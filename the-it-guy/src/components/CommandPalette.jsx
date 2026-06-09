@@ -1,4 +1,4 @@
-import { Command, FileText, Home, Layers, Search, Workflow } from 'lucide-react'
+import { Building2, Command, FileText, Handshake, Home, Layers, Search, Workflow } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
@@ -70,6 +70,24 @@ function CommandPalette({ onNewTransaction, onNewDevelopment }) {
         label: 'Go to Reports',
         icon: <FileText size={14} />,
         run: () => navigate('/reports'),
+      },
+      {
+        id: 'commercial-dashboard',
+        label: 'Go to Commercial Dashboard',
+        icon: <Building2 size={14} />,
+        run: () => navigate('/commercial/dashboard'),
+      },
+      {
+        id: 'commercial-transactions',
+        label: 'Go to Commercial Transactions',
+        icon: <Handshake size={14} />,
+        run: () => navigate('/commercial/dashboard#transactions'),
+      },
+      {
+        id: 'commercial-documents',
+        label: 'Go to Commercial Documents',
+        icon: <FileText size={14} />,
+        run: () => navigate('/commercial/documents'),
       },
       {
         id: 'new-dev',

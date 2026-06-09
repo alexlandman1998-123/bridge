@@ -1,6 +1,6 @@
 import CommercialPipelineColumn from './CommercialPipelineColumn'
 
-function CommercialPipelineBoard({ stages = [], records = [], loading = false, error = '', getStage, renderCard }) {
+function CommercialPipelineBoard({ stages = [], records = [], loading = false, error = '', getStage, getStageSummary, renderCard }) {
   if (loading) {
     return (
       <section className="flex gap-4 overflow-x-auto pb-3">
@@ -35,6 +35,7 @@ function CommercialPipelineBoard({ stages = [], records = [], loading = false, e
             key={stage.value}
             stage={stage}
             records={stageRecords}
+            summary={getStageSummary?.(stageRecords, stage) || ''}
             renderCard={renderCard}
           />
         )

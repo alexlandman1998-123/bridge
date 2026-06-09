@@ -2,6 +2,7 @@ import { FileText, X } from 'lucide-react'
 import { useState } from 'react'
 import { formatCommercialDate, labelFromValue, lookupLabel } from '../commercialPipelineHelpers'
 import { formatCurrency, formatNumber } from '../commercialFormatters'
+import { getCommercialNextAction } from '../commercialPresentation'
 import CommercialDocumentLibrary from './CommercialDocumentLibrary'
 import CommercialHeadsOfTermsPanel from './CommercialHeadsOfTermsPanel'
 import CommercialStatusPill from './CommercialStatusPill'
@@ -76,6 +77,7 @@ function CommercialDealDetailDrawer({
               <CommercialStatusPill value={record.status} />
               <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{labelFromValue(record.stage)}</span>
               <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{labelFromValue(record.deal_type)}</span>
+              <span className="rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Next: {getCommercialNextAction('deals', record)}</span>
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
@@ -90,12 +92,14 @@ function CommercialDealDetailDrawer({
               <DetailRow label="Stage" value={labelFromValue(record.stage)} />
               <DetailRow label="Probability" value={record.probability_percentage ? `${formatNumber(record.probability_percentage)}%` : '-'} />
               <DetailRow label="Expected close" value={formatCommercialDate(record.expected_close_date)} />
+              <DetailRow label="Next action" value={getCommercialNextAction('deals', record)} />
             </DetailBlock>
 
             <DetailBlock title="Parties">
               <DetailRow label="Tenant/client" value={lookupLabel(lookups, 'tenants', record.tenant_id)} />
               <DetailRow label="Landlord/seller" value={lookupLabel(lookups, 'landlords', record.landlord_id)} />
               <DetailRow label="Property" value={lookupLabel(lookups, 'properties', record.property_id)} />
+              <DetailRow label="Vacancy / unit" value={lookupLabel(lookups, 'vacancies', record.vacancy_id)} />
               <DetailRow label="Assigned broker" value={record.assigned_broker || 'Unassigned'} />
             </DetailBlock>
 
@@ -108,13 +112,13 @@ function CommercialDealDetailDrawer({
             <DetailBlock title={record.deal_type === 'sale' ? 'Sales Awareness' : 'Leasing Awareness'}>
               {record.deal_type === 'sale' ? (
                 <>
-                  <DetailRow label="Next workflow fit" value="Offer, due diligence, legal, transfer, close" />
-                  <DetailRow label="Current shell" value="Shared commercial pipeline" />
+                  <DetailRow label="Broker focus" value="Confirm offer, due diligence, and closing conditions" />
+                  <DetailRow label="Next action" value={getCommercialNextAction('deals', record)} />
                 </>
               ) : (
                 <>
-                  <DetailRow label="Next workflow fit" value="Heads of terms, lease draft, fit-out, occupation" />
-                  <DetailRow label="Current shell" value="Shared commercial pipeline" />
+                  <DetailRow label="Broker focus" value="Heads of Terms, lease draft, fit-out, occupation" />
+                  <DetailRow label="Next action" value={getCommercialNextAction('deals', record)} />
                 </>
               )}
             </DetailBlock>

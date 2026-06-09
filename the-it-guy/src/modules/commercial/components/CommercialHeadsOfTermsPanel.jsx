@@ -2,7 +2,9 @@ import { CheckCircle2, FileSignature, Save } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { COMMERCIAL_HOT_STATUSES } from '../commercialDocumentConstants'
 import { formatCurrency, formatNumber, titleize } from '../commercialFormatters'
-import { createHeadsOfTerms, getHeadsOfTermsByDeal, updateHeadsOfTerms, updateHeadsOfTermsStatus } from '../services/commercialApi'
+import { getCommercialNextAction } from '../commercialPresentation'
+import { createHeadsOfTerms, createLeaseFromHeadsOfTerms, getHeadsOfTermsByDeal, updateHeadsOfTerms, updateHeadsOfTermsStatus } from '../services/commercialApi'
+import CommercialStatusPill from './CommercialStatusPill'
 
 const HOT_FIELDS = [
   { name: 'premises_description', label: 'Premises description', type: 'textarea', span: 'full' },
@@ -19,6 +21,28 @@ const HOT_FIELDS = [
   { name: 'special_conditions', label: 'Special conditions', type: 'textarea', span: 'full' },
   { name: 'broker_commission_notes', label: 'Broker commission notes', type: 'textarea', span: 'full' },
 ]
+
+const HOT_PROGRESS = [
+  { value: 'draft', label: 'Draft', dateKey: 'created_at' },
+  { value: 'sent', label: 'Sent', dateKey: 'sent_at' },
+  { value: 'under_review', label: 'Review', dateKey: null },
+  { value: 'accepted', label: 'Accepted', dateKey: 'accepted_at' },
+  { value: 'signed', label: 'Signed', dateKey: 'signed_at' },
+]
+
+const HOT_PROGRESS_INDEX = {
+  draft: 0,
+  sent: 1,
+  sent_for_review: 1,
+  under_review: 2,
+  accepted: 3,
+  approved_by_landlord: 3,
+  approved_by_tenant: 3,
+  rejected: 3,
+  signed: 4,
+  ready_for_lease: 4,
+  converted: 4,
+}
 
 function normalizeValue(value) {
   return value === null || value === undefined ? '' : String(value)
@@ -45,12 +69,21 @@ function buildInitialValues(hot, deal) {
   return values
 }
 
+function formatTimelineDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short' }).format(date)
+}
+
 function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChange }) {
   const [hot, setHot] = useState(null)
   const [values, setValues] = useState({})
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [leaseCreating, setLeaseCreating] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
   const loadHot = useCallback(async () => {
     if (!deal?.id) return
@@ -72,13 +105,15 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
   }, [loadHot])
 
   const statusLabel = useMemo(() => COMMERCIAL_HOT_STATUSES.find((status) => status.value === hot?.status)?.label || titleize(hot?.status || 'draft'), [hot])
-  const readyForLease = hot?.status === 'ready_for_lease'
+  const readyForLease = ['signed', 'ready_for_lease'].includes(hot?.status)
+  const currentProgressIndex = HOT_PROGRESS_INDEX[hot?.status] ?? 0
 
   async function handleSave(event) {
     event.preventDefault()
     if (!deal?.id) return
     setSaving(true)
     setError('')
+    setSuccess('')
     try {
       const payload = {
         ...serializeHot(values),
@@ -87,6 +122,10 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
         tenant_id: deal.tenant_id,
         landlord_id: deal.landlord_id,
         property_id: deal.property_id,
+        vacancy_id: deal.vacancy_id,
+        broker_id: deal.broker_id || deal.assigned_broker,
+        branch_id: deal.branch_id,
+        team_id: deal.team_id,
       }
       const saved = hot?.id ? await updateHeadsOfTerms(hot.id, payload) : await createHeadsOfTerms(payload)
       setHot(saved)
@@ -103,6 +142,7 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
     if (!hot?.id || hot.status === status) return
     setSaving(true)
     setError('')
+    setSuccess('')
     try {
       const saved = await updateHeadsOfTermsStatus(hot.id, status)
       setHot(saved)
@@ -112,6 +152,33 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
       setError(statusError?.message || 'Heads of Terms status could not be updated.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleCreateLease() {
+    if (!hot?.id || !readyForLease) return
+    setLeaseCreating(true)
+    setError('')
+    setSuccess('')
+    try {
+      const lease = await createLeaseFromHeadsOfTerms(hot, {
+        organisation_id: organisationId,
+        deal_id: deal?.id,
+        tenant_id: deal?.tenant_id || hot.tenant_id,
+        landlord_id: deal?.landlord_id || hot.landlord_id,
+        property_id: deal?.property_id || hot.property_id,
+        vacancy_id: deal?.vacancy_id || hot.vacancy_id,
+        broker_id: deal?.broker_id || hot.broker_id,
+        branch_id: deal?.branch_id || hot.branch_id,
+        team_id: deal?.team_id || hot.team_id,
+      })
+      setSuccess(lease?.id ? `Lease ${String(lease.id).slice(0, 8)} created from signed HOT.` : 'Lease created from signed HOT.')
+      await loadHot()
+      onActivityChange?.()
+    } catch (leaseError) {
+      setError(leaseError?.message || 'Lease could not be created from this Heads of Terms.')
+    } finally {
+      setLeaseCreating(false)
     }
   }
 
@@ -145,13 +212,16 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
           <div className="flex flex-wrap items-center gap-2">
             <FileSignature size={18} className="text-[#1267a3]" />
             <h3 className="text-sm font-semibold tracking-[-0.02em] text-[#102236]">Heads of Terms</h3>
-            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600">{statusLabel}</span>
+            <CommercialStatusPill value={hot?.status || 'draft'} />
           </div>
-          <p className="mt-1 text-sm text-slate-500">Structured HOT capture for future PDF generation and lease pack workflows.</p>
+          <p className="mt-1 text-sm text-slate-500">Structured HOT capture for tracking terms, approvals, and lease readiness.</p>
+          <p className="mt-2 inline-flex rounded-full border border-amber-100 bg-white px-3 py-1 text-xs font-semibold text-amber-700">
+            Next: {getCommercialNextAction('headsOfTerms', hot || { status: 'draft' })}
+          </p>
           {readyForLease ? (
             <p className="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1 text-xs font-semibold text-emerald-700">
               <CheckCircle2 size={14} />
-              Ready for lease draft. Consider moving this deal to Lease Draft.
+              Ready for lease creation.
             </p>
           ) : null}
         </div>
@@ -164,8 +234,21 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
           >
             {COMMERCIAL_HOT_STATUSES.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
           </select>
-          <p className="text-right text-xs text-slate-500">{loading ? 'Loading...' : hot ? 'Draft available' : 'No HOT yet'}</p>
+          <p className="text-right text-xs text-slate-500">{loading ? 'Loading...' : hot ? statusLabel : 'No HOT yet'}</p>
         </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-5">
+        {HOT_PROGRESS.map((step, index) => {
+          const complete = index <= currentProgressIndex
+          const stepDate = formatTimelineDate(hot?.[step.dateKey])
+          return (
+            <div key={step.value} className={`rounded-2xl border px-3 py-3 ${complete ? 'border-emerald-100 bg-emerald-50/70 text-emerald-800' : 'border-slate-100 bg-slate-50 text-slate-500'}`}>
+              <p className="text-xs font-semibold uppercase tracking-[0.1em]">{step.label}</p>
+              <p className="mt-1 text-xs font-medium">{stepDate || (complete ? 'Reached' : 'Pending')}</p>
+            </div>
+          )
+        })}
       </div>
 
       <div className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:grid-cols-3">
@@ -184,6 +267,7 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
       </div>
 
       {error ? <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</div> : null}
+      {success ? <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{success}</div> : null}
 
       <form onSubmit={handleSave} className="mt-4 grid gap-4 md:grid-cols-2">
         {HOT_FIELDS.map((field) => (
@@ -193,14 +277,27 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
           </label>
         ))}
         <div className="md:col-span-2">
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:opacity-60"
-          >
-            <Save size={16} />
-            {saving ? 'Saving...' : hot ? 'Save draft' : 'Create Heads of Terms'}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="submit"
+              disabled={saving || leaseCreating}
+              className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:opacity-60"
+            >
+              <Save size={16} />
+              {saving ? 'Saving...' : hot ? 'Save draft' : 'Create Heads of Terms'}
+            </button>
+            {readyForLease ? (
+              <button
+                type="button"
+                onClick={() => void handleCreateLease()}
+                disabled={leaseCreating || saving}
+                className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60"
+              >
+                <CheckCircle2 size={16} />
+                {leaseCreating ? 'Creating lease...' : 'Create Lease'}
+              </button>
+            ) : null}
+          </div>
         </div>
       </form>
     </section>

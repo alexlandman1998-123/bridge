@@ -1,9 +1,11 @@
 import { Bell, Search } from 'lucide-react'
-import { Suspense, useEffect, useRef } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../../../components/QuickCreateDropdown'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
-import { COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_GROUPS } from '../commercialNavigation'
+import { useWorkspace } from '../../../context/WorkspaceContext'
+import { COMMERCIAL_BOTTOM_NAV_ITEMS, COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_GROUPS, isCommercialNavItemActive } from '../commercialNavigation'
+import { resolveCommercialAccessContext } from '../services/commercialApi'
 import CommercialBranding from './CommercialBranding'
 import CommercialSidebar from './CommercialSidebar'
 
@@ -24,8 +26,47 @@ function CommercialPageSkeleton() {
 function CommercialLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { role } = useWorkspace()
   const contentScrollRef = useRef(null)
-  const mobileNavItems = [COMMERCIAL_DASHBOARD_NAV_ITEM, ...COMMERCIAL_NAV_GROUPS.flatMap((group) => group.items)]
+  const [searchTerm, setSearchTerm] = useState('')
+  const [accessState, setAccessState] = useState({ loading: true, allowed: false, message: '' })
+  const currentPath = `${location.pathname}${location.search || ''}`
+  const mobileNavItems = useMemo(
+    () => [COMMERCIAL_DASHBOARD_NAV_ITEM, ...COMMERCIAL_NAV_GROUPS.flatMap((group) => group.items), ...COMMERCIAL_BOTTOM_NAV_ITEMS],
+    [],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadCommercialAccess() {
+      if (role === 'platform_admin') {
+        if (!cancelled) setAccessState({ loading: false, allowed: true, message: '' })
+        return
+      }
+      try {
+        const scope = await resolveCommercialAccessContext()
+        if (!cancelled) {
+          setAccessState({
+            loading: false,
+            allowed: Boolean(scope?.hasCommercialAccess),
+            message: scope?.hasCommercialAccess ? '' : 'You need Commercial workspace access before opening the Commercial brokerage module.',
+          })
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAccessState({
+            loading: false,
+            allowed: false,
+            message: error?.message || 'Commercial workspace access could not be verified.',
+          })
+        }
+      }
+    }
+    void loadCommercialAccess()
+    return () => {
+      cancelled = true
+    }
+  }, [role])
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -33,6 +74,41 @@ function CommercialLayout() {
     })
     return () => window.cancelAnimationFrame(frameId)
   }, [location.pathname])
+
+  function handleSearchKeyDown(event) {
+    if (event.key !== 'Enter') return
+    const query = searchTerm.trim()
+    navigate(query ? `/commercial/listings?search=${encodeURIComponent(query)}` : '/commercial/listings')
+  }
+
+  if (accessState.loading) {
+    return (
+      <section className="flex min-h-screen items-center justify-center bg-[#f6f8fb] px-4 text-[#102236]">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+          <h1 className="text-xl font-semibold tracking-[-0.035em]">Checking Commercial access</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">Validating your Commercial brokerage membership.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (!accessState.allowed) {
+    return (
+      <section className="flex min-h-screen items-center justify-center bg-[#f6f8fb] px-4 text-[#102236]">
+        <div className="w-full max-w-md rounded-3xl border border-amber-200 bg-white p-6 text-center shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+          <h1 className="text-xl font-semibold tracking-[-0.035em]">Commercial access required</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">{accessState.message}</p>
+          <button
+            type="button"
+            onClick={() => navigate('/dashboard')}
+            className="mt-5 rounded-2xl bg-[#102b46] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#163a5b]"
+          >
+            Back to Residential
+          </button>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f6f8fb] text-[#102236]">
@@ -42,37 +118,39 @@ function CommercialLayout() {
           <div className="flex items-center justify-between gap-3">
             <CommercialBranding compact />
             <div className="w-[190px]">
-              <WorkspaceSwitcher
-                currentPath={`${location.pathname}${location.search || ''}`}
-                onSelectWorkspace={(path) => navigate(path)}
-              />
+              <WorkspaceSwitcher currentPath={currentPath} onSelectWorkspace={(path) => navigate(path)} />
             </div>
           </div>
           <div className="mt-3 flex items-center gap-2">
             <QuickCreateDropdown />
             <div className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-500">
               <Search size={15} className="shrink-0" />
-              <input className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none" placeholder="Search commercial..." />
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none"
+                placeholder="Search listings, properties, landlords..."
+              />
             </div>
           </div>
           <nav className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Commercial mobile navigation">
             {mobileNavItems.map((item) => {
               const Icon = item.icon
+              const active = isCommercialNavItemActive(`${location.pathname}${location.hash || ''}`, item)
               return (
-                <NavLink
+                <Link
                   key={item.to}
                   to={item.to}
-                  end={item.to === '/commercial/dashboard'}
-                  className={({ isActive }) =>
-                    [
-                      'inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold',
-                      isActive ? 'border-[#cfe0ef] bg-[#eef5fb] text-[#123b61]' : 'border-slate-200 bg-white text-slate-600',
-                    ].join(' ')
-                  }
+                  aria-current={active ? 'page' : undefined}
+                  className={[
+                    'inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-150',
+                    active ? 'border-[#cfe0ef] bg-[#eef5fb] text-[#123b61]' : 'border-slate-200 bg-white text-slate-600',
+                  ].join(' ')}
                 >
                   <Icon size={14} />
                   {item.label}
-                </NavLink>
+                </Link>
               )
             })}
           </nav>
@@ -82,20 +160,23 @@ function CommercialLayout() {
             <QuickCreateDropdown />
             <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-500 shadow-sm">
               <Search size={16} className="shrink-0" />
-              <input className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[#102236] outline-none" placeholder="Search commercial clients, properties, deals..." />
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-[#102236] outline-none"
+                placeholder="Search listings, properties, landlords, areas, brokers..."
+              />
             </div>
             <div className="w-[220px] shrink-0">
-              <WorkspaceSwitcher
-                currentPath={`${location.pathname}${location.search || ''}`}
-                onSelectWorkspace={(path) => navigate(path)}
-              />
+              <WorkspaceSwitcher currentPath={currentPath} onSelectWorkspace={(path) => navigate(path)} />
             </div>
             <button type="button" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-blue-200 hover:text-blue-600" aria-label="Notifications">
               <Bell size={17} />
             </button>
           </div>
         </div>
-        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 px-4 py-5 sm:px-5 lg:px-6">
+        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 overflow-x-hidden px-4 py-5 sm:px-5 lg:px-6">
           <Suspense fallback={<CommercialPageSkeleton />}>
             <Outlet />
           </Suspense>

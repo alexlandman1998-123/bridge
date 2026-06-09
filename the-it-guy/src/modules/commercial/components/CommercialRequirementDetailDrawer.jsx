@@ -1,6 +1,9 @@
 import { ArrowRight, FileText, Plus, X } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { formatBudgetRange, formatCommercialDate, formatCommercialList, formatSizeRange, labelFromValue, lookupLabel } from '../commercialPipelineHelpers'
+import { getCommercialNextAction } from '../commercialPresentation'
+import { buildRequirementVacancyMatches } from '../services/commercialIntelligenceApi'
 import CommercialDocumentLibrary from './CommercialDocumentLibrary'
 import CommercialStatusPill from './CommercialStatusPill'
 
@@ -56,6 +59,14 @@ function CommercialRequirementDetailDrawer({
   const [note, setNote] = useState('')
 
   if (!open || !record) return null
+  const suggestedVacancies = buildRequirementVacancyMatches({
+    requirements: [record],
+    vacancies: lookups.vacancies || [],
+    properties: lookups.properties || [],
+    listings: lookups.listings || [],
+    brokers: lookups.brokers || [],
+    limit: 5,
+  })
 
   async function handleAddNote(event) {
     event.preventDefault()
@@ -75,6 +86,7 @@ function CommercialRequirementDetailDrawer({
             <div className="mt-3 flex flex-wrap gap-2">
               <CommercialStatusPill value={record.status} />
               <span className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{labelFromValue(record.stage)}</span>
+              <span className="rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Next: {getCommercialNextAction('requirements', record)}</span>
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50">
@@ -88,6 +100,7 @@ function CommercialRequirementDetailDrawer({
               <DetailRow label="Type" value={labelFromValue(record.requirement_type)} />
               <DetailRow label="Client type" value={labelFromValue(record.client_type)} />
               <DetailRow label="Assigned broker" value={record.assigned_broker || 'Unassigned'} />
+              <DetailRow label="Next action" value={getCommercialNextAction('requirements', record)} />
               <DetailRow label="Last updated" value={formatCommercialDate(record.updated_at)} />
             </DetailBlock>
 
@@ -111,9 +124,27 @@ function CommercialRequirementDetailDrawer({
             </DetailBlock>
 
             <DetailBlock title="Shortlisted Properties">
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
-                Property shortlisting relationships will appear here once matching is connected.
-              </div>
+              {suggestedVacancies.length ? suggestedVacancies.map((match) => (
+                <div key={match.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#102236]">{match.vacancyName}</p>
+                      <p className="mt-1 truncate text-xs text-slate-500">{match.propertyName} · {match.area}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{match.matchPercentage}% Match</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span>{match.availableGla ? `${new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(match.availableGla)} m²` : '-'}</span>
+                    <span>{match.rental ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(match.rental) : '-'}</span>
+                    <span>{match.brokerName}</span>
+                    <Link to="/commercial/deals/leasing" className="font-semibold text-blue-600">Create Deal</Link>
+                  </div>
+                </div>
+              )) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
+                  No suggested vacancies available yet.
+                </div>
+              )}
             </DetailBlock>
 
             <DetailBlock title="Related Deals">

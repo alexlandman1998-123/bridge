@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { COMMERCIAL_DOCUMENT_STATUSES, getCommercialDocumentCategories } from '../commercialDocumentConstants'
+import { COMMERCIAL_DOCUMENT_REQUEST_PRIORITIES, COMMERCIAL_DOCUMENT_STATUSES, getCommercialDocumentCategories } from '../commercialDocumentConstants'
 
 function CommercialDocumentRequestModal({ open, entityType, onClose, onSubmit }) {
   const categories = getCommercialDocumentCategories(entityType)
@@ -9,6 +9,7 @@ function CommercialDocumentRequestModal({ open, entityType, onClose, onSubmit })
     category: categories[0]?.value || '',
     requestedFrom: '',
     dueDate: '',
+    priority: 'normal',
     notes: '',
     status: 'requested',
   })
@@ -17,7 +18,7 @@ function CommercialDocumentRequestModal({ open, entityType, onClose, onSubmit })
 
   useEffect(() => {
     if (!open) return
-    setForm({ documentName: '', category: categories[0]?.value || '', requestedFrom: '', dueDate: '', notes: '', status: 'requested' })
+    setForm({ documentName: '', category: categories[0]?.value || '', requestedFrom: '', dueDate: '', priority: 'normal', notes: '', status: 'requested' })
     setError('')
   }, [categories, open])
 
@@ -100,6 +101,16 @@ function CommercialDocumentRequestModal({ open, entityType, onClose, onSubmit })
               className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-medium text-[#102236] outline-none focus:border-[#9fb9d1] focus:ring-4 focus:ring-[#dbeafe]"
             >
               {COMMERCIAL_DOCUMENT_STATUSES.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Priority</span>
+            <select
+              value={form.priority}
+              onChange={(event) => setForm((previous) => ({ ...previous, priority: event.target.value }))}
+              className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-medium text-[#102236] outline-none focus:border-[#9fb9d1] focus:ring-4 focus:ring-[#dbeafe]"
+            >
+              {COMMERCIAL_DOCUMENT_REQUEST_PRIORITIES.map((priority) => <option key={priority.value} value={priority.value}>{priority.label}</option>)}
             </select>
           </label>
           <label className="grid gap-1.5 sm:col-span-2">

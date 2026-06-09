@@ -3,14 +3,14 @@ import { useEffect, useState } from 'react'
 import { COMMERCIAL_DOCUMENT_STATUSES, getCommercialDocumentCategories } from '../commercialDocumentConstants'
 
 function CommercialDocumentUploadModal({ open, entityType, onClose, onSubmit }) {
-  const [form, setForm] = useState({ documentName: '', category: '', status: 'uploaded', notes: '', file: null })
+  const [form, setForm] = useState({ documentName: '', category: '', status: 'uploaded', versionNumber: '1', expiresAt: '', notes: '', file: null })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const categories = getCommercialDocumentCategories(entityType)
 
   useEffect(() => {
     if (!open) return
-    setForm({ documentName: '', category: categories[0]?.value || '', status: 'uploaded', notes: '', file: null })
+    setForm({ documentName: '', category: categories[0]?.value || '', status: 'uploaded', versionNumber: '1', expiresAt: '', notes: '', file: null })
     setError('')
   }, [categories, open])
 
@@ -85,6 +85,25 @@ function CommercialDocumentUploadModal({ open, entityType, onClose, onSubmit }) 
             >
               {COMMERCIAL_DOCUMENT_STATUSES.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
             </select>
+          </label>
+          <label className="grid gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Version</span>
+            <input
+              type="number"
+              min="1"
+              value={form.versionNumber}
+              onChange={(event) => setForm((previous) => ({ ...previous, versionNumber: event.target.value }))}
+              className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-medium text-[#102236] outline-none focus:border-[#9fb9d1] focus:ring-4 focus:ring-[#dbeafe]"
+            />
+          </label>
+          <label className="grid gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Expiry date</span>
+            <input
+              type="date"
+              value={form.expiresAt}
+              onChange={(event) => setForm((previous) => ({ ...previous, expiresAt: event.target.value }))}
+              className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-medium text-[#102236] outline-none focus:border-[#9fb9d1] focus:ring-4 focus:ring-[#dbeafe]"
+            />
           </label>
           <label className="grid gap-1.5 sm:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Notes</span>

@@ -1,10 +1,15 @@
 import { createElement } from 'react'
+import CommercialListingWizard from './components/CommercialListingWizard'
 import CommercialStatusPill from './components/CommercialStatusPill'
 import { formatCurrency, formatDate, formatList, formatNumber, titleize } from './commercialFormatters'
+import { getCommercialNextAction, getCommercialUpdatedDate } from './commercialPresentation'
+import { lifecycleOptions } from './commercialWorkflow'
+import { scoreListingQuality } from './services/commercialIntelligenceApi'
 import {
   archiveCommercialDeal,
   archiveCommercialLandlord,
   archiveCommercialLease,
+  archiveCommercialListing,
   archiveCommercialProperty,
   archiveCommercialRequirement,
   archiveCommercialTenant,
@@ -12,6 +17,7 @@ import {
   createCommercialDeal,
   createCommercialLandlord,
   createCommercialLease,
+  createCommercialListing,
   createCommercialProperty,
   createCommercialRequirement,
   createCommercialTenant,
@@ -19,6 +25,7 @@ import {
   getCommercialDeals,
   getCommercialLandlords,
   getCommercialLeases,
+  getCommercialListings,
   getCommercialProperties,
   getCommercialRequirements,
   getCommercialTenants,
@@ -26,6 +33,7 @@ import {
   updateCommercialDeal,
   updateCommercialLandlord,
   updateCommercialLease,
+  updateCommercialListing,
   updateCommercialProperty,
   updateCommercialRequirement,
   updateCommercialTenant,
@@ -39,45 +47,47 @@ export const ACTIVE_STATUSES = [
 ]
 
 const LEASE_STATUSES = [
-  { value: 'draft', label: 'Draft' },
-  { value: 'active', label: 'Active' },
-  { value: 'expiring_soon', label: 'Expiring Soon' },
-  { value: 'renewed', label: 'Renewed' },
-  { value: 'expired', label: 'Expired' },
-  { value: 'terminated', label: 'Terminated' },
+  ...lifecycleOptions('leases'),
   { value: 'archived', label: 'Archived' },
 ]
 
 const VACANCY_STATUSES = [
-  { value: 'available', label: 'Available' },
-  { value: 'reserved', label: 'Reserved' },
-  { value: 'under_negotiation', label: 'Under Negotiation' },
+  ...lifecycleOptions('vacancies'),
+]
+
+export const LISTING_STATUSES = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'coming_soon', label: 'Coming Soon' },
+  { value: 'active', label: 'Active' },
+  { value: 'under_offer', label: 'Under Offer' },
   { value: 'leased', label: 'Leased' },
-  { value: 'occupied', label: 'Occupied' },
-  { value: 'upcoming', label: 'Upcoming' },
+  { value: 'sold', label: 'Sold' },
+  { value: 'expired', label: 'Expired' },
   { value: 'archived', label: 'Archived' },
 ]
 
+export const LISTING_CATEGORIES = [
+  { value: 'office', label: 'Office' },
+  { value: 'industrial', label: 'Industrial' },
+  { value: 'retail', label: 'Retail' },
+  { value: 'agricultural', label: 'Agricultural' },
+  { value: 'mixed_use', label: 'Mixed Use' },
+  { value: 'development_land', label: 'Development Land' },
+]
+
+export const LISTING_TYPES = [
+  { value: 'lease', label: 'To Let' },
+  { value: 'sale', label: 'For Sale' },
+  { value: 'investment', label: 'Investment' },
+  { value: 'development', label: 'Development' },
+]
+
 export const REQUIREMENT_STAGES = [
-  { value: 'new_requirement', label: 'New Requirement' },
-  { value: 'shortlisting', label: 'Shortlisting' },
-  { value: 'viewing', label: 'Viewing' },
-  { value: 'proposal', label: 'Proposal' },
-  { value: 'negotiation', label: 'Negotiation' },
-  { value: 'lease_stage', label: 'Lease Stage' },
-  { value: 'closed_won', label: 'Closed Won' },
-  { value: 'closed_lost', label: 'Closed Lost' },
+  ...lifecycleOptions('requirements'),
 ]
 
 export const DEAL_STAGES = [
-  { value: 'requirement', label: 'Requirement' },
-  { value: 'shortlist', label: 'Shortlist' },
-  { value: 'proposal', label: 'Proposal' },
-  { value: 'heads_of_terms', label: 'Heads of Terms' },
-  { value: 'lease_draft', label: 'Lease Draft' },
-  { value: 'signed', label: 'Signed' },
-  { value: 'closed_won', label: 'Closed Won' },
-  { value: 'closed_lost', label: 'Closed Lost' },
+  ...lifecycleOptions('deals'),
 ]
 
 export const PROPERTY_TYPES = [
@@ -112,6 +122,27 @@ function statusColumn() {
   return { key: 'status', label: 'Status', render: (row) => createElement(CommercialStatusPill, { value: row.status }) }
 }
 
+function brokerColumn(key = 'assigned_broker') {
+  return { key, label: 'Broker Owner', render: (row, lookups) => getLookupLabel(lookups, 'brokers', row[key] || row.broker_id, 'Unassigned') }
+}
+
+function nextActionColumn(kind) {
+  return { key: 'next_action', label: 'Next Action', sortable: false, render: (row) => getCommercialNextAction(kind, row) }
+}
+
+function updatedColumn() {
+  return { key: 'updated_at', label: 'Last Activity', render: (row) => getCommercialUpdatedDate(row) }
+}
+
+function standardSortOptions(valueKey = 'updated_at', valueLabel = 'Value / GLA') {
+  return [
+    { key: 'updated_at', direction: 'desc', label: 'Newest updated' },
+    { key: 'updated_at', direction: 'asc', label: 'Oldest updated' },
+    { key: valueKey, direction: 'desc', label: `${valueLabel}: high to low` },
+    { key: valueKey, direction: 'asc', label: `${valueLabel}: low to high` },
+  ]
+}
+
 function maxGreaterThanMin(minKey, maxKey, message) {
   return (values) => {
     const min = Number(values[minKey])
@@ -134,22 +165,27 @@ function leaseDateValidation(values) {
 
 export const commercialCrudConfigs = {
   landlords: {
+    kind: 'landlords',
     title: 'Landlords',
     description: 'Manage landlords, landlord contacts, portfolios, mandates, and available space.',
     createLabel: 'New landlord',
+    documentsEntityType: 'commercial_landlord',
     emptyTitle: 'No landlords yet',
-    emptyDescription: 'Create landlord records to start building the commercial portfolio layer.',
+    emptyDescription: 'Add your first landlord to start tracking mandates, properties, vacancies, and portfolio activity.',
     fetchRecords: getCommercialLandlords,
     createRecord: createCommercialLandlord,
     updateRecord: updateCommercialLandlord,
     archiveRecord: archiveCommercialLandlord,
+    defaultSortKey: 'updated_at',
+    defaultSortDirection: 'desc',
+    sortOptions: standardSortOptions('name', 'Landlord name'),
     filters: [{ key: 'status', label: 'Status', options: ACTIVE_STATUSES }],
     columns: [
       { key: 'name', label: 'Landlord' },
       { key: 'landlord_type', label: 'Type', render: (row) => titleize(row.landlord_type) },
       { key: 'contact_person', label: 'Contact Person', render: (row) => row.contact_person || '-' },
-      { key: 'email', label: 'Email', render: (row) => row.email || '-' },
-      { key: 'phone', label: 'Phone', render: (row) => row.phone || '-' },
+      nextActionColumn('landlords'),
+      updatedColumn(),
       statusColumn(),
     ],
     fields: [
@@ -166,22 +202,28 @@ export const commercialCrudConfigs = {
     ],
   },
   tenants: {
+    kind: 'tenants',
     title: 'Tenants',
     description: 'Manage tenant contacts, requirements, lease history, and future expansion opportunities.',
     createLabel: 'New tenant',
+    documentsEntityType: 'commercial_tenant',
     emptyTitle: 'No tenants yet',
-    emptyDescription: 'Create tenant records to prepare requirement tracking and lease history.',
+    emptyDescription: 'Add tenants so brokers can capture requirements, track lease expiries, and manage future demand.',
     fetchRecords: getCommercialTenants,
     createRecord: createCommercialTenant,
     updateRecord: updateCommercialTenant,
     archiveRecord: archiveCommercialTenant,
+    defaultSortKey: 'updated_at',
+    defaultSortDirection: 'desc',
+    sortOptions: standardSortOptions('current_lease_expiry', 'Lease expiry'),
     filters: [{ key: 'status', label: 'Status', options: ACTIVE_STATUSES }],
     columns: [
       { key: 'name', label: 'Tenant' },
       { key: 'industry', label: 'Industry', render: (row) => row.industry || '-' },
       { key: 'contact_person', label: 'Contact Person', render: (row) => row.contact_person || '-' },
-      { key: 'current_location', label: 'Current Location', render: (row) => row.current_location || '-' },
       { key: 'current_lease_expiry', label: 'Lease Expiry', render: (row) => formatDate(row.current_lease_expiry) },
+      nextActionColumn('tenants'),
+      updatedColumn(),
       statusColumn(),
     ],
     fields: [
@@ -199,18 +241,26 @@ export const commercialCrudConfigs = {
     ],
   },
   properties: {
+    kind: 'properties',
     title: 'Properties',
     description: 'Manage commercial property stock, availability, vacancies, and property-specific leasing context.',
     createLabel: 'New property',
-    emptyTitle: 'No commercial properties yet',
-    emptyDescription: 'Create commercial property stock before linking requirements, deals, and leases.',
+    documentsEntityType: 'commercial_property',
+    emptyTitle: 'No properties yet',
+    emptyDescription: 'Add your first commercial property to start tracking vacancies, leases, and landlord activity.',
     fetchRecords: getCommercialProperties,
     createRecord: createCommercialProperty,
     updateRecord: updateCommercialProperty,
     archiveRecord: archiveCommercialProperty,
+    defaultSortKey: 'updated_at',
+    defaultSortDirection: 'desc',
+    sortOptions: standardSortOptions('gla_m2', 'GLA'),
     filters: [
       { key: 'status', label: 'Status', options: ACTIVE_STATUSES },
       { key: 'property_type', label: 'Property type', options: PROPERTY_TYPES },
+      { key: 'branch_id', label: 'Branch', optionsFrom: 'branches' },
+      { key: 'team_id', label: 'Team', optionsFrom: 'teams' },
+      { key: 'broker_id', label: 'Broker Owner', optionsFrom: 'brokers' },
     ],
     columns: [
       { key: 'property_name', label: 'Property' },
@@ -220,11 +270,16 @@ export const commercialCrudConfigs = {
       { key: 'gla_m2', label: 'GLA', render: (row) => formatNumber(row.gla_m2, 'm²') },
       { key: 'available_space_m2', label: 'Available Space', render: (row) => formatNumber(row.available_space_m2, 'm²') },
       { key: 'vacancy_percentage', label: 'Vacancy %', render: (row) => `${formatNumber(row.vacancy_percentage)}%` },
+      nextActionColumn('properties'),
+      updatedColumn(),
       statusColumn(),
     ],
     fields: [
       { name: 'property_name', label: 'Property name', required: true },
       { name: 'landlord_id', label: 'Landlord', type: 'select', optionsFrom: 'landlords' },
+      { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
+      { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
+      { name: 'broker_id', label: 'Broker owner', type: 'select', optionsFrom: 'brokers' },
       { name: 'property_type', label: 'Property type', type: 'select', options: PROPERTY_TYPES },
       { name: 'address', label: 'Address', span: 'full' },
       { name: 'suburb', label: 'Suburb' },
@@ -246,56 +301,138 @@ export const commercialCrudConfigs = {
     ],
   },
   vacancies: {
+    kind: 'vacancies',
     title: 'Vacancies',
     description: 'Manage available units, floors, live GLA, asking rentals, landlord instructions, availability dates, broker assignments, and vacancy status.',
     createLabel: 'New vacancy',
+    documentsEntityType: 'commercial_vacancy',
     emptyTitle: 'No vacancies yet',
-    emptyDescription: 'Capture live commercial availability so leasing teams can match tenant demand to stock.',
+    emptyDescription: 'Capture live commercial availability so brokers can match tenant demand to stock.',
     fetchRecords: getCommercialVacancies,
     createRecord: createCommercialVacancy,
     updateRecord: updateCommercialVacancy,
     archiveRecord: archiveCommercialVacancy,
+    defaultSortKey: 'updated_at',
+    defaultSortDirection: 'desc',
+    sortOptions: standardSortOptions('available_area_m2', 'Available GLA'),
     filters: [
+      { key: 'branch_id', label: 'Branch', optionsFrom: 'branches' },
+      { key: 'team_id', label: 'Team', optionsFrom: 'teams' },
       { key: 'status', label: 'Status', options: VACANCY_STATUSES },
+      { key: 'broker_assignment', label: 'Broker Owner', optionsFrom: 'brokers' },
     ],
     columns: [
       { key: 'vacancy_name', label: 'Vacancy' },
       { key: 'property_id', label: 'Property', render: (row, lookups) => getLookupLabel(lookups, 'properties', row.property_id) },
-      { key: 'landlord_id', label: 'Landlord', render: (row, lookups) => getLookupLabel(lookups, 'landlords', row.landlord_id) },
       { key: 'unit_or_floor', label: 'Unit/Floor', render: (row) => row.unit_or_floor || '-' },
       { key: 'available_area_m2', label: 'Available GLA', render: (row) => formatNumber(row.available_area_m2, 'm²') },
       { key: 'asking_rental', label: 'Asking Rental', render: (row) => formatCurrency(row.asking_rental) },
-      { key: 'availability_date', label: 'Availability', render: (row) => formatDate(row.availability_date) },
+      brokerColumn('broker_assignment'),
+      nextActionColumn('vacancies'),
+      updatedColumn(),
       statusColumn(),
     ],
     fields: [
       { name: 'vacancy_name', label: 'Vacancy name', required: true },
       { name: 'property_id', label: 'Property', type: 'select', optionsFrom: 'properties' },
       { name: 'landlord_id', label: 'Landlord', type: 'select', optionsFrom: 'landlords' },
+      { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
+      { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
       { name: 'unit_or_floor', label: 'Unit/Floor' },
       { name: 'available_area_m2', label: 'Available area m²', type: 'number' },
       { name: 'asking_rental', label: 'Asking rental', type: 'number' },
       { name: 'availability_date', label: 'Availability date', type: 'date' },
-      { name: 'broker_assignment', label: 'Broker assignment id' },
+      { name: 'broker_assignment', label: 'Assigned broker', type: 'select', optionsFrom: 'brokers' },
       { name: 'status', label: 'Status', type: 'select', options: VACANCY_STATUSES, defaultValue: 'available' },
       { name: 'incentives', label: 'Incentives', type: 'textarea', span: 'full' },
       { name: 'fit_out_allowance', label: 'Fit-out allowance', type: 'number' },
       { name: 'notes', label: 'Notes', type: 'textarea', span: 'full' },
     ],
   },
+  listings: {
+    kind: 'listings',
+    title: 'Listings',
+    description: 'Manage market-facing commercial opportunities linked to landlords, properties, vacancies, brokers, teams, and branches.',
+    createLabel: 'Add Listing',
+    createModal: CommercialListingWizard,
+    documentsEntityType: 'commercial_listing',
+    secondaryActions: [{ label: 'Assignments', to: '/commercial/brokers/assignments' }],
+    emptyTitle: 'No listings yet',
+    emptyDescription: 'Create a commercial listing to market a vacancy, property, or specialist opportunity.',
+    fetchRecords: getCommercialListings,
+    createRecord: createCommercialListing,
+    updateRecord: updateCommercialListing,
+    archiveRecord: archiveCommercialListing,
+    defaultSortKey: 'updated_at',
+    defaultSortDirection: 'desc',
+    sortOptions: standardSortOptions('pricing', 'Pricing'),
+    searchFields: ['title', 'description', 'listing_category', 'listing_type', 'listing_status', 'pricing_notes'],
+    searchLookupFields: [
+      { name: 'landlord_id', optionsFrom: 'landlords' },
+      { name: 'property_id', optionsFrom: 'properties' },
+      { name: 'vacancy_id', optionsFrom: 'vacancies' },
+      { name: 'broker_id', optionsFrom: 'brokers' },
+    ],
+    filters: [
+      { key: 'branch_id', label: 'Branch', optionsFrom: 'branches' },
+      { key: 'team_id', label: 'Team', optionsFrom: 'teams' },
+      { key: 'broker_id', label: 'Broker Owner', optionsFrom: 'brokers' },
+      { key: 'listing_status', label: 'Listing Status', options: LISTING_STATUSES },
+      { key: 'listing_category', label: 'Category', options: LISTING_CATEGORIES },
+      { key: 'featured', label: 'Featured', options: [{ value: 'true', label: 'Featured' }, { value: 'false', label: 'Standard' }] },
+    ],
+    columns: [
+      { key: 'title', label: 'Listing' },
+      { key: 'listing_category', label: 'Category', render: (row) => titleize(row.listing_category) },
+      { key: 'listing_status', label: 'Status', render: (row) => createElement(CommercialStatusPill, { value: row.listing_status || row.status }) },
+      { key: 'property_id', label: 'Property', render: (row, lookups) => getLookupLabel(lookups, 'properties', row.property_id) },
+      { key: 'vacancy_id', label: 'Vacancy', render: (row, lookups) => getLookupLabel(lookups, 'vacancies', row.vacancy_id) },
+      { key: 'pricing', label: 'Pricing', render: (row) => formatCurrency(row.pricing) },
+      { key: 'quality', label: 'Quality', sortable: false, render: (row) => `${scoreListingQuality(row).score}%` },
+      brokerColumn('broker_id'),
+      nextActionColumn('listings'),
+      updatedColumn(),
+    ],
+    fields: [
+      { name: 'title', label: 'Listing title', required: true },
+      { name: 'listing_type', label: 'Listing type', type: 'select', options: LISTING_TYPES, defaultValue: 'lease' },
+      { name: 'listing_category', label: 'Listing category', type: 'select', options: LISTING_CATEGORIES, defaultValue: 'office' },
+      { name: 'listing_status', label: 'Listing status', type: 'select', options: LISTING_STATUSES, defaultValue: 'draft' },
+      { name: 'landlord_id', label: 'Landlord', type: 'select', optionsFrom: 'landlords' },
+      { name: 'property_id', label: 'Property', type: 'select', optionsFrom: 'properties' },
+      { name: 'vacancy_id', label: 'Vacancy', type: 'select', optionsFrom: 'vacancies' },
+      { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
+      { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
+      { name: 'broker_id', label: 'Broker owner', type: 'select', optionsFrom: 'brokers' },
+      { name: 'pricing', label: 'Pricing', type: 'number' },
+      { name: 'pricing_notes', label: 'Pricing notes', span: 'full' },
+      { name: 'available_from', label: 'Available from', type: 'date' },
+      { name: 'featured', label: 'Featured', type: 'checkbox' },
+      { name: 'status', label: 'Internal status', type: 'select', options: ACTIVE_STATUSES, defaultValue: 'active' },
+      { name: 'description', label: 'Description', type: 'textarea', span: 'full' },
+      { name: 'notes', label: 'Notes', type: 'textarea', span: 'full' },
+    ],
+  },
   requirements: {
+    kind: 'requirements',
     title: 'Requirements',
     description: 'Track tenant and investor requirements, preferred locations, budgets, and progress status.',
     createLabel: 'New requirement',
     documentsEntityType: 'commercial_requirement',
     secondaryActions: [{ label: 'Pipeline view', to: '/commercial/requirements/pipeline' }],
     emptyTitle: 'No requirements yet',
-    emptyDescription: 'Create tenant or investor requirements to begin commercial matching.',
+    emptyDescription: 'Capture tenant requirements so brokers can match them to available vacancies.',
     fetchRecords: getCommercialRequirements,
     createRecord: createCommercialRequirement,
     updateRecord: updateCommercialRequirement,
     archiveRecord: archiveCommercialRequirement,
+    defaultSortKey: 'updated_at',
+    defaultSortDirection: 'desc',
+    sortOptions: standardSortOptions('max_size_m2', 'Required GLA'),
     filters: [
+      { key: 'branch_id', label: 'Branch', optionsFrom: 'branches' },
+      { key: 'team_id', label: 'Team', optionsFrom: 'teams' },
+      { key: 'assigned_broker', label: 'Broker Owner', optionsFrom: 'brokers' },
       { key: 'status', label: 'Status', options: ACTIVE_STATUSES },
       { key: 'stage', label: 'Stage', options: REQUIREMENT_STAGES },
       { key: 'property_type', label: 'Property type', options: PROPERTY_TYPES },
@@ -304,11 +441,12 @@ export const commercialCrudConfigs = {
     columns: [
       { key: 'requirement_name', label: 'Requirement' },
       { key: 'tenant_id', label: 'Client', render: (row, lookups) => getLookupLabel(lookups, 'tenants', row.tenant_id, titleize(row.client_type)) },
-      { key: 'requirement_type', label: 'Type', render: (row) => titleize(row.requirement_type) },
       { key: 'size', label: 'Size Needed', render: (row) => `${formatNumber(row.min_size_m2, 'm²')} - ${formatNumber(row.max_size_m2, 'm²')}` },
       { key: 'preferred_locations', label: 'Locations', render: (row) => formatList(row.preferred_locations) },
-      { key: 'budget', label: 'Budget', render: (row) => `${formatCurrency(row.budget_min)} - ${formatCurrency(row.budget_max)}` },
       { key: 'stage', label: 'Stage', render: (row) => titleize(row.stage) },
+      brokerColumn(),
+      nextActionColumn('requirements'),
+      updatedColumn(),
       statusColumn(),
     ],
     fields: [
@@ -316,6 +454,8 @@ export const commercialCrudConfigs = {
       { name: 'requirement_type', label: 'Requirement type', type: 'select', required: true, options: [{ value: 'lease', label: 'Lease' }, { value: 'purchase', label: 'Purchase' }, { value: 'investment', label: 'Investment' }] },
       { name: 'client_type', label: 'Client type', type: 'select', options: [{ value: 'tenant', label: 'Tenant' }, { value: 'investor', label: 'Investor' }, { value: 'owner_occupier', label: 'Owner Occupier' }] },
       { name: 'tenant_id', label: 'Linked tenant', type: 'select', optionsFrom: 'tenants' },
+      { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
+      { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
       { name: 'property_type', label: 'Property type', type: 'select', options: PROPERTY_TYPES },
       { name: 'preferred_locations', label: 'Preferred locations', type: 'multiText', help: 'Separate locations with commas.' },
       { name: 'min_size_m2', label: 'Min size m²', type: 'number' },
@@ -324,7 +464,7 @@ export const commercialCrudConfigs = {
       { name: 'budget_max', label: 'Budget max', type: 'number' },
       { name: 'target_occupation_date', label: 'Target occupation date', type: 'date' },
       { name: 'lease_term_months', label: 'Lease term months', type: 'number' },
-      { name: 'assigned_broker', label: 'Assigned broker id' },
+      { name: 'assigned_broker', label: 'Assigned broker', type: 'select', optionsFrom: 'brokers' },
       { name: 'stage', label: 'Stage', type: 'select', options: REQUIREMENT_STAGES, defaultValue: 'new_requirement' },
       { name: 'status', label: 'Status', type: 'select', options: ACTIVE_STATUSES, defaultValue: 'active' },
       { name: 'special_requirements', label: 'Special requirements', type: 'textarea', span: 'full' },
@@ -332,6 +472,7 @@ export const commercialCrudConfigs = {
     ],
   },
   deals: {
+    kind: 'deals',
     title: 'Deals',
     description: 'Track commercial leasing and sales deals from requirement through signed agreement.',
     createLabel: 'New deal',
@@ -339,12 +480,18 @@ export const commercialCrudConfigs = {
     showHeadsOfTerms: true,
     secondaryActions: [{ label: 'Pipeline view', to: '/commercial/deals/pipeline' }],
     emptyTitle: 'No commercial deals yet',
-    emptyDescription: 'Create a deal once a requirement, property, or negotiation is active.',
+    emptyDescription: 'Create a deal once a tenant shows interest in a vacancy or property.',
     fetchRecords: getCommercialDeals,
     createRecord: createCommercialDeal,
     updateRecord: updateCommercialDeal,
     archiveRecord: archiveCommercialDeal,
+    defaultSortKey: 'updated_at',
+    defaultSortDirection: 'desc',
+    sortOptions: standardSortOptions('deal_value', 'Deal value'),
     filters: [
+      { key: 'branch_id', label: 'Branch', optionsFrom: 'branches' },
+      { key: 'team_id', label: 'Team', optionsFrom: 'teams' },
+      { key: 'assigned_broker', label: 'Broker Owner', optionsFrom: 'brokers' },
       { key: 'status', label: 'Status', options: ACTIVE_STATUSES },
       { key: 'stage', label: 'Stage', options: DEAL_STAGES },
       { key: 'deal_type', label: 'Deal type', options: [{ value: 'lease', label: 'Lease' }, { value: 'sale', label: 'Sale' }] },
@@ -353,11 +500,13 @@ export const commercialCrudConfigs = {
       { key: 'deal_name', label: 'Deal' },
       { key: 'deal_type', label: 'Type', render: (row) => titleize(row.deal_type) },
       { key: 'tenant_id', label: 'Tenant/Client', render: (row, lookups) => getLookupLabel(lookups, 'tenants', row.tenant_id) },
-      { key: 'landlord_id', label: 'Landlord/Seller', render: (row, lookups) => getLookupLabel(lookups, 'landlords', row.landlord_id) },
       { key: 'property_id', label: 'Property', render: (row, lookups) => getLookupLabel(lookups, 'properties', row.property_id) },
+      { key: 'listing_id', label: 'Listing', render: (row, lookups) => getLookupLabel(lookups, 'listings', row.listing_id) },
       { key: 'stage', label: 'Stage', render: (row) => titleize(row.stage) },
       { key: 'deal_value', label: 'Value', render: (row) => formatCurrency(row.deal_value) },
-      { key: 'expected_close_date', label: 'Expected Close', render: (row) => formatDate(row.expected_close_date) },
+      brokerColumn(),
+      nextActionColumn('deals'),
+      updatedColumn(),
       statusColumn(),
     ],
     fields: [
@@ -367,7 +516,10 @@ export const commercialCrudConfigs = {
       { name: 'tenant_id', label: 'Linked tenant', type: 'select', optionsFrom: 'tenants' },
       { name: 'landlord_id', label: 'Linked landlord', type: 'select', optionsFrom: 'landlords' },
       { name: 'property_id', label: 'Linked property', type: 'select', optionsFrom: 'properties' },
-      { name: 'assigned_broker', label: 'Assigned broker id' },
+      { name: 'listing_id', label: 'Linked listing', type: 'select', optionsFrom: 'listings' },
+      { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
+      { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
+      { name: 'assigned_broker', label: 'Assigned broker', type: 'select', optionsFrom: 'brokers' },
       { name: 'stage', label: 'Stage', type: 'select', options: DEAL_STAGES, defaultValue: 'requirement' },
       { name: 'deal_value', label: 'Deal value', type: 'number' },
       { name: 'estimated_commission', label: 'Estimated commission', type: 'number' },
@@ -378,26 +530,35 @@ export const commercialCrudConfigs = {
     ],
   },
   leases: {
+    kind: 'leases',
     title: 'Leases',
     description: 'Manage lease records, renewals, expiries, deposits, escalation percentages, and occupation dates.',
     createLabel: 'New lease',
     documentsEntityType: 'commercial_lease',
     emptyTitle: 'No leases yet',
-    emptyDescription: 'Create lease records once commercial deals are signed or ready for lease management.',
+    emptyDescription: 'Signed leases will appear here once deals are finalised and ready for lease management.',
     fetchRecords: getCommercialLeases,
     createRecord: createCommercialLease,
     updateRecord: updateCommercialLease,
     archiveRecord: archiveCommercialLease,
-    filters: [{ key: 'status', label: 'Status', options: LEASE_STATUSES }],
+    defaultSortKey: 'updated_at',
+    defaultSortDirection: 'desc',
+    sortOptions: standardSortOptions('monthly_rental', 'Monthly rental'),
+    filters: [
+      { key: 'branch_id', label: 'Branch', optionsFrom: 'branches' },
+      { key: 'team_id', label: 'Team', optionsFrom: 'teams' },
+      { key: 'broker_id', label: 'Broker Owner', optionsFrom: 'brokers' },
+      { key: 'status', label: 'Status', options: LEASE_STATUSES },
+    ],
     crossValidate: leaseDateValidation,
     columns: [
       { key: 'tenant_id', label: 'Tenant', render: (row, lookups) => getLookupLabel(lookups, 'tenants', row.tenant_id) },
       { key: 'property_id', label: 'Property', render: (row, lookups) => getLookupLabel(lookups, 'properties', row.property_id) },
-      { key: 'landlord_id', label: 'Landlord', render: (row, lookups) => getLookupLabel(lookups, 'landlords', row.landlord_id) },
-      { key: 'lease_start_date', label: 'Lease Start', render: (row) => formatDate(row.lease_start_date) },
       { key: 'lease_end_date', label: 'Lease End', render: (row) => formatDate(row.lease_end_date) },
       { key: 'monthly_rental', label: 'Monthly Rental', render: (row) => formatCurrency(row.monthly_rental) },
       { key: 'escalation_percentage', label: 'Escalation', render: (row) => `${formatNumber(row.escalation_percentage)}%` },
+      nextActionColumn('leases'),
+      updatedColumn(),
       { key: 'status', label: 'Renewal Status', render: (row) => createElement(CommercialStatusPill, { value: row.status }) },
     ],
     fields: [
@@ -405,6 +566,9 @@ export const commercialCrudConfigs = {
       { name: 'tenant_id', label: 'Tenant', type: 'select', optionsFrom: 'tenants' },
       { name: 'landlord_id', label: 'Landlord', type: 'select', optionsFrom: 'landlords' },
       { name: 'property_id', label: 'Property', type: 'select', optionsFrom: 'properties' },
+      { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
+      { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
+      { name: 'broker_id', label: 'Broker owner', type: 'select', optionsFrom: 'brokers' },
       { name: 'lease_start_date', label: 'Lease start date', type: 'date' },
       { name: 'lease_end_date', label: 'Lease end date', type: 'date' },
       { name: 'occupation_date', label: 'Occupation date', type: 'date' },

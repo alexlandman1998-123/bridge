@@ -1,11 +1,14 @@
 import { titleize } from '../commercialFormatters'
 
 const STATUS_STYLES = {
+  draft: 'border-slate-200 bg-white text-slate-600',
   requested: 'border-amber-100 bg-amber-50 text-amber-700',
   uploaded: 'border-blue-100 bg-blue-50 text-blue-700',
   under_review: 'border-violet-100 bg-violet-50 text-violet-700',
   approved: 'border-emerald-100 bg-emerald-50 text-emerald-700',
   rejected: 'border-rose-100 bg-rose-50 text-rose-700',
+  expired: 'border-orange-100 bg-orange-50 text-orange-700',
+  superseded: 'border-slate-200 bg-slate-50 text-slate-500',
   completed: 'border-slate-200 bg-slate-50 text-slate-700',
   archived: 'border-slate-200 bg-slate-100 text-slate-500',
 }

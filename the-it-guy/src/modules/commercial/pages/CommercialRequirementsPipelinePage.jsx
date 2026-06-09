@@ -3,6 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ACTIVE_STATUSES, commercialCrudConfigs, PROPERTY_TYPES, REQUIREMENT_STAGES } from '../commercialCrudConfig'
 import { formatBudgetRange, formatCommercialList, formatSizeRange, labelFromValue, lookupLabel, toLookupOptions } from '../commercialPipelineHelpers'
+import { formatNumber } from '../commercialFormatters'
+import { getCommercialNextAction } from '../commercialPresentation'
+import { normalizeCommercialLifecycleStage } from '../commercialWorkflow'
 import CommercialFormModal from '../components/CommercialFormModal'
 import CommercialPipelineBoard from '../components/CommercialPipelineBoard'
 import CommercialPipelineCard from '../components/CommercialPipelineCard'
@@ -28,7 +31,7 @@ function uniqueOptions(rows, key) {
 
 function recordMatchesFilters(record, filters) {
   if (filters.status && String(record.status || '') !== filters.status) return false
-  if (filters.stage && String(record.stage || '') !== filters.stage) return false
+  if (filters.stage && normalizeCommercialLifecycleStage('requirements', record.stage, 'new') !== filters.stage) return false
   if (filters.property_type && String(record.property_type || '') !== filters.property_type) return false
   if (filters.assigned_broker && String(record.assigned_broker || '') !== filters.assigned_broker) return false
   return true
@@ -160,7 +163,7 @@ function CommercialRequirementsPipelinePage() {
     requirement_id: selectedRequirement.id,
     tenant_id: selectedRequirement.tenant_id,
     assigned_broker: selectedRequirement.assigned_broker,
-    stage: 'requirement',
+    stage: 'new',
     status: 'active',
   } : null
 
@@ -193,14 +196,18 @@ function CommercialRequirementsPipelinePage() {
         records={visibleRequirements}
         loading={loading}
         error={error}
-        getStage={(record) => record.stage || 'new_requirement'}
+        getStage={(record) => normalizeCommercialLifecycleStage('requirements', record.stage, 'new')}
+        getStageSummary={(stageRecords) => {
+          const totalGla = stageRecords.reduce((sum, record) => sum + Number(record.max_size_m2 || record.min_size_m2 || 0), 0)
+          return totalGla ? `${formatNumber(totalGla, 'm²')} demand` : ''
+        }}
         renderCard={(record) => (
           <CommercialPipelineCard
             key={record.id}
             title={record.requirement_name || 'Commercial requirement'}
             eyebrow={labelFromValue(record.requirement_type)}
             status={record.status}
-            stage={record.stage || 'new_requirement'}
+            stage={normalizeCommercialLifecycleStage('requirements', record.stage, 'new')}
             stages={REQUIREMENT_STAGES}
             moving={movingId === record.id}
             onOpen={() => setSelectedRequirement(record)}
@@ -212,6 +219,7 @@ function CommercialRequirementsPipelinePage() {
               { label: 'Location', value: formatCommercialList(record.preferred_locations) },
               { label: 'Budget', value: formatBudgetRange(record) },
               { label: 'Broker', value: record.assigned_broker || 'Unassigned' },
+              { label: 'Next', value: getCommercialNextAction('requirements', record) },
             ]}
           />
         )}

@@ -1,38 +1,27 @@
 import { ChevronDown } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { memo, useMemo, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
-import { COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_GROUPS } from '../commercialNavigation'
+import { COMMERCIAL_BOTTOM_NAV_ITEMS, COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_GROUPS, isCommercialNavItemActive } from '../commercialNavigation'
 import CommercialBranding from './CommercialBranding'
-
-function isPathActive(pathname, to) {
-  return pathname === to || pathname.startsWith(`${to}/`)
-}
 
 function CommercialSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const navRef = useRef(null)
+  const currentFullPath = `${location.pathname}${location.hash || ''}`
+  const currentWorkspacePath = `${location.pathname}${location.search || ''}`
   const DashboardIcon = COMMERCIAL_DASHBOARD_NAV_ITEM.icon
   const activeGroupId = useMemo(() => {
     const activeGroup = COMMERCIAL_NAV_GROUPS.find((group) =>
-      group.items.some((item) => isPathActive(location.pathname, item.to)),
+      group.items.some((item) => isCommercialNavItemActive(currentFullPath, item)),
     )
     return activeGroup?.id || ''
-  }, [location.pathname])
+  }, [currentFullPath])
   const [expandedGroups, setExpandedGroups] = useState(() => activeGroupId ? { [activeGroupId]: true } : {})
 
   function toggleGroup(groupId) {
     setExpandedGroups((previous) => ({ ...previous, [groupId]: !previous[groupId] }))
   }
-
-  useEffect(() => {
-    const frameId = window.requestAnimationFrame(() => {
-      const activeLink = navRef.current?.querySelector?.('[aria-current="page"]')
-      activeLink?.scrollIntoView?.({ block: 'nearest' })
-    })
-    return () => window.cancelAnimationFrame(frameId)
-  }, [location.pathname])
 
   return (
     <aside className="hidden h-screen w-[278px] shrink-0 border-r border-slate-200 bg-white shadow-[12px_0_36px_rgba(15,23,42,0.035)] lg:flex">
@@ -41,27 +30,25 @@ function CommercialSidebar() {
           <CommercialBranding />
 
           <WorkspaceSwitcher
-            currentPath={`${location.pathname}${location.search || ''}`}
+            currentPath={currentWorkspacePath}
             onSelectWorkspace={(path) => navigate(path)}
           />
         </div>
 
-        <nav ref={navRef} className="mt-5 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" aria-label="Commercial Navigation">
-          <NavLink
+        <nav className="mt-5 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" aria-label="Commercial Navigation">
+          <Link
             to={COMMERCIAL_DASHBOARD_NAV_ITEM.to}
-            end
-            className={({ isActive }) =>
-              [
-                'flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-semibold transition',
-                isActive
-                  ? 'border border-[#cfe0ef] bg-[#eef5fb] text-[#123b61] shadow-[0_10px_24px_rgba(17,58,107,0.08)]'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-[#123b61]',
-              ].join(' ')
-            }
+            aria-current={isCommercialNavItemActive(currentFullPath, COMMERCIAL_DASHBOARD_NAV_ITEM) ? 'page' : undefined}
+            className={[
+              'flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-semibold transition-colors duration-150',
+              isCommercialNavItemActive(currentFullPath, COMMERCIAL_DASHBOARD_NAV_ITEM)
+                ? 'border border-[#cfe0ef] bg-[#eef5fb] text-[#123b61] shadow-[0_10px_24px_rgba(17,58,107,0.08)]'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-[#123b61]',
+            ].join(' ')}
           >
             <DashboardIcon size={17} />
             <span>{COMMERCIAL_DASHBOARD_NAV_ITEM.label}</span>
-          </NavLink>
+          </Link>
 
           <div className="pt-2">
             {COMMERCIAL_NAV_GROUPS.map((group) => {
@@ -87,22 +74,22 @@ function CommercialSidebar() {
                     <div className="mt-1 grid gap-1 border-l border-slate-200 pl-3 ml-5">
                       {group.items.map((item) => {
                         const ItemIcon = item.icon
+                        const active = isCommercialNavItemActive(currentFullPath, item)
                         return (
-                          <NavLink
+                          <Link
                             key={item.to}
                             to={item.to}
-                            className={({ isActive }) =>
-                              [
-                                'flex min-h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition',
-                                isActive
-                                  ? 'bg-[#eef5fb] text-[#123b61] shadow-[0_8px_18px_rgba(17,58,107,0.07)]'
-                                  : 'text-slate-600 hover:bg-slate-50 hover:text-[#123b61]',
-                              ].join(' ')
-                            }
+                            aria-current={active ? 'page' : undefined}
+                            className={[
+                              'flex min-h-9 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition-colors duration-150',
+                              active
+                                ? 'bg-[#eef5fb] text-[#123b61] shadow-[0_8px_18px_rgba(17,58,107,0.07)]'
+                                : 'text-slate-600 hover:bg-slate-50 hover:text-[#123b61]',
+                            ].join(' ')}
                           >
                             <ItemIcon size={15} />
                             <span className="truncate">{item.label}</span>
-                          </NavLink>
+                          </Link>
                         )
                       })}
                     </div>
@@ -112,9 +99,32 @@ function CommercialSidebar() {
             })}
           </div>
         </nav>
+
+        <nav className="mt-3 shrink-0 border-t border-slate-200 pt-3" aria-label="Commercial Settings">
+          {COMMERCIAL_BOTTOM_NAV_ITEMS.map((item) => {
+            const Icon = item.icon
+            const active = isCommercialNavItemActive(currentFullPath, item)
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                aria-current={active ? 'page' : undefined}
+                className={[
+                  'flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-semibold transition-colors duration-150',
+                  active
+                    ? 'border border-[#cfe0ef] bg-[#eef5fb] text-[#123b61] shadow-[0_10px_24px_rgba(17,58,107,0.08)]'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-[#123b61]',
+                ].join(' ')}
+              >
+                <Icon size={17} />
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
       </div>
     </aside>
   )
 }
 
-export default CommercialSidebar
+export default memo(CommercialSidebar)

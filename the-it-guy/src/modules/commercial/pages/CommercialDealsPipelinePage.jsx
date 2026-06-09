@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import { ACTIVE_STATUSES, DEAL_STAGES, PROPERTY_TYPES } from '../commercialCrudConfig'
 import { formatCommercialDate, labelFromValue, lookupLabel } from '../commercialPipelineHelpers'
 import { formatCurrency } from '../commercialFormatters'
+import { getCommercialNextAction } from '../commercialPresentation'
+import { normalizeCommercialLifecycleStage } from '../commercialWorkflow'
 import CommercialDealDetailDrawer from '../components/CommercialDealDetailDrawer'
 import CommercialPipelineBoard from '../components/CommercialPipelineBoard'
 import CommercialPipelineCard from '../components/CommercialPipelineCard'
@@ -54,7 +56,7 @@ function recordMatchesFilters(record, filters, lookups) {
   if (filters.assigned_broker && String(record.assigned_broker || '') !== filters.assigned_broker) return false
   if (filters.status && String(record.status || '') !== filters.status) return false
   if (filters.deal_type && String(record.deal_type || '') !== filters.deal_type) return false
-  if (filters.stage && String(record.stage || '') !== filters.stage) return false
+  if (filters.stage && normalizeCommercialLifecycleStage('deals', record.stage, 'new') !== filters.stage) return false
   if (filters.property_type && propertyTypeForDeal(record, lookups) !== filters.property_type) return false
   if (!dateWithinRange(record.expected_close_date, filters.expected_close_from, filters.expected_close_to)) return false
   return true
@@ -190,7 +192,11 @@ function CommercialDealsPipelinePage() {
         records={visibleDeals}
         loading={loading}
         error={error}
-        getStage={(record) => record.stage || 'requirement'}
+        getStage={(record) => normalizeCommercialLifecycleStage('deals', record.stage, 'new')}
+        getStageSummary={(stageRecords) => {
+          const totalValue = stageRecords.reduce((sum, record) => sum + Number(record.deal_value || 0), 0)
+          return totalValue ? `${formatCurrency(totalValue)} pipeline` : ''
+        }}
         renderCard={(record) => (
           <CommercialPipelineCard
             key={record.id}
@@ -198,7 +204,7 @@ function CommercialDealsPipelinePage() {
             eyebrow={labelFromValue(record.deal_type)}
             tone={record.deal_type === 'sale' ? 'amber' : 'green'}
             status={record.status}
-            stage={record.stage || 'requirement'}
+            stage={normalizeCommercialLifecycleStage('deals', record.stage, 'new')}
             stages={DEAL_STAGES}
             moving={movingId === record.id}
             onOpen={() => setSelectedDeal(record)}
@@ -210,6 +216,7 @@ function CommercialDealsPipelinePage() {
               { label: 'Value', value: formatCurrency(record.deal_value) },
               { label: 'Commission', value: formatCurrency(record.estimated_commission) },
               { label: 'Close', value: formatCommercialDate(record.expected_close_date) },
+              { label: 'Next', value: getCommercialNextAction('deals', record) },
             ]}
           />
         )}
