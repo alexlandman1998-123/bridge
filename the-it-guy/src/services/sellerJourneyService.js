@@ -43,6 +43,7 @@ export const SELLER_JOURNEY_STAGES = [
 ]
 
 const STAGE_INDEX = new Map(SELLER_JOURNEY_STAGES.map((stage, index) => [stage.key, index]))
+const SELLER_ONBOARDING_SUBMITTED_STATUSES = new Set(['submitted', 'completed', 'complete', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'])
 
 function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
@@ -122,14 +123,15 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
     : {}
+  const leadMandateStageSignals = [lead?.stage, lead?.status]
+    .map(normalizeKey)
+    .filter((status) => status.includes('mandate') || status.includes('signing') || status.includes('signature'))
   const statuses = [
     listing?.mandateStatus,
     listing?.mandate_status,
     listing?.mandate?.status,
     lead?.mandateStatus,
     lead?.mandate_status,
-    lead?.stage,
-    lead?.status,
     packet?.status,
     mandatePacketStatus?.state,
     mandatePacketStatus?.signingStatus,
@@ -137,7 +139,15 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
     sourceContext?.mandate_status,
     sourceContext?.signingStatus,
     sourceContext?.signing_status,
+    ...leadMandateStageSignals,
   ].map(normalizeKey)
+  const onboardingStatus = normalizeKey(
+    lead?.sellerOnboardingStatus ||
+      lead?.seller_onboarding_status ||
+      listing?.sellerOnboarding?.status ||
+      listing?.seller_onboarding_status,
+  )
+  const onboardingStatusBlocksStatusOnlyMandate = Boolean(onboardingStatus && !SELLER_ONBOARDING_SUBMITTED_STATUSES.has(onboardingStatus))
 
   const signers = mandatePacketStatus?.signingSummary?.signers || mandatePacketStatus?.signers || []
   const allSignersSigned = Boolean(mandatePacketStatus?.signingSummary?.allSignersSigned) ||
@@ -145,12 +155,18 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   const hasFinalArtifact = (Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []).some((version) =>
     firstPresent(version?.final_signed_file_path, version?.final_signed_file_url, version?.final_signed_file_access_url),
   )
-  if (allSignersSigned || hasFinalArtifact || statuses.some((status) => ['signed', 'completed', 'fully_signed', 'uploaded_signed'].includes(status) || status.includes('mandate_signed'))) {
+  const mandatePacketRef = firstPresent(lead?.mandatePacketId, lead?.mandate_packet_id, listing?.mandatePacketId, listing?.mandate_packet_id, packet?.id)
+  const allowStatusOnlyMandate = !onboardingStatusBlocksStatusOnlyMandate || Boolean(mandatePacketRef)
+  if (
+    allSignersSigned ||
+    hasFinalArtifact ||
+    (allowStatusOnlyMandate && statuses.some((status) => ['signed', 'completed', 'fully_signed', 'uploaded_signed'].includes(status) || status.includes('mandate_signed')))
+  ) {
     return 'signed'
   }
   if (
-    firstPresent(lead?.mandatePacketId, lead?.mandate_packet_id, listing?.mandatePacketId, listing?.mandate_packet_id, packet?.id) ||
-    statuses.some((status) => ['sent', 'generated', 'ready', 'ready_for_generation', 'partially_signed', 'sent_to_seller', 'sent_to_agent'].includes(status) || status.includes('mandate_sent'))
+    mandatePacketRef ||
+    (allowStatusOnlyMandate && statuses.some((status) => ['sent', 'generated', 'ready', 'ready_for_generation', 'partially_signed', 'sent_to_seller', 'sent_to_agent'].includes(status) || status.includes('mandate_sent')))
   ) {
     return statuses.some((status) => status.includes('sent') || status.includes('partially_signed')) ? 'sent' : 'draft'
   }
@@ -204,14 +220,13 @@ function buildJourneySteps(stageKey, evidence = {}) {
   const currentIndex = STAGE_INDEX.get(stageKey) ?? 0
   return SELLER_JOURNEY_STAGES.map((stage, index) => {
     const evidenceDone = Boolean(evidence[stage.key])
-    const completedByProgression = index < currentIndex
     const isCurrent = index === currentIndex
     return {
       ...stage,
-      completed: evidenceDone || completedByProgression,
+      completed: evidenceDone,
       current: isCurrent,
-      upcoming: !isCurrent && !(evidenceDone || completedByProgression),
-      state: isCurrent ? 'current' : evidenceDone || completedByProgression ? 'completed' : 'upcoming',
+      upcoming: !isCurrent && !evidenceDone,
+      state: isCurrent ? 'current' : evidenceDone ? 'completed' : 'upcoming',
       status: evidence[`${stage.key}Status`] || '',
     }
   })

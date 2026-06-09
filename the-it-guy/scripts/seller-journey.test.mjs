@@ -66,6 +66,57 @@ const baseLead = {
 
 {
   const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      listingId: 'listing-onboarding-sent',
+      stage: 'Onboarding Sent',
+      status: 'Onboarding Sent',
+      sellerOnboardingToken: 'seller-token-1',
+      sellerOnboardingStatus: 'sent',
+    },
+    listing: {
+      id: 'listing-onboarding-sent',
+      originatingCrmLeadId: 'lead-1',
+      listingStatus: 'seller_lead',
+      mandateStatus: 'not_started',
+      sellerOnboarding: { token: 'seller-token-1', status: 'sent' },
+    },
+  })
+  assert.equal(journey.stage.key, 'listing_created')
+  assert.equal(journey.mandateStatus, 'not_started')
+  assert.equal(journey.kpis.find((item) => item.key === 'mandate').value, 'Not started')
+  assert.equal(journey.sellerPortalStatus, 'Sent')
+  assert.equal(journey.steps.find((step) => step.key === 'mandate_sent').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
+  assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, true)
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      listingId: 'listing-onboarding-sent-polluted',
+      stage: 'Onboarding Sent',
+      status: 'Onboarding Sent',
+      sellerOnboardingToken: 'seller-token-2',
+      sellerOnboardingStatus: 'sent',
+    },
+    listing: {
+      id: 'listing-onboarding-sent-polluted',
+      originatingCrmLeadId: 'lead-1',
+      listingStatus: 'seller_lead',
+      mandateStatus: 'signed',
+      sellerOnboarding: { token: 'seller-token-2', status: 'sent' },
+    },
+  })
+  assert.equal(journey.mandateStatus, 'not_started')
+  assert.equal(journey.kpis.find((item) => item.key === 'mandate').value, 'Not started')
+  assert.equal(journey.steps.find((step) => step.key === 'mandate_sent').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
+}
+
+{
+  const journey = buildSellerJourney({
     lead: { ...baseLead, listingId: 'listing-1' },
     listing: {
       id: 'listing-1',
