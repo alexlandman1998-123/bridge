@@ -743,10 +743,240 @@ function firstMissingNumber(current: unknown, fallback: unknown) {
   return existing === null ? normalizeNumber(fallback) : existing;
 }
 
+function normalizeBoolean(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const normalized = lower(value).replace(/[\s-]+/g, "_");
+  return ["true", "yes", "y", "1", "on", "enabled"].includes(normalized);
+}
+
+function normalizeFeatureKey(value: unknown) {
+  return lower(value).replace(/[\s-]+/g, "_");
+}
+
+function firstNumber(...values: unknown[]) {
+  for (const value of values) {
+    const parsed = normalizeNumber(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function addPublicationFeature(features: Set<string>, key: string, enabled: boolean) {
+  const normalized = normalizeFeatureKey(key);
+  if (enabled && normalized) features.add(normalized);
+}
+
+function resolveParkingBays(formData: Record<string, unknown>) {
+  const explicit = firstNumber(formData.parkingBays, formData.parking_bays);
+  if (explicit !== null) return explicit;
+  const covered = firstNumber(formData.parkingCovered, formData.coveredParking, formData.garages);
+  const open = firstNumber(formData.parkingOpen, formData.openParking);
+  if (covered === null && open === null) return null;
+  return (covered || 0) + (open || 0);
+}
+
+function resolvePublicationDescription(formData: Record<string, unknown>) {
+  const notes = firstValue(formData.propertyDescription, formData.description, formData.propertyNotes, formData.listingPreviewDescription);
+  if (notes) return notes;
+  const conditionParts = [
+    firstValue(formData.propertyCondition),
+    firstValue(formData.kitchenCondition),
+    firstValue(formData.bathroomCondition),
+  ].filter(Boolean);
+  return conditionParts.length ? `Condition: ${conditionParts.join(", ")}` : "";
+}
+
+function buildPublicationDraftFromSellerOnboarding({
+  listing,
+  formData,
+}: {
+  listing: Record<string, unknown>;
+  formData: Record<string, unknown>;
+}) {
+  const canonicalFacts = asRecord(formData.canonicalSellerFacts || formData.canonicalFacts);
+  const propertyFacts = asRecord(canonicalFacts.property);
+  const transactionFacts = asRecord(canonicalFacts.transaction);
+  const complianceFacts = asRecord(canonicalFacts.compliance);
+  const features = new Set<string>(
+    Array.isArray(formData.features) ? formData.features.map(normalizeFeatureKey).filter(Boolean) : [],
+  );
+
+  addPublicationFeature(features, "pool", normalizeBoolean(formData.pool) || normalizeBoolean(formData.swimmingPool) || normalizeBoolean(complianceFacts.swimming_pool));
+  addPublicationFeature(features, "electric_fence", normalizeBoolean(formData.electricFence) || normalizeBoolean(complianceFacts.electric_fence));
+  addPublicationFeature(features, "solar", normalizeBoolean(formData.solarInstallation) || normalizeBoolean(complianceFacts.solar_installation));
+  addPublicationFeature(features, "borehole", normalizeBoolean(formData.borehole) || normalizeBoolean(complianceFacts.borehole));
+  addPublicationFeature(features, "gas_installation", normalizeBoolean(formData.gasInstallation) || normalizeBoolean(complianceFacts.gas_installation));
+  addPublicationFeature(features, "estate_or_hoa", normalizeBoolean(formData.estateOrHoa) || normalizeBoolean(propertyFacts.estate_or_hoa));
+  addPublicationFeature(features, "sectional_title", normalizeBoolean(formData.sectionalTitle) || normalizeBoolean(propertyFacts.sectional_title));
+
+  return {
+    title: firstValue(formData.listingTitle, formData.propertyAddress, propertyFacts.address, listing.title, listing.address_line_1),
+    address: firstValue(formData.propertyAddress, propertyFacts.address, listing.address_line_1, listing.title),
+    suburb: firstValue(formData.suburb, propertyFacts.suburb, listing.suburb),
+    province: firstValue(formData.province, propertyFacts.province, listing.province),
+    property_type: firstValue(formData.propertyType, propertyFacts.property_type, listing.property_type),
+    listing_type: "Sale",
+    asking_price: firstNumber(formData.askingPrice, transactionFacts.asking_price, listing.asking_price, listing.estimated_value),
+    bedrooms: firstNumber(formData.bedrooms),
+    bathrooms: firstNumber(formData.bathrooms),
+    garages: firstNumber(formData.garages),
+    parking_bays: resolveParkingBays(formData),
+    floor_size: firstNumber(formData.floorSize, propertyFacts.floor_size),
+    erf_size: firstNumber(formData.erfSize, propertyFacts.erf_size),
+    rates_taxes: firstNumber(formData.ratesTaxes, propertyFacts.rates_taxes),
+    levies: firstNumber(formData.levies, propertyFacts.levies),
+    description: resolvePublicationDescription(formData),
+    features: Array.from(features),
+    amenities: [],
+    status: "Draft",
+  };
+}
+
+function mergePublicationDraft(existing: Record<string, unknown>, draft: Record<string, unknown>) {
+  const merged: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(draft)) {
+    const current = existing[key];
+    if (Array.isArray(value)) {
+      merged[key] = Array.isArray(current) && current.length ? current : value;
+    } else if (typeof value === "number") {
+      merged[key] = normalizeNumber(current) === null ? value : normalizeNumber(current);
+    } else {
+      merged[key] = normalizeText(current) || value || null;
+    }
+  }
+  merged.status = normalizeText(existing.status) || normalizeText(draft.status) || "Draft";
+  return merged;
+}
+
+async function syncListingPublicationDraftFromSellerOnboarding({
+  supabase,
+  listingId,
+  listing,
+  formData,
+}: {
+  supabase: any;
+  listingId: string;
+  listing: Record<string, unknown>;
+  formData: Record<string, unknown>;
+}) {
+  if (!listingId || !Object.keys(formData || {}).length) return null;
+  const draft = buildPublicationDraftFromSellerOnboarding({ listing, formData });
+  const existing = await supabase
+    .from("listing_publication_data")
+    .select("title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, features, amenities, status")
+    .eq("listing_id", listingId)
+    .maybeSingle();
+  if (existing.error) {
+    console.error("[final-signed] publication draft lookup failed", { listingId, error: String(existing.error?.message || existing.error) });
+    return null;
+  }
+
+  const merged = mergePublicationDraft(asRecord(existing.data), draft);
+  const result = await supabase
+    .from("listing_publication_data")
+    .upsert({ listing_id: listingId, ...merged }, { onConflict: "listing_id" })
+    .select("id, listing_id, status")
+    .maybeSingle();
+  if (result.error) {
+    console.error("[final-signed] publication draft sync failed", { listingId, error: String(result.error?.message || result.error) });
+    return null;
+  }
+  return result.data || null;
+}
+
 function resolveSignedMandateListingStatus(current: unknown) {
   const status = lower(current);
   if (["active", "under_offer", "transaction_created", "sold", "withdrawn"].includes(status)) return status;
   return "mandate_signed";
+}
+
+function listingAlreadyOwnsOperationalFields(status: unknown) {
+  return ["mandate_signed", "active", "under_offer", "transaction_created", "sold", "withdrawn"].includes(lower(status));
+}
+
+const SIGNED_MANDATE_LISTING_SELECT =
+  "id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value";
+
+function isUniqueViolation(error: unknown) {
+  const details = asRecord(error);
+  return normalizeText(details.code) === "23505" || lower(details.message).includes("duplicate key");
+}
+
+async function fetchSignedMandateListingById({
+  supabase,
+  organisationId,
+  listingId,
+}: {
+  supabase: any;
+  organisationId: string;
+  listingId: string;
+}) {
+  if (!normalizeNullableUuid(listingId)) return null;
+  const query = await supabase
+    .from("private_listings")
+    .select(SIGNED_MANDATE_LISTING_SELECT)
+    .eq("organisation_id", organisationId)
+    .eq("id", listingId)
+    .maybeSingle();
+  if (!query.error && query.data) return query.data as Record<string, unknown>;
+  return null;
+}
+
+async function fetchSignedMandateListingByLeadColumn({
+  supabase,
+  organisationId,
+  leadId,
+  column,
+}: {
+  supabase: any;
+  organisationId: string;
+  leadId: string;
+  column: "originating_crm_lead_id" | "seller_lead_id";
+}) {
+  if (!leadId) return null;
+  const query = await supabase
+    .from("private_listings")
+    .select(SIGNED_MANDATE_LISTING_SELECT)
+    .eq("organisation_id", organisationId)
+    .eq(column, leadId)
+    .neq("listing_status", "withdrawn")
+    .neq("listing_visibility", "archived")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!query.error && query.data) return query.data as Record<string, unknown>;
+  return null;
+}
+
+async function findExistingSignedMandateListing({
+  supabase,
+  organisationId,
+  linkedListingId,
+  leadId,
+}: {
+  supabase: any;
+  organisationId: string;
+  linkedListingId: string;
+  leadId: string;
+}) {
+  return await fetchSignedMandateListingById({
+    supabase,
+    organisationId,
+    listingId: linkedListingId,
+  }) ||
+    await fetchSignedMandateListingByLeadColumn({
+      supabase,
+      organisationId,
+      leadId,
+      column: "originating_crm_lead_id",
+    }) ||
+    await fetchSignedMandateListingByLeadColumn({
+      supabase,
+      organisationId,
+      leadId,
+      column: "seller_lead_id",
+    });
 }
 
 function resolveSellerOnboardingSnapshot({
@@ -977,29 +1207,12 @@ async function ensureListingFromSignedMandate({
   }
 
   const linkedListingId = normalizeText(existingListingId || lead?.listing_id);
-  let listing: Record<string, unknown> | null = null;
-  if (normalizeNullableUuid(linkedListingId)) {
-    const existingById = await supabase
-      .from("private_listings")
-      .select("id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value")
-      .eq("organisation_id", organisationId)
-      .eq("id", linkedListingId)
-      .maybeSingle();
-    if (!existingById.error && existingById.data) listing = existingById.data as Record<string, unknown>;
-  }
-
-  if (!listing && leadId) {
-    const existingByLead = await supabase
-      .from("private_listings")
-      .select("id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value")
-      .eq("organisation_id", organisationId)
-      .eq("originating_crm_lead_id", leadId)
-      .neq("listing_status", "withdrawn")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (!existingByLead.error && existingByLead.data) listing = existingByLead.data as Record<string, unknown>;
-  }
+  let listing: Record<string, unknown> | null = await findExistingSignedMandateListing({
+    supabase,
+    organisationId,
+    linkedListingId,
+    leadId,
+  });
 
   const title = firstValue(
     placeholders.property_address,
@@ -1031,14 +1244,20 @@ async function ensureListingFromSignedMandate({
     sourceLead,
     lead,
   });
-  const existingListingFound = Boolean(listing?.id);
+  let existingListingFound = Boolean(listing?.id);
 
   if (listing?.id) {
     const existingSellerOnboardingStatus = lower(listing.seller_onboarding_status);
+    const listingOwnsOperationalFields = listingAlreadyOwnsOperationalFields(listing.listing_status);
     await supabase
       .from("private_listings")
       .update({
-        assigned_agent_id: normalizeNullableUuid(listing.assigned_agent_id || lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
+        // Once a listing has entered mandate-signed or later, acquisition data
+        // may only sync lifecycle/linkage fields. Listing-owned operational
+        // fields must not be backfilled from a later-edited lead.
+        assigned_agent_id: listingOwnsOperationalFields
+          ? normalizeNullableUuid(listing.assigned_agent_id)
+          : normalizeNullableUuid(listing.assigned_agent_id || lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
         seller_lead_id: normalizeText(listing.seller_lead_id) || leadId || null,
         originating_crm_lead_id: normalizeText(listing.originating_crm_lead_id) || leadId || null,
         listing_status: resolveSignedMandateListingStatus(listing.listing_status),
@@ -1048,50 +1267,62 @@ async function ensureListingFromSignedMandate({
         seller_onboarding_status: sellerOnboardingStatus === "completed" || !existingSellerOnboardingStatus || existingSellerOnboardingStatus === "not_started"
           ? sellerOnboardingStatus
           : existingSellerOnboardingStatus,
-        title: firstMissingText(listing.title, title),
-        address_line_1: firstMissingText(listing.address_line_1, address),
-        property_type: firstMissingText(listing.property_type, placeholders.property_type, placeholders["property.property_type"]),
-        suburb: firstMissingText(listing.suburb, placeholders.property_suburb, placeholders["property.suburb"], lead?.area_interest),
-        city: firstMissingText(listing.city, placeholders.property_city, placeholders["property.city"]),
-        province: firstMissingText(listing.province, placeholders.property_province, placeholders["property.province"]),
-        asking_price: firstMissingNumber(listing.asking_price, askingPrice),
-        estimated_value: firstMissingNumber(listing.estimated_value, askingPrice),
+        title: listingOwnsOperationalFields ? normalizeText(listing.title) || null : firstMissingText(listing.title, title),
+        address_line_1: listingOwnsOperationalFields ? normalizeText(listing.address_line_1) || null : firstMissingText(listing.address_line_1, address),
+        property_type: listingOwnsOperationalFields ? normalizeText(listing.property_type) || null : firstMissingText(listing.property_type, placeholders.property_type, placeholders["property.property_type"]),
+        suburb: listingOwnsOperationalFields ? normalizeText(listing.suburb) || null : firstMissingText(listing.suburb, placeholders.property_suburb, placeholders["property.suburb"], lead?.area_interest),
+        city: listingOwnsOperationalFields ? normalizeText(listing.city) || null : firstMissingText(listing.city, placeholders.property_city, placeholders["property.city"]),
+        province: listingOwnsOperationalFields ? normalizeText(listing.province) || null : firstMissingText(listing.province, placeholders.property_province, placeholders["property.province"]),
+        asking_price: listingOwnsOperationalFields ? normalizeNumber(listing.asking_price) : firstMissingNumber(listing.asking_price, askingPrice),
+        estimated_value: listingOwnsOperationalFields ? normalizeNumber(listing.estimated_value) : firstMissingNumber(listing.estimated_value, askingPrice),
         updated_at: new Date().toISOString(),
       })
       .eq("id", String(listing.id));
   } else {
+    const insertPayload = {
+      organisation_id: organisationId,
+      assigned_agent_id: normalizeNullableUuid(lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
+      seller_lead_id: leadId || null,
+      originating_crm_lead_id: leadId || null,
+      listing_reference: createListingReference(),
+      listing_status: "mandate_signed",
+      listing_visibility: "internal",
+      property_type: firstValue(placeholders.property_type, placeholders["property.property_type"]) || null,
+      listing_category: "private_sale",
+      title: title || null,
+      description: null,
+      asking_price: askingPrice,
+      estimated_value: askingPrice,
+      address_line_1: address || null,
+      suburb: firstValue(placeholders.property_suburb, placeholders["property.suburb"], lead?.area_interest) || null,
+      city: firstValue(placeholders.property_city, placeholders["property.city"]) || null,
+      province: firstValue(placeholders.property_province, placeholders["property.province"]) || null,
+      seller_type: firstValue(placeholders.seller_entity_type, placeholders["seller.entity_type"]) || null,
+      mandate_type: firstValue(placeholders.mandate_type, placeholders["mandate.type"]) || "sole",
+      mandate_status: "signed",
+      mandate_packet_id: normalizeText(packet.id) || null,
+      seller_onboarding_status: sellerOnboardingStatus,
+      is_active: false,
+      created_by: null,
+    };
     const insert = await supabase
       .from("private_listings")
-      .insert({
-        organisation_id: organisationId,
-        assigned_agent_id: normalizeNullableUuid(lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
-        seller_lead_id: leadId || null,
-        originating_crm_lead_id: leadId || null,
-        listing_reference: createListingReference(),
-        listing_status: "mandate_signed",
-        listing_visibility: "internal",
-        property_type: firstValue(placeholders.property_type, placeholders["property.property_type"]) || null,
-        listing_category: "private_sale",
-        title: title || null,
-        description: null,
-        asking_price: askingPrice,
-        estimated_value: askingPrice,
-        address_line_1: address || null,
-        suburb: firstValue(placeholders.property_suburb, placeholders["property.suburb"], lead?.area_interest) || null,
-        city: firstValue(placeholders.property_city, placeholders["property.city"]) || null,
-        province: firstValue(placeholders.property_province, placeholders["property.province"]) || null,
-        seller_type: firstValue(placeholders.seller_entity_type, placeholders["seller.entity_type"]) || null,
-        mandate_type: firstValue(placeholders.mandate_type, placeholders["mandate.type"]) || "sole",
-        mandate_status: "signed",
-        mandate_packet_id: normalizeText(packet.id) || null,
-        seller_onboarding_status: sellerOnboardingStatus,
-        is_active: false,
-        created_by: null,
-      })
+      .insert(insertPayload)
       .select("id, listing_status, mandate_status")
       .single();
-    if (insert.error) throw insert.error;
-    listing = insert.data as Record<string, unknown>;
+    if (insert.error) {
+      if (!isUniqueViolation(insert.error)) throw insert.error;
+      listing = await findExistingSignedMandateListing({
+        supabase,
+        organisationId,
+        linkedListingId,
+        leadId,
+      });
+      if (!listing?.id) throw insert.error;
+      existingListingFound = true;
+    } else {
+      listing = insert.data as Record<string, unknown>;
+    }
   }
 
   const listingId = normalizeText(listing?.id);
@@ -1101,6 +1332,26 @@ async function ensureListingFromSignedMandate({
     supabase,
     listingId,
     snapshot: sellerOnboardingSnapshot,
+  });
+
+  await syncListingPublicationDraftFromSellerOnboarding({
+    supabase,
+    listingId,
+    listing: {
+      ...(listing || {}),
+      title,
+      address_line_1: address,
+      property_type: firstValue((listing || {}).property_type, placeholders.property_type, placeholders["property.property_type"]),
+      suburb: firstValue((listing || {}).suburb, placeholders.property_suburb, placeholders["property.suburb"], lead?.area_interest),
+      city: firstValue((listing || {}).city, placeholders.property_city, placeholders["property.city"]),
+      province: firstValue((listing || {}).province, placeholders.property_province, placeholders["property.province"]),
+      asking_price: firstNumber((listing || {}).asking_price, askingPrice),
+      estimated_value: firstNumber((listing || {}).estimated_value, askingPrice),
+    },
+    formData: asRecord(sellerOnboardingSnapshot.formData),
+  }).catch((error) => {
+    console.error("[final-signed] publication draft sync skipped", { listingId, error: String(error?.message || error) });
+    return null;
   });
 
   await updateLeadConversionLink({

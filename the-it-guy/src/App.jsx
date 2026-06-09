@@ -58,7 +58,10 @@ const AgentsPage = lazy(() => import('./pages/Agents'))
 const AgentWorkspacePage = lazyNamed(() => import('./pages/Agents'), 'AgentWorkspacePage')
 const AgencyAnalyticsPage = lazy(() => import('./pages/agency/AgencyAnalyticsPage'))
 const AgencyBranchesPage = lazy(() => import('./pages/agency/AgencyBranchesPage'))
+const AgencyGovernancePage = lazy(() => import('./pages/agency/AgencyGovernancePage'))
 const AgencyBranchWorkspacePage = lazy(() => import('./pages/agency/AgencyBranchWorkspacePage'))
+const AssistantDashboardPage = lazy(() => import('./pages/agency/AssistantDashboardPage'))
+const BranchCommandCentrePage = lazy(() => import('./pages/agency/BranchCommandCentrePage'))
 const AppointmentRsvpPage = lazy(() => import('./pages/AppointmentRsvpPage'))
 const AttorneyDashboardPage = lazy(() => import('./pages/AttorneyDashboardPage'))
 const AttorneyFirmSettingsPage = lazy(() => import('./pages/AttorneyFirmSettingsPage'))
@@ -917,10 +920,12 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
   return children
 }
 
-function AgentManagementRoute({ children }) {
+function AgentManagementRoute({ children, allowBranchOperations = false }) {
   const workspaceContext = useWorkspace()
   const { workspaceReady, profileLoading } = workspaceContext
-  const canAccess = evaluateAccessRequirement({ permission: PERMISSIONS.manageBranches }, workspaceContext).ok
+  const canAccess =
+    evaluateAccessRequirement({ permission: PERMISSIONS.manageBranches }, workspaceContext).ok ||
+    (allowBranchOperations && evaluateAccessRequirement({ permission: PERMISSIONS.manageUsers }, workspaceContext).ok)
 
   if (!workspaceReady || profileLoading) {
     return (
@@ -939,6 +944,46 @@ function AgentManagementRoute({ children }) {
 
   if (!canAccess) {
     return <AccessDenied message="You need agency management authority to open this area." />
+  }
+
+  return children
+}
+
+const SUPPORT_OPERATION_ROLES = new Set(['assistant', 'transaction_coordinator', 'listing_coordinator', 'admin_coordinator', 'admin_staff'])
+
+function SupportOperationsRoute({ children }) {
+  const workspaceContext = useWorkspace()
+  const { workspaceReady, profileLoading, currentMembership, workspaceRole } = workspaceContext
+  const membershipRole = String(
+    workspaceRole ||
+      currentMembership?.workspaceRole ||
+      currentMembership?.workspace_role ||
+      currentMembership?.organisationRole ||
+      currentMembership?.organisation_role ||
+      currentMembership?.role ||
+      '',
+  ).trim().toLowerCase()
+  const canAccess =
+    SUPPORT_OPERATION_ROLES.has(membershipRole) &&
+    evaluateAccessRequirement({ permission: PERMISSIONS.viewAgencyDashboard }, workspaceContext).ok
+
+  if (!workspaceReady || profileLoading) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Preparing your workspace…</h2>
+          <p>Validating support access.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
+    return children
+  }
+
+  if (!canAccess) {
+    return <AccessDenied message="You need an assistant or coordinator role to open this workspace." />
   }
 
   return children
@@ -2054,9 +2099,19 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/assistant/dashboard"
+                element={
+                  <SupportOperationsRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AssistantDashboardPage />
+                    </RoleRoute>
+                  </SupportOperationsRoute>
+                }
+              />
+              <Route
                 path="/agency/branches"
                 element={
-                  <AgentManagementRoute>
+                  <AgentManagementRoute allowBranchOperations>
                     <RoleRoute allowedRoles={['agent']}>
                       <AgencyBranchesPage />
                     </RoleRoute>
@@ -2064,9 +2119,19 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/agency/branch-command-centre"
+                element={
+                  <AgentManagementRoute allowBranchOperations>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <BranchCommandCentrePage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
                 path="/agency/branches/:branchId"
                 element={
-                  <AgentManagementRoute>
+                  <AgentManagementRoute allowBranchOperations>
                     <RoleRoute allowedRoles={['agent']}>
                       <AgencyBranchWorkspacePage />
                     </RoleRoute>
@@ -2099,6 +2164,16 @@ function AppRoutes() {
                   <AgentManagementRoute>
                     <RoleRoute allowedRoles={['agent']}>
                       <AgencyAnalyticsPage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
+                path="/agency/governance"
+                element={
+                  <AgentManagementRoute>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgencyGovernancePage />
                     </RoleRoute>
                   </AgentManagementRoute>
                 }

@@ -112,6 +112,7 @@ function normalizeAgentInviteRole(value) {
   if (normalized === 'senior_agent') return 'agent'
   if (normalized === 'branch_manager') return 'branch_manager'
   if (normalized === 'principal') return 'principal'
+  if (['assistant', 'transaction_coordinator', 'listing_coordinator', 'admin_coordinator'].includes(normalized)) return normalized
   return 'agent'
 }
 

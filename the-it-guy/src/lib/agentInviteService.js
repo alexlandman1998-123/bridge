@@ -16,13 +16,19 @@ export const AGENT_INVITE_STATUS = {
 }
 
 export const AGENT_ROLE_OPTIONS = [
+  { value: 'owner', label: 'Organisation Owner' },
   { value: 'super_admin', label: 'Super Admin' },
   { value: 'principal', label: 'Principal / Owner' },
   { value: 'admin', label: 'Admin' },
   { value: 'branch_manager', label: 'Branch Manager' },
   { value: 'branch_admin', label: 'Branch Admin / Manager' },
+  { value: 'team_lead', label: 'Team Lead' },
   { value: 'agent', label: 'Agent' },
   { value: 'senior_agent', label: 'Senior Agent' },
+  { value: 'assistant', label: 'Assistant' },
+  { value: 'transaction_coordinator', label: 'Transaction Coordinator' },
+  { value: 'listing_coordinator', label: 'Listing Coordinator' },
+  { value: 'admin_coordinator', label: 'Admin Coordinator' },
 ]
 
 function readJson(key, fallback) {

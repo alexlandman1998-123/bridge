@@ -28,11 +28,18 @@ import {
 } from './settingsUi'
 
 const ROLE_OPTIONS = [
+  { value: 'owner', label: 'Organisation Owner' },
   { value: 'super_admin', label: 'Super Admin' },
   { value: 'principal', label: 'Principal' },
   { value: 'admin', label: 'Admin' },
   { value: 'branch_manager', label: 'Branch Manager' },
+  { value: 'team_lead', label: 'Team Lead' },
+  { value: 'senior_agent', label: 'Senior Agent' },
   { value: 'agent', label: 'Agent' },
+  { value: 'assistant', label: 'Assistant' },
+  { value: 'transaction_coordinator', label: 'Transaction Coordinator' },
+  { value: 'listing_coordinator', label: 'Listing Coordinator' },
+  { value: 'admin_coordinator', label: 'Admin Coordinator' },
   { value: 'viewer', label: 'Viewer' },
 ]
 

@@ -69,6 +69,17 @@ import {
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import { buildAgentPerformanceModel, AGENT_DATE_RANGE_OPTIONS, AGENT_STATUS_TABS, LEADERBOARD_METRICS } from '../modules/agency/agents/agentPerformanceUtils'
 import { loadAgentPerformanceSources } from '../modules/agency/agents/agentPerformanceDataService'
+import {
+  discoverAgentOffboardingAssets,
+  executeAgentAssetReassignment,
+  hasBlockingAgentAssets,
+} from '../services/agentOffboardingService'
+import {
+  buildTransferMembershipReport,
+  executeAgentTransferRetention,
+  recordAgentTransferMembershipTransition,
+  validateTransferRetentionStrategy,
+} from '../services/agentTransferService'
 
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -87,13 +98,19 @@ const AGENT_WORKSPACE_TABS = [
 ]
 
 const ORGANISATION_ROLE_OPTIONS = [
+  { value: 'owner', label: 'Organisation Owner' },
   { value: 'super_admin', label: 'Super Admin' },
   { value: 'principal', label: 'Principal / Owner' },
   { value: 'admin', label: 'Admin' },
   { value: 'branch_manager', label: 'Branch Manager' },
   { value: 'branch_admin', label: 'Branch Admin / Manager' },
+  { value: 'team_lead', label: 'Team Lead' },
   { value: 'senior_agent', label: 'Senior Agent' },
   { value: 'agent', label: 'Agent' },
+  { value: 'assistant', label: 'Assistant' },
+  { value: 'transaction_coordinator', label: 'Transaction Coordinator' },
+  { value: 'listing_coordinator', label: 'Listing Coordinator' },
+  { value: 'admin_coordinator', label: 'Admin Coordinator' },
 ]
 
 const EMPTY_ORGANISATION = { id: 'all', name: 'All Organisations' }
@@ -126,10 +143,17 @@ const AGENT_STATUS_PILL_CLASS = {
   [AGENT_INVITE_STATUS.REVOKED]: 'border-[#f3d8d8] bg-[#fff4f4] text-[#a03c3c]',
 }
 
+const SUPPORT_USER_ROLES = new Set(['assistant', 'transaction_coordinator', 'listing_coordinator', 'admin_coordinator', 'admin_staff'])
+
 function formatRoleLabel(value) {
   const normalized = String(value || '').trim().toLowerCase()
   const matched = ORGANISATION_ROLE_OPTIONS.find((item) => item.value === normalized) || AGENT_ROLE_OPTIONS.find((item) => item.value === normalized)
   return matched?.label || 'Agent'
+}
+
+function canReceiveOperationalOwnership(agent = {}) {
+  const role = String(agent?.role || agent?.workspaceRole || agent?.organisationRole || '').trim().toLowerCase()
+  return !SUPPORT_USER_ROLES.has(role)
 }
 
 function formatPercent(value) {
@@ -1221,7 +1245,7 @@ function AgentInsightPanel({ topPerformers, recentAgents, attentionAgents }) {
   )
 }
 
-function AgentDirectoryTable({ agents, onView, onEditRole, onDeactivate }) {
+function AgentDirectoryTable({ agents, onView, onEditRole, onDeactivate, onTransfer }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full min-w-[860px] text-left">
@@ -1265,6 +1289,7 @@ function AgentDirectoryTable({ agents, onView, onEditRole, onDeactivate }) {
                   <div className="flex justify-end gap-2">
                     <Button type="button" size="sm" variant="secondary" onClick={() => onView(agent)}>Workspace</Button>
                     <Button type="button" size="sm" variant="secondary" onClick={() => onEditRole(agent)}>Role</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => onTransfer(agent)}>Transfer</Button>
                     <Button type="button" size="sm" variant="secondary" onClick={() => onDeactivate(agent)}>Deactivate</Button>
                   </div>
                 </td>
@@ -1274,6 +1299,615 @@ function AgentDirectoryTable({ agents, onView, onEditRole, onDeactivate }) {
         </tbody>
       </table>
     </div>
+  )
+}
+
+function normalizeOffboardingAgentId(agent = {}) {
+  return String(agent.userId || agent.id || '').trim()
+}
+
+function AgentOffboardingWizard({
+  open,
+  agent,
+  loading = false,
+  executing = false,
+  error = '',
+  discovery = null,
+  candidateAgents = [],
+  onClose,
+  onRefresh,
+  onSubmit,
+}) {
+  const [step, setStep] = useState(1)
+  const [mode, setMode] = useState('single')
+  const [defaultAgentId, setDefaultAgentId] = useState('')
+  const [reason, setReason] = useState('Agent offboarding')
+  const [appointmentAction, setAppointmentAction] = useState('reassign')
+  const [splitAssignments, setSplitAssignments] = useState({
+    leads: '',
+    listings: '',
+    transactions: '',
+    appointments: '',
+    contacts: '',
+    tasks: '',
+    documentPackets: '',
+    documentRequests: '',
+  })
+
+  const summary = discovery?.summary || {}
+  const assets = discovery?.assets || {}
+  const hasAssets = hasBlockingAgentAssets(summary)
+  const options = candidateAgents
+    .map((item) => ({
+      id: normalizeOffboardingAgentId(item),
+      userId: normalizeOffboardingAgentId(item),
+      name: item.name || item.email || 'Agent',
+      email: item.email || '',
+      branchId: item.branchId || null,
+      office: item.office || 'Assigned branch',
+    }))
+    .filter((item) => item.userId && item.userId !== normalizeOffboardingAgentId(agent))
+
+  const selectedDefault = options.find((item) => item.userId === defaultAgentId) || null
+  const selectedByType = Object.fromEntries(Object.entries(splitAssignments).map(([key, value]) => [key, options.find((item) => item.userId === value) || null]))
+  const activeSummaryRows = [
+    ['Seller Leads', summary.sellerLeads || 0],
+    ['Buyer Leads', summary.buyerLeads || 0],
+    ['Contacts', summary.contacts || 0],
+    ['Tasks', summary.tasks || 0],
+    ['Listings', summary.listings || 0],
+    ['Active Transactions', summary.activeTransactions || 0],
+    ['Future Appointments', summary.appointments || 0],
+    ['Document Packets', summary.documentPackets || 0],
+    ['Open Document Requests', summary.openDocumentRequests || 0],
+    ['Pending Seller Uploads', summary.pendingSellerUploads || 0],
+  ]
+  const canSubmitNoAssets = !hasAssets
+  const needsDestination = hasAssets && mode !== 'branch_pool'
+  const hasDestination = mode === 'single' ? Boolean(selectedDefault) : ['leads', 'listings', 'transactions', 'appointments'].every((key) => {
+    const countByKey = {
+      leads: (summary.sellerLeads || 0) + (summary.buyerLeads || 0),
+      listings: summary.listings || 0,
+      transactions: summary.activeTransactions || 0,
+      appointments: summary.appointments || 0,
+    }
+    return !countByKey[key] || Boolean(selectedByType[key])
+  })
+  const branchPoolBlocked = mode === 'branch_pool' && ((summary.listings || 0) || (summary.activeTransactions || 0) || (summary.appointments || 0) || (summary.documentPackets || 0))
+  const canSubmit = !loading && !executing && (canSubmitNoAssets || (hasAssets && !branchPoolBlocked && (!needsDestination || hasDestination)))
+
+  function submit() {
+    const strategy = mode === 'split'
+      ? {
+          mode,
+          defaultAgent: selectedDefault,
+          byType: selectedByType,
+        }
+      : {
+          mode,
+          defaultAgent: selectedDefault,
+          byType: {},
+        }
+    onSubmit?.({
+      strategy,
+      reason,
+      appointmentAction,
+      assets,
+    })
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={executing ? undefined : onClose}
+      title="Agent Offboarding"
+      subtitle={agent ? `Protect business assets before deactivating ${agent.name || agent.email || 'this agent'}.` : ''}
+      className="max-w-[920px]"
+      footer={
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-xs font-medium text-[#6a7f98]">
+            {hasAssets ? 'Deactivation is blocked until active assets are handled.' : 'No active assets found. Deactivation can continue.'}
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={executing}>Cancel</Button>
+            {step > 1 ? <Button type="button" variant="secondary" onClick={() => setStep((value) => Math.max(1, value - 1))} disabled={executing}>Back</Button> : null}
+            {step < 3 ? (
+              <Button type="button" onClick={() => setStep((value) => Math.min(3, value + 1))} disabled={loading || executing}>
+                Next
+              </Button>
+            ) : (
+              <Button type="button" onClick={submit} disabled={!canSubmit}>
+                {executing ? 'Completing Offboarding…' : 'Reassign Assets & Deactivate'}
+              </Button>
+            )}
+          </div>
+        </div>
+      }
+    >
+      <div className="space-y-5">
+        <div className="grid grid-cols-3 gap-2">
+          {['Review Agent', 'Asset Summary', 'Reassignment'].map((label, index) => {
+            const active = step === index + 1
+            return (
+              <div key={label} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${active ? 'border-[#1769d1] bg-[#eef6ff] text-[#1254a3]' : 'border-[#e1e8f0] bg-white text-[#70849a]'}`}>
+                {index + 1}. {label}
+              </div>
+            )
+          })}
+        </div>
+
+        {error ? <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">{error}</div> : null}
+
+        {step === 1 ? (
+          <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="rounded-2xl border border-[#dfe8f2] bg-white p-4">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#0f2742] text-base font-semibold text-white">{getAgentInitials(agent || {})}</span>
+                <div className="min-w-0">
+                  <h3 className="truncate text-lg font-semibold text-[#10243a]">{agent?.name || 'Agent'}</h3>
+                  <p className="truncate text-sm text-[#60758d]">{agent?.email || 'No email'}</p>
+                  <p className="truncate text-xs font-semibold text-[#7a8ea5]">{agent?.office || 'No branch'} · {formatRoleLabel(agent?.role)}</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-[#edf2f7] bg-[#f8fbff] p-3">
+                  <p className="text-xs font-semibold text-[#71859c]">Status</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{getAgentStatusMeta(agent || {}).label}</p>
+                </div>
+                <div className="rounded-xl border border-[#edf2f7] bg-[#f8fbff] p-3">
+                  <p className="text-xs font-semibold text-[#71859c]">Joined</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{formatDate(agent?.activatedAt || agent?.invitedAt)}</p>
+                </div>
+                <div className="rounded-xl border border-[#edf2f7] bg-[#f8fbff] p-3">
+                  <p className="text-xs font-semibold text-[#71859c]">Current Assets</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{loading ? 'Scanning…' : summary.totalAssets || 0}</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[#f0dfc2] bg-[#fffbf3] p-4">
+              <AlertTriangle size={20} className="text-[#b7791f]" />
+              <h4 className="mt-3 text-sm font-semibold text-[#3a2a12]">Hard safety rule</h4>
+              <p className="mt-2 text-sm leading-6 text-[#7a5a25]">Agents with active assets must be reassigned before deactivation completes. Historical attribution stays untouched.</p>
+              <Button type="button" variant="secondary" size="sm" className="mt-4" onClick={onRefresh} disabled={loading || executing}>
+                {loading ? 'Scanning…' : 'Refresh asset scan'}
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
+        {step === 2 ? (
+          <section className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {activeSummaryRows.map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-[#e1e9f2] bg-white p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7890a8]">{label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-[#10243a]">{loading ? '…' : value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-2xl border border-[#dbe7f3] bg-[#f7fbff] p-4 text-sm leading-6 text-[#415a73]">
+              Seller and buyer relationships, portals, documents, tasks, and appointments stay connected to their business records. The wizard changes only operational ownership.
+            </div>
+          </section>
+        ) : null}
+
+        {step === 3 ? (
+          <section className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              {[
+                ['single', 'Single Agent', 'Assign every transferable asset to one active agent.'],
+                ['split', 'Split Assignment', 'Choose destination owners per asset type.'],
+                ['branch_pool', 'Branch Pool', 'Move lead workload to the branch pool only.'],
+              ].map(([value, label, copy]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setMode(value)}
+                  className={`rounded-2xl border p-4 text-left transition ${mode === value ? 'border-[#1769d1] bg-[#eef6ff] shadow-sm' : 'border-[#dfe8f2] bg-white hover:bg-[#f8fbff]'}`}
+                >
+                  <span className="text-sm font-semibold text-[#10243a]">{label}</span>
+                  <span className="mt-2 block text-xs leading-5 text-[#637991]">{copy}</span>
+                </button>
+              ))}
+            </div>
+
+            {branchPoolBlocked ? (
+              <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">
+                Branch pool can only be used when the agent has no active listings, transactions, appointments, or document packets.
+              </div>
+            ) : null}
+
+            {mode === 'single' ? (
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Destination Agent</span>
+                <Field as="select" value={defaultAgentId} onChange={(event) => setDefaultAgentId(event.target.value)}>
+                  <option value="">Select destination agent</option>
+                  {options.map((option) => (
+                    <option key={option.userId} value={option.userId}>{option.name} · {option.office}</option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
+            {mode === 'split' ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                {[
+                  ['leads', 'Leads'],
+                  ['listings', 'Listings'],
+                  ['transactions', 'Transactions'],
+                  ['appointments', 'Appointments'],
+                  ['contacts', 'Contacts'],
+                  ['tasks', 'Tasks'],
+                  ['documentPackets', 'Document Packets'],
+                  ['documentRequests', 'Document Requests'],
+                ].map(([key, label]) => (
+                  <label key={key} className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
+                    <Field as="select" value={splitAssignments[key]} onChange={(event) => setSplitAssignments((previous) => ({ ...previous, [key]: event.target.value }))}>
+                      <option value="">Select agent</option>
+                      {options.map((option) => (
+                        <option key={`${key}-${option.userId}`} value={option.userId}>{option.name} · {option.office}</option>
+                      ))}
+                    </Field>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Future Appointments</span>
+                <Field as="select" value={appointmentAction} onChange={(event) => setAppointmentAction(event.target.value)}>
+                  <option value="reassign">Reassign to new owner</option>
+                  <option value="cancel">Cancel and audit</option>
+                </Field>
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Reason</span>
+                <Field value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Agent resignation, branch move, restructuring…" />
+              </label>
+            </div>
+          </section>
+        ) : null}
+      </div>
+    </Modal>
+  )
+}
+
+function AgentTransferWizard({
+  open,
+  agent,
+  loading = false,
+  executing = false,
+  error = '',
+  discovery = null,
+  candidateAgents = [],
+  destinationOrganisations = [],
+  branchOptions = [],
+  sourceOrganisation = {},
+  onClose,
+  onRefresh,
+  onSubmit,
+}) {
+  const currentOrganisationId = String(agent?.organisationId || sourceOrganisation?.id || '').trim().toLowerCase()
+  const availableOrganisations = destinationOrganisations.filter((organisation) => String(organisation?.id || '').trim().toLowerCase() !== currentOrganisationId)
+  const [step, setStep] = useState(1)
+  const [destinationMode, setDestinationMode] = useState(availableOrganisations.length ? 'existing' : 'new')
+  const [destinationOrganisationId, setDestinationOrganisationId] = useState(availableOrganisations[0]?.id || '')
+  const [newOrganisationName, setNewOrganisationName] = useState('')
+  const [destinationBranchId, setDestinationBranchId] = useState('')
+  const [destinationRole, setDestinationRole] = useState('agent')
+  const [assetMode, setAssetMode] = useState('single')
+  const [retentionAgentId, setRetentionAgentId] = useState('')
+  const [appointmentAction, setAppointmentAction] = useState('reassign')
+  const [reason, setReason] = useState('Agent transfer between agencies')
+  const [splitAssignments, setSplitAssignments] = useState({
+    leads: '',
+    listings: '',
+    transactions: '',
+    appointments: '',
+    contacts: '',
+    tasks: '',
+    documentPackets: '',
+    documentRequests: '',
+  })
+
+  const summary = discovery?.summary || {}
+  const assets = discovery?.assets || {}
+  const hasAssets = hasBlockingAgentAssets(summary)
+  const retentionOptions = candidateAgents
+    .map((item) => ({
+      id: normalizeOffboardingAgentId(item),
+      userId: normalizeOffboardingAgentId(item),
+      name: item.name || item.email || 'Agent',
+      email: item.email || '',
+      branchId: item.branchId || null,
+      office: item.office || 'Assigned branch',
+    }))
+    .filter((item) => item.userId && item.userId !== normalizeOffboardingAgentId(agent))
+
+  const selectedRetentionAgent = retentionOptions.find((item) => item.userId === retentionAgentId) || null
+  const selectedByType = Object.fromEntries(Object.entries(splitAssignments).map(([key, value]) => [key, retentionOptions.find((item) => item.userId === value) || null]))
+  const effectiveDestinationOrganisationId =
+    destinationOrganisationId && availableOrganisations.some((organisation) => organisation.id === destinationOrganisationId)
+      ? destinationOrganisationId
+      : availableOrganisations[0]?.id || ''
+  const selectedDestinationOrganisation = destinationMode === 'existing'
+    ? availableOrganisations.find((organisation) => organisation.id === effectiveDestinationOrganisationId) || null
+    : { id: '', name: newOrganisationName.trim() }
+  const selectedDestinationBranch = branchOptions.find((branch) => branch.id === destinationBranchId) || null
+  const transferReport = buildTransferMembershipReport({
+    agent,
+    sourceOrganisation,
+    destinationOrganisation: selectedDestinationOrganisation,
+    summary,
+  })
+  const retentionStrategy = assetMode === 'split'
+    ? { mode: assetMode, defaultAgent: selectedRetentionAgent, byType: selectedByType }
+    : { mode: assetMode, defaultAgent: selectedRetentionAgent, byType: {} }
+  const validation = validateTransferRetentionStrategy({ summary, strategy: retentionStrategy })
+  const destinationValid = destinationMode === 'existing' ? Boolean(selectedDestinationOrganisation?.id) : Boolean(newOrganisationName.trim())
+  const branchPoolBlocked = assetMode === 'branch_pool' && ((summary.listings || 0) || (summary.activeTransactions || 0) || (summary.appointments || 0) || (summary.documentPackets || 0))
+  const canSubmit = !loading && !executing && destinationValid && validation.ok && !branchPoolBlocked
+  const activeSummaryRows = [
+    ['Seller Leads', summary.sellerLeads || 0],
+    ['Buyer Leads', summary.buyerLeads || 0],
+    ['Listings', summary.listings || 0],
+    ['Active Transactions', summary.activeTransactions || 0],
+    ['Future Appointments', summary.appointments || 0],
+    ['Document Packets', summary.documentPackets || 0],
+  ]
+
+  function submit() {
+    onSubmit?.({
+      assets,
+      summary,
+      retentionStrategy,
+      destination: {
+        mode: destinationMode,
+        organisation: selectedDestinationOrganisation,
+        newOrganisationName: newOrganisationName.trim(),
+        branch: selectedDestinationBranch,
+        role: destinationRole,
+      },
+      appointmentAction,
+      reason,
+    })
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={executing ? undefined : onClose}
+      title="Transfer Agent"
+      subtitle={agent ? `Move ${agent.name || agent.email || 'this agent'} to another agency without moving source-agency assets.` : ''}
+      className="max-w-[980px]"
+      footer={
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-medium text-[#6a7f98]">
+            Default rule: the agent moves, the old agency's business assets stay.
+          </p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={executing}>Cancel</Button>
+            {step > 1 ? <Button type="button" variant="secondary" onClick={() => setStep((value) => Math.max(1, value - 1))} disabled={executing}>Back</Button> : null}
+            {step < 4 ? (
+              <Button type="button" onClick={() => setStep((value) => Math.min(4, value + 1))} disabled={loading || executing}>
+                Next
+              </Button>
+            ) : (
+              <Button type="button" onClick={submit} disabled={!canSubmit}>
+                {executing ? 'Transferring Agent…' : 'Transfer Agent'}
+              </Button>
+            )}
+          </div>
+        </div>
+      }
+    >
+      <div className="space-y-5">
+        <div className="grid gap-2 sm:grid-cols-4">
+          {['Review Agent', 'Review Assets', 'Destination', 'Retain Assets'].map((label, index) => {
+            const active = step === index + 1
+            return (
+              <div key={label} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${active ? 'border-[#1769d1] bg-[#eef6ff] text-[#1254a3]' : 'border-[#e1e8f0] bg-white text-[#70849a]'}`}>
+                {index + 1}. {label}
+              </div>
+            )
+          })}
+        </div>
+
+        {error ? <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">{error}</div> : null}
+
+        {step === 1 ? (
+          <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="rounded-2xl border border-[#dfe8f2] bg-white p-4">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#0f2742] text-base font-semibold text-white">{getAgentInitials(agent || {})}</span>
+                <div className="min-w-0">
+                  <h3 className="truncate text-lg font-semibold text-[#10243a]">{agent?.name || 'Agent'}</h3>
+                  <p className="truncate text-sm text-[#60758d]">{agent?.email || 'No email'}</p>
+                  <p className="truncate text-xs font-semibold text-[#7a8ea5]">{sourceOrganisation?.name || agent?.organisationName || 'Current agency'} · {formatRoleLabel(agent?.role)}</p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-[#edf2f7] bg-[#f8fbff] p-3">
+                  <p className="text-xs font-semibold text-[#71859c]">Current Membership</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{getAgentStatusMeta(agent || {}).label}</p>
+                </div>
+                <div className="rounded-xl border border-[#edf2f7] bg-[#f8fbff] p-3">
+                  <p className="text-xs font-semibold text-[#71859c]">Joined</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{formatDate(agent?.activatedAt || agent?.invitedAt)}</p>
+                </div>
+                <div className="rounded-xl border border-[#edf2f7] bg-[#f8fbff] p-3">
+                  <p className="text-xs font-semibold text-[#71859c]">Source Assets</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{loading ? 'Scanning…' : summary.totalAssets || 0}</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[#dbe7f3] bg-[#f7fbff] p-4">
+              <ShieldCheck size={20} className="text-[#1769d1]" />
+              <h4 className="mt-3 text-sm font-semibold text-[#10243a]">Membership model</h4>
+              <ul className="mt-2 space-y-2 text-sm leading-5 text-[#526981]">
+                {transferReport.desiredBehaviour.slice(0, 3).map((item) => <li key={item}>• {item}</li>)}
+              </ul>
+              <Button type="button" variant="secondary" size="sm" className="mt-4" onClick={onRefresh} disabled={loading || executing}>
+                {loading ? 'Scanning…' : 'Refresh asset scan'}
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
+        {step === 2 ? (
+          <section className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+              {activeSummaryRows.map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-[#e1e9f2] bg-white p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7890a8]">{label}</p>
+                  <p className="mt-2 text-2xl font-semibold text-[#10243a]">{loading ? '…' : value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-2xl border border-[#f0dfc2] bg-[#fffbf3] p-4 text-sm leading-6 text-[#6d5423]">
+              These records remain in {sourceOrganisation?.name || agent?.organisationName || 'the source agency'}. Created-by, won-by, and originated-by attribution is not overwritten.
+            </div>
+          </section>
+        ) : null}
+
+        {step === 3 ? (
+          <section className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              {[
+                ['existing', 'Existing Agency Invite', 'Send the agent an invite to an agency already known to this workspace.'],
+                ['new', 'New Agency', 'Create a destination agency record and send an invite.'],
+              ].map(([value, label, copy]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setDestinationMode(value)}
+                  className={`rounded-2xl border p-4 text-left transition ${destinationMode === value ? 'border-[#1769d1] bg-[#eef6ff] shadow-sm' : 'border-[#dfe8f2] bg-white hover:bg-[#f8fbff]'}`}
+                >
+                  <span className="text-sm font-semibold text-[#10243a]">{label}</span>
+                  <span className="mt-2 block text-xs leading-5 text-[#637991]">{copy}</span>
+                </button>
+              ))}
+            </div>
+
+            {destinationMode === 'existing' ? (
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Destination Agency</span>
+                <Field as="select" value={effectiveDestinationOrganisationId} onChange={(event) => setDestinationOrganisationId(event.target.value)}>
+                  <option value="">Select destination agency</option>
+                  {availableOrganisations.map((organisation) => (
+                    <option key={organisation.id} value={organisation.id}>{organisation.name}</option>
+                  ))}
+                </Field>
+              </label>
+            ) : (
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">New Agency Name</span>
+                <Field value={newOrganisationName} onChange={(event) => setNewOrganisationName(event.target.value)} placeholder="RE/MAX Sandton, Harcourts West..." />
+              </label>
+            )}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Destination Branch</span>
+                <Field as="select" value={destinationBranchId} onChange={(event) => setDestinationBranchId(event.target.value)}>
+                  <option value="">Destination agency to assign later</option>
+                  {branchOptions.map((branch) => (
+                    <option key={branch.id} value={branch.id}>{branch.name}</option>
+                  ))}
+                </Field>
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Destination Role</span>
+                <Field as="select" value={destinationRole} onChange={(event) => setDestinationRole(event.target.value)}>
+                  {AGENT_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </Field>
+              </label>
+            </div>
+          </section>
+        ) : null}
+
+        {step === 4 ? (
+          <section className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              {[
+                ['single', 'Single Internal Owner', 'Retain all source-agency assets under one active colleague.'],
+                ['split', 'Split Retention', 'Choose different internal owners per asset type.'],
+                ['branch_pool', 'Branch Pool', 'Only lead workload can move to the branch pool.'],
+              ].map(([value, label, copy]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setAssetMode(value)}
+                  className={`rounded-2xl border p-4 text-left transition ${assetMode === value ? 'border-[#1769d1] bg-[#eef6ff] shadow-sm' : 'border-[#dfe8f2] bg-white hover:bg-[#f8fbff]'}`}
+                >
+                  <span className="text-sm font-semibold text-[#10243a]">{label}</span>
+                  <span className="mt-2 block text-xs leading-5 text-[#637991]">{copy}</span>
+                </button>
+              ))}
+            </div>
+
+            {branchPoolBlocked || !validation.ok ? (
+              <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm text-[#b42318]">
+                {branchPoolBlocked ? 'Branch pool cannot retain active listings, transactions, appointments, or document packets.' : validation.reason}
+              </div>
+            ) : null}
+
+            {assetMode === 'single' ? (
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Source-Agency Retention Owner</span>
+                <Field as="select" value={retentionAgentId} onChange={(event) => setRetentionAgentId(event.target.value)} disabled={!hasAssets}>
+                  <option value="">{hasAssets ? 'Select internal owner' : 'No source assets to retain'}</option>
+                  {retentionOptions.map((option) => (
+                    <option key={option.userId} value={option.userId}>{option.name} · {option.office}</option>
+                  ))}
+                </Field>
+              </label>
+            ) : null}
+
+            {assetMode === 'split' ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                {[
+                  ['leads', 'Leads'],
+                  ['listings', 'Listings'],
+                  ['transactions', 'Transactions'],
+                  ['appointments', 'Appointments'],
+                  ['contacts', 'Contacts'],
+                  ['tasks', 'Tasks'],
+                  ['documentPackets', 'Document Packets'],
+                  ['documentRequests', 'Document Requests'],
+                ].map(([key, label]) => (
+                  <label key={key} className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</span>
+                    <Field as="select" value={splitAssignments[key]} onChange={(event) => setSplitAssignments((previous) => ({ ...previous, [key]: event.target.value }))}>
+                      <option value="">Select internal owner</option>
+                      {retentionOptions.map((option) => (
+                        <option key={`${key}-${option.userId}`} value={option.userId}>{option.name} · {option.office}</option>
+                      ))}
+                    </Field>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Future Appointments</span>
+                <Field as="select" value={appointmentAction} onChange={(event) => setAppointmentAction(event.target.value)}>
+                  <option value="reassign">Reassign to retained owner</option>
+                  <option value="cancel">Cancel and audit</option>
+                </Field>
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Reason</span>
+                <Field value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Agent resigned and joined another agency..." />
+              </label>
+            </div>
+          </section>
+        ) : null}
+      </div>
+    </Modal>
   )
 }
 
@@ -1425,7 +2059,7 @@ function ActivityHeatmap({ data = [] }) {
   )
 }
 
-function AgentPerformanceCard({ agent, canManage = false, onView, onEditRole, onDeactivate, onAssignLead }) {
+function AgentPerformanceCard({ agent, canManage = false, onView, onEditRole, onDeactivate, onTransfer, onAssignLead }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const performance = agent.performance || {}
   const statusMeta = agent.statusMeta || getAgentStatusMeta(agent)
@@ -1518,6 +2152,7 @@ function AgentPerformanceCard({ agent, canManage = false, onView, onEditRole, on
             <div className="absolute bottom-[calc(100%+8px)] right-0 z-20 w-44 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)]">
               <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={onView}>Open lead workspace</button>
               {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={onEditRole}>Edit agent</button> : null}
+              {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={onTransfer}>Transfer agent</button> : null}
               {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#9a3a13] hover:bg-[#fff7ed]" onClick={onDeactivate}>Deactivate</button> : null}
             </div>
           ) : null}
@@ -1527,7 +2162,7 @@ function AgentPerformanceCard({ agent, canManage = false, onView, onEditRole, on
   )
 }
 
-function AgentPerformanceTable({ agents, canManage = false, onView, onEditRole, onDeactivate }) {
+function AgentPerformanceTable({ agents, canManage = false, onView, onEditRole, onDeactivate, onTransfer }) {
   return (
     <div className="overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white shadow-sm">
       <table className="w-full min-w-[1040px] text-left">
@@ -1572,6 +2207,7 @@ function AgentPerformanceTable({ agents, canManage = false, onView, onEditRole, 
                   <div className="flex justify-end gap-1.5">
                     <Button type="button" size="sm" variant="secondary" onClick={() => onView(agent)}>Open</Button>
                     {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onEditRole(agent)}>Role</Button> : null}
+                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onTransfer(agent)}>Transfer</Button> : null}
                     {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onDeactivate(agent)}>Disable</Button> : null}
                   </div>
                 </td>
@@ -2511,6 +3147,14 @@ export function AgentsPage() {
   const [roleEditValue, setRoleEditValue] = useState('agent')
   const [confirmDialog, setConfirmDialog] = useState({ open: false, type: '', agent: null })
   const [confirmingAction, setConfirmingAction] = useState(false)
+  const [offboardingWizard, setOffboardingWizard] = useState({ open: false, agent: null, discovery: null })
+  const [offboardingLoading, setOffboardingLoading] = useState(false)
+  const [offboardingExecuting, setOffboardingExecuting] = useState(false)
+  const [offboardingError, setOffboardingError] = useState('')
+  const [transferWizard, setTransferWizard] = useState({ open: false, agent: null, discovery: null })
+  const [transferLoading, setTransferLoading] = useState(false)
+  const [transferExecuting, setTransferExecuting] = useState(false)
+  const [transferError, setTransferError] = useState('')
   const [organisationModalOpen, setOrganisationModalOpen] = useState(false)
   const [organisationName, setOrganisationName] = useState('')
   const [organisationSubmitting, setOrganisationSubmitting] = useState(false)
@@ -2932,6 +3576,26 @@ export function AgentsPage() {
     })
   }, [performanceModel.agents, sortBy])
 
+  const offboardingDestinationAgents = useMemo(
+    () =>
+      agents
+        .filter((agent) => String(agent?.status || '').trim().toLowerCase() === AGENT_INVITE_STATUS.ACTIVE)
+        .filter(canReceiveOperationalOwnership)
+        .filter((agent) => normalizeOffboardingAgentId(agent))
+        .filter((agent) => normalizeOffboardingAgentId(agent) !== normalizeOffboardingAgentId(offboardingWizard.agent || {})),
+    [agents, offboardingWizard.agent],
+  )
+
+  const transferRetentionAgents = useMemo(
+    () =>
+      agents
+        .filter((agent) => String(agent?.status || '').trim().toLowerCase() === AGENT_INVITE_STATUS.ACTIVE)
+        .filter(canReceiveOperationalOwnership)
+        .filter((agent) => normalizeOffboardingAgentId(agent))
+        .filter((agent) => normalizeOffboardingAgentId(agent) !== normalizeOffboardingAgentId(transferWizard.agent || {})),
+    [agents, transferWizard.agent],
+  )
+
   function handleInviteFormChange(key, value) {
     setInviteForm((previous) => ({ ...previous, [key]: value }))
   }
@@ -3130,46 +3794,6 @@ export function AgentsPage() {
     }
   }
 
-  async function handleResendInvite(agent) {
-    const inviteId = String(agent?.inviteId || '').trim()
-    if (!inviteId) {
-      setActionError('No invite record found for this agent.')
-      return
-    }
-
-    try {
-      setActionError('')
-      const invites = readAgentInvites()
-      const targetInvite = invites.find((invite) => String(invite?.id || '') === inviteId)
-      if (!targetInvite) {
-        throw new Error('Invite record not found.')
-      }
-      const sentInvite = markAgentInviteSent(inviteId)
-      await sendInviteNotifications(sentInvite)
-      setActionMessage(`Invite resent to ${targetInvite.email}.`)
-      await loadData()
-    } catch (resendError) {
-      setActionError(resendError?.message || 'Unable to resend invite.')
-    }
-  }
-
-  async function handleCopyInviteLink(agent) {
-    const token = String(agent?.inviteToken || '').trim()
-    if (!token) {
-      setActionError('Invite link is not available for this agent.')
-      return
-    }
-
-    const link = buildAgentInviteLink(token)
-    try {
-      await navigator.clipboard.writeText(link)
-      setActionMessage('Invite link copied.')
-      setActionError('')
-    } catch {
-      setActionError('Unable to copy invite link.')
-    }
-  }
-
   function openRoleEditor(agent) {
     setRoleEditTarget(agent)
     setRoleEditValue(String(agent?.role || 'agent').trim().toLowerCase() || 'agent')
@@ -3201,7 +3825,209 @@ export function AgentsPage() {
   }
 
   function openConfirm(type, agent) {
+    if (type === 'deactivate') {
+      void openOffboardingWizard(agent)
+      return
+    }
     setConfirmDialog({ open: true, type, agent })
+  }
+
+  async function loadOffboardingDiscovery(agent) {
+    if (!agent) return null
+    const organisationId = agent.organisationId || agentDirectory?.agency?.id || ''
+    setOffboardingLoading(true)
+    setOffboardingError('')
+    try {
+      const discovery = await discoverAgentOffboardingAssets({ organisationId, agent })
+      setOffboardingWizard((previous) => ({ ...previous, discovery }))
+      return discovery
+    } catch (discoveryError) {
+      const message = discoveryError?.message || 'Unable to scan this agent’s assets.'
+      setOffboardingError(message)
+      return null
+    } finally {
+      setOffboardingLoading(false)
+    }
+  }
+
+  async function openOffboardingWizard(agent) {
+    setActionError('')
+    setActionMessage('')
+    setOffboardingError('')
+    setOffboardingWizard({ open: true, agent, discovery: null })
+    await loadOffboardingDiscovery(agent)
+  }
+
+  function closeOffboardingWizard() {
+    if (offboardingExecuting) return
+    setOffboardingWizard({ open: false, agent: null, discovery: null })
+    setOffboardingError('')
+  }
+
+  async function handleOffboardingSubmit({ strategy, reason, appointmentAction, assets }) {
+    const agent = offboardingWizard.agent
+    if (!agent) return
+    try {
+      setOffboardingExecuting(true)
+      setOffboardingError('')
+      setActionError('')
+
+      if (offboardingWizard.discovery?.summary?.totalAssets) {
+        await executeAgentAssetReassignment({
+          organisationId: agent.organisationId || agentDirectory?.agency?.id || '',
+          agent,
+          assets,
+          strategy,
+          appointmentAction,
+          reason,
+          actor: profile,
+        })
+      }
+
+      if (agent.organisationUserId) {
+        await deactivateOrganisationUser(agent.organisationUserId)
+      } else {
+        setAgentStatus({
+          agentEmail: agent.email,
+          organisationId: agent.organisationId,
+          status: AGENT_INVITE_STATUS.REVOKED,
+        })
+      }
+
+      setActionMessage(`Agent offboarded. ${agent.name || agent.email || 'The agent'} has been deactivated after business assets were handled.`)
+      setOffboardingWizard({ open: false, agent: null, discovery: null })
+      await loadData()
+    } catch (offboardingFailure) {
+      setOffboardingError(offboardingFailure?.message || 'Unable to complete agent offboarding.')
+    } finally {
+      setOffboardingExecuting(false)
+    }
+  }
+
+  async function loadTransferDiscovery(agent) {
+    if (!agent) return null
+    const organisationId = agent.organisationId || agentDirectory?.agency?.id || ''
+    setTransferLoading(true)
+    setTransferError('')
+    try {
+      const discovery = await discoverAgentOffboardingAssets({ organisationId, agent })
+      setTransferWizard((previous) => ({ ...previous, discovery }))
+      return discovery
+    } catch (discoveryError) {
+      const message = discoveryError?.message || 'Unable to scan this agent’s source-agency assets.'
+      setTransferError(message)
+      return null
+    } finally {
+      setTransferLoading(false)
+    }
+  }
+
+  async function openTransferWizard(agent) {
+    setActionError('')
+    setActionMessage('')
+    setTransferError('')
+    setTransferWizard({ open: true, agent, discovery: null })
+    await loadTransferDiscovery(agent)
+  }
+
+  function closeTransferWizard() {
+    if (transferExecuting) return
+    setTransferWizard({ open: false, agent: null, discovery: null })
+    setTransferError('')
+  }
+
+  async function handleTransferSubmit({ assets, summary, retentionStrategy, destination, appointmentAction, reason }) {
+    const agent = transferWizard.agent
+    if (!agent) return
+
+    try {
+      setTransferExecuting(true)
+      setTransferError('')
+      setActionError('')
+
+      const sourceOrganisation = {
+        id: agent.organisationId || agentDirectory?.agency?.id || '',
+        name: agent.organisationName || agentDirectory?.agency?.name || 'Source agency',
+      }
+      let destinationOrganisation = destination?.organisation || null
+      if (destination?.mode === 'new') {
+        destinationOrganisation = createAgentOrganisation({
+          name: destination?.newOrganisationName,
+          createdByUserId: profile?.id || '',
+          createdByEmail: profile?.email || '',
+        })
+      }
+      if (!destinationOrganisation?.id && !destinationOrganisation?.name) {
+        throw new Error('Choose a destination agency before transferring this agent.')
+      }
+
+      const nameParts = String(agent.name || '').trim().split(/\s+/).filter(Boolean)
+      const firstName = agent.firstName || nameParts[0] || String(agent.email || '').split('@')[0] || 'Agent'
+      const surname = agent.surname || nameParts.slice(1).join(' ') || 'Transfer'
+      const destinationInvite = createAgentInvite({
+        firstName,
+        surname,
+        email: agent.email,
+        mobile: agent.phone || agent.mobile || '',
+        organisationId: destinationOrganisation.id,
+        organisationName: destinationOrganisation.name,
+        branchId: destination?.branch?.id || '',
+        office: destination?.branch?.name || '',
+        role: destination?.role || 'agent',
+        notes: `Agency transfer from ${sourceOrganisation.name}. ${reason || ''}`.trim(),
+        invitedByUserId: profile?.id || '',
+        invitedByEmail: profile?.email || '',
+        invitedByName: profile?.fullName || profile?.name || profile?.email || '',
+      })
+
+      await executeAgentTransferRetention({
+        organisationId: sourceOrganisation.id,
+        agent,
+        assets,
+        summary,
+        strategy: retentionStrategy,
+        appointmentAction,
+        reason,
+        actor: profile,
+        destinationOrganisation,
+        destinationInvite: destinationInvite.invite,
+      })
+
+      await sendInviteNotifications(destinationInvite.invite)
+      markAgentInviteSent(destinationInvite.invite.id)
+
+      if (agent.organisationUserId) {
+        await deactivateOrganisationUser(agent.organisationUserId)
+      } else {
+        setAgentStatus({
+          agentEmail: agent.email,
+          organisationId: agent.organisationId,
+          status: AGENT_INVITE_STATUS.REVOKED,
+        })
+      }
+
+      await recordAgentTransferMembershipTransition({
+        actor: profile,
+        agent,
+        sourceOrganisation,
+        destinationOrganisation,
+        destinationInvite: destinationInvite.invite,
+        reason,
+        oldMembershipDeactivated: true,
+      })
+
+      setActionMessage(`${agent.name || agent.email || 'Agent'} transferred. Source-agency assets were retained and a destination invite was sent.`)
+      setInviteSentContext({
+        email: destinationInvite.invite?.email || agent.email || '',
+        link: buildAgentInviteLink(destinationInvite.invite?.token),
+      })
+      setTransferWizard({ open: false, agent: null, discovery: null })
+      await loadData()
+    } catch (transferFailure) {
+      setTransferError(transferFailure?.message || 'Unable to complete agent transfer.')
+    } finally {
+      setTransferExecuting(false)
+    }
   }
 
   async function handleConfirmAction() {
@@ -3496,6 +4322,7 @@ export function AgentsPage() {
                       onView={() => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
                       onEditRole={() => openRoleEditor(agent)}
                       onDeactivate={() => openConfirm('deactivate', agent)}
+                      onTransfer={() => openTransferWizard(agent)}
                       onAssignLead={() => setActionMessage('Lead assignment opens from the lead pipeline workspace.')}
                     />
                   ))}
@@ -3507,6 +4334,7 @@ export function AgentsPage() {
                   onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
                   onEditRole={openRoleEditor}
                   onDeactivate={(agent) => openConfirm('deactivate', agent)}
+                  onTransfer={(agent) => openTransferWizard(agent)}
                 />
               ) : (
                 <AgentLeaderboardView
@@ -3622,6 +4450,42 @@ export function AgentsPage() {
               </Field>
             </label>
           </Modal>
+
+          {offboardingWizard.open ? (
+            <AgentOffboardingWizard
+              open={offboardingWizard.open}
+              agent={offboardingWizard.agent}
+              loading={offboardingLoading}
+              executing={offboardingExecuting}
+              error={offboardingError}
+              discovery={offboardingWizard.discovery}
+              candidateAgents={offboardingDestinationAgents}
+              onClose={closeOffboardingWizard}
+              onRefresh={() => loadOffboardingDiscovery(offboardingWizard.agent)}
+              onSubmit={handleOffboardingSubmit}
+            />
+          ) : null}
+
+          {transferWizard.open ? (
+            <AgentTransferWizard
+              open={transferWizard.open}
+              agent={transferWizard.agent}
+              loading={transferLoading}
+              executing={transferExecuting}
+              error={transferError}
+              discovery={transferWizard.discovery}
+              candidateAgents={transferRetentionAgents}
+              destinationOrganisations={organisationOptions}
+              branchOptions={inviteBranchOptions}
+              sourceOrganisation={{
+                id: transferWizard.agent?.organisationId || agentDirectory?.agency?.id || '',
+                name: transferWizard.agent?.organisationName || agentDirectory?.agency?.name || 'Current agency',
+              }}
+              onClose={closeTransferWizard}
+              onRefresh={() => loadTransferDiscovery(transferWizard.agent)}
+              onSubmit={handleTransferSubmit}
+            />
+          ) : null}
 
           <ConfirmDialog
             open={confirmDialog.open}

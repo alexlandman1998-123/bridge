@@ -209,6 +209,7 @@ export function getNavItemsForRole(role) {
 
 const AGENT_LEADERSHIP_KEYWORDS = ['principal', 'headquarters', 'hq', 'admin', 'branch manager', 'office manager']
 const MANAGEMENT_MEMBERSHIP_ROLES = new Set(['super_admin', 'principal', 'admin', 'branch_manager'])
+const SUPPORT_MEMBERSHIP_ROLES = new Set(['assistant', 'transaction_coordinator', 'listing_coordinator', 'admin_coordinator', 'admin_staff'])
 const BOND_HQ_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'hq_manager', 'manager', 'admin', 'admin_staff', 'bond_hq_admin', 'bond_hq_manager', 'national_manager', 'bond_national_manager', 'finance_manager', 'bond_finance_manager', 'finance', 'cfo', 'operations_manager', 'bond_operations_manager'])
 const BOND_REGIONAL_ROLES = new Set(['regional_manager', 'bond_regional_manager'])
 const BOND_BRANCH_ROLES = new Set(['branch_manager', 'bond_branch_manager', 'team_lead', 'bond_team_lead'])
@@ -331,6 +332,10 @@ function normalizeMembershipRole(value) {
   if (normalized === 'branch manager') return 'branch_manager'
   if (normalized === 'branch_admin') return 'branch_manager'
   if (normalized === 'principal / owner') return 'principal'
+  if (normalized === 'personal_assistant' || normalized === 'personal assistant' || normalized === 'pa') return 'assistant'
+  if (normalized === 'transaction coordinator') return 'transaction_coordinator'
+  if (normalized === 'listing coordinator' || normalized === 'marketing coordinator') return 'listing_coordinator'
+  if (normalized === 'admin coordinator' || normalized === 'receptionist') return 'admin_coordinator'
   return normalized
 }
 
@@ -455,10 +460,23 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     return items
   }
 
+  const normalizedMembershipRole = normalizeMembershipRole(membershipRole || profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role)
+  if (SUPPORT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {
+    return [
+      { key: 'assistant_dashboard', label: 'Dashboard', to: '/assistant/dashboard' },
+      { key: 'assistant_listings', label: 'Listings', to: '/listings', activeMatch: ['/listings', '/agent/listings'] },
+      { key: 'assistant_transactions', label: 'Transactions', to: '/transactions' },
+      { key: 'assistant_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
+      { key: 'assistant_documents', label: 'Documents', to: '/documents' },
+      { key: 'assistant_clients', label: 'Clients', to: '/clients' },
+    ]
+  }
+
   const canManageOrganisation = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
   if (!canManageOrganisation) {
     return items
   }
+  const isBranchManager = normalizedMembershipRole === 'branch_manager'
 
   return [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
@@ -483,13 +501,19 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     {
       key: 'agency',
       label: 'Agency',
-      to: '/agency/branches',
+      to: isBranchManager ? '/agency/branch-command-centre' : '/agency/branches',
       activeMatch: ['/agency', '/agents/reporting'],
       children: [
+        { key: 'agency_branch_command', label: 'Branch Command', to: '/agency/branch-command-centre' },
         { key: 'agency_branches', label: 'Branches', to: '/agency/branches' },
-        { key: 'agency_agents', label: 'Agents', to: '/agency/agents' },
-        { key: 'agency_analytics', label: 'Analytics', to: '/agency/analytics' },
-        { key: 'agents_reporting', label: 'Reports', to: '/agents/reporting' },
+        ...(!isBranchManager
+          ? [
+              { key: 'agency_agents', label: 'Agents', to: '/agency/agents' },
+              { key: 'agency_governance', label: 'Governance', to: '/agency/governance' },
+              { key: 'agency_analytics', label: 'Analytics', to: '/agency/analytics' },
+              { key: 'agents_reporting', label: 'Reports', to: '/agents/reporting' },
+            ]
+          : []),
       ],
     },
     { key: 'clients', label: 'Clients', to: '/clients' },

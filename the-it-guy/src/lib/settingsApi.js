@@ -44,6 +44,12 @@ import { assertPermission } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
 import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
 import { recordSecurityAuditEvent } from '../services/auditLogService'
+import {
+  AGENCY_AUTHORITY_ACTIONS,
+  assertAgencyAuthority,
+  classifyRoleTransition,
+  recordAgencyGovernanceAudit,
+} from '../services/agencyAuthorityService'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
 import { logUnsafeFallbackBlocked, resolveCurrentWorkspace, WorkspaceContextError } from '../services/workspaceResolutionService'
 import { assertMembershipStatusTransition } from '../services/transitions/stateTransitionEngine'
@@ -345,6 +351,29 @@ function assertOrganisationAdminAccess(context, actionLabel = 'perform this acti
     currentWorkspace: context?.organisation?.id ? { id: context.organisation.id, type: context?.organisation?.type || '' } : null,
     workspaceType: context?.organisation?.type || '',
   }, `You do not have permission to ${actionLabel}.`)
+}
+
+function getAuthorityActorFromContext(context = {}) {
+  return {
+    id: context?.profile?.id || '',
+    userId: context?.profile?.id || '',
+    email: context?.profile?.email || '',
+    role: context?.membershipRole || context?.profile?.role || 'viewer',
+    membershipRole: context?.membershipRole || 'viewer',
+    branchId: context?.membershipBranchId || context?.branchId || context?.profile?.branchId || '',
+  }
+}
+
+function getAuthorityTargetFromOrganisationUser(row = {}) {
+  return {
+    id: row?.id || '',
+    organisationUserId: row?.id || '',
+    userId: row?.user_id || row?.userId || '',
+    email: row?.email || '',
+    role: row?.role || row?.workspace_role || row?.organisation_role || 'viewer',
+    membershipRole: row?.role || row?.workspace_role || row?.organisation_role || 'viewer',
+    branchId: row?.branch_id || row?.primary_branch_id || '',
+  }
 }
 
 function isGenericDocumentLabel(value) {
@@ -1168,6 +1197,10 @@ function mapAgencyInviteRoleToOrganisationRole(role = '') {
   if (normalized === 'principal' || normalized === 'owner') return 'principal'
   if (normalized === 'administrator' || normalized === 'admin') return 'admin'
   if (normalized === 'branch_manager') return 'branch_manager'
+  if (normalized === 'assistant') return 'assistant'
+  if (normalized === 'transaction_coordinator') return 'transaction_coordinator'
+  if (normalized === 'listing_coordinator') return 'listing_coordinator'
+  if (normalized === 'admin_coordinator') return 'admin_coordinator'
   if (normalized === 'agent') return 'agent'
   return 'viewer'
 }
@@ -1177,9 +1210,17 @@ function normalizeOrganisationUserRole(role = '', fallback = 'viewer') {
   if (
     [
       'super_admin',
+      'owner',
       'principal',
       'admin',
       'branch_manager',
+      'team_lead',
+      'manager',
+      'senior_agent',
+      'assistant',
+      'transaction_coordinator',
+      'listing_coordinator',
+      'admin_coordinator',
       'developer',
       'agent',
       'attorney',
@@ -1574,13 +1615,32 @@ async function getAuthenticatedUser() {
 async function findActiveMembershipByUserId(client, userId) {
   const membershipQuery = await client
     .from('organisation_users')
-    .select('id, organisation_id, role, status, email')
+    .select('id, organisation_id, role, status, email, branch_id, primary_branch_id, branch_scope')
     .eq('user_id', userId)
     .neq('status', 'deactivated')
     .order('created_at', { ascending: true })
     .limit(1)
 
   if (membershipQuery.error) {
+    if (
+      isMissingColumnError(membershipQuery.error, 'branch_id') ||
+      isMissingColumnError(membershipQuery.error, 'primary_branch_id') ||
+      isMissingColumnError(membershipQuery.error, 'branch_scope')
+    ) {
+      const fallbackQuery = await client
+        .from('organisation_users')
+        .select('id, organisation_id, role, status, email')
+        .eq('user_id', userId)
+        .neq('status', 'deactivated')
+        .order('created_at', { ascending: true })
+        .limit(1)
+
+      if (fallbackQuery.error) {
+        throw fallbackQuery.error
+      }
+
+      return fallbackQuery.data?.[0] || null
+    }
     throw membershipQuery.error
   }
 
@@ -1649,10 +1709,36 @@ async function activatePendingInviteMembership(client, { userId, inviteRowId }) 
     })
     .eq('id', inviteRowId)
     .eq('status', 'invited')
-    .select('id, organisation_id, role, status, email')
+    .select('id, organisation_id, role, status, email, branch_id, primary_branch_id, branch_scope')
     .maybeSingle()
 
   if (fallbackResult.error) {
+    if (
+      isMissingColumnError(fallbackResult.error, 'branch_id') ||
+      isMissingColumnError(fallbackResult.error, 'primary_branch_id') ||
+      isMissingColumnError(fallbackResult.error, 'branch_scope')
+    ) {
+      const legacyResult = await client
+        .from('organisation_users')
+        .update({
+          user_id: userId,
+          status: 'active',
+          accepted_at: nowIso,
+        })
+        .eq('id', inviteRowId)
+        .eq('status', 'invited')
+        .select('id, organisation_id, role, status, email')
+        .maybeSingle()
+
+      if (legacyResult.error) {
+        if (rpcResult.error) {
+          throw rpcResult.error
+        }
+        throw legacyResult.error
+      }
+
+      return legacyResult.data || null
+    }
     if (rpcResult.error) {
       throw rpcResult.error
     }
@@ -1987,6 +2073,10 @@ async function ensureOrganisationContext(client) {
         organisationSettings: safeJson(insertSettings.data?.settings_json, DEFAULT_ORGANISATION_SETTINGS),
         membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
         membershipStatus: membership?.status || 'active',
+        membershipId: membership?.id || null,
+        membershipBranchId: membership?.branch_id || membership?.primary_branch_id || null,
+        membershipPrimaryBranchId: membership?.primary_branch_id || membership?.branch_id || null,
+        membershipBranchScope: membership?.branch_scope || null,
         onboardingMode: resolvedOnboardingMode,
         profile,
         persisted: !insertSettings.error,
@@ -1998,6 +2088,10 @@ async function ensureOrganisationContext(client) {
       organisationSettings: safeJson(settingsQuery.data.settings_json, DEFAULT_ORGANISATION_SETTINGS),
       membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
       membershipStatus: membership?.status || 'active',
+      membershipId: membership?.id || null,
+      membershipBranchId: membership?.branch_id || membership?.primary_branch_id || null,
+      membershipPrimaryBranchId: membership?.primary_branch_id || membership?.branch_id || null,
+      membershipBranchScope: membership?.branch_scope || null,
       onboardingMode: resolvedOnboardingMode,
       profile,
       persisted: true,
@@ -4025,6 +4119,18 @@ export async function inviteOrganisationUser(input = {}) {
     invitation_expires_at: resolveInviteExpiryIso(7),
   }
 
+  assertAgencyAuthority(
+    payload.role === 'principal' || payload.role === 'owner' || payload.role === 'super_admin'
+      ? AGENCY_AUTHORITY_ACTIONS.invitePrincipal
+      : AGENCY_AUTHORITY_ACTIONS.inviteAgent,
+    getAuthorityActorFromContext(context),
+    { email: payload.email, role: payload.role, branchId: payload.branch_id },
+    {
+      nextRole: payload.role,
+      message: 'You do not have authority to invite a user at this level.',
+    },
+  )
+
   let result = await upsertOrganisationUserInvite(client, payload)
   if (result.error && payload.role === 'branch_manager') {
     result = await upsertOrganisationUserInvite(client, { ...payload, role: 'agent' })
@@ -4061,10 +4167,33 @@ export async function updateOrganisationUserRole(userRowId, role) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
   assertOrganisationAdminAccess(context, 'manage organisation members')
+  const nextRole = normalizeOrganisationUserRole(role, 'viewer')
+
+  const existing = await client
+    .from('organisation_users')
+    .select('id, organisation_id, user_id, branch_id, email, role, status')
+    .eq('id', userRowId)
+    .eq('organisation_id', context.organisation.id)
+    .maybeSingle()
+  if (existing.error) throw existing.error
+  if (!existing.data?.id) throw new Error('Organisation user not found.')
+
+  const transitionType = classifyRoleTransition(existing.data.role, nextRole)
+  assertAgencyAuthority(
+    transitionType === 'promotion' ? AGENCY_AUTHORITY_ACTIONS.promoteUser : AGENCY_AUTHORITY_ACTIONS.demoteUser,
+    getAuthorityActorFromContext(context),
+    getAuthorityTargetFromOrganisationUser(existing.data),
+    {
+      nextRole,
+      message: transitionType === 'promotion'
+        ? 'You do not have authority to promote this organisation user.'
+        : 'You do not have authority to demote this organisation user.',
+    },
+  )
 
   const { data, error } = await client
     .from('organisation_users')
-    .update({ role: normalizeOrganisationUserRole(role, 'viewer') })
+    .update({ role: nextRole })
     .eq('id', userRowId)
     .eq('organisation_id', context.organisation.id)
     .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
@@ -4077,10 +4206,18 @@ export async function updateOrganisationUserRole(userRowId, role) {
   void recordSecurityAuditEvent({
     userId: context.profile?.id,
     workspaceId: context.organisation.id,
-    action: 'role_changed',
+    action: transitionType === 'promotion' ? 'agency_user_promoted' : transitionType === 'demotion' ? 'agency_user_demoted' : 'role_changed',
     targetType: 'organisation_user',
     targetId: userRowId,
-    metadata: { role: normalizeOrganisationUserRole(role, 'viewer') },
+    metadata: { previousRole: existing.data.role, role: nextRole, transitionType },
+  })
+  void recordAgencyGovernanceAudit({
+    actor: getAuthorityActorFromContext(context),
+    workspaceId: context.organisation.id,
+    action: transitionType === 'promotion' ? 'principal_promoted' : transitionType === 'demotion' ? 'agency_user_demoted' : 'agency_user_role_changed',
+    target: getAuthorityTargetFromOrganisationUser(data),
+    previousRole: existing.data.role,
+    nextRole,
   })
   organisationUsersCache = null
   return normalizeOrganisationUserRow(data)
@@ -4093,11 +4230,18 @@ export async function deactivateOrganisationUser(userRowId) {
 
   const existing = await client
     .from('organisation_users')
-    .select('id, status')
+    .select('id, organisation_id, user_id, branch_id, email, role, status')
     .eq('id', userRowId)
     .eq('organisation_id', context.organisation.id)
     .maybeSingle()
   if (existing.error) throw existing.error
+  if (!existing.data?.id) throw new Error('Organisation user not found.')
+  assertAgencyAuthority(
+    AGENCY_AUTHORITY_ACTIONS.deactivateAgent,
+    getAuthorityActorFromContext(context),
+    getAuthorityTargetFromOrganisationUser(existing.data),
+    { message: 'You do not have authority to deactivate this organisation user.' },
+  )
   assertMembershipStatusTransition(existing.data?.status, 'deactivated')
 
   const { data, error } = await client
@@ -4118,6 +4262,14 @@ export async function deactivateOrganisationUser(userRowId) {
     action: 'membership_deactivated',
     targetType: 'organisation_user',
     targetId: userRowId,
+  })
+  void recordAgencyGovernanceAudit({
+    actor: getAuthorityActorFromContext(context),
+    workspaceId: context.organisation.id,
+    action: 'agency_user_deactivated',
+    target: getAuthorityTargetFromOrganisationUser(existing.data),
+    previousRole: existing.data.role,
+    metadata: { previousStatus: existing.data.status, newStatus: 'deactivated' },
   })
   organisationUsersCache = null
   return normalizeOrganisationUserRow(data)

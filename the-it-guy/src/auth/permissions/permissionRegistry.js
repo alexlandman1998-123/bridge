@@ -226,6 +226,63 @@ function mergeGrants(...entries) {
 const readOnlyGeneral = grant(ACCESS_SCOPES.allWorkspace, GENERAL_READ)
 const allGeneral = grant(ACCESS_SCOPES.allWorkspace, [...GENERAL_READ, ...GENERAL_ADMIN])
 
+const ASSISTANT_SUPPORT_PERMISSIONS = [
+  PERMISSIONS.viewDashboard,
+  PERMISSIONS.viewAgencyDashboard,
+  PERMISSIONS.viewLeads,
+  PERMISSIONS.editLeads,
+  PERMISSIONS.viewListings,
+  PERMISSIONS.editListings,
+  PERMISSIONS.viewClients,
+  PERMISSIONS.editClients,
+  PERMISSIONS.viewTransactions,
+  PERMISSIONS.editTransactions,
+  PERMISSIONS.manageAppointments,
+  PERMISSIONS.requestDocuments,
+]
+
+const TRANSACTION_COORDINATOR_PERMISSIONS = [
+  PERMISSIONS.viewDashboard,
+  PERMISSIONS.viewAgencyDashboard,
+  PERMISSIONS.viewTransactions,
+  PERMISSIONS.editTransactions,
+  PERMISSIONS.advanceTransactionStage,
+  PERMISSIONS.viewClients,
+  PERMISSIONS.editClients,
+  PERMISSIONS.manageAppointments,
+  PERMISSIONS.requestDocuments,
+]
+
+const LISTING_COORDINATOR_PERMISSIONS = [
+  PERMISSIONS.viewDashboard,
+  PERMISSIONS.viewAgencyDashboard,
+  PERMISSIONS.viewListings,
+  PERMISSIONS.createListings,
+  PERMISSIONS.editListings,
+  PERMISSIONS.publishListings,
+  PERMISSIONS.viewClients,
+  PERMISSIONS.editClients,
+  PERMISSIONS.manageAppointments,
+  PERMISSIONS.requestDocuments,
+]
+
+const ADMIN_COORDINATOR_PERMISSIONS = [
+  PERMISSIONS.viewDashboard,
+  PERMISSIONS.viewAgencyDashboard,
+  PERMISSIONS.viewLeads,
+  PERMISSIONS.createLeads,
+  PERMISSIONS.editLeads,
+  PERMISSIONS.viewListings,
+  PERMISSIONS.editListings,
+  PERMISSIONS.viewClients,
+  PERMISSIONS.createClients,
+  PERMISSIONS.editClients,
+  PERMISSIONS.viewTransactions,
+  PERMISSIONS.editTransactions,
+  PERMISSIONS.manageAppointments,
+  PERMISSIONS.requestDocuments,
+]
+
 export const permissionsByWorkspaceRole = Object.freeze({
   [WORKSPACE_TYPES.agency]: Object.freeze({
     [ORG_ROLES.owner]: mergeGrants(allGeneral, grant(ACCESS_SCOPES.allWorkspace, AGENCY_PERMISSIONS)),
@@ -238,6 +295,10 @@ export const permissionsByWorkspaceRole = Object.freeze({
       grant(ACCESS_SCOPES.branchOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.createLeads, PERMISSIONS.editLeads, PERMISSIONS.assignLeads, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.viewClients, PERMISSIONS.createClients, PERMISSIONS.editClients, PERMISSIONS.viewTransactions, PERMISSIONS.createTransactions, PERMISSIONS.editTransactions, PERMISSIONS.manageAppointments, PERMISSIONS.viewReports]),
     ),
     [ORG_ROLES.agent]: grant(ACCESS_SCOPES.assignedOnly, [PERMISSIONS.viewDashboard, PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.createLeads, PERMISSIONS.editLeads, PERMISSIONS.viewListings, PERMISSIONS.createListings, PERMISSIONS.editListings, PERMISSIONS.viewClients, PERMISSIONS.createClients, PERMISSIONS.editClients, PERMISSIONS.viewTransactions, PERMISSIONS.createTransactions, PERMISSIONS.editTransactions, PERMISSIONS.manageAppointments]),
+    [ORG_ROLES.assistant]: grant(ACCESS_SCOPES.assignedOnly, ASSISTANT_SUPPORT_PERMISSIONS),
+    [ORG_ROLES.transactionCoordinator]: grant(ACCESS_SCOPES.branchOnly, TRANSACTION_COORDINATOR_PERMISSIONS),
+    [ORG_ROLES.listingCoordinator]: grant(ACCESS_SCOPES.branchOnly, LISTING_COORDINATOR_PERMISSIONS),
+    [ORG_ROLES.adminCoordinator]: grant(ACCESS_SCOPES.branchOnly, ADMIN_COORDINATOR_PERMISSIONS),
     [ORG_ROLES.adminStaff]: mergeGrants(readOnlyGeneral, grant(ACCESS_SCOPES.branchOnly, [PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.createLeads, PERMISSIONS.editLeads, PERMISSIONS.viewListings, PERMISSIONS.viewClients, PERMISSIONS.createClients, PERMISSIONS.editClients, PERMISSIONS.viewTransactions, PERMISSIONS.manageAppointments])),
     [ORG_ROLES.viewer]: mergeGrants(readOnlyGeneral, grant(ACCESS_SCOPES.assignedOnly, [PERMISSIONS.viewAgencyDashboard, PERMISSIONS.viewLeads, PERMISSIONS.viewListings, PERMISSIONS.viewClients, PERMISSIONS.viewTransactions])),
   }),

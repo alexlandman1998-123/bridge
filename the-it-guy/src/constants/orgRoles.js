@@ -18,6 +18,10 @@ export const ORG_ROLES = Object.freeze({
   processor: 'processor',
   compliance: 'compliance',
   agent: 'agent',
+  assistant: 'assistant',
+  transactionCoordinator: 'transaction_coordinator',
+  listingCoordinator: 'listing_coordinator',
+  adminCoordinator: 'admin_coordinator',
   adminStaff: 'admin_staff',
   paralegal: 'paralegal',
   viewer: 'viewer',
@@ -54,6 +58,10 @@ export function normalizeOrgRole(value, { appRole = '', workspaceType = '' } = {
   if (normalized === 'hq manager') return ORG_ROLES.hqManager
   if (normalized === 'regional manager') return ORG_ROLES.regionalManager
   if (normalized === 'team lead') return ORG_ROLES.teamLead
+  if (normalized === 'personal_assistant' || normalized === 'personal assistant' || normalized === 'pa') return ORG_ROLES.assistant
+  if (normalized === 'transaction coordinator' || normalized === 'transaction_coordination') return ORG_ROLES.transactionCoordinator
+  if (normalized === 'listing coordinator' || normalized === 'listing_coordination' || normalized === 'marketing coordinator') return ORG_ROLES.listingCoordinator
+  if (normalized === 'admin coordinator' || normalized === 'administrator coordinator' || normalized === 'receptionist') return ORG_ROLES.adminCoordinator
   if (normalized === 'bond_hq_admin' || normalized === 'bond hq admin' || normalized === 'national_admin') return ORG_ROLES.hqManager
   if (normalized === 'bond_hq_manager' || normalized === 'bond hq manager' || normalized === 'national_manager') return ORG_ROLES.hqManager
   if (normalized === 'bond_regional_manager' || normalized === 'bond regional manager') return ORG_ROLES.regionalManager

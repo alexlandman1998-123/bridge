@@ -21,6 +21,10 @@ export const AGENCY_ORGANISATION_TYPE_OPTIONS = [
 
 export const AGENCY_INVITE_ROLE_OPTIONS = [
   { value: 'agent', label: 'Agent' },
+  { value: 'assistant', label: 'Assistant' },
+  { value: 'transaction_coordinator', label: 'Transaction Coordinator' },
+  { value: 'listing_coordinator', label: 'Listing Coordinator' },
+  { value: 'admin_coordinator', label: 'Admin Coordinator' },
   { value: 'branch_manager', label: 'Branch Manager' },
   { value: 'administrator', label: 'Administrator' },
 ]

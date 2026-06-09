@@ -34,6 +34,7 @@ import { linkUploadedDocumentToRequirement } from './documents/canonicalDocument
 import { resolveRequirements } from './documents/canonicalDocumentResolverService'
 import { canAdvanceWorkflowStage } from './documents/canonicalWorkflowGateService'
 import { buildSellerResolverInputFromFacts } from './documents/sellerOnboardingFactTransformer'
+import { buildSellerOnboardingPublicationDraft, mergePublicationDraft } from './sellerListingPublicationMapper'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -1922,6 +1923,88 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
   }
 }
 
+function mapPublicationRowToDraft(row = {}) {
+  return {
+    title: row.title,
+    address: row.address,
+    suburb: row.suburb,
+    province: row.province,
+    propertyType: row.property_type,
+    listingType: row.listing_type,
+    askingPrice: row.asking_price,
+    bedrooms: row.bedrooms,
+    bathrooms: row.bathrooms,
+    garages: row.garages,
+    parkingBays: row.parking_bays,
+    floorSize: row.floor_size,
+    erfSize: row.erf_size,
+    ratesTaxes: row.rates_taxes,
+    levies: row.levies,
+    description: row.description,
+    features: Array.isArray(row.features) ? row.features : [],
+    amenities: Array.isArray(row.amenities) ? row.amenities : [],
+    status: row.status,
+  }
+}
+
+function mapPublicationDraftToRow(listingId, draft = {}) {
+  return {
+    listing_id: listingId,
+    title: normalizeNullableText(draft.title),
+    address: normalizeNullableText(draft.address),
+    suburb: normalizeNullableText(draft.suburb),
+    province: normalizeNullableText(draft.province),
+    property_type: normalizeNullableText(draft.propertyType),
+    listing_type: normalizeText(draft.listingType) === 'Rental' ? 'Rental' : 'Sale',
+    asking_price: normalizeNumber(draft.askingPrice),
+    bedrooms: normalizeNumber(draft.bedrooms),
+    bathrooms: normalizeNumber(draft.bathrooms),
+    garages: normalizeNumber(draft.garages),
+    parking_bays: normalizeNumber(draft.parkingBays),
+    floor_size: normalizeNumber(draft.floorSize),
+    erf_size: normalizeNumber(draft.erfSize),
+    rates_taxes: normalizeNumber(draft.ratesTaxes),
+    levies: normalizeNumber(draft.levies),
+    description: normalizeNullableText(draft.description),
+    features: Array.isArray(draft.features) ? draft.features : [],
+    amenities: Array.isArray(draft.amenities) ? draft.amenities : [],
+    status: ['Draft', 'Ready', 'Published', 'Archived'].includes(normalizeText(draft.status))
+      ? normalizeText(draft.status)
+      : 'Draft',
+  }
+}
+
+async function syncSellerOnboardingPublicationDraft(client, { listing = {}, formData = {} } = {}) {
+  const listingId = normalizeUuid(listing?.id)
+  if (!listingId) return { skipped: true, reason: 'listing_id_missing' }
+  const { facts } = getCanonicalSellerPayloadFromFormData(formData)
+  const draft = buildSellerOnboardingPublicationDraft({
+    listing,
+    formData,
+    canonicalFacts: facts || listing?.sellerCanonicalFacts || listing?.canonicalFacts || {},
+  })
+
+  const existing = await client
+    .from('listing_publication_data')
+    .select('title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, features, amenities, status')
+    .eq('listing_id', listingId)
+    .maybeSingle()
+  if (existing.error && !isMissingTableError(existing.error, 'listing_publication_data')) throw existing.error
+  if (isMissingTableError(existing.error, 'listing_publication_data')) return { skipped: true, reason: 'distribution_tables_missing' }
+
+  const merged = mergePublicationDraft(mapPublicationRowToDraft(existing.data || {}), draft)
+  const upsert = await client
+    .from('listing_publication_data')
+    .upsert(mapPublicationDraftToRow(listingId, merged), { onConflict: 'listing_id' })
+    .select('*')
+    .single()
+  if (upsert.error) {
+    if (isMissingTableError(upsert.error, 'listing_publication_data')) return { skipped: true, reason: 'distribution_tables_missing' }
+    throw upsert.error
+  }
+  return { skipped: false, publication: upsert.data }
+}
+
 export async function getPrivateListing(listingId, options = {}) {
   return getPrivateListingById(listingId, options)
 }
@@ -2636,6 +2719,13 @@ export async function submitSellerOnboarding(token, payload = {}) {
       console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding submit', factError)
       return null
     })
+    await syncSellerOnboardingPublicationDraft(client, {
+      listing: rpcContext.listing,
+      formData: payload.formData,
+    }).catch((publicationError) => {
+      console.warn('[Private Listings] seller onboarding publication draft sync skipped after onboarding submit', publicationError)
+      return null
+    })
     void maybeResolveCanonicalSellerRequirements({
       listing: rpcContext.listing,
       formData: payload.formData,
@@ -2770,6 +2860,13 @@ export async function submitSellerOnboarding(token, payload = {}) {
     formData: nextFormData,
   }).catch((factError) => {
     console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback submit', factError)
+    return null
+  })
+  await syncSellerOnboardingPublicationDraft(client, {
+    listing: listingForContext,
+    formData: nextFormData,
+  }).catch((publicationError) => {
+    console.warn('[Private Listings] seller onboarding publication draft sync skipped after onboarding fallback submit', publicationError)
     return null
   })
   void maybeResolveCanonicalSellerRequirements({

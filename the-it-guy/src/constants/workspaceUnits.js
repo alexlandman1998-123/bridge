@@ -45,6 +45,9 @@ const BRANCH_AUTHORITY_ROLES = new Set([
   ORG_ROLES.processor,
   ORG_ROLES.paralegal,
   ORG_ROLES.consultant,
+  ORG_ROLES.transactionCoordinator,
+  ORG_ROLES.listingCoordinator,
+  ORG_ROLES.adminCoordinator,
 ])
 
 const BOND_SCOPE_FALLBACK_BY_ROLE = Object.freeze({

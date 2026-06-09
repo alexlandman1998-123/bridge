@@ -50,6 +50,10 @@ export function getReportingRoleLabel(role = '') {
     manager: 'Manager',
     sales_manager: 'Sales Manager',
     development_manager: 'Development Manager',
+    assistant: 'Assistant',
+    transaction_coordinator: 'Transaction Coordinator',
+    listing_coordinator: 'Listing Coordinator',
+    admin_coordinator: 'Admin Coordinator',
     admin_staff: 'Admin Staff',
     viewer: 'Viewer',
   }

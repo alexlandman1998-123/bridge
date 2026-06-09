@@ -3,7 +3,7 @@ import { buildRoleHeadcount } from '../lib/reportingRoleLogic'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { assertPermission } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
-import { getWorkspaceUnitLabels } from '../constants/workspaceUnits'
+import { BRANCH_SCOPES, getWorkspaceUnitLabels, normalizeBranchScope } from '../constants/workspaceUnits'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { recordSecurityAuditEvent } from './auditLogService'
 import { assertMembershipStatusTransition } from './transitions/stateTransitionEngine'
@@ -68,29 +68,80 @@ async function resolveOrganisationContext() {
     profile: context?.profile || null,
     membershipRole: normalizeLower(context?.membershipRole || 'viewer'),
     membershipStatus: normalizeLower(context?.membershipStatus || 'pending'),
+    membershipId: normalizeText(context?.membershipId),
+    membershipBranchId: normalizeText(context?.membershipBranchId || context?.membershipPrimaryBranchId),
+    membershipPrimaryBranchId: normalizeText(context?.membershipPrimaryBranchId || context?.membershipBranchId),
+    membershipBranchScope: normalizeBranchScope(context?.membershipBranchScope, ''),
     workspaceType: normalizeLower(organisation?.type || WORKSPACE_TYPES.agency) || WORKSPACE_TYPES.agency,
     workspaceKind: normalizeLower(organisation?.workspaceKind || organisation?.workspace_kind || organisation?.type || WORKSPACE_TYPES.agency),
   }
 }
 
-function assertBranchManagementAccess(context, action = 'manage branches') {
-  const labels = getWorkspaceUnitLabels(context?.workspaceType || WORKSPACE_TYPES.agency)
-  assertPermission(PERMISSIONS.manageBranches, {
+function buildBranchPermissionContext(context = {}) {
+  return {
     profile: context?.profile,
     appRole: context?.profile?.role || 'agent',
     organisationRole: context?.membershipRole,
+    branchScope: context?.membershipBranchScope,
+    branchId: context?.membershipBranchId,
+    primaryBranchId: context?.membershipPrimaryBranchId,
     membershipStatus: context?.membershipStatus,
     currentMembership: {
-      id: context?.organisationId || 'agency-membership',
+      id: context?.membershipId || context?.organisationId || 'agency-membership',
       role: context?.membershipRole,
       status: context?.membershipStatus || 'active',
       workspaceType: context?.workspaceType || WORKSPACE_TYPES.agency,
       workspaceId: context?.organisationId,
+      branch_id: context?.membershipBranchId || null,
+      primary_branch_id: context?.membershipPrimaryBranchId || context?.membershipBranchId || null,
+      branch_scope: context?.membershipBranchScope || null,
       workspace: { id: context?.organisationId, type: context?.workspaceType || WORKSPACE_TYPES.agency },
     },
     currentWorkspace: { id: context?.organisationId, type: context?.workspaceType || WORKSPACE_TYPES.agency },
     workspaceType: context?.workspaceType || WORKSPACE_TYPES.agency,
-  }, `You do not have permission to ${action || `manage ${labels.plural.toLowerCase()}`}.`)
+  }
+}
+
+function canResolvePermission(permission, context) {
+  try {
+    assertPermission(permission, buildBranchPermissionContext(context), 'permission_check')
+    return true
+  } catch {
+    return false
+  }
+}
+
+function assertBranchManagementAccess(context, action = 'manage branches') {
+  const labels = getWorkspaceUnitLabels(context?.workspaceType || WORKSPACE_TYPES.agency)
+  assertPermission(
+    PERMISSIONS.manageBranches,
+    buildBranchPermissionContext(context),
+    `You do not have permission to ${action || `manage ${labels.plural.toLowerCase()}`}.`,
+  )
+}
+
+function assertBranchOperationalAccess(context, action = 'operate this branch') {
+  if (
+    canResolvePermission(PERMISSIONS.manageBranches, context) ||
+    canResolvePermission(PERMISSIONS.manageUsers, context) ||
+    canResolvePermission(PERMISSIONS.assignLeads, context)
+  ) {
+    return true
+  }
+
+  throw new Error(`You do not have permission to ${action}.`)
+}
+
+function hasAllBranchAccess(context = {}) {
+  return ['owner', 'principal', 'super_admin', 'admin'].includes(normalizeLower(context?.membershipRole)) ||
+    normalizeBranchScope(context?.membershipBranchScope, '') === BRANCH_SCOPES.allBranches
+}
+
+function filterBranchesForContext(branches = [], context = {}) {
+  if (hasAllBranchAccess(context)) return branches
+  const assignedBranchId = normalizeText(context?.membershipBranchId || context?.membershipPrimaryBranchId)
+  if (!assignedBranchId) return []
+  return branches.filter((branch) => normalizeText(branch?.id) === assignedBranchId)
 }
 
 async function listOrganisationBranches(client, organisationId) {
@@ -314,7 +365,7 @@ export async function getBranches() {
   }
 
   const context = await resolveOrganisationContext()
-  assertBranchManagementAccess(context, 'create branches')
+  assertBranchOperationalAccess(context, 'view branch operations')
   const { organisationId } = context
   const [branches, members, transactions, listings, leads] = await Promise.all([
     listOrganisationBranches(supabase, organisationId),
@@ -326,7 +377,7 @@ export async function getBranches() {
 
   const membersByBranchId = new Map()
   for (const member of members) {
-    const branchId = normalizeText(member?.branch_id)
+    const branchId = normalizeText(member?.branch_id || member?.primary_branch_id)
     if (!branchId) continue
     if (!membersByBranchId.has(branchId)) {
       membersByBranchId.set(branchId, [])
@@ -334,7 +385,7 @@ export async function getBranches() {
     membersByBranchId.get(branchId).push(member)
   }
 
-  return branches.map((branch) =>
+  return filterBranchesForContext(branches, context).map((branch) =>
     buildBranchViewModel(branch, {
       members: membersByBranchId.get(normalizeText(branch?.id)) || [],
       transactions,
@@ -497,7 +548,7 @@ export async function inviteBranchMember(payload = {}) {
   }
 
   const context = await resolveOrganisationContext()
-  assertBranchManagementAccess(context, 'invite branch members')
+  assertBranchOperationalAccess(context, 'invite branch members')
   const { organisationId } = context
   const email = normalizeLower(payload?.email)
   const branchId = normalizeText(payload?.branchId)
@@ -508,6 +559,9 @@ export async function inviteBranchMember(payload = {}) {
   }
   if (!branchId) {
     throw new Error('Branch is required for member invite.')
+  }
+  if (!hasAllBranchAccess(context) && branchId !== normalizeText(context?.membershipBranchId || context?.membershipPrimaryBranchId)) {
+    throw new Error('You can only invite members to your assigned branch.')
   }
   const existingInvite = await supabase
     .from('organisation_users')
