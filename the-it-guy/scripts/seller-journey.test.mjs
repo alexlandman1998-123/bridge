@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {
+  buildSellerDocuments,
   buildSellerJourney,
   getSellerJourneyMetrics,
   getSellerJourneyStage,
@@ -82,12 +83,15 @@ const baseLead = {
       sellerOnboarding: { token: 'seller-token-1', status: 'sent' },
     },
   })
-  assert.equal(journey.stage.key, 'listing_created')
+  assert.equal(journey.stage.key, 'contacted')
+  assert.equal(journey.listingCreated, false)
   assert.equal(journey.mandateStatus, 'not_started')
   assert.equal(journey.kpis.find((item) => item.key === 'mandate').value, 'Not started')
+  assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Not created')
   assert.equal(journey.sellerPortalStatus, 'Sent')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_sent').state, 'upcoming')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'upcoming')
   assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, true)
 }
 
@@ -109,10 +113,14 @@ const baseLead = {
       sellerOnboarding: { token: 'seller-token-2', status: 'sent' },
     },
   })
+  assert.equal(journey.stage.key, 'contacted')
+  assert.equal(journey.listingCreated, false)
   assert.equal(journey.mandateStatus, 'not_started')
   assert.equal(journey.kpis.find((item) => item.key === 'mandate').value, 'Not started')
+  assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Not created')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_sent').state, 'upcoming')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
+  assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'upcoming')
 }
 
 {
@@ -162,6 +170,59 @@ const baseLead = {
   assert.equal(journey.documentsOutstanding, 0)
   assert.equal(journey.documents.find((item) => item.label === 'Seller ID Document').status, 'Uploaded')
   assert.equal(journey.documents.find((item) => item.label === 'Rates Account').status, 'Approved')
+}
+
+{
+  const documents = buildSellerDocuments({
+    listing: {
+      id: 'listing-company-docs',
+      listingStatus: 'onboarding_sent',
+      sellerOnboardingStatus: 'completed',
+      sellerOnboarding: {
+        status: 'completed',
+        formData: {
+          ownershipType: 'company',
+          companyName: 'Testing Seller Pty Ltd',
+          companyDirectorName: 'Alex Director',
+        },
+      },
+      documents: [
+        {
+          id: 'doc-company-resolution',
+          document_type: 'company_resolution',
+          document_name: 'Company resolution.pdf',
+          status: 'uploaded',
+          storage_path: 'seller-portal/listing-company-docs/company-resolution.pdf',
+        },
+      ],
+    },
+  })
+  assert.equal(documents.some((item) => item.label === 'Company Registration Documents'), true)
+  assert.equal(documents.find((item) => item.label === 'Company Resolution').status, 'Uploaded')
+  assert.equal(documents.some((item) => item.label === 'Trust Deed'), false)
+}
+
+{
+  const documents = buildSellerDocuments({
+    listing: {
+      id: 'listing-multiple-owner-docs',
+      listingStatus: 'onboarding_completed',
+      sellerOnboardingStatus: 'completed',
+      sellerOnboarding: {
+        status: 'completed',
+        formData: {
+          ownershipType: 'multiple_individuals',
+          multipleOwners: [
+            { id: 'owner-a', name: 'Alex', surname: 'Owner', maritalRegime: 'single' },
+            { id: 'owner-b', name: 'Taylor', surname: 'Owner', maritalRegime: 'married_in_community' },
+          ],
+        },
+      },
+    },
+  })
+  assert.equal(documents.some((item) => item.label === 'Owner 1 ID Document / Passport'), true)
+  assert.equal(documents.some((item) => item.label === 'Owner 2 Proof Of Address'), true)
+  assert.equal(documents.some((item) => item.label === 'Owner 2 Marriage Certificate'), true)
 }
 
 {

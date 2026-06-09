@@ -1,4 +1,8 @@
 import { inferLeadCategoryFromRecord } from '../lib/leadCategory.js'
+import {
+  buildSellerRequirementProfile,
+  generateSellerDocumentRequirements,
+} from '../lib/sellerDocumentRequirementEngine.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -44,6 +48,7 @@ export const SELLER_JOURNEY_STAGES = [
 
 const STAGE_INDEX = new Map(SELLER_JOURNEY_STAGES.map((stage, index) => [stage.key, index]))
 const SELLER_ONBOARDING_SUBMITTED_STATUSES = new Set(['submitted', 'completed', 'complete', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'])
+const LISTING_CREATED_STATUS_KEYS = new Set(['mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'])
 
 function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
@@ -195,16 +200,26 @@ function isListingLive(listing = {}) {
   )
 }
 
-function hasListingCreated({ lead = {}, listing = {} } = {}) {
+function listingHasCreationLifecycle(listing = {}) {
+  const status = normalizeKey(listing?.listingStatus || listing?.listing_status || listing?.status || listing?.lifecycleStatus || listing?.lifecycle_status)
+  return isListingLive(listing) || LISTING_CREATED_STATUS_KEYS.has(status)
+}
+
+function hasListingShell({ lead = {}, listing = {} } = {}) {
   if (listing && readListingId(listing)) return listingBelongsToLead(listing, lead) || Boolean(firstPresent(lead?.listingId, lead?.listing_id))
   return Boolean(firstPresent(lead?.listingId, lead?.listing_id, lead?.privateListingId, lead?.private_listing_id))
+}
+
+function hasListingCreated({ lead = {}, listing = {}, mandateStatus = '' } = {}) {
+  if (!hasListingShell({ lead, listing })) return false
+  return listingHasCreationLifecycle(listing || lead) || mandateStatus === 'signed'
 }
 
 export function getSellerJourneyStage({ lead = {}, appointments = [], listing = null, mandatePacketStatus = null, mandatePacket = null } = {}) {
   if (!isSellerLead(lead)) return null
   const valuationAppointment = findValuationAppointment(appointments)
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
-  const listingCreated = hasListingCreated({ lead, listing })
+  const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
 
   if (listingCreated && isListingLive(listing || lead)) return { ...SELLER_JOURNEY_STAGES[5], status: 'Live' }
   if (listingCreated) return { ...SELLER_JOURNEY_STAGES[4], status: 'Draft' }
@@ -391,6 +406,17 @@ function requirementSignals(requirement = {}) {
   ].map(normalizeKey).filter(Boolean)
 }
 
+function requirementIdentity(requirement = {}) {
+  return firstPresent(
+    requirement?.requirementKey,
+    requirement?.requirement_key,
+    requirement?.key,
+    requirement?.canonicalRequirementInstanceId,
+    requirement?.canonical_requirement_instance_id,
+    normalizeRequirementLabel(requirement),
+  ).toLowerCase()
+}
+
 function requirementIsActive(requirement = {}) {
   const status = normalizeKey(requirement?.status || requirement?.requiredDocumentStatus || requirement?.required_document_status)
   return requirement?.isRequired !== false &&
@@ -450,13 +476,74 @@ function normalizeSellerDocumentRow(document = {}, index = 0, overrides = {}) {
   }
 }
 
+function onboardingFactsForListing(listing = {}) {
+  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || {}
+  return onboarding?.formData ||
+    onboarding?.form_data ||
+    listing?.sellerOnboardingFormData ||
+    listing?.seller_onboarding_form_data ||
+    {}
+}
+
+function hasSellerOnboardingFacts(listing = {}) {
+  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || {}
+  const formData = onboardingFactsForListing(listing)
+  return Boolean(
+    (formData && typeof formData === 'object' && Object.keys(formData).length) ||
+      firstPresent(
+        listing?.sellerType,
+        listing?.seller_type,
+        listing?.ownershipStructure,
+        listing?.ownership_structure,
+        onboarding?.sellerType,
+        onboarding?.seller_type,
+        onboarding?.ownershipStructure,
+        onboarding?.ownership_structure,
+      ),
+  )
+}
+
+function deriveSellerDocumentRequirements(listing = {}) {
+  if (!hasSellerOnboardingFacts(listing)) return []
+  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || {}
+  const formData = onboardingFactsForListing(listing)
+  const currentStatus = normalizeKey(listing?.listingStatus || listing?.listing_status || listing?.status || listing?.lifecycleStatus || listing?.lifecycle_status)
+  const listingForRequirements = {
+    ...listing,
+    listingStatus: ['seller_lead', 'onboarding_sent'].includes(currentStatus) ? 'onboarding_completed' : listing?.listingStatus || listing?.listing_status || listing?.status,
+    sellerOnboardingStatus: firstPresent(listing?.sellerOnboardingStatus, listing?.seller_onboarding_status, onboarding?.status) || 'completed',
+    sellerOnboarding: {
+      ...onboarding,
+      status: firstPresent(onboarding?.status, listing?.sellerOnboardingStatus, listing?.seller_onboarding_status) || 'completed',
+      formData,
+    },
+  }
+  const profile = buildSellerRequirementProfile(listingForRequirements)
+  return generateSellerDocumentRequirements(profile).filter(requirementIsActive)
+}
+
+function mergeSellerDocumentRequirements(...requirementLists) {
+  const merged = []
+  const seen = new Set()
+  for (const requirement of requirementLists.flat()) {
+    if (!requirementIsActive(requirement)) continue
+    const identity = requirementIdentity(requirement)
+    if (identity && seen.has(identity)) continue
+    if (identity) seen.add(identity)
+    merged.push(requirement)
+  }
+  return merged
+}
+
 export function buildSellerDocuments({ listing = {}, documents = [] } = {}) {
   const existingDocs = [
     ...(Array.isArray(documents) ? documents : []),
     ...(Array.isArray(listing?.documents) ? listing.documents : []),
   ]
-  const activeRequirements = (Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : [])
-    .filter(requirementIsActive)
+  const activeRequirements = mergeSellerDocumentRequirements(
+    Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : [],
+    deriveSellerDocumentRequirements(listing),
+  )
   if (activeRequirements.length) {
     const matchedIndexes = new Set()
     const requirementRows = activeRequirements.map((requirement, index) => {
@@ -553,7 +640,7 @@ export function buildSellerJourney({ lead = {}, contact = {}, appointments = [],
   const stage = getSellerJourneyStage({ lead, appointments, listing, mandatePacketStatus, mandatePacket }) || { key: 'contacted', label: 'Contacted', status: '' }
   const valuationAppointment = findValuationAppointment(appointments)
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
-  const listingCreated = hasListingCreated({ lead, listing })
+  const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
   const listingLive = listingCreated && isListingLive(listing || lead)
   const evidence = {
     contacted: isSellerLead(lead),

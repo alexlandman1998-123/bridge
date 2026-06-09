@@ -117,6 +117,35 @@ function mapSellerRequiredDocument(requirement = {}) {
   }
 }
 
+function sellerRequirementIdentity(requirement = {}) {
+  return String(
+    requirement?.key ||
+      requirement?.requirement_key ||
+      requirement?.document_key ||
+      requirement?.canonicalRequirementInstanceId ||
+      requirement?.canonical_requirement_instance_id ||
+      requirement?.label ||
+      requirement?.requirement_name ||
+      requirement?.name ||
+      '',
+  )
+    .trim()
+    .toLowerCase()
+}
+
+function mergeSellerRequiredDocuments(...requirementLists) {
+  const merged = []
+  const seen = new Set()
+  for (const requirement of requirementLists.flat()) {
+    if (!requirement || typeof requirement !== 'object') continue
+    const identity = sellerRequirementIdentity(requirement)
+    if (identity && seen.has(identity)) continue
+    if (identity) seen.add(identity)
+    merged.push(requirement)
+  }
+  return merged
+}
+
 function mapSellerUploadedDocument(document = {}) {
   return {
     ...document,
@@ -372,22 +401,26 @@ function resolveSellerPortalWorkflowStage(listing = {}, onboarding = {}, status 
 
 function getSellerRequiredDocuments(listing = {}, formData = {}) {
   const persisted = Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []
-  if (persisted.length) return persisted
+  const hasOnboardingFacts =
+    formData && typeof formData === 'object' && Object.keys(formData).length > 0
   try {
-    return generateSellerDocumentRequirements({
-      ...listing,
-      sellerOnboarding: {
-        ...(listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object' ? listing.sellerOnboarding : {}),
-        status: listing?.sellerOnboardingStatus || 'completed',
-        formData,
-      },
-    })
+    const derived = (!persisted.length || hasOnboardingFacts)
+      ? generateSellerDocumentRequirements({
+          ...listing,
+          sellerOnboarding: {
+            ...(listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object' ? listing.sellerOnboarding : {}),
+            status: listing?.sellerOnboardingStatus || 'completed',
+            formData,
+          },
+        })
+      : []
+    return mergeSellerRequiredDocuments(persisted, derived)
   } catch (error) {
     console.warn('[client-portal-documents] Failed to derive seller document requirements', {
       listingId: listing?.id || null,
       error,
     })
-    return []
+    return persisted
   }
 }
 

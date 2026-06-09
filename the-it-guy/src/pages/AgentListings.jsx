@@ -626,13 +626,23 @@ function buildQuickListingNotes(form, completeness, mandateStatus) {
   return [...humanNotes, serializeQuickListingMetadata(metadata)].join('\n')
 }
 
-function resolveQuickListingStatus(form) {
-  return normalizeKey(form.listingStatus) === 'active' ? 'active' : 'listing_review'
+function hasQuickListingSignedMandate(form = {}) {
+  return Boolean(form?.mandateSigned && normalizeText(form?.manualMandateFileName))
 }
 
-function resolveQuickListingVisibility(value) {
+function getQuickListingMandateStatus(form = {}) {
+  return hasQuickListingSignedMandate(form) ? 'signed' : 'not_started'
+}
+
+function resolveQuickListingStatus(form, { activationWarnings = [] } = {}) {
+  return normalizeKey(form.listingStatus) === 'active' && !activationWarnings.length ? 'active' : 'listing_review'
+}
+
+function resolveQuickListingVisibility(value, listingStatus = '') {
+  const normalizedStatus = normalizeKey(listingStatus)
+  if (normalizedStatus === 'active') return 'active_market'
   const normalized = normalizeKey(value)
-  if (normalized === 'organisation') return 'active_market'
+  if (normalized === 'archived') return 'archived'
   return 'internal'
 }
 
@@ -713,21 +723,22 @@ function findQuickListingDuplicates({ form = {}, listings = [], transactions = [
   return matches
 }
 
-function validateQuickListingMinimumFields({ form, assignedAgentKey }) {
+function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent = true }) {
   const errors = []
-  if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
-  if (!normalizeText(form.sellerName)) errors.push('Seller name is required.')
-  if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or phone is required.')
-  if (!form.listingPrice || Number(form.listingPrice) <= 0) errors.push('Listing price is required.')
-  if (!normalizeText(assignedAgentKey)) errors.push('Assigned agent is required.')
+  if (!normalizeText(form.propertyAddress) && !normalizeText(form.listingTitle)) errors.push('Property address or listing title is required.')
+  if (!normalizeText(form.sellerName)) errors.push('Seller display name is required.')
+  if (requireAssignedAgent && !normalizeText(assignedAgentKey)) errors.push('Assigned agent is required.')
   if (!['draft', 'active'].includes(normalizeKey(form.listingStatus))) errors.push('Listing status must be Draft or Active.')
   return errors
 }
 
 function validateQuickListingActiveRules({ form, assignedAgentKey }) {
   if (normalizeKey(form.listingStatus) !== 'active') return []
-  const errors = validateQuickListingMinimumFields({ form, assignedAgentKey })
-  if (!form.mandateStatusCaptured) errors.push('Capture whether the mandate is signed before marking the listing Active.')
+  const errors = validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent: true })
+  if (!normalizeText(form.propertyAddress)) errors.push('Property address is required before marking the listing Active.')
+  if (!normalizeText(form.propertyType)) errors.push('Property type is required before marking the listing Active.')
+  if (!form.listingPrice || Number(form.listingPrice) <= 0) errors.push('Listing price is required before marking the listing Active.')
+  if (!hasQuickListingSignedMandate(form)) errors.push('Upload the signed mandate before marking the listing Active.')
   if (!normalizeText(form.commissionValue)) errors.push('Capture the commission structure before marking the listing Active.')
   return [...new Set(errors)]
 }
@@ -1001,8 +1012,7 @@ function AgentListings({ initialTab = null } = {}) {
     if (isManualListingFlow) {
       const normalizedStatus = normalizeKey(form.listingStatus || 'draft')
       const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
-      const mandateSigned = Boolean(form.mandateSigned)
-      const mandateStatus = mandateSigned && mandateUploaded ? 'signed_uploaded' : 'missing'
+      const mandateStatus = getQuickListingMandateStatus(form)
       const selectedAgent =
         assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === normalizeText(form.assignedAgentId || form.assignedAgentEmail)) ||
         assignableAgents[0] ||
@@ -1017,16 +1027,18 @@ function AgentListings({ initialTab = null } = {}) {
       const resolvedBranchId = normalizeText(selectedBranch?.id || form.branchId || currentBranchId)
       const resolvedBranchName = normalizeText(selectedBranch?.name || form.branchName)
 
-      const minimumErrors = validateQuickListingMinimumFields({ form, assignedAgentKey: resolvedAssignedAgentKey })
+      const minimumErrors = validateQuickListingMinimumFields({
+        form,
+        assignedAgentKey: resolvedAssignedAgentKey,
+        requireAssignedAgent: useDbFirstListingPersistence,
+      })
       if (minimumErrors.length) {
         setError(minimumErrors[0])
         return
       }
-      const activeErrors = validateQuickListingActiveRules({ form, assignedAgentKey: resolvedAssignedAgentKey })
-      if (activeErrors.length) {
-        setError(activeErrors[0])
-        return
-      }
+      const activationWarnings = validateQuickListingActiveRules({ form, assignedAgentKey: resolvedAssignedAgentKey })
+      const resolvedListingStatus = resolveQuickListingStatus(form, { activationWarnings })
+      const resolvedListingIsActive = resolvedListingStatus === 'active'
       if (!resolvedAssignedAgentId && useDbFirstListingPersistence) {
         setError('Select an assigned agent.')
         return
@@ -1043,13 +1055,13 @@ function AgentListings({ initialTab = null } = {}) {
       }
 
       const completeness = buildListingCompleteness({ form, mandateUploaded })
-      const complianceWarnings = getListingComplianceWarnings({
+      const complianceWarnings = [...new Set([...getListingComplianceWarnings({
         mandateStatus,
         seller: { name: sellerName, email: sellerEmail, phone: sellerPhone, registrationNumber: form.sellerRegistrationNumber },
         commission: { type: form.commissionType, value: form.commissionValue },
         property24ListingUrl: form.externalListingLink,
         documents: mandateUploaded ? [{ document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), status: 'uploaded' }] : [],
-      }, completeness)
+      }, completeness), ...activationWarnings])]
       const quickNotes = buildQuickListingNotes(
         {
           ...form,
@@ -1096,10 +1108,10 @@ function AgentListings({ initialTab = null } = {}) {
           organisationId,
           branchId: resolvedBranchId || null,
           assignedAgentId: resolvedAssignedAgentId || null,
-          listingStatus: resolveQuickListingStatus(form),
-          sellerOnboardingStatus: 'completed',
+          listingStatus: resolvedListingIsActive ? 'listing_review' : resolvedListingStatus,
+          sellerOnboardingStatus: 'not_started',
           mandateStatus: 'not_started',
-          listingVisibility: resolveQuickListingVisibility(form.visibility),
+          listingVisibility: resolveQuickListingVisibility(form.visibility, resolvedListingIsActive ? 'listing_review' : resolvedListingStatus),
           title: listingTitle,
           propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
           listingSource: 'private_listing',
@@ -1120,6 +1132,7 @@ function AgentListings({ initialTab = null } = {}) {
           property24ListingUrl: form.externalListingLink,
           source: 'quick_add',
           origin: 'quick_add',
+          captureMethod: 'agent_captured',
           completeness,
           canonicalStructure: CANONICAL_LISTING_STRUCTURE,
         })
@@ -1146,6 +1159,11 @@ function AgentListings({ initialTab = null } = {}) {
             return
           }
           sellerUpdatePayload.mandateStatus = 'signed'
+          if (resolvedListingIsActive) {
+            sellerUpdatePayload.listingStatus = 'active'
+            sellerUpdatePayload.listingVisibility = 'active_market'
+            sellerUpdatePayload.isActive = true
+          }
         }
         await updatePrivateListing(created.listing.id, sellerUpdatePayload, { includeRequirementsAndDocuments: false }).catch(() => null)
         await createPrivateListingActivity({
@@ -1163,6 +1181,9 @@ function AgentListings({ initialTab = null } = {}) {
             branchId: resolvedBranchId,
             workspaceId: workspace?.id || null,
             mandateStatus,
+            selectedListingStatus: normalizedStatus,
+            resolvedListingStatus,
+            activationWarnings,
             documentUploaded: mandateUploaded,
             duplicateOverride: quickAddDuplicateOverride,
             documentsUploaded: mandateUploaded ? [{ category: form.mandateDocumentCategory, name: form.manualMandateFileName }] : [],
@@ -1181,7 +1202,7 @@ function AgentListings({ initialTab = null } = {}) {
           canonicalStructure: CANONICAL_LISTING_STRUCTURE,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          activatedAt: normalizedStatus === 'active' ? new Date().toISOString() : null,
+          activatedAt: resolvedListingIsActive ? new Date().toISOString() : null,
           listingTitle,
           propertyType: form.propertyType,
           propertyCategory: form.propertyCategory,
@@ -1216,8 +1237,9 @@ function AgentListings({ initialTab = null } = {}) {
             value: Number(form.commissionValue || 0) || null,
           },
           sellerOnboarding: {
-            status: SELLER_ONBOARDING_STATUS.COMPLETED,
-            completedAt: new Date().toISOString(),
+            status: SELLER_ONBOARDING_STATUS.NOT_STARTED,
+            completedAt: null,
+            captureMethod: 'agent_captured',
           },
           documents: mandateUploaded
             ? [{ id: generateId('document'), category: form.mandateDocumentCategory, document_type: normalizeDocumentCategoryKey(form.mandateDocumentCategory), document_name: form.manualMandateFileName, status: 'uploaded', uploaded_at: new Date().toISOString() }]
@@ -1241,6 +1263,9 @@ function AgentListings({ initialTab = null } = {}) {
               createdBy: profile?.id || null,
               assignedAgent: resolvedAssignedAgentName,
               mandateStatus,
+              selectedListingStatus: normalizedStatus,
+              resolvedListingStatus,
+              activationWarnings,
               documentUploaded: mandateUploaded,
               duplicateOverride: quickAddDuplicateOverride,
               documentsUploaded: mandateUploaded ? [{ category: form.mandateDocumentCategory, name: form.manualMandateFileName }] : [],
@@ -1249,8 +1274,8 @@ function AgentListings({ initialTab = null } = {}) {
               createdAt: new Date().toISOString(),
             },
           ],
-          status: normalizedStatus === 'active' ? LISTING_STATUS.LISTING_ACTIVE : LISTING_STATUS.MANDATE_READY,
-          listingStatus: normalizedStatus === 'active' ? LISTING_STATUS.LISTING_ACTIVE : LISTING_STATUS.MANDATE_READY,
+          status: resolvedListingIsActive ? LISTING_STATUS.LISTING_ACTIVE : LISTING_STATUS.MANDATE_READY,
+          listingStatus: resolvedListingIsActive ? LISTING_STATUS.LISTING_ACTIVE : LISTING_STATUS.MANDATE_READY,
         }
         createdListingId = quickListing.id
         createdListingTitle = quickListing.listingTitle
@@ -1265,13 +1290,13 @@ function AgentListings({ initialTab = null } = {}) {
       setQuickAddSuccess({
         id: createdListingId,
         title: createdListingTitle,
-        statusLabel: complianceWarnings.length ? 'Needs Attention' : normalizedStatus === 'active' ? 'Live' : 'Draft',
+        statusLabel: complianceWarnings.length ? 'Needs Attention' : resolvedListingIsActive ? 'Live' : 'Draft',
         mandateStatus,
         complianceWarnings,
       })
       setWorkflowMessage(
-        `Quick Add Listing created as ${complianceWarnings.length ? 'Needs Attention' : getStatusLabelFromManualSelection(normalizedStatus)}${
-          mandateStatus === 'missing' ? '. Missing mandate still requires follow-up.' : '. Signed mandate captured.'
+        `Quick Add Listing created as ${complianceWarnings.length ? 'Needs Attention' : resolvedListingIsActive ? 'Active' : 'Draft'}${
+          mandateStatus !== 'signed' ? '. Missing mandate still requires follow-up before activation.' : '. Signed mandate captured.'
         }`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
@@ -1288,6 +1313,7 @@ function AgentListings({ initialTab = null } = {}) {
       const created = await createPrivateListing({
         organisationId,
         assignedAgentId: String(profile?.id || '').trim() || null,
+        assignedAgentEmail: String(profile?.email || '').trim(),
         listingStatus: 'seller_lead',
         sellerOnboardingStatus: 'not_started',
         mandateStatus: 'not_started',
@@ -2773,10 +2799,11 @@ function AgentListings({ initialTab = null } = {}) {
                   {(() => {
                     const mandateUploaded = Boolean(normalizeText(form.manualMandateFileName))
                     const completeness = buildListingCompleteness({ form, mandateUploaded })
-                    const activeWarnings = normalizeKey(form.listingStatus) === 'active' && form.mandateStatusCaptured && !mandateUploaded
-                      ? ['Mandate not uploaded. This listing can be Active, but the warning remains visible until uploaded.']
-                      : []
-                    const readinessLabel = completeness.missingItems.length
+                    const activeWarnings = validateQuickListingActiveRules({
+                      form,
+                      assignedAgentKey: normalizeText(form.assignedAgentId || form.assignedAgentEmail),
+                    })
+                    const readinessLabel = completeness.missingItems.length || activeWarnings.length
                       ? 'Needs Attention'
                       : normalizeKey(form.listingStatus) === 'active'
                         ? 'Live'
@@ -2792,6 +2819,9 @@ function AgentListings({ initialTab = null } = {}) {
                             {activeWarnings.map((warning) => (
                               <p key={warning} className="mt-2 text-xs font-semibold text-[#9a5b13]">{warning}</p>
                             ))}
+                            {normalizeKey(form.listingStatus) === 'active' && activeWarnings.length ? (
+                              <p className="mt-2 text-xs font-semibold text-[#1f4f78]">It will be created as Listing Review until these activation items are complete.</p>
+                            ) : null}
                           </div>
                           {completeness.missingItems.length ? <CircleAlert className="text-[#9a5b13]" size={20} /> : <CheckCircle2 className="text-[#1f7d44]" size={20} />}
                         </div>

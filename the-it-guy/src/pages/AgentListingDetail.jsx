@@ -45,9 +45,11 @@ import {
   listAppointmentsAsync,
 } from '../lib/agencyPipelineService'
 import {
+  buildSellerOnboardingLink,
   buildSellerClientPortalLink,
   deleteAgentPrivateListingCascade,
   generateId,
+  generateSellerOnboardingToken,
   readAgentPrivateListings,
   writeAgentPrivateListings,
 } from '../lib/agentListingStorage'
@@ -82,9 +84,11 @@ import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import {
   getPrivateListing,
   deletePrivateListing,
+  sendSellerOnboarding,
   syncPrivateListingDistributionData,
   updatePrivateListing,
   updatePrivateListingOnboardingFormData,
+  uploadPrivateListingDocument,
   uploadPrivateListingMediaAsset,
 } from '../services/privateListingService'
 import { listListingLeadInterests } from '../services/leadListingInterestService'
@@ -437,6 +441,19 @@ function resolveSellerEmailFromListing(listing = {}) {
       listing?.seller_email ||
       listing?.seller?.email,
   ).toLowerCase()
+}
+
+function resolveSellerPhoneFromListing(listing = {}) {
+  const formData = getListingSellerFormData(listing)
+  return toCleanText(
+    formData.sellerPhone ||
+      formData.phone ||
+      formData.contactNumber ||
+      formData.mobile ||
+      listing?.sellerPhone ||
+      listing?.seller_phone ||
+      listing?.seller?.phone,
+  )
 }
 
 function resolveSellerNameFromListing(listing = {}) {
@@ -942,6 +959,49 @@ function MetricCard({ label, value, meta }) {
   )
 }
 
+function FollowUpActionCard({ action, loading = false, onAction, onUpload }) {
+  const Icon = action.icon || CircleAlert
+  const ButtonIcon = action.buttonIcon || ExternalLink
+  const buttonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:bg-[#f5f8fb] disabled:text-[#9aa9b8]'
+  return (
+    <article className="flex h-full min-h-[172px] flex-col justify-between rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+      <div>
+        <div className="flex items-start justify-between gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
+            <Icon size={16} />
+          </span>
+          <StatusPill status={action.complete ? 'done' : action.status || 'pending'} label={action.complete ? 'Done' : action.statusLabel || 'Needs action'} />
+        </div>
+        <h3 className="mt-4 text-sm font-semibold text-[#142132]">{action.title}</h3>
+        <p className="mt-2 text-sm leading-5 text-[#607387]">{action.copy}</p>
+      </div>
+      {action.upload ? (
+        <label className={`${buttonClass} mt-4 cursor-pointer ${loading ? 'pointer-events-none opacity-65' : ''}`}>
+          <Upload size={15} />
+          {loading ? 'Uploading...' : action.buttonLabel}
+          <input
+            type="file"
+            className="sr-only"
+            accept=".pdf,.png,.jpg,.jpeg,.webp"
+            disabled={loading}
+            onChange={onUpload}
+          />
+        </label>
+      ) : (
+        <button
+          type="button"
+          className={`${buttonClass} mt-4`}
+          onClick={() => onAction(action)}
+          disabled={loading || action.disabled}
+        >
+          {loading ? <Loader2 size={15} className="animate-spin" /> : <ButtonIcon size={15} />}
+          {loading ? action.loadingLabel || 'Working...' : action.buttonLabel}
+        </button>
+      )}
+    </article>
+  )
+}
+
 function buildDonutStyle(segments, fallback = '#dbe6f2') {
   const safeSegments = Array.isArray(segments) ? segments.filter((segment) => Number(segment?.value || 0) > 0) : []
   const total = safeSegments.reduce((sum, segment) => sum + Number(segment.value || 0), 0)
@@ -1115,6 +1175,7 @@ function AgentListingDetail() {
   const [deletingListing, setDeletingListing] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
+  const [followUpActionId, setFollowUpActionId] = useState('')
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
@@ -1916,6 +1977,288 @@ function AgentListingDetail() {
       setDetailError(error?.message || 'Unable to resend the seller client portal link.')
     } finally {
       setResendingSellerPortalLink(false)
+    }
+  }
+
+  function openSellerWorkspaceSection(tab, message = '') {
+    setActiveTab('seller')
+    setSellerWorkspaceTab(tab)
+    setDetailError('')
+    if (message) setDetailMessage(message)
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
+    }
+  }
+
+  async function handleSendSellerOnboardingFollowUp() {
+    if (!listingRecord?.id) return
+    setDetailError('')
+    setDetailMessage('')
+    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
+    const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
+    const hasSellerContact = isValidEmail(sellerEmail) || Boolean(formatSouthAfricanWhatsAppNumber(sellerPhone))
+    const existingOnboardingLink = String(listingRecord?.sellerOnboarding?.link || '').trim()
+    if (!hasSellerContact) {
+      if (existingOnboardingLink) {
+        if (typeof navigator !== 'undefined') {
+          void navigator.clipboard?.writeText(existingOnboardingLink)
+        }
+        setDetailMessage('Seller onboarding link copied. Add seller contact details before sending it directly.')
+        return
+      }
+      openSellerWorkspaceSection('seller', 'Add a seller email or phone number before sending the onboarding link.')
+      return
+    }
+
+    try {
+      setFollowUpActionId('send_onboarding')
+      const token = isSupabaseConfigured && isUuidLike(listingRecord.id)
+        ? ''
+        : generateSellerOnboardingToken()
+      const localLink = token ? buildSellerOnboardingLink(token) : ''
+      const response = isSupabaseConfigured && isUuidLike(listingRecord.id)
+        ? await sendSellerOnboarding(listingRecord.id, {
+            sellerType: sellerFormData?.sellerType || listingRecord?.sellerType || listingRecord?.seller?.sellerType || null,
+            ownershipStructure: sellerFormData?.ownershipStructure || sellerFormData?.ownershipType || null,
+            maritalRegime: sellerFormData?.maritalRegime || sellerFormData?.maritalStatus || null,
+            sellerContactEmail: sellerEmail,
+            sellerContactPhone: sellerPhone,
+          })
+        : { token, link: localLink, expiresAt: '' }
+      const onboardingToken = response?.token || token
+      const onboardingLink = response?.link || localLink
+      const sentAt = new Date().toISOString()
+      const currentStatus = normalizeKey(listingRecord?.listingStatus || listingRecord?.status || '')
+      const nextListingStatus = currentStatus === 'seller_lead' ? 'onboarding_sent' : listingRecord?.listingStatus || listingRecord?.status
+
+      const localListing = patchListing((row) => ({
+        ...row,
+        listingStatus: nextListingStatus,
+        status: nextListingStatus || row?.status,
+        sellerOnboardingStatus: 'sent',
+        seller_onboarding_status: 'sent',
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          token: onboardingToken,
+          link: onboardingLink,
+          status: 'sent',
+          sentAt,
+          expiresAt: response?.expiresAt || row?.sellerOnboarding?.expiresAt || '',
+          formData: {
+            ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
+            sellerEmail: sellerEmail || row?.sellerOnboarding?.formData?.sellerEmail || '',
+            sellerPhone: sellerPhone || row?.sellerOnboarding?.formData?.sellerPhone || '',
+          },
+        },
+        updatedAt: sentAt,
+      }))
+
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        await updatePrivateListing(listingRecord.id, { sellerOnboardingStatus: 'sent' }, { includeRequirementsAndDocuments: false }).catch((error) => {
+          console.warn('[AgentListingDetail] seller onboarding listing status sync skipped', error)
+        })
+      }
+
+      let deliveryWarning = ''
+      const sellerDisplayName = resolveSellerNameFromListing(localListing || listingRecord) || 'Seller'
+      const propertyLabel = listingRecord?.listingTitle || listingRecord?.title || listingRecord?.propertyAddress || marketingDraft.addressLine1 || 'your property'
+      const agentDisplayName = getCanonicalOfferActor().name || 'your agent'
+      if (isSupabaseConfigured && onboardingLink) {
+        if (isValidEmail(sellerEmail)) {
+          try {
+            const emailResponse = await invokeEdgeFunction('send-email', {
+              body: {
+                type: 'seller_onboarding_link',
+                to: sellerEmail,
+                organisationId: listingOrganisationId,
+                sellerName: sellerDisplayName,
+                propertyTitle: propertyLabel,
+                onboardingLink,
+                agentName: agentDisplayName,
+              },
+            })
+            if (emailResponse?.error || emailResponse?.data?.error) {
+              deliveryWarning = ' Email delivery needs attention.'
+            }
+          } catch (error) {
+            console.warn('[AgentListingDetail] seller onboarding email failed', error)
+            deliveryWarning = ' Email delivery needs attention.'
+          }
+        }
+        const normalizedSellerPhone = formatSouthAfricanWhatsAppNumber(sellerPhone)
+        if (normalizedSellerPhone) {
+          try {
+            const whatsappResult = await sendWhatsAppNotification({
+              to: normalizedSellerPhone,
+              role: 'seller',
+              message: `Hi ${sellerDisplayName},\n\nYour agent has started your seller onboarding for ${propertyLabel}.\n\nPlease complete your onboarding here:\n${onboardingLink}\n\nAgent: ${agentDisplayName}\n\n- Bridge`,
+            })
+            if (!whatsappResult?.ok) deliveryWarning = `${deliveryWarning} WhatsApp delivery needs attention.`
+          } catch (error) {
+            console.warn('[AgentListingDetail] seller onboarding WhatsApp failed', error)
+            deliveryWarning = `${deliveryWarning} WhatsApp delivery needs attention.`
+          }
+        }
+      }
+
+      if (onboardingLink && typeof navigator !== 'undefined') {
+        void navigator.clipboard?.writeText(onboardingLink)
+      }
+      setDetailMessage(
+        onboardingLink
+          ? `Seller onboarding link ready and copied.${deliveryWarning || ''}`
+          : `Seller onboarding was marked as sent.${deliveryWarning || ''}`,
+      )
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to create the seller onboarding link.')
+    } finally {
+      setFollowUpActionId('')
+    }
+  }
+
+  async function handleGenerateMandateFollowUp() {
+    if (!listingRecord?.id) return
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      setFollowUpActionId('generate_mandate')
+      const preparedAt = new Date().toISOString()
+      const localListing = patchListing((row) => ({
+        ...row,
+        mandateStatus: 'ready',
+        mandate: {
+          ...(row?.mandate || {}),
+          status: 'ready',
+          preparedAt,
+          updatedAt: preparedAt,
+          preparedBy: String(profile?.id || profile?.email || 'agent').trim(),
+        },
+        updatedAt: preparedAt,
+      }))
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        const savedListing = await updatePrivateListing(listingRecord.id, { mandateStatus: 'ready' }, { includeRequirementsAndDocuments: false })
+        if (savedListing?.id) {
+          setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(localListing, savedListing)))
+        }
+      }
+      setDetailMessage('Mandate marked ready for generation. Complete seller facts and commission before sending it out.')
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to prepare the mandate.')
+    } finally {
+      setFollowUpActionId('')
+    }
+  }
+
+  async function handleSignedMandateUpload(event) {
+    const file = event?.target?.files?.[0] || null
+    if (event?.target) event.target.value = ''
+    if (!file || !listingRecord?.id) return
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      setFollowUpActionId('upload_signed_mandate')
+      const signedAt = new Date().toISOString()
+      const uploadedDocument = isSupabaseConfigured && isUuidLike(listingRecord.id)
+        ? await uploadPrivateListingDocument(listingRecord.id, file, {
+            documentType: 'signed_mandate',
+            documentCategory: 'Mandate',
+            documentName: file.name || 'Signed Mandate',
+            visibility: 'internal',
+            status: 'uploaded',
+          })
+        : {
+            id: generateId('signed-mandate'),
+            document_name: file.name || 'Signed Mandate',
+            document_type: 'signed_mandate',
+            category: 'Mandate',
+            status: 'uploaded',
+            uploaded_at: signedAt,
+            url: await readAsDataUrl(file),
+          }
+      const documentUrl = uploadedDocument?.url || uploadedDocument?.fileUrl || uploadedDocument?.file_url || ''
+      const documentRow = {
+        ...uploadedDocument,
+        id: uploadedDocument?.id || generateId('signed-mandate'),
+        documentName: uploadedDocument?.document_name || uploadedDocument?.documentName || file.name || 'Signed Mandate',
+        documentType: uploadedDocument?.document_type || uploadedDocument?.documentType || 'signed_mandate',
+        category: uploadedDocument?.category || 'Mandate',
+        status: uploadedDocument?.status || 'uploaded',
+        uploadedAt: uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt || signedAt,
+        url: documentUrl,
+      }
+      const localListing = patchListing((row) => ({
+        ...row,
+        mandateStatus: 'signed',
+        mandateSignedDate: signedAt.slice(0, 10),
+        signedMandateUrl: documentUrl || row?.signedMandateUrl || '',
+        mandate: {
+          ...(row?.mandate || {}),
+          status: 'signed',
+          signedAt,
+          signedUrl: documentUrl || row?.mandate?.signedUrl || '',
+          updatedAt: signedAt,
+        },
+        documents: [
+          documentRow,
+          ...(Array.isArray(row?.documents)
+            ? row.documents.filter((document) => normalizeKey(document?.document_type || document?.documentType || document?.documentName || document?.document_name || document?.name) !== 'signed_mandate')
+            : []),
+        ],
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          formData: {
+            ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
+            mandateSignedDate: signedAt.slice(0, 10),
+            signedMandateUrl: documentUrl,
+          },
+        },
+        updatedAt: signedAt,
+      }))
+      setMarketingDraft((previous) => ({ ...previous, mandateSignedDate: signedAt.slice(0, 10) }))
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        const savedListing = await updatePrivateListing(listingRecord.id, {
+          mandateStatus: 'signed',
+          listingStatus: normalizeKey(listingRecord?.listingStatus || listingRecord?.status) === 'active' ? 'active' : 'mandate_signed',
+        })
+        if (savedListing?.id) {
+          setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(localListing, savedListing)))
+        }
+      }
+      setDetailMessage('Signed mandate uploaded and linked to this listing.')
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to upload the signed mandate.')
+    } finally {
+      setFollowUpActionId('')
+    }
+  }
+
+  function handleFollowUpAction(action) {
+    if (action.key === 'send_onboarding') {
+      void handleSendSellerOnboardingFollowUp()
+      return
+    }
+    if (action.key === 'generate_mandate') {
+      if (action.complete) {
+        openSellerWorkspaceSection('documents', 'Review mandate documents and upload the signed mandate when it is ready.')
+        return
+      }
+      void handleGenerateMandateFollowUp()
+      return
+    }
+    if (action.key === 'add_seller_contact') {
+      openSellerWorkspaceSection('seller', 'Add the seller name, email, and phone in the seller workspace.')
+      return
+    }
+    if (action.key === 'complete_seller_facts') {
+      if (listingRecord?.sellerOnboarding?.link) {
+        window.open(listingRecord.sellerOnboarding.link, '_blank', 'noopener,noreferrer')
+      } else {
+        openSellerWorkspaceSection('seller', 'Capture the remaining seller facts here, or send onboarding to let the seller complete them.')
+      }
+      return
+    }
+    if (action.key === 'add_commission') {
+      openSellerWorkspaceSection('commission', 'Capture commission terms so the mandate and seller profile are complete.')
     }
   }
 
@@ -2746,6 +3089,102 @@ function AgentListingDetail() {
       lastUpdatedSource: lastUpdated ? `Updated ${formatDate(lastUpdated)}` : 'No captured source',
     }
   }, [listingRecord, marketingDraft.price, sellerFormData])
+
+  const followUpActions = useMemo(() => {
+    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
+    const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
+    const sellerName = resolveSellerNameFromListing(listingRecord)
+    const hasSellerName = Boolean(sellerName)
+    const hasSellerContact = isValidEmail(sellerEmail) || Boolean(formatSouthAfricanWhatsAppNumber(sellerPhone))
+    const onboarding = listingRecord?.sellerOnboarding || {}
+    const onboardingStatus = normalizeKey(onboarding?.status || listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status)
+    const onboardingReady = Boolean(
+      onboarding?.token ||
+        onboarding?.link ||
+        ['sent', 'viewed', 'in_progress', 'submitted', 'under_review', 'completed'].includes(onboardingStatus),
+    )
+    const mandateStatus = normalizeKey(mandateWorkspace.status)
+    const mandatePrepared = mandateWorkspace.isSigned || ['ready', 'generated', 'sent', 'viewed'].includes(mandateStatus)
+    const sellerFactsComplete = sellerProfile.completionPercent >= 80
+    return [
+      {
+        key: 'send_onboarding',
+        title: 'Send seller onboarding',
+        copy: onboardingReady
+          ? 'A seller onboarding link already exists for this listing.'
+          : hasSellerContact
+            ? 'Create the seller portal link and send it to the captured seller contact.'
+            : 'Capture an email or phone first, then send the seller portal link.',
+        complete: onboardingReady,
+        statusLabel: hasSellerContact ? 'Ready' : 'Missing contact',
+        icon: Link2,
+        buttonIcon: Link2,
+        buttonLabel: onboardingReady ? (hasSellerContact ? 'Resend Link' : 'Copy Link') : hasSellerContact ? 'Create & Send Link' : 'Add Contact',
+        loadingLabel: 'Creating link...',
+      },
+      {
+        key: 'generate_mandate',
+        title: 'Generate mandate',
+        copy: mandatePrepared
+          ? 'Mandate preparation has started for this listing.'
+          : 'Mark the mandate ready so the listing can move from Quick Add into the mandate workflow.',
+        complete: mandatePrepared,
+        statusLabel: 'Needs prep',
+        icon: FileText,
+        buttonIcon: FileText,
+        buttonLabel: mandatePrepared ? 'Review Mandate' : 'Mark Ready',
+        loadingLabel: 'Preparing...',
+      },
+      {
+        key: 'upload_signed_mandate',
+        title: 'Upload signed mandate',
+        copy: mandateWorkspace.isSigned
+          ? 'A signed mandate is already linked to this listing.'
+          : 'Attach the signed PDF or image when the seller has signed outside the portal.',
+        complete: mandateWorkspace.isSigned,
+        statusLabel: 'Required for active',
+        icon: Upload,
+        buttonLabel: mandateWorkspace.isSigned ? 'Replace File' : 'Upload Signed File',
+        upload: true,
+      },
+      {
+        key: 'add_seller_contact',
+        title: 'Add seller contact',
+        copy: hasSellerName && hasSellerContact
+          ? 'Seller name and contact details are captured.'
+          : 'Capture seller name, surname, email, or phone without forcing the full onboarding journey.',
+        complete: hasSellerName && hasSellerContact,
+        statusLabel: 'Quick capture',
+        icon: UserRound,
+        buttonIcon: UserRound,
+        buttonLabel: hasSellerName && hasSellerContact ? 'Review Seller' : 'Add Seller',
+      },
+      {
+        key: 'complete_seller_facts',
+        title: 'Complete seller facts',
+        copy: sellerFactsComplete
+          ? 'Seller facts are complete enough for mandate and readiness checks.'
+          : 'Finish ownership, compliance, and mandate facts in the seller profile or portal.',
+        complete: sellerFactsComplete,
+        statusLabel: `${sellerProfile.completionPercent}% complete`,
+        icon: ShieldCheck,
+        buttonIcon: listingRecord?.sellerOnboarding?.link ? ExternalLink : ShieldCheck,
+        buttonLabel: listingRecord?.sellerOnboarding?.link ? 'Open Portal' : 'Open Seller',
+      },
+      {
+        key: 'add_commission',
+        title: 'Add commission',
+        copy: commissionWorkspace.hasData
+          ? 'Commission terms are available for the mandate workspace.'
+          : 'Capture commission percentage, amount, VAT handling, and payment responsibility.',
+        complete: commissionWorkspace.hasData,
+        statusLabel: 'Commercial terms',
+        icon: HandCoins,
+        buttonIcon: HandCoins,
+        buttonLabel: commissionWorkspace.hasData ? 'Review Commission' : 'Add Commission',
+      },
+    ]
+  }, [commissionWorkspace.hasData, listingRecord, mandateWorkspace.isSigned, mandateWorkspace.status, sellerProfile.completionPercent])
 
   useEffect(() => {
     setCommissionDraft({
@@ -5338,6 +5777,30 @@ function AgentListingDetail() {
               </div>
             </div>
           </nav>
+
+          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-[#142132]">Listing Follow-Ups</h2>
+                <p className="mt-1 text-sm text-[#607387]">Complete a Quick Add listing here without restarting seller onboarding.</p>
+              </div>
+              <StatusPill
+                status={followUpActions.every((action) => action.complete) ? 'done' : 'pending'}
+                label={`${followUpActions.filter((action) => action.complete).length}/${followUpActions.length} complete`}
+              />
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {followUpActions.map((action) => (
+                <FollowUpActionCard
+                  key={action.key}
+                  action={action}
+                  loading={followUpActionId === action.key}
+                  onAction={handleFollowUpAction}
+                  onUpload={action.key === 'upload_signed_mandate' ? handleSignedMandateUpload : undefined}
+                />
+              ))}
+            </div>
+          </section>
 
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-6">

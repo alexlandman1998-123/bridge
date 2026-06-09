@@ -104,6 +104,25 @@ const baseLead = {
 
 {
   const listing = {
+    id: 'listing-onboarding-shell',
+    sellerLeadId: 'seller-1',
+    listingStatus: 'onboarding_sent',
+    mandateStatus: 'not_started',
+    askingPrice: 2500000,
+  }
+  const journey = buildSellerJourney({
+    lead: { ...baseLead, listingId: 'listing-onboarding-shell', sellerOnboardingStatus: 'sent' },
+    listing,
+  })
+  const listingReadiness = getListingReadiness({ lead: { ...baseLead, listingId: 'listing-onboarding-shell' }, listing, journey })
+  assert.equal(journey.listingCreated, false)
+  assert.equal(listingReadiness.hasListing, false)
+  assert.equal(listingReadiness.incompleteItems[0].blocker, 'Listing Not Created')
+  assert.equal(canCreateListing({ lead: { ...baseLead, listingId: 'listing-onboarding-shell' }, listing, journey }), false)
+}
+
+{
+  const listing = {
     id: 'listing-1',
     sellerLeadId: 'seller-1',
     listingStatus: 'draft',

@@ -52,7 +52,7 @@ function isMissingColumnError(error, columnName = '') {
 
 function getMissingLeadAssignmentColumn(error) {
   const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
-  return ['first_contacted_at', 'ownership_status', 'sla_due_at', 'assigned_queue_id', 'assigned_at']
+  return ['first_contacted_at', 'ownership_status', 'sla_due_at', 'assigned_queue_id', 'assigned_at', 'assigned_agent_email']
     .find((column) => message.includes(column)) || ''
 }
 
@@ -211,6 +211,21 @@ async function findBranchAgent({ organisationId = '', branchId = '' } = {}) {
     .limit(20)
   if (error) return null
   return (data || []).find((row) => ['agent', 'principal', 'branch_manager', 'manager'].includes(normalizeLower(row.role || row.workspace_role || row.organisation_role))) || null
+}
+
+async function findAgentIdentity({ organisationId = '', agentId = '' } = {}) {
+  const client = requireClient()
+  const normalizedAgentId = nullableUuid(agentId)
+  if (!normalizedAgentId) return null
+  const { data, error } = await client
+    .from('organisation_users')
+    .select('user_id, id, email')
+    .eq('organisation_id', organisationId)
+    .or(`user_id.eq.${normalizedAgentId},id.eq.${normalizedAgentId}`)
+    .limit(1)
+    .maybeSingle()
+  if (error) return null
+  return data || null
 }
 
 function queueForLead(lead = {}, listing = null) {
@@ -372,12 +387,14 @@ export async function assignLeadToAgent({ organisationId = '', leadId = '', agen
   const normalizedAgentId = nullableUuid(agentId)
   if (!normalizedOrgId || !normalizedLeadId || !normalizedAgentId) throw new Error('Valid organisation, lead, and agent ids are required.')
   const assignedAt = new Date().toISOString()
+  const agentIdentity = await findAgentIdentity({ organisationId: normalizedOrgId, agentId: normalizedAgentId })
   return updateLeadAssignment({
     organisationId: normalizedOrgId,
     leadId: normalizedLeadId,
     patch: {
       assigned_agent_id: normalizedAgentId,
       assigned_user_id: normalizedAgentId,
+      assigned_agent_email: normalizeText(agentIdentity?.email).toLowerCase() || null,
       assigned_queue_id: null,
       assigned_at: assignedAt,
       sla_due_at: calculateSlaDueAt(assignedAt, slaHours),
@@ -401,6 +418,7 @@ export async function assignLeadToQueue({ organisationId = '', leadId = '', queu
     patch: {
       assigned_agent_id: null,
       assigned_user_id: null,
+      assigned_agent_email: null,
       assigned_queue_id: normalizedQueueId,
       assigned_at: assignedAt,
       sla_due_at: calculateSlaDueAt(assignedAt, slaHours),
@@ -419,6 +437,7 @@ export function reassignLead({ organisationId = '', leadId = '', agentId = '', r
 export async function autoAssignLead({ organisationId = '', leadId = '', slaHours = 24 } = {}, { actor = null } = {}) {
   const decision = await evaluateAssignmentRules({ organisationId, leadId })
   if (decision.type === 'agent') {
+    const agentIdentity = await findAgentIdentity({ organisationId, agentId: decision.agentId })
     return {
       decision,
       ...(await updateLeadAssignment({
@@ -427,6 +446,7 @@ export async function autoAssignLead({ organisationId = '', leadId = '', slaHour
         patch: {
           assigned_agent_id: decision.agentId,
           assigned_user_id: decision.agentId,
+          assigned_agent_email: normalizeText(agentIdentity?.email).toLowerCase() || null,
           assigned_queue_id: null,
           assigned_at: new Date().toISOString(),
           sla_due_at: calculateSlaDueAt(new Date().toISOString(), slaHours),

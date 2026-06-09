@@ -271,7 +271,7 @@ async function findExistingLead(client, organisationId, contactId) {
   if (!contactId) return null
   const { data, error } = await client
     .from('leads')
-    .select('lead_id, organisation_id, assigned_agent_id, assigned_user_id, branch_id, contact_id, lead_source, stage, status, priority, budget, area_interest, property_interest, listing_id, notes, created_at, updated_at')
+    .select('lead_id, organisation_id, assigned_agent_id, assigned_agent_email, assigned_user_id, branch_id, contact_id, lead_source, stage, status, priority, budget, area_interest, property_interest, listing_id, notes, created_at, updated_at')
     .eq('organisation_id', organisationId)
     .eq('contact_id', contactId)
     .order('updated_at', { ascending: false })
@@ -285,33 +285,41 @@ async function findExistingLead(client, organisationId, contactId) {
 
 async function resolveListing(client, enquiry) {
   const listingId = enquiry.listingId || enquiry.lead.listingId
-  const fields = 'id, organisation_id, assigned_agent_id, listing_reference, title, property_address, address_line_1, suburb, city, listing_status'
+  const selectVariants = [
+    'id, organisation_id, assigned_agent_id, assigned_agent_email, listing_reference, title, property_address, address_line_1, suburb, city, listing_status',
+    'id, organisation_id, assigned_agent_id, listing_reference, title, property_address, address_line_1, suburb, city, listing_status',
+  ]
   if (isUuidLike(listingId)) {
-    const { data, error } = await client
-      .from('private_listings')
-      .select(fields)
-      .eq('organisation_id', enquiry.organisationId)
-      .eq('id', listingId)
-      .maybeSingle()
-    if (!error && data) return data
-    if (error && !isRecoverableReadError(error, 'private_listings')) throw error
+    for (const fields of selectVariants) {
+      const { data, error } = await client
+        .from('private_listings')
+        .select(fields)
+        .eq('organisation_id', enquiry.organisationId)
+        .eq('id', listingId)
+        .maybeSingle()
+      if (!error && data) return data
+      if (error && !isRecoverableReadError(error, 'private_listings')) throw error
+    }
   }
   if (enquiry.listingReference) {
-    const { data, error } = await client
-      .from('private_listings')
-      .select(fields)
-      .eq('organisation_id', enquiry.organisationId)
-      .eq('listing_reference', enquiry.listingReference)
-      .maybeSingle()
-    if (!error && data) return data
-    if (error && !isRecoverableReadError(error, 'private_listings')) throw error
+    for (const fields of selectVariants) {
+      const { data, error } = await client
+        .from('private_listings')
+        .select(fields)
+        .eq('organisation_id', enquiry.organisationId)
+        .eq('listing_reference', enquiry.listingReference)
+        .maybeSingle()
+      if (!error && data) return data
+      if (error && !isRecoverableReadError(error, 'private_listings')) throw error
+    }
   }
   return null
 }
 
 function buildAssignedAgent(enquiry, listing) {
   const listingAgentId = normalizeText(listing?.assigned_agent_id)
-  if (listingAgentId) return { id: listingAgentId, userId: listingAgentId }
+  const listingAgentEmail = normalizeEmail(listing?.assigned_agent_email)
+  if (listingAgentId || listingAgentEmail) return { id: listingAgentId, userId: listingAgentId, email: listingAgentEmail }
   if (enquiry.assignedAgent) return enquiry.assignedAgent
   return null
 }
@@ -353,6 +361,7 @@ function mapLeadRow(row = {}) {
     leadId: normalizeText(row.leadId || row.lead_id),
     contactId: normalizeText(row.contactId || row.contact_id),
     assignedAgentId: normalizeText(row.assignedAgentId || row.assigned_agent_id),
+    assignedAgentEmail: normalizeEmail(row.assignedAgentEmail || row.assigned_agent_email),
     organisationId: normalizeText(row.organisationId || row.organisation_id),
     leadSource: normalizeText(row.leadSource || row.lead_source),
     stage: normalizeText(row.stage),

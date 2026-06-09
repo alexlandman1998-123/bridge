@@ -49,6 +49,7 @@ try {
   assert.equal(remotePayload.branch_id, branchId)
   assert.equal(remotePayload.assigned_user_id, assignedUserId)
   assert.equal(remotePayload.assigned_agent_id, assignedUserId)
+  assert.equal(remotePayload.assigned_agent_email, 'casey@example.com')
   assert.equal(remotePayload.created_by, actorId)
 
   const { lead: fallbackLead } = buildLocalLeadAndContactRows({
@@ -70,6 +71,7 @@ try {
 
   const fallbackPayload = buildRemoteLeadCreatePayload(fallbackLead, organisationId, { id: actorId })
   assert.equal(fallbackPayload.assigned_user_id, assignedUserId)
+  assert.equal(fallbackPayload.assigned_agent_email, 'casey@example.com')
   assert.equal(fallbackPayload.created_by, actorId)
 
   const resolvedScope = await resolveLeadScopeContext(

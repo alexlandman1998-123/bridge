@@ -79,7 +79,7 @@ const transactions = [
 
 const listings = [
   { id: 'listing-one', originating_crm_lead_id: 'lead-viewing-offer', listing_status: 'active', suburb: 'Sandton' },
-  { id: 'listing-two', listing_status: 'seller_lead', suburb: 'Claremont' },
+  { id: 'listing-two', listing_status: 'seller_lead', suburb: 'Claremont', assigned_agent_id: 'agent-seller-id', assigned_agent_email: 'seller.agent@example.test' },
 ]
 
 const listingInterests = [
@@ -129,6 +129,11 @@ try {
   assert.match(contactOnly.requirementSummary, /3-bed/)
   assert.match(contactOnly.requirementSummary, /Bartlett/)
 
+  const sellerLinked = rows.find((row) => row.leadId === 'seller-listing-link')
+  assert.equal(sellerLinked.assignedAgentId, 'agent-seller-id', 'seller lead should inherit owner id from its linked listing when lead ownership is sparse')
+  assert.equal(sellerLinked.assignedAgentEmail, 'seller.agent@example.test', 'seller lead should inherit owner email from its linked listing when lead ownership is sparse')
+  assert.equal(sellerLinked.assignedAgent, 'seller.agent@example.test', 'seller lead owner display should not fall back to unassigned when listing owner email exists')
+
   const viewingLead = rows.find((row) => row.leadId === 'lead-viewing-offer')
   assert.equal(viewingLead.appointmentCount, 1)
   assert.equal(viewingLead.offerCount, 1)
@@ -157,6 +162,12 @@ try {
   assert.equal(filterAgentLeadRows(rows, { createdFrom: '2026-05-02', createdTo: '2026-05-03' }).length, 2)
 
   const workspaceSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+  const privateListingServiceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+  assert.ok(workspaceSource.includes("function isArchivedLead"), 'lead list should detect archived leads as lifecycle state')
+  assert.ok(workspaceSource.includes("{ key: 'archived', label: 'Archived'"), 'lead category tabs should expose an Archived view')
+  assert.match(workspaceSource, /filters\.category === 'archived'\) return filtered\.filter\(isArchivedLead\)/, 'Archived tab should show archived leads only')
+  assert.match(workspaceSource, /const activeRows = filtered\.filter\(\(row\) => !isArchivedLead\(row\)\)/, 'active lead tabs should hide archived leads')
+  assert.match(workspaceSource, /xl:grid-cols-5/, 'lead category tabs should make room for the archived view')
   const buyerTabsSource = workspaceSource.match(/: \[\n      \{ key: 'overview'[\s\S]*?\n    \], \[isSellerLeadWorkspace\]\)/)?.[0] || ''
   const buyerTabKeys = [...buyerTabsSource.matchAll(/\{ key: '([^']+)'/g)].map((match) => match[1])
   assert.deepEqual(buyerTabKeys, [
@@ -188,6 +199,44 @@ try {
   assert.ok(workspaceSource.includes('lead_workspace_offer_link'), 'offer links should tag viewed-listing history from the lead workspace')
   assert.ok(workspaceSource.includes('Post-Viewing Offer Portal Sent'), 'offer portal sends should be logged to lead activity')
   assert.ok(workspaceSource.includes('Send Offer Link'), 'offers tab should expose a clear send offer link action')
+  assert.match(workspaceSource, /sticky top-0 z-10 grid grid-cols-2[\s\S]*lg:grid-cols-7/, 'seller workspace tabs should spread across the row with optional appointments')
+  assert.ok(workspaceSource.includes("const SELLER_ADD_ON_APPOINTMENT_TYPES"), 'seller appointments should use an explicit add-on appointment type list')
+  assert.ok(workspaceSource.includes('function SellerAppointmentForm'), 'seller workspace should expose an optional seller appointment form')
+  assert.ok(workspaceSource.includes('function SellerAppointmentsTab'), 'seller workspace should expose appointments as an add-on tab')
+  assert.ok(workspaceSource.includes("linkedWorkflow: 'seller_lead_add_on'"), 'seller appointments should be tagged as add-on workflow records')
+  assert.ok(workspaceSource.includes("linkedWorkflowStage: 'optional_appointment'"), 'seller appointments should not be treated as a canonical progress stage')
+  assert.ok(workspaceSource.includes("appointmentType: 'other'"), 'seller appointment add-on should not default to the seller consultation progress type')
+  assert.ok(workspaceSource.includes('Schedule Appointment'), 'seller workspace should expose a clear schedule appointment action')
+  assert.match(workspaceSource, /<summary className="inline-flex min-h-11[\s\S]*Actions/, 'seller header actions should collapse into a single dropdown')
+  assert.ok(workspaceSource.includes('role="list" aria-label="Seller lead status shortcuts"'), 'seller status chips should be actionable shortcuts')
+  for (const actionId of ['edit_seller', 'assign_agent', 'open_journey', 'open_readiness', 'open_listing', 'view_mandate']) {
+    assert.ok(workspaceSource.includes(actionId), `seller status chips should link to ${actionId}`)
+  }
+  assert.ok(workspaceSource.includes('id="seller-journey"'), 'current stage shortcut should have a seller journey anchor target')
+  assert.ok(workspaceSource.includes("focusSellerWorkspaceSection('seller-ownership')"), 'assigned agent shortcut should focus the ownership action card')
+  assert.match(workspaceSource, /SellerTimelineList timeline=\{timeline\} limit=\{12\} compact/, 'recent activity should render enough rows for card scrolling')
+  assert.match(workspaceSource, /overflow-y-auto/, 'recent activity should scroll inside its card')
+  assert.match(workspaceSource, /getSellerDocumentDisplayStatus\(document\)/, 'seller document summary should show upload status text')
+  assert.match(workspaceSource, /function SellerMandateTab\(\{ row, listing, journey, onboardingStatus = '', onGenerateMandate \}\)/, 'mandate tab should receive onboarding status')
+  assert.match(workspaceSource, /const mandateRequiresOnboarding = !mandateMeta\.hasRecord && !sellerOnboardingIsSubmitted\(onboardingStatus\)/, 'mandate tab should use the same onboarding submission gate as the header')
+  assert.match(workspaceSource, /disabled=\{mandateRequiresOnboarding\}/, 'mandate tab generate button should be disabled until onboarding is submitted')
+  assert.ok(workspaceSource.includes('function SellerTimelineSummaryCard'), 'seller activity should include a timeline summary card')
+  assert.ok(workspaceSource.includes('function SellerTimelineMilestonesCard'), 'seller activity should include key milestone checklist')
+  assert.ok(workspaceSource.includes('function SellerPremiumActivityFeed'), 'seller activity should render premium timeline cards')
+  assert.ok(workspaceSource.includes('function SellerActivityInsightsPanel'), 'seller activity should include insights and secondary filters')
+  assert.ok(workspaceSource.includes('dedupeSellerActivityEvents'), 'seller activity should group duplicate events in the frontend presentation')
+  assert.match(workspaceSource, /grid min-w-0 gap-5 lg:grid-cols-12/, 'seller activity workspace should use a bounded 12-column grid')
+  assert.match(workspaceSource, /lg:col-span-4 xl:col-span-3/, 'seller activity summary column should fit the current content area')
+  assert.match(workspaceSource, /lg:col-span-8 xl:col-span-6/, 'seller activity main feed should fit the current content area')
+  assert.match(workspaceSource, /lg:col-span-12 xl:col-span-3/, 'seller activity insights should collapse below on laptop widths')
+  for (const activityFilter of ['Communication', 'Documents', 'Mandate', 'Appointments', 'System']) {
+    assert.ok(workspaceSource.includes(activityFilter), `seller activity filters should include ${activityFilter}`)
+  }
+  assert.ok(workspaceSource.includes('Export Activity'), 'seller activity should expose a future-safe export action')
+  assert.match(privateListingServiceSource, /bridge_upload_private_listing_seller_document/, 'seller portal uploads should use the seller document RPC')
+  assert.match(privateListingServiceSource, /private_listing_documents/, 'seller portal uploads should persist into private listing documents')
+  assert.match(privateListingServiceSource, /status: 'uploaded'/, 'seller portal uploads should mark documents uploaded')
+  assert.match(privateListingServiceSource, /updatePrivateListingRequirementStatus\(matchedRequirement\.id, 'uploaded'\)/, 'seller portal uploads should mark matched requirements uploaded')
   assert.ok(workspaceSource.includes('function LeadOfferTransactionConversionPanel'), 'offers tab should expose accepted-offer transaction conversion')
   assert.ok(workspaceSource.includes('createTransactionFromAcceptedCanonicalOffer'), 'accepted offers should convert through the canonical transaction service')
   assert.ok(workspaceSource.includes('buyer_lead_offer_conversion'), 'buyer onboarding should be sent from the lead offer conversion flow')

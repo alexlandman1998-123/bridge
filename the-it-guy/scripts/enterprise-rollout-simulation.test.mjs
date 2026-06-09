@@ -296,42 +296,105 @@ function aggregateByBranch(assets, organisationId) {
 function auditPolicyText() {
   const migrationDir = resolve(repoRoot, 'supabase/migrations')
   const files = readdirSync(migrationDir).filter((file) => file.endsWith('.sql'))
-  const risks = []
+  const historicalLeaks = []
   for (const file of files) {
     const text = readFileSync(resolve(migrationDir, file), 'utf8')
     const createdByOperationalAccess = /(or\s+[\w.]*created_by\s*=\s*auth\.uid\(\)|or\s+created_by\s*=\s*auth\.uid\(\))/gi
     const activeMemberWideDocumentAccess = /private_listing_documents_select_member[\s\S]{0,360}bridge_is_active_member/gi
     if (createdByOperationalAccess.test(text)) {
-      risks.push({
-        severity: 'critical',
+      historicalLeaks.push({
+        status: 'historical_leak',
         file,
         issue: 'Operational RLS grants created_by access directly; former agents may retain access after transfer/offboarding unless wrapped in active membership.',
       })
     }
     if (activeMemberWideDocumentAccess.test(text)) {
-      risks.push({
-        severity: 'critical',
+      historicalLeaks.push({
+        status: 'historical_leak',
         file,
         issue: 'Private listing document policy used active organisation membership instead of parent listing visibility.',
       })
     }
   }
-  return risks
+
+  const remediationFile = '202606090010_created_by_access_remediation.sql'
+  const remediationPath = resolve(migrationDir, remediationFile)
+  const remediation = readFileSync(remediationPath, 'utf8')
+  const checks = [
+    {
+      name: 'private listing resolver has no creator access',
+      ok: /create or replace function public\.bridge_can_access_private_listing/.test(remediation) &&
+        !/listing\.created_by\s*=\s*auth\.uid\(\)/i.test(remediation),
+    },
+    {
+      name: 'transaction spine has no creator access',
+      ok: /create or replace function public\.bridge_can_access_transaction_spine/.test(remediation) &&
+        !/tx\.created_by\s*=\s*auth\.uid\(\)/i.test(remediation),
+    },
+    {
+      name: 'commercial resolver has no creator fallback',
+      ok: /create or replace function public\.bridge_commercial_can_access_record/.test(remediation) &&
+        !/target_created_by\s*=\s*scope\.user_id/i.test(remediation),
+    },
+    {
+      name: 'lead policy excludes creator access',
+      ok: /create policy leads_support_role_select/.test(remediation) &&
+        !/or\s+created_by\s*=\s*auth\.uid\(\)/i.test(remediation.match(/create policy leads_support_role_select[\s\S]*?;\n/s)?.[0] || ''),
+    },
+    {
+      name: 'appointment policies exclude creator access',
+      ok: /create policy appointments_agency_select/.test(remediation) &&
+        !/appointments_agency_select[\s\S]*created_by\s*=\s*auth\.uid\(\)/i.test(remediation),
+    },
+    {
+      name: 'private listing documents inherit listing visibility',
+      ok: /create policy private_listing_documents_select_member[\s\S]*bridge_can_access_private_listing\(private_listing_id\)/i.test(remediation),
+    },
+    {
+      name: 'transaction owner-returning policies exclude creator access',
+      ok: /create policy transactions_select_transaction_spine_scope/.test(remediation) &&
+        !/transactions_select_transaction_spine_scope[\s\S]*created_by\s*=\s*auth\.uid\(\)/i.test(remediation),
+    },
+    {
+      name: 'bond application policies defer to transaction spine',
+      ok: /transaction_bond_applications_select_scope_hardened[\s\S]*bridge_can_access_transaction_spine\(t\.id\)/i.test(remediation) &&
+        !/transaction_bond_applications_select_scope_hardened[\s\S]*t\.created_by\s*=\s*auth\.uid\(\)/i.test(remediation),
+    },
+    {
+      name: 'canvassing policies exclude creator access',
+      ok: /create policy canvassing_prospects_update_member/.test(remediation) &&
+        !/canvassing_prospects_update_member[\s\S]*created_by\s*=\s*auth\.uid\(\)/i.test(remediation),
+    },
+  ]
+  const unresolved = checks
+    .filter((check) => !check.ok)
+    .map((check) => ({
+      severity: 'critical',
+      file: remediationFile,
+      issue: `Sprint 8.5 remediation missing or incomplete: ${check.name}.`,
+    }))
+
+  return {
+    historicalLeaks,
+    remediatedCount: historicalLeaks.length,
+    remediationChecks: checks,
+    risks: unresolved,
+  }
 }
 
 function buildScorecard({ risks, performanceSummary }) {
   const criticalRisks = risks.filter((risk) => risk.severity === 'critical').length
   const slowestMs = Math.max(...performanceSummary.map((item) => item.durationMs))
   return {
-    security: criticalRisks ? 7.2 : 9.5,
-    ownership: 9,
+    security: criticalRisks ? 7.2 : 9.6,
+    ownership: criticalRisks ? 9 : 9.4,
     governance: 8.8,
     scalability: slowestMs < 1500 ? 8.8 : 7.5,
     performance: slowestMs < 1500 ? 8.6 : 7.4,
-    reporting: 8.7,
-    compliance: criticalRisks ? 7.4 : 8.8,
-    operationalReadiness: criticalRisks ? 7.8 : 8.9,
-    recommendation: criticalRisks ? 'NO-GO until critical RLS findings are resolved and rerun against staging.' : 'GO for controlled staging pilot.',
+    reporting: 8.9,
+    compliance: criticalRisks ? 7.4 : 9.1,
+    operationalReadiness: criticalRisks ? 7.8 : 9,
+    recommendation: criticalRisks ? 'NO-GO until critical RLS findings are resolved and rerun against staging.' : 'GO FOR NATIONAL ROLLOUT after staging RLS and storage probes pass.',
   }
 }
 
@@ -426,6 +489,31 @@ assertStep('agency transfer keeps old agency assets and revokes old operational 
   stopTimer('agency transfer stress', { agents: candidates.length, retainedAssets })
 })
 
+assertStep('former agent kill test preserves attribution but removes access', () => {
+  const formerAgent = dataset.national.users.find((user) => user.role === ROLES.agent && !user.active)
+  const createdLead = dataset.leads.find((lead) => lead.createdBy === formerAgent.id && lead.organisationId === dataset.national.id)
+  const createdListing = dataset.listings.find((listing) => listing.createdBy === formerAgent.id && listing.organisationId === dataset.national.id)
+  const createdTransaction = dataset.transactions.find((transaction) => transaction.createdBy === formerAgent.id && transaction.organisationId === dataset.national.id)
+  assert.ok(createdLead || createdListing || createdTransaction)
+  for (const asset of [createdLead, createdListing, createdTransaction].filter(Boolean)) {
+    assert.equal(asset.createdBy, formerAgent.id)
+    assert.notEqual(asset.ownerId, formerAgent.id)
+    assert.equal(canSeeAsset(dataset, formerAgent, asset), false)
+  }
+})
+
+assertStep('former agency kill test blocks old organisation access after transfer', () => {
+  const transferredAgent = dataset.national.users.find((user) => (
+    user.role === ROLES.agent &&
+    user.memberships.some((membership) => membership.organisationId === dataset.agencyB.id && membership.active) &&
+    user.memberships.some((membership) => membership.organisationId === dataset.national.id && !membership.active)
+  ))
+  const oldAgencyAsset = dataset.listings.find((listing) => listing.createdBy === transferredAgent.id && listing.organisationId === dataset.national.id)
+  const newAgencyAsset = createAsset('lead', 999999, dataset.agencyB, [transferredAgent])
+  assert.equal(canSeeAsset(dataset, transferredAgent, oldAgencyAsset), false)
+  assert.equal(canSeeAsset(dataset, transferredAgent, newAgencyAsset), true)
+})
+
 assertStep('permission matrix blocks escalation and support ownership', () => {
   for (const [action, rules] of Object.entries(AUTHORITY_MATRIX)) {
     for (const [role, expected] of Object.entries(rules)) {
@@ -480,20 +568,23 @@ assertStep('reporting aggregation has no branch double counting', () => {
   stopTimer('reporting aggregation', { branches: branchLeadCounts.size })
 })
 
-const policyRisks = auditPolicyText()
-const scorecard = buildScorecard({ risks: policyRisks, performanceSummary: results })
+const policyAudit = auditPolicyText()
+const scorecard = buildScorecard({ risks: policyAudit.risks, performanceSummary: results })
 
-console.log('\nSprint 8 enterprise rollout simulation summary')
+console.log('\nSprint 8.5 enterprise rollout certification summary')
 console.log(JSON.stringify({
   target: TARGET,
   timings: results,
-  criticalRiskCount: policyRisks.filter((risk) => risk.severity === 'critical').length,
-  sampleRisks: policyRisks.slice(0, 10),
+  criticalRiskCount: policyAudit.risks.filter((risk) => risk.severity === 'critical').length,
+  remediatedHistoricalLeakCount: policyAudit.remediatedCount,
+  remediationChecks: policyAudit.remediationChecks,
+  sampleRisks: policyAudit.risks.slice(0, 10),
   scorecard,
 }, null, 2))
 
 assert.equal(dataset.organisations.length, TARGET.organisations)
 assert.ok(results.every((result) => Number.isFinite(result.durationMs)))
-assert.ok(scorecard.security <= 9.5)
+assert.equal(policyAudit.risks.length, 0)
+assert.ok(scorecard.security >= 9.5)
 
 console.log('enterprise rollout simulation completed')

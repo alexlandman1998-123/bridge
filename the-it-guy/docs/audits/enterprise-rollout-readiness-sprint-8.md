@@ -1,5 +1,7 @@
 # Sprint 8: Enterprise Rollout Simulation, Scale Validation & National Readiness
 
+Supersession note: Sprint 8 produced a NO-GO because of creator-based operational access. Sprint 8.5 remediated that blocker and produced the final GO certification in `docs/audits/ownership-enforcement-rollout-certification-sprint-8-5.md`.
+
 ## Executive Decision
 
 Recommendation: NO-GO for national production rollout until the critical RLS findings are resolved and rerun against staging.

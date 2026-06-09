@@ -1,11 +1,11 @@
 import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusLabel,
-} from './privateListingLifecycle'
+} from './privateListingLifecycle.js'
 import {
   normalizePropertyCategory,
   normalizePropertyStructureType,
-} from './propertyTaxonomy'
+} from './propertyTaxonomy.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy seller requirement engine is retained as a compatibility fallback.

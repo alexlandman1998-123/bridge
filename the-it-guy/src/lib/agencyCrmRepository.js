@@ -18,8 +18,10 @@ const LEGACY_LEAD_SELECT_FIELDS =
   'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
 const LEAD_SELECT_FIELDS =
   `${LEGACY_LEAD_SELECT_FIELDS}, branch_id, assigned_user_id, created_by`
+const LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL =
+  `${LEAD_SELECT_FIELDS}, assigned_agent_email`
 const LEAD_SELECT_FIELDS_EXTENDED =
-  `${LEAD_SELECT_FIELDS}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status`
+  `${LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status`
 const LEAD_ACTIVITY_SELECT_FIELDS =
   'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at'
 const TASK_SELECT_FIELDS =
@@ -119,7 +121,7 @@ function mapSupabaseLead(row = {}) {
     createdBy: normalizeText(row?.created_by),
     assignedAgentId: normalizeText(row?.assigned_agent_id),
     assignedAgentName: '',
-    assignedAgentEmail: '',
+    assignedAgentEmail: normalizeText(row?.assigned_agent_email).toLowerCase(),
     contactId: normalizeText(row?.contact_id),
     leadCategory: inferLeadCategoryFromRecord(row, 'other'),
     leadDirection: normalizeText(row?.lead_direction) || 'Inbound',
@@ -376,6 +378,7 @@ function buildRemoteLeadUpdatePayload(patch = {}) {
   if (hasOwn(patch, 'assignedUserId')) corePayload.assigned_user_id = normalizeNullableUuid(patch.assignedUserId)
   if (hasOwn(patch, 'createdBy')) corePayload.created_by = normalizeNullableUuid(patch.createdBy)
   if (hasOwn(patch, 'assignedAgentId')) corePayload.assigned_agent_id = normalizeNullableUuid(patch.assignedAgentId)
+  if (hasOwn(patch, 'assignedAgentEmail')) corePayload.assigned_agent_email = normalizeText(patch.assignedAgentEmail).toLowerCase() || null
   if (hasOwn(patch, 'contactId')) corePayload.contact_id = normalizeNullableUuid(patch.contactId)
   if (hasOwn(patch, 'leadCategory')) corePayload.lead_category = normalizeLeadCategory(patch.leadCategory, 'other')
   if (hasOwn(patch, 'leadDirection')) corePayload.lead_direction = normalizeText(patch.leadDirection) || 'Inbound'
@@ -421,6 +424,7 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
   const resolvedAssignedAgentId = normalizeNullableUuid(lead?.assignedAgentId)
   const resolvedAssignedUserId = normalizeNullableUuid(lead?.assignedUserId) || resolvedAssignedAgentId
   const resolvedCreatedBy = normalizeNullableUuid(lead?.createdBy) || normalizeNullableUuid(actor?.id)
+  const resolvedAssignedAgentEmail = normalizeText(lead?.assignedAgentEmail || actor?.email).toLowerCase()
   return {
     lead_id: normalizeText(lead.leadId),
     organisation_id: workspaceId,
@@ -428,6 +432,7 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
     assigned_user_id: resolvedAssignedUserId,
     created_by: resolvedCreatedBy,
     assigned_agent_id: resolvedAssignedAgentId,
+    assigned_agent_email: resolvedAssignedAgentEmail || null,
     contact_id: normalizeText(lead.contactId) || null,
     lead_category: inferLeadCategoryFromRecord(lead, 'other'),
     lead_direction: normalizeText(lead.leadDirection) || 'Inbound',
@@ -448,6 +453,9 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
 
 async function selectLeadsWithCompatibility(queryBuilderFactory) {
   let leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_EXTENDED)
+  if (leadResult.error && isMissingColumnError(leadResult.error)) {
+    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL)
+  }
   if (leadResult.error && isMissingColumnError(leadResult.error)) {
     leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS)
   }
@@ -635,7 +643,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     let leadResult = await supabase.from('leads').upsert(leadPayloadForRemote, { onConflict: 'lead_id' })
     if (leadResult.error && isMissingColumnError(leadResult.error)) {
       const fallbackLeadPayload = { ...leadPayloadForRemote }
-      const optionalColumns = ['listing_id', 'branch_id', 'assigned_user_id', 'created_by']
+      const optionalColumns = ['listing_id', 'branch_id', 'assigned_user_id', 'assigned_agent_email', 'created_by']
       let recovered = false
       for (const column of optionalColumns) {
         if (!Object.prototype.hasOwnProperty.call(fallbackLeadPayload, column)) continue

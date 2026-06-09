@@ -771,6 +771,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     organisationId: row.organisation_id || null,
     branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
+    assignedAgentEmail: normalizeText(row.assigned_agent_email).toLowerCase(),
     sellerLeadId: row.seller_lead_id || null,
     originatingCrmLeadId: row.originating_crm_lead_id || null,
     sellerProfileId: row.seller_profile_id || null,
@@ -974,6 +975,7 @@ function mapPrivateListingSummaryRow(row = {}) {
     organisationId: row.organisation_id || null,
     branchId: row.branch_id || null,
     assignedAgentId: row.assigned_agent_id || null,
+    assignedAgentEmail: normalizeText(row.assigned_agent_email).toLowerCase(),
     sellerLeadId: row.seller_lead_id || null,
     sellerProfileId: row.seller_profile_id || null,
     propertyProfileId: row.property_profile_id || null,
@@ -1392,6 +1394,7 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
     organisation_id: organisationId,
     branch_id: normalizeUuid(payload.branchId || payload.branch_id),
     assigned_agent_id: normalizeUuid(payload.assignedAgentId),
+    assigned_agent_email: normalizeText(payload.assignedAgentEmail).toLowerCase() || null,
     seller_lead_id: normalizeLeadLink(payload.sellerLeadId),
     originating_crm_lead_id: normalizeLeadLink(payload.originatingCrmLeadId),
     seller_profile_id: normalizeUuid(payload.sellerProfileId),
@@ -1468,11 +1471,15 @@ export async function createPrivateListing(payload = {}, options = {}) {
     isMissingColumnError(insert.error, 'property_category') ||
     isMissingColumnError(insert.error, 'listing_source') ||
     isMissingColumnError(insert.error, 'property_structure_type') ||
+    isMissingColumnError(insert.error, 'assigned_agent_email') ||
     hasMissingPrivateListingPortalColumn(insert.error)
   )) {
+    const fallbackPayload = { ...listingPayload }
+    if (isMissingColumnError(insert.error, 'assigned_agent_email')) delete fallbackPayload.assigned_agent_email
+    const shouldStripBranchId = isMissingColumnError(insert.error, 'branch_id')
     insert = await client
       .from('private_listings')
-      .insert(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(Object.fromEntries(Object.entries(listingPayload).filter(([key]) => key !== 'branch_id')))))
+      .insert(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(Object.fromEntries(Object.entries(fallbackPayload).filter(([key]) => !shouldStripBranchId || key !== 'branch_id')))))
       .select('*')
       .single()
   }
@@ -1542,6 +1549,7 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
 
   const patch = {}
   if (payload.assignedAgentId !== undefined) patch.assigned_agent_id = normalizeUuid(payload.assignedAgentId)
+  if (payload.assignedAgentEmail !== undefined) patch.assigned_agent_email = normalizeText(payload.assignedAgentEmail).toLowerCase() || null
   if (payload.sellerLeadId !== undefined) patch.seller_lead_id = normalizeLeadLink(payload.sellerLeadId)
   if (payload.originatingCrmLeadId !== undefined) patch.originating_crm_lead_id = normalizeLeadLink(payload.originatingCrmLeadId)
   if (payload.sellerProfileId !== undefined) patch.seller_profile_id = normalizeUuid(payload.sellerProfileId)
@@ -1605,12 +1613,14 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     isMissingColumnError(updateQuery.error, 'property_category') ||
     isMissingColumnError(updateQuery.error, 'listing_source') ||
     isMissingColumnError(updateQuery.error, 'property_structure_type') ||
+    isMissingColumnError(updateQuery.error, 'assigned_agent_email') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_facts_json') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_fact_readiness_json') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_facts_updated_at') ||
     hasMissingPrivateListingPortalColumn(updateQuery.error)
   )) {
     const compatiblePatch = { ...patch }
+    if (isMissingColumnError(updateQuery.error, 'assigned_agent_email')) delete compatiblePatch.assigned_agent_email
     delete compatiblePatch.seller_canonical_facts_json
     delete compatiblePatch.seller_canonical_fact_readiness_json
     delete compatiblePatch.seller_canonical_facts_updated_at

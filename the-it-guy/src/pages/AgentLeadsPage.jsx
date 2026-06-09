@@ -1,13 +1,17 @@
 import {
+  AlertTriangle,
+  Archive,
   ArrowLeft,
   CalendarDays,
   ChevronDown,
   CheckCircle2,
   Clock3,
+  CreditCard,
   ExternalLink,
   FileText,
   Home,
   Mail,
+  MapPin,
   MessageSquarePlus,
   MoreVertical,
   Phone,
@@ -15,6 +19,7 @@ import {
   RefreshCw,
   Search,
   Tag,
+  Target,
   Trash2,
   UserRound,
 } from 'lucide-react'
@@ -137,6 +142,11 @@ const LEAD_APPOINTMENT_TYPES = [
   { value: 'otp_signing', label: 'OTP Signing' },
   { value: 'other', label: 'Other Appointment' },
 ]
+const SELLER_ADD_ON_APPOINTMENT_TYPES = [
+  { value: 'other', label: 'Seller Appointment' },
+  { value: 'mandate_signing', label: 'Mandate Signing' },
+  { value: 'client_meeting', label: 'Client Meeting' },
+]
 const VIEWING_OUTCOME_OPTIONS = [
   'Interested',
   'Needs second viewing',
@@ -154,6 +164,7 @@ const LEAD_CATEGORY_FILTERS = [
   { key: 'buyer', label: 'Buyer Leads', helper: 'Requirements, matches, viewings', icon: UserRound },
   { key: 'seller', label: 'Seller Leads', helper: 'Property, mandate, listing readiness', icon: Home },
   { key: 'other', label: 'Other', helper: 'Uncategorised follow-up', icon: FileText },
+  { key: 'archived', label: 'Archived', helper: 'Closed out and hidden from active views', icon: Archive },
 ]
 const LEAD_SOURCE_OPTIONS = [
   'Property24',
@@ -198,6 +209,12 @@ function splitName(fullName = '') {
 function normalizeLeadSourceOption(value = '') {
   const normalized = normalizeText(value)
   return LEAD_SOURCE_OPTIONS.includes(normalized) ? normalized : LEAD_SOURCE_OPTIONS[LEAD_SOURCE_OPTIONS.length - 1]
+}
+
+function readDate(value) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 function formatDate(value, fallback = '—') {
@@ -437,6 +454,11 @@ function normalizeLeadCategory(row = {}) {
   return 'other'
 }
 
+function isArchivedLead(row = {}) {
+  const lifecycle = `${row.stage || ''} ${row.status || ''} ${row.lifecycleStatus || row.lifecycle_status || ''}`.toLowerCase()
+  return lifecycle.includes('archived')
+}
+
 function getLeadCategoryLabel(row = {}) {
   const category = normalizeLeadCategory(row)
   if (category === 'seller') return 'Seller Lead'
@@ -456,7 +478,7 @@ function isUuidLike(value = '') {
 }
 
 function getOwnerName(row = {}) {
-  const owner = normalizeText(row.assignedAgentName || row.assigned_agent_name || row.assignedAgent || row.assigned_agent)
+  const owner = normalizeText(row.assignedAgentName || row.assigned_agent_name || row.assignedAgent || row.assigned_agent || row.assignedAgentEmail || row.assigned_agent_email)
   if (!owner || isUuidLike(owner)) return 'Unassigned'
   if (owner.includes('@')) return owner.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
   return owner
@@ -598,6 +620,169 @@ function getBuyerLastActivity(row = {}) {
     .filter(({ date }) => date && !Number.isNaN(new Date(date).getTime()))
     .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
   return candidates[0] || null
+}
+
+function getBuyerDocumentCollections(row = {}) {
+  return [
+    row.documents,
+    row.buyerDocuments,
+    row.buyer_documents,
+    row.canonicalDocuments,
+    row.canonical_documents,
+    row.documentRequirements,
+    row.document_requirements,
+  ].flatMap((collection) => (Array.isArray(collection) ? collection : []))
+}
+
+function getBuyerDocumentReadiness(row = {}) {
+  const documents = getBuyerDocumentCollections(row)
+  const isComplete = (document) => {
+    const status = normalizeText(document?.status || document?.reviewStatus || document?.review_status || document?.documentStatus || document?.document_status).toLowerCase()
+    return ['approved', 'uploaded', 'complete', 'completed', 'verified', 'received'].some((token) => status.includes(token)) || Boolean(document?.uploadedAt || document?.uploaded_at || document?.fileUrl || document?.file_url)
+  }
+  const labelFor = (document) => normalizeText(document?.label || document?.name || document?.title || document?.requirementLabel || document?.requirement_label || document?.type || document?.documentType || document?.document_type)
+  if (!documents.length) {
+    return {
+      percent: 0,
+      label: 'Documents Not Started',
+      tone: 'amber',
+      complete: 0,
+      total: 4,
+      missing: ['ID document', 'Proof of address', 'Finance documents'],
+    }
+  }
+  const complete = documents.filter(isComplete).length
+  const total = documents.length
+  const percent = Math.round((complete / Math.max(total, 1)) * 100)
+  const missing = documents.filter((document) => !isComplete(document)).map(labelFor).filter(Boolean).slice(0, 3)
+  return {
+    percent,
+    label: percent >= 90 ? 'Documents Ready' : percent >= 50 ? 'Documents In Progress' : 'Documents Needed',
+    tone: percent >= 90 ? 'green' : percent >= 50 ? 'blue' : 'amber',
+    complete,
+    total,
+    missing,
+  }
+}
+
+function getBuyerFinanceReadiness(row = {}) {
+  const requirement = getBuyerPrimaryRequirement(row)
+  const financeStatus = normalizeText(
+    requirement.financeStatus ||
+      requirement.finance_status ||
+      row.financeStatus ||
+      row.finance_status ||
+      row.bondApplicationStatus ||
+      row.bond_application_status,
+  ).toLowerCase()
+  const financeType = normalizeText(requirement.financeType || requirement.finance_type || row.financeType || row.finance_type).toLowerCase()
+  const preApproved = requirement.preApproved === true || requirement.pre_approved === true || ['pre_approved', 'pre-approved', 'approved'].some((token) => financeStatus.includes(token))
+  const cash = financeStatus.includes('cash') || financeType.includes('cash')
+  const bondApplications = [
+    ...(Array.isArray(row.bondApplications) ? row.bondApplications : []),
+    ...(Array.isArray(row.bond_applications) ? row.bond_applications : []),
+    ...(Array.isArray(row.financeApplications) ? row.financeApplications : []),
+  ]
+  const needsFinance = ['bond', 'finance', 'mortgage', 'preapproval', 'pre-approval'].some((token) => `${financeStatus} ${financeType}`.includes(token))
+  if (cash) {
+    return { score: 100, label: 'Cash Buyer', tone: 'green', helper: 'No bond application required.', missing: [] }
+  }
+  if (preApproved) {
+    return { score: 90, label: 'Finance Ready', tone: 'green', helper: getBuyerPreQualifiedLabel(requirement), missing: [] }
+  }
+  if (bondApplications.length) {
+    return { score: 70, label: 'Bond In Progress', tone: 'blue', helper: `${bondApplications.length} application${bondApplications.length === 1 ? '' : 's'} linked.`, missing: [] }
+  }
+  if (needsFinance) {
+    return { score: 45, label: 'Finance Required', tone: 'amber', helper: 'Confirm pre-approval and document pack.', missing: ['Pre-approval', 'Finance documents'] }
+  }
+  return { score: 35, label: 'Finance Unknown', tone: 'amber', helper: 'Confirm whether this buyer is cash, bond, or hybrid.', missing: ['Finance position'] }
+}
+
+function getBuyerPropertyReadiness(row = {}) {
+  const requirement = getBuyerPrimaryRequirement(row)
+  const propertyOptions = getLeadAppointmentPropertyOptions(row)
+  const listingInterests = Array.isArray(row.listingInterests) ? row.listingInterests : []
+  const suggestions = Array.isArray(row.suggestions) ? row.suggestions : []
+  const appointments = Array.isArray(row.appointments) ? row.appointments : []
+  const offers = Array.isArray(row.offers) ? row.offers : []
+  const hasRequirement = getBuyerBudgetLabel(row, requirement) !== '—' || getBuyerAreaLabel(row, requirement) !== '—'
+  let score = hasRequirement ? 45 : 15
+  if (propertyOptions.length || listingInterests.length || suggestions.length) score += 25
+  if (appointments.some(isViewingAppointment)) score += 20
+  if (offers.length) score += 10
+  const percent = Math.min(100, score)
+  return {
+    percent,
+    label: offers.length ? 'Offer Context Ready' : propertyOptions.length ? 'Properties Linked' : hasRequirement ? 'Requirement Captured' : 'Requirement Needed',
+    tone: percent >= 80 ? 'green' : percent >= 55 ? 'blue' : 'amber',
+    propertyCount: propertyOptions.length || listingInterests.length || suggestions.length,
+    requirement,
+  }
+}
+
+function getBuyerWorkspaceCommand(row = {}) {
+  const steps = getBuyerOutreachSteps(row)
+  const finance = getBuyerFinanceReadiness(row)
+  const documents = getBuyerDocumentReadiness(row)
+  const property = getBuyerPropertyReadiness(row)
+  const nextStep = steps.find((step) => !step.done)
+  if (finance.score < 60) {
+    return {
+      title: 'Finance position needs confirmation',
+      copy: finance.helper,
+      actionLabel: 'Review Requirements',
+      actionId: 'property_match',
+      tone: 'amber',
+      blockers: finance.missing,
+    }
+  }
+  if (documents.percent < 50 && finance.score < 90) {
+    return {
+      title: 'Document pack is not ready',
+      copy: 'Finance and transaction readiness depend on the buyer document pack.',
+      actionLabel: 'Review Tasks',
+      actionId: 'tasks',
+      tone: 'amber',
+      blockers: documents.missing,
+    }
+  }
+  if (property.percent < 55) {
+    return {
+      title: 'No strong property path yet',
+      copy: 'Capture requirements or send matching properties before pushing toward an offer.',
+      actionLabel: 'Match Properties',
+      actionId: 'property_match',
+      tone: 'blue',
+      blockers: ['Property requirement', 'Matched listings'],
+    }
+  }
+  if (nextStep) {
+    const actionMap = {
+      reached_out: ['Contact buyer', 'timeline'],
+      viewing_scheduled: ['Schedule Viewing', 'appointments'],
+      viewing_completed: ['Review Viewing', 'appointments'],
+      offer_made: ['Open Offers', 'offers'],
+      transaction_created: ['Convert Lead', 'convert'],
+    }
+    const [actionLabel, actionId] = actionMap[nextStep.key] || ['Review Timeline', 'timeline']
+    return {
+      title: nextStep.label,
+      copy: nextStep.hint,
+      actionLabel,
+      actionId,
+      tone: 'blue',
+      blockers: [],
+    }
+  }
+  return {
+    title: 'Buyer journey is transaction-ready',
+    copy: 'The buyer has enough journey signal to review transaction handoff.',
+    actionLabel: 'Open Transaction',
+    actionId: 'convert',
+    tone: 'green',
+    blockers: [],
+  }
 }
 
 function getWhatsAppHref(phone = '') {
@@ -1496,29 +1681,73 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
   )
 }
 
+function BuyerHeaderStatusBlock({ icon, label, value, tone = 'slate', helper = '' }) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/80 px-3.5 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+        {icon ? createElement(icon, { size: 14, className: 'shrink-0' }) : null}
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="mt-2 flex min-w-0 items-center gap-2">
+        <span className={`h-2 w-2 shrink-0 rounded-full ${tone === 'green' ? 'bg-emerald-500' : tone === 'blue' ? 'bg-blue-500' : tone === 'amber' ? 'bg-amber-500' : tone === 'red' ? 'bg-rose-500' : 'bg-slate-300'}`} />
+        <strong className="truncate text-sm font-semibold text-slate-950">{value || '—'}</strong>
+      </div>
+      {helper ? <p className="mt-1 truncate text-xs font-semibold text-slate-500">{helper}</p> : null}
+    </div>
+  )
+}
+
 function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onOpenTimeline, onDelete, onConvert }) {
   const [moreOpen, setMoreOpen] = useState(false)
+  const finance = getBuyerFinanceReadiness(row)
+  const documents = getBuyerDocumentReadiness(row)
+  const property = getBuyerPropertyReadiness(row)
+  const transactionReady = Boolean(row.convertedTransactionId || row.converted_transaction_id || (Array.isArray(row.transactions) && row.transactions.length))
+  const stageLabel = formatCleanValue(row.stage || row.status)
   return (
-    <header className={`${panelClass} p-5`}>
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill tone="blue">Buyer Lead</StatusPill>
-            <StatusPill tone={getStageTone(row.stage)}>{formatCleanValue(row.stage || row.status)}</StatusPill>
-            <StatusPill tone={leadScore >= 80 ? 'green' : 'amber'}>{getIntentLabel(leadScore)}</StatusPill>
+    <header className={`${panelClass} overflow-visible bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.08)]`}>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,1fr)_220px] xl:items-start">
+        <div className="flex min-w-0 gap-4">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl bg-slate-950 text-xl font-semibold text-white shadow-[0_18px_34px_rgba(15,23,42,0.18)]">
+            {getInitials(row.name)}
           </div>
-          <h1 className="mt-3 break-words text-3xl font-semibold tracking-[-0.045em] text-slate-950">{row.name}</h1>
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-600">
-            <span className="inline-flex items-center gap-1.5"><Phone size={15} />{row.phone || 'No phone'}</span>
-            <span className="inline-flex items-center gap-1.5"><Mail size={15} />{row.email || 'No email'}</span>
-            <span className="inline-flex items-center gap-1.5"><Tag size={15} />{formatCleanValue(sourceInfo?.leadSource || row.source)}</span>
-            <span className="inline-flex items-center gap-1.5"><UserRound size={15} />{getOwnerName(row)}</span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill tone="blue">Buyer Journey</StatusPill>
+              <StatusPill tone={getStageTone(row.stage)}>{stageLabel}</StatusPill>
+              <StatusPill tone={leadScore >= 80 ? 'green' : 'amber'}>{getIntentLabel(leadScore)}</StatusPill>
+              <StatusPill>{formatDate(row.createdAt || row.created_at, 'No created date')}</StatusPill>
+            </div>
+            <h1 className="mt-3 break-words text-3xl font-semibold tracking-[-0.045em] text-slate-950">{row.name}</h1>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-600">
+              <span className="inline-flex items-center gap-1.5"><Phone size={15} />{row.phone || 'No phone'}</span>
+              <span className="inline-flex items-center gap-1.5"><Mail size={15} />{row.email || 'No email'}</span>
+              <span className="inline-flex items-center gap-1.5"><Tag size={15} />{formatCleanValue(sourceInfo?.leadSource || row.source)}</span>
+            </div>
+            {lastActivity?.date ? <p className="mt-2 text-sm font-medium text-slate-500">Last activity {formatRelativeTime(lastActivity.date)} · {formatDateTime(lastActivity.date)}</p> : null}
           </div>
-          {lastActivity?.date ? <p className="mt-2 text-sm font-medium text-slate-500">Last activity {formatRelativeTime(lastActivity.date)} · {formatDateTime(lastActivity.date)}</p> : null}
         </div>
-        <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-3 xl:w-auto">
+
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <BuyerHeaderStatusBlock icon={UserRound} label="Assigned Agent" value={getOwnerName(row)} tone={getOwnerName(row) === 'Unassigned' ? 'amber' : 'green'} />
+          <BuyerHeaderStatusBlock icon={Clock3} label="Current Stage" value={stageLabel} tone={getStageTone(row.stage || row.status)} />
+          <BuyerHeaderStatusBlock icon={CreditCard} label="Finance" value={finance.label} tone={finance.tone} helper={`${finance.score}% ready`} />
+          <BuyerHeaderStatusBlock icon={Target} label="Property Match" value={property.label} tone={property.tone} helper={`${property.percent}% fit`} />
+          <BuyerHeaderStatusBlock icon={FileText} label="Documents" value={documents.label} tone={documents.tone} helper={`${documents.complete}/${documents.total} complete`} />
+          <BuyerHeaderStatusBlock icon={Home} label="Transaction" value={transactionReady ? 'Created' : 'Not Created'} tone={transactionReady ? 'green' : 'slate'} />
+        </div>
+
+        <div className="flex flex-col gap-2 xl:items-stretch">
+          <button type="button" onClick={onConvert} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800">
+            {transactionReady ? 'Open Transaction' : 'Convert to Transaction'}
+            <ExternalLink size={15} />
+          </button>
+          <button type="button" onClick={onOpenTimeline} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <Clock3 size={15} />
+            Activity
+          </button>
           <div className="relative">
-            <button type="button" onClick={() => setMoreOpen((open) => !open)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-haspopup="menu" aria-expanded={moreOpen}>
+            <button type="button" onClick={() => setMoreOpen((open) => !open)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-haspopup="menu" aria-expanded={moreOpen}>
               <MoreVertical size={15} />
               More
             </button>
@@ -1535,12 +1764,107 @@ function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onOpenTimel
               </div>
             ) : null}
           </div>
-          <button type="button" onClick={onConvert} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700">
-            Convert to Transaction
-          </button>
         </div>
       </div>
     </header>
+  )
+}
+
+function BuyerCommandMetric({ icon, label, value, tone = 'slate', helper = '' }) {
+  const toneClass = tone === 'green'
+    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+    : tone === 'blue'
+      ? 'border-blue-100 bg-blue-50 text-blue-700'
+      : tone === 'amber'
+        ? 'border-amber-100 bg-amber-50 text-amber-700'
+        : 'border-slate-200 bg-slate-50 text-slate-700'
+  return (
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] opacity-80">
+        {icon ? createElement(icon, { size: 15 }) : null}
+        {label}
+      </div>
+      <strong className="mt-3 block text-2xl font-semibold tracking-[-0.045em] text-slate-950">{value}</strong>
+      {helper ? <p className="mt-1 text-sm font-semibold text-slate-600">{helper}</p> : null}
+    </div>
+  )
+}
+
+function BuyerJourneyCommandRow({ row, onNavigate, onConvert }) {
+  const command = getBuyerWorkspaceCommand(row)
+  const finance = getBuyerFinanceReadiness(row)
+  const documents = getBuyerDocumentReadiness(row)
+  const property = getBuyerPropertyReadiness(row)
+  const requirement = property.requirement || {}
+  const missing = command.blockers?.length ? command.blockers : ['No major blocker visible']
+  const toneClass = command.tone === 'green'
+    ? 'border-emerald-100 bg-emerald-50/70'
+    : command.tone === 'blue'
+      ? 'border-blue-100 bg-blue-50/70'
+      : 'border-amber-100 bg-amber-50/70'
+  const runCommand = () => {
+    if (command.actionId === 'convert') onConvert?.()
+    else onNavigate?.(command.actionId || 'overview')
+  }
+  return (
+    <section className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)_minmax(280px,0.75fr)]">
+      <article className={`rounded-2xl border p-5 shadow-sm ${toneClass}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <AlertTriangle size={15} className={command.tone === 'green' ? 'text-emerald-600' : command.tone === 'blue' ? 'text-blue-600' : 'text-amber-600'} />
+              Next Best Action
+            </p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{command.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{command.copy}</p>
+          </div>
+          <button type="button" onClick={runCommand} className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
+            {command.actionLabel}
+          </button>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {missing.map((item) => (
+            <span key={item} className="inline-flex min-h-8 items-center rounded-full bg-white/80 px-3 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">{item}</span>
+          ))}
+        </div>
+      </article>
+
+      <article className={`${panelClass} p-5`}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Buyer Readiness</p>
+            <h2 className="mt-2 text-lg font-semibold tracking-[-0.035em] text-slate-950">Finance and documents</h2>
+          </div>
+          <StatusPill tone={finance.tone}>{finance.label}</StatusPill>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <BuyerCommandMetric icon={CreditCard} label="Finance" value={`${finance.score}%`} tone={finance.tone} helper={finance.helper} />
+          <BuyerCommandMetric icon={FileText} label="Docs" value={`${documents.percent}%`} tone={documents.tone} helper={`${documents.complete}/${documents.total} complete`} />
+        </div>
+      </article>
+
+      <article className={`${panelClass} overflow-hidden p-5`}>
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+          <MapPin size={15} />
+          Property Requirement
+        </p>
+        <h2 className="mt-3 line-clamp-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">{getLeadContextSummary(row) || 'Requirement pending'}</h2>
+        <dl className="mt-4 grid gap-2 text-sm">
+          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+            <dt className="font-semibold text-slate-500">Budget</dt>
+            <dd className="truncate font-semibold text-slate-950">{getBuyerBudgetLabel(row, requirement)}</dd>
+          </div>
+          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+            <dt className="font-semibold text-slate-500">Area</dt>
+            <dd className="truncate font-semibold text-slate-950">{getBuyerAreaLabel(row, requirement)}</dd>
+          </div>
+          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+            <dt className="font-semibold text-slate-500">Matches</dt>
+            <dd className="font-semibold text-slate-950">{property.propertyCount}</dd>
+          </div>
+        </dl>
+      </article>
+    </section>
   )
 }
 
@@ -1604,13 +1928,17 @@ function RowActionMenu({ row, onOpen }) {
 
 function LeadCategoryFilter({ filters, rows, onChange }) {
   const counts = rows.reduce((accumulator, row) => {
+    if (isArchivedLead(row)) {
+      accumulator.archived += 1
+      return accumulator
+    }
     const category = normalizeLeadCategory(row)
     accumulator.all += 1
     accumulator[category] = (accumulator[category] || 0) + 1
     return accumulator
-  }, { all: 0, buyer: 0, seller: 0, other: 0 })
+  }, { all: 0, buyer: 0, seller: 0, other: 0, archived: 0 })
   return (
-    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Lead pipeline views">
+    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5" role="tablist" aria-label="Lead pipeline views">
       {LEAD_CATEGORY_FILTERS.map((option) => {
         const active = filters.category === option.key
         const Icon = option.icon
@@ -1658,6 +1986,10 @@ function LeadViewSummary({ category = 'all', visibleCount = 0 }) {
       title: 'Other leads',
       copy: 'Basic follow-up leads that are not yet buyer or seller pipeline work.',
     },
+    archived: {
+      title: 'Archived leads',
+      copy: 'Closed-out buyer, seller, and other leads. These are hidden from the active operating views.',
+    },
   }
   const summary = summaries[category] || summaries.all
   return (
@@ -1677,6 +2009,7 @@ function getLeadColumnHeader(category = 'all') {
   if (category === 'buyer') return 'Buyer / Requirement'
   if (category === 'seller') return 'Seller / Property'
   if (category === 'other') return 'Lead / Notes'
+  if (category === 'archived') return 'Archived Lead'
   return 'Lead Context'
 }
 
@@ -3155,8 +3488,10 @@ function AgentLeadList() {
   const options = useMemo(() => getLeadFilterOptions(rows), [rows])
   const visibleRows = useMemo(() => {
     const filtered = filterAgentLeadRows(rows, filters)
-    if (!filters.category || filters.category === 'all') return filtered
-    return filtered.filter((row) => normalizeLeadCategory(row) === filters.category)
+    if (filters.category === 'archived') return filtered.filter(isArchivedLead)
+    const activeRows = filtered.filter((row) => !isArchivedLead(row))
+    if (!filters.category || filters.category === 'all') return activeRows
+    return activeRows.filter((row) => normalizeLeadCategory(row) === filters.category)
   }, [rows, filters])
   const recommendationRows = useMemo(() => rows.flatMap((row) => Array.isArray(row.recommendations) ? row.recommendations : []), [rows])
   const recommendationMetrics = useMemo(() => getRecommendationMetrics(recommendationRows), [recommendationRows])
@@ -4430,6 +4765,165 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved }) {
   )
 }
 
+function SellerAppointmentForm({ organisationId, lead, listing = null, actor, onSaved }) {
+  const contact = getLeadContactSnapshot(lead)
+  const listingId = getSellerListingId(lead, listing)
+  const property = getSellerPropertySummary(lead, listing)
+  const [draft, setDraft] = useState({
+    appointmentType: 'other',
+    title: `Seller appointment - ${contact.name || lead?.name || 'Seller'}`,
+    appointmentStatus: 'confirmed',
+    sendInviteEmails: false,
+    date: getTodayInputValue(),
+    startTime: '',
+    location: property.address !== 'Property address pending' ? property.address : '',
+    notes: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    setDraft((previous) => ({
+      ...previous,
+      title: previous.title || `Seller appointment - ${contact.name || lead?.name || 'Seller'}`,
+    }))
+  }, [contact.name, lead?.name])
+
+  async function submit(event) {
+    event.preventDefault()
+    if (!organisationId || !lead?.leadId) {
+      setError('This seller lead needs to be loaded before an appointment can be created.')
+      return
+    }
+    if (!normalizeText(draft.date) || !normalizeText(draft.startTime)) {
+      setError('Choose a date and start time for the appointment.')
+      return
+    }
+
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      const sellerParticipant = {
+        name: contact.name || lead.name || 'Seller',
+        email: contact.email,
+        phone: contact.phone,
+        contactId: contact.contactId || null,
+        participantRole: 'Seller',
+        rsvpStatus: 'Pending',
+      }
+      const result = await createAppointmentAsync(organisationId, {
+        appointmentType: draft.appointmentType,
+        title: normalizeText(draft.title) || `Seller appointment - ${contact.name || lead.name || 'Seller'}`,
+        customTypeLabel: draft.appointmentType === 'other' ? 'Seller Appointment' : '',
+        date: draft.date,
+        startTime: draft.startTime,
+        location: normalizeText(draft.location),
+        locationType: normalizeText(draft.location) ? 'physical' : 'to_be_confirmed',
+        notes: normalizeText(draft.notes),
+        status: draft.appointmentStatus,
+        leadId: lead.leadId,
+        contactId: contact.contactId || null,
+        listingId: listingId || null,
+        listingLabel: property.address,
+        relatedEntityType: 'lead',
+        relatedEntityId: lead.leadId,
+        linkedWorkflow: 'seller_lead_add_on',
+        linkedWorkflowStage: 'optional_appointment',
+        visibility: draft.sendInviteEmails ? 'client_visible' : 'shared_role_players',
+        assignedAgent: actor,
+        participants: [sellerParticipant].filter((participant) => participant.email || participant.phone || participant.name),
+        instructions: 'Optional seller lead appointment. This does not gate onboarding, mandate generation, or listing creation.',
+        sendInviteEmails: draft.sendInviteEmails,
+        attachCalendarInvite: draft.sendInviteEmails,
+      }, { actor })
+      setMessage(buildAppointmentCreateMessage(result, {
+        ...draft,
+        appointmentStatus: draft.appointmentStatus,
+      }, false))
+      setDraft({
+        appointmentType: 'other',
+        title: `Seller appointment - ${contact.name || lead.name || 'Seller'}`,
+        appointmentStatus: 'confirmed',
+        sendInviteEmails: false,
+        date: getTodayInputValue(),
+        startTime: '',
+        location: property.address !== 'Property address pending' ? property.address : '',
+        notes: '',
+      })
+      await onSaved?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to create this appointment.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Optional seller appointment</p>
+          <p className="mt-1 text-sm text-slate-500">Linked to this seller lead{listingId ? ' and listing' : ''}; it does not update journey progress or mandate eligibility.</p>
+        </div>
+        <StatusPill tone="blue">Add-on</StatusPill>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Type
+          <select value={draft.appointmentType} onChange={(event) => setDraft((previous) => ({ ...previous, appointmentType: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
+            {SELLER_ADD_ON_APPOINTMENT_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Title
+          <input value={draft.title} onChange={(event) => setDraft((previous) => ({ ...previous, title: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Seller appointment" />
+        </label>
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Date
+          <input type="date" value={draft.date} onChange={(event) => setDraft((previous) => ({ ...previous, date: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
+        </label>
+        <label className="grid gap-1 text-sm font-semibold text-slate-700">
+          Start time
+          <input type="time" value={draft.startTime} onChange={(event) => setDraft((previous) => ({ ...previous, startTime: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" />
+        </label>
+      </div>
+      <div className="grid gap-3 md:grid-cols-[1fr_1fr_220px]">
+        <input value={draft.location} onChange={(event) => setDraft((previous) => ({ ...previous, location: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Location or property address" />
+        <input value={draft.notes} onChange={(event) => setDraft((previous) => ({ ...previous, notes: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300" placeholder="Internal notes" />
+        <select value={draft.appointmentStatus} onChange={(event) => setDraft((previous) => ({ ...previous, appointmentStatus: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
+          <option value="confirmed">Confirmed</option>
+          <option value="requested">Requested</option>
+        </select>
+      </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <label className="flex min-h-11 items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={draft.sendInviteEmails} onChange={(event) => setDraft((previous) => ({ ...previous, sendInviteEmails: event.target.checked }))} />
+          Send invite to seller
+        </label>
+        <button type="submit" disabled={saving || !normalizeText(draft.date) || !normalizeText(draft.startTime)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+          <CalendarDays size={15} />
+          {saving ? 'Saving...' : 'Schedule Appointment'}
+        </button>
+      </div>
+      {error ? <p className="text-sm font-semibold text-red-600">{error}</p> : null}
+      {message ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+    </form>
+  )
+}
+
+function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, onSaved }) {
+  return (
+    <SellerWorkspaceCard title="Appointments" action={<StatusPill tone={(lead?.appointments || []).length ? 'blue' : 'slate'}>{(lead?.appointments || []).length} linked</StatusPill>}>
+      <div className="grid gap-5">
+        <SellerAppointmentForm organisationId={organisationId} lead={lead} listing={listing} actor={actor} onSaved={onSaved} />
+        <AppointmentList items={lead.appointments} organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
+      </div>
+    </SellerWorkspaceCard>
+  )
+}
+
 function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
   const contact = getLeadContactSnapshot(lead)
   const contexts = useMemo(() => getLeadOfferPropertyContexts(lead), [lead])
@@ -5447,6 +5941,214 @@ function getSellerTimelineItems(timeline = [], limit = 5) {
   })
 }
 
+function getSellerActivityTimestamp(item = {}) {
+  return item.timestamp || item.activityDate || item.activity_date || item.createdAt || item.created_at || item.updatedAt || item.updated_at || ''
+}
+
+function getSellerActivityActor(item = {}) {
+  return normalizeText(
+    item.actorName ||
+      item.agentName ||
+      item.agent?.name ||
+      item.createdByName ||
+      item.created_by_name ||
+      item.createdBy ||
+      item.created_by,
+  ) || 'Bridge'
+}
+
+function getInitials(value = '') {
+  return normalizeText(value)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'BR'
+}
+
+function getSellerActivityCategory(item = {}) {
+  const source = normalizeText([
+    item.title,
+    item.activityType,
+    item.activity_type,
+    item.type,
+    item.description,
+    item.activityNote,
+    item.activity_note,
+    item.outcome,
+  ].filter(Boolean).join(' ')).toLowerCase()
+  if (/call|email|whatsapp|sms|message|note|contact|communication|phone/.test(source)) return 'communication'
+  if (/document|upload|proof|rates|title deed|id |fica|mandate pdf|photo|image/.test(source)) return 'documents'
+  if (/mandate|signature|signing|signed/.test(source)) return 'mandate'
+  if (/appointment|valuation|viewing|consultation|meeting|calendar/.test(source)) return 'appointments'
+  return 'system'
+}
+
+function getSellerActivityTone(item = {}) {
+  const source = normalizeText([
+    item.title,
+    item.activityType,
+    item.activity_type,
+    item.type,
+    item.description,
+    item.activityNote,
+    item.activity_note,
+    item.outcome,
+    item.status,
+  ].filter(Boolean).join(' ')).toLowerCase()
+  if (/failed|failure|declined|rejected|cancelled|canceled|lost|error/.test(source)) return 'risk'
+  if (/missing|outstanding|overdue|expir|pending|no activity|required/.test(source)) return 'attention'
+  if (/signed|submitted|completed|complete|published|live|approved|accepted|uploaded/.test(source)) return 'success'
+  return 'workflow'
+}
+
+function getSellerActivityIcon(category = 'system', tone = 'workflow') {
+  if (tone === 'success') return CheckCircle2
+  if (category === 'communication') return Mail
+  if (category === 'documents' || category === 'mandate') return FileText
+  if (category === 'appointments') return CalendarDays
+  if (category === 'system') return Home
+  return Clock3
+}
+
+function normalizeSellerActivityEvent(item = {}, index = 0) {
+  const title = normalizeText(item.title || item.activityType || item.activity_type || item.type) || 'Lead Updated'
+  const description = normalizeText(item.description || item.activityNote || item.activity_note || item.outcome) || 'Seller workflow activity'
+  const timestamp = getSellerActivityTimestamp(item)
+  const category = getSellerActivityCategory({ ...item, title, description })
+  const tone = getSellerActivityTone({ ...item, title, description })
+  const actor = getSellerActivityActor(item)
+  return {
+    raw: item,
+    key: item.id || item.activityId || item.activity_id || `${title}-${timestamp || 'undated'}-${index}`,
+    title,
+    description,
+    timestamp,
+    actor,
+    category,
+    tone,
+    sourceType: normalizeText(item.activityType || item.activity_type || item.type || category),
+  }
+}
+
+function dedupeSellerActivityEvents(events = []) {
+  const windowMs = 10 * 60 * 1000
+  const grouped = new Map()
+  for (const event of events) {
+    const date = readDate(event.timestamp)
+    const bucket = date ? Math.floor(date.getTime() / windowMs) : 'undated'
+    const key = [
+      normalizeText(event.title).toLowerCase(),
+      normalizeText(event.description).toLowerCase(),
+      normalizeText(event.actor).toLowerCase(),
+      event.category,
+      bucket,
+    ].join('|')
+    const existing = grouped.get(key)
+    if (!existing) {
+      grouped.set(key, { ...event, count: 1, originals: [event] })
+      continue
+    }
+    const existingDate = readDate(existing.timestamp)
+    const nextDate = readDate(event.timestamp)
+    const preferred = nextDate && (!existingDate || nextDate.getTime() > existingDate.getTime()) ? event : existing
+    grouped.set(key, {
+      ...preferred,
+      count: existing.count + 1,
+      originals: [...existing.originals, event],
+    })
+  }
+  return Array.from(grouped.values())
+}
+
+function getSellerMilestones({ row = {}, listing = null, journey = null } = {}) {
+  const mandateStatus = getSellerMandateStatus(row, listing, journey)
+  const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, listing))
+  const hasMandate = sellerMandateHasRecord(row, listing, journey)
+  return [
+    {
+      key: 'lead_created',
+      label: 'Lead Created',
+      complete: true,
+      date: row.createdAt || row.created_at,
+    },
+    {
+      key: 'onboarding_submitted',
+      label: 'Seller Onboarding Submitted',
+      complete: onboardingSubmitted,
+      date: listing?.sellerOnboarding?.submittedAt || listing?.sellerOnboarding?.completedAt || listing?.seller_onboarding?.submitted_at || row.sellerOnboardingSubmittedAt || row.seller_onboarding_submitted_at,
+    },
+    {
+      key: 'mandate_generated',
+      label: 'Mandate Generated',
+      complete: hasMandate,
+      date: row.mandateSentAt || row.mandate_sent_at || listing?.mandate?.updatedAt || listing?.updatedAt || listing?.updated_at,
+    },
+    {
+      key: 'mandate_signed',
+      label: 'Mandate Signed',
+      complete: ['signed', 'completed', 'fully_signed'].includes(mandateStatus),
+      date: row.mandateSignedAt || row.mandate_signed_at || listing?.mandateSignedAt || listing?.mandate_signed_at || listing?.mandate?.signedAt,
+    },
+    {
+      key: 'listing_created',
+      label: 'Listing Created',
+      complete: Boolean(journey?.listingCreated),
+      date: listing?.createdAt || listing?.created_at || row.listingCreatedAt || row.listing_created_at,
+    },
+    {
+      key: 'listing_live',
+      label: 'Listing Live',
+      complete: Boolean(journey?.listingLive),
+      date: listing?.publishedAt || listing?.published_at || listing?.activatedAt || listing?.activated_at,
+    },
+  ]
+}
+
+function buildSellerTimelineSummary({ row = {}, listing = null, journey = null, readiness = null } = {}) {
+  const documents = journey?.documents || []
+  const incompleteDocuments = documents.filter((document) => getSellerDocumentCompletion([document]).percent < 100)
+  const onboardingStatus = getSellerOnboardingStatus(row, listing)
+  const mandateMeta = getSellerMandateMeta(row, listing, journey)
+  const leadStatus = journey?.listingLive
+    ? 'Listing is live.'
+    : journey?.listingCreated
+      ? 'Listing draft has been created.'
+      : mandateMeta.mode === 'signed'
+        ? 'Mandate has been signed.'
+        : mandateMeta.hasRecord
+          ? 'Mandate has been generated.'
+          : sellerOnboardingIsSubmitted(onboardingStatus)
+            ? 'Seller onboarding completed.'
+            : getSellerOnboardingToken(row, listing)
+              ? 'Seller onboarding has been sent.'
+              : 'Seller lead is active.'
+  const next = incompleteDocuments.length
+    ? `Waiting for ${incompleteDocuments.slice(0, 2).map((item) => item.label).join(' and ')} before publication.`
+    : readiness?.nextAction?.label
+      ? readiness.nextAction.label
+      : journey?.listingLive
+        ? 'Monitor listing activity and offers.'
+        : 'Review the next seller workflow step.'
+  return { leadStatus, next }
+}
+
+function getSellerActivityInsights(events = [], readiness = null) {
+  const now = new Date()
+  const last7Days = events.filter((event) => {
+    const date = readDate(event.timestamp)
+    if (!date) return false
+    return now.getTime() - date.getTime() <= 7 * 86_400_000
+  }).length
+  return {
+    total: events.length,
+    last7Days,
+    documents: events.filter((event) => event.category === 'documents').length,
+    appointments: events.filter((event) => event.category === 'appointments').length,
+    pendingActions: readiness?.blockers?.length || events.filter((event) => event.tone === 'attention' || event.tone === 'risk').length,
+  }
+}
+
 function getSellerNextBestActionMeta({ row = {}, listing = null, journey = null, readiness = null, onboardingStatus = '' } = {}) {
   const blocker = readiness?.blockers?.find((item) => item.severity === 'blocked') || readiness?.blockers?.[0] || readiness?.nextAction?.blocker || null
   const nextAction = readiness?.nextAction || journey?.nextRecommendedAction || null
@@ -5636,6 +6338,14 @@ function getSellerDocumentCompletion(documents = []) {
   }
 }
 
+function getSellerDocumentDisplayStatus(document = {}) {
+  const complete = getSellerDocumentCompletion([document]).percent === 100
+  const rawStatus = normalizeText(document.status || document.documentStatus || document.document_status)
+  return rawStatus
+    ? rawStatus.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : complete ? 'Uploaded' : 'Missing'
+}
+
 function SellerWorkspaceCard({ title, action, children, className = '', id = '' }) {
   return (
     <section id={id || undefined} className={`${panelClass} flex h-full min-h-[220px] flex-col p-5 ${className}`}>
@@ -5643,7 +6353,7 @@ function SellerWorkspaceCard({ title, action, children, className = '', id = '' 
         <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">{title}</h2>
         {action}
       </div>
-      <div className="mt-4 flex flex-1 flex-col">{children}</div>
+      <div className="mt-4 flex min-h-0 flex-1 flex-col">{children}</div>
     </section>
   )
 }
@@ -5671,15 +6381,15 @@ function SellerAvatar({ name = '' }) {
   )
 }
 
-function SellerLeadStatusChips({ row, journey, readiness, listing = null }) {
+function SellerLeadStatusChips({ row, journey, readiness, listing = null, onAction }) {
   const listingMeta = getSellerListingMeta(row, listing, journey)
   const mandateMeta = getSellerMandateMeta(row, listing, journey)
   const chips = [
-    { label: 'Assigned Agent', value: getOwnerName(row) || 'Unassigned', tone: getOwnerName(row) === 'Unassigned' ? 'slate' : 'blue' },
-    { label: 'Current Stage', value: journey?.stage?.label || row.stage || 'Contacted', tone: 'blue' },
-    { label: 'Readiness', value: readiness?.readinessLabel || 'Review', tone: readiness?.missingItems?.length ? 'amber' : 'green' },
-    { label: 'Listing', value: listingMeta.label, tone: listingMeta.tone },
-    { label: 'Mandate', value: mandateMeta.label, tone: mandateMeta.tone },
+    { label: 'Assigned Agent', value: getOwnerName(row) || 'Unassigned', tone: getOwnerName(row) === 'Unassigned' ? 'slate' : 'blue', actionId: 'assign_agent' },
+    { label: 'Current Stage', value: journey?.stage?.label || row.stage || 'Contacted', tone: 'blue', actionId: 'open_journey' },
+    { label: 'Readiness', value: readiness?.readinessLabel || 'Review', tone: readiness?.missingItems?.length ? 'amber' : 'green', actionId: 'open_readiness' },
+    { label: 'Listing', value: listingMeta.label, tone: listingMeta.tone, actionId: listingMeta.hasListing ? 'open_listing' : 'create_listing' },
+    { label: 'Mandate', value: mandateMeta.label, tone: mandateMeta.tone, actionId: mandateMeta.hasRecord ? 'view_mandate' : 'generate_mandate' },
   ]
 
   const toneClasses = {
@@ -5690,14 +6400,20 @@ function SellerLeadStatusChips({ row, journey, readiness, listing = null }) {
   }
 
   return (
-    <dl className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5" role="list" aria-label="Seller lead status shortcuts">
       {chips.map((chip) => (
-        <div key={chip.label} className={`min-w-0 rounded-2xl border px-3 py-2 shadow-[0_10px_30px_rgba(15,23,42,0.04)] ${toneClasses[chip.tone] || toneClasses.slate}`}>
-          <dt className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{chip.label}</dt>
-          <dd className="mt-1 truncate text-sm font-semibold capitalize">{chip.value || 'Not Set'}</dd>
-        </div>
+        <button
+          key={chip.label}
+          type="button"
+          onClick={() => onAction?.(chip.actionId)}
+          className={`min-w-0 rounded-2xl border px-3 py-2 text-left shadow-[0_10px_30px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(15,23,42,0.08)] focus:outline-none focus:ring-2 focus:ring-blue-200 ${toneClasses[chip.tone] || toneClasses.slate}`}
+          title={`Open ${chip.label.toLowerCase()} action`}
+        >
+          <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">{chip.label}</span>
+          <span className="mt-1 block truncate text-sm font-semibold capitalize">{chip.value || 'Not Set'}</span>
+        </button>
       ))}
-    </dl>
+    </div>
   )
 }
 
@@ -5710,10 +6426,12 @@ function SellerLeadActions({
   onSendSellerOnboarding,
   onGenerateMandate,
   onOpenListing,
+  onOpenAppointments,
   onCopySellerPortalLink,
   onCopyListingLink,
   onMarkAsLost,
   onArchiveLead,
+  onStatusAction,
 }) {
   const listingMeta = getSellerListingMeta(row, listing, journey)
   const mandateMeta = getSellerMandateMeta(row, listing, journey)
@@ -5721,59 +6439,61 @@ function SellerLeadActions({
   const OnboardingIcon = onboardingMeta.icon || Mail
   const mandateRequiresOnboarding = !mandateMeta.hasRecord && !sellerOnboardingIsSubmitted(onboardingStatus)
 
-  const buttonBase = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60'
+  const menuButtonClass = 'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
 
   return (
-    <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-      <button type="button" onClick={onOpenListing} className={`${buttonBase} bg-slate-950 text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-slate-800`}>
-        {listingMeta.actionLabel}
-      </button>
-      <button
-        type="button"
-        onClick={() => onSendSellerOnboarding?.()}
-        disabled={sendingOnboarding || onboardingMeta.disabled}
-        title={onboardingMeta.help}
-        className={`${buttonBase} border ${onboardingMeta.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : onboardingMeta.tone === 'sent' ? 'border-slate-200 bg-slate-50 text-slate-500' : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
-      >
-        <OnboardingIcon size={16} />
-        {sendingOnboarding ? 'Sending...' : onboardingMeta.label}
-      </button>
-      <button
-        type="button"
-        onClick={() => onSendSellerOnboarding?.()}
-        disabled={sendingOnboarding}
-        className={`${buttonBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}
-      >
-        <RefreshCw size={15} />
-        Resend Seller Portal Link
-      </button>
-      <button
-        type="button"
-        onClick={onGenerateMandate}
-        disabled={mandateRequiresOnboarding}
-        title={mandateRequiresOnboarding ? 'Seller onboarding must be submitted before generating a mandate.' : mandateMeta.actionLabel}
-        className={`${buttonBase} border ${mandateMeta.tone === 'green' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : mandateMeta.hasRecord ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-      >
-        <FileText size={16} />
-        {mandateMeta.actionLabel}
-      </button>
+    <div className="flex items-center justify-start lg:justify-end">
       <details className="relative">
-        <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label="Seller actions">
-          <MoreVertical size={17} />
+        <summary className="inline-flex min-h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-slate-800" aria-label="Seller actions">
+          Actions
+          <ChevronDown size={16} />
         </summary>
-        <div className="absolute right-0 z-20 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-xl">
-          <a href="#seller-details" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Edit seller details</a>
-          <a href="#seller-ownership" className="block rounded-lg px-3 py-2 hover:bg-slate-50">Assign agent</a>
+        <div className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-xl">
+          <button type="button" onClick={onOpenListing} className={menuButtonClass}>
+            <Home size={15} />
+            {listingMeta.actionLabel}
+          </button>
+          <button
+            type="button"
+            onClick={() => onSendSellerOnboarding?.()}
+            disabled={sendingOnboarding || onboardingMeta.disabled}
+            title={onboardingMeta.help}
+            className={menuButtonClass}
+          >
+            <OnboardingIcon size={15} />
+            {sendingOnboarding ? 'Sending...' : onboardingMeta.label}
+          </button>
+          <button type="button" onClick={() => onSendSellerOnboarding?.()} disabled={sendingOnboarding} className={menuButtonClass}>
+            <RefreshCw size={15} />
+            Resend Seller Portal Link
+          </button>
+          <button
+            type="button"
+            onClick={onGenerateMandate}
+            disabled={mandateRequiresOnboarding}
+            title={mandateRequiresOnboarding ? 'Seller onboarding must be submitted before generating a mandate.' : mandateMeta.actionLabel}
+            className={menuButtonClass}
+          >
+            <FileText size={15} />
+            {mandateMeta.actionLabel}
+          </button>
+          <button type="button" onClick={onOpenAppointments} className={menuButtonClass}>
+            <CalendarDays size={15} />
+            Schedule Appointment
+          </button>
+          <div className="my-1 h-px bg-slate-100" />
+          <button type="button" onClick={() => onStatusAction?.('edit_seller')} className={menuButtonClass}>Edit seller details</button>
+          <button type="button" onClick={() => onStatusAction?.('assign_agent')} className={menuButtonClass}>Assign agent</button>
           {onboardingMeta.disabled ? (
-            <button type="button" onClick={() => onSendSellerOnboarding?.()} disabled={sendingOnboarding} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-50">
+            <button type="button" onClick={() => onSendSellerOnboarding?.()} disabled={sendingOnboarding} className={menuButtonClass}>
               Resend Onboarding Link
             </button>
           ) : null}
-          <button type="button" onClick={onCopySellerPortalLink} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Copy seller portal link</button>
-          <button type="button" onClick={onCopyListingLink} className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50">Copy listing link</button>
+          <button type="button" onClick={onCopySellerPortalLink} className={menuButtonClass}>Copy seller portal link</button>
+          <button type="button" onClick={onCopyListingLink} className={menuButtonClass}>Copy listing link</button>
           <div className="my-1 h-px bg-slate-100" />
-          <button type="button" onClick={onMarkAsLost} className="block w-full rounded-lg px-3 py-2 text-left text-rose-600 hover:bg-rose-50">Mark as lost</button>
-          <button type="button" onClick={onArchiveLead} className="block w-full rounded-lg px-3 py-2 text-left text-rose-600 hover:bg-rose-50">Archive lead</button>
+          <button type="button" onClick={onMarkAsLost} className={`${menuButtonClass} text-rose-600 hover:bg-rose-50`}>Mark as lost</button>
+          <button type="button" onClick={onArchiveLead} className={`${menuButtonClass} text-rose-600 hover:bg-rose-50`}>Archive lead</button>
         </div>
       </details>
     </div>
@@ -5790,10 +6510,12 @@ function SellerLeadHeader({
   onSendSellerOnboarding,
   onGenerateMandate,
   onOpenListing,
+  onOpenAppointments,
   onCopySellerPortalLink,
   onCopyListingLink,
   onMarkAsLost,
   onArchiveLead,
+  onStatusAction,
 }) {
   return (
     <header className={`${panelClass} overflow-visible border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)]`}>
@@ -5819,7 +6541,7 @@ function SellerLeadHeader({
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
-          <SellerLeadStatusChips row={row} journey={journey} readiness={readiness} listing={listing} />
+          <SellerLeadStatusChips row={row} journey={journey} readiness={readiness} listing={listing} onAction={onStatusAction} />
           <SellerLeadActions
             row={row}
             journey={journey}
@@ -5829,10 +6551,12 @@ function SellerLeadHeader({
             onSendSellerOnboarding={onSendSellerOnboarding}
             onGenerateMandate={onGenerateMandate}
             onOpenListing={onOpenListing}
+            onOpenAppointments={onOpenAppointments}
             onCopySellerPortalLink={onCopySellerPortalLink}
             onCopyListingLink={onCopyListingLink}
             onMarkAsLost={onMarkAsLost}
             onArchiveLead={onArchiveLead}
+            onStatusAction={onStatusAction}
           />
         </div>
       </div>
@@ -5843,7 +6567,7 @@ function SellerLeadHeader({
 function SellerJourneyRail({ journey = null, row = {}, listing = null }) {
   if (!journey) return <EmptyState title="Seller journey unavailable" copy="This seller lead could not be mapped to the existing seller journey service." />
   return (
-    <section className={`${panelClass} flex h-full min-h-[220px] flex-col p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]`}>
+    <section id="seller-journey" className={`${panelClass} scroll-mt-6 flex h-full min-h-[220px] flex-col p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]`}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">Seller Journey</h2>
@@ -5984,17 +6708,18 @@ function SellerWorkspaceTabs({ activeTab, onTabChange }) {
     { key: 'seller', label: 'Seller' },
     { key: 'property', label: 'Property' },
     { key: 'mandate', label: 'Mandate' },
+    { key: 'appointments', label: 'Appointments' },
     { key: 'documents', label: 'Documents' },
     { key: 'activity', label: 'Activity' },
   ]
   return (
-    <nav className={`${panelClass} sticky top-0 z-10 flex flex-wrap gap-1 p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)]`} aria-label="Seller workspace tabs">
+    <nav className={`${panelClass} sticky top-0 z-10 grid grid-cols-2 gap-2 p-2 shadow-[0_12px_30px_rgba(15,23,42,0.06)] sm:grid-cols-3 lg:grid-cols-7`} aria-label="Seller workspace tabs">
       {tabs.map((tab) => (
         <button
           key={tab.key}
           type="button"
           onClick={() => onTabChange(tab.key)}
-          className={`min-h-10 rounded-xl px-4 text-sm font-semibold transition ${activeTab === tab.key ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+          className={`flex min-h-10 w-full items-center justify-center rounded-xl px-4 text-sm font-semibold transition ${activeTab === tab.key ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
         >
           {tab.label}
         </button>
@@ -6018,7 +6743,9 @@ function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId,
       </SellerWorkspaceCard>
       <SellerDocumentsSummaryCard journey={journey} />
       <SellerWorkspaceCard title="Recent Activity" action={<button type="button" onClick={() => onTabChange('activity')} className="text-xs font-semibold text-blue-700">View All</button>}>
-        <SellerTimelineList timeline={timeline} limit={5} compact />
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <SellerTimelineList timeline={timeline} limit={12} compact />
+        </div>
       </SellerWorkspaceCard>
       <SellerOwnershipSummaryCard organisationId={organisationId} lead={row} actor={actor} onSaved={onSaved} />
     </div>
@@ -6073,8 +6800,12 @@ function SellerPropertyTab({ row, listing }) {
   )
 }
 
-function SellerMandateTab({ row, listing, journey, onGenerateMandate }) {
+function SellerMandateTab({ row, listing, journey, onboardingStatus = '', onGenerateMandate }) {
   const mandateMeta = getSellerMandateMeta(row, listing, journey)
+  const mandateRequiresOnboarding = !mandateMeta.hasRecord && !sellerOnboardingIsSubmitted(onboardingStatus)
+  const mandateActionHelp = mandateRequiresOnboarding
+    ? 'Seller onboarding must be submitted before generating a mandate.'
+    : mandateMeta.actionLabel
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
       <SellerWorkspaceCard title="Mandate Status" action={<StatusPill tone={mandateMeta.tone}>{mandateMeta.label}</StatusPill>}>
@@ -6084,9 +6815,16 @@ function SellerMandateTab({ row, listing, journey, onGenerateMandate }) {
           <SellerInfoRow label="Date Signed" value={formatDateTime(row.mandateSignedAt || row.mandate_signed_at || listing?.mandateSignedAt || listing?.mandate_signed_at)} />
           <SellerInfoRow label="Seller Portal" value={journey?.sellerPortalStatus || 'Not opened'} />
         </dl>
-        <button type="button" onClick={onGenerateMandate} className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white">
+        <button
+          type="button"
+          onClick={onGenerateMandate}
+          disabled={mandateRequiresOnboarding}
+          title={mandateActionHelp}
+          className={`mt-5 inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${mandateRequiresOnboarding ? 'bg-slate-200 text-slate-500' : 'bg-slate-950 text-white hover:bg-slate-800'}`}
+        >
           {mandateMeta.actionLabel}
         </button>
+        {mandateRequiresOnboarding ? <p className="mt-2 text-xs font-semibold text-slate-500">{mandateActionHelp}</p> : null}
       </SellerWorkspaceCard>
       <SellerWorkspaceCard title="Mandate History">
         <div className="space-y-3">
@@ -6159,10 +6897,268 @@ function SellerTimelineList({ timeline = [], limit = 8, compact = false }) {
   )
 }
 
-function SellerActivityTab({ timeline = [] }) {
+function SellerTimelineSummaryCard({ row = {}, listing = null, journey = null, readiness = null, onTabChange }) {
+  const summary = buildSellerTimelineSummary({ row, listing, journey, readiness })
   return (
-    <SellerWorkspaceCard title="Activity">
-      <SellerTimelineList timeline={timeline} limit={30} />
+    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Timeline Summary</p>
+      <h3 className="mt-3 text-lg font-semibold tracking-[-0.035em] text-slate-950">{summary.leadStatus}</h3>
+      <p className="mt-2 text-sm font-medium leading-6 text-slate-600">{summary.next}</p>
+      <button type="button" onClick={() => onTabChange?.('overview')} className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+        View next steps
+      </button>
+    </section>
+  )
+}
+
+function SellerTimelineMilestonesCard({ row = {}, listing = null, journey = null }) {
+  const milestones = getSellerMilestones({ row, listing, journey })
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Key Milestones</p>
+      <div className="mt-4 space-y-3">
+        {milestones.map((milestone) => (
+          <div key={milestone.key} className="grid grid-cols-[32px_minmax(0,1fr)] gap-3">
+            <span className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border ${milestone.complete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>
+              {milestone.complete ? <CheckCircle2 size={15} /> : <Clock3 size={14} />}
+            </span>
+            <div className="min-w-0">
+              <p className={`truncate text-sm font-semibold ${milestone.complete ? 'text-slate-950' : 'text-slate-500'}`}>{milestone.label}</p>
+              <p className="mt-0.5 text-xs font-semibold text-slate-400">{milestone.complete ? formatDate(milestone.date, 'Date unavailable') : 'Upcoming'}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function SellerActivityAvatar({ name = '' }) {
+  return (
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">
+      {getInitials(name)}
+    </span>
+  )
+}
+
+function SellerActivityCard({ event, density = 'list' }) {
+  const Icon = getSellerActivityIcon(event.category, event.tone)
+  const toneClasses = {
+    success: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+    workflow: 'border-blue-100 bg-blue-50 text-blue-700',
+    attention: 'border-amber-100 bg-amber-50 text-amber-700',
+    risk: 'border-rose-100 bg-rose-50 text-rose-700',
+  }
+  const compact = density === 'compact'
+  return (
+    <article className={`relative grid min-w-0 gap-3 border-b border-slate-100 last:border-b-0 ${compact ? 'py-3 sm:grid-cols-[40px_minmax(0,1fr)]' : 'py-5 sm:grid-cols-[44px_minmax(0,1fr)_88px]'}`}>
+      <span className={`flex h-10 w-10 items-center justify-center rounded-2xl border ${toneClasses[event.tone] || toneClasses.workflow}`}>
+        {createElement(Icon, { size: 17 })}
+      </span>
+      <div className="min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 className="min-w-0 truncate text-sm font-semibold text-slate-950">{event.title}{event.count > 1 ? ` x${event.count}` : ''}</h3>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold capitalize text-slate-500">{event.category}</span>
+        </div>
+        {!compact ? <p className="mt-1 text-sm leading-6 text-slate-600">{event.description}</p> : null}
+        <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs font-semibold text-slate-500">
+          <SellerActivityAvatar name={event.actor} />
+          <span className="truncate text-slate-700">{event.actor}</span>
+          <span>{event.timestamp ? formatRelativeTime(event.timestamp, 'Date unavailable') : 'Date unavailable'}</span>
+          {event.timestamp ? <span>{formatDateTime(event.timestamp, 'Date unavailable')}</span> : null}
+        </div>
+      </div>
+      <button type="button" className="absolute right-0 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-700" aria-label="Activity event actions">
+        <MoreVertical size={16} />
+      </button>
+    </article>
+  )
+}
+
+function SellerPremiumActivityFeed({ events = [], density = 'list' }) {
+  if (!events.length) {
+    return (
+      <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
+        <p className="text-base font-semibold text-slate-950">No activity yet</p>
+        <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">Activity will appear here as the seller progresses from lead to listing.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="mt-2 divide-y divide-slate-100">
+      {events.map((event) => <SellerActivityCard key={event.key} event={event} density={density} />)}
+    </div>
+  )
+}
+
+function SellerActivityInsightsPanel({
+  insights,
+  dateRange,
+  toneFilter,
+  actorFilter,
+  actorOptions = [],
+  onDateRangeChange,
+  onToneFilterChange,
+  onActorFilterChange,
+}) {
+  const rows = [
+    ['Total Events', insights.total],
+    ['Last 7 Days', insights.last7Days],
+    ['Documents', insights.documents],
+    ['Appointments', insights.appointments],
+    ['Pending Actions', insights.pendingActions],
+  ]
+  return (
+    <aside className="grid min-w-0 gap-5 lg:grid-cols-2 xl:grid-cols-1">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Activity Insights</p>
+        <dl className="mt-4 space-y-2">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+              <dt className="text-sm font-semibold text-slate-600">{label}</dt>
+              <dd className="text-sm font-semibold text-slate-950">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Filters</p>
+        <div className="mt-4 grid gap-3">
+          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+            Date range
+            <select value={dateRange} onChange={(event) => onDateRangeChange?.(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700 outline-none focus:border-blue-300">
+              <option value="all">All time</option>
+              <option value="last_7">Last 7 days</option>
+              <option value="last_30">Last 30 days</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+            Event type
+            <select value={toneFilter} onChange={(event) => onToneFilterChange?.(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700 outline-none focus:border-blue-300">
+              <option value="all">All types</option>
+              <option value="success">Success</option>
+              <option value="workflow">Workflow</option>
+              <option value="attention">Attention</option>
+              <option value="risk">Error / Risk</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+            Actor
+            <select value={actorFilter} onChange={(event) => onActorFilterChange?.(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm normal-case tracking-normal text-slate-700 outline-none focus:border-blue-300">
+              <option value="all">All actors</option>
+              {actorOptions.map((actor) => <option key={actor} value={actor}>{actor}</option>)}
+            </select>
+          </label>
+          <button type="button" disabled className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-400">
+            Export Activity
+          </button>
+        </div>
+      </section>
+    </aside>
+  )
+}
+
+function SellerActivityTab({ timeline = [], row = {}, listing = null, journey = null, readiness = null, onTabChange }) {
+  const rawEvents = useMemo(() => (Array.isArray(timeline) ? timeline : []).map(normalizeSellerActivityEvent), [timeline])
+  const dedupedEvents = useMemo(() => dedupeSellerActivityEvents(rawEvents), [rawEvents])
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [sortOrder, setSortOrder] = useState('newest')
+  const [density, setDensity] = useState('list')
+  const [dateRange, setDateRange] = useState('all')
+  const [toneFilter, setToneFilter] = useState('all')
+  const [actorFilter, setActorFilter] = useState('all')
+  const filteredEvents = useMemo(() => {
+    const now = new Date()
+    return dedupedEvents
+      .filter((event) => categoryFilter === 'all' || event.category === categoryFilter)
+      .filter((event) => toneFilter === 'all' || event.tone === toneFilter)
+      .filter((event) => actorFilter === 'all' || event.actor === actorFilter)
+      .filter((event) => {
+        if (dateRange === 'all') return true
+        const date = readDate(event.timestamp)
+        if (!date) return false
+        const days = dateRange === 'last_7' ? 7 : 30
+        return now.getTime() - date.getTime() <= days * 86_400_000
+      })
+      .sort((left, right) => {
+        const leftTime = readDate(left.timestamp)?.getTime() || 0
+        const rightTime = readDate(right.timestamp)?.getTime() || 0
+        return sortOrder === 'oldest' ? leftTime - rightTime : rightTime - leftTime
+      })
+  }, [actorFilter, categoryFilter, dateRange, dedupedEvents, sortOrder, toneFilter])
+  const actorOptions = useMemo(() => Array.from(new Set(dedupedEvents.map((event) => event.actor).filter(Boolean))).sort(), [dedupedEvents])
+  const categoryOptions = [
+    { key: 'all', label: 'All' },
+    { key: 'communication', label: 'Communication' },
+    { key: 'documents', label: 'Documents' },
+    { key: 'mandate', label: 'Mandate' },
+    { key: 'appointments', label: 'Appointments' },
+    { key: 'system', label: 'System' },
+  ]
+
+  return (
+    <SellerWorkspaceCard title="Activity Workspace" className="min-h-0">
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold tracking-[-0.035em] text-slate-950">Activity</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-500">{rawEvents.length} events</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-300">
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+            </select>
+            <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+              {['compact', 'list'].map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setDensity(option)}
+                  className={`min-h-8 rounded-lg px-3 text-xs font-semibold capitalize ${density === option ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="grid min-w-0 gap-5 lg:grid-cols-12">
+          <div className="grid min-w-0 gap-5 lg:col-span-4 xl:col-span-3">
+            <SellerTimelineSummaryCard row={row} listing={listing} journey={journey} readiness={readiness} onTabChange={onTabChange} />
+            <SellerTimelineMilestonesCard row={row} listing={listing} journey={journey} />
+          </div>
+          <div className="min-w-0 lg:col-span-8 xl:col-span-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap gap-2">
+                {categoryOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setCategoryFilter(option.key)}
+                    className={`inline-flex min-h-9 items-center rounded-full px-3 text-xs font-semibold transition ${categoryFilter === option.key ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <SellerPremiumActivityFeed events={filteredEvents} density={density} />
+            </div>
+          </div>
+          <div className="min-w-0 lg:col-span-12 xl:col-span-3">
+            <SellerActivityInsightsPanel
+              insights={getSellerActivityInsights(rawEvents, readiness)}
+              dateRange={dateRange}
+              toneFilter={toneFilter}
+              actorFilter={actorFilter}
+              actorOptions={actorOptions}
+              onDateRangeChange={setDateRange}
+              onToneFilterChange={setToneFilter}
+              onActorFilterChange={setActorFilter}
+            />
+          </div>
+        </div>
+      </div>
     </SellerWorkspaceCard>
   )
 }
@@ -6170,9 +7166,10 @@ function SellerActivityTab({ timeline = [] }) {
 function SellerTabContent({ activeTab, row, sourceInfo, journey, readiness, listing, onboardingStatus, timeline, organisationId, actor, onSaved, onTabChange, onGenerateMandate }) {
   if (activeTab === 'seller') return <SellerProfileTab row={row} journey={journey} onboardingStatus={onboardingStatus} />
   if (activeTab === 'property') return <SellerPropertyTab row={row} listing={listing} />
-  if (activeTab === 'mandate') return <SellerMandateTab row={row} listing={listing} journey={journey} onGenerateMandate={onGenerateMandate} />
+  if (activeTab === 'mandate') return <SellerMandateTab row={row} listing={listing} journey={journey} onboardingStatus={onboardingStatus} onGenerateMandate={onGenerateMandate} />
+  if (activeTab === 'appointments') return <SellerAppointmentsTab organisationId={organisationId} lead={row} listing={listing} actor={actor} onSaved={onSaved} />
   if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} />
-  if (activeTab === 'activity') return <SellerActivityTab timeline={timeline} />
+  if (activeTab === 'activity') return <SellerActivityTab timeline={timeline} row={row} listing={listing} journey={journey} readiness={readiness} onTabChange={onTabChange} />
   return (
     <SellerOverviewTab
       row={row}
@@ -6241,7 +7238,9 @@ function SellerDocumentsSummaryCard({ journey = null }) {
           return (
             <div key={document.id} className="flex min-h-8 items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
               <span className="truncate text-sm font-semibold text-slate-700">{document.label}</span>
-              <span className={`text-sm font-semibold ${complete ? 'text-emerald-600' : 'text-rose-500'}`}>{complete ? '✓' : '✗'}</span>
+              <span className={`shrink-0 text-xs font-semibold ${complete ? 'text-emerald-600' : 'text-rose-500'}`}>
+                {getSellerDocumentDisplayStatus(document)}
+              </span>
             </div>
           )
         }) : <p className="text-sm text-slate-500">No seller documents linked.</p>}
@@ -6376,16 +7375,36 @@ function SellerLeadWorkspaceLayout({
   onArchiveLead,
 }) {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('overview')
+  const focusSellerWorkspaceSection = useCallback((sectionId = '') => {
+    if (!sectionId || typeof window === 'undefined') return
+    window.setTimeout(() => {
+      const target = document.getElementById(sectionId)
+      target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    }, 80)
+  }, [])
   const handleAcquisitionAction = useCallback((actionId = '') => {
     const key = normalizeText(actionId).toLowerCase()
     if (['send_onboarding', 'open_seller_portal'].includes(key)) onSendSellerOnboarding?.()
     else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(key)) onGenerateMandate?.()
     else if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(key)) onOpenListing?.()
     else if (['open_documents'].includes(key)) setActiveWorkspaceTab('documents')
+    else if (['schedule_appointment', 'open_appointments'].includes(key)) setActiveWorkspaceTab('appointments')
     else if (['contact_seller', 'open_timeline'].includes(key)) setActiveWorkspaceTab('activity')
     else if (['capture_property_address'].includes(key)) setActiveWorkspaceTab('property')
+    else if (key === 'edit_seller') {
+      setActiveWorkspaceTab('overview')
+      focusSellerWorkspaceSection('seller-details')
+    }
+    else if (key === 'assign_agent') {
+      setActiveWorkspaceTab('overview')
+      focusSellerWorkspaceSection('seller-ownership')
+    } else if (key === 'open_journey') {
+      focusSellerWorkspaceSection('seller-journey')
+    } else if (key === 'open_readiness') {
+      setActiveWorkspaceTab('documents')
+    }
     else setActiveWorkspaceTab('overview')
-  }, [onGenerateMandate, onOpenListing, onSendSellerOnboarding])
+  }, [focusSellerWorkspaceSection, onGenerateMandate, onOpenListing, onSendSellerOnboarding])
 
   return (
     <div className="space-y-6">
@@ -6399,10 +7418,12 @@ function SellerLeadWorkspaceLayout({
         onSendSellerOnboarding={onSendSellerOnboarding}
         onGenerateMandate={onGenerateMandate}
         onOpenListing={onOpenListing}
+        onOpenAppointments={() => setActiveWorkspaceTab('appointments')}
         onCopySellerPortalLink={onCopySellerPortalLink}
         onCopyListingLink={onCopyListingLink}
         onMarkAsLost={onMarkAsLost}
         onArchiveLead={onArchiveLead}
+        onStatusAction={handleAcquisitionAction}
       />
       {sellerActionError ? <p className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{sellerActionError}</p> : null}
       {sellerActionMessage ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{sellerActionMessage}</p> : null}
@@ -6887,6 +7908,12 @@ function AgentLeadWorkspace() {
                 lastActivity={getBuyerLastActivity(row)}
                 onOpenTimeline={() => setActiveTab('timeline')}
                 onDelete={deleteCurrentLead}
+                onConvert={convertBuyerLead}
+              />
+
+              <BuyerJourneyCommandRow
+                row={row}
+                onNavigate={setActiveTab}
                 onConvert={convertBuyerLead}
               />
 

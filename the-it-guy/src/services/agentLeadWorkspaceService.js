@@ -139,6 +139,8 @@ function normalizeListing(row = {}) {
     id: listingId,
     listingId,
     leadId: readId(row, ['sellerLeadId', 'seller_lead_id', 'originatingCrmLeadId', 'originating_crm_lead_id']),
+    assignedAgentId: readId(row, ['assignedAgentId', 'assigned_agent_id']),
+    assignedAgentEmail: normalizeText(row?.assignedAgentEmail || row?.assigned_agent_email).toLowerCase(),
     status: normalizeText(row?.listingStatus || row?.listing_status),
     title: normalizeText(row?.title || row?.property_address || row?.propertyAddress || row?.suburb),
   }
@@ -264,8 +266,9 @@ export function buildAgentLeadRows({
       source: normalizeText(lead?.leadSource || lead?.lead_source) || 'Unknown',
       stage: normalizeText(lead?.stage || lead?.status) || 'Unknown',
       status: normalizeText(lead?.status || lead?.stage) || 'Unknown',
-      assignedAgentId: readId(lead, ['assignedAgentId', 'assigned_agent_id', 'assignedUserId', 'assigned_user_id']),
-      assignedAgent: normalizeText(lead?.assignedAgentName || lead?.assigned_agent_name || lead?.assignedAgentEmail || lead?.assigned_agent_email || lead?.assignedAgentId || lead?.assigned_agent_id) || 'Unassigned',
+      assignedAgentId: readId(lead, ['assignedAgentId', 'assigned_agent_id', 'assignedUserId', 'assigned_user_id']) || readId(relatedListings[0] || {}, ['assignedAgentId', 'assigned_agent_id']),
+      assignedAgentEmail: normalizeText(lead?.assignedAgentEmail || lead?.assigned_agent_email || relatedListings[0]?.assignedAgentEmail || relatedListings[0]?.assigned_agent_email).toLowerCase(),
+      assignedAgent: normalizeText(lead?.assignedAgentName || lead?.assigned_agent_name || lead?.assignedAgentEmail || lead?.assigned_agent_email || relatedListings[0]?.assignedAgentEmail || relatedListings[0]?.assigned_agent_email || lead?.assignedAgentId || lead?.assigned_agent_id) || 'Unassigned',
       assignedQueueId: readId(lead, ['assignedQueueId', 'assigned_queue_id']),
       assignedQueue: normalizeText(lead?.assignedQueueId || lead?.assigned_queue_id) || '—',
       assignedAt,
@@ -369,12 +372,24 @@ async function safeReadTransactions(organisationId = '', context = {}) {
 
 async function safeReadPrivateListings(organisationId = '') {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
-  const { data, error } = await supabase
-    .from('private_listings')
-    .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_status, property_address, suburb, city, asking_price, created_at, updated_at')
-    .eq('organisation_id', organisationId)
-    .order('updated_at', { ascending: false })
-    .limit(1000)
+  const selectVariants = [
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, assigned_agent_email, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
+  ]
+  let data = []
+  let error = null
+  for (const fields of selectVariants) {
+    const result = await supabase
+      .from('private_listings')
+      .select(fields)
+      .eq('organisation_id', organisationId)
+      .order('updated_at', { ascending: false })
+      .limit(1000)
+    data = result.data
+    error = result.error
+    if (!error || !isRecoverableReadError(error, 'private_listings')) break
+  }
   if (error) {
     if (isRecoverableReadError(error, 'private_listings')) return []
     throw error

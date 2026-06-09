@@ -125,7 +125,7 @@ function complianceDocumentComplete(journey = {}, listing = {}) {
 
 export function getListingReadiness({ lead = {}, listing = {}, journey = null } = {}) {
   const resolvedJourney = journey || buildSellerJourney({ lead, listing })
-  const hasListing = Boolean(listing?.id || listing?.listingId || listing?.listing_id || resolvedJourney.listingCreated)
+  const hasListing = Boolean(resolvedJourney.listingCreated)
   const photosComplete = listingImages(listing).length > 0
   const descriptionComplete = Boolean(listingDescription(listing))
   const pricingComplete = listingPrice(listing, lead) > 0
@@ -138,7 +138,9 @@ export function getListingReadiness({ lead = {}, listing = {}, journey = null } 
     { key: 'compliance', label: 'Compliance', complete: complianceComplete, blocker: 'Missing Compliance Docs' },
     { key: 'visibility', label: 'Visibility', complete: visibilityComplete, blocker: 'Listing In Draft' },
   ]
-  const incompleteItems = hasListing ? items.filter((item) => !item.complete) : items
+  const incompleteItems = hasListing ? items.filter((item) => !item.complete) : [
+    { key: 'listing', label: 'Listing', complete: false, blocker: 'Listing Not Created' },
+  ]
   return {
     hasListing,
     items,

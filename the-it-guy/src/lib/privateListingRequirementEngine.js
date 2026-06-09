@@ -15,4 +15,4 @@ export {
   getSellerRequirementProfile,
   isSellerRequirementSatisfied,
   syncSellerDocumentRequirements,
-} from './sellerDocumentRequirementEngine'
+} from './sellerDocumentRequirementEngine.js'

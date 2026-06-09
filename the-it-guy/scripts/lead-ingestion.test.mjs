@@ -59,6 +59,8 @@ assert.match(serviceSource, /status: 'interested'/)
 assert.match(serviceSource, /createIngestionLog/)
 assert.match(serviceSource, /Duplicate payload external reference/)
 assert.match(serviceSource, /Unknown listing/)
+assert.match(serviceSource, /assigned_agent_email/, 'buyer enquiry ingestion should read listing agent email for ownership display')
+assert.match(serviceSource, /email: listingAgentEmail/, 'buyer enquiry ingestion should carry listing agent email into assignment payload')
 
 const pageSource = await fs.readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
 assert.match(pageSource, /Enquiry History/)
@@ -79,10 +81,10 @@ for (const copy of ['Send Seller Onboarding', 'Generate Mandate', 'Seller onboar
 }
 for (const copy of [
   'SellerLeadWorkspaceLayout',
-  'SellerWorkspaceHero',
-  'SellerJourneyHeroPanel',
-  'SellerActionsPanel',
-  'SellerKpiRow',
+  'SellerLeadHeader',
+  'SellerAcquisitionActionRow',
+  'SellerJourneyRail',
+  'SellerOverviewTab',
   'SellerDocumentsSummaryCard',
   'SellerOwnershipSummaryCard',
   'SellerCommunicationCard',
@@ -98,7 +100,7 @@ for (const copy of [
 ]) {
   assert.match(pageSource, new RegExp(copy), `seller lead workspace consolidation should render ${copy}`)
 }
-assert.match(pageSource, /grid items-stretch gap-6 lg:grid-cols-2/)
+assert.match(pageSource, /grid min-w-0 gap-5 lg:grid-cols-12/)
 const sellerDetailsSource = pageSource.slice(pageSource.indexOf('function SellerDetailsCard'), pageSource.indexOf('function SellerDocumentsSummaryCard'))
 assert.doesNotMatch(sellerDetailsSource, /Legacy Budget|Area Interest|Property Interest|Property Alerts|Saved Searches/)
 const sellerCommunicationSource = pageSource.slice(pageSource.indexOf('function SellerCommunicationCard'), pageSource.indexOf('function SellerTimelinePanel'))
@@ -107,7 +109,7 @@ assert.match(pageSource, /CreateLeadDropdown/)
 assert.match(pageSource, /LeadCreateModal/)
 assert.match(pageSource, /sendSellerOnboarding/)
 assert.match(pageSource, /sellerOnboardingIsSubmitted/)
-assert.match(pageSource, /\/pipeline\/leads\/\$\{row\.leadId\}\/legal\/mandate\?mode=generate/)
+assert.match(pageSource, /\/pipeline\/leads\/\$\{row\.leadId\}\/legal\/mandate\?mode=\$\{mandateMeta\.mode\}&returnTo=\$\{returnTo\}/)
 assert.match(pageSource, /buildSellerJourney/)
 assert.match(pageSource, /buildSellerReadinessSummary/)
 assert.match(pageSource, /activeTab === 'property_match'/)
