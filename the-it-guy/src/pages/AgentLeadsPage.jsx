@@ -5283,6 +5283,32 @@ function sellerPortalLinkActionLabel(status = '') {
   return 'Send Seller Portal Link'
 }
 
+function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboarding = {}, organisationId = '', actor = {}, workspaceName = '' } = {}) {
+  const propertyTitle = normalizeText(
+    listing?.title ||
+      listing?.propertyTitle ||
+      row?.propertyInterest ||
+      row?.property_interest ||
+      row?.sellerPropertyAddress ||
+      row?.seller_property_address ||
+      row?.areaInterest ||
+      row?.area_interest ||
+      'your property',
+  )
+  return {
+    type: 'seller_onboarding_link',
+    to: normalizeText(row.email || row.contact?.email).toLowerCase(),
+    organisationId: normalizeText(organisationId),
+    sellerName: normalizeText(row.name || row.contact?.name || 'Seller'),
+    propertyTitle,
+    onboardingLink: normalizeText(onboarding?.link),
+    transactionReference: normalizeText(row.leadReference || row.lead_reference || row.leadId),
+    agentName: normalizeText(row.assignedAgentName || actor.fullName || actor.name || actor.email),
+    organisationName: normalizeText(workspaceName),
+    supportEmail: normalizeText(actor.email),
+  }
+}
+
 function SellerActionsPanel({
   journey = null,
   readiness = null,
@@ -5461,6 +5487,16 @@ function SellerWorkspaceHero({
             <button type="button" onClick={onOpenListing} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">
               {listingActionLabel}
             </button>
+            <button
+              type="button"
+              onClick={onGenerateMandate}
+              disabled={!mandateReady}
+              title={!mandateReady ? 'Seller onboarding must be submitted before generating a mandate.' : 'Generate mandate'}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+            >
+              <FileText size={16} />
+              Generate Mandate
+            </button>
             <details className="relative">
               <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50" aria-label="Seller actions">
                 <MoreVertical size={17} />
@@ -5473,10 +5509,10 @@ function SellerWorkspaceHero({
                   type="button"
                   onClick={onGenerateMandate}
                   disabled={!mandateReady}
-                  title={!mandateReady ? 'Seller onboarding must be submitted before opening the mandate workspace.' : 'Open mandate workspace'}
+                  title={!mandateReady ? 'Seller onboarding must be submitted before generating a mandate.' : 'Generate mandate'}
                   className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  View Mandate
+                  Generate Mandate
                 </button>
               </div>
             </details>
@@ -5891,6 +5927,7 @@ function AgentLeadWorkspace() {
     })
   }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney])
   const sellerOnboardingStatus = row ? getSellerOnboardingStatus(row, linkedSellerListing) : ''
+  const workspaceName = normalizeText(workspaceContext.currentWorkspace?.name || workspaceContext.workspace?.name)
   const tabs = useMemo(() => isSellerLeadWorkspace
     ? [
       { key: 'overview', label: 'Overview' },
@@ -5965,10 +6002,28 @@ function AgentLeadWorkspace() {
         sellerContactEmail: sellerEmail,
         sellerContactPhone: normalizeText(row.phone || row.contact?.phone),
       })
+      const onboardingEmail = await invokeEdgeFunction('send-email', {
+        body: buildSellerOnboardingEmailPayload({
+          row,
+          listing: linkedSellerListing,
+          onboarding,
+          organisationId,
+          actor,
+          workspaceName,
+        }),
+      })
+      if (onboardingEmail?.error || onboardingEmail?.data?.error) {
+        throw new Error(
+          onboardingEmail?.error?.message ||
+            onboardingEmail?.data?.error ||
+            'Seller onboarding email could not be sent.',
+        )
+      }
       await updateAgencyCrmLeadRecord(organisationId, row.leadId, {
         stage: 'Onboarding Sent',
         status: 'Onboarding Sent',
         sellerOnboardingToken: onboarding?.token,
+        sellerOnboardingLink: onboarding?.link,
         sellerOnboardingStatus: 'sent',
         listingId,
       })
@@ -5979,14 +6034,14 @@ function AgentLeadWorkspace() {
         outcome: 'Onboarding link sent',
         activityDate: new Date().toISOString(),
       }, { actor })
-      setSellerActionMessage('Seller onboarding sent.')
+      setSellerActionMessage('Seller onboarding email sent.')
       await loadWorkspace()
     } catch (actionError) {
       setSellerActionError(actionError?.message || 'Unable to send seller onboarding right now.')
     } finally {
       setSendingSellerOnboarding(false)
     }
-  }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sendingSellerOnboarding])
+  }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sendingSellerOnboarding, workspaceName])
 
   const openMandateWorkspace = useCallback(() => {
     if (!row) return
