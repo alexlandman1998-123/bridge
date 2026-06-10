@@ -32,6 +32,8 @@ assert.ok(threadStart < composerStart, 'Conversation history should appear above
 assert.doesNotMatch(overviewBlock, /overviewPrimaryNextAction\.title/, 'Overview should not render the old Next Action card')
 assert.match(overviewBlock, /const isSystemEntry = entry\.kind === 'system'/, 'System-generated updates should stay visually identified')
 assert.match(overviewBlock, /const isManualEntry = entry\.kind === 'comment'/, 'Manual discussion updates should stay visually identified')
+assert.match(overviewBlock, /<div key=\{entry\.id\} className="flex w-full">/, 'Conversation rows should use the full thread width')
+assert.doesNotMatch(overviewBlock, /max-w-\[min\(100%,46rem\)\]/, 'Conversation cards should not be capped narrower than the thread container')
 assert.match(overviewBlock, /Update Type[\s\S]{0,300}<Field as="select" value=\{discussionType\}/, 'Manual composer should keep update type selection')
 assert.match(overviewBlock, /Visibility[\s\S]{0,300}<Field as="select" value=\{discussionVisibility\}/, 'Manual composer should keep visibility selection')
 

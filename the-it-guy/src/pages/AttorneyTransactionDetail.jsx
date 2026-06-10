@@ -8056,9 +8056,9 @@ function AttorneyTransactionDetail() {
                         const isSystemEntry = entry.kind === 'system'
                         const isManualEntry = entry.kind === 'comment'
                         return (
-                          <div key={entry.id} className={`flex ${isManualEntry ? 'justify-end' : 'justify-start'}`}>
+                          <div key={entry.id} className="flex w-full">
                             <article
-                              className={`max-w-[min(100%,46rem)] rounded-[15px] border px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] ${
+                              className={`w-full rounded-[15px] border px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] ${
                                 isSystemEntry
                                   ? 'border-borderSoft bg-white/80'
                                   : isManualEntry

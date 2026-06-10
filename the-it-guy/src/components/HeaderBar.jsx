@@ -339,7 +339,8 @@ function HeaderBar({ onLogout, user }) {
   const userInitials = getUserInitials(user)
   const userAvatarUrl = getUserAvatarUrl(user)
   const isAgentsDirectoryRoute = location.pathname === '/agency/agents'
-  const showPersonaSwitcher = role !== 'bond_originator' && !isAgentsDirectoryRoute
+  const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
+  const showPersonaSwitcher = role !== 'bond_originator' && !isAgentWorkspaceRole && !isAgentsDirectoryRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
   const agentDashboardOwnsHeader =
     role === 'agent' &&
@@ -570,27 +571,29 @@ function HeaderBar({ onLogout, user }) {
         ) : null}
 
         <div className="ui-shell-actions ui-shell-actions-premium">
-          <div
-            className="ui-shell-role-switch ui-shell-role-switch-premium min-h-[44px] min-w-[196px] shrink-0"
-            aria-label="Active persona"
-          >
-            <span>View</span>
-            <select
-              className="flex-1"
-              value={role}
-              onChange={(event) => {
-                setActivePersona(event.target.value)
-                navigate('/dashboard')
-              }}
+          {showPersonaSwitcher ? (
+            <div
+              className="ui-shell-role-switch ui-shell-role-switch-premium min-h-[44px] min-w-[196px] shrink-0"
+              aria-label="Active persona"
             >
-              {personaOptions.map((option) => (
-                <option value={option.value} key={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            {rolePreviewActive ? <em>Preview</em> : null}
-          </div>
+              <span>View</span>
+              <select
+                className="flex-1"
+                value={role}
+                onChange={(event) => {
+                  setActivePersona(event.target.value)
+                  navigate('/dashboard')
+                }}
+              >
+                {personaOptions.map((option) => (
+                  <option value={option.value} key={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {rolePreviewActive ? <em>Preview</em> : null}
+            </div>
+          ) : null}
 
           <div className="ui-shell-search ui-shell-search-premium min-h-[44px]" aria-label="Search">
             <Search size={17} className="shrink-0 text-textSoft" />
