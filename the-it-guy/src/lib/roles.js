@@ -186,6 +186,7 @@ export const APP_NAV_BY_ROLE = {
   platform_admin: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'platform_diagnostics', label: 'Diagnostics', to: '/platform/diagnostics' },
+    { key: 'platform_transaction_routing', label: 'Routing Rollout', to: '/platform/transaction-routing-rollout' },
     { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' },
     { key: 'settings', label: 'Settings', to: '/settings' },
   ],

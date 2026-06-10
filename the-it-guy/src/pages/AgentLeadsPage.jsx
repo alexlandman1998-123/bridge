@@ -65,7 +65,9 @@ import {
 import {
   createPrivateListing,
   sendSellerOnboarding,
+  updatePrivateListingOnboardingFormData,
 } from '../services/privateListingService'
+import { listOrganisationCommissionStructures } from '../lib/settingsApi'
 import {
   activateLeadRequirement,
   archiveLeadRequirement,
@@ -536,6 +538,196 @@ function readFirstValue(row = {}, keys = []) {
 function toFiniteNumber(value) {
   const number = Number(value)
   return Number.isFinite(number) ? number : 0
+}
+
+function firstFilledValue(...values) {
+  for (const value of values) {
+    if (Array.isArray(value) ? value.length : normalizeText(value)) return value
+  }
+  return ''
+}
+
+function normalizeCommissionTermType(value) {
+  const normalized = normalizeText(value).toLowerCase()
+  if (['fixed', 'amount', 'flat', 'flat_fee'].includes(normalized)) return 'fixed'
+  return 'percentage'
+}
+
+function readSellerOnboardingFormData(listing = {}) {
+  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || listing?.sellerOnboardingRecord || {}
+  const formData = onboarding?.formData || onboarding?.form_data || listing?.sellerOnboardingFormData || listing?.seller_onboarding_form_data
+  return formData && typeof formData === 'object' ? formData : {}
+}
+
+function getSellerCommissionWorkspace(row = {}, listing = {}) {
+  const formData = readSellerOnboardingFormData(listing)
+  const commission = listing?.commission && typeof listing.commission === 'object' ? listing.commission : {}
+  const commissionType = normalizeCommissionTermType(firstFilledValue(
+    commission.commission_structure,
+    commission.commissionStructure,
+    commission.commission_type,
+    commission.commissionType,
+    formData.commissionStructure,
+    formData.commissionType,
+    row.commissionStructure,
+    row.commissionType,
+    'percentage',
+  ))
+  const percentage = toFiniteNumber(firstFilledValue(
+    commission.commission_percentage,
+    commission.percentage,
+    formData.commissionPercentage,
+    formData.commissionPercent,
+    formData.commission_percent,
+    formData.mandateCommissionPercentage,
+    formData.mandateCommissionPercent,
+    row.commissionPercentage,
+    row.commissionPercent,
+    row.mandateCommissionPercentage,
+    row.mandateCommissionPercent,
+  ))
+  const amount = toFiniteNumber(firstFilledValue(
+    commission.commission_amount,
+    commission.amount,
+    formData.commissionAmount,
+    formData.commission_amount,
+    formData.mandateCommissionAmount,
+    row.commissionAmount,
+    row.mandateCommissionAmount,
+  ))
+  const price = toFiniteNumber(firstFilledValue(
+    listing?.askingPrice,
+    listing?.asking_price,
+    listing?.estimatedValue,
+    listing?.estimated_value,
+    row.estimatedValue,
+    row.estimated_value,
+    row.budget,
+  ))
+  const estimatedExVat = amount || (price && percentage ? (price * percentage) / 100 : 0)
+  const vatHandling = normalizeText(firstFilledValue(
+    commission.vat,
+    commission.vat_handling,
+    commission.vatHandling,
+    formData.vatHandling,
+    formData.vatApplicable,
+    row.vatHandling,
+  ))
+  const vatIncluded = ['yes', 'inclusive'].includes(vatHandling.toLowerCase()) || vatHandling.toLowerCase().includes('incl')
+  const agencyStructureId = normalizeText(firstFilledValue(
+    commission.agency_commission_structure_id,
+    commission.agencyCommissionStructureId,
+    commission.commission_structure_id,
+    commission.commissionStructureId,
+    formData.agencyCommissionStructureId,
+    formData.commissionStructureId,
+    row.agencyCommissionStructureId,
+    row.commissionStructureId,
+  ))
+  const agencyStructureName = normalizeText(firstFilledValue(
+    commission.agency_commission_structure_name,
+    commission.agencyCommissionStructureName,
+    commission.commission_structure_name,
+    commission.commissionStructureName,
+    formData.agencyCommissionStructureName,
+    formData.commissionStructureName,
+    row.agencyCommissionStructureName,
+    row.commissionStructureName,
+  ))
+  const mandateTerms = normalizeText(firstFilledValue(
+    commission.mandate_terms,
+    commission.mandateTerms,
+    formData.mandateTerms,
+    formData.specialConditions,
+    row.mandateTerms,
+  ))
+  const paymentResponsibility = normalizeText(firstFilledValue(
+    commission.payment_responsibility,
+    commission.paymentResponsibility,
+    formData.paymentResponsibility,
+    row.paymentResponsibility,
+  ))
+  const notes = normalizeText(firstFilledValue(
+    commission.commission_notes,
+    commission.notes,
+    formData.commissionNotes,
+    row.commissionNotes,
+  ))
+  const lastUpdated = firstFilledValue(
+    commission.updated_at,
+    commission.updatedAt,
+    formData.commissionUpdatedAt,
+    row.commissionUpdatedAt,
+  )
+  return {
+    commissionType,
+    percentage,
+    amount,
+    estimatedExVat,
+    estimatedInclVat: vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0,
+    vatHandling,
+    vatIncluded,
+    agencyStructureId,
+    agencyStructureName,
+    mandateTerms,
+    paymentResponsibility,
+    notes,
+    lastUpdated,
+    hasData: Boolean(percentage || amount || vatHandling || agencyStructureId || agencyStructureName || mandateTerms || paymentResponsibility || notes),
+  }
+}
+
+function buildSellerCommissionDraft(summary = {}) {
+  return {
+    commissionType: summary.commissionType || 'percentage',
+    percentage: summary.percentage ? String(summary.percentage) : '',
+    amount: summary.amount ? String(summary.amount) : '',
+    vatHandling: summary.vatHandling || '',
+    agencyStructureId: summary.agencyStructureId || '',
+    agencyStructureName: summary.agencyStructureName || '',
+    mandateTerms: summary.mandateTerms || '',
+    paymentResponsibility: summary.paymentResponsibility || '',
+    notes: summary.notes || '',
+  }
+}
+
+function buildSellerCommissionFormPatch(draft = {}, actor = {}) {
+  const commissionType = normalizeCommissionTermType(draft.commissionType)
+  const percentage = toFiniteNumber(draft.percentage)
+  const amount = toFiniteNumber(draft.amount)
+  const vatHandling = normalizeText(draft.vatHandling)
+  const agencyStructureId = normalizeText(draft.agencyStructureId)
+  const agencyStructureName = normalizeText(draft.agencyStructureName)
+  const mandateTerms = normalizeText(draft.mandateTerms)
+  const paymentResponsibility = normalizeText(draft.paymentResponsibility)
+  const notes = normalizeText(draft.notes)
+  const updatedAt = new Date().toISOString()
+  const updatedBy = normalizeText(actor?.id || actor?.userId || actor?.email || actor?.name || 'agent')
+  return {
+    commissionStructure: commissionType,
+    commissionType,
+    commissionPercentage: percentage ? String(percentage) : '',
+    commissionPercent: percentage ? String(percentage) : '',
+    commission_percent: percentage ? String(percentage) : '',
+    mandateCommissionPercentage: percentage ? String(percentage) : '',
+    mandateCommissionPercent: percentage ? String(percentage) : '',
+    commissionAmount: amount ? String(amount) : '',
+    commission_amount: amount ? String(amount) : '',
+    mandateCommissionAmount: amount ? String(amount) : '',
+    vatHandling,
+    agencyCommissionStructureId: agencyStructureId,
+    agency_commission_structure_id: agencyStructureId,
+    agencyCommissionStructureName: agencyStructureName,
+    agency_commission_structure_name: agencyStructureName,
+    commissionStructureId: agencyStructureId,
+    commissionStructureName: agencyStructureName,
+    mandateTerms,
+    paymentResponsibility,
+    commissionNotes: notes,
+    commissionUpdatedAt: updatedAt,
+    commissionUpdatedBy: updatedBy,
+    commissionSource: 'seller_lead_workspace',
+  }
 }
 
 function getBuyerPrimaryRequirement(row = {}) {
@@ -6575,20 +6767,20 @@ function SellerJourneyRail({ journey = null, row = {}, listing = null }) {
         </div>
         <StatusPill tone={journey.listingLive ? 'green' : journey.listingCreated ? 'amber' : 'blue'}>{journey.stage?.status || journey.status?.status || 'Active'}</StatusPill>
       </div>
-      <ol className="mt-7 grid gap-4 lg:grid-cols-6">
+      <ol className="mt-7 grid min-w-0 grid-cols-2 gap-x-3 gap-y-5 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-6 lg:px-3">
         {(journey.steps || []).map((step, index, steps) => {
           const date = getSellerJourneyStepDate(row, listing, journey, step)
           const isLast = index === steps.length - 1
           return (
             <li key={step.key} className="relative min-w-0">
-              {!isLast ? <span className={`absolute left-10 top-5 hidden h-px w-[calc(100%+1rem)] lg:block ${step.completed ? 'bg-emerald-300' : 'bg-slate-200'}`} /> : null}
-              <div className="relative flex min-h-[104px] flex-col items-start gap-3">
+              {!isLast ? <span className={`absolute left-10 top-5 hidden h-px w-[calc(100%-0.25rem)] lg:block ${step.completed ? 'bg-emerald-300' : 'bg-slate-200'}`} /> : null}
+              <div className="relative flex min-h-[104px] min-w-0 flex-col items-start gap-3">
                 <span className={`z-10 flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${step.current ? 'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-100' : step.completed ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-200 bg-white text-slate-300'}`}>
                   {step.completed || step.current ? <CheckCircle2 size={16} /> : <FileText size={14} />}
                 </span>
-                <div className="min-w-0">
-                  <p className={`truncate text-sm font-semibold ${step.current ? 'text-blue-700' : step.completed ? 'text-slate-950' : 'text-slate-500'}`}>{step.label}</p>
-                  <p className="mt-1 truncate text-xs font-semibold text-slate-500">{date ? formatDate(date) : step.upcoming ? 'Upcoming' : step.status || step.state}</p>
+                <div className="min-w-0 max-w-full pr-2">
+                  <p className={`max-w-full break-words text-sm font-semibold leading-5 ${step.current ? 'text-blue-700' : step.completed ? 'text-slate-950' : 'text-slate-500'}`}>{step.label}</p>
+                  <p className="mt-1 max-w-full break-words text-xs font-semibold leading-4 text-slate-500">{date ? formatDate(date) : step.upcoming ? 'Upcoming' : step.status || step.state}</p>
                 </div>
               </div>
             </li>
@@ -6800,7 +6992,165 @@ function SellerPropertyTab({ row, listing }) {
   )
 }
 
-function SellerMandateTab({ row, listing, journey, onboardingStatus = '', onGenerateMandate }) {
+function SellerCommissionCard({
+  commissionDraft,
+  commissionSummary,
+  commissionStructures = [],
+  commissionStructuresLoading = false,
+  savingCommission = false,
+  onCommissionDraftChange,
+  onSaveCommission,
+}) {
+  const structures = Array.isArray(commissionStructures) ? commissionStructures.filter((item) => item?.isActive !== false) : []
+  const percentage = toFiniteNumber(commissionDraft?.percentage)
+  const amount = toFiniteNumber(commissionDraft?.amount)
+  const estimatedExVat = amount || commissionSummary?.estimatedExVat || 0
+  const vatHandling = normalizeText(commissionDraft?.vatHandling).toLowerCase()
+  const vatIncluded = ['yes', 'inclusive'].includes(vatHandling) || vatHandling.includes('incl')
+  const estimatedInclVat = vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0
+  const selectedStructure = structures.find((item) => normalizeText(item.id || item.name) === normalizeText(commissionDraft?.agencyStructureId))
+  const update = (key, value) => onCommissionDraftChange?.(key, value)
+  return (
+    <SellerWorkspaceCard
+      title="Commission Structure"
+      action={<StatusPill tone={commissionSummary?.hasData ? 'green' : 'slate'}>{commissionSummary?.hasData ? 'Captured' : 'Pending'}</StatusPill>}
+      className="min-h-[420px]"
+    >
+      <div className="grid gap-4 lg:grid-cols-2">
+        <label className="grid gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Agency Split</span>
+          <select
+            value={commissionDraft?.agencyStructureId || ''}
+            onChange={(event) => {
+              const next = structures.find((item) => normalizeText(item.id || item.name) === normalizeText(event.target.value))
+              update('agencyStructureId', event.target.value)
+              update('agencyStructureName', next?.name || '')
+            }}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+          >
+            <option value="">{commissionStructuresLoading ? 'Loading structures...' : 'No split selected'}</option>
+            {structures.map((structure) => (
+              <option key={structure.id || structure.name} value={structure.id || structure.name}>
+                {structure.name}{structure.isDefault ? ' (Default)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="grid gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Mandate Commission</span>
+          <select
+            value={commissionDraft?.commissionType || 'percentage'}
+            onChange={(event) => update('commissionType', event.target.value)}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+          >
+            <option value="percentage">Percentage</option>
+            <option value="fixed">Fixed Amount</option>
+          </select>
+        </label>
+        <label className="grid gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Commission %</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={commissionDraft?.percentage || ''}
+            onChange={(event) => update('percentage', event.target.value)}
+            placeholder="5"
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+          />
+        </label>
+        <label className="grid gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Fixed Amount</span>
+          <input
+            type="number"
+            min="0"
+            step="1000"
+            value={commissionDraft?.amount || ''}
+            onChange={(event) => update('amount', event.target.value)}
+            placeholder={estimatedExVat ? String(Math.round(estimatedExVat)) : '0'}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+          />
+        </label>
+        <label className="grid gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">VAT Handling</span>
+          <select
+            value={commissionDraft?.vatHandling || ''}
+            onChange={(event) => update('vatHandling', event.target.value)}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+          >
+            <option value="">Not captured</option>
+            <option value="no">No VAT</option>
+            <option value="exclusive">VAT Exclusive</option>
+            <option value="inclusive">VAT Inclusive</option>
+          </select>
+        </label>
+        <label className="grid gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Paid By</span>
+          <select
+            value={commissionDraft?.paymentResponsibility || ''}
+            onChange={(event) => update('paymentResponsibility', event.target.value)}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+          >
+            <option value="">Not captured</option>
+            <option value="seller">Seller</option>
+            <option value="buyer">Buyer</option>
+            <option value="split">Split</option>
+            <option value="agency">Agency</option>
+          </select>
+        </label>
+      </div>
+      <label className="mt-4 grid gap-2">
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Mandate Terms</span>
+        <input
+          value={commissionDraft?.mandateTerms || ''}
+          onChange={(event) => update('mandateTerms', event.target.value)}
+          placeholder="Sole mandate, payable on registration"
+          className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+        />
+      </label>
+      <label className="mt-4 grid gap-2">
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Notes / Special Conditions</span>
+        <textarea
+          rows={3}
+          value={commissionDraft?.notes || ''}
+          onChange={(event) => update('notes', event.target.value)}
+          placeholder="Capture exclusions, overrides, or seller-specific commission notes."
+          className="min-h-[96px] rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+        />
+      </label>
+      <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
+        <SellerInfoRow label="Split Profile" value={selectedStructure?.name || commissionDraft?.agencyStructureName || 'Not selected'} />
+        <SellerInfoRow label="Ex VAT" value={estimatedExVat ? formatCurrency(estimatedExVat) : 'Not captured'} />
+        <SellerInfoRow label="Incl VAT" value={estimatedInclVat ? formatCurrency(estimatedInclVat) : 'Not captured'} />
+      </div>
+      <button
+        type="button"
+        onClick={() => onSaveCommission?.(commissionDraft)}
+        disabled={savingCommission}
+        className="mt-5 inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+      >
+        <CreditCard size={16} />
+        {savingCommission ? 'Saving...' : 'Save Commission'}
+      </button>
+      {percentage || amount ? <p className="mt-2 text-xs font-semibold text-slate-500">Saved terms sync to seller onboarding data for mandate merge fields.</p> : null}
+    </SellerWorkspaceCard>
+  )
+}
+
+function SellerMandateTab({
+  row,
+  listing,
+  journey,
+  onboardingStatus = '',
+  commissionDraft,
+  commissionSummary,
+  commissionStructures = [],
+  commissionStructuresLoading = false,
+  savingCommission = false,
+  onCommissionDraftChange,
+  onSaveCommission,
+  onGenerateMandate,
+}) {
   const mandateMeta = getSellerMandateMeta(row, listing, journey)
   const mandateRequiresOnboarding = !mandateMeta.hasRecord && !sellerOnboardingIsSubmitted(onboardingStatus)
   const mandateActionHelp = mandateRequiresOnboarding
@@ -6826,20 +7176,31 @@ function SellerMandateTab({ row, listing, journey, onboardingStatus = '', onGene
         </button>
         {mandateRequiresOnboarding ? <p className="mt-2 text-xs font-semibold text-slate-500">{mandateActionHelp}</p> : null}
       </SellerWorkspaceCard>
-      <SellerWorkspaceCard title="Mandate History">
-        <div className="space-y-3">
-          {[
-            ['Generated', sellerMandateHasRecord(row, listing, journey) ? 'Available' : 'Not generated'],
-            ['Sent', ['sent', 'signed'].includes(getSellerMandateStatus(row, listing, journey)) ? 'Sent' : 'Pending'],
-            ['Signed', mandateMeta.mode === 'signed' ? 'Signed' : 'Pending'],
-          ].map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 px-3 py-3">
-              <span className="text-sm font-semibold text-slate-700">{label}</span>
-              <span className="text-sm font-semibold text-slate-950">{value}</span>
-            </div>
-          ))}
-        </div>
-      </SellerWorkspaceCard>
+      <div className="grid gap-6">
+        <SellerCommissionCard
+          commissionDraft={commissionDraft}
+          commissionSummary={commissionSummary}
+          commissionStructures={commissionStructures}
+          commissionStructuresLoading={commissionStructuresLoading}
+          savingCommission={savingCommission}
+          onCommissionDraftChange={onCommissionDraftChange}
+          onSaveCommission={onSaveCommission}
+        />
+        <SellerWorkspaceCard title="Mandate History" className="min-h-[220px]">
+          <div className="space-y-3">
+            {[
+              ['Generated', sellerMandateHasRecord(row, listing, journey) ? 'Available' : 'Not generated'],
+              ['Sent', ['sent', 'signed'].includes(getSellerMandateStatus(row, listing, journey)) ? 'Sent' : 'Pending'],
+              ['Signed', mandateMeta.mode === 'signed' ? 'Signed' : 'Pending'],
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 px-3 py-3">
+                <span className="text-sm font-semibold text-slate-700">{label}</span>
+                <span className="text-sm font-semibold text-slate-950">{value}</span>
+              </div>
+            ))}
+          </div>
+        </SellerWorkspaceCard>
+      </div>
     </div>
   )
 }
@@ -6975,17 +7336,17 @@ function SellerActivityCard({ event, density = 'list' }) {
   )
 }
 
-function SellerPremiumActivityFeed({ events = [], density = 'list' }) {
+function SellerPremiumActivityFeed({ events = [], density = 'list', className = '' }) {
   if (!events.length) {
     return (
-      <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
+      <div className={`mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center ${className}`}>
         <p className="text-base font-semibold text-slate-950">No activity yet</p>
         <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">Activity will appear here as the seller progresses from lead to listing.</p>
       </div>
     )
   }
   return (
-    <div className="mt-2 divide-y divide-slate-100">
+    <div className={`mt-2 divide-y divide-slate-100 ${className}`}>
       {events.map((event) => <SellerActivityCard key={event.key} event={event} density={density} />)}
     </div>
   )
@@ -7129,20 +7490,22 @@ function SellerActivityTab({ timeline = [], row = {}, listing = null, journey = 
             <SellerTimelineMilestonesCard row={row} listing={listing} journey={journey} />
           </div>
           <div className="min-w-0 lg:col-span-8 xl:col-span-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="flex flex-wrap gap-2">
-                {categoryOptions.map((option) => (
-                  <button
-                    key={option.key}
-                    type="button"
-                    onClick={() => setCategoryFilter(option.key)}
-                    className={`inline-flex min-h-9 items-center rounded-full px-3 text-xs font-semibold transition ${categoryFilter === option.key ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+            <div className="flex h-[560px] min-h-[380px] min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="shrink-0 border-b border-slate-100 pb-3">
+                <div className="flex flex-wrap gap-2">
+                  {categoryOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setCategoryFilter(option.key)}
+                      className={`inline-flex min-h-9 items-center rounded-full px-3 text-xs font-semibold transition ${categoryFilter === option.key ? 'bg-slate-950 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <SellerPremiumActivityFeed events={filteredEvents} density={density} />
+              <SellerPremiumActivityFeed events={filteredEvents} density={density} className="min-h-0 flex-1 overflow-y-auto pr-2 [scrollbar-gutter:stable]" />
             </div>
           </div>
           <div className="min-w-0 lg:col-span-12 xl:col-span-3">
@@ -7163,10 +7526,48 @@ function SellerActivityTab({ timeline = [], row = {}, listing = null, journey = 
   )
 }
 
-function SellerTabContent({ activeTab, row, sourceInfo, journey, readiness, listing, onboardingStatus, timeline, organisationId, actor, onSaved, onTabChange, onGenerateMandate }) {
+function SellerTabContent({
+  activeTab,
+  row,
+  sourceInfo,
+  journey,
+  readiness,
+  listing,
+  onboardingStatus,
+  timeline,
+  organisationId,
+  actor,
+  commissionDraft,
+  commissionSummary,
+  commissionStructures,
+  commissionStructuresLoading,
+  savingCommission,
+  onCommissionDraftChange,
+  onSaveCommission,
+  onSaved,
+  onTabChange,
+  onGenerateMandate,
+}) {
   if (activeTab === 'seller') return <SellerProfileTab row={row} journey={journey} onboardingStatus={onboardingStatus} />
   if (activeTab === 'property') return <SellerPropertyTab row={row} listing={listing} />
-  if (activeTab === 'mandate') return <SellerMandateTab row={row} listing={listing} journey={journey} onboardingStatus={onboardingStatus} onGenerateMandate={onGenerateMandate} />
+  if (activeTab === 'mandate') {
+    return (
+      <SellerMandateTab
+        row={row}
+        listing={listing}
+        journey={journey}
+        onboardingStatus={onboardingStatus}
+        commissionDraft={commissionDraft}
+        commissionSummary={commissionSummary}
+        commissionStructures={commissionStructures}
+        commissionStructuresLoading={commissionStructuresLoading}
+        savingCommission={savingCommission}
+        onCommissionDraftChange={onCommissionDraftChange}
+        onSaveCommission={onSaveCommission}
+        onGenerateMandate={onGenerateMandate}
+      />
+    )
+  }
   if (activeTab === 'appointments') return <SellerAppointmentsTab organisationId={organisationId} lead={row} listing={listing} actor={actor} onSaved={onSaved} />
   if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} />
   if (activeTab === 'activity') return <SellerActivityTab timeline={timeline} row={row} listing={listing} journey={journey} readiness={readiness} onTabChange={onTabChange} />
@@ -7365,7 +7766,9 @@ function SellerLeadWorkspaceLayout({
   organisationId,
   actor,
   timeline,
+  savingCommission,
   onSaved,
+  onSaveCommission,
   onSendSellerOnboarding,
   onGenerateMandate,
   onOpenListing,
@@ -7375,6 +7778,44 @@ function SellerLeadWorkspaceLayout({
   onArchiveLead,
 }) {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('overview')
+  const commissionSummary = useMemo(() => getSellerCommissionWorkspace(row, linkedSellerListing), [linkedSellerListing, row])
+  const [commissionDraft, setCommissionDraft] = useState(() => buildSellerCommissionDraft(commissionSummary))
+  const [commissionStructures, setCommissionStructures] = useState([])
+  const [commissionStructuresLoading, setCommissionStructuresLoading] = useState(false)
+  useEffect(() => {
+    setCommissionDraft(buildSellerCommissionDraft(commissionSummary))
+  }, [
+    commissionSummary.agencyStructureId,
+    commissionSummary.agencyStructureName,
+    commissionSummary.amount,
+    commissionSummary.commissionType,
+    commissionSummary.mandateTerms,
+    commissionSummary.notes,
+    commissionSummary.paymentResponsibility,
+    commissionSummary.percentage,
+    commissionSummary.vatHandling,
+  ])
+  useEffect(() => {
+    let active = true
+    async function loadCommissionStructures() {
+      try {
+        setCommissionStructuresLoading(true)
+        const rows = await listOrganisationCommissionStructures()
+        if (active) setCommissionStructures(Array.isArray(rows) ? rows : [])
+      } catch (structureError) {
+        if (active) setCommissionStructures([])
+      } finally {
+        if (active) setCommissionStructuresLoading(false)
+      }
+    }
+    void loadCommissionStructures()
+    return () => {
+      active = false
+    }
+  }, [])
+  const updateCommissionDraft = useCallback((key, value) => {
+    setCommissionDraft((previous) => ({ ...previous, [key]: value }))
+  }, [])
   const focusSellerWorkspaceSection = useCallback((sectionId = '') => {
     if (!sectionId || typeof window === 'undefined') return
     window.setTimeout(() => {
@@ -7386,6 +7827,7 @@ function SellerLeadWorkspaceLayout({
     const key = normalizeText(actionId).toLowerCase()
     if (['send_onboarding', 'open_seller_portal'].includes(key)) onSendSellerOnboarding?.()
     else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(key)) onGenerateMandate?.()
+    else if (['add_commission', 'review_commission', 'open_commission'].includes(key)) setActiveWorkspaceTab('mandate')
     else if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(key)) onOpenListing?.()
     else if (['open_documents'].includes(key)) setActiveWorkspaceTab('documents')
     else if (['schedule_appointment', 'open_appointments'].includes(key)) setActiveWorkspaceTab('appointments')
@@ -7448,6 +7890,13 @@ function SellerLeadWorkspaceLayout({
         timeline={timeline}
         organisationId={organisationId}
         actor={actor}
+        commissionDraft={commissionDraft}
+        commissionSummary={commissionSummary}
+        commissionStructures={commissionStructures}
+        commissionStructuresLoading={commissionStructuresLoading}
+        savingCommission={savingCommission}
+        onCommissionDraftChange={updateCommissionDraft}
+        onSaveCommission={onSaveCommission}
         onSaved={onSaved}
         onTabChange={setActiveWorkspaceTab}
         onGenerateMandate={onGenerateMandate}
@@ -7567,6 +8016,7 @@ function AgentLeadWorkspace() {
   const [sellerActionError, setSellerActionError] = useState('')
   const [sellerActionMessage, setSellerActionMessage] = useState('')
   const [sendingSellerOnboarding, setSendingSellerOnboarding] = useState(false)
+  const [savingSellerCommission, setSavingSellerCommission] = useState(false)
 
   const loadWorkspace = useCallback(async () => {
     if (!organisationId || !leadId) return
@@ -7737,6 +8187,72 @@ function AgentLeadWorkspace() {
     }
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sendingSellerOnboarding, workspaceName])
 
+  const saveSellerCommissionForLead = useCallback(async (draft = {}) => {
+    if (!row || !isSellerLeadWorkspace || savingSellerCommission) return
+    if (!organisationId) {
+      setSellerActionError('Select an agency workspace before saving commission terms.')
+      return
+    }
+    try {
+      setSavingSellerCommission(true)
+      setSellerActionError('')
+      setSellerActionMessage('')
+      let listingId = getSellerListingId(row, linkedSellerListing)
+      if (!listingId) {
+        const created = await createPrivateListing({
+          organisationId,
+          assignedAgentId: normalizeText(row.assignedAgentId || actor.id),
+          sellerLeadId: normalizeText(row.leadId),
+          originatingCrmLeadId: normalizeText(row.leadId),
+          listingStatus: 'seller_lead',
+          sellerOnboardingStatus: 'in_progress',
+          mandateStatus: 'not_started',
+          listingVisibility: 'internal',
+          title: normalizeText(row.propertyInterest || row.property_interest || row.sellerPropertyAddress || row.seller_property_address),
+          propertyType: normalizeText(row.propertyType || row.property_type) || 'House',
+          listingCategory: 'private_sale',
+          askingPrice: Number(row.estimatedValue || row.estimated_value || row.budget || 0) || 0,
+          estimatedValue: Number(row.estimatedValue || row.estimated_value || row.budget || 0) || 0,
+          addressLine1: normalizeText(row.sellerPropertyAddress || row.seller_property_address || row.areaInterest || row.area_interest),
+          suburb: normalizeText(row.areaInterest || row.area_interest),
+          description: normalizeText(row.notes),
+          source: 'lead_workspace_commission',
+        }, {
+          includeRequirementsAndDocuments: false,
+          syncRequirements: false,
+        })
+        listingId = normalizeText(created?.listing?.id)
+        if (listingId) {
+          await updateAgencyCrmLeadRecord(organisationId, row.leadId, { listingId }).catch(() => {})
+        }
+      }
+      if (!listingId) throw new Error('Create or link a seller listing before saving commission terms.')
+
+      const formPatch = buildSellerCommissionFormPatch(draft, actor)
+      const existingFormData = readSellerOnboardingFormData(linkedSellerListing)
+      const currentStatus = getSellerOnboardingStatus(row, linkedSellerListing)
+      await updatePrivateListingOnboardingFormData(listingId, {
+        ...existingFormData,
+        ...formPatch,
+      }, {
+        status: sellerOnboardingIsSubmitted(currentStatus) ? currentStatus : 'in_progress',
+      })
+      await createAgencyCrmLeadActivity(organisationId, row.leadId, {
+        agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
+        activityType: 'Commission Updated',
+        activityNote: 'Seller lead commission structure and mandate commission terms were updated.',
+        outcome: formPatch.agencyCommissionStructureName || formPatch.commissionStructure,
+        activityDate: new Date().toISOString(),
+      }, { actor }).catch(() => {})
+      setSellerActionMessage('Commission structure saved for mandate generation.')
+      await loadWorkspace()
+    } catch (actionError) {
+      setSellerActionError(actionError?.message || 'Unable to save commission terms right now.')
+    } finally {
+      setSavingSellerCommission(false)
+    }
+  }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, savingSellerCommission])
+
   const openMandateWorkspace = useCallback(() => {
     if (!row) return
     const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, linkedSellerListing))
@@ -7890,7 +8406,9 @@ function AgentLeadWorkspace() {
               organisationId={organisationId}
               actor={actor}
               timeline={data?.timeline || row.communicationTimeline || []}
+              savingCommission={savingSellerCommission}
               onSaved={loadWorkspace}
+              onSaveCommission={saveSellerCommissionForLead}
               onSendSellerOnboarding={sendSellerOnboardingForLead}
               onGenerateMandate={openMandateWorkspace}
               onOpenListing={openSellerListing}

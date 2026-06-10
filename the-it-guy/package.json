@@ -89,6 +89,7 @@
     "test:transaction-routing-diagnostics": "node scripts/transaction-routing-diagnostics.test.mjs",
     "test:transaction-routing-correction": "node scripts/transaction-routing-correction.test.mjs",
     "test:transaction-routing-backfill": "node scripts/transaction-routing-backfill.test.mjs",
+    "test:transaction-routing-rollout-console": "node scripts/transaction-routing-rollout-console.test.mjs",
     "test:seller-journey": "node scripts/seller-journey.test.mjs",
     "test:seller-analytics": "node scripts/seller-analytics.test.mjs",
     "test:seller-portal-alignment": "node scripts/seller-portal-alignment.test.mjs",
