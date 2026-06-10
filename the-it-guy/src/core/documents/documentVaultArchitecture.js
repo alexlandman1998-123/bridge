@@ -82,6 +82,11 @@ function getGroupByKey(groupKey) {
 }
 
 function inferGroupKeyFromDocument(requirement = {}) {
+  const explicitGroupKey = normalizeGroupKey(requirement.groupKey || requirement.group_key, '')
+  if (explicitGroupKey) {
+    return explicitGroupKey
+  }
+
   const key = String(requirement.key || '')
     .trim()
     .toLowerCase()

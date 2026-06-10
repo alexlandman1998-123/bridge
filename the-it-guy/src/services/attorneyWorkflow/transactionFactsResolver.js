@@ -5,6 +5,28 @@ const HYBRID_FINANCE_VALUES = new Set(['hybrid', 'cash_and_bond', 'partial_bond'
 const COMPANY_VALUES = new Set(['company', 'business', 'corporate', 'pty', 'pty_ltd', 'close_corporation', 'cc'])
 const TRUST_VALUES = new Set(['trust', 'family_trust'])
 const INDIVIDUAL_VALUES = new Set(['individual', 'person', 'natural_person', 'private_individual'])
+const NATURAL_PERSON_PURCHASER_VALUES = new Set([
+  'single',
+  'unmarried',
+  'not_married',
+  'never_married',
+  'divorced',
+  'widowed',
+  'married',
+  'married_coc',
+  'married_cop',
+  'married_in_community',
+  'married_in_community_of_property',
+  'married_anc',
+  'married_anc_accrual',
+  'married_out_of_community',
+  'married_out_of_community_of_property',
+  'foreign',
+  'foreign_purchaser',
+  'foreign_individual',
+  'foreign_buyer',
+  'non_resident',
+])
 
 const DEVELOPMENT_TRANSACTION_VALUES = new Set(['development', 'development_sale', 'new_development', 'off_plan'])
 const PRIVATE_TRANSACTION_VALUES = new Set(['private', 'private_sale', 'resale', 'seller_owned', 'sale'])
@@ -175,6 +197,7 @@ function normalizeEntityType(value) {
   if (normalized.includes('developer')) return 'developer'
   if (COMPANY_VALUES.has(normalized) || normalized.includes('company') || normalized.includes('pty')) return 'company'
   if (TRUST_VALUES.has(normalized) || normalized.includes('trust')) return 'trust'
+  if (NATURAL_PERSON_PURCHASER_VALUES.has(normalized)) return 'individual'
   if (INDIVIDUAL_VALUES.has(normalized) || normalized.includes('individual') || normalized.includes('person')) return 'individual'
   return normalized
 }

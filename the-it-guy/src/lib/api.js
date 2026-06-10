@@ -236,6 +236,20 @@ export const ATTORNEY_LEGAL_ROLE_REQUIRED = ['transfer']
 export const RESERVATION_STATUSES = ['not_required', 'pending', 'paid', 'verified', 'rejected']
 export const FUNDING_SOURCE_STATUSES = ['planned', 'pending', 'paid', 'verified']
 const DISCUSSION_TYPES = ['operational', 'blocker', 'document', 'decision', 'client', 'finance', 'legal', 'system', 'workflow', 'reminder', 'internal_note', 'client_update']
+const PROXY_UPDATE_CONFIRMATION_STATUSES = ['pending', 'confirmed', 'rejected', 'superseded']
+const PROXY_UPDATE_WORKFLOW_AREAS = ['general', 'sales', 'finance', 'transfer', 'bond', 'cancellation', 'documents', 'onboarding', 'client']
+const PROXY_UPDATE_TARGET_ROLE_LABELS = {
+  transfer_attorney: 'Transfer Attorney',
+  bond_attorney: 'Bond Attorney',
+  cancellation_attorney: 'Cancellation Attorney',
+  attorney: 'Attorney / Conveyancer',
+  bond_originator: 'Bond Originator',
+  buyer: 'Buyer',
+  seller: 'Seller',
+  client: 'Client / Buyer',
+  agent: 'Estate Agent',
+  developer_contact: 'Developer Contact',
+}
 const WORKFLOW_COMMENT_META_PREFIX = '__bridge_workflow_meta__'
 const CANONICAL_UPLOAD_CATEGORY_KEY_HINTS = {
   'instruction / otp documents': 'signed_otp',
@@ -8812,6 +8826,115 @@ function normalizeTransactionEventRow(row) {
     createdAt: row?.created_at || null,
     updatedAt: row?.updated_at || null,
   }
+}
+
+function normalizeProxyUpdateTargetRole(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replaceAll(' ', '_')
+    .replaceAll('-', '_')
+
+  if (['conveyancer', 'attorney', 'transfer_conveyancer', 'buyer_attorney', 'seller_attorney'].includes(normalized)) {
+    return 'transfer_attorney'
+  }
+  if (['bondoriginator', 'bond_originator', 'originator'].includes(normalized)) {
+    return 'bond_originator'
+  }
+  if (['bond_attorney', 'bond_conveyancer'].includes(normalized)) {
+    return 'bond_attorney'
+  }
+  if (['cancellation_attorney', 'cancellation_conveyancer'].includes(normalized)) {
+    return 'cancellation_attorney'
+  }
+  if (['buyer', 'client'].includes(normalized)) {
+    return 'buyer'
+  }
+  if (['seller', 'agent', 'developer_contact'].includes(normalized)) {
+    return normalized
+  }
+  return normalized || 'transfer_attorney'
+}
+
+function getProxyUpdateTargetRoleLabel(value) {
+  const normalized = normalizeProxyUpdateTargetRole(value)
+  return PROXY_UPDATE_TARGET_ROLE_LABELS[normalized] || TRANSACTION_ROLE_LABELS[normalized] || normalized.replaceAll('_', ' ')
+}
+
+function normalizeProxyUpdateWorkflowArea(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replaceAll(' ', '_')
+    .replaceAll('-', '_')
+  return PROXY_UPDATE_WORKFLOW_AREAS.includes(normalized) ? normalized : 'general'
+}
+
+function normalizeProxyUpdateConfirmationStatus(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return PROXY_UPDATE_CONFIRMATION_STATUSES.includes(normalized) ? normalized : 'pending'
+}
+
+function normalizeTransactionProxyUpdateRow(row) {
+  const targetRoleType = normalizeProxyUpdateTargetRole(row?.target_role_type)
+  const workflowArea = normalizeProxyUpdateWorkflowArea(row?.workflow_area)
+  const confirmationStatus = normalizeProxyUpdateConfirmationStatus(row?.confirmation_status)
+  const createdByRole = normalizeRoleType(row?.created_by_role || 'developer')
+
+  return {
+    id: row?.id || null,
+    transactionId: row?.transaction_id || null,
+    targetRoleType,
+    targetRoleLabel: getProxyUpdateTargetRoleLabel(targetRoleType),
+    targetParticipantId: row?.target_participant_id || null,
+    workflowArea,
+    workflowAreaLabel: workflowArea.replaceAll('_', ' ').replace(/\b\w/g, (match) => match.toUpperCase()),
+    workflowStepId: row?.workflow_step_id || null,
+    previousStatus: row?.previous_status || '',
+    newStatus: row?.new_status || '',
+    note: row?.note || '',
+    evidenceDocumentId: row?.evidence_document_id || null,
+    createdByUserId: row?.created_by_user_id || null,
+    createdByRole,
+    createdByRoleLabel: TRANSACTION_ROLE_LABELS[createdByRole] || createdByRole,
+    confirmationStatus,
+    confirmedByUserId: row?.confirmed_by_user_id || null,
+    confirmedAt: row?.confirmed_at || null,
+    rejectionReason: row?.rejection_reason || '',
+    metadata: row?.metadata && typeof row.metadata === 'object' ? row.metadata : {},
+    isDemoData: Boolean(row?.is_demo_data),
+    createdAt: row?.created_at || null,
+    updatedAt: row?.updated_at || null,
+  }
+}
+
+async function fetchTransactionProxyUpdatesWithClient(client, transactionId, { limit = 100 } = {}) {
+  if (!transactionId) {
+    return []
+  }
+
+  const query = await client
+    .from('transaction_proxy_updates')
+    .select(
+      'id, transaction_id, target_role_type, target_participant_id, workflow_area, workflow_step_id, previous_status, new_status, note, evidence_document_id, created_by_user_id, created_by_role, confirmation_status, confirmed_by_user_id, confirmed_at, rejection_reason, metadata, is_demo_data, created_at, updated_at',
+    )
+    .eq('transaction_id', transactionId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'transaction_proxy_updates') || isMissingSchemaError(query.error)) {
+      return []
+    }
+    throw query.error
+  }
+
+  return (query.data || []).map((row) => normalizeTransactionProxyUpdateRow(row))
+}
+
+export async function fetchTransactionProxyUpdates(transactionId, options = {}) {
+  const client = options.client || requireClient()
+  return fetchTransactionProxyUpdatesWithClient(client, transactionId, { limit: options.limit || 100 })
 }
 
 function normalizeNotificationRow(row) {
@@ -19222,6 +19345,7 @@ export async function deleteTransactionEverywhere({ transactionId, unitId } = {}
   await deleteOptionalByTransaction('onboarding_form_data')
   await deleteOptionalByTransaction('transaction_required_documents')
   await deleteOptionalByTransaction('transaction_comments')
+  await deleteOptionalByTransaction('transaction_proxy_updates')
   await deleteOptionalByTransaction('transaction_finance_details')
   await deleteOptionalByTransaction('transaction_financial_records')
   await deleteOptionalByTransaction('transaction_funding_sources')
@@ -25709,6 +25833,7 @@ export async function fetchTransactionById(transactionId) {
 
     if (unitDetail?.transaction?.id === transactionId) {
       const transactionEvents = await fetchTransactionEvents(transactionId)
+      const transactionProxyUpdates = await fetchTransactionProxyUpdatesWithClient(client, transactionId, { limit: 100 })
       const appointmentsByTransactionId = await fetchTransactionAppointments(client, [transactionId], { viewer: 'internal' })
       const rolePlayers = await fetchTransactionRolePlayersIfPossible(client, transactionId)
       const liveChecklist = await buildLiveTransactionChecklistData(client, {
@@ -25727,12 +25852,13 @@ export async function fetchTransactionById(transactionId) {
         transactionRolePlayers: rolePlayers,
         transaction_role_players: rolePlayers,
         transactionEvents,
+        transactionProxyUpdates,
         appointments: appointmentsByTransactionId[transactionId] || [],
       }
     }
   }
 
-  const [unitQuery, buyerQuery, initialParticipantsQuery, rolePlayers, discussionRows, transactionEvents, onboardingFormData, appointmentsByTransactionId] = await Promise.all([
+  const [unitQuery, buyerQuery, initialParticipantsQuery, rolePlayers, discussionRows, transactionEvents, transactionProxyUpdates, onboardingFormData, appointmentsByTransactionId] = await Promise.all([
     transaction.unit_id
       ? client
           .from('units')
@@ -25757,6 +25883,7 @@ export async function fetchTransactionById(transactionId) {
       limit: 250,
     }),
     fetchTransactionEvents(transactionId),
+    fetchTransactionProxyUpdatesWithClient(client, transactionId, { limit: 100 }),
     fetchOnboardingFormDataForTransaction(client, transactionId, transaction?.purchaser_type || 'individual'),
     fetchTransactionAppointments(client, [transactionId], { viewer: 'internal' }),
   ])
@@ -25903,6 +26030,7 @@ export async function fetchTransactionById(transactionId) {
     stage: normalizeStage(transaction?.stage, unitQuery.data?.status || 'Available'),
     mainStage: normalizeMainStage(transaction?.current_main_stage, transaction?.stage || unitQuery.data?.status || 'Available'),
     transactionEvents,
+    transactionProxyUpdates,
     appointments: appointmentsByTransactionId[transactionId] || [],
   }
 }
@@ -26731,6 +26859,7 @@ export async function fetchUnitDetail(unitId) {
   let transactionDiscussion = []
   let transactionStatusLink = null
   let transactionEvents = []
+  let transactionProxyUpdates = []
   let appointments = []
   let documentRequests = []
   let transactionChecklistItems = []
@@ -26840,6 +26969,16 @@ export async function fetchUnitDetail(unitId) {
     } catch (transactionEventsError) {
       if (!isMissingSchemaError(transactionEventsError)) {
         throw transactionEventsError
+      }
+    }
+
+    try {
+      timer.mark('proxy_updates_query_start')
+      transactionProxyUpdates = await fetchTransactionProxyUpdatesWithClient(client, transaction.id, { limit: 100 })
+      timer.mark('proxy_updates_query_end')
+    } catch (proxyUpdatesError) {
+      if (!isMissingSchemaError(proxyUpdatesError)) {
+        throw proxyUpdatesError
       }
     }
 
@@ -27035,6 +27174,7 @@ export async function fetchUnitDetail(unitId) {
     transactionDiscussion,
     transactionStatusLink,
     transactionEvents,
+    transactionProxyUpdates,
     appointments,
     documentRequests,
     documentRequestSummary: summarizeDocumentRequests(documentRequests),
@@ -29594,6 +29734,213 @@ export async function addTransactionDiscussionComment({
   })
 
   return normalizeTransactionCommentRow(insertResult.data)
+}
+
+export async function recordTransactionProxyUpdate({
+  transactionId,
+  targetRoleType,
+  targetParticipantId = null,
+  workflowArea = 'general',
+  workflowStepId = null,
+  previousStatus = '',
+  newStatus = '',
+  note = '',
+  evidenceDocumentId = null,
+  createdByRole = null,
+  metadata = {},
+  unitId = null,
+  authorName = '',
+} = {}) {
+  const client = requireClient()
+  const normalizedTransactionId = normalizeNullableText(transactionId)
+  if (!normalizedTransactionId) {
+    throw new Error('Transaction is required.')
+  }
+
+  const normalizedNote = normalizeNullableText(note)
+  if (!normalizedNote) {
+    throw new Error('Update note is required.')
+  }
+
+  const activeProfile = await resolveActiveProfileContext(client)
+  const actorRole = normalizeRoleType(createdByRole || activeProfile.role || 'agent')
+  if (!['agent', 'developer', 'internal_admin'].includes(actorRole)) {
+    throw new Error('Only transaction coordinators can record updates on behalf of roleplayers.')
+  }
+
+  const normalizedTargetRole = normalizeProxyUpdateTargetRole(targetRoleType)
+  const normalizedWorkflowArea = normalizeProxyUpdateWorkflowArea(workflowArea)
+  const normalizedNewStatus = normalizeNullableText(newStatus)
+  const targetRoleLabel = getProxyUpdateTargetRoleLabel(normalizedTargetRole)
+  const workflowAreaLabel = normalizedWorkflowArea.replaceAll('_', ' ').replace(/\b\w/g, (match) => match.toUpperCase())
+
+  const insertPayload = {
+    transaction_id: normalizedTransactionId,
+    target_role_type: normalizedTargetRole,
+    target_participant_id: targetParticipantId || null,
+    workflow_area: normalizedWorkflowArea,
+    workflow_step_id: normalizeNullableText(workflowStepId),
+    previous_status: normalizeNullableText(previousStatus),
+    new_status: normalizedNewStatus,
+    note: normalizedNote,
+    evidence_document_id: evidenceDocumentId || null,
+    created_by_user_id: activeProfile.userId || null,
+    created_by_role: actorRole,
+    confirmation_status: 'pending',
+    metadata: metadata && typeof metadata === 'object' ? metadata : {},
+  }
+
+  const insertResult = await client
+    .from('transaction_proxy_updates')
+    .insert(insertPayload)
+    .select(
+      'id, transaction_id, target_role_type, target_participant_id, workflow_area, workflow_step_id, previous_status, new_status, note, evidence_document_id, created_by_user_id, created_by_role, confirmation_status, confirmed_by_user_id, confirmed_at, rejection_reason, metadata, is_demo_data, created_at, updated_at',
+    )
+    .single()
+
+  if (insertResult.error) {
+    if (isMissingTableError(insertResult.error, 'transaction_proxy_updates') || isMissingSchemaError(insertResult.error)) {
+      throw new Error('Transaction proxy updates are not set up yet. Run the latest Supabase migrations first.')
+    }
+    throw insertResult.error
+  }
+
+  const proxyUpdate = normalizeTransactionProxyUpdateRow(insertResult.data)
+  const statusText = normalizedNewStatus ? ` Status: ${normalizedNewStatus}.` : ''
+  const commentText = `[operational][shared] External update recorded for ${targetRoleLabel} (${workflowAreaLabel}).${statusText} ${normalizedNote}`
+  const comment = await addTransactionDiscussionComment({
+    transactionId: normalizedTransactionId,
+    authorName: normalizeNullableText(authorName) || TRANSACTION_ROLE_LABELS[actorRole] || 'Transaction Coordinator',
+    authorRole: actorRole,
+    commentText,
+    unitId,
+    client,
+  })
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: normalizedTransactionId,
+    eventType: 'RoleplayerProxyUpdateRecorded',
+    createdByRole: actorRole,
+    eventData: {
+      proxyUpdateId: proxyUpdate.id,
+      targetRoleType: normalizedTargetRole,
+      targetRoleLabel,
+      workflowArea: normalizedWorkflowArea,
+      workflowStepId: proxyUpdate.workflowStepId,
+      previousStatus: proxyUpdate.previousStatus,
+      newStatus: proxyUpdate.newStatus,
+      confirmationStatus: proxyUpdate.confirmationStatus,
+      commentId: comment?.id || null,
+    },
+  })
+
+  return proxyUpdate
+}
+
+export async function confirmTransactionProxyUpdate(updateId, options = {}) {
+  const client = requireClient()
+  const normalizedUpdateId = normalizeNullableText(updateId)
+  if (!normalizedUpdateId) {
+    throw new Error('Proxy update is required.')
+  }
+
+  const activeProfile = await resolveActiveProfileContext(client)
+  const updateResult = await client
+    .from('transaction_proxy_updates')
+    .update({
+      confirmation_status: 'confirmed',
+      confirmed_by_user_id: activeProfile.userId || null,
+      confirmed_at: new Date().toISOString(),
+      rejection_reason: null,
+    })
+    .eq('id', normalizedUpdateId)
+    .select(
+      'id, transaction_id, target_role_type, target_participant_id, workflow_area, workflow_step_id, previous_status, new_status, note, evidence_document_id, created_by_user_id, created_by_role, confirmation_status, confirmed_by_user_id, confirmed_at, rejection_reason, metadata, is_demo_data, created_at, updated_at',
+    )
+    .single()
+
+  if (updateResult.error) {
+    throw updateResult.error
+  }
+
+  const proxyUpdate = normalizeTransactionProxyUpdateRow(updateResult.data)
+  await logTransactionEventIfPossible(client, {
+    transactionId: proxyUpdate.transactionId,
+    eventType: 'RoleplayerProxyUpdateConfirmed',
+    eventData: {
+      proxyUpdateId: proxyUpdate.id,
+      targetRoleType: proxyUpdate.targetRoleType,
+      workflowArea: proxyUpdate.workflowArea,
+    },
+  })
+
+  if (options.addComment !== false) {
+    await addTransactionDiscussionComment({
+      transactionId: proxyUpdate.transactionId,
+      authorName: options.authorName || 'Roleplayer',
+      authorRole: options.authorRole || proxyUpdate.targetRoleType,
+      commentText: `[operational][shared] ${proxyUpdate.targetRoleLabel} confirmed an external update recorded on their behalf.`,
+      unitId: options.unitId || null,
+      client,
+    })
+  }
+
+  return proxyUpdate
+}
+
+export async function rejectTransactionProxyUpdate(updateId, reason = '', options = {}) {
+  const client = requireClient()
+  const normalizedUpdateId = normalizeNullableText(updateId)
+  if (!normalizedUpdateId) {
+    throw new Error('Proxy update is required.')
+  }
+
+  const rejectionReason = normalizeNullableText(reason)
+  if (!rejectionReason) {
+    throw new Error('Rejection reason is required.')
+  }
+
+  const updateResult = await client
+    .from('transaction_proxy_updates')
+    .update({
+      confirmation_status: 'rejected',
+      rejection_reason: rejectionReason,
+      confirmed_at: new Date().toISOString(),
+    })
+    .eq('id', normalizedUpdateId)
+    .select(
+      'id, transaction_id, target_role_type, target_participant_id, workflow_area, workflow_step_id, previous_status, new_status, note, evidence_document_id, created_by_user_id, created_by_role, confirmation_status, confirmed_by_user_id, confirmed_at, rejection_reason, metadata, is_demo_data, created_at, updated_at',
+    )
+    .single()
+
+  if (updateResult.error) {
+    throw updateResult.error
+  }
+
+  const proxyUpdate = normalizeTransactionProxyUpdateRow(updateResult.data)
+  await logTransactionEventIfPossible(client, {
+    transactionId: proxyUpdate.transactionId,
+    eventType: 'RoleplayerProxyUpdateRejected',
+    eventData: {
+      proxyUpdateId: proxyUpdate.id,
+      targetRoleType: proxyUpdate.targetRoleType,
+      workflowArea: proxyUpdate.workflowArea,
+      rejectionReason,
+    },
+  })
+
+  if (options.addComment !== false) {
+    await addTransactionDiscussionComment({
+      transactionId: proxyUpdate.transactionId,
+      authorName: options.authorName || 'Roleplayer',
+      authorRole: options.authorRole || proxyUpdate.targetRoleType,
+      commentText: `[blocker][shared] ${proxyUpdate.targetRoleLabel} rejected an external update: ${rejectionReason}`,
+      unitId: options.unitId || null,
+      client,
+    })
+  }
+
+  return proxyUpdate
 }
 
 export async function getOrCreateTransactionStatusLink({ transactionId, createdByRole = 'developer' }) {

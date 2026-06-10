@@ -183,8 +183,11 @@ const CATEGORY_TO_PACK_KEY = Object.freeze({
   seller_entity: 'seller_identity_fica',
   property_compliance: 'property_compliance',
   bond: 'bond_originator',
+  bond_documents: 'bond_originator',
   cancellation: 'property_finance_existing_bond',
+  cancellation_documents: 'property_finance_existing_bond',
   transfer: 'attorney_transfer_readiness',
+  transfer_documents: 'attorney_transfer_readiness',
   transaction_type: 'attorney_transfer_readiness',
 })
 
@@ -210,12 +213,45 @@ const PRE_COLLECTION_ALLOWED_KEYS = new Set([
   'proof_of_income',
 ])
 
+const BUYER_ADAPTER_CANONICAL_KEY_OVERRIDES = Object.freeze({
+  id_document: 'buyer_id_document',
+  purchaser_id: 'buyer_id_document',
+  purchaser_1_id: 'buyer_id_document',
+  passport_copy: 'buyer_id_document',
+  proof_of_address: 'buyer_proof_of_address',
+  purchaser_proof_of_address: 'buyer_proof_of_address',
+  purchaser_1_proof_of_address: 'buyer_proof_of_address',
+  cipc_registration: 'buyer_company_registration_documents',
+  company_resolution: 'buyer_company_resolution',
+  director_id: 'buyer_director_ids',
+  director_proof_of_address: 'buyer_business_address',
+  trust_deed: 'buyer_trust_deed',
+  letters_of_authority: 'buyer_letters_of_authority',
+  trust_resolution: 'buyer_trustee_resolution',
+  trustee_id: 'buyer_trustee_ids',
+})
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function buyerAdapterCanonicalKey(key = '') {
+  const normalized = normalizeKey(key)
+  return BUYER_ADAPTER_CANONICAL_KEY_OVERRIDES[normalized] || legacyRequirementKeyToCanonicalKey(normalized)
+}
+
+function attorneyFallbackPackKey(requirement = {}, definition = {}) {
+  if (definition.pack_key) return definition.pack_key
+  const category = normalizeKey(requirement.category)
+  const appliesTo = normalizeKey(requirement.appliesTo)
+  if (category === 'fica' || category === 'entity_documents') {
+    return appliesTo === 'seller' ? 'seller_identity_fica' : 'buyer_identity_fica'
+  }
+  return CATEGORY_TO_PACK_KEY[category] || 'attorney_transfer_readiness'
 }
 
 function normalizeArray(value) {
@@ -567,7 +603,7 @@ function buildBuyerAdapterCandidates({
   )
 
   return normalizeArray(derived.requiredDocuments).map((template) => {
-    const definitionKey = legacyRequirementKeyToCanonicalKey(template.key)
+    const definitionKey = buyerAdapterCanonicalKey(template.key)
     const definition = definitionsByKey.get(definitionKey)
     if (!definition) return null
     const packKey = definition.pack_key || GROUP_KEY_TO_PACK_KEY[normalizeKey(template.groupKey)] || 'buyer_identity_fica'
@@ -623,7 +659,7 @@ function buildAttorneyAdapterCandidates({
     const definition = definitionsByKey.get(definitionKey)
     if (!definition) return null
 
-    const packKey = definition.pack_key || CATEGORY_TO_PACK_KEY[normalizeKey(requirement.category)] || 'attorney_transfer_readiness'
+    const packKey = attorneyFallbackPackKey(requirement, definition)
     const laneKey = normalizeKey(requirement.laneKey)
     const stageGates =
       laneKey === 'bond'

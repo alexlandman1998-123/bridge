@@ -544,6 +544,11 @@ export const EMPLOYMENT_TYPE_OPTIONS = [
     caption: 'Business-led income that usually needs financial statements and longer bank history.',
   },
   {
+    value: 'company_director',
+    label: 'Company director',
+    caption: 'Director or shareholder income that usually needs company financial support.',
+  },
+  {
     value: 'commission',
     label: 'Commission-based / Variable income',
     caption: 'Income varies month to month and needs earning history support.',
@@ -559,6 +564,11 @@ export const EMPLOYMENT_TYPE_OPTIONS = [
     caption: 'Retirement or pension-based income with pension proof and bank statements.',
   },
   {
+    value: 'unemployed',
+    label: 'Unemployed / No regular income',
+    caption: 'No current employment income; affordability depends on alternative income or funds.',
+  },
+  {
     value: 'other',
     label: 'Other',
     caption: 'Any other income profile that still needs finance support documents.',
@@ -568,10 +578,42 @@ export const EMPLOYMENT_TYPE_OPTIONS = [
 const EMPLOYMENT_COMPLEXITY_SCORE = {
   full_time: 'low',
   self_employed: 'high',
+  company_director: 'high',
   commission: 'medium',
   contract: 'medium',
   retired: 'medium',
+  unemployed: 'high',
   other: 'medium',
+}
+
+const EMPLOYMENT_TYPE_ALIASES = {
+  employed: 'full_time',
+  permanent: 'full_time',
+  permanent_employed: 'full_time',
+  permanently_employed: 'full_time',
+  salaried: 'full_time',
+  salary: 'full_time',
+  self_employment: 'self_employed',
+  selfemployed: 'self_employed',
+  business_owner: 'self_employed',
+  owner: 'self_employed',
+  director: 'company_director',
+  shareholder: 'company_director',
+  pensioner: 'retired',
+  pension: 'retired',
+  not_employed: 'unemployed',
+  no_employment: 'unemployed',
+  no_income: 'unemployed',
+}
+
+function normalizeEmploymentType(value) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  if (!normalized) return ''
+  const aliased = EMPLOYMENT_TYPE_ALIASES[normalized] || normalized
+  return EMPLOYMENT_TYPE_OPTIONS.some((item) => item.value === aliased) ? aliased : normalized
 }
 
 function isNaturalPersonPurchaserType(value) {
@@ -580,28 +622,28 @@ function isNaturalPersonPurchaserType(value) {
 }
 
 export function getEmploymentTypeLabel(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
+  const normalized = normalizeEmploymentType(value)
   return EMPLOYMENT_TYPE_OPTIONS.find((item) => item.value === normalized)?.label || 'Not provided'
 }
 
 export function getEmploymentTypeHelper(value) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
+  const normalized = normalizeEmploymentType(value)
 
   switch (normalized) {
     case 'full_time':
       return 'You will usually be asked for the last 3 months of payslips and bank statements.'
     case 'self_employed':
       return 'You may be asked for additional financial documents such as financial statements and extended bank history.'
+    case 'company_director':
+      return 'You may be asked for company financial statements, tax support, and extended bank history.'
     case 'commission':
       return 'You will usually be asked for longer bank history and commission or income statements.'
     case 'contract':
       return 'You may be asked for bank statements and supporting contracts or invoices where available.'
     case 'retired':
       return 'You will usually be asked for proof of pension income and recent bank statements.'
+    case 'unemployed':
+      return 'You will usually be asked for alternative income, source-of-funds support, and recent bank statements.'
     case 'other':
       return 'Bridge will request a broader set of finance support documents so the bond application is not delayed.'
     default:
@@ -689,7 +731,7 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           ],
           {
             description: 'Required for salaried or regularly employed bond applicants.',
-            visibleWhen: (values) => ['full_time', 'commission', 'contract'].includes(String(values.employment_type || '').trim().toLowerCase()),
+            visibleWhen: (values) => ['full_time', 'commission', 'contract'].includes(normalizeEmploymentType(values.employment_type)),
           },
         ),
       )
@@ -708,7 +750,7 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           ],
           {
             description: 'Required where the bond application depends on self-employed or business-led income.',
-            visibleWhen: (values) => String(values.employment_type || '').trim().toLowerCase() === 'self_employed',
+            visibleWhen: (values) => ['self_employed', 'company_director'].includes(normalizeEmploymentType(values.employment_type)),
           },
         ),
       )
@@ -724,7 +766,7 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           ],
           {
             description: 'Required where affordability will rely on retirement income.',
-            visibleWhen: (values) => String(values.employment_type || '').trim().toLowerCase() === 'retired',
+            visibleWhen: (values) => normalizeEmploymentType(values.employment_type) === 'retired',
           },
         ),
       )
@@ -739,7 +781,7 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           ],
           {
             description: 'Used when the income profile does not fit the standard salaried or retirement paths.',
-            visibleWhen: (values) => ['other', 'contract', 'commission'].includes(String(values.employment_type || '').trim().toLowerCase()),
+            visibleWhen: (values) => ['other', 'contract', 'commission', 'unemployed'].includes(normalizeEmploymentType(values.employment_type)),
           },
         ),
       )
@@ -1146,9 +1188,7 @@ function getFinanceDocumentDefinitions(values = {}, financeType) {
   })
   const purchaserSnapshot = resolveStructuredPurchasers(values, purchaserType)
   const naturalPersonPurchase = isNaturalPersonPurchaserType(purchaserType)
-  const employmentType = String(values.employment_type || purchaserSnapshot.purchasers?.[0]?.employment_type || '')
-    .trim()
-    .toLowerCase()
+  const employmentType = normalizeEmploymentType(values.employment_type || purchaserSnapshot.purchasers?.[0]?.employment_type)
 
   if (normalizedFinanceType === 'cash') {
     documents.push({
@@ -1179,6 +1219,7 @@ function getFinanceDocumentDefinitions(values = {}, financeType) {
           )
           break
         case 'self_employed':
+        case 'company_director':
           documents.push(
             {
               key: 'bank_statements_12_months',
@@ -1253,6 +1294,22 @@ function getFinanceDocumentDefinitions(values = {}, financeType) {
               label: 'Bank Statements (Last 3 Months)',
               groupKey: 'finance',
               description: 'Used to support the pension income position.',
+            },
+          )
+          break
+        case 'unemployed':
+          documents.push(
+            {
+              key: 'bank_statements_6_months',
+              label: 'Bank Statements (Last 6 Months)',
+              groupKey: 'finance',
+              description: 'Used to assess available funds and account conduct.',
+            },
+            {
+              key: 'income_explanation',
+              label: 'Alternative Income / Source of Funds Explanation',
+              groupKey: 'finance',
+              description: 'Explains the source of funds or support for affordability where no employment income is declared.',
             },
           )
           break
@@ -1601,9 +1658,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const trustees = Array.isArray(formData.trustees) ? formData.trustees.filter((item) => isFilledValue(item)) : []
   const directors = Array.isArray(formData.directors) ? formData.directors.filter((item) => isFilledValue(item)) : []
   const fundingSources = Array.isArray(formData.funding_sources) ? formData.funding_sources.filter((item) => isFilledValue(item)) : []
-  const employmentType = String(formData.employment_type || '')
-    .trim()
-    .toLowerCase()
+  const employmentType = normalizeEmploymentType(formData.employment_type)
 
   const parties = []
   const primaryName = [formData.first_name, formData.last_name].filter(Boolean).join(' ').trim()
@@ -1917,9 +1972,7 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
       return
     }
 
-    const employmentType = String(purchaser.employment_type || '')
-      .trim()
-      .toLowerCase()
+    const employmentType = normalizeEmploymentType(purchaser.employment_type)
     requireField(employmentType, `${buyerLabel} Employment Type`)
 
     if (employmentType === 'full_time') {
@@ -1928,12 +1981,12 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
       requireField(purchaser.employment_start_date, `${buyerLabel} Employment Start Date`)
     }
 
-    if (employmentType === 'self_employed') {
+    if (employmentType === 'self_employed' || employmentType === 'company_director') {
       requireField(purchaser.business_name, `${buyerLabel} Business Name`)
       requireField(purchaser.years_in_business, `${buyerLabel} Years in Business`)
     }
 
-    if (['full_time', 'self_employed', 'retired', 'contract', 'other', 'commission'].includes(employmentType)) {
+    if (['full_time', 'self_employed', 'company_director', 'retired', 'contract', 'other', 'commission'].includes(employmentType)) {
       requireField(purchaser.gross_monthly_income, `${buyerLabel} Gross Monthly Income`)
       requireField(purchaser.net_monthly_income, `${buyerLabel} Net Monthly Income`)
       requireField(purchaser.income_frequency, `${buyerLabel} Income Frequency`)

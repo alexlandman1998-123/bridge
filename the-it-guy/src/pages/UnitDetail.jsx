@@ -62,6 +62,7 @@ import {
   getOrCreateTransactionOnboarding,
   getOrCreateClientPortalLink,
   archiveTransactionLifecycle,
+  recordTransactionProxyUpdate,
   saveTransaction,
   saveTransactionClientInformation,
   sendReservationDepositRequest,
@@ -134,6 +135,38 @@ const ONBOARDING_MODE_OPTIONS = [
   { value: 'client_portal', label: 'Client Portal' },
   { value: 'manual', label: 'Manual (Internal)' },
 ]
+const PROXY_UPDATE_ROLE_OPTIONS = [
+  { value: 'transfer_attorney', label: 'Transfer Attorney' },
+  { value: 'bond_originator', label: 'Bond Originator' },
+  { value: 'bond_attorney', label: 'Bond Attorney' },
+  { value: 'cancellation_attorney', label: 'Cancellation Attorney' },
+  { value: 'buyer', label: 'Buyer' },
+  { value: 'seller', label: 'Seller' },
+]
+const PROXY_UPDATE_WORKFLOW_OPTIONS = [
+  { value: 'general', label: 'General' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'transfer', label: 'Transfer' },
+  { value: 'bond', label: 'Bond' },
+  { value: 'cancellation', label: 'Cancellation' },
+  { value: 'documents', label: 'Documents' },
+  { value: 'onboarding', label: 'Onboarding' },
+  { value: 'client', label: 'Client' },
+]
+const PROXY_UPDATE_STATUS_OPTIONS = [
+  { value: 'reported', label: 'Reported' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'waiting', label: 'Waiting' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'blocked', label: 'Blocked' },
+]
+const DEFAULT_PROXY_UPDATE_FORM = {
+  targetRoleType: 'transfer_attorney',
+  workflowArea: 'general',
+  newStatus: 'reported',
+  note: '',
+}
 
 function mapLegacyMainStageToWorkflowAction(mainStage = '') {
   const normalized = String(mainStage || '').trim().toUpperCase()
@@ -2631,6 +2664,9 @@ function UnitDetail() {
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionFeedFilter, setDiscussionFeedFilter] = useState('all')
+  const [proxyUpdateModalOpen, setProxyUpdateModalOpen] = useState(false)
+  const [proxyUpdateSaving, setProxyUpdateSaving] = useState(false)
+  const [proxyUpdateForm, setProxyUpdateForm] = useState(() => ({ ...DEFAULT_PROXY_UPDATE_FORM }))
   const [actingRole, setActingRole] = useState('developer')
   const [clientPortalLink, setClientPortalLink] = useState(null)
   const [activeDocumentLibraryCategory, setActiveDocumentLibraryCategory] = useState('all')
@@ -5317,6 +5353,7 @@ function UnitDetail() {
     activeViewerPermissions,
     transactionDiscussion,
     transactionEvents,
+    transactionProxyUpdates = [],
     onboardingFormData,
   } = detail
 
@@ -5439,6 +5476,48 @@ function UnitDetail() {
   const canRequestAdditionalDocuments =
     Boolean(actingPermissions.canRequestAdditionalDocuments) ||
     ['developer', 'agent', 'attorney', 'bond_originator', 'internal_admin'].includes(effectiveEditorRole)
+  const canRecordProxyUpdate =
+    Boolean(transaction?.id) &&
+    canCommentInWorkspace &&
+    ['agent', 'developer', 'internal_admin'].includes(effectiveEditorRole)
+  const pendingProxyUpdates = (transactionProxyUpdates || []).filter((item) => item.confirmationStatus === 'pending')
+  const recentProxyUpdates = (transactionProxyUpdates || []).slice(0, 4)
+  async function handleSubmitProxyUpdate(event) {
+    event.preventDefault()
+    if (!transaction?.id) {
+      setError('Transaction data is not available for external updates.')
+      return
+    }
+
+    if (!canRecordProxyUpdate) {
+      setError('Your current role cannot record external roleplayer updates.')
+      return
+    }
+
+    try {
+      setProxyUpdateSaving(true)
+      setError('')
+      await recordTransactionProxyUpdate({
+        transactionId: transaction.id,
+        targetRoleType: proxyUpdateForm.targetRoleType,
+        workflowArea: proxyUpdateForm.workflowArea,
+        newStatus: proxyUpdateForm.newStatus,
+        note: proxyUpdateForm.note,
+        createdByRole: effectiveEditorRole,
+        unitId: unit?.id || null,
+        authorName: resolveActingParticipantName(),
+      })
+      setProxyUpdateForm({ ...DEFAULT_PROXY_UPDATE_FORM })
+      setProxyUpdateModalOpen(false)
+      setWorkspaceMenu('activity')
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (proxyUpdateError) {
+      setError(proxyUpdateError?.message || 'Unable to record external update.')
+    } finally {
+      setProxyUpdateSaving(false)
+    }
+  }
   const canEditMainStage = elevatedWorkspaceRoles.includes(effectiveEditorRole)
   const salesLanePermissions = resolveWorkflowLanePermissions('sales', {
     actorRole: effectiveEditorRole,
@@ -6190,6 +6269,12 @@ function UnitDetail() {
       ]
   const agentQuickActions = [
     {
+      label: 'External Update',
+      icon: MessageSquare,
+      onClick: () => setProxyUpdateModalOpen(true),
+      disabled: !canRecordProxyUpdate,
+    },
+    {
       label: 'Request Documents',
       icon: FilePlus2,
       onClick: () => {
@@ -6284,6 +6369,55 @@ function UnitDetail() {
     ['FICA Completed', onboardingComplete ? formatDate(transaction?.onboarding_completed_at || transaction?.updated_at) : 'Pending'],
     ['Target Registration', targetRegistrationLabel],
   ]
+  const proxyUpdatesSummaryPanel = recentProxyUpdates.length ? (
+    <WorkspacePanel
+      title="Roleplayer Updates"
+      copy="External updates recorded by the transaction coordinator, pending roleplayer confirmation where required."
+      className="no-print"
+      actions={
+        canRecordProxyUpdate ? (
+          <Button type="button" variant="secondary" size="sm" onClick={() => setProxyUpdateModalOpen(true)}>
+            Record External Update
+          </Button>
+        ) : null
+      }
+    >
+      <div className="grid gap-3">
+        {recentProxyUpdates.map((item) => (
+          <article key={item.id} className="rounded-[16px] border border-[#e1e9f2] bg-white px-4 py-3 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <strong className="text-sm font-semibold text-[#142132]">{item.targetRoleLabel}</strong>
+                  <span className="rounded-full border border-[#dce6f0] bg-[#f8fbfd] px-2.5 py-0.5 text-[0.68rem] font-semibold text-[#6b7d93]">
+                    {item.workflowAreaLabel}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-sm leading-6 text-[#2f465c]">{item.note}</p>
+              </div>
+              <span
+                className={[
+                  'inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em]',
+                  item.confirmationStatus === 'pending'
+                    ? 'border-[#f2ddc1] bg-[#fff4e7] text-[#9a5a1a]'
+                    : item.confirmationStatus === 'confirmed'
+                      ? 'border-[#cfe8da] bg-[#effaf3] text-[#197a45]'
+                      : 'border-[#f4c7c3] bg-[#fff5f5] text-[#b42318]',
+                ].join(' ')}
+              >
+                {item.confirmationStatus.replaceAll('_', ' ')}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-[#72849a]">
+              {item.newStatus ? <span>Status: {item.newStatus.replaceAll('_', ' ')}</span> : null}
+              <span>Recorded by {item.createdByRoleLabel}</span>
+              <span>{formatDateTime(item.createdAt)}</span>
+            </div>
+          </article>
+        ))}
+      </div>
+    </WorkspacePanel>
+  ) : null
 
   const workspaceMenus = isAgentWorkspace
     ? [
@@ -6363,6 +6497,15 @@ function UnitDetail() {
       onClick: handleCopyClientPortalLink,
       disabled: !transaction?.id || !canEditSalesWorkflow,
       hidden: !canEditSalesWorkflow,
+    },
+    {
+      id: 'record-external-update',
+      label: 'Record External Update',
+      icon: 'report',
+      variant: 'primary',
+      onClick: () => setProxyUpdateModalOpen(true),
+      disabled: !canRecordProxyUpdate,
+      hidden: !canRecordProxyUpdate,
     },
   ]
 
@@ -7389,6 +7532,7 @@ function UnitDetail() {
             {financeWorkflowSection}
             <div className="no-print">{transferWorkflowSection}</div>
             {bondWorkflowSection}
+            {proxyUpdatesSummaryPanel}
 
             <WorkspacePanel
               title="Comments & Updates"
@@ -9728,6 +9872,95 @@ function UnitDetail() {
           }}
         />
       </div>
+    </Modal>
+    <Modal
+      open={proxyUpdateModalOpen}
+      onClose={() => {
+        if (proxyUpdateSaving) return
+        setProxyUpdateModalOpen(false)
+      }}
+      title="Record External Update"
+      subtitle="Capture progress reported outside Bridge without changing the roleplayer's confirmed lane truth."
+      footer={(
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setProxyUpdateModalOpen(false)}
+            disabled={proxyUpdateSaving}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="transaction-proxy-update-form"
+            disabled={proxyUpdateSaving || !proxyUpdateForm.note.trim() || !canRecordProxyUpdate}
+          >
+            {proxyUpdateSaving ? 'Recording...' : 'Record Update'}
+          </Button>
+        </div>
+      )}
+      className="max-w-[720px]"
+    >
+      <form id="transaction-proxy-update-form" onSubmit={handleSubmitProxyUpdate} className="space-y-4">
+        <div className="rounded-[14px] border border-[#e1eaf4] bg-[#fbfdff] px-4 py-3 text-sm leading-6 text-[#2f4358]">
+          This records what the agent was told by phone, email, or WhatsApp. The roleplayer can confirm or correct it later.
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field
+            as="select"
+            label="Roleplayer"
+            value={proxyUpdateForm.targetRoleType}
+            onChange={(event) => setProxyUpdateForm((previous) => ({ ...previous, targetRoleType: event.target.value }))}
+          >
+            {PROXY_UPDATE_ROLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Field>
+          <Field
+            as="select"
+            label="Workflow area"
+            value={proxyUpdateForm.workflowArea}
+            onChange={(event) => setProxyUpdateForm((previous) => ({ ...previous, workflowArea: event.target.value }))}
+          >
+            {PROXY_UPDATE_WORKFLOW_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Field>
+          <Field
+            as="select"
+            label="Reported status"
+            value={proxyUpdateForm.newStatus}
+            onChange={(event) => setProxyUpdateForm((previous) => ({ ...previous, newStatus: event.target.value }))}
+          >
+            {PROXY_UPDATE_STATUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Field>
+        </div>
+
+        <Field
+          as="textarea"
+          label="Update note"
+          value={proxyUpdateForm.note}
+          onChange={(event) => setProxyUpdateForm((previous) => ({ ...previous, note: event.target.value }))}
+          placeholder="Example: Bond originator confirmed by email that approval was granted; grant letter expected tomorrow."
+          rows={5}
+        />
+
+        {pendingProxyUpdates.length ? (
+          <div className="rounded-[14px] border border-[#f2ddc1] bg-[#fffaf2] px-4 py-3 text-sm text-[#7a4c18]">
+            {pendingProxyUpdates.length} roleplayer {pendingProxyUpdates.length === 1 ? 'update is' : 'updates are'} already awaiting confirmation on this transaction.
+          </div>
+        ) : null}
+      </form>
     </Modal>
     <Modal
       open={uploadDocumentModalOpen}

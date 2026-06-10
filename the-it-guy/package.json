@@ -72,6 +72,7 @@
     "test:unified-invites": "node scripts/unified-invites.test.mjs",
     "test:role-resolution": "node scripts/role-resolution.test.mjs",
     "test:attorney-onboarding-fk-safety": "node scripts/attorney-onboarding-fk-safety.test.mjs",
+    "test:document-request-scenario-matrix": "node scripts/document-request-scenario-matrix.test.mjs",
     "test:canonical-document-resolver": "node scripts/canonical-document-resolver.test.mjs",
     "test:canonical-document-adapters": "node scripts/canonical-document-adapters.test.mjs",
     "test:seller-onboarding-facts": "node scripts/seller-onboarding-facts.test.mjs",
