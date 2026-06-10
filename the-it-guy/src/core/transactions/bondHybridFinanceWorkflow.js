@@ -189,5 +189,5 @@ export function getBondHybridFinanceProgressPercent(stage, status = 'active') {
   if (status === 'completed') return 100
   const index = getBondHybridFinanceStageIndex(stage)
   if (index < 0) return 0
-  return Math.min(100, Math.round(((index + 1) / Math.max(BOND_HYBRID_FINANCE_STAGES.length - 1, 1)) * 100))
+  return Math.min(100, Math.round((index / Math.max(BOND_HYBRID_FINANCE_STAGES.length - 1, 1)) * 100))
 }

@@ -482,6 +482,9 @@ export function resolveTransactionFinancePermissions({
   const canEditFinanceWorkflow =
     Boolean(activeViewerPermissions?.canEditFinanceWorkflow) &&
     ['bond_originator', 'admin'].includes(role)
+  const canProxyFinanceWorkflow =
+    Boolean(activeViewerPermissions?.canProxyFinanceWorkflow) &&
+    ['agent', 'admin', 'internal_admin'].includes(role)
   const canUploadFromPermissions = Boolean(activeViewerPermissions?.canUploadDocuments)
 
   return {
@@ -494,6 +497,7 @@ export function resolveTransactionFinancePermissions({
     canMarkInstructionSent: canEditFinanceWorkflow || ['developer', 'admin', 'bond_originator'].includes(role),
     canVerifyProofOfFunds: canEditFinanceWorkflow || ['developer', 'admin'].includes(role),
     canUpdateBlockers: canEditFinanceWorkflow || ['developer', 'admin', 'bond_originator'].includes(role),
+    canProxyFinanceWorkflow,
   }
 }
 

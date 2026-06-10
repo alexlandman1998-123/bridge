@@ -75,6 +75,7 @@
     "test:attorney-onboarding-fk-safety": "node scripts/attorney-onboarding-fk-safety.test.mjs",
     "test:document-request-scenario-matrix": "node scripts/document-request-scenario-matrix.test.mjs",
     "test:client-portal-virtual-subprocess-ids": "node scripts/client-portal-virtual-subprocess-ids.test.mjs",
+    "test:finance-tab-launch-readiness": "node scripts/finance-tab-launch-readiness.test.mjs",
     "test:document-request-stale-finance-rows": "node scripts/document-request-stale-finance-rows.test.mjs",
     "test:canonical-document-resolver": "node scripts/canonical-document-resolver.test.mjs",
     "test:canonical-document-adapters": "node scripts/canonical-document-adapters.test.mjs",

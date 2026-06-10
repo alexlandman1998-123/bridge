@@ -62,8 +62,9 @@ function ChipList({ label, items = [], tone = 'neutral', empty = '' }) {
   )
 }
 
-function IndicativeFinanceReadinessContainer({ handoff = null, className = '' }) {
+function IndicativeFinanceReadinessContainer({ handoff = null, className = '', variant = 'default' }) {
   if (!handoff) return null
+  const compact = variant === 'compact'
   const toneClasses = getToneClasses(handoff.statusTone)
   const blockers = uniqueItems([...(handoff.topMissingItems || []), ...(handoff.topRiskFlags || [])])
   const stats = [
@@ -81,7 +82,7 @@ function IndicativeFinanceReadinessContainer({ handoff = null, className = '' })
             <ShieldCheck size={17} />
           </span>
           <div className="min-w-0">
-            <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">Indicative Finance Readiness</h3>
+            <h3 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">Buyer Finance Readiness Snapshot</h3>
             <p className="mt-1 text-sm leading-5 text-[#61758a]">{handoff.summaryLine || 'Captured readiness data for originator review.'}</p>
           </div>
         </div>
@@ -90,13 +91,13 @@ function IndicativeFinanceReadinessContainer({ handoff = null, className = '' })
         </span>
       </header>
 
-      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+      <div className={`mt-3 grid gap-2 ${compact ? 'sm:grid-cols-2' : 'md:grid-cols-2 xl:grid-cols-4'}`}>
         {stats.map((item) => (
           <ReadinessStat key={item.label} label={item.label} value={item.value} />
         ))}
       </div>
 
-      <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className={`mt-3 grid gap-3 ${compact ? '' : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'}`}>
         <article className="rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-3">
           <div className="flex items-start gap-2">
             <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-[#2f7a51]" />
@@ -113,12 +114,14 @@ function IndicativeFinanceReadinessContainer({ handoff = null, className = '' })
         </article>
       </div>
 
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <ChipList label="Strengths" items={handoff.topStrengths || []} tone="success" empty="No strengths captured yet." />
-        <ChipList label="Checklist" items={(handoff.handoffChecklist || []).map((item) => `${item.label}: ${item.detail}`)} tone="neutral" />
-      </div>
+      {!compact ? (
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          <ChipList label="Strengths" items={handoff.topStrengths || []} tone="success" empty="No strengths captured yet." />
+          <ChipList label="Checklist" items={(handoff.handoffChecklist || []).map((item) => `${item.label}: ${item.detail}`)} tone="neutral" />
+        </div>
+      ) : null}
 
-      {handoff.disclaimer ? (
+      {handoff.disclaimer && !compact ? (
         <p className="mt-3 flex items-start gap-2 rounded-[8px] border border-[#e5ecf4] bg-white px-3 py-2.5 text-xs leading-5 text-[#61758a]">
           <AlertCircle size={14} className="mt-0.5 shrink-0 text-[#6f8299]" />
           <span>{handoff.disclaimer}</span>

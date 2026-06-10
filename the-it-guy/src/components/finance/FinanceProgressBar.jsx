@@ -61,6 +61,8 @@ function FinanceProgressBar({
   viewerRole = '',
   loadingStage = '',
   onStageChange,
+  title = 'Bond Application Progress',
+  description = 'Bond finance workflow status shared across Bridge.',
   className = '',
 }) {
   const workflow = workflowData?.workflow || workflowData || null
@@ -74,8 +76,8 @@ function FinanceProgressBar({
     <section className={`rounded-[18px] border border-[#dfe7f1] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)] ${className}`}>
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h3 className="text-base font-semibold tracking-[-0.02em] text-[#101b2d]">Application Progress</h3>
-          <p className="mt-1 text-sm text-[#66758b]">Shared finance workflow status across Bridge.</p>
+          <h3 className="text-base font-semibold tracking-[-0.02em] text-[#101b2d]">{title}</h3>
+          <p className="mt-1 text-sm text-[#66758b]">{description}</p>
         </div>
         <strong className="text-sm font-semibold text-[#0b57d0]">{progress}% Complete</strong>
       </div>
@@ -85,7 +87,7 @@ function FinanceProgressBar({
           <div className="absolute left-4 right-4 top-[18px] h-px bg-[#cfd9e6]" />
           <div
             className="absolute left-4 top-[18px] h-[3px] rounded-full bg-[#155eef]"
-            style={{ width: `calc(${Math.max(progress, 0)}% - 2rem)` }}
+            style={{ width: progress <= 0 ? 0 : `calc(${Math.max(progress, 0)}% - 2rem)` }}
           />
           <div className="relative grid grid-cols-8 gap-4">
             {steps.map((step, index) => {
