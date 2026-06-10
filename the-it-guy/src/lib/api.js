@@ -2881,7 +2881,7 @@ async function hasBondAttorneyAssignmentForTransaction(client, transactionId) {
   return Boolean((query.data || []).length)
 }
 
-async function ensureTransactionSubprocesses(client, transactionId, { createIfMissing = true } = {}) {
+export async function ensureTransactionSubprocesses(client, transactionId, { createIfMissing = true } = {}) {
   if (!transactionId) {
     return buildDefaultSubprocessState()
   }
@@ -3008,21 +3008,27 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
     return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType, includeLevyClearanceSteps })
   }
 
-  let stepQuery = await client
-    .from('transaction_subprocess_steps')
-    .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, created_at, updated_at')
-    .in('subprocess_id', subprocessIds)
-    .order('sort_order', { ascending: true })
+  const persistedSubprocessIds = subprocessIds.filter((id) => isUuidLike(id))
+  let stepRows = []
 
-  if (stepQuery.error) {
-    if (isMissingSchemaError(stepQuery.error)) {
-      return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType, includeLevyClearanceSteps })
+  if (persistedSubprocessIds.length) {
+    const stepQuery = await client
+      .from('transaction_subprocess_steps')
+      .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, created_at, updated_at')
+      .in('subprocess_id', persistedSubprocessIds)
+      .order('sort_order', { ascending: true })
+
+    if (stepQuery.error) {
+      if (isMissingSchemaError(stepQuery.error)) {
+        return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType, includeLevyClearanceSteps })
+      }
+
+      throw stepQuery.error
     }
 
-    throw stepQuery.error
+    stepRows = stepQuery.data || []
   }
 
-  let stepRows = stepQuery.data || []
   const existingKeysBySubprocess = stepRows.reduce((accumulator, item) => {
     if (!accumulator[item.subprocess_id]) {
       accumulator[item.subprocess_id] = new Set()
@@ -3067,9 +3073,14 @@ async function ensureTransactionSubprocesses(client, transactionId, { createIfMi
         })),
       ]
     } else {
+      const persistedMissingStepRows = missingStepRows.filter((row) => isUuidLike(row.subprocess_id))
+      if (!persistedMissingStepRows.length) {
+        return buildDefaultSubprocessState(transactionId, { financeType: transactionFinanceType, includeLevyClearanceSteps })
+      }
+
       const stepInsertResult = await client
         .from('transaction_subprocess_steps')
-        .upsert(missingStepRows, { onConflict: 'subprocess_id,step_key', ignoreDuplicates: true })
+        .upsert(persistedMissingStepRows, { onConflict: 'subprocess_id,step_key', ignoreDuplicates: true })
         .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, created_at, updated_at')
 
       if (stepInsertResult.error) {
@@ -6875,7 +6886,7 @@ async function getOrCreateTransactionOnboardingRecord(
   return normalizeOnboardingRow(insertResult.data, normalizedType)
 }
 
-async function ensureTransactionRequiredDocuments(
+export async function ensureTransactionRequiredDocuments(
   client,
   {
     transactionId,

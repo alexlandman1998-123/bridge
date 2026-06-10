@@ -341,6 +341,17 @@ try {
   })
   assertIncludes(keys(cancellationFallback.requirements), ['cancellation_instruction', 'existing_bond_account_details', 'cancellation_figures', 'bank_cancellation_documents'], 'Attorney fallback cancellation')
 
+  const noCancellationFallback = resolveLegalDocumentRequirements({
+    id: 'attorney-no-cancellation',
+    finance_type: 'bond',
+    transaction_type: 'private_sale',
+    purchaser_type: 'individual',
+    seller_entity_type: 'individual',
+    cancellation_required: false,
+    seller_has_existing_bond: false,
+  })
+  assertExcludes(keys(noCancellationFallback.requirements), ['cancellation_instruction', 'existing_bond_account_details', 'cancellation_figures', 'bank_cancellation_documents'], 'Attorney fallback no cancellation')
+
   const canonicalDefinitions = [
     buyerDefinition('buyer_id_document'),
     buyerDefinition('buyer_proof_of_address'),

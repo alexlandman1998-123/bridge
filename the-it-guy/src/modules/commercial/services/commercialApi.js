@@ -230,7 +230,7 @@ async function findCurrentCommercialMembership(organisationId, userId) {
   if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
   const query = await supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, module, module_type, workspace_type, metadata, status, email, first_name, last_name, last_active_at')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, module, module_type, workspace_type, module_metadata, metadata, status, email, first_name, last_name, last_active_at')
     .eq('organisation_id', organisationId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
@@ -283,6 +283,106 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
   })
 
   return commercialScopeInflight
+}
+
+async function findCurrentOrganisationMembership(organisationId, userId) {
+  if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
+  const fullSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, module_type, workspace_type, module_metadata, status, email'
+  const basicSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, role, workspace_role, organisation_role, status, email'
+  const query = await supabase
+    .from('organisation_users')
+    .select(fullSelect)
+    .eq('organisation_id', organisationId)
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (!query.error) return query.data?.[0] || null
+  if (!isCommercialSchemaMismatchError(query.error)) throw query.error
+
+  const fallback = await supabase
+    .from('organisation_users')
+    .select(basicSelect)
+    .eq('organisation_id', organisationId)
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+
+  if (fallback.error) throw fallback.error
+  return fallback.data?.[0] || null
+}
+
+function isMissingCommercialActivationColumn(error) {
+  if (!isCommercialSchemaMismatchError(error)) return false
+  const missingColumn = getMissingCommercialColumn(error)
+  return ['module_context', 'module_metadata'].includes(missingColumn)
+}
+
+function buildCommercialActivationMetadata(member = {}, userId = '') {
+  const previousMetadata = parseJsonObject(member.module_metadata || member.moduleMetadata)
+  return {
+    ...previousMetadata,
+    module: 'commercial',
+    module_context: 'commercial',
+    activated_at: new Date().toISOString(),
+    activated_by: userId,
+    source: 'commercial_access_setup_prompt',
+  }
+}
+
+export async function activateCommercialWorkspaceForCurrentUser() {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Commercial setup requires Supabase to be configured.')
+  }
+
+  const context = await resolveCommercialOrganisationContext()
+  const userId = context.userId || await getCurrentUserId()
+  if (!context.organisationId || !userId) {
+    throw new Error('An active organisation membership is required before Commercial can be activated.')
+  }
+
+  const existingCommercialMembership = await findCurrentCommercialMembership(context.organisationId, userId).catch(() => null)
+  if (existingCommercialMembership?.id && isCommercialMembershipRow(existingCommercialMembership)) {
+    commercialScopeCache = null
+    return resolveCommercialAccessContext({ forceRefresh: true })
+  }
+
+  const member = await findCurrentOrganisationMembership(context.organisationId, userId)
+  if (!member?.id) {
+    throw new Error('We could not find an active membership to activate for Commercial.')
+  }
+
+  const fullPayload = {
+    module_context: 'commercial',
+    module_metadata: buildCommercialActivationMetadata(member, userId),
+  }
+  const fullSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, module_type, workspace_type, module_metadata, status, email'
+  const update = await supabase
+    .from('organisation_users')
+    .update(fullPayload)
+    .eq('id', member.id)
+    .eq('organisation_id', context.organisationId)
+    .select(fullSelect)
+    .maybeSingle()
+
+  if (update.error && isMissingCommercialActivationColumn(update.error)) {
+    if (getMissingCommercialColumn(update.error) === 'module_context') {
+      throw new Error('Commercial setup is not installed for this workspace yet.')
+    }
+    const fallback = await supabase
+      .from('organisation_users')
+      .update({ module_context: 'commercial' })
+      .eq('id', member.id)
+      .eq('organisation_id', context.organisationId)
+      .select('id, organisation_id, user_id, branch_id, primary_branch_id, role, workspace_role, organisation_role, module_context, status, email')
+      .maybeSingle()
+    if (fallback.error) throw fallback.error
+  } else if (update.error) {
+    throw update.error
+  }
+
+  commercialScopeCache = null
+  return resolveCommercialAccessContext({ forceRefresh: true })
 }
 
 function applyCommercialScope(query, kind, scope = {}) {

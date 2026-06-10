@@ -47,7 +47,8 @@ includes(permissionRegistry, "{ prefix: '/commercial', appRole: APP_ROLES.agent,
 const commercialLayout = await read('../src/modules/commercial/components/CommercialLayout.jsx')
 for (const marker of [
   'resolveCommercialAccessContext',
-  'Commercial access required',
+  'Set up Commercial workspace',
+  'Activate Commercial',
   'hasCommercialAccess',
 ]) {
   includes(commercialLayout, marker, `Commercial layout should verify explicit commercial access: ${marker}`)
