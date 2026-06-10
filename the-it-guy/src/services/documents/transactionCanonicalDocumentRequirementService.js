@@ -235,18 +235,20 @@ function hybridFinanceType(value) {
   return normalized
 }
 
-function inferPropertyFacts(transaction = {}) {
+function inferPropertyFacts(transaction = {}, transactionFacts = {}) {
   const propertyType = normalizeKey(
     transaction.property_type ||
     transaction.propertyType ||
     transaction.unit?.property_type ||
     transaction.unit?.propertyType,
   )
+  const propertyTenure = normalizeKey(transactionFacts.propertyTenure || transaction.property_tenure || transaction.propertyTenure)
   return {
     type: propertyType || 'unknown',
-    sectional_title: propertyType.includes('sectional') || propertyType.includes('body_corporate'),
-    hoa: propertyType.includes('estate') || propertyType.includes('hoa'),
-    freehold: propertyType.includes('freehold'),
+    tenure: propertyTenure || 'unknown',
+    sectional_title: transactionFacts.isSectionalTitle || propertyTenure === 'sectional_title' || propertyType.includes('sectional') || propertyType.includes('body_corporate'),
+    hoa: transactionFacts.isEstateHoa || propertyTenure === 'estate_hoa' || propertyType.includes('estate') || propertyType.includes('hoa'),
+    freehold: transactionFacts.isFreehold || propertyTenure === 'freehold' || propertyType.includes('freehold'),
   }
 }
 
@@ -347,7 +349,7 @@ export function buildTransactionDocumentFacts({
     salesReadyForFinance: salesSnapshot.readyForFinance || currentMainStageIndex >= getMainStageIndex('FIN'),
     salesBlockers: salesSnapshot.blockers || [],
   })
-  const property = inferPropertyFacts(transaction)
+  const property = inferPropertyFacts(transaction, transactionFacts)
 
   return {
     buyer: {
@@ -367,6 +369,7 @@ export function buildTransactionDocumentFacts({
     property,
     purchase: {
       finance_type: financeType,
+      vat_treatment: transactionFacts.vatTreatment,
     },
     finance: {
       type: financeType,
@@ -385,6 +388,7 @@ export function buildTransactionDocumentFacts({
       current_main_stage: currentMainStage,
       transaction_type: transactionFacts.transactionType,
       seller_has_existing_bond: Boolean(transactionFacts.sellerHasExistingBond),
+      workflow_template_key: transactionFacts.workflowTemplateKey || '',
     },
     context: {
       type: 'transaction',

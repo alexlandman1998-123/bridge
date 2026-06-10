@@ -67,8 +67,9 @@ import {
   updateAgentRole,
 } from '../lib/agentInviteService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
-import { buildAgentPerformanceModel, AGENT_DATE_RANGE_OPTIONS, AGENT_STATUS_TABS, LEADERBOARD_METRICS } from '../modules/agency/agents/agentPerformanceUtils'
+import { AGENT_DATE_RANGE_OPTIONS, LEADERBOARD_METRICS } from '../modules/agency/agents/agentPerformanceUtils'
 import { loadAgentPerformanceSources } from '../modules/agency/agents/agentPerformanceDataService'
+import { getPrincipalAgentCommandCentre } from '../modules/agency/agents/principalAgentCommandCentreService'
 import {
   discoverAgentOffboardingAssets,
   executeAgentAssetReassignment,
@@ -183,6 +184,30 @@ function getAgentInitials(agent) {
     .slice(0, 2)
     .map((part) => part.charAt(0).toUpperCase())
     .join('') || 'A'
+}
+
+function getAgentAvatarUrl(agent = {}) {
+  return String(
+    agent.avatarUrl ||
+      agent.avatar_url ||
+      agent.profilePhotoUrl ||
+      agent.profile_photo_url ||
+      agent.photoUrl ||
+      agent.photo_url ||
+      agent.picture ||
+      '',
+  ).trim()
+}
+
+function AgentAvatar({ agent = {}, initials = '', className = '' }) {
+  const avatarUrl = getAgentAvatarUrl(agent)
+  const safeInitials = initials || agent.initials || getAgentInitials(agent)
+
+  return (
+    <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full ${className}`}>
+      {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : safeInitials}
+    </span>
+  )
 }
 
 function buildInviteMessage({ invite, inviteLink }) {
@@ -563,6 +588,8 @@ function normalizeOrganisationUserAgent(user = {}, context = {}) {
     name: fullName,
     email,
     phone: user.phone || '',
+    avatarUrl: getAgentAvatarUrl(user),
+    profilePhotoUrl: getAgentAvatarUrl(user),
     office: user.branchName || (user.branchId ? 'Assigned Branch' : 'Head Office'),
     branchId: user.branchId || null,
     organisationId: normalizeAgentRecordId(context.organisationId || user.organisationId || ''),
@@ -615,6 +642,8 @@ function mergeAgentRows(baseRows = [], overlayRows = []) {
       name: overlay.name || existing.name,
       email: overlay.email || existing.email,
       phone: overlay.phone || existing.phone,
+      avatarUrl: getAgentAvatarUrl(overlay) || getAgentAvatarUrl(existing),
+      profilePhotoUrl: getAgentAvatarUrl(overlay) || getAgentAvatarUrl(existing),
       office: overlay.office || existing.office,
       organisationId: overlay.organisationId || existing.organisationId,
       organisationName: overlay.organisationName || existing.organisationName,
@@ -802,6 +831,8 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
         name: directoryAgent?.name || 'Agent',
         email: directoryAgent?.email || '',
         phone: directoryAgent?.phone || '',
+        avatarUrl: getAgentAvatarUrl(directoryAgent),
+        profilePhotoUrl: getAgentAvatarUrl(directoryAgent),
         office: directoryAgent?.office || 'Office',
         status: String(directoryAgent?.status || 'Active').replace(/\b\w/g, (char) => char.toUpperCase()),
         deals: [],
@@ -814,6 +845,8 @@ function computeAgentWorkspaceData({ transactions, privateListings, pipelineRows
         name: existing.name || directoryAgent?.name || existing.name,
         email: existing.email || directoryAgent?.email || existing.email,
         phone: existing.phone || directoryAgent?.phone || existing.phone,
+        avatarUrl: getAgentAvatarUrl(existing) || getAgentAvatarUrl(directoryAgent),
+        profilePhotoUrl: getAgentAvatarUrl(existing) || getAgentAvatarUrl(directoryAgent),
         office: existing.office || directoryAgent?.office || existing.office,
       })
     }
@@ -1045,9 +1078,7 @@ function AgentDirectoryCard({ agent, onView, onEditRole, onDeactivate, onResendI
     <article className="flex min-h-[268px] flex-col rounded-2xl border border-[#dce5f0] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-[#c8d6e5] hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-12 w-12 flex-none items-center justify-center rounded-full border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#eaf2fb)] text-sm font-semibold text-[#244e70]">
-            {getAgentInitials(agent)}
-          </span>
+          <AgentAvatar agent={agent} className="h-12 w-12 flex-none border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#eaf2fb)] text-sm font-semibold text-[#244e70]" />
           <div className="min-w-0">
             <h3 className="truncate text-[1rem] font-semibold text-[#142132]">{agent.name || 'Agent'}</h3>
             <p className="truncate text-sm text-[#60758d]">{formatRoleLabel(agent.role)}</p>
@@ -1267,9 +1298,7 @@ function AgentDirectoryTable({ agents, onView, onEditRole, onDeactivate, onTrans
               <tr key={`${agent.id}-${agent.organisationId || 'org'}-list`} className="hover:bg-slate-50">
                 <td className="px-4 py-4">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-[#f8fbff] text-sm font-semibold text-[#245076]">
-                      {getAgentInitials(agent)}
-                    </span>
+                    <AgentAvatar agent={agent} className="h-10 w-10 border border-[#d7e2ef] bg-[#f8fbff] text-sm font-semibold text-[#245076]" />
                     <div className="min-w-0">
                       <p className="truncate font-semibold text-[#142132]">{agent.name || 'Agent'}</p>
                       <p className="truncate text-xs text-[#60758d]">{agent.email || 'No email added'}</p>
@@ -1442,7 +1471,7 @@ function AgentOffboardingWizard({
           <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="rounded-2xl border border-[#dfe8f2] bg-white p-4">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#0f2742] text-base font-semibold text-white">{getAgentInitials(agent || {})}</span>
+                <AgentAvatar agent={agent || {}} className="h-14 w-14 bg-[#0f2742] text-base font-semibold text-white" />
                 <div className="min-w-0">
                   <h3 className="truncate text-lg font-semibold text-[#10243a]">{agent?.name || 'Agent'}</h3>
                   <p className="truncate text-sm text-[#60758d]">{agent?.email || 'No email'}</p>
@@ -1721,7 +1750,7 @@ function AgentTransferWizard({
           <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="rounded-2xl border border-[#dfe8f2] bg-white p-4">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#0f2742] text-base font-semibold text-white">{getAgentInitials(agent || {})}</span>
+                <AgentAvatar agent={agent || {}} className="h-14 w-14 bg-[#0f2742] text-base font-semibold text-white" />
                 <div className="min-w-0">
                   <h3 className="truncate text-lg font-semibold text-[#10243a]">{agent?.name || 'Agent'}</h3>
                   <p className="truncate text-sm text-[#60758d]">{agent?.email || 'No email'}</p>
@@ -1915,26 +1944,25 @@ function PerformanceKpiStrip({ kpis }) {
   const cards = [
     { label: 'Total Agents', value: kpis.totalAgents, helper: 'In selected scope', icon: Users, tone: 'bg-[#edf5ff] text-[#1769d1]' },
     { label: 'Active Today', value: kpis.activeToday, helper: 'Logged activity today', icon: CheckCircle2, tone: 'bg-[#ecfdf3] text-[#16894f]' },
-    { label: 'Pipeline Value', value: formatCompactCurrency(kpis.totalPipelineValue), helper: 'Active assigned value', icon: ArrowRight, tone: 'bg-[#eef4ff] text-[#315adf]' },
-    { label: 'Transactions', value: kpis.activeTransactions, helper: 'Active deals', icon: BriefcaseBusiness, tone: 'bg-[#f3efff] text-[#7657d8]' },
-    { label: 'Conversion', value: `${kpis.averageConversionRate || 0}%`, helper: 'Average rate', icon: Trophy, tone: 'bg-[#fff7e8] text-[#a46313]' },
-    { label: 'Response Time', value: kpis.averageResponseTimeLabel || 'N/A', helper: 'Lead to first action', icon: Clock3, tone: 'bg-[#f1f7ff] text-[#1f4f78]' },
+    { label: 'Pipeline Value', value: formatCompactCurrency(kpis.pipelineValue ?? kpis.totalPipelineValue), helper: 'Active assigned value', icon: ArrowRight, tone: 'bg-[#eef4ff] text-[#315adf]' },
+    { label: 'Transactions', value: kpis.transactions ?? kpis.activeTransactions, helper: 'Active deals', icon: BriefcaseBusiness, tone: 'bg-[#f3efff] text-[#7657d8]' },
+    { label: 'Conversion Rate', value: `${(kpis.conversionRate ?? kpis.averageConversionRate) || 0}%`, helper: 'Network conversion', icon: Trophy, tone: 'bg-[#fff7e8] text-[#a46313]' },
     { label: 'Commission MTD', value: kpis.commissionMtd === null || kpis.commissionMtd === undefined ? 'N/A' : formatCompactCurrency(kpis.commissionMtd), helper: 'Registered month to date', icon: DollarSign, tone: 'bg-[#f0fbf5] text-[#1d7d45]' },
   ]
 
   return (
-    <section className="sticky top-0 z-10 grid grid-cols-1 gap-2 border-y border-[#e6edf5] bg-[#f8fbff]/95 py-3 backdrop-blur sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       {cards.map((card) => {
         const Icon = card.icon
         return (
-          <article key={card.label} className="min-w-0 rounded-xl border border-[#dfe7f1] bg-white px-3 py-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+          <article key={card.label} className="min-w-0 rounded-2xl border border-[#dfe7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
             <div className="flex min-w-0 items-center gap-2.5">
-              <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${card.tone}`}>
+              <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${card.tone}`}>
                 <Icon size={15} />
               </span>
               <div className="min-w-0">
                 <p className="truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">{card.label}</p>
-                <p className="mt-0.5 truncate text-[1.04rem] font-semibold leading-none tracking-[-0.025em] text-[#10243a]">{card.value}</p>
+                <p className="mt-1 truncate text-[1.16rem] font-semibold leading-none tracking-[-0.025em] text-[#10243a]">{card.value}</p>
                 <p className="mt-1 truncate text-[0.68rem] text-[#71859c]">{card.helper}</p>
               </div>
             </div>
@@ -1942,6 +1970,143 @@ function PerformanceKpiStrip({ kpis }) {
         )
       })}
     </section>
+  )
+}
+
+function BranchPerformanceScroller({ branches = [] }) {
+  return (
+    <section className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">Branch Performance</h2>
+          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Office-level performance inside the selected scope.</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">{branches.length} offices</span>
+      </div>
+      <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+        {branches.map((branch) => (
+          <article key={branch.id} className="min-w-[250px] rounded-2xl border border-[#e2ebf5] bg-[#fbfdff] p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="truncate text-sm font-semibold text-[#10243a]">{branch.name}</h3>
+                <p className="mt-1 text-xs text-[#6d8299]">{branch.attentionCount || 0} need attention</p>
+              </div>
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#edf5ff] text-[#1769d1]">
+                <Building2 size={16} />
+              </span>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-xl bg-white px-3 py-2">
+                <p className="text-[#71859c]">Agents</p>
+                <p className="mt-1 font-semibold text-[#10243a]">{branch.activeAgents}</p>
+              </div>
+              <div className="rounded-xl bg-white px-3 py-2">
+                <p className="text-[#71859c]">Pipeline</p>
+                <p className="mt-1 font-semibold text-[#10243a]">{formatCompactCurrency(branch.pipelineValue)}</p>
+              </div>
+              <div className="rounded-xl bg-white px-3 py-2">
+                <p className="text-[#71859c]">Transactions</p>
+                <p className="mt-1 font-semibold text-[#10243a]">{branch.transactions}</p>
+              </div>
+              <div className="rounded-xl bg-white px-3 py-2">
+                <p className="text-[#71859c]">Conversion</p>
+                <p className="mt-1 font-semibold text-[#10243a]">{branch.conversionRate || 0}%</p>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function TopPerformersPanel({ rows = [], metric = 'pipelineValue', metricOptions = LEADERBOARD_METRICS, onMetricChange, onView }) {
+  const renderMetric = (row) => {
+    if (metric === 'conversionRate') return `${row.metricValue || 0}%`
+    if (metric === 'activityVolume' || metric === 'registrations' || metric === 'deals') return row.metricValue || 0
+    if (metric === 'responseTime') return row.metricValue ? `${Math.round(row.metricValue)}h` : 'N/A'
+    return formatCompactCurrency(row.metricValue)
+  }
+
+  return (
+    <article className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">Top Performers</h2>
+          <p className="mt-0.5 text-xs text-[#6d8299]">Ranked by the selected performance metric.</p>
+        </div>
+        <DirectorySelect
+          label="Leaderboard metric"
+          value={metric}
+          onChange={onMetricChange}
+          options={metricOptions.map((item) => ({ value: item.value, label: item.label }))}
+        />
+      </div>
+      <div className="mt-4 divide-y divide-[#edf2f7]">
+        {rows.length ? rows.map((row) => (
+          <button key={row.id} type="button" className="grid w-full grid-cols-[34px_minmax(0,1fr)_96px] items-center gap-3 py-3 text-left hover:bg-[#f8fbff]" onClick={() => onView(row.agent)}>
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#eef5ff] text-xs font-semibold text-[#1769d1]">{row.rank}</span>
+            <span className="min-w-0">
+              <span className="flex min-w-0 items-center gap-2">
+                <AgentAvatar agent={row} className="h-8 w-8 border border-[#d7e2ef] bg-white text-[0.68rem] font-semibold text-[#245076]" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-[#10243a]">{row.name}</span>
+                  <span className="block truncate text-xs text-[#6d8299]">{formatRoleLabel(row.role)} · {row.branchName || 'Current Office'}</span>
+                </span>
+              </span>
+              <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-[#edf2f7]">
+                <span className="block h-full rounded-full bg-[#1769d1]" style={{ width: `${Math.max(5, row.progress || 0)}%` }} />
+              </span>
+            </span>
+            <span className="text-right text-xs font-semibold text-[#10243a]">{renderMetric(row)}</span>
+          </button>
+        )) : (
+          <p className="rounded-xl bg-[#f8fbff] px-3 py-6 text-center text-sm text-[#6b7f97]">No ranked performance data yet.</p>
+        )}
+      </div>
+    </article>
+  )
+}
+
+function AttentionAgentsPanel({ rows = [], onView }) {
+  const severityClass = {
+    High: 'border-[#f1c9c9] bg-[#fff4f4] text-[#a03c3c]',
+    Medium: 'border-[#f0dfb8] bg-[#fff8eb] text-[#8a641d]',
+    Low: 'border-[#dbe6f2] bg-[#f8fbff] text-[#60758d]',
+  }
+
+  return (
+    <article className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">Agents Requiring Attention</h2>
+          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Coaching signals from activity, follow-ups and conversion.</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-[#f0dfb8] bg-[#fff8eb] px-3 py-1 text-xs font-semibold text-[#8a641d]">{rows.length} watch</span>
+      </div>
+      <div className="mt-4 divide-y divide-[#edf2f7]">
+        {rows.length ? rows.map((row) => (
+          <div key={row.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <AgentAvatar agent={row} className="h-8 w-8 bg-[#fff7ed] text-xs font-semibold text-[#9a5b13]" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-[#10243a]">{row.name}</p>
+                  <p className="truncate text-xs text-[#6d8299]">{row.primaryReason}</p>
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${severityClass[row.severity] || severityClass.Low}`}>{row.severity} risk</span>
+                <span className="text-xs font-semibold text-[#60758d]">{row.suggestedAction}</span>
+              </div>
+            </div>
+            <Button type="button" size="sm" variant="secondary" onClick={() => onView(row.agent)}>Open</Button>
+          </div>
+        )) : (
+          <p className="rounded-xl bg-[#f8fbff] px-3 py-6 text-center text-sm text-[#6b7f97]">No intervention items right now.</p>
+        )}
+      </div>
+    </article>
   )
 }
 
@@ -2069,9 +2234,7 @@ function AgentPerformanceCard({ agent, canManage = false, onView, onEditRole, on
     <article className="group min-w-0 rounded-2xl border border-[#dfe7f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-[#c7d6e6] hover:bg-[#fbfdff] hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
       <div className="flex items-start justify-between gap-3">
         <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={onView}>
-          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#eaf2fb)] text-sm font-semibold text-[#244e70]">
-            {agent.initials || getAgentInitials(agent)}
-          </span>
+          <AgentAvatar agent={agent} className="h-11 w-11 border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#eaf2fb)] text-sm font-semibold text-[#244e70]" />
           <span className="min-w-0">
             <span className="block truncate text-sm font-semibold text-[#10243a]">{agent.displayName || agent.name || 'Agent'}</span>
             <span className="mt-0.5 block truncate text-xs text-[#60758d]">{formatRoleLabel(agent.role)} • {agent.office || agent.organisationName || 'Unassigned'}</span>
@@ -2162,60 +2325,89 @@ function AgentPerformanceCard({ agent, canManage = false, onView, onEditRole, on
   )
 }
 
-function AgentPerformanceTable({ agents, canManage = false, onView, onEditRole, onDeactivate, onTransfer }) {
+function AgentPerformanceTable({ rows = [], canManage = false, sortBy = 'pipeline', onSort, onView, onEditRole, onDeactivate, onTransfer }) {
+  const headers = [
+    { key: 'name', label: 'Agent' },
+    { key: 'branch', label: 'Branch' },
+    { key: 'role', label: 'Role' },
+    { key: 'pipeline', label: 'Pipeline' },
+    { key: 'deals', label: 'Deals' },
+    { key: 'listings', label: 'Listings' },
+    { key: 'conversion', label: 'Conversion' },
+    { key: 'lastActivity', label: 'Last Activity' },
+    { key: 'followUps', label: 'Follow-ups' },
+    { key: 'status', label: 'Status' },
+  ]
+
   return (
-    <div className="overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white shadow-sm">
-      <table className="w-full min-w-[1040px] text-left">
-        <thead className="bg-[#f6f9fc] text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#70849d]">
-          <tr>
-            <th className="px-4 py-3">Agent</th>
-            <th className="px-4 py-3">Branch</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Pipeline</th>
-            <th className="px-4 py-3">Deals</th>
-            <th className="px-4 py-3">Listings</th>
-            <th className="px-4 py-3">Conversion</th>
-            <th className="px-4 py-3">Response</th>
-            <th className="px-4 py-3">Last Activity</th>
-            <th className="px-4 py-3 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[#e8eef5] text-sm text-[#22384c]">
-          {agents.map((agent) => {
-            const performance = agent.performance || {}
-            const statusMeta = agent.statusMeta || getAgentStatusMeta(agent)
-            return (
-              <tr key={`${agent.id}-${agent.organisationId || 'org'}-performance-row`} className="hover:bg-[#f8fbff]">
-                <td className="px-4 py-3">
-                  <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => onView(agent)}>
-                    <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-[#f8fbff] text-xs font-semibold text-[#245076]">{agent.initials || getAgentInitials(agent)}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate font-semibold text-[#142132]">{agent.displayName || agent.name || 'Agent'}</span>
-                      <span className="block truncate text-xs text-[#60758d]">{agent.email || 'No email added'}</span>
-                    </span>
+    <div className="overflow-hidden rounded-2xl border border-[#dde6f1] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[#edf2f7] px-4 py-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">Agent Performance Table</h2>
+          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Sortable, filter-aware operating view for principal oversight.</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">{rows.length} agents</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1160px] text-left">
+          <thead className="bg-[#f6f9fc] text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#70849d]">
+            <tr>
+              {headers.map((header) => (
+                <th key={header.key} className="px-4 py-3">
+                  <button
+                    type="button"
+                    className={`inline-flex rounded-lg px-1 py-0.5 text-left transition hover:bg-white hover:text-[#1769d1] ${sortBy === header.key ? 'text-[#1769d1]' : ''}`}
+                    onClick={() => onSort?.(header.key)}
+                  >
+                    {header.label}
                   </button>
-                </td>
-                <td className="px-4 py-3">{agent.office || agent.organisationName || 'Unassigned'}</td>
-                <td className="px-4 py-3"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${statusMeta.className}`}>{statusMeta.label}</span></td>
-                <td className="px-4 py-3 font-semibold">{formatCompactCurrency(performance.pipelineValue)}</td>
-                <td className="px-4 py-3">{performance.deals || 0}</td>
-                <td className="px-4 py-3">{performance.listings || 0}</td>
-                <td className="px-4 py-3">{performance.conversionRate || 0}%</td>
-                <td className="px-4 py-3">{performance.responseTimeLabel || 'N/A'}</td>
-                <td className="px-4 py-3">{formatRelativeActivity(performance.lastActivityAt)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex justify-end gap-1.5">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => onView(agent)}>Open</Button>
-                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onEditRole(agent)}>Role</Button> : null}
-                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onTransfer(agent)}>Transfer</Button> : null}
-                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onDeactivate(agent)}>Disable</Button> : null}
-                  </div>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                </th>
+              ))}
+              <th className="px-4 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#e8eef5] text-sm text-[#22384c]">
+            {rows.map((row) => {
+              const performance = row.performance || {}
+              const statusClassName = row.statusClassName || getAgentStatusMeta(row.agent || {}).className
+              return (
+                <tr key={`${row.id}-${row.branchId || 'branch'}-performance-row`} className="cursor-pointer hover:bg-[#f8fbff]" onClick={() => onView(row.agent)}>
+                  <td className="px-4 py-3">
+                    <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={(event) => { event.stopPropagation(); onView(row.agent) }}>
+                      <AgentAvatar agent={row} className="h-9 w-9 border border-[#d7e2ef] bg-[#f8fbff] text-xs font-semibold text-[#245076]" />
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold text-[#142132]">{row.name || 'Agent'}</span>
+                        <span className="block truncate text-xs text-[#60758d]">{row.email || 'No email added'}</span>
+                      </span>
+                    </button>
+                  </td>
+                  <td className="px-4 py-3">{row.branchName || 'Current Office'}</td>
+                  <td className="px-4 py-3">{formatRoleLabel(row.role)}</td>
+                  <td className="px-4 py-3 font-semibold">{formatCompactCurrency(performance.pipelineValue)}</td>
+                  <td className="px-4 py-3">{performance.deals || 0}</td>
+                  <td className="px-4 py-3">{performance.listings || 0}</td>
+                  <td className="px-4 py-3">{performance.conversionRate || 0}%</td>
+                  <td className="px-4 py-3">{formatRelativeActivity(performance.lastActivityAt)}</td>
+                  <td className="px-4 py-3">
+                    <span className={performance.overdueFollowUps ? 'font-semibold text-[#9a4038]' : ''}>{performance.overdueFollowUps || 0}</span>
+                  </td>
+                  <td className="px-4 py-3"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${statusClassName}`}>{row.statusLabel || 'Active'}</span></td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1.5">
+                      <a className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" href={row.phone ? `tel:${row.phone}` : undefined} onClick={(event) => event.stopPropagation()} aria-label="Call agent"><Phone size={15} /></a>
+                      <a className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" href={row.email ? `mailto:${row.email}` : undefined} onClick={(event) => event.stopPropagation()} aria-label="Email agent"><Mail size={15} /></a>
+                      <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" onClick={(event) => { event.stopPropagation(); onView(row.agent) }} aria-label="Schedule"><CalendarDays size={15} /></button>
+                      {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onEditRole(row.agent) }}>Role</Button> : null}
+                      {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onTransfer(row.agent) }}>Transfer</Button> : null}
+                      {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onDeactivate(row.agent) }}><MoreHorizontal size={15} /></Button> : null}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
@@ -2283,7 +2475,7 @@ function AgentPerformanceIntelligencePanel({ intelligence, onLeaderboard }) {
             <div key={`${agent.id}-top-performance`} className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#eaf3ff] text-xs font-semibold text-[#1769d1]">{index + 1}</span>
-                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-white text-[0.64rem] font-semibold text-[#245076]">{agent.initials || getAgentInitials(agent)}</span>
+                <AgentAvatar agent={agent} className="h-7 w-7 border border-[#d7e2ef] bg-white text-[0.64rem] font-semibold text-[#245076]" />
                 <span className="truncate text-sm font-semibold text-[#263a4f]">{agent.displayName || agent.name || 'Agent'}</span>
               </div>
               <span className="shrink-0 text-xs font-semibold text-[#0f2742]">{formatCompactCurrency(agent.performance?.pipelineValue)}</span>
@@ -2527,8 +2719,8 @@ function AgentWorkspace({ agent, canManageSettings }) {
       <section className="min-w-0 rounded-3xl border border-[#dde6f1] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.06)] sm:p-5">
         <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.72fr)]">
           <div className="flex min-w-0 flex-col gap-4 sm:flex-row">
-            <span className="relative inline-flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#e7eef7)] text-2xl font-semibold text-[#2f5578]">
-              {getAgentInitials(agent)}
+            <span className="relative inline-flex h-20 w-20 shrink-0">
+              <AgentAvatar agent={agent} className="h-20 w-20 border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#e7eef7)] text-2xl font-semibold text-[#2f5578]" />
               <span className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-2 border-white bg-[#16a365]" />
             </span>
             <div className="min-w-0">
@@ -3126,14 +3318,12 @@ export function AgentsPage() {
   const [commissionStructures, setCommissionStructures] = useState([])
   const [branchFilter, setBranchFilter] = useState('all')
   const [dateRange, setDateRange] = useState('last_30_days')
-  const [activeAgentTab, setActiveAgentTab] = useState('all')
   const [leaderboardMetric, setLeaderboardMetric] = useState('pipelineValue')
   const [officeFilter, setOfficeFilter] = useState('all')
   const [organisationFilter, setOrganisationFilter] = useState(EMPTY_ORGANISATION.id)
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [viewMode, setViewMode] = useState('grid')
-  const [sortBy, setSortBy] = useState('name')
+  const [sortBy, setSortBy] = useState('pipeline')
   const [searchTerm, setSearchTerm] = useState('')
   const [agents, setAgents] = useState([])
   const [agentDirectory, setAgentDirectory] = useState(() => readAgentDirectory())
@@ -3257,6 +3447,8 @@ export function AgentsPage() {
           ...agent,
           email: directoryMatch?.email || agent?.email || '',
           phone: directoryMatch?.phone || agent?.phone || '',
+          avatarUrl: getAgentAvatarUrl(directoryMatch) || getAgentAvatarUrl(invite) || getAgentAvatarUrl(agent),
+          profilePhotoUrl: getAgentAvatarUrl(directoryMatch) || getAgentAvatarUrl(invite) || getAgentAvatarUrl(agent),
           office: directoryMatch?.office || agent?.office || 'Office',
           organisationId,
           organisationName: directoryMatch?.agencyName || directory?.agency?.name || 'Bridge Organisation',
@@ -3290,6 +3482,8 @@ export function AgentsPage() {
           name: profile?.fullName || profile?.name || profileEmail || 'Principal',
           email: profile?.email || '',
           phone: profile?.phoneNumber || profile?.phone || '',
+          avatarUrl: getAgentAvatarUrl(profile),
+          profilePhotoUrl: getAgentAvatarUrl(profile),
           office: directory?.agency?.office || 'Head Office',
           organisationId: String(directory?.agency?.id || performanceSources.organisationSettings?.organisation?.id || '').trim().toLowerCase(),
           organisationName: directory?.agency?.name || profile?.companyName || 'Bridge Organisation',
@@ -3510,10 +3704,15 @@ export function AgentsPage() {
     [],
   )
 
-  const effectiveStatusFilter = statusFilter !== 'all' ? statusFilter : activeAgentTab
+  const effectiveStatusFilter = statusFilter
 
-  const performanceModel = useMemo(
-    () => buildAgentPerformanceModel({
+  const commandCentreModel = useMemo(
+    () => getPrincipalAgentCommandCentre({
+      principalId: profile?.id || '',
+      organisationId: organisationFilter === EMPTY_ORGANISATION.id
+        ? (agentDirectory?.agency?.id || '')
+        : organisationFilter,
+      branchId: branchFilter,
       agents,
       branches,
       leads: leadRows,
@@ -3529,52 +3728,12 @@ export function AgentsPage() {
         status: effectiveStatusFilter,
         search: searchTerm,
         dateRange,
+        rankingMetric: leaderboardMetric,
+        sortBy,
       },
     }),
-    [agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, listingRows, officeFilter, roleFilter, searchTerm, taskRows, transactionRows],
+    [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, roleFilter, searchTerm, sortBy, taskRows, transactionRows],
   )
-
-  const statusSummaryModel = useMemo(
-    () => buildAgentPerformanceModel({
-      agents,
-      branches,
-      leads: leadRows,
-      transactions: transactionRows,
-      listings: listingRows,
-      appointments: appointmentRows,
-      tasks: taskRows,
-      activities: leadActivities,
-      filters: {
-        branchId: branchFilter,
-        office: officeFilter,
-        role: roleFilter,
-        status: 'all',
-        search: searchTerm,
-        dateRange,
-      },
-    }),
-    [agents, appointmentRows, branchFilter, branches, dateRange, leadActivities, leadRows, listingRows, officeFilter, roleFilter, searchTerm, taskRows, transactionRows],
-  )
-
-  const tabCounts = useMemo(() => {
-    const counts = { all: statusSummaryModel.agents.length, active: 0, inactive: 0, on_leave: 0 }
-    statusSummaryModel.agents.forEach((agent) => {
-      const key = agent.baseStatusKey || 'active'
-      if (Object.prototype.hasOwnProperty.call(counts, key)) counts[key] += 1
-    })
-    return counts
-  }, [statusSummaryModel.agents])
-
-  const filteredAgents = useMemo(() => {
-    const rows = [...performanceModel.agents]
-    return rows.sort((left, right) => {
-      if (sortBy === 'pipeline') return (right.performance?.pipelineValue || 0) - (left.performance?.pipelineValue || 0)
-      if (sortBy === 'active_deals') return (right.performance?.deals || 0) - (left.performance?.deals || 0)
-      if (sortBy === 'recent') return new Date(right.performance?.lastActivityAt || 0).getTime() - new Date(left.performance?.lastActivityAt || 0).getTime()
-      if (sortBy === 'status') return String(left.statusMeta?.label || '').localeCompare(String(right.statusMeta?.label || ''))
-      return String(left?.displayName || left?.name || '').localeCompare(String(right?.displayName || right?.name || ''))
-    })
-  }, [performanceModel.agents, sortBy])
 
   const offboardingDestinationAgents = useMemo(
     () =>
@@ -4093,18 +4252,13 @@ export function AgentsPage() {
     <section className="space-y-5">
       {canManageDirectory ? (
         <>
-          <section className="flex flex-col gap-4 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)] lg:flex-row lg:items-start lg:justify-between">
+          <section className="flex flex-col gap-4 rounded-2xl border border-[#dde6f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <h1 className="text-[1.65rem] font-semibold tracking-[-0.035em] text-[#0f2237]">Agents</h1>
-              <p className="mt-1 text-sm leading-6 text-[#667a92]">Manage agent performance, activity and pipeline across your organisation.</p>
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8a9bb0]">Principal Workspace</p>
+              <h1 className="mt-1 text-[1.65rem] font-semibold tracking-[-0.035em] text-[#0f2237]">Agent Command Centre</h1>
+              <p className="mt-1 text-sm leading-6 text-[#667a92]">Network performance, coaching signals and operational ownership across your visible agent scope.</p>
             </div>
             <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-              <DirectorySelect
-                label="Branch"
-                value={branchFilter}
-                onChange={setBranchFilter}
-                options={performanceModel.filters.branchOptions.map((branch) => ({ value: branch.id, label: branch.name }))}
-              />
               <DirectorySelect
                 label="Date range"
                 value={dateRange}
@@ -4127,61 +4281,10 @@ export function AgentsPage() {
                   Add Agent
                 </Button>
               ) : null}
-              {canManageDirectory ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setActionMessage('Agent export is ready to connect to the reporting service.')}
-                >
-                  <FileText size={15} />
-                  Export
-                </Button>
-              ) : null}
-              <div className="inline-flex rounded-xl border border-[#d9e3ef] bg-white p-1 shadow-sm">
-                <button
-                  type="button"
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${viewMode === 'grid' ? 'bg-[#1769d1] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f5f8fb]'}`}
-                  aria-label="Grid view"
-                  onClick={() => setViewMode('grid')}
-                >
-                  <Grid2X2 size={16} />
-                </button>
-                <button
-                  type="button"
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${viewMode === 'table' ? 'bg-[#1769d1] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f5f8fb]'}`}
-                  aria-label="Table view"
-                  onClick={() => setViewMode('table')}
-                >
-                  <List size={17} />
-                </button>
-                <button
-                  type="button"
-                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${viewMode === 'leaderboard' ? 'bg-[#1769d1] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f5f8fb]'}`}
-                  aria-label="Leaderboard view"
-                  onClick={() => setViewMode('leaderboard')}
-                >
-                  <Trophy size={16} />
-                </button>
-              </div>
-              <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 shadow-sm">
-                <span className="text-xs font-semibold text-[#60758d]">Sort by</span>
-                <select
-                  className="min-w-[150px] border-0 bg-transparent p-0 text-sm font-semibold text-[#24364b] outline-none"
-                  value={sortBy}
-                  onChange={(event) => setSortBy(event.target.value)}
-                >
-                  <option value="name">Name A-Z</option>
-                  <option value="pipeline">Pipeline value</option>
-                  <option value="active_deals">Active deals</option>
-                  <option value="recent">Recently active</option>
-                  <option value="status">Status</option>
-                </select>
-              </label>
             </div>
           </section>
 
-          <section className="grid gap-2 rounded-2xl border border-[#dde6f1] bg-white p-3 shadow-sm md:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(142px,auto))_auto]">
+          <section className="sticky top-0 z-20 grid gap-2 rounded-2xl border border-[#dde6f1] bg-white/95 p-3 shadow-sm backdrop-blur md:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(142px,auto))_auto]">
             <label className="min-w-0">
               <span className="sr-only">Search agents</span>
               <input
@@ -4191,6 +4294,12 @@ export function AgentsPage() {
                 placeholder="Search agent, email, phone or branch..."
               />
             </label>
+            <DirectorySelect
+              label="Branch / office"
+              value={branchFilter}
+              onChange={setBranchFilter}
+              options={commandCentreModel.filterOptions.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
+            />
             <DirectorySelect
               label="Office"
               value={officeFilter}
@@ -4217,8 +4326,9 @@ export function AgentsPage() {
                 setOfficeFilter('all')
                 setRoleFilter('all')
                 setStatusFilter('all')
-                setActiveAgentTab('all')
                 setDateRange('last_30_days')
+                setLeaderboardMetric('pipelineValue')
+                setSortBy('pipeline')
                 setSearchTerm('')
               }}
             >
@@ -4227,21 +4337,20 @@ export function AgentsPage() {
             </button>
           </section>
 
-          <PerformanceKpiStrip kpis={performanceModel.kpis} />
-
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
-            <ChartShell title="Pipeline Value by Agent" helper="Top active pipeline owners" empty={!performanceModel.charts.pipelineByAgent.length}>
-              <PipelineValueChart data={performanceModel.charts.pipelineByAgent} />
-            </ChartShell>
-            <ChartShell title="Conversion Rate by Agent" helper="Registered opportunities over total" empty={!performanceModel.charts.conversionByAgent.length}>
-              <ConversionRateChart data={performanceModel.charts.conversionByAgent} />
-            </ChartShell>
-            <ChartShell title="Listings vs Registrations" helper="Active listings compared with closed deals" empty={!performanceModel.charts.listingsVsRegistrations.length}>
-              <ListingsRegistrationsChart data={performanceModel.charts.listingsVsRegistrations} />
-            </ChartShell>
-            <ChartShell title="Activity Heatmap" helper="Activity type by weekday" empty={!performanceModel.charts.activityHeatmap.some((row) => row.days.some((day) => day.value))}>
-              <ActivityHeatmap data={performanceModel.charts.activityHeatmap} />
-            </ChartShell>
+          <PerformanceKpiStrip kpis={commandCentreModel.kpis} />
+          <BranchPerformanceScroller branches={commandCentreModel.branchPerformance} />
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <TopPerformersPanel
+              rows={commandCentreModel.topPerformers}
+              metric={leaderboardMetric}
+              metricOptions={commandCentreModel.filterOptions.leaderboardMetrics}
+              onMetricChange={setLeaderboardMetric}
+              onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+            />
+            <AttentionAgentsPanel
+              rows={commandCentreModel.attentionAgents}
+              onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+            />
           </section>
         </>
       ) : null}
@@ -4283,95 +4392,65 @@ export function AgentsPage() {
       {loading ? <div className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-6 text-sm text-[#647a92]">Loading agents…</div> : null}
 
       {!loading && canManageDirectory ? (
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="min-w-0">
-            <div className="mb-3 flex flex-col gap-3 rounded-2xl border border-[#dde6f1] bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-[#10243a]">Agent Workspace</h2>
-                <p className="mt-0.5 text-xs text-[#6d8299]">Operational cards, table and leaderboard all respect the selected filters.</p>
-              </div>
-              <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl bg-[#f2f6fb] p-1">
-                {AGENT_STATUS_TABS.map((tab) => (
-                  <button
-                    key={tab.value}
-                    type="button"
-                    onClick={() => {
-                      setActiveAgentTab(tab.value)
-                      if (statusFilter !== 'all') setStatusFilter('all')
-                    }}
-                    className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition ${
-                      activeAgentTab === tab.value
-                        ? 'bg-white text-[#1769d1] shadow-sm'
-                        : 'text-[#60758d] hover:bg-white/70 hover:text-[#10243a]'
-                    }`}
-                  >
-                    {tab.label}
-                    <span className="rounded-full bg-[#e7eef7] px-1.5 py-0.5 text-[0.64rem] text-[#526981]">{tabCounts[tab.value] || 0}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            {filteredAgents.length ? (
-              viewMode === 'grid' ? (
-                <section className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
-                  {filteredAgents.map((agent) => (
-                    <AgentPerformanceCard
-                      key={`${agent.id}-${agent.organisationId || 'org'}`}
-                      agent={agent}
-                      canManage={canManageDirectory}
-                      onView={() => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
-                      onEditRole={() => openRoleEditor(agent)}
-                      onDeactivate={() => openConfirm('deactivate', agent)}
-                      onTransfer={() => openTransferWizard(agent)}
-                      onAssignLead={() => setActionMessage('Lead assignment opens from the lead pipeline workspace.')}
-                    />
-                  ))}
-                </section>
-              ) : viewMode === 'table' ? (
-                <AgentPerformanceTable
-                  agents={filteredAgents}
-                  canManage={canManageDirectory}
-                  onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
-                  onEditRole={openRoleEditor}
-                  onDeactivate={(agent) => openConfirm('deactivate', agent)}
-                  onTransfer={(agent) => openTransferWizard(agent)}
-                />
-              ) : (
-                <AgentLeaderboardView
-                  agents={filteredAgents}
-                  metric={leaderboardMetric}
-                  onMetricChange={setLeaderboardMetric}
-                  onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
-                />
-              )
-            ) : (
-              <section className="rounded-2xl border border-dashed border-[#c9d8e8] bg-white px-5 py-12 text-center shadow-sm">
-                <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#edf5ff] text-[#1769d1]">
-                  <Users size={24} />
-                </span>
-                <h2 className="mt-4 text-base font-semibold text-[#142132]">No agents found for this filter.</h2>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#647a92]">
-                  Try broadening the filters, or invite a new agent to this organisation.
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="mt-4"
-                  onClick={() => {
-                    resetInviteForm()
-                    setInviteModalOpen(true)
-                  }}
-                >
-                  + Add Agent
-                </Button>
-              </section>
-            )}
-          </div>
+        <section className="space-y-4">
+          {commandCentreModel.agentsTable.length ? (
+            <AgentPerformanceTable
+              rows={commandCentreModel.agentsTable}
+              canManage={canManageDirectory}
+              sortBy={sortBy}
+              onSort={setSortBy}
+              onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+              onEditRole={openRoleEditor}
+              onDeactivate={(agent) => openConfirm('deactivate', agent)}
+              onTransfer={(agent) => openTransferWizard(agent)}
+            />
+          ) : (
+            <section className="rounded-2xl border border-dashed border-[#c9d8e8] bg-white px-5 py-12 text-center shadow-sm">
+              <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#edf5ff] text-[#1769d1]">
+                <Users size={24} />
+              </span>
+              <h2 className="mt-4 text-base font-semibold text-[#142132]">No agents found for this filter.</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#647a92]">
+                Try broadening the filters, or invite a new agent to this organisation.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                className="mt-4"
+                onClick={() => {
+                  resetInviteForm()
+                  setInviteModalOpen(true)
+                }}
+              >
+                + Add Agent
+              </Button>
+            </section>
+          )}
 
-          <AgentPerformanceIntelligencePanel
-            intelligence={performanceModel.intelligence}
-            onLeaderboard={() => setViewMode('leaderboard')}
-          />
+          <details className="group rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-[#10243a]">Analytics</span>
+                <span className="mt-0.5 block truncate text-xs text-[#6d8299]">Secondary charts kept below the command centre table.</span>
+              </span>
+              <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d] group-open:hidden">Expand</span>
+              <span className="hidden rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d] group-open:inline-flex">Collapse</span>
+            </summary>
+            <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-4">
+              <ChartShell title="Pipeline Value by Agent" helper="Top active pipeline owners" empty={!commandCentreModel.analytics.pipelineByAgent.length}>
+                <PipelineValueChart data={commandCentreModel.analytics.pipelineByAgent} />
+              </ChartShell>
+              <ChartShell title="Conversion Rate by Agent" helper="Registered opportunities over total" empty={!commandCentreModel.analytics.conversionByAgent.length}>
+                <ConversionRateChart data={commandCentreModel.analytics.conversionByAgent} />
+              </ChartShell>
+              <ChartShell title="Listings vs Registrations" helper="Active listings compared with closed deals" empty={!commandCentreModel.analytics.listingsVsRegistrations.length}>
+                <ListingsRegistrationsChart data={commandCentreModel.analytics.listingsVsRegistrations} />
+              </ChartShell>
+              <ChartShell title="Activity Heatmap" helper="Activity type by weekday" empty={!commandCentreModel.analytics.activityHeatmap.some((row) => row.days.some((day) => day.value))}>
+                <ActivityHeatmap data={commandCentreModel.analytics.activityHeatmap} />
+              </ChartShell>
+            </section>
+          </details>
         </section>
       ) : null}
 

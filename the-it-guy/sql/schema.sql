@@ -45,6 +45,7 @@ alter table if exists profiles add column if not exists first_name text;
 alter table if exists profiles add column if not exists last_name text;
 alter table if exists profiles add column if not exists company_name text;
 alter table if exists profiles add column if not exists phone_number text;
+alter table if exists profiles add column if not exists avatar_url text;
 alter table if exists profiles add column if not exists title text;
 alter table if exists profiles add column if not exists timezone text;
 alter table if exists profiles add column if not exists date_format text;

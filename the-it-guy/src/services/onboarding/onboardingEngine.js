@@ -53,12 +53,13 @@ async function updateProfileOnboardingCompletion({ userId, appRole = '', complet
     .from('profiles')
     .update(payload)
     .eq('id', userId)
-    .select('id, email, first_name, last_name, full_name, company_name, phone_number, role, onboarding_completed, created_at, updated_at')
+    .select('id, email, first_name, last_name, full_name, company_name, phone_number, avatar_url, role, onboarding_completed, created_at, updated_at')
     .maybeSingle()
 
-  if (result.error && isMissingSchemaError(result.error, 'company_name')) {
+  if (result.error && (isMissingSchemaError(result.error, 'company_name') || isMissingSchemaError(result.error, 'avatar_url'))) {
     const fallbackPayload = { ...payload }
-    delete fallbackPayload.company_name
+    if (isMissingSchemaError(result.error, 'company_name')) delete fallbackPayload.company_name
+    if (isMissingSchemaError(result.error, 'avatar_url')) delete fallbackPayload.avatar_url
     result = await client
       .from('profiles')
       .update(fallbackPayload)

@@ -1,6 +1,7 @@
 import { generateId } from './agentListingStorage'
 import { isUnsafeFallbackAllowed } from './envValidation'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
+import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 import { WorkspaceContextError, logUnsafeFallbackBlocked } from '../services/workspaceResolutionService'
 
 const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
@@ -117,6 +118,83 @@ function normalizePurchaserType(value) {
   return 'individual'
 }
 
+function compactObject(value = {}) {
+  return Object.fromEntries(
+    Object.entries(value || {}).filter(([, item]) => item !== undefined),
+  )
+}
+
+function toPersistedFinanceType(value) {
+  const normalized = normalize(value).toLowerCase()
+  if (normalized === 'combination') return 'hybrid'
+  if (['cash', 'bond', 'hybrid', 'developer', 'unknown'].includes(normalized)) return normalized
+  return normalizeFinanceType(value)
+}
+
+function buildTransactionRoutingProfileContext({ listing = null, offerRecord = null, lead = null, payload = {} } = {}) {
+  return {
+    transaction: payload?.transaction || {},
+    listing,
+    offer: {
+      ...(offerRecord || {}),
+      financeType: payload?.financeType || offerRecord?.offer?.financeType || offerRecord?.financeType,
+      offer: offerRecord?.offer || {},
+    },
+    buyerLead: lead,
+    sellerLead: payload?.sellerLead || listing?.sellerLead || null,
+    sellerOnboarding: listing?.sellerOnboarding || payload?.sellerOnboarding || null,
+    financeType: payload?.financeType,
+    transactionType: payload?.transactionType || payload?.transaction_type,
+    propertyTenure: payload?.propertyTenure || payload?.property_tenure,
+    vatTreatment: payload?.vatTreatment || payload?.vat_treatment,
+    buyerEntityType: payload?.buyerEntityType || payload?.purchaserType || payload?.purchaser_type,
+    sellerEntityType: payload?.sellerEntityType || payload?.sellerType || payload?.seller_type,
+    sellerHasExistingBond: payload?.sellerHasExistingBond ?? payload?.seller_has_existing_bond,
+    cancellationRequired: payload?.cancellationRequired ?? payload?.cancellation_required,
+  }
+}
+
+function resolveRoutingProfileForTransaction({ listing = null, offerRecord = null, lead = null, payload = {} } = {}) {
+  if (payload?.routingProfile && typeof payload.routingProfile === 'object') return payload.routingProfile
+  if (payload?.routing_profile && typeof payload.routing_profile === 'object') return payload.routing_profile
+  return resolveTransactionRoutingProfile(buildTransactionRoutingProfileContext({ listing, offerRecord, lead, payload }))
+}
+
+function buildRoutingProfileTransactionFields(profile = {}) {
+  const financeType = toPersistedFinanceType(profile.financeType)
+  return compactObject({
+    finance_type: financeType || null,
+    transaction_type: profile.transactionType && profile.transactionType !== 'unknown' ? profile.transactionType : undefined,
+    property_type: profile.propertyTenure && profile.propertyTenure !== 'unknown' ? profile.propertyTenure : undefined,
+    property_tenure: profile.propertyTenure && profile.propertyTenure !== 'unknown' ? profile.propertyTenure : undefined,
+    purchaser_type: profile.buyerEntityType && profile.buyerEntityType !== 'unknown' ? profile.buyerEntityType : undefined,
+    seller_type: profile.sellerEntityType && profile.sellerEntityType !== 'unknown' ? profile.sellerEntityType : undefined,
+    seller_has_existing_bond: Boolean(profile.sellerHasExistingBond),
+    existing_bond: Boolean(profile.sellerHasExistingBond),
+    cancellation_required: Boolean(profile.cancellationRequired),
+    vat_treatment: profile.vatTreatment && profile.vatTreatment !== 'unknown' ? profile.vatTreatment : undefined,
+    routing_profile_version: profile.version || undefined,
+    routing_profile_json: profile,
+  })
+}
+
+function removeRoutingProfileTransactionFields(payload = {}) {
+  const next = { ...payload }
+  for (const key of [
+    'property_tenure',
+    'seller_type',
+    'seller_has_existing_bond',
+    'existing_bond',
+    'cancellation_required',
+    'vat_treatment',
+    'routing_profile_version',
+    'routing_profile_json',
+  ]) {
+    delete next[key]
+  }
+  return next
+}
+
 function resolveInitialMainStage(stageValue) {
   const normalized = normalize(stageValue).toLowerCase()
   if (!normalized || normalized === 'available') return 'AVAIL'
@@ -227,6 +305,8 @@ function buildTransactionRow({
   const stage = normalize(payload?.stage || '') || 'Reserved'
   const mainStage = resolveInitialMainStage(stage)
   const organisationId = getOrganisationId({ organisationId: payload?.organisationId, listing, offerRecord })
+  const routingProfile = resolveRoutingProfileForTransaction({ listing, offerRecord, lead, payload })
+  const routingFields = buildRoutingProfileTransactionFields(routingProfile)
 
   const assignedAgentId = normalize(
     payload?.assignedAgentId || listing?.assignedAgentId || lead?.assignedAgentId || actor?.id || offerRecord?.agentId || null,
@@ -275,7 +355,9 @@ function buildTransactionRow({
       id: transactionId,
       matter_number: matterNumber,
       transaction_reference: `AG-${String(transactionId).slice(-6).toUpperCase()}`,
-      transaction_type: listing?.developmentId ? 'development' : 'private_property',
+      transaction_type: routingProfile.transactionType && routingProfile.transactionType !== 'unknown'
+        ? routingProfile.transactionType
+        : listing?.developmentId ? 'development_sale' : 'private_sale',
       development_id: listing?.developmentId || null,
       unit_id: listing?.id || payload?.listingId || null,
       buyer_id: offerRecord?.buyerLeadId || payload?.originatingBuyerLeadId || lead?.leadId || null,
@@ -286,8 +368,17 @@ function buildTransactionRow({
       property_description: listing?.listingTitle || payload?.propertyDescription || null,
       sales_price: offerAmount,
       purchase_price: offerAmount,
-      finance_type: normalizeFinanceType(payload?.financeType || offerRecord?.offer?.financeType || null),
-      purchaser_type: 'individual',
+      finance_type: routingFields.finance_type || normalizeFinanceType(payload?.financeType || offerRecord?.offer?.financeType || null),
+      purchaser_type: routingFields.purchaser_type || 'individual',
+      property_type: routingFields.property_type || listing?.propertyType || payload?.propertyType || null,
+      property_tenure: routingFields.property_tenure || null,
+      seller_type: routingFields.seller_type || null,
+      seller_has_existing_bond: routingFields.seller_has_existing_bond || false,
+      existing_bond: routingFields.existing_bond || false,
+      cancellation_required: routingFields.cancellation_required || false,
+      vat_treatment: routingFields.vat_treatment || null,
+      routing_profile_version: routingFields.routing_profile_version || null,
+      routing_profile_json: routingProfile,
       stage,
       current_main_stage: mainStage,
       next_action: workflowHealthIssues.length ? 'Resolve workflow health warnings' : 'Buyer onboarding pending',
@@ -724,6 +815,8 @@ export async function createTransactionFromLeadOverride({
     })
 
     const nextMainStage = resolveInitialMainStage(created?.transactionRow?.transaction?.stage || payload?.stage || 'Reserved')
+    const routingProfile = resolveRoutingProfileForTransaction({ listing, lead, payload })
+    const routingFields = buildRoutingProfileTransactionFields(routingProfile)
     const baseInsertPayload = {
       id: created.transactionId,
       organisation_id: nextOrganisationId,
@@ -731,7 +824,9 @@ export async function createTransactionFromLeadOverride({
       unit_id: nextListingId || null,
       buyer_id: buyer?.id || (isUuidLike(nextLeadId) ? nextLeadId : null),
       transaction_reference: created?.transactionRow?.transaction?.transaction_reference || null,
-      transaction_type: created?.transactionRow?.transaction?.transaction_type || 'private_property',
+      transaction_type: routingFields.transaction_type || created?.transactionRow?.transaction?.transaction_type || 'private_sale',
+      property_type: routingFields.property_type || normalize(payload?.propertyType || payload?.property_type || listing?.propertyType || listing?.property_type) || null,
+      property_tenure: routingFields.property_tenure || null,
       property_address_line_1: normalize(payload?.propertyAddress || listing?.propertyAddress) || null,
       suburb: normalize(payload?.suburb || listing?.suburb) || null,
       city: normalize(payload?.city || listing?.city) || null,
@@ -739,11 +834,18 @@ export async function createTransactionFromLeadOverride({
       property_description: normalize(payload?.propertyDescription || listing?.listingTitle) || null,
       sales_price: money(payload?.dealValue || payload?.purchasePrice || lead?.estimatedValue || lead?.budget || 0),
       purchase_price: money(payload?.dealValue || payload?.purchasePrice || lead?.estimatedValue || lead?.budget || 0),
-      finance_type: normalizeFinanceType(payload?.financeType || 'cash'),
+      finance_type: routingFields.finance_type || normalizeFinanceType(payload?.financeType || 'cash'),
       cash_amount: asNumber(payload?.cashAmount ?? payload?.cash_amount),
       bond_amount: asNumber(payload?.bondAmount ?? payload?.bond_amount),
       deposit_amount: asNumber(payload?.depositAmount ?? payload?.deposit_amount),
-      purchaser_type: normalizePurchaserType(payload?.purchaserType || payload?.purchaser_type),
+      purchaser_type: routingFields.purchaser_type || normalizePurchaserType(payload?.purchaserType || payload?.purchaser_type),
+      seller_type: routingFields.seller_type || null,
+      seller_has_existing_bond: routingFields.seller_has_existing_bond || false,
+      existing_bond: routingFields.existing_bond || false,
+      cancellation_required: routingFields.cancellation_required || false,
+      vat_treatment: routingFields.vat_treatment || null,
+      routing_profile_version: routingFields.routing_profile_version || null,
+      routing_profile_json: routingProfile,
       stage: normalize(payload?.stage || 'Reserved') || 'Reserved',
       current_main_stage: nextMainStage,
       next_action: 'Buyer onboarding pending',
@@ -779,7 +881,7 @@ export async function createTransactionFromLeadOverride({
     const variants = [
       { ...baseInsertPayload },
       (() => {
-        const fallback = { ...baseInsertPayload }
+        const fallback = removeRoutingProfileTransactionFields(baseInsertPayload)
         delete fallback.assigned_agent_id
         delete fallback.listing_id
         delete fallback.originating_lead_id
@@ -800,6 +902,7 @@ export async function createTransactionFromLeadOverride({
         delete fallback.agency_split_percentage_snapshot
         delete fallback.agent_commission_amount
         delete fallback.agency_commission_amount
+        if (!fallback.property_type) delete fallback.property_type
         return fallback
       })(),
       (() => {

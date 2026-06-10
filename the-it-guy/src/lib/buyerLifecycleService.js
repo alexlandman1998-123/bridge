@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { createTransactionFromLeadOverride } from './transactionLifecycleService'
+import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -1859,29 +1860,44 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     budget: canonicalOffer.offerAmount,
   }
 
+  const conversionPayload = {
+    ...payload,
+    organisationId: scopedOrganisationId,
+    originatingBuyerLeadId: canonicalOffer.buyerLeadId,
+    originatingLeadId: canonicalOffer.buyerLeadId,
+    buyerContactId: canonicalOffer.buyerContactId,
+    listingId: canonicalOffer.listingId || payload?.listingId,
+    acceptedOfferId: canonicalOffer.offerId || canonicalOffer.id,
+    purchasePrice: canonicalOffer.offerAmount || payload?.purchasePrice,
+    dealValue: canonicalOffer.offerAmount || payload?.dealValue,
+    depositAmount: canonicalOffer.depositAmount || payload?.depositAmount,
+    cashAmount: canonicalOffer.cashComponent || payload?.cashAmount,
+    bondAmount: canonicalOffer.bondComponent || payload?.bondAmount,
+    financeType: canonicalOffer.financeType || payload?.financeType,
+    purchaserType: canonicalOffer.conditions?.buyerType || canonicalOffer.conditions?.purchaserType || payload?.purchaserType || 'individual',
+    buyerEntityType: canonicalOffer.conditions?.buyerType || canonicalOffer.conditions?.purchaserType || payload?.buyerEntityType || payload?.purchaserType || 'individual',
+    sellerEntityType: listing?.sellerType || listing?.seller_type || listing?.seller?.sellerType || listing?.seller?.type || payload?.sellerEntityType || payload?.sellerType,
+    sellerHasExistingBond: listing?.sellerHasExistingBond ?? listing?.seller_has_existing_bond ?? listing?.seller?.hasExistingBond ?? payload?.sellerHasExistingBond,
+    cancellationRequired: listing?.cancellationRequired ?? listing?.cancellation_required ?? payload?.cancellationRequired,
+    propertyTenure: listing?.propertyTenure || listing?.property_tenure || listing?.propertyStructureType || listing?.property_structure_type || payload?.propertyTenure,
+    vatTreatment: listing?.vatTreatment || listing?.vat_treatment || listing?.sellerOnboarding?.formData?.vatTreatment || payload?.vatTreatment,
+    assignedAgentId: canonicalOffer.agentId || payload?.assignedAgentId || actor?.id,
+    assignedAgentName: payload?.assignedAgentName || actor?.name,
+    assignedAgentEmail: payload?.assignedAgentEmail || actor?.email,
+  }
+  conversionPayload.routingProfile = resolveTransactionRoutingProfile({
+    transaction: conversionPayload,
+    listing,
+    offer: canonicalOffer,
+    buyerLead,
+    sellerOnboarding: listing?.sellerOnboarding,
+  })
+
   const created = await createTransactionFromLeadOverride({
     lead: buyerLead,
     listing,
     actor,
-    payload: {
-      ...payload,
-      organisationId: scopedOrganisationId,
-      originatingBuyerLeadId: canonicalOffer.buyerLeadId,
-      originatingLeadId: canonicalOffer.buyerLeadId,
-      buyerContactId: canonicalOffer.buyerContactId,
-      listingId: canonicalOffer.listingId || payload?.listingId,
-      acceptedOfferId: canonicalOffer.offerId || canonicalOffer.id,
-      purchasePrice: canonicalOffer.offerAmount || payload?.purchasePrice,
-      dealValue: canonicalOffer.offerAmount || payload?.dealValue,
-      depositAmount: canonicalOffer.depositAmount || payload?.depositAmount,
-      cashAmount: canonicalOffer.cashComponent || payload?.cashAmount,
-      bondAmount: canonicalOffer.bondComponent || payload?.bondAmount,
-      financeType: canonicalOffer.financeType || payload?.financeType,
-      purchaserType: canonicalOffer.conditions?.buyerType || canonicalOffer.conditions?.purchaserType || payload?.purchaserType || 'individual',
-      assignedAgentId: canonicalOffer.agentId || payload?.assignedAgentId || actor?.id,
-      assignedAgentName: payload?.assignedAgentName || actor?.name,
-      assignedAgentEmail: payload?.assignedAgentEmail || actor?.email,
-    },
+    payload: conversionPayload,
   })
 
   const transactionId = normalizeText(created?.transactionId || created?.transactionRow?.transaction?.id)

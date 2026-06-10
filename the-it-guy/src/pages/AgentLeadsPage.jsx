@@ -6730,7 +6730,7 @@ function SellerWorkspaceTabs({ activeTab, onTabChange }) {
 
 function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId, actor, onSaved, onTabChange }) {
   return (
-    <div className="grid items-stretch gap-6 xl:grid-cols-4">
+    <div className="grid items-stretch gap-6 xl:grid-cols-4 xl:auto-rows-[360px]">
       <SellerWorkspaceCard title="Lead Summary">
         <dl className="flex flex-1 flex-col">
           <SellerInfoRow label="Source" value={sourceInfo?.leadSource || row.source} />
@@ -6743,7 +6743,7 @@ function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId,
       </SellerWorkspaceCard>
       <SellerDocumentsSummaryCard journey={journey} />
       <SellerWorkspaceCard title="Recent Activity" action={<button type="button" onClick={() => onTabChange('activity')} className="text-xs font-semibold text-blue-700">View All</button>}>
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <SellerTimelineList timeline={timeline} limit={12} compact />
         </div>
       </SellerWorkspaceCard>

@@ -252,6 +252,7 @@ export default function AgentInviteOnboarding() {
           lastName: form.surname,
           phoneNumber: form.mobile,
           ppraNumber: form.ppraNumber,
+          photoUrl: form.photoUrl,
         })
         recordAuditEvent('invite_accepted', {
           source: 'supabase',

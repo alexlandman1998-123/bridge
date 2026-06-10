@@ -16,7 +16,66 @@ function getInviteTitle(reason = '') {
   if (reason === 'revoked') return 'Invite Revoked'
   if (reason === 'already_accepted') return 'Invite Already Used'
   if (reason === 'invite_email_mismatch') return 'Wrong Account'
+  if (reason === 'existing_membership_branch_mismatch') return 'Branch Transfer Required'
   return 'Invite Not Available'
+}
+
+function formatInviteRoleLabel(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  const labels = {
+    owner: 'Organisation Owner',
+    principal: 'Principal',
+    admin: 'Admin',
+    admin_staff: 'Admin Staff',
+    branch_manager: 'Branch Manager',
+    team_lead: 'Team Lead',
+    agent: 'Agent',
+    assistant: 'Assistant',
+    transaction_coordinator: 'Transaction Coordinator',
+    listing_coordinator: 'Listing Coordinator',
+    admin_coordinator: 'Admin Coordinator',
+    attorney: 'Attorney',
+    developer: 'Developer',
+    bond_originator: 'Bond Originator',
+  }
+  if (labels[normalized]) return labels[normalized]
+  return normalized
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ') || 'Workspace Member'
+}
+
+function getInviteBranchName(invite = {}) {
+  return normalizeText(invite?.metadata?.branch_name || invite?.metadata?.branchName || invite?.metadata?.office_name || invite?.metadata?.officeName)
+}
+
+function getInviteUnavailableMessage(reason = '') {
+  if (reason === 'already_accepted') {
+    return 'This invite link has already been used. Sign in with the invited account, or ask the sender to resend access if you still need help.'
+  }
+  if (reason === 'existing_membership_branch_mismatch') {
+    return 'This account is already connected to a different branch. Ask a principal or admin to transfer the membership before accepting this branch invite.'
+  }
+  if (reason === 'expired') return 'This invite has expired. Ask the sender to issue a fresh invite.'
+  if (reason === 'revoked') return 'This invite was revoked. Ask the sender to issue a fresh invite if access is still needed.'
+  if (reason === 'invite_email_mismatch') return 'This invite belongs to another email address. Switch accounts to continue.'
+  return 'We could not validate this invite. Ask the sender to issue a fresh invite if access is still required.'
+}
+
+function getInviteErrorMessage(error, { sessionEmail = '', invitedEmail = '' } = {}) {
+  if (error instanceof InviteValidationError) {
+    if (error.code === 'invite_email_mismatch') {
+      return `You are signed in as ${sessionEmail}. Sign in as ${invitedEmail || 'the invited email'} to accept this invite.`
+    }
+    if (error.code === 'existing_membership_branch_mismatch') {
+      return 'This account is already assigned to another branch. A principal or admin needs to transfer the membership first.'
+    }
+    if (error.code === 'invite_expired') return 'This invite has expired. Ask the sender for a new invite.'
+    if (error.code === 'invite_accepted') return 'This invite has already been accepted.'
+    return error.message || error.code
+  }
+  return error?.message || 'Unable to accept this invite.'
 }
 
 function getRedirectTarget(result = {}) {
@@ -33,6 +92,20 @@ function getInviteTarget(invite = {}) {
 function clearPendingInviteToken() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(PENDING_INVITE_TOKEN_STORAGE_KEY)
+}
+
+function InviteDetailList({ details = [] }) {
+  if (!details.length) return null
+  return (
+    <dl className="grid gap-2 rounded-control border border-borderSoft bg-surfaceAlt p-4 sm:grid-cols-3">
+      {details.map((item) => (
+        <div key={item.label} className="min-w-0">
+          <dt className="text-label font-semibold uppercase text-textMuted">{item.label}</dt>
+          <dd className="mt-1 truncate text-secondary font-semibold text-textStrong">{item.value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
 }
 
 export default function InviteResolver() {
@@ -102,13 +175,26 @@ export default function InviteResolver() {
   const acceptedInviteBelongsToSession = Boolean(reason === 'already_accepted' && (signedInAsInvitedEmail || acceptedBySignedInUser))
   const pendingInviteWrongAccount = Boolean(reason === '' && sessionEmail && invitedEmail && !signedInAsInvitedEmail)
   const workspaceName = normalizeText(invite?.workspace?.display_name || invite?.workspace?.name)
+  const branchName = getInviteBranchName(invite)
+  const roleLabel = invite ? formatInviteRoleLabel(invite?.metadata?.role_label || invite?.targetWorkspaceRole || invite?.metadata?.role) : ''
+  const inviteDetails = useMemo(() => {
+    const rows = []
+    if (workspaceName) rows.push({ label: 'Workspace', value: workspaceName })
+    if (branchName) rows.push({ label: 'Branch', value: branchName })
+    if (roleLabel) rows.push({ label: 'Role', value: roleLabel })
+    return rows
+  }, [branchName, roleLabel, workspaceName])
   const invitePurpose = useMemo(() => {
     if (!invite) return 'Bridge invite'
     if (invite.inviteType === 'transaction_invite') return 'Transaction collaboration'
     if (invite.inviteType === 'workspace_and_transaction_invite') return 'Workspace and transaction collaboration'
     if (invite.inviteType === 'client_invite') return 'Client access'
+    if (invite.inviteType === 'branch_invite') {
+      return branchName && workspaceName ? `${branchName} branch at ${workspaceName}` : 'Branch workspace access'
+    }
+    if (invite.inviteType === 'team_invite') return 'Team workspace access'
     return workspaceName ? `${workspaceName} workspace` : 'Workspace access'
-  }, [invite, workspaceName])
+  }, [branchName, invite, workspaceName])
 
   useEffect(() => {
     if (acceptedInviteBelongsToSession) {
@@ -136,11 +222,9 @@ export default function InviteResolver() {
     } catch (acceptError) {
       if (acceptError instanceof InviteValidationError) {
         setReason(acceptError.code)
-        setError(acceptError.code === 'invite_email_mismatch'
-          ? `You are signed in as ${sessionEmail}. Sign in as ${invitedEmail || 'the invited email'} to accept this invite.`
-          : acceptError.message || acceptError.code)
+        setError(getInviteErrorMessage(acceptError, { sessionEmail, invitedEmail }))
       } else {
-        setError(acceptError?.message || 'Unable to accept this invite.')
+        setError(getInviteErrorMessage(acceptError, { sessionEmail, invitedEmail }))
       }
     } finally {
       setSaving(false)
@@ -204,6 +288,7 @@ export default function InviteResolver() {
         <p className="text-secondary text-textMuted">
           This invite is for <strong>{invitedEmail}</strong>, but you are signed in as <strong>{sessionEmail}</strong>.
         </p>
+        <InviteDetailList details={inviteDetails} />
         <div className="flex flex-wrap gap-2">
           <Button type="button" onClick={() => void handleSwitchAccount()}>
             Switch account
@@ -224,10 +309,9 @@ export default function InviteResolver() {
           <h1 className="text-page-title font-semibold">{getInviteTitle(reason)}</h1>
         </div>
         <p className="text-secondary text-textMuted">
-          {reason === 'already_accepted'
-            ? 'This invite link has already been used. Sign in with the invited account, or ask the sender to resend access if you still need help.'
-            : 'We could not validate this invite. Ask the sender to issue a fresh invite if access is still required.'}
+          {getInviteUnavailableMessage(reason)}
         </p>
+        <InviteDetailList details={inviteDetails} />
         {error ? <p className="rounded-control border border-danger/30 bg-dangerSoft px-3 py-2 text-secondary text-danger">{error}</p> : null}
         <Link to="/dashboard" className="inline-flex rounded-control border border-borderDefault px-4 py-2 text-secondary font-semibold text-textStrong">
           Back to Bridge
@@ -243,6 +327,8 @@ export default function InviteResolver() {
         <h1 className="text-page-title font-semibold text-textStrong">Accept Invite</h1>
         <p className="text-secondary text-textMuted">{invitePurpose}</p>
       </div>
+
+      <InviteDetailList details={inviteDetails} />
 
       <div className="space-y-3 rounded-control border border-borderSoft bg-surfaceAlt p-4">
         {invitedEmail ? (

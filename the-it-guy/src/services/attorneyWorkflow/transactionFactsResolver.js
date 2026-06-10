@@ -66,6 +66,24 @@ const CANCELLATION_FIELD_CANDIDATES = [
   'seller_requires_bond_cancellation',
 ]
 
+const PROPERTY_TENURE_FIELD_CANDIDATES = [
+  'property_tenure',
+  'propertyTenure',
+  'property_structure_type',
+  'propertyStructureType',
+  'ownership_type',
+  'ownershipType',
+]
+
+const VAT_TREATMENT_FIELD_CANDIDATES = [
+  'vat_treatment',
+  'vatTreatment',
+  'transfer_tax_treatment',
+  'vat_applicable',
+  'vatApplicable',
+  'is_vat_transaction',
+]
+
 function normalizeKey(value) {
   return String(value || '')
     .trim()
@@ -107,6 +125,38 @@ function truthyFlag(value) {
   return ['true', 'yes', 'y', '1', 'required', 'requires_cancellation', 'cancellation_required', 'bond', 'existing_bond', 'outstanding'].includes(normalized)
 }
 
+function parseJsonObject(value) {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function extractRoutingProfile(transaction = {}) {
+  return parseJsonObject(
+    transaction.routingProfile ||
+      transaction.routing_profile ||
+      transaction.routing_profile_json ||
+      transaction.routingProfileJson,
+  )
+}
+
+function firstProfileField(profile, candidates, rawFieldsUsed, canonicalName) {
+  for (const field of candidates) {
+    const value = readPath(profile, field)
+    if (hasUsableValue(value)) {
+      rawFieldsUsed[canonicalName] = `routing_profile_json.${field}`
+      return value
+    }
+  }
+  return undefined
+}
+
 function normalizeFinanceType(value) {
   const normalized = normalizeKey(value)
   if (!normalized) return 'unknown'
@@ -122,6 +172,7 @@ function normalizeFinanceType(value) {
 function normalizeEntityType(value) {
   const normalized = normalizeKey(value)
   if (!normalized) return 'unknown'
+  if (normalized.includes('developer')) return 'developer'
   if (COMPANY_VALUES.has(normalized) || normalized.includes('company') || normalized.includes('pty')) return 'company'
   if (TRUST_VALUES.has(normalized) || normalized.includes('trust')) return 'trust'
   if (INDIVIDUAL_VALUES.has(normalized) || normalized.includes('individual') || normalized.includes('person')) return 'individual'
@@ -141,6 +192,32 @@ function normalizeTransactionType(value, transaction = {}) {
   return normalized
 }
 
+function normalizePropertyTenure(value, transaction = {}) {
+  const normalized = normalizeKey(value)
+  const haystack = normalizeKey([
+    value,
+    transaction?.property_type,
+    transaction?.propertyType,
+    transaction?.unit?.property_type,
+    transaction?.unit?.propertyType,
+  ].filter(Boolean).join(' '))
+  if (normalized === 'sectional_title' || haystack.includes('sectional') || haystack.includes('body_corporate')) return 'sectional_title'
+  if (normalized === 'estate_hoa' || haystack.includes('estate') || haystack.includes('hoa')) return 'estate_hoa'
+  if (normalized === 'freehold' || haystack.includes('freehold') || haystack.includes('full_title')) return 'freehold'
+  if (haystack.includes('share_block')) return 'share_block'
+  return normalized || 'unknown'
+}
+
+function normalizeVatTreatment(value) {
+  const normalized = normalizeKey(value)
+  if (!normalized) return 'unknown'
+  if (['vat', 'vat_applicable', 'standard_vat', 'taxable_supply'].includes(normalized)) return 'vat'
+  if (['zero_rated', 'zero_rated_going_concern', 'going_concern'].includes(normalized)) return 'zero_rated_going_concern'
+  if (['transfer_duty', 'duty', 'no_vat', 'false'].includes(normalized)) return 'transfer_duty'
+  if (truthyFlag(value)) return 'vat'
+  return normalized
+}
+
 function countRelated(transaction, keys = []) {
   for (const key of keys) {
     const value = readPath(transaction, key)
@@ -155,19 +232,32 @@ export function resolveTransactionFacts(transaction = {}) {
   const rawFieldsUsed = {}
   const missingFields = []
   const confidenceWarnings = []
+  const routingProfile = extractRoutingProfile(transaction)
 
-  const financeRaw = firstField(transaction, FINANCE_FIELD_CANDIDATES, rawFieldsUsed, 'financeType')
-  const transactionTypeRaw = firstField(transaction, TRANSACTION_TYPE_FIELD_CANDIDATES, rawFieldsUsed, 'transactionType')
-  const buyerEntityRaw = firstField(transaction, BUYER_ENTITY_FIELD_CANDIDATES, rawFieldsUsed, 'buyerEntityType')
-  const sellerEntityRaw = firstField(transaction, SELLER_ENTITY_FIELD_CANDIDATES, rawFieldsUsed, 'sellerEntityType')
-  const sellerBondRaw = firstField(transaction, SELLER_BOND_FIELD_CANDIDATES, rawFieldsUsed, 'sellerHasExistingBond')
-  const cancellationRaw = firstField(transaction, CANCELLATION_FIELD_CANDIDATES, rawFieldsUsed, 'cancellationRequired')
+  const financeRaw = firstProfileField(routingProfile, ['financeType', 'finance_type'], rawFieldsUsed, 'financeType') ??
+    firstField(transaction, FINANCE_FIELD_CANDIDATES, rawFieldsUsed, 'financeType')
+  const transactionTypeRaw = firstProfileField(routingProfile, ['transactionType', 'transaction_type'], rawFieldsUsed, 'transactionType') ??
+    firstField(transaction, TRANSACTION_TYPE_FIELD_CANDIDATES, rawFieldsUsed, 'transactionType')
+  const buyerEntityRaw = firstProfileField(routingProfile, ['buyerEntityType', 'buyer_entity_type', 'purchaserType', 'purchaser_type'], rawFieldsUsed, 'buyerEntityType') ??
+    firstField(transaction, BUYER_ENTITY_FIELD_CANDIDATES, rawFieldsUsed, 'buyerEntityType')
+  const sellerEntityRaw = firstProfileField(routingProfile, ['sellerEntityType', 'seller_entity_type', 'sellerType', 'seller_type'], rawFieldsUsed, 'sellerEntityType') ??
+    firstField(transaction, SELLER_ENTITY_FIELD_CANDIDATES, rawFieldsUsed, 'sellerEntityType')
+  const sellerBondRaw = firstProfileField(routingProfile, ['sellerHasExistingBond', 'seller_has_existing_bond', 'existingBond', 'existing_bond'], rawFieldsUsed, 'sellerHasExistingBond') ??
+    firstField(transaction, SELLER_BOND_FIELD_CANDIDATES, rawFieldsUsed, 'sellerHasExistingBond')
+  const cancellationRaw = firstProfileField(routingProfile, ['cancellationRequired', 'cancellation_required'], rawFieldsUsed, 'cancellationRequired') ??
+    firstField(transaction, CANCELLATION_FIELD_CANDIDATES, rawFieldsUsed, 'cancellationRequired')
+  const propertyTenureRaw = firstProfileField(routingProfile, ['propertyTenure', 'property_tenure'], rawFieldsUsed, 'propertyTenure') ??
+    firstField(transaction, PROPERTY_TENURE_FIELD_CANDIDATES, rawFieldsUsed, 'propertyTenure')
+  const vatTreatmentRaw = firstProfileField(routingProfile, ['vatTreatment', 'vat_treatment'], rawFieldsUsed, 'vatTreatment') ??
+    firstField(transaction, VAT_TREATMENT_FIELD_CANDIDATES, rawFieldsUsed, 'vatTreatment')
 
   const financeType = normalizeFinanceType(financeRaw)
   const transactionType = normalizeTransactionType(transactionTypeRaw, transaction)
   const buyerEntityType = normalizeEntityType(buyerEntityRaw)
   const sellerEntityType = normalizeEntityType(sellerEntityRaw)
   const propertyType = normalizeKey(transaction?.property_type || transaction?.propertyType || transaction?.unit?.property_type)
+  const propertyTenure = normalizePropertyTenure(propertyTenureRaw || propertyType, transaction)
+  const vatTreatment = normalizeVatTreatment(vatTreatmentRaw)
 
   if (financeType === 'unknown') {
     missingFields.push('finance_type')
@@ -199,18 +289,28 @@ export function resolveTransactionFacts(transaction = {}) {
   if (!hasUsableValue(sellerBondRaw) && !hasUsableValue(cancellationRaw)) {
     confidenceWarnings.push('No seller bond/cancellation flag was found; cancellation workflow is not required by default.')
   }
+  if (propertyTenure === 'unknown') {
+    missingFields.push('property_tenure')
+    confidenceWarnings.push('Property tenure is missing; sectional title, HOA, and freehold transfer requirements may be incomplete.')
+  }
+  if ((transactionType === 'commercial' || transactionType === 'development_sale') && vatTreatment === 'unknown') {
+    missingFields.push('vat_treatment')
+    confidenceWarnings.push('VAT treatment is missing; VAT/transfer duty requirements may be incomplete.')
+  }
 
   return {
-    transactionId: transaction?.id || transaction?.transaction_id || null,
+    transactionId: transaction?.id || transaction?.transaction_id || routingProfile.transactionId || null,
     transactionType,
     financeType,
     propertyType,
+    propertyTenure,
+    vatTreatment,
     isCashDeal,
     isBondDeal,
     isHybridDeal,
-    requiresTransferAttorney: true,
-    requiresBondAttorney: isBondDeal || isHybridDeal,
-    requiresCancellationAttorney: cancellationRequired,
+    requiresTransferAttorney: hasUsableValue(routingProfile.requiresTransferAttorney) ? truthyFlag(routingProfile.requiresTransferAttorney) : true,
+    requiresBondAttorney: hasUsableValue(routingProfile.requiresBondAttorney) ? truthyFlag(routingProfile.requiresBondAttorney) : isBondDeal || isHybridDeal,
+    requiresCancellationAttorney: hasUsableValue(routingProfile.requiresCancellationAttorney) ? truthyFlag(routingProfile.requiresCancellationAttorney) : cancellationRequired,
     buyerEntityType,
     sellerEntityType,
     buyerIsIndividual: buyerEntityType === 'individual',
@@ -223,8 +323,16 @@ export function resolveTransactionFacts(transaction = {}) {
     isPrivateSale,
     isResale,
     isCommercialTransaction,
+    isSectionalTitle: propertyTenure === 'sectional_title',
+    isEstateHoa: propertyTenure === 'estate_hoa',
+    isFreehold: propertyTenure === 'freehold',
+    hasVatTreatment: vatTreatment === 'vat' || vatTreatment === 'zero_rated_going_concern',
     sellerHasExistingBond,
     cancellationRequired,
+    requiredWorkflowKeys: Array.isArray(routingProfile.requiredWorkflowKeys) ? routingProfile.requiredWorkflowKeys.filter(Boolean) : [],
+    requiredDocumentGroups: Array.isArray(routingProfile.requiredDocumentGroups) ? routingProfile.requiredDocumentGroups.filter(Boolean) : [],
+    workflowTemplateKey: routingProfile.workflowTemplateKey || '',
+    routingProfileVersion: routingProfile.version || transaction.routing_profile_version || transaction.routingProfileVersion || '',
     hasMultipleBuyers: countRelated(transaction, ['buyers', 'buyer_participants', 'buyer_count', 'purchaser_count']) > 1,
     hasMultipleSellers: countRelated(transaction, ['sellers', 'seller_participants', 'seller_count', 'vendor_count']) > 1,
     rawFieldsUsed,
@@ -240,4 +348,6 @@ export const transactionFactsFieldCandidates = {
   sellerEntityType: SELLER_ENTITY_FIELD_CANDIDATES,
   sellerBond: SELLER_BOND_FIELD_CANDIDATES,
   cancellation: CANCELLATION_FIELD_CANDIDATES,
+  propertyTenure: PROPERTY_TENURE_FIELD_CANDIDATES,
+  vatTreatment: VAT_TREATMENT_FIELD_CANDIDATES,
 }

@@ -161,6 +161,7 @@ const ICON_BY_KEY = {
   agent_intelligence_performance: BriefcaseBusiness,
   agent_intelligence_network: Users,
   platform_diagnostics: ShieldUser,
+  platform_transaction_routing: Workflow,
 }
 
 const BRIDGE_BRAND_MARK = 'bridge.'

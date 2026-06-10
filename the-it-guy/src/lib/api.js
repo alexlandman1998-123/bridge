@@ -151,6 +151,8 @@ import {
   maybeResolveTransactionDocumentRequirements,
 } from '../services/documents/transactionCanonicalDocumentRequirementService'
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
+import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
+import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
 
 const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
 const CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG = 'VITE_CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH'
@@ -14424,7 +14426,7 @@ async function fetchTransactionRowById(client, transactionId) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, listing_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, matter_number, transaction_reference, transaction_type, property_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, cancellation_required, vat_treatment, routing_profile_version, routing_profile_json, development_id, unit_id, listing_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .eq('id', transactionId)
@@ -14436,6 +14438,14 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'matter_number') ||
       isMissingColumnError(query.error, 'transaction_type') ||
       isMissingColumnError(query.error, 'property_type') ||
+      isMissingColumnError(query.error, 'property_tenure') ||
+      isMissingColumnError(query.error, 'seller_type') ||
+      isMissingColumnError(query.error, 'seller_has_existing_bond') ||
+      isMissingColumnError(query.error, 'existing_bond') ||
+      isMissingColumnError(query.error, 'cancellation_required') ||
+      isMissingColumnError(query.error, 'vat_treatment') ||
+      isMissingColumnError(query.error, 'routing_profile_version') ||
+      isMissingColumnError(query.error, 'routing_profile_json') ||
       isMissingColumnError(query.error, 'property_address_line_1') ||
       isMissingColumnError(query.error, 'matter_owner') ||
       isMissingColumnError(query.error, 'development_id') ||
@@ -14492,6 +14502,14 @@ async function fetchTransactionRowById(client, transactionId) {
       'transaction_reference',
       'transaction_type',
       'property_type',
+      'property_tenure',
+      'seller_type',
+      'seller_has_existing_bond',
+      'existing_bond',
+      'cancellation_required',
+      'vat_treatment',
+      'routing_profile_version',
+      'routing_profile_json',
       'property_address_line_1',
       'matter_owner',
       'development_id',
@@ -28219,6 +28237,424 @@ export async function saveTransactionClientInformation({
   }
 }
 
+function normalizeRoutingKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+}
+
+function normalizeRoutingBoolean(value, fallback = false) {
+  if (typeof value === 'boolean') return value
+  if (value === null || value === undefined || value === '') return Boolean(fallback)
+  const normalized = normalizeRoutingKey(value)
+  if (['1', 'true', 'yes', 'y', 'required', 'applies', 'existing_bond'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'n', 'not_required', 'none'].includes(normalized)) return false
+  return Boolean(fallback)
+}
+
+function normalizeRoutingFinanceType(value, fallback = 'unknown') {
+  const normalized = normalizeFinanceType(value || '', { allowUnknown: true })
+  if (normalized === 'combination') return 'hybrid'
+  if (normalized === 'unknown') return fallback
+  return normalized || fallback
+}
+
+function nullableUnknown(value) {
+  const normalized = normalizeRoutingKey(value)
+  return normalized && normalized !== 'unknown' ? normalized : null
+}
+
+function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) {
+  const financeType = normalizeRoutingFinanceType(input.financeType ?? input.finance_type ?? transaction.finance_type, 'unknown')
+  const sellerHasExistingBond = normalizeRoutingBoolean(
+    input.sellerHasExistingBond ?? input.seller_has_existing_bond ?? input.existingBond ?? input.existing_bond,
+    transaction.seller_has_existing_bond ?? transaction.existing_bond ?? false,
+  )
+  const cancellationRequired = normalizeRoutingBoolean(
+    input.cancellationRequired ?? input.cancellation_required,
+    transaction.cancellation_required ?? sellerHasExistingBond,
+  ) || sellerHasExistingBond
+  const nextTransaction = {
+    ...transaction,
+    finance_type: financeType === 'unknown' ? transaction.finance_type || null : financeType,
+    transaction_type: nullableUnknown(input.transactionType ?? input.transaction_type ?? transaction.transaction_type),
+    property_type: normalizeNullableText(input.propertyType ?? input.property_type ?? transaction.property_type),
+    property_tenure: nullableUnknown(input.propertyTenure ?? input.property_tenure ?? transaction.property_tenure),
+    purchaser_type: normalizePurchaserType(input.purchaserType ?? input.purchaser_type ?? transaction.purchaser_type),
+    buyer_entity_type: normalizePurchaserType(input.purchaserType ?? input.purchaser_type ?? transaction.purchaser_type),
+    seller_type: nullableUnknown(input.sellerType ?? input.seller_type ?? transaction.seller_type),
+    seller_entity_type: nullableUnknown(input.sellerType ?? input.seller_type ?? transaction.seller_type),
+    seller_has_existing_bond: sellerHasExistingBond,
+    existing_bond: sellerHasExistingBond,
+    cancellation_required: cancellationRequired,
+    vat_treatment: nullableUnknown(input.vatTreatment ?? input.vat_treatment ?? transaction.vat_treatment),
+  }
+  const routingProfile = resolveTransactionRoutingProfile({ transaction: nextTransaction })
+  const resolvedFinanceType = routingProfile.financeType === 'hybrid' ? 'hybrid' : financeType
+  const resolvedTransactionType = routingProfile.transactionType && routingProfile.transactionType !== 'unknown'
+    ? routingProfile.transactionType
+    : nextTransaction.transaction_type
+  return {
+    payload: {
+      finance_type: resolvedFinanceType && resolvedFinanceType !== 'unknown' ? resolvedFinanceType : null,
+      transaction_type: resolvedTransactionType || null,
+      property_type: nextTransaction.property_type || null,
+      property_tenure: routingProfile.propertyTenure && routingProfile.propertyTenure !== 'unknown' ? routingProfile.propertyTenure : nextTransaction.property_tenure || null,
+      purchaser_type: routingProfile.buyerEntityType && routingProfile.buyerEntityType !== 'unknown' ? routingProfile.buyerEntityType : nextTransaction.purchaser_type || null,
+      seller_type: routingProfile.sellerEntityType && routingProfile.sellerEntityType !== 'unknown' ? routingProfile.sellerEntityType : nextTransaction.seller_type || null,
+      seller_has_existing_bond: Boolean(routingProfile.sellerHasExistingBond),
+      existing_bond: Boolean(routingProfile.sellerHasExistingBond),
+      cancellation_required: Boolean(routingProfile.cancellationRequired),
+      vat_treatment: routingProfile.vatTreatment && routingProfile.vatTreatment !== 'unknown' ? routingProfile.vatTreatment : null,
+      routing_profile_version: routingProfile.version || null,
+      routing_profile_json: routingProfile,
+      updated_at: new Date().toISOString(),
+    },
+    routingProfile,
+  }
+}
+
+export async function saveTransactionRoutingProfile({
+  transactionId,
+  financeType,
+  transactionType,
+  propertyType,
+  propertyTenure,
+  purchaserType,
+  sellerType,
+  sellerHasExistingBond,
+  cancellationRequired,
+  vatTreatment,
+  reason = '',
+  actorRole = null,
+} = {}) {
+  if (!transactionId) throw new Error('Transaction is required.')
+
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'attorney')
+  if (!['attorney', 'developer', 'internal_admin', 'admin', 'agent', 'bond_originator'].includes(normalizedActorRole)) {
+    throw new Error('Your role does not have permission to update routing facts.')
+  }
+
+  let transactionQuery = await client
+    .from('transactions')
+    .select(
+      selectWithoutKnownMissingColumns(
+        'id, finance_type, transaction_type, property_type, property_tenure, purchaser_type, seller_type, seller_has_existing_bond, existing_bond, cancellation_required, vat_treatment, routing_profile_version, routing_profile_json, updated_at',
+      ),
+    )
+    .eq('id', transactionId)
+    .maybeSingle()
+
+  if (transactionQuery.error && isMissingColumnError(transactionQuery.error)) {
+    registerKnownMissingColumns(transactionQuery.error, [
+      'transaction_type',
+      'property_type',
+      'property_tenure',
+      'purchaser_type',
+      'seller_type',
+      'seller_has_existing_bond',
+      'existing_bond',
+      'cancellation_required',
+      'vat_treatment',
+      'routing_profile_version',
+      'routing_profile_json',
+    ])
+    transactionQuery = await client
+      .from('transactions')
+      .select(selectWithoutKnownMissingColumns('id, finance_type, transaction_type, property_type, purchaser_type, updated_at'))
+      .eq('id', transactionId)
+      .maybeSingle()
+  }
+
+  if (transactionQuery.error) throw transactionQuery.error
+  const transaction = transactionQuery.data
+  if (!transaction) throw new Error('Transaction not found.')
+
+  const { payload, routingProfile } = buildTransactionRoutingCorrectionPayload(transaction, {
+    financeType,
+    transactionType,
+    propertyType,
+    propertyTenure,
+    purchaserType,
+    sellerType,
+    sellerHasExistingBond,
+    cancellationRequired,
+    vatTreatment,
+  })
+
+  const fallbackColumns = [
+    'transaction_type',
+    'property_type',
+    'property_tenure',
+    'purchaser_type',
+    'seller_type',
+    'seller_has_existing_bond',
+    'existing_bond',
+    'cancellation_required',
+    'vat_treatment',
+    'routing_profile_version',
+    'routing_profile_json',
+  ]
+  let updatePayload = { ...payload }
+  let updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
+
+  if (updateResult.error && isFinanceTypeConstraintError(updateResult.error) && updatePayload.finance_type === 'hybrid') {
+    updatePayload = { ...updatePayload, finance_type: 'combination' }
+    updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
+  }
+
+  if (updateResult.error) {
+    let fallbackError = updateResult.error
+    let fallbackAttempts = 0
+    while (fallbackError && fallbackAttempts < fallbackColumns.length) {
+      const missingColumns = fallbackColumns.filter((column) => isMissingColumnError(fallbackError, column))
+      if (!missingColumns.length) break
+      const beforeKeys = Object.keys(updatePayload).length
+      missingColumns.forEach((column) => {
+        delete updatePayload[column]
+      })
+      if (Object.keys(updatePayload).length === beforeKeys) break
+      const fallbackResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
+      updateResult = fallbackResult
+      fallbackError = fallbackResult.error
+      fallbackAttempts += 1
+      if (!fallbackError) break
+    }
+  }
+
+  if (updateResult.error) throw updateResult.error
+
+  try {
+    await logTransactionEventIfPossible(client, {
+      transactionId,
+      eventType: 'RoutingProfileUpdated',
+      eventData: {
+        reason: normalizeNullableText(reason),
+        routingProfileVersion: routingProfile.version,
+        workflowTemplateKey: routingProfile.workflowTemplateKey,
+        requiredWorkflowKeys: routingProfile.requiredWorkflowKeys,
+        missingFields: routingProfile.missingFields,
+      },
+      createdBy: actorProfile.userId || null,
+      createdByRole: normalizedActorRole,
+    })
+  } catch (eventError) {
+    console.warn('[transaction-routing] unable to record routing update event', eventError)
+  }
+
+  await publishWorkflowChangedIfPossible(client, {
+    transactionId,
+    triggerType: 'routing_profile',
+    triggerId: transactionId,
+    reasonCode: 'routing_profile_updated',
+    userId: actorProfile.userId || null,
+    source: 'transaction_routing_profile',
+    payload: {
+      routingProfileVersion: routingProfile.version,
+      requiredWorkflowKeys: routingProfile.requiredWorkflowKeys,
+      missingFields: routingProfile.missingFields,
+    },
+  })
+
+  return fetchTransactionById(transactionId)
+}
+
+async function updateTransactionRoutingBackfillPayload(client, transactionId, payload = {}) {
+  const fallbackColumns = [
+    'transaction_type',
+    'property_tenure',
+    'purchaser_type',
+    'seller_type',
+    'seller_has_existing_bond',
+    'existing_bond',
+    'cancellation_required',
+    'vat_treatment',
+    'routing_profile_version',
+    'routing_profile_json',
+    'updated_at',
+  ]
+  let updatePayload = { ...payload, updated_at: new Date().toISOString() }
+  let updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
+
+  if (updateResult.error && isFinanceTypeConstraintError(updateResult.error) && updatePayload.finance_type === 'hybrid') {
+    updatePayload = { ...updatePayload, finance_type: 'combination' }
+    updateResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
+  }
+
+  if (updateResult.error) {
+    let fallbackError = updateResult.error
+    let fallbackAttempts = 0
+    while (fallbackError && fallbackAttempts < fallbackColumns.length) {
+      const missingColumns = fallbackColumns.filter((column) => isMissingColumnError(fallbackError, column))
+      if (!missingColumns.length) break
+      const beforeKeys = Object.keys(updatePayload).length
+      missingColumns.forEach((column) => {
+        delete updatePayload[column]
+      })
+      if (Object.keys(updatePayload).length === beforeKeys) break
+      const fallbackResult = await client.from('transactions').update(updatePayload).eq('id', transactionId)
+      updateResult = fallbackResult
+      fallbackError = fallbackResult.error
+      fallbackAttempts += 1
+      if (!fallbackError) break
+    }
+  }
+
+  if (updateResult.error) throw updateResult.error
+  return updatePayload
+}
+
+export async function runTransactionRoutingProfileBackfill({
+  organisationId = '',
+  transactionIds = [],
+  limit = 200,
+  dryRun = true,
+  includeNeedsFacts = false,
+  actorRole = null,
+} = {}) {
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'developer')
+  if (!['developer', 'internal_admin', 'admin', 'agency_admin'].includes(normalizedActorRole)) {
+    throw new Error('You do not have permission to run transaction routing backfills.')
+  }
+
+  const boundedLimit = Math.max(1, Math.min(Number(limit) || 200, 1000))
+  const normalizedTransactionIds = (Array.isArray(transactionIds) ? transactionIds : [])
+    .map((id) => normalizeNullableText(id))
+    .filter(Boolean)
+
+  let query = client
+    .from('transactions')
+    .select(
+      selectWithoutKnownMissingColumns(
+        'id, organisation_id, finance_type, transaction_type, property_type, property_tenure, purchaser_type, seller_type, seller_has_existing_bond, existing_bond, cancellation_required, vat_treatment, development_id, unit_id, routing_profile_version, routing_profile_json, is_active, updated_at, created_at',
+      ),
+    )
+    .order('updated_at', { ascending: false })
+    .limit(boundedLimit)
+
+  if (normalizeNullableText(organisationId)) query = query.eq('organisation_id', normalizeNullableText(organisationId))
+  if (normalizedTransactionIds.length) query = query.in('id', normalizedTransactionIds)
+
+  let rowsQuery = await query
+
+  if (rowsQuery.error && isMissingColumnError(rowsQuery.error)) {
+    registerKnownMissingColumns(rowsQuery.error, [
+      'organisation_id',
+      'transaction_type',
+      'property_type',
+      'property_tenure',
+      'purchaser_type',
+      'seller_type',
+      'seller_has_existing_bond',
+      'existing_bond',
+      'cancellation_required',
+      'vat_treatment',
+      'development_id',
+      'unit_id',
+      'routing_profile_version',
+      'routing_profile_json',
+      'is_active',
+      'updated_at',
+      'created_at',
+    ])
+
+    let fallbackQuery = client
+      .from('transactions')
+      .select(selectWithoutKnownMissingColumns('id, organisation_id, finance_type, transaction_type, property_type, development_id, unit_id, updated_at, created_at'))
+      .order('updated_at', { ascending: false })
+      .limit(boundedLimit)
+
+    if (normalizeNullableText(organisationId)) fallbackQuery = fallbackQuery.eq('organisation_id', normalizeNullableText(organisationId))
+    if (normalizedTransactionIds.length) fallbackQuery = fallbackQuery.in('id', normalizedTransactionIds)
+    rowsQuery = await fallbackQuery
+  }
+
+  if (rowsQuery.error) throw rowsQuery.error
+
+  const rows = Array.isArray(rowsQuery.data) ? rowsQuery.data : []
+  const plan = buildTransactionRoutingBackfillPlan(rows, {
+    dryRun,
+    includeNeedsFacts,
+  })
+
+  if (dryRun) {
+    return {
+      ...plan,
+      applied: [],
+      skipped: plan.operations.map((operation) => ({
+        transactionId: operation.transactionId,
+        reason: 'dry_run',
+      })),
+    }
+  }
+
+  const applied = []
+  const skipped = []
+  for (const operation of plan.operations) {
+    if (!operation.transactionId) {
+      skipped.push({ transactionId: null, reason: 'missing_transaction_id' })
+      continue
+    }
+
+    try {
+      const appliedPayload = await updateTransactionRoutingBackfillPayload(client, operation.transactionId, operation.updatePayload)
+      applied.push({
+        transactionId: operation.transactionId,
+        reasonCodes: operation.reasonCodes,
+        persistedColumns: Object.keys(appliedPayload),
+      })
+      await logTransactionEventIfPossible(client, {
+        transactionId: operation.transactionId,
+        eventType: 'RoutingProfileBackfilled',
+        eventData: {
+          reasonCodes: operation.reasonCodes,
+          missingFields: operation.missingFields,
+          source: 'phase6_routing_backfill',
+        },
+        createdBy: actorProfile.userId || null,
+        createdByRole: normalizedActorRole,
+      }).catch((eventError) => {
+        console.warn('[transaction-routing] unable to record routing backfill event', eventError)
+      })
+      await publishWorkflowChangedIfPossible(client, {
+        transactionId: operation.transactionId,
+        triggerType: 'routing_profile',
+        triggerId: operation.transactionId,
+        reasonCode: 'routing_profile_backfilled',
+        userId: actorProfile.userId || null,
+        source: 'transaction_routing_profile_backfill',
+        payload: {
+          reasonCodes: operation.reasonCodes,
+          missingFields: operation.missingFields,
+        },
+      })
+    } catch (error) {
+      skipped.push({
+        transactionId: operation.transactionId,
+        reason: error?.message || String(error),
+      })
+    }
+  }
+
+  return {
+    ...plan,
+    dryRun: false,
+    applied,
+    skipped,
+    summary: {
+      ...plan.summary,
+      appliedUpdates: applied.length,
+      skippedUpdates: skipped.length,
+    },
+  }
+}
+
 export async function updateTransactionStakeholderContacts({
   transactionId,
   buyerName,
@@ -37574,6 +38010,7 @@ function buildDefaultProfileFromUser(user) {
     fullName: fullName || metadataFullName || null,
     companyName: String(metadata.company_name || metadata.company || '').trim() || '',
     phoneNumber: String(metadata.phone || metadata.phone_number || '').trim() || '',
+    avatarUrl: String(metadata.avatar_url || metadata.avatarUrl || metadata.picture || '').trim() || '',
     role: normalizeAppRole(metadata.role || metadata.role_type || metadata.persona || metadata.app_role || DEFAULT_APP_ROLE),
     systemRole: resolveSystemRole({ role: metadata.role || metadata.role_type || metadata.persona || metadata.app_role || DEFAULT_APP_ROLE }),
     primaryAttorneyFirmId: null,
@@ -37598,6 +38035,7 @@ function normalizeProfileRow(row, user, fallback = null) {
     fullName: combinedName || row?.full_name || base.fullName || null,
     companyName: row?.company_name || base.companyName || '',
     phoneNumber: row?.phone_number || base.phoneNumber || '',
+    avatarUrl: row?.avatar_url || base.avatarUrl || '',
     role: normalizeAppRole(row?.role || base.role || DEFAULT_APP_ROLE),
     systemRole: resolveSystemRole({ system_role: row?.system_role || base.systemRole, role: row?.role || base.role }),
     primaryAttorneyFirmId: row?.primary_attorney_firm_id || base.primaryAttorneyFirmId || null,
@@ -37620,6 +38058,7 @@ async function ensureProfileRecord(client, user, fallbackProfile) {
     full_name: fallbackProfile.fullName || null,
     company_name: fallbackProfile.companyName || null,
     phone_number: fallbackProfile.phoneNumber || null,
+    avatar_url: fallbackProfile.avatarUrl || null,
     role: normalizeAppRole(fallbackProfile.role),
     system_role: resolveSystemRole(fallbackProfile),
     primary_attorney_firm_id: fallbackProfile.primaryAttorneyFirmId || null,
@@ -37631,18 +38070,22 @@ async function ensureProfileRecord(client, user, fallbackProfile) {
     .from('profiles')
     .upsert(rowPayload, { onConflict: 'id' })
     .select(
-      'id, email, first_name, last_name, full_name, company_name, phone_number, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
+      'id, email, first_name, last_name, full_name, company_name, phone_number, avatar_url, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
     )
     .single()
 
   if (
     result.error &&
-    (isMissingColumnError(result.error, 'primary_attorney_firm_id') || isMissingColumnError(result.error, 'attorney_role') || isMissingColumnError(result.error, 'system_role'))
+    (isMissingColumnError(result.error, 'primary_attorney_firm_id') ||
+      isMissingColumnError(result.error, 'attorney_role') ||
+      isMissingColumnError(result.error, 'system_role') ||
+      isMissingColumnError(result.error, 'avatar_url'))
   ) {
     const legacyPayload = { ...rowPayload }
     delete legacyPayload.primary_attorney_firm_id
     delete legacyPayload.attorney_role
     delete legacyPayload.system_role
+    delete legacyPayload.avatar_url
     result = await client
       .from('profiles')
       .upsert(legacyPayload, { onConflict: 'id' })
@@ -37688,14 +38131,17 @@ export async function getOrCreateUserProfile({ user } = {}) {
   let profileQuery = await client
     .from('profiles')
     .select(
-      'id, email, first_name, last_name, full_name, company_name, phone_number, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
+      'id, email, first_name, last_name, full_name, company_name, phone_number, avatar_url, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
     )
     .eq('id', activeUser.id)
     .maybeSingle()
 
   if (
     profileQuery.error &&
-    (isMissingColumnError(profileQuery.error, 'primary_attorney_firm_id') || isMissingColumnError(profileQuery.error, 'attorney_role') || isMissingColumnError(profileQuery.error, 'system_role'))
+    (isMissingColumnError(profileQuery.error, 'primary_attorney_firm_id') ||
+      isMissingColumnError(profileQuery.error, 'attorney_role') ||
+      isMissingColumnError(profileQuery.error, 'system_role') ||
+      isMissingColumnError(profileQuery.error, 'avatar_url'))
   ) {
     profileQuery = await client
       .from('profiles')
@@ -37740,6 +38186,7 @@ export async function updateUserProfile({
   lastName,
   companyName,
   phoneNumber,
+  avatarUrl,
   role,
   onboardingCompleted,
   primaryAttorneyFirmId,
@@ -37778,6 +38225,10 @@ export async function updateUserProfile({
     payload.phone_number = normalizeNullableText(phoneNumber)
   }
 
+  if (avatarUrl !== undefined) {
+    payload.avatar_url = normalizeNullableText(avatarUrl)
+  }
+
   if (role !== undefined) {
     payload.role = normalizeAppRole(role)
     payload.system_role = resolveSystemRole({ role: payload.role })
@@ -37810,18 +38261,19 @@ export async function updateUserProfile({
     .from('profiles')
     .upsert(payload, { onConflict: 'id' })
     .select(
-      'id, email, first_name, last_name, full_name, company_name, phone_number, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
+      'id, email, first_name, last_name, full_name, company_name, phone_number, avatar_url, role, system_role, primary_attorney_firm_id, attorney_role, onboarding_completed, created_at, updated_at',
     )
     .single()
 
   if (
     updateResult.error &&
-    (isMissingColumnError(updateResult.error, 'primary_attorney_firm_id') || isMissingColumnError(updateResult.error, 'attorney_role') || isMissingColumnError(updateResult.error, 'system_role'))
+    (isMissingColumnError(updateResult.error, 'primary_attorney_firm_id') || isMissingColumnError(updateResult.error, 'attorney_role') || isMissingColumnError(updateResult.error, 'system_role') || isMissingColumnError(updateResult.error, 'avatar_url'))
   ) {
     const legacyPayload = { ...payload }
     delete legacyPayload.primary_attorney_firm_id
     delete legacyPayload.attorney_role
     delete legacyPayload.system_role
+    delete legacyPayload.avatar_url
     updateResult = await client
       .from('profiles')
       .upsert(legacyPayload, { onConflict: 'id' })

@@ -50,6 +50,14 @@ const TABS = [
   { key: 'settings', label: 'Settings' },
 ]
 
+const BRANCH_AGENT_ROLE_VALUES = new Set([
+  'agent',
+  'assistant',
+  'transaction_coordinator',
+  'listing_coordinator',
+  'admin_coordinator',
+])
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -95,7 +103,7 @@ async function sendBranchInviteEmail({ invite, organisationName }) {
       to: recipientEmail,
       inviteeName: invite?.name || `${invite?.firstName || ''} ${invite?.surname || ''}`.trim(),
       organisationName: organisationName || invite?.organisationName || 'Bridge Organisation',
-      workspaceRole: 'agent',
+      workspaceRole: invite?.roleLabel || formatRoleLabel(invite?.role || 'agent'),
       inviteLink,
     },
   })
@@ -107,11 +115,6 @@ async function sendBranchInviteEmail({ invite, organisationName }) {
 
 function normalizeAgentInviteRole(value) {
   const normalized = normalizeText(value).toLowerCase()
-  if (normalized === 'super_admin') return 'owner'
-  if (normalized === 'admin' || normalized === 'branch_admin') return 'admin_staff'
-  if (normalized === 'senior_agent') return 'agent'
-  if (normalized === 'branch_manager') return 'branch_manager'
-  if (normalized === 'principal') return 'principal'
   if (['assistant', 'transaction_coordinator', 'listing_coordinator', 'admin_coordinator'].includes(normalized)) return normalized
   return 'agent'
 }
@@ -125,6 +128,10 @@ function formatRoleLabel(value) {
     .filter(Boolean)
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(' ') || 'Agent'
+}
+
+function getBranchAgentRoleOptions() {
+  return AGENT_ROLE_OPTIONS.filter((option) => BRANCH_AGENT_ROLE_VALUES.has(option.value))
 }
 
 function formatDateShort(value) {
@@ -395,6 +402,7 @@ function BranchAgentInviteModal({
 }) {
   const defaultCommissionStructure = commissionStructures.find((structure) => structure?.isDefault) || null
   const hasCommissionStructures = commissionStructures.length > 0
+  const branchAgentRoleOptions = useMemo(() => getBranchAgentRoleOptions(), [])
   const [form, setForm] = useState({
     firstName: '',
     surname: '',
@@ -479,11 +487,13 @@ function BranchAgentInviteModal({
     try {
       setSubmitting(true)
       setError('')
+      const resolvedWorkspaceRole = normalizeAgentInviteRole(form.role)
+      const resolvedRoleLabel = formatRoleLabel(resolvedWorkspaceRole)
       const inviteResult = await createInvite({
         invite_type: 'branch_invite',
         expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
         target_workspace_id: organisation?.id || branch?.organisationId,
-        target_workspace_role: normalizeAgentInviteRole(form.role),
+        target_workspace_role: resolvedWorkspaceRole,
         target_branch_id: branch?.id,
         email: form.email,
         phone: form.mobile,
@@ -493,7 +503,8 @@ function BranchAgentInviteModal({
           last_name: normalizeText(form.surname),
           mobile: normalizeText(form.mobile),
           branch_name: branch?.name || '',
-          role: form.role,
+          role: resolvedWorkspaceRole,
+          role_label: resolvedRoleLabel,
           commission_structure_id: selectedCommissionStructure.id,
           commission_structure_name: selectedCommissionStructure.name,
           notes: normalizeText(form.notes),
@@ -508,6 +519,9 @@ function BranchAgentInviteModal({
         email: form.email,
         mobile: form.mobile,
         organisationName: organisation?.name || 'Bridge Organisation',
+        branchName: branch?.name || '',
+        role: resolvedWorkspaceRole,
+        roleLabel: resolvedRoleLabel,
       }
 
       await assignOrganisationUserCommissionProfile({
@@ -575,7 +589,7 @@ function BranchAgentInviteModal({
             <label className="grid gap-1.5">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Role / Permission</span>
               <Field as="select" value={form.role} onChange={(event) => updateField('role', event.target.value)}>
-                {AGENT_ROLE_OPTIONS.map((option) => (
+                {branchAgentRoleOptions.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </Field>

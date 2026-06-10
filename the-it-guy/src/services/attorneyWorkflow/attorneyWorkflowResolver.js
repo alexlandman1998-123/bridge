@@ -506,6 +506,72 @@ function addTransactionTypeRequirements(requirements, facts) {
   }
 }
 
+function addPropertyTenureRequirements(requirements, facts) {
+  if (facts.isSectionalTitle) {
+    requirements.push(
+      documentRequirement({
+        id: 'body_corporate_levy_clearance',
+        label: 'Body Corporate Levy Clearance',
+        category: 'property_documents',
+        appliesTo: 'property',
+        reason: 'Sectional title transfers require levy clearance from the body corporate.',
+      }),
+      documentRequirement({
+        id: 'sectional_title_conduct_rules',
+        label: 'Sectional Title Conduct Rules',
+        category: 'property_documents',
+        appliesTo: 'property',
+        required: false,
+        reason: 'Sectional title matters may require body corporate conduct rules.',
+      }),
+    )
+  }
+
+  if (facts.isEstateHoa) {
+    requirements.push(
+      documentRequirement({
+        id: 'hoa_levy_clearance',
+        label: 'HOA Levy Clearance',
+        category: 'property_documents',
+        appliesTo: 'property',
+        reason: 'Estate/HOA transfers require HOA levy clearance.',
+      }),
+      documentRequirement({
+        id: 'hoa_consent',
+        label: 'HOA Consent',
+        category: 'property_documents',
+        appliesTo: 'property',
+        required: false,
+        reason: 'Some estate transfers require HOA consent before transfer.',
+      }),
+    )
+  }
+}
+
+function addVatTreatmentRequirements(requirements, facts) {
+  if (!facts.hasVatTreatment) return
+  requirements.push(
+    documentRequirement({
+      id: 'vat_status_confirmation',
+      label: 'VAT Status Confirmation',
+      category: 'commercial_documents',
+      appliesTo: 'transaction',
+      reason: 'VAT-routed transfers require VAT treatment confirmation.',
+    }),
+  )
+  if (facts.vatTreatment === 'zero_rated_going_concern') {
+    requirements.push(
+      documentRequirement({
+        id: 'zero_rated_going_concern_confirmation',
+        label: 'Zero-Rated Going Concern Confirmation',
+        category: 'commercial_documents',
+        appliesTo: 'transaction',
+        reason: 'Zero-rated going concern transactions require supporting VAT confirmation.',
+      }),
+    )
+  }
+}
+
 export function resolveLegalRequirements(transactionOrFacts = {}) {
   const facts = transactionOrFacts?.rawFieldsUsed ? transactionOrFacts : resolveTransactionFacts(transactionOrFacts)
   const lanes = resolveAttorneyLanes(facts)
@@ -535,6 +601,8 @@ export function resolveLegalRequirements(transactionOrFacts = {}) {
   addBuyerRequirements(documentRequirements, updateOptions, facts)
   addSellerRequirements(documentRequirements, updateOptions, facts)
   addTransactionTypeRequirements(documentRequirements, facts)
+  addPropertyTenureRequirements(documentRequirements, facts)
+  addVatTreatmentRequirements(documentRequirements, facts)
 
   if (facts.requiresBondAttorney) {
     documentRequirements.push(

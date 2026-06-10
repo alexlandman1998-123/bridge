@@ -172,6 +172,7 @@ const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
 const PartnerPortalPage = lazy(() => import('./pages/PartnerPortalPage'))
 const PartnersPage = lazy(() => import('./pages/PartnersPage'))
 const PlatformDiagnosticsPage = lazy(() => import('./pages/PlatformDiagnosticsPage'))
+const TransactionRoutingRolloutPage = lazy(() => import('./pages/TransactionRoutingRolloutPage'))
 const WorkflowMigrationValidationPage = lazy(() => import('./pages/WorkflowMigrationValidationPage'))
 const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
@@ -528,7 +529,7 @@ function AppLayout({ onLogout, session = null, user }) {
               onNewTransaction={() => handleOpenNewTransaction()}
               onNewDevelopment={() => setDevelopmentModalOpen(true)}
               onLogout={onLogout}
-              user={user}
+              user={{ ...(user || {}), ...(profile || {}) }}
             />
           </Suspense>
         ) : null}
@@ -1253,6 +1254,14 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['platform_admin', 'developer']}>
                     <WorkflowMigrationValidationPage />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/platform/transaction-routing-rollout"
+                element={
+                  <RoleRoute allowedRoles={['platform_admin', 'developer']}>
+                    <TransactionRoutingRolloutPage />
                   </RoleRoute>
                 }
               />

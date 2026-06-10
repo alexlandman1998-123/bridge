@@ -88,6 +88,20 @@ function getUserInitials(user) {
   return 'IT'
 }
 
+function getUserAvatarUrl(user) {
+  return String(
+    user?.avatarUrl ||
+      user?.avatar_url ||
+      user?.profilePhotoUrl ||
+      user?.profile_photo_url ||
+      user?.photoUrl ||
+      user?.photo_url ||
+      user?.user_metadata?.avatar_url ||
+      user?.user_metadata?.picture ||
+      '',
+  ).trim()
+}
+
 function formatNotificationTimestamp(value) {
   if (!value) {
     return 'Just now'
@@ -323,6 +337,7 @@ function HeaderBar({ onLogout, user }) {
   const hideSearchInHeader = role === 'attorney' && (location.pathname === '/dashboard' || location.pathname === '/')
   const developerDashboardHeaderOnly = role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/')
   const userInitials = getUserInitials(user)
+  const userAvatarUrl = getUserAvatarUrl(user)
   const isAgentsDirectoryRoute = location.pathname === '/agency/agents'
   const showPersonaSwitcher = role !== 'bond_originator' && !isAgentsDirectoryRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
@@ -432,7 +447,9 @@ function HeaderBar({ onLogout, user }) {
         className="ui-shell-avatar-trigger h-[44px]"
         onClick={() => setOpen((previous) => !previous)}
       >
-        <span className="inline-grid h-7 w-7 place-items-center rounded-full bg-textStrong text-secondary font-semibold text-textInverse">{userInitials}</span>
+        <span className="inline-grid h-7 w-7 place-items-center overflow-hidden rounded-full bg-textStrong text-secondary font-semibold text-textInverse">
+          {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : userInitials}
+        </span>
         <ChevronDown size={14} />
       </button>
 

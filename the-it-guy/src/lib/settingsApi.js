@@ -1587,6 +1587,7 @@ function normalizeAccountSettings(row, profile) {
     lastName: normalizeText(row?.last_name) || profile?.lastName || '',
     email: normalizeText(row?.email) || profile?.email || '',
     phoneNumber: normalizeText(row?.phone_number) || profile?.phoneNumber || '',
+    avatarUrl: normalizeText(row?.avatar_url) || profile?.avatarUrl || '',
     companyName: normalizeText(row?.company_name) || profile?.companyName || '',
     title: normalizeText(row?.title),
     timezone: normalizeText(row?.timezone) || 'Africa/Johannesburg',
@@ -2205,6 +2206,7 @@ export async function fetchAccountSettings() {
       lastName: 'User',
       email: '',
       phoneNumber: '',
+      avatarUrl: '',
       companyName: '',
       role: 'viewer',
     })
@@ -2223,6 +2225,7 @@ export async function fetchAccountSettings() {
       full_name,
       company_name,
       phone_number,
+      avatar_url,
       role,
       title,
       timezone,
@@ -2233,7 +2236,7 @@ export async function fetchAccountSettings() {
     .maybeSingle()
 
   if (error) {
-    if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'title')) {
+    if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'title') || isMissingColumnError(error, 'avatar_url')) {
       return normalizeAccountSettings({}, profile)
     }
     throw error
@@ -2253,6 +2256,7 @@ export async function updateAccountSettings(input = {}) {
     full_name: normalizeNullableText([input.firstName, input.lastName].filter(Boolean).join(' ')),
     company_name: normalizeNullableText(input.companyName),
     phone_number: normalizeNullableText(input.phoneNumber),
+    avatar_url: normalizeNullableText(input.avatarUrl),
     title: normalizeNullableText(input.title),
     timezone: normalizeNullableText(input.timezone) || 'Africa/Johannesburg',
     date_format: normalizeNullableText(input.dateFormat) || 'DD MMM YYYY',
@@ -2273,6 +2277,7 @@ export async function updateAccountSettings(input = {}) {
       full_name,
       company_name,
       phone_number,
+      avatar_url,
       role,
       title,
       timezone,
@@ -2282,13 +2287,14 @@ export async function updateAccountSettings(input = {}) {
     .single()
 
   if (error) {
-    if (isMissingColumnError(error, 'title') || isMissingColumnError(error, 'notification_preferences_json')) {
+    if (isMissingColumnError(error, 'title') || isMissingColumnError(error, 'notification_preferences_json') || isMissingColumnError(error, 'avatar_url')) {
       await updateUserProfile({
         userId: user.id,
         firstName: input.firstName,
         lastName: input.lastName,
         companyName: input.companyName,
         phoneNumber: input.phoneNumber,
+        avatarUrl: input.avatarUrl,
       })
 
       return normalizeAccountSettings(
@@ -2299,6 +2305,7 @@ export async function updateAccountSettings(input = {}) {
           last_name: input.lastName,
           company_name: input.companyName,
           phone_number: input.phoneNumber,
+          avatar_url: input.avatarUrl,
         },
         { id: user.id, email: user.email, role: 'viewer' },
       )
@@ -4002,12 +4009,36 @@ function normalizeOrganisationUserRow(row) {
     lastName: normalizeText(row?.last_name),
     fullName: [normalizeText(row?.first_name), normalizeText(row?.last_name)].filter(Boolean).join(' ') || normalizeText(row?.email),
     email: normalizeText(row?.email),
+    avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profile?.avatar_url),
     role: normalizeText(row?.role) || 'viewer',
     status: normalizeText(row?.status) || 'invited',
     lastActiveAt: row?.last_active_at || null,
     invitedAt: row?.invited_at || null,
     acceptedAt: row?.accepted_at || null,
   }
+}
+
+async function fetchOrganisationUserProfileAvatars(client, userIds = []) {
+  const ids = [...new Set(userIds.map((id) => normalizeText(id)).filter(Boolean))]
+  if (!ids.length) return {}
+
+  const { data, error } = await client
+    .from('profiles')
+    .select('id, avatar_url')
+    .in('id', ids)
+
+  if (error) {
+    if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'avatar_url') || isPermissionDeniedError(error)) {
+      return {}
+    }
+    throw error
+  }
+
+  return (data || []).reduce((accumulator, row) => {
+    const id = normalizeText(row?.id)
+    if (id) accumulator[id] = normalizeText(row?.avatar_url)
+    return accumulator
+  }, {})
 }
 
 export async function listOrganisationUsers() {
@@ -4057,7 +4088,11 @@ export async function listOrganisationUsers() {
       throw error
     }
 
-    return (data || []).map(normalizeOrganisationUserRow)
+    const avatarByUserId = await fetchOrganisationUserProfileAvatars(client, (data || []).map((row) => row?.user_id))
+    return (data || []).map((row) => normalizeOrganisationUserRow({
+      ...row,
+      avatar_url: avatarByUserId[normalizeText(row?.user_id)] || '',
+    }))
   })()
     .then((users) => {
       organisationUsersCache = {
@@ -4418,6 +4453,7 @@ export async function completeInvitedMemberOnboarding(input = {}) {
       first_name: firstName || undefined,
       last_name: lastName || undefined,
       phone_number: normalizeText(input.phoneNumber || '') || undefined,
+      avatar_url: normalizeText(input.avatarUrl || input.photoUrl || '') || undefined,
     },
     context: { source: 'legacy_org_invite_acceptance', inviteId: invite.id },
   })

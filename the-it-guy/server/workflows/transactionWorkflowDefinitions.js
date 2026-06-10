@@ -135,6 +135,10 @@ export function listTransactionWorkflowKeys() {
 
 export function resolveWorkflowKeysForTransaction(transaction = {}) {
   const facts = resolveTransactionFacts(transaction)
+  if (Array.isArray(facts.requiredWorkflowKeys) && facts.requiredWorkflowKeys.length) {
+    const routedKeys = facts.requiredWorkflowKeys.filter((key) => getTransactionWorkflowDefinition(key))
+    if (routedKeys.length) return routedKeys
+  }
   const financeType = normaliseFinanceType(transaction.finance_type || facts.financeType)
   const attorneyLanes = resolveRequiredAttorneyLanes(transaction, { facts })
   const keys = ['sales_otp']

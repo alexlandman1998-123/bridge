@@ -166,6 +166,7 @@ export function WorkspaceProvider({ children }) {
             last_name: payload.lastName || undefined,
             company_name: payload.companyName || undefined,
             phone_number: payload.phoneNumber || undefined,
+            avatar_url: payload.avatarUrl || undefined,
           },
           context: { source: 'workspace_context_save_profile_draft' },
         })
@@ -179,6 +180,7 @@ export function WorkspaceProvider({ children }) {
         lastName: payload.lastName,
         companyName: payload.companyName,
         phoneNumber: payload.phoneNumber,
+        avatarUrl: payload.avatarUrl,
         role: payload.role,
         onboardingCompleted: payload.onboardingCompleted,
       })

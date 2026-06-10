@@ -544,6 +544,103 @@ function addTransactionTypeRequirements(requirements, facts) {
   }
 }
 
+function addPropertyTenureRequirements(requirements, facts) {
+  if (facts.isSectionalTitle) {
+    requirements.push(
+      requirement({
+        id: 'body_corporate_levy_clearance',
+        label: 'Body Corporate Levy Clearance',
+        category: 'property_compliance',
+        requiredFrom: 'seller',
+        appliesTo: 'property',
+        visibilityDefault: 'client_visible',
+        reason: 'Sectional title transfers require body corporate levy clearance.',
+      }),
+      requirement({
+        id: 'body_corporate_statement',
+        label: 'Body Corporate Statement',
+        category: 'property_compliance',
+        requiredFrom: 'seller',
+        appliesTo: 'property',
+        visibilityDefault: 'client_visible',
+        reason: 'Sectional title matters require body corporate account and levy information.',
+      }),
+      requirement({
+        id: 'sectional_title_conduct_rules',
+        label: 'Sectional Title Conduct Rules',
+        category: 'property_compliance',
+        requiredFrom: 'seller',
+        appliesTo: 'property',
+        required: false,
+        visibilityDefault: 'client_visible',
+        reason: 'Body corporate rules may be needed for sectional title transfers.',
+      }),
+    )
+  }
+
+  if (facts.isEstateHoa) {
+    requirements.push(
+      requirement({
+        id: 'hoa_levy_clearance',
+        label: 'HOA Levy Clearance',
+        category: 'property_compliance',
+        requiredFrom: 'seller',
+        appliesTo: 'property',
+        visibilityDefault: 'client_visible',
+        reason: 'Estate/HOA transfers require HOA levy clearance.',
+      }),
+      requirement({
+        id: 'hoa_consent',
+        label: 'HOA Consent',
+        category: 'property_compliance',
+        requiredFrom: 'seller',
+        appliesTo: 'property',
+        required: false,
+        visibilityDefault: 'client_visible',
+        reason: 'Some estate transfers require HOA consent before transfer.',
+      }),
+      requirement({
+        id: 'hoa_conduct_rules',
+        label: 'HOA Conduct Rules',
+        category: 'property_compliance',
+        requiredFrom: 'seller',
+        appliesTo: 'property',
+        required: false,
+        visibilityDefault: 'client_visible',
+        reason: 'HOA rules may be needed for estate transfers.',
+      }),
+    )
+  }
+}
+
+function addVatTreatmentRequirements(requirements, facts) {
+  if (!facts.hasVatTreatment) return
+  requirements.push(
+    requirement({
+      id: 'vat_status_confirmation',
+      label: 'VAT Status Confirmation',
+      category: 'property_compliance',
+      requiredFrom: 'seller',
+      appliesTo: 'transaction',
+      visibilityDefault: 'professional_shared',
+      reason: 'VAT-routed transfers require VAT treatment confirmation.',
+    }),
+  )
+  if (facts.vatTreatment === 'zero_rated_going_concern') {
+    requirements.push(
+      requirement({
+        id: 'zero_rated_going_concern_confirmation',
+        label: 'Zero-Rated Going Concern Confirmation',
+        category: 'property_compliance',
+        requiredFrom: 'seller',
+        appliesTo: 'transaction',
+        visibilityDefault: 'professional_shared',
+        reason: 'Zero-rated going concern transactions require supporting VAT confirmation.',
+      }),
+    )
+  }
+}
+
 function addBaseSigningRequirements(signingRequirements, facts) {
   signingRequirements.push(
     signingRequirement({
@@ -632,6 +729,8 @@ export function resolveLegalDocumentRequirements(transactionOrFacts = {}) {
   addBuyerEntityRequirements(requirements, facts)
   addSellerEntityRequirements(requirements, facts)
   addTransactionTypeRequirements(requirements, facts)
+  addPropertyTenureRequirements(requirements, facts)
+  addVatTreatmentRequirements(requirements, facts)
   addBaseSigningRequirements(signingRequirements, facts)
   addBondRequirements(requirements, signingRequirements, facts)
   addCancellationRequirements(requirements, signingRequirements, facts)

@@ -89,6 +89,7 @@ import {
   reviewCanonicalDocumentRequirement,
   runWorkflowAction,
   saveTransactionRoleplayerSelections,
+  saveTransactionRoutingProfile,
   undoTransactionRegistration,
   unarchiveTransactionLifecycle,
   updateBondApplication,
@@ -105,6 +106,10 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supab
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getDocumentReadiness } from '../services/documentReadinessService'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
+import {
+  buildTransactionRoutingDiagnostics,
+  getTransactionRoutingStatusLabel,
+} from '../services/transactionRoutingDiagnosticsService'
 import {
   buildBondApplicationPdfHtml,
   buildBondApplicationViewModel,
@@ -139,6 +144,45 @@ const BOND_ORIGINATOR_WORKSPACE_TABS = [
   { id: 'stakeholders', label: 'Roleplayers' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'activity', label: 'Activity' },
+]
+
+const ROUTING_FINANCE_TYPE_OPTIONS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'bond', label: 'Bond' },
+  { value: 'hybrid', label: 'Hybrid' },
+  { value: 'developer', label: 'Developer finance' },
+  { value: 'unknown', label: 'Unknown' },
+]
+
+const ROUTING_TRANSACTION_TYPE_OPTIONS = [
+  { value: 'private_sale', label: 'Private sale' },
+  { value: 'resale', label: 'Resale' },
+  { value: 'development_sale', label: 'New development' },
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'unknown', label: 'Unknown' },
+]
+
+const ROUTING_TENURE_OPTIONS = [
+  { value: 'freehold', label: 'Freehold' },
+  { value: 'sectional_title', label: 'Sectional title' },
+  { value: 'estate_hoa', label: 'Estate / HOA' },
+  { value: 'share_block', label: 'Share block' },
+  { value: 'unknown', label: 'Unknown' },
+]
+
+const ROUTING_ENTITY_TYPE_OPTIONS = [
+  { value: 'individual', label: 'Individual' },
+  { value: 'company', label: 'Company' },
+  { value: 'trust', label: 'Trust' },
+  { value: 'developer', label: 'Developer' },
+  { value: 'unknown', label: 'Unknown' },
+]
+
+const ROUTING_VAT_OPTIONS = [
+  { value: 'transfer_duty', label: 'Transfer duty' },
+  { value: 'vat', label: 'VAT' },
+  { value: 'zero_rated_going_concern', label: 'Zero-rated going concern' },
+  { value: 'unknown', label: 'Unknown' },
 ]
 
 const ATTORNEY_DOCUMENT_CATEGORIES = [
@@ -3241,6 +3285,77 @@ function OverviewSidePanel({ title, children }) {
   )
 }
 
+function TransactionRoutingSummaryCard({ diagnostics = null, canEdit = false, onEdit = null }) {
+  if (!diagnostics) return null
+  const statusClasses = diagnostics.status === 'needs_attention'
+    ? 'border-warning/30 bg-warningSoft text-warning'
+    : diagnostics.status === 'ready'
+      ? 'border-success/30 bg-successSoft text-success'
+      : 'border-borderDefault bg-mutedBg text-textMuted'
+  return (
+    <OverviewSidePanel title="Routing Profile">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClasses}`}>
+          {getTransactionRoutingStatusLabel(diagnostics.status)}
+        </span>
+        <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-1 text-[0.68rem] font-semibold text-textMuted">
+          {diagnostics.source === 'persisted' ? 'Persisted' : 'Computed'}
+        </span>
+        </div>
+        {canEdit ? (
+          <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
+            Edit
+          </Button>
+        ) : null}
+      </div>
+      <p className="mt-3 text-sm font-semibold leading-5 text-textStrong">{diagnostics.summary}</p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {diagnostics.decisions.map((item) => (
+          <div key={item.key} className="min-w-0 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+            <span className="block text-[0.66rem] font-semibold uppercase text-textMuted">{item.label}</span>
+            <strong className="mt-1 block truncate text-xs text-textStrong">{item.value}</strong>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3">
+        <span className="block text-[0.66rem] font-semibold uppercase text-textMuted">Workflow route</span>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {diagnostics.requiredWorkflowLabels.map((label) => (
+            <span key={label} className="inline-flex rounded-full border border-borderSoft bg-white px-2 py-1 text-[0.68rem] font-semibold text-textMuted">
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+      {diagnostics.missingFieldLabels.length ? (
+        <div className="mt-3 rounded-[12px] border border-warning/25 bg-warningSoft px-3 py-2 text-xs leading-5 text-warning">
+          <strong className="block text-[0.7rem] uppercase">Missing facts</strong>
+          <span>{diagnostics.missingFieldLabels.join(', ')}</span>
+        </div>
+      ) : null}
+    </OverviewSidePanel>
+  )
+}
+
+function buildRoutingProfileDraft(transaction = {}, diagnostics = {}) {
+  const facts = diagnostics?.facts || {}
+  const profile = diagnostics?.profile || {}
+  const boolString = (value) => (value ? 'true' : 'false')
+  return {
+    financeType: facts.financeType || profile.financeType || transaction?.finance_type || 'unknown',
+    transactionType: facts.transactionType || profile.transactionType || transaction?.transaction_type || 'unknown',
+    propertyType: transaction?.property_type || transaction?.propertyType || '',
+    propertyTenure: facts.propertyTenure || profile.propertyTenure || transaction?.property_tenure || 'unknown',
+    purchaserType: facts.buyerEntityType || profile.buyerEntityType || transaction?.purchaser_type || 'unknown',
+    sellerType: facts.sellerEntityType || profile.sellerEntityType || transaction?.seller_type || 'unknown',
+    sellerHasExistingBond: boolString(facts.sellerHasExistingBond || profile.sellerHasExistingBond || transaction?.seller_has_existing_bond),
+    cancellationRequired: boolString(facts.cancellationRequired || profile.cancellationRequired || transaction?.cancellation_required),
+    vatTreatment: facts.vatTreatment || profile.vatTreatment || transaction?.vat_treatment || 'unknown',
+    reason: '',
+  }
+}
+
 function WorkflowDetailsDrawer({
   lane,
   open,
@@ -3576,6 +3691,10 @@ function AttorneyTransactionDetail() {
     notes: '',
     requestTitle: '',
   })
+  const [routingProfileModalOpen, setRoutingProfileModalOpen] = useState(false)
+  const [routingProfileSaving, setRoutingProfileSaving] = useState(false)
+  const [routingProfileError, setRoutingProfileError] = useState('')
+  const [routingProfileDraft, setRoutingProfileDraft] = useState(() => buildRoutingProfileDraft())
   const uploadDraft = documentUploadForm
   const setUploadDraft = setDocumentUploadForm
   const [reviewActionDraft, setReviewActionDraft] = useState({
@@ -3805,6 +3924,13 @@ function AttorneyTransactionDetail() {
   const development = data?.development || null
   const unit = data?.unit || null
   const documents = data?.documents ?? EMPTY_ARRAY
+  const routingDiagnostics = useMemo(
+    () => (transaction ? buildTransactionRoutingDiagnostics(transaction) : null),
+    [transaction],
+  )
+  const canEditRoutingProfile = ['attorney', 'developer', 'internal_admin', 'admin', 'agent', 'bond_originator'].includes(
+    String(workspaceRole || '').trim().toLowerCase(),
+  )
   const requiredDocumentChecklist = useMemo(() => data?.requiredDocumentChecklist || EMPTY_ARRAY, [data?.requiredDocumentChecklist])
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
@@ -4991,6 +5117,48 @@ function AttorneyTransactionDetail() {
       setWorkflowOperations(operations)
     }
     await loadData({ background: true })
+  }
+
+  function openRoutingProfileModal() {
+    setRoutingProfileDraft(buildRoutingProfileDraft(transaction || {}, routingDiagnostics || {}))
+    setRoutingProfileError('')
+    setRoutingProfileModalOpen(true)
+  }
+
+  async function handleSaveRoutingProfile(event) {
+    event?.preventDefault?.()
+    if (!transaction?.id) {
+      setRoutingProfileError('Transaction data is not available.')
+      return
+    }
+
+    try {
+      setRoutingProfileSaving(true)
+      setRoutingProfileError('')
+      const nextDetail = await saveTransactionRoutingProfile({
+        transactionId: transaction.id,
+        financeType: routingProfileDraft.financeType,
+        transactionType: routingProfileDraft.transactionType,
+        propertyType: routingProfileDraft.propertyType,
+        propertyTenure: routingProfileDraft.propertyTenure,
+        purchaserType: routingProfileDraft.purchaserType,
+        sellerType: routingProfileDraft.sellerType,
+        sellerHasExistingBond: routingProfileDraft.sellerHasExistingBond === 'true',
+        cancellationRequired: routingProfileDraft.cancellationRequired === 'true',
+        vatTreatment: routingProfileDraft.vatTreatment,
+        reason: routingProfileDraft.reason,
+        actorRole: workspaceRole,
+      })
+      if (nextDetail) {
+        setData(nextDetail)
+      }
+      setRoutingProfileModalOpen(false)
+      await refreshWorkflowAfterChange()
+    } catch (routingError) {
+      setRoutingProfileError(routingError?.message || 'Unable to update routing profile.')
+    } finally {
+      setRoutingProfileSaving(false)
+    }
   }
 
   async function refreshBondHybridFinanceWorkflow(nextWorkflow = null) {
@@ -7834,6 +8002,11 @@ function AttorneyTransactionDetail() {
                       ))}
                     </div>
                   </OverviewSidePanel>
+                  <TransactionRoutingSummaryCard
+                    diagnostics={routingDiagnostics}
+                    canEdit={canEditRoutingProfile}
+                    onEdit={openRoutingProfileModal}
+                  />
                 </aside>
               ) : null}
             </section>
@@ -9990,6 +10163,157 @@ function AttorneyTransactionDetail() {
         onCancel={() => setConfirmDialog({ open: false, title: '', description: '', action: '' })}
         onConfirm={() => void handleConfirmAction(confirmDialog.action)}
       />
+
+      <Modal
+        open={routingProfileModalOpen}
+        onClose={routingProfileSaving ? undefined : () => setRoutingProfileModalOpen(false)}
+        title="Edit Routing Profile"
+        subtitle="Update the facts that decide finance, transfer, bond, cancellation, and document routing."
+        className="max-w-2xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setRoutingProfileModalOpen(false)}
+              disabled={routingProfileSaving}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" form="transaction-routing-profile-form" disabled={routingProfileSaving}>
+              {routingProfileSaving ? 'Saving...' : 'Save Routing'}
+            </Button>
+          </div>
+        )}
+      >
+        <form id="transaction-routing-profile-form" onSubmit={handleSaveRoutingProfile} className="grid gap-4">
+          {routingProfileError ? (
+            <p className="rounded-[12px] border border-danger/25 bg-dangerSoft px-3 py-2 text-sm text-danger">
+              {routingProfileError}
+            </p>
+          ) : null}
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Finance type</span>
+              <Field
+                as="select"
+                value={routingProfileDraft.financeType}
+                onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, financeType: event.target.value }))}
+              >
+                {ROUTING_FINANCE_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Transaction type</span>
+              <Field
+                as="select"
+                value={routingProfileDraft.transactionType}
+                onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transactionType: event.target.value }))}
+              >
+                {ROUTING_TRANSACTION_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Property type</span>
+              <Field
+                value={routingProfileDraft.propertyType}
+                onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, propertyType: event.target.value }))}
+                placeholder="e.g. Sectional title apartment"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Property tenure</span>
+              <Field
+                as="select"
+                value={routingProfileDraft.propertyTenure}
+                onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, propertyTenure: event.target.value }))}
+              >
+                {ROUTING_TENURE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Purchaser type</span>
+              <Field
+                as="select"
+                value={routingProfileDraft.purchaserType}
+                onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, purchaserType: event.target.value }))}
+              >
+                {ROUTING_ENTITY_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Seller type</span>
+              <Field
+                as="select"
+                value={routingProfileDraft.sellerType}
+                onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, sellerType: event.target.value }))}
+              >
+                {ROUTING_ENTITY_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Seller existing bond</span>
+              <Field
+                as="select"
+                value={routingProfileDraft.sellerHasExistingBond}
+                onChange={(event) =>
+                  setRoutingProfileDraft((previous) => ({
+                    ...previous,
+                    sellerHasExistingBond: event.target.value,
+                    cancellationRequired: event.target.value === 'true' ? 'true' : previous.cancellationRequired,
+                  }))
+                }
+              >
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </Field>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label font-semibold uppercase text-textMuted">Cancellation required</span>
+              <Field
+                as="select"
+                value={routingProfileDraft.cancellationRequired}
+                onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, cancellationRequired: event.target.value }))}
+              >
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </Field>
+            </label>
+            <label className="flex flex-col gap-1.5 md:col-span-2">
+              <span className="text-label font-semibold uppercase text-textMuted">VAT / transfer duty</span>
+              <Field
+                as="select"
+                value={routingProfileDraft.vatTreatment}
+                onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, vatTreatment: event.target.value }))}
+              >
+                {ROUTING_VAT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-label font-semibold uppercase text-textMuted">Note</span>
+            <Field
+              as="textarea"
+              rows={3}
+              value={routingProfileDraft.reason}
+              onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, reason: event.target.value }))}
+              placeholder="Optional context for this routing change"
+            />
+          </label>
+        </form>
+      </Modal>
 
       <Modal
         open={reviewActionDraft.open}

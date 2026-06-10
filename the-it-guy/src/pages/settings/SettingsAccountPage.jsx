@@ -15,6 +15,25 @@ import {
   settingsPageClass,
 } from './settingsUi'
 
+function getInitials(form = {}) {
+  const source = [form.firstName, form.lastName].filter(Boolean).join(' ') || form.email || 'User'
+  return String(source)
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'U'
+}
+
+function readImageFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(new Error('Unable to read the selected image.'))
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function SettingsAccountPage() {
   const { refreshProfile } = useWorkspace()
   const [form, setForm] = useState(null)
@@ -66,6 +85,30 @@ export default function SettingsAccountPage() {
         [key]: value,
       },
     }))
+  }
+
+  async function handleAvatarFileChange(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Choose an image file for your profile picture.')
+      event.target.value = ''
+      return
+    }
+    if (file.size > 1.5 * 1024 * 1024) {
+      setError('Profile pictures must be smaller than 1.5MB.')
+      event.target.value = ''
+      return
+    }
+    try {
+      setError('')
+      const dataUrl = await readImageFileAsDataUrl(file)
+      updateField('avatarUrl', dataUrl)
+    } catch (readError) {
+      setError(readError.message)
+    } finally {
+      event.target.value = ''
+    }
   }
 
   async function handleSave(event) {
@@ -123,7 +166,33 @@ export default function SettingsAccountPage() {
 
       <form className="space-y-0" onSubmit={handleSave}>
         <SettingsSectionCard title="Profile" description="These details identify you across Bridge and external workspaces.">
+          <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-[#e1e9f2] bg-[#fbfdff] p-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-4">
+              <span className="inline-flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#d7e2ef] bg-white text-lg font-semibold text-[#244e70] shadow-sm">
+                {form.avatarUrl ? <img src={form.avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(form)}
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-[#10243a]">Profile picture</h2>
+                <p className="mt-1 max-w-xl text-sm leading-6 text-[#60758d]">Shown in Bridge headers, agent workspaces, and seller-facing appointment surfaces where your profile is used.</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 sm:ml-auto">
+              <label className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#24364b] shadow-sm transition hover:bg-[#f7fafc]">
+                Upload Image
+                <input type="file" accept="image/*" className="sr-only" onChange={handleAvatarFileChange} />
+              </label>
+              {form.avatarUrl ? (
+                <button type="button" className="inline-flex h-10 items-center justify-center rounded-xl border border-[#f0d7d7] bg-white px-4 text-sm font-semibold text-[#9a4038] shadow-sm transition hover:bg-[#fff6f6]" onClick={() => updateField('avatarUrl', '')}>
+                  Remove
+                </button>
+              ) : null}
+            </div>
+          </div>
           <div className={settingsGridClass}>
+            <label className={`${settingsFieldClass} md:col-span-2`}>
+              <span className="text-sm font-medium text-[#51657b]">Profile picture URL</span>
+              <Field value={form.avatarUrl || ''} onChange={(event) => updateField('avatarUrl', event.target.value)} placeholder="https://..." />
+            </label>
             <label className={settingsFieldClass}>
               <span className="text-sm font-medium text-[#51657b]">First name</span>
               <Field value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} />
