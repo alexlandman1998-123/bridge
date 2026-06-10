@@ -8,7 +8,6 @@ import {
   Clock3,
   Hammer,
   Landmark,
-  LockKeyhole,
   Shield,
   Scale,
   ShieldCheck,
@@ -557,12 +556,7 @@ function Auth({ onDevBypass = null }) {
         </section>
 
         <section className="auth-card">
-          <div className="auth-security-badge">
-            <LockKeyhole size={15} />
-            <span>Your data is secure</span>
-          </div>
-
-          {securityLogoutMessage ? (
+          {mode === 'login' && securityLogoutMessage ? (
             <p className="auth-feedback success">You were signed out for security. Please log in again.</p>
           ) : null}
 
@@ -632,7 +626,6 @@ function Auth({ onDevBypass = null }) {
                     </div>
                     <div className="signup-section-heading">
                       <strong>What best describes you?</strong>
-                      <p>This helps us tailor Bridge to your business.</p>
                     </div>
                     <div className="signup-role-grid">
                     {orderedBusinessTypeOptions.map((option, index) => {

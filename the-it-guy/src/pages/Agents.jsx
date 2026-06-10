@@ -188,13 +188,13 @@ function getAgentInitials(agent) {
 
 function getAgentAvatarUrl(agent = {}) {
   return String(
-    agent.avatarUrl ||
-      agent.avatar_url ||
-      agent.profilePhotoUrl ||
-      agent.profile_photo_url ||
-      agent.photoUrl ||
-      agent.photo_url ||
-      agent.picture ||
+    agent?.avatarUrl ||
+      agent?.avatar_url ||
+      agent?.profilePhotoUrl ||
+      agent?.profile_photo_url ||
+      agent?.photoUrl ||
+      agent?.photo_url ||
+      agent?.picture ||
       '',
   ).trim()
 }

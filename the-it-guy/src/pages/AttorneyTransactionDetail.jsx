@@ -15,6 +15,7 @@ import {
   FileCheck2,
   FileText,
   Landmark,
+  LockKeyhole,
   MessageSquarePlus,
   MoreHorizontal,
   Paperclip,
@@ -34,7 +35,6 @@ import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import AttorneyAssignmentSection from '../components/attorney/assignments/AttorneyAssignmentSection'
-import TransactionBondHybridFinanceWorkflowPanel from '../components/TransactionBondHybridFinanceWorkflowPanel'
 import TransactionFinanceCommandCenter from '../components/transaction/TransactionFinanceCommandCenter'
 import TransactionLifecycleProgress from '../components/TransactionLifecycleProgress'
 import FinanceProgressBar from '../components/finance/FinanceProgressBar'
@@ -1077,6 +1077,64 @@ const WORKFLOW_STATUS_META = {
   not_started: { label: 'Not Started', dot: 'bg-slate-300', text: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200' },
 }
 
+const LEGAL_WORKFLOW_STAGE_CATALOG = {
+  transfer: [
+    { key: 'instruction_received', label: 'Instruction', description: 'Sale instruction and source documents received.' },
+    { key: 'fica_requested', label: 'FICA Requested', description: 'Buyer and seller compliance packs requested.' },
+    { key: 'fica_received', label: 'FICA Received', description: 'Required identity and authority documents received.' },
+    { key: 'transfer_documents_prepared', label: 'Drafting', description: 'Transfer documents prepared for signature.' },
+    { key: 'buyer_signed', label: 'Buyer Signed', description: 'Buyer transfer signing completed.' },
+    { key: 'seller_signed', label: 'Seller Signed', description: 'Seller transfer signing completed.' },
+    { key: 'guarantees_received', label: 'Guarantees', description: 'Guarantees or cash undertaking confirmed.', appliesWhen: ({ facts }) => !facts?.isCashDeal },
+    { key: 'clearances_requested', label: 'Clearances Requested', description: 'Rates, levy, HOA, or compliance clearances requested.' },
+    { key: 'clearances_received', label: 'Clearances Received', description: 'Required transfer clearances received.' },
+    { key: 'lodgement_ready', label: 'Lodgement Ready', description: 'Transfer pack ready for deeds office lodgement.' },
+    { key: 'lodged', label: 'Lodged', description: 'Matter lodged at deeds office.' },
+    { key: 'prep', label: 'Prep', description: 'On prep for registration.' },
+    { key: 'registered', label: 'Registered', description: 'Transfer registered and close-out can begin.' },
+  ],
+  bond: [
+    { key: 'bond_instruction_received', label: 'Instruction', description: 'Bond attorney instruction received from finance.' },
+    { key: 'bank_requirements_confirmed', label: 'Bank Requirements', description: 'Bank conditions and attorney requirements confirmed.' },
+    { key: 'bond_documents_prepared', label: 'Bond Documents', description: 'Bond documents prepared for buyer signature.' },
+    { key: 'buyer_signed_bond_documents', label: 'Buyer Signed', description: 'Buyer signed bond documents.' },
+    { key: 'guarantees_issued', label: 'Guarantees Issued', description: 'Guarantees issued to the transfer attorney.' },
+    { key: 'bond_lodgement_ready', label: 'Lodgement Ready', description: 'Bond pack ready to lodge with transfer.' },
+    { key: 'bond_lodged', label: 'Bond Lodged', description: 'Bond lodged at deeds office.' },
+    { key: 'bond_registered', label: 'Bond Registered', description: 'Bond registered.' },
+  ],
+  cancellation: [
+    { key: 'cancellation_instruction_received', label: 'Instruction', description: 'Cancellation instruction received.' },
+    { key: 'cancellation_figures_requested', label: 'Figures Requested', description: 'Settlement/cancellation figures requested from bank.' },
+    { key: 'cancellation_figures_received', label: 'Figures Received', description: 'Cancellation figures received and checked.' },
+    { key: 'guarantees_accepted', label: 'Guarantees Accepted', description: 'Cancellation guarantees accepted.' },
+    { key: 'cancellation_documents_prepared', label: 'Documents Prepared', description: 'Cancellation documents prepared.' },
+    { key: 'cancellation_lodged', label: 'Cancellation Lodged', description: 'Cancellation lodged with the linked transfer.' },
+    { key: 'cancellation_registered', label: 'Cancellation Registered', description: 'Seller bond cancellation registered.' },
+  ],
+}
+
+const LEGAL_WORKFLOW_REASON_LABELS = {
+  cash: 'Cash',
+  bond: 'Bond finance',
+  hybrid: 'Hybrid finance',
+  private_sale: 'Private sale',
+  resale: 'Resale',
+  development_sale: 'New development',
+  commercial: 'Commercial',
+  individual: 'Individual',
+  company: 'Company',
+  trust: 'Trust',
+  developer: 'Developer',
+  freehold: 'Freehold',
+  sectional_title: 'Sectional title',
+  estate_hoa: 'Estate / HOA',
+  share_block: 'Share block',
+  vat: 'VAT',
+  transfer_duty: 'Transfer duty',
+  zero_rated_going_concern: 'Zero-rated going concern',
+}
+
 const WORKFLOW_STEP_STATUS_OPTIONS = [
   { value: 'not_started', label: 'Not Started' },
   { value: 'in_progress', label: 'In Progress' },
@@ -1264,6 +1322,186 @@ function getStepClasses(step = {}, currentStep = null) {
   const base = isCurrent ? 'border-primary bg-primarySoft shadow-[0_8px_18px_rgba(15,70,110,0.10)]' : `${meta.border} ${meta.bg}`
   const text = isCurrent ? 'text-primary' : meta.text
   return { base, text, meta, isCurrent }
+}
+
+function labelLegalWorkflowValue(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return 'Unknown'
+  return LEGAL_WORKFLOW_REASON_LABELS[normalized] || toTitle(normalized)
+}
+
+function buildLegalWorkflowReasonChips(facts = {}, workflowKey = 'transfer') {
+  const chips = [
+    labelLegalWorkflowValue(facts.financeType),
+    labelLegalWorkflowValue(facts.transactionType),
+    labelLegalWorkflowValue(facts.propertyTenure),
+  ]
+
+  if (workflowKey === 'transfer') {
+    chips.push(`Buyer: ${labelLegalWorkflowValue(facts.buyerEntityType)}`)
+    chips.push(`Seller: ${labelLegalWorkflowValue(facts.sellerEntityType)}`)
+    if (facts.hasVatTreatment) chips.push(labelLegalWorkflowValue(facts.vatTreatment))
+  }
+
+  if (workflowKey === 'bond') {
+    chips.push(facts.isHybridDeal ? 'Cash + bond handoff' : 'Bond handoff')
+  }
+
+  if (workflowKey === 'cancellation') {
+    chips.push(facts.requiresCancellationAttorney ? 'Seller bond cancellation' : 'No cancellation')
+  }
+
+  return [...new Set(chips.filter((chip) => chip && chip !== 'Unknown'))]
+}
+
+function getLegalWorkflowStageDefinitions(workflowKey = 'transfer', facts = {}) {
+  const definitions = LEGAL_WORKFLOW_STAGE_CATALOG[workflowKey] || LEGAL_WORKFLOW_STAGE_CATALOG.transfer
+  return definitions.filter((stage) => !stage.appliesWhen || stage.appliesWhen({ facts }))
+}
+
+function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null, facts = {} } = {}) {
+  const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []
+  const laneStepMap = new Map(
+    laneSteps.map((step) => [String(step.stepKey || step.step_key || '').trim(), step]),
+  )
+  const currentStep = lane ? getCurrentWorkflowStep(lane) : null
+  const currentKey = currentStep?.stepKey || currentStep?.step_key || lane?.currentStage || lane?.summary?.currentStage || ''
+  let currentIndex = -1
+
+  const steps = getLegalWorkflowStageDefinitions(workflowKey, facts).map((definition, index) => {
+    const storedStep = laneStepMap.get(definition.key)
+    if (definition.key === currentKey) currentIndex = index
+    return {
+      ...definition,
+      storedStep,
+      status: normalizeWorkspaceStatus(storedStep?.status),
+      completedAt: storedStep?.completedAt || storedStep?.completed_at || null,
+      comment: storedStep?.comment || '',
+    }
+  })
+
+  if (currentIndex < 0) {
+    currentIndex = steps.findIndex((step) => !['completed'].includes(step.status))
+  }
+
+  return steps.map((step, index) => {
+    let displayStatus = step.status
+    if (!step.storedStep) {
+      displayStatus = index < currentIndex ? 'completed' : index === currentIndex ? 'in_progress' : 'not_started'
+    } else if (index === currentIndex && !['completed', 'blocked', 'waiting'].includes(displayStatus)) {
+      displayStatus = 'in_progress'
+    }
+    return {
+      ...step,
+      displayStatus,
+      isCurrent: index === currentIndex,
+    }
+  })
+}
+
+function getLegalWorkflowProgressPercent(steps = []) {
+  if (!steps.length) return 0
+  const completed = steps.filter((step) => step.displayStatus === 'completed').length
+  const hasCurrent = steps.some((step) => step.isCurrent && step.displayStatus !== 'completed')
+  return Math.max(0, Math.min(100, Math.round(((completed + (hasCurrent ? 0.5 : 0)) / steps.length) * 100)))
+}
+
+function getConditionalLegalWorkflowProgress({ workflowKey = 'transfer', lane = null, facts = {}, fallback = 0 } = {}) {
+  const steps = buildLegalWorkflowProgressSteps({ workflowKey, lane, facts })
+  return steps.length ? getLegalWorkflowProgressPercent(steps) : Number(fallback || 0)
+}
+
+function legalProgressIcon(status) {
+  if (status === 'completed') return CheckCircle2
+  if (status === 'in_progress') return Landmark
+  return LockKeyhole
+}
+
+function LegalWorkflowProgressBar({ workflow = null, diagnostics = null }) {
+  if (!workflow) return null
+  const facts = diagnostics?.facts || {}
+  const workflowKey = workflow.accentKey || workflow.key || 'transfer'
+  const steps = buildLegalWorkflowProgressSteps({ workflowKey, lane: workflow.lane, facts })
+  const progress = getLegalWorkflowProgressPercent(steps)
+  const reasonChips = workflow.reasonChips?.length ? workflow.reasonChips : buildLegalWorkflowReasonChips(facts, workflowKey)
+  const activeIndex = steps.findIndex((item) => item.isCurrent)
+
+  return (
+    <section className="rounded-[18px] border border-[#dfe7f1] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold tracking-[-0.02em] text-[#101b2d]">Workflow Progress</h3>
+          <p className="mt-1 text-sm text-[#66758b]">{workflow.summary}</p>
+          {reasonChips.length ? (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {reasonChips.map((chip) => (
+                <span key={chip} className="inline-flex rounded-full border border-[#dce6f2] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#62758a]">
+                  {chip}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <strong className="text-sm font-semibold text-[#0b57d0]">{progress}% Complete</strong>
+      </div>
+
+      <div className="mt-7 overflow-x-auto pb-2">
+        <div className="relative min-w-[860px]">
+          <div className="absolute left-4 right-4 top-[18px] h-px bg-[#cfd9e6]" />
+          <div
+            className="absolute left-4 top-[18px] h-[3px] rounded-full bg-[#155eef]"
+            style={{ width: `calc(${Math.max(progress, 0)}% - 2rem)` }}
+          />
+          <div
+            className="relative grid gap-4"
+            style={{ gridTemplateColumns: `repeat(${Math.max(steps.length, 1)}, minmax(0, 1fr))` }}
+          >
+            {steps.map((step, index) => {
+              const Icon = legalProgressIcon(step.displayStatus)
+              const isCurrent = step.isCurrent && step.displayStatus !== 'completed'
+              const isCompleted = step.displayStatus === 'completed'
+              const isBlocked = step.displayStatus === 'blocked'
+              const isWaiting = step.displayStatus === 'waiting'
+              return (
+                <div key={step.key} className="min-w-0 text-center">
+                  <span
+                    className={[
+                      'mx-auto inline-flex h-9 w-9 items-center justify-center rounded-full border bg-white shadow-[0_4px_10px_rgba(15,23,42,0.08)]',
+                      isCompleted
+                        ? 'border-[#0f9f68] bg-[#0f9f68] text-white'
+                        : isBlocked
+                          ? 'border-[#e03131] bg-[#e03131] text-white'
+                          : isWaiting
+                            ? 'border-[#f59f00] bg-[#f59f00] text-white'
+                            : isCurrent
+                              ? 'border-[#155eef] bg-[#155eef] text-white'
+                              : 'border-[#d8e2ef] text-[#728198]',
+                    ].join(' ')}
+                  >
+                    <Icon size={16} />
+                  </span>
+                  <span className={`mt-3 block text-xs font-semibold ${isCurrent ? 'text-[#155eef]' : isCompleted ? 'text-[#101b2d]' : 'text-[#66758b]'}`}>
+                    {step.label}
+                  </span>
+                  <span className={`mt-1 block text-[0.72rem] ${isCurrent ? 'font-semibold text-[#155eef]' : 'text-[#728198]'}`}>
+                    {isCompleted && step.completedAt
+                      ? formatShortDayMonth(step.completedAt)
+                      : isCurrent
+                        ? WORKFLOW_STATUS_META[step.displayStatus]?.label || 'In Progress'
+                        : activeIndex >= 0 && index > activeIndex ? 'Pending' : WORKFLOW_STATUS_META[step.displayStatus]?.label || ''}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#edf2f7]">
+        <div className="h-full rounded-full bg-[#155eef]" style={{ width: `${progress}%` }} />
+      </div>
+    </section>
+  )
 }
 
 function getRequirementStatusLabel(status) {
@@ -3338,6 +3576,70 @@ function TransactionRoutingSummaryCard({ diagnostics = null, canEdit = false, on
   )
 }
 
+function LegalWorkflowRoutingPanel({ diagnostics = null, workflows = [], canEdit = false, onEdit = null }) {
+  if (!diagnostics) return null
+  const statusClasses = diagnostics.status === 'needs_attention'
+    ? 'border-warning/30 bg-warningSoft text-warning'
+    : diagnostics.status === 'ready'
+      ? 'border-success/30 bg-successSoft text-success'
+      : 'border-borderDefault bg-mutedBg text-textMuted'
+  const activeWorkflows = workflows.filter((workflow) => workflow.required)
+
+  return (
+    <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClasses}`}>
+              {getTransactionRoutingStatusLabel(diagnostics.status)}
+            </span>
+            <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-2.5 py-1 text-[0.68rem] font-semibold text-textMuted">
+              {diagnostics.source === 'persisted' ? 'Persisted route' : 'Computed route'}
+            </span>
+          </div>
+          <h3 className="mt-3 text-base font-semibold text-textStrong">{diagnostics.summary}</h3>
+          <p className="mt-1 text-sm leading-6 text-textMuted">
+            Legal lanes and document requirements are derived from finance type, party type, property tenure, VAT treatment, and seller bond cancellation.
+          </p>
+        </div>
+        {canEdit ? (
+          <Button type="button" variant="secondary" size="sm" onClick={onEdit}>
+            Edit Routing
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.55fr)]">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {diagnostics.decisions.map((item) => (
+            <article key={item.key} className="min-w-0 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
+              <span className="block text-[0.66rem] font-semibold uppercase text-textMuted">{item.label}</span>
+              <strong className="mt-1 block truncate text-sm text-textStrong">{item.value}</strong>
+            </article>
+          ))}
+        </div>
+        <div className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
+          <span className="block text-[0.66rem] font-semibold uppercase text-textMuted">Active legal workflows</span>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {activeWorkflows.map((workflow) => (
+              <span key={workflow.key} className="inline-flex rounded-full border border-borderSoft bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-textMuted">
+                {workflow.title}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {diagnostics.missingFieldLabels.length ? (
+        <div className="mt-4 rounded-[12px] border border-warning/25 bg-warningSoft px-3 py-2 text-xs leading-5 text-warning">
+          <strong className="block text-[0.7rem] uppercase">Missing routing facts</strong>
+          <span>{diagnostics.missingFieldLabels.join(', ')}</span>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function buildRoutingProfileDraft(transaction = {}, diagnostics = {}) {
   const facts = diagnostics?.facts || {}
   const profile = diagnostics?.profile || {}
@@ -5067,21 +5369,6 @@ function AttorneyTransactionDetail() {
       if (shareError?.name !== 'AbortError') setError('Unable to share this application link.')
     }
   }
-  const bondHybridFinanceWorkflowPanel = isBondOrHybridFinance ? (
-    <TransactionBondHybridFinanceWorkflowPanel
-      workflowData={transactionFinanceWorkflow}
-      canEdit={canEditBondHybridFinanceWorkflow}
-      variant={workspaceRole === 'bond_originator' ? 'originator' : 'agent'}
-      financeReadinessHandoff={financeReadinessHandoff}
-      loadingAction={bondHybridFinanceActionLoading}
-      onAdvanceStage={(stageKey) => void handleBondHybridFinanceStage(stageKey)}
-      onAddApplication={(payload) => void handleAddBondHybridApplication(payload)}
-      onUpdateApplication={(applicationId, payload) => void handleUpdateBondHybridApplication(applicationId, payload)}
-      onAddQuote={(payload) => void handleAddBondHybridQuote(payload)}
-      onApproveQuote={(quoteId) => void handleApproveBondHybridQuote(quoteId)}
-      onInstructionSent={() => void handleMarkBondHybridInstructionSent()}
-    />
-  ) : null
   function handleOpenFinanceDocument(document = {}) {
     const url = document?.url || document?.publicUrl || document?.downloadUrl || ''
     if (url) window.open(url, '_blank', 'noopener,noreferrer')
@@ -5974,6 +6261,10 @@ function AttorneyTransactionDetail() {
     () => workflowLanes.find((lane) => String(lane?.laneKey || '').trim().toLowerCase() === 'cancellation') || null,
     [workflowLanes],
   )
+  const bondAttorneyWorkflowLane = useMemo(
+    () => workflowLanes.find((lane) => String(lane?.laneKey || '').trim().toLowerCase() === 'bond') || null,
+    [workflowLanes],
+  )
   const bondWorkflowSummary = useMemo(
     () => summarizeBondHybridFinanceWorkflow(transactionFinanceWorkflow || {}),
     [transactionFinanceWorkflow],
@@ -6021,6 +6312,7 @@ function AttorneyTransactionDetail() {
     },
   ]
   const legalWorkflowModels = useMemo(() => {
+    const routingFacts = routingDiagnostics?.facts || {}
     const transferWorkflow = {
       key: 'transfer',
       detailKey: 'transfer',
@@ -6032,7 +6324,12 @@ function AttorneyTransactionDetail() {
       required: true,
       statusKey: transferWorkflowLane ? getWorkflowHealthKey(transferWorkflowLane) : 'not_started',
       statusLabel: transferWorkflowLane ? getWorkflowHealthLabel(transferWorkflowLane) : 'Not Started',
-      progressPercent: Number(transferWorkflowLane?.summary?.completionPercent || 0),
+      progressPercent: getConditionalLegalWorkflowProgress({
+        workflowKey: 'transfer',
+        lane: transferWorkflowLane,
+        facts: routingFacts,
+        fallback: transferWorkflowLane?.summary?.completionPercent,
+      }),
       nextStep: transferWorkflowLane
         ? (getCurrentWorkflowStep(transferWorkflowLane) ? getWorkflowStepLabel(getCurrentWorkflowStep(transferWorkflowLane)) : transferWorkflowLane?.summary?.nextAction || 'Workflow review')
         : 'Assign transfer attorney',
@@ -6042,6 +6339,7 @@ function AttorneyTransactionDetail() {
       assignedContact: transferAttorney?.participantName || transferAttorney?.participantEmail || transaction?.assigned_attorney_email || 'Not assigned',
       route: `${transactionWorkspaceBasePath}/transfer/transfer`,
       activityCount: activityFeed.filter((entry) => (entry?.filterKeys || []).includes('transfer')).length,
+      reasonChips: buildLegalWorkflowReasonChips(routingFacts, 'transfer'),
       blockers: [
         !transferAttorney && !transaction?.attorney ? 'Transfer attorney still needs to be assigned.' : '',
         ...(Array.isArray(transferWorkflowLane?.summary?.blockers) ? transferWorkflowLane.summary.blockers : []),
@@ -6057,28 +6355,44 @@ function AttorneyTransactionDetail() {
       accentKey: 'bond',
       title: 'Bond Registration',
       summary: requiresBondRegistrationWorkflow
-        ? 'Bond registration is active for this bond or hybrid transaction.'
+        ? (bondAttorneyWorkflowLane ? getWorkflowExplanation(bondAttorneyWorkflowLane) : 'Bond registration is active for this bond or hybrid transaction.')
         : 'No bond registration workflow is required for this transaction.',
       required: requiresBondRegistrationWorkflow,
-      statusKey: requiresBondRegistrationWorkflow ? getBondWorkflowStatusKey(transactionFinanceWorkflow) : 'not_started',
+      statusKey: requiresBondRegistrationWorkflow
+        ? (bondAttorneyWorkflowLane ? getWorkflowHealthKey(bondAttorneyWorkflowLane) : getBondWorkflowStatusKey(transactionFinanceWorkflow))
+        : 'not_started',
       statusLabel: requiresBondRegistrationWorkflow
-        ? (WORKFLOW_STATUS_META[getBondWorkflowStatusKey(transactionFinanceWorkflow)]?.label || 'Not Started')
+        ? (bondAttorneyWorkflowLane ? getWorkflowHealthLabel(bondAttorneyWorkflowLane) : WORKFLOW_STATUS_META[getBondWorkflowStatusKey(transactionFinanceWorkflow)]?.label || 'Not Started')
         : 'Not Required',
-      progressPercent: requiresBondRegistrationWorkflow ? getBondWorkflowProgressPercent(transactionFinanceWorkflow) : 0,
-      nextStep: requiresBondRegistrationWorkflow ? getBondWorkflowNextStep(transactionFinanceWorkflow) : 'Not required',
+      progressPercent: requiresBondRegistrationWorkflow
+        ? getConditionalLegalWorkflowProgress({
+            workflowKey: 'bond',
+            lane: bondAttorneyWorkflowLane,
+            facts: routingFacts,
+            fallback: bondAttorneyWorkflowLane?.summary?.completionPercent ?? getBondWorkflowProgressPercent(transactionFinanceWorkflow),
+          })
+        : 0,
+      nextStep: requiresBondRegistrationWorkflow
+        ? (bondAttorneyWorkflowLane
+            ? (getCurrentWorkflowStep(bondAttorneyWorkflowLane)
+                ? getWorkflowStepLabel(getCurrentWorkflowStep(bondAttorneyWorkflowLane))
+                : bondAttorneyWorkflowLane?.summary?.nextAction || 'Workflow review')
+            : getBondWorkflowNextStep(transactionFinanceWorkflow))
+        : 'Not required',
       assignedLabel: 'Assigned Bond Attorney',
       assignedDisplay: bondAttorney?.organisationName || bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned',
       assignedOrganisation: bondAttorney?.organisationName || bondAttorney?.firmName || 'Not assigned',
       assignedContact: bondAttorney?.participantName || bondAttorney?.participantEmail || 'Not assigned',
       route: `${transactionWorkspaceBasePath}/transfer/bond-registration`,
       activityCount: activityFeed.filter((entry) => (entry?.filterKeys || []).includes('bond')).length,
+      reasonChips: buildLegalWorkflowReasonChips(routingFacts, 'bond'),
       blockers: requiresBondRegistrationWorkflow
         ? [
             !bondAttorney ? 'Bond attorney still needs to be assigned.' : '',
-            !bondWorkflowSummary.currentStage ? 'Bond workflow has not started yet.' : '',
+            ...(Array.isArray(bondAttorneyWorkflowLane?.summary?.blockers) ? bondAttorneyWorkflowLane.summary.blockers : []),
           ].filter(Boolean)
         : [],
-      lane: null,
+      lane: bondAttorneyWorkflowLane,
     })
 
     items.push({
@@ -6096,7 +6410,14 @@ function AttorneyTransactionDetail() {
       statusLabel: requiresCancellationWorkflow
         ? (cancellationWorkflowLane ? getWorkflowHealthLabel(cancellationWorkflowLane) : 'Not Started')
         : 'Not Required',
-      progressPercent: requiresCancellationWorkflow ? Number(cancellationWorkflowLane?.summary?.completionPercent || 0) : 0,
+      progressPercent: requiresCancellationWorkflow
+        ? getConditionalLegalWorkflowProgress({
+            workflowKey: 'cancellation',
+            lane: cancellationWorkflowLane,
+            facts: routingFacts,
+            fallback: cancellationWorkflowLane?.summary?.completionPercent,
+          })
+        : 0,
       nextStep: requiresCancellationWorkflow
         ? (cancellationWorkflowLane
             ? (getCurrentWorkflowStep(cancellationWorkflowLane)
@@ -6110,6 +6431,7 @@ function AttorneyTransactionDetail() {
       assignedContact: cancellationAttorney?.participantName || cancellationAttorney?.participantEmail || 'Not assigned',
       route: `${transactionWorkspaceBasePath}/transfer/bond-cancellation`,
       activityCount: activityFeed.filter((entry) => (entry?.filterKeys || []).includes('cancellation')).length,
+      reasonChips: buildLegalWorkflowReasonChips(routingFacts, 'cancellation'),
       blockers: requiresCancellationWorkflow
         ? [
             !cancellationAttorney ? 'Cancellation attorney still needs to be assigned.' : '',
@@ -6123,11 +6445,12 @@ function AttorneyTransactionDetail() {
   }, [
     activityFeed,
     bondAttorney,
-    bondWorkflowSummary.currentStage,
+    bondAttorneyWorkflowLane,
     cancellationAttorney,
     cancellationWorkflowLane,
     requiresBondRegistrationWorkflow,
     requiresCancellationWorkflow,
+    routingDiagnostics,
     transaction?.assigned_attorney_email,
     transaction?.attorney,
     transactionFinanceWorkflow,
@@ -6142,10 +6465,6 @@ function AttorneyTransactionDetail() {
   const activeLegalWorkflowModel = useMemo(
     () => legalWorkflowModels.find((item) => item.detailKey === activeLegalWorkflowDetailKey) || null,
     [activeLegalWorkflowDetailKey, legalWorkflowModels],
-  )
-  const bondWorkflowDocuments = useMemo(
-    () => documents.filter((document) => ['bond', 'finance'].includes(resolveDocumentLibraryCategory(document))).slice(0, 8),
-    [documents],
   )
   const transactionContactRows = [
     {
@@ -7537,84 +7856,7 @@ function AttorneyTransactionDetail() {
           <>
             <section className={activeWorkspaceMenu === 'overview' ? 'grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]' : 'space-y-5'}>
               <div className="space-y-4">
-                {activeWorkspaceMenu === 'overview' ? (
-                  <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-textMuted">Next Action</span>
-                        <h2 className="mt-2 text-lg font-semibold tracking-[-0.025em] text-textStrong">
-                          {overviewPrimaryNextAction.title}
-                        </h2>
-                        <p className="mt-1 max-w-2xl text-sm leading-6 text-textMuted">
-                          {overviewPrimaryNextAction.description}
-                        </p>
-                      </div>
-                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getNextActionStatusClasses(overviewPrimaryNextAction.status)}`}>
-                        {toTitle(overviewPrimaryNextAction.status || 'pending')}
-                      </span>
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                      {[
-                        ['Due Date', formatDate(overviewPrimaryNextAction.dueDate)],
-                        ['Priority', toTitle(overviewPrimaryNextAction.priority || 'normal')],
-                        ['Stage', TRANSACTION_LIFECYCLE_STAGE_LABELS[displayedLifecycleProgress.currentStage] || 'Overview'],
-                      ].map(([label, value]) => (
-                        <article key={label} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
-                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
-                          <strong className="mt-1 block text-sm text-textStrong">{value}</strong>
-                        </article>
-                      ))}
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {overviewPrimaryNextAction.primaryActionLabel ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={saving || overviewPrimaryNextAction.primaryActionEnabled === false}
-                          onClick={() => (
-                            usingTransactionRollupOverview && overviewPrimaryNextAction.primaryActionKey
-                              ? void handleOverviewWorkflowAction({
-                                  actionKey: overviewPrimaryNextAction.primaryActionKey,
-                                })
-                              : handleOverviewActionTarget(overviewPrimaryNextAction.primaryActionTarget)
-                          )}
-                        >
-                          {overviewPrimaryNextAction.primaryActionLabel}
-                        </Button>
-                      ) : null}
-                      {overviewPrimaryNextAction.secondaryActionLabel ? (
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleOverviewActionTarget(overviewPrimaryNextAction.secondaryActionTarget)}
-                        >
-                          {overviewPrimaryNextAction.secondaryActionLabel}
-                        </Button>
-                      ) : null}
-                    </div>
-                    {usingTransactionRollupOverview && transactionRollup?.blockers?.length ? (
-                      <div className="mt-4 rounded-[12px] border border-[#f5d7bc] bg-[#fff7ed] px-3 py-3">
-                        <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#b85d12]">Workflow blockers</span>
-                        <ul className="mt-2 space-y-1 text-sm text-[#8a4b16]">
-                          {transactionRollup.blockers.slice(0, 3).map((blocker, index) => (
-                            <li key={`${blocker.code || blocker.stepKey || 'blocker'}-${index}`}>{blocker.message}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                    {import.meta.env.DEV && USE_TRANSACTION_ROLLUP_OVERVIEW ? (
-                      <div className="mt-4 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3 text-xs text-textMuted">
-                        <div>Legacy stage: {TRANSACTION_LIFECYCLE_STAGE_LABELS[lifecycleProgressState.currentStage] || 'Overview'}</div>
-                        <div>Roll-up stage: {transactionRollup?.parentStage || 'Unavailable'}</div>
-                        <div>Legacy progress: {lifecycleProgressState.progressPercent ?? 0}%</div>
-                        <div>Roll-up progress: {transactionRollup?.progressPercent ?? 0}%</div>
-                        <div>Used fallback: {usingTransactionRollupOverview ? 'false' : 'true'}</div>
-                        {transactionRollupError ? <div>Roll-up warning: {transactionRollupError}</div> : null}
-                      </div>
-                    ) : null}
-                  </section>
-                ) : (
+                {activeWorkspaceMenu !== 'overview' ? (
                   activeLegalWorkflowDetailKey ? (
                     (() => {
                       const workflow = activeLegalWorkflowModel
@@ -7667,163 +7909,79 @@ function AttorneyTransactionDetail() {
                             </div>
                           </section>
 
-                          {activeLegalWorkflowDetailKey === 'bond-registration' ? (
-                            <>
-                              <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                                <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-3">
-                                  {[
-                                    ['Current Stage', bondWorkflowSummary.currentStageLabel || 'Not started'],
-                                    ['Instruction Sent', bondWorkflowSummary.instructionSent ? 'Yes' : 'No'],
-                                    ['Quotes Received', String(bondWorkflowSummary.quotesReceivedCount || 0)],
-                                    ['Approved Bank', bondWorkflowSummary.approvedBank || 'Not approved yet'],
-                                  ].map(([label, value]) => (
-                                    <article key={label} className="min-w-0 rounded-[14px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                                      <span className="block break-words text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
-                                      <strong className="mt-1 block break-words text-sm text-textStrong">{value}</strong>
-                                    </article>
-                                  ))}
-                                </div>
-                              </section>
+                          <LegalWorkflowProgressBar workflow={workflow} diagnostics={routingDiagnostics} />
 
-                              {bondHybridFinanceWorkflowPanel}
-
-                              <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                  <div>
-                                    <h3 className="text-sm font-semibold text-textStrong">Bond Documents</h3>
-                                    <p className="mt-1 text-sm text-textMuted">Bond instructions, guarantees, and supporting finance documents.</p>
-                                  </div>
-                                  <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
-                                    {bondWorkflowDocuments.length} file{bondWorkflowDocuments.length === 1 ? '' : 's'}
-                                  </span>
+                          <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.55fr)]">
+                            <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <h3 className="text-sm font-semibold text-textStrong">Required Documents</h3>
+                                  <p className="mt-1 text-sm text-textMuted">Conditional requirements for this routed legal workflow.</p>
                                 </div>
-                                <div className="mt-4 space-y-2">
-                                  {bondWorkflowDocuments.length ? (
-                                    bondWorkflowDocuments.map((document) => (
-                                      <article key={document.id} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                                        <strong className="block break-words text-sm text-textStrong">{document.name || 'Bond document'}</strong>
-                                        <p className="mt-1 break-words text-xs text-textMuted">
-                                          {document.category || 'Bond'} • {formatDateTime(document.updated_at || document.created_at)}
-                                        </p>
-                                      </article>
-                                    ))
-                                  ) : (
-                                    <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
-                                      No bond workflow documents have been uploaded yet.
-                                    </p>
-                                  )}
-                                </div>
-                              </section>
-                            </>
-                          ) : (
-                            <section className="space-y-4">
-                              <div className="space-y-4">
-                                <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                                  <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                      <h3 className="text-sm font-semibold text-textStrong">
-                                        {activeLegalWorkflowDetailKey === 'bond-cancellation' ? 'Cancellation Timeline' : 'Transfer Timeline'}
-                                      </h3>
-                                      <p className="mt-1 text-sm text-textMuted">Detailed milestone progress for this legal workflow.</p>
-                                    </div>
-                                    <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
-                                      {(lane?.steps || []).length} step{(lane?.steps || []).length === 1 ? '' : 's'}
-                                    </span>
-                                  </div>
-                                  <div className="mt-4 space-y-2">
-                                    {(lane?.steps || []).length ? (
-                                      lane.steps.map((step) => {
-                                        const classes = getStepClasses(step, getCurrentWorkflowStep(lane))
-                                        return (
-                                          <article key={step.id || step.stepKey} className={`rounded-[12px] border px-3 py-3 ${classes.base}`}>
-                                            <div className="flex items-start justify-between gap-3">
-                                              <div className="min-w-0">
-                                                <strong className="block text-sm text-textStrong">{getWorkflowStepLabel(step)}</strong>
-                                                <p className={`mt-1 text-xs ${classes.text}`}>
-                                                  {step.completedAt ? `Completed ${formatShortDayMonth(step.completedAt)}` : classes.meta.label}
-                                                </p>
-                                                {step.comment ? <p className="mt-1 text-xs leading-5 text-textMuted">{step.comment}</p> : null}
-                                              </div>
-                                              <span className={`mt-0.5 h-2.5 w-2.5 rounded-full ${classes.meta.dot}`} />
-                                            </div>
-                                          </article>
-                                        )
-                                      })
-                                    ) : (
-                                      <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
-                                        {activeLegalWorkflowDetailKey === 'bond-cancellation'
-                                          ? 'No cancellation workflow lane is configured yet.'
-                                          : 'No transfer workflow lane is configured yet.'}
-                                      </p>
-                                    )}
-                                  </div>
-                                </section>
-
-                                <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                                  <div className="flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                      <h3 className="text-sm font-semibold text-textStrong">Required Documents</h3>
-                                      <p className="mt-1 text-sm text-textMuted">Canonical required documents linked to this workflow.</p>
-                                    </div>
-                                    <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
-                                      {(lane?.documentRequirements || []).length} item{(lane?.documentRequirements || []).length === 1 ? '' : 's'}
-                                    </span>
-                                  </div>
-                                  <div className="mt-4 space-y-2">
-                                    {(lane?.documentRequirements || []).length ? (
-                                      lane.documentRequirements.map((item) => {
-                                        const statusKey = normalizeWorkspaceStatus(item.status)
-                                        const statusMeta = WORKFLOW_STATUS_META[statusKey] || WORKFLOW_STATUS_META.not_started
-                                        return (
-                                          <article key={item.id || item.key} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
-                                            <div className="flex items-start justify-between gap-3">
-                                              <div className="min-w-0">
-                                                <strong className="block text-sm text-textStrong">{item.label}</strong>
-                                                <p className="mt-1 text-xs text-textMuted">
-                                                  {toTitle(item.category)} • {toTitle(item.requiredFrom)}
-                                                </p>
-                                              </div>
-                                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
-                                                {toTitle(item.status || 'missing')}
-                                              </span>
-                                            </div>
-                                          </article>
-                                        )
-                                      })
-                                    ) : (
-                                      <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
-                                        No required documents are configured for this workflow yet.
-                                      </p>
-                                    )}
-                                  </div>
-                                </section>
+                                <span className="inline-flex rounded-full border border-borderSoft bg-surfaceAlt px-3 py-1 text-xs font-semibold text-textMuted">
+                                  {(lane?.documentRequirements || []).length} item{(lane?.documentRequirements || []).length === 1 ? '' : 's'}
+                                </span>
                               </div>
+                              <div className="mt-4 grid gap-2 md:grid-cols-2">
+                                {(lane?.documentRequirements || []).length ? (
+                                  lane.documentRequirements.map((item) => {
+                                    const statusKey = normalizeWorkspaceStatus(item.status)
+                                    const statusMeta = WORKFLOW_STATUS_META[statusKey] || WORKFLOW_STATUS_META.not_started
+                                    return (
+                                      <article key={item.id || item.key} className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="min-w-0">
+                                            <strong className="block text-sm text-textStrong">{item.label}</strong>
+                                            <p className="mt-1 text-xs leading-5 text-textMuted">
+                                              {toTitle(item.category)} • {item.reason || 'Required for this route.'}
+                                            </p>
+                                          </div>
+                                          <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusMeta.border} ${statusMeta.bg} ${statusMeta.text}`}>
+                                            {toTitle(item.status || 'missing')}
+                                          </span>
+                                        </div>
+                                      </article>
+                                    )
+                                  })
+                                ) : (
+                                  <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted md:col-span-2">
+                                    No required documents are configured for this workflow yet.
+                                  </p>
+                                )}
+                              </div>
+                            </section>
 
-                              <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-                                <h3 className="text-sm font-semibold text-textStrong">Workflow Snapshot</h3>
-                                <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-2">
-                                  {(activeLegalWorkflowDetailKey === 'bond-cancellation'
+                            <section className="rounded-[18px] border border-borderDefault bg-white p-5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                              <h3 className="text-sm font-semibold text-textStrong">Workflow Snapshot</h3>
+                              <div className="mt-3 grid gap-2">
+                                {(activeLegalWorkflowDetailKey === 'bond-registration'
+                                  ? [
+                                      ['Bank Requirements', summarizeLaneMilestone(lane, ['bank_requirements', 'requirements'])],
+                                      ['Bond Documents', summarizeLaneMilestone(lane, ['bond_documents', 'documents'])],
+                                      ['Guarantees', summarizeLaneMilestone(lane, ['guarantee'])],
+                                      ['Finance Instruction', bondWorkflowSummary.instructionSent ? 'Sent' : 'Pending'],
+                                    ]
+                                  : activeLegalWorkflowDetailKey === 'bond-cancellation'
                                     ? [
                                         ['Instruction', summarizeLaneMilestone(lane, ['instruction'])],
-                                        ['Settlement Figures', summarizeLaneMilestone(lane, ['settlement'])],
+                                        ['Figures', summarizeLaneMilestone(lane, ['figures'])],
                                         ['Guarantees', summarizeLaneMilestone(lane, ['guarantee'])],
-                                        ['Lodgement', summarizeLaneMilestone(lane, ['lodgement'])],
+                                        ['Registration', summarizeLaneMilestone(lane, ['registered'])],
                                       ]
                                     : [
-                                        ['Signing Status', summarizeLaneMilestone(lane, ['signed', 'signing'])],
-                                        ['Rates Clearance', summarizeLaneMilestone(lane, ['rates', 'clearance'])],
-                                        ['Lodgement', summarizeLaneMilestone(lane, ['lodgement'])],
-                                        ['Registration', summarizeLaneMilestone(lane, ['registration'])],
+                                        ['FICA', summarizeLaneMilestone(lane, ['fica'])],
+                                        ['Signing', summarizeLaneMilestone(lane, ['signed', 'signing'])],
+                                        ['Clearances', summarizeLaneMilestone(lane, ['clearance'])],
+                                        ['Registration', summarizeLaneMilestone(lane, ['registered'])],
                                       ]).map(([label, value]) => (
-                                    <div key={label} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
-                                      <span className="break-words text-sm text-textMuted">{label}</span>
-                                      <strong className="break-words text-sm text-textStrong">{value}</strong>
-                                    </div>
-                                  ))}
-                                </div>
-                              </section>
+                                  <div key={label} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5">
+                                    <span className="break-words text-sm text-textMuted">{label}</span>
+                                    <strong className="break-words text-sm text-textStrong">{value}</strong>
+                                  </div>
+                                ))}
+                              </div>
                             </section>
-                          )}
+                          </section>
                         </>
                       )
                     })()
@@ -7833,6 +7991,13 @@ function AttorneyTransactionDetail() {
                         <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-textStrong">Transfer</h2>
                         <p className="mt-1 text-sm leading-6 text-textMuted">Manage the legal workflows for this transaction.</p>
                       </section>
+
+                      <LegalWorkflowRoutingPanel
+                        diagnostics={routingDiagnostics}
+                        workflows={legalWorkflowModels}
+                        canEdit={canEditRoutingProfile}
+                        onEdit={openRoutingProfileModal}
+                      />
 
                       <section className="rounded-[18px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:p-5">
                         <div className="grid items-stretch gap-4 lg:grid-cols-2">
@@ -7868,7 +8033,7 @@ function AttorneyTransactionDetail() {
                       </section>
                     </>
                   )
-                )}
+                ) : null}
 
                 {activeWorkspaceMenu === 'overview' ? (
                   <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
@@ -7885,7 +8050,67 @@ function AttorneyTransactionDetail() {
                         View all activity
                       </Button>
                     </div>
-                    <form onSubmit={handleAddDiscussion} className="mb-4 rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
+                    <div className="max-h-[540px] space-y-3 overflow-y-auto rounded-[14px] border border-borderSoft bg-surfaceAlt p-3 pr-2">
+                      {overviewConversationEntries.slice().reverse().map((entry) => {
+                        const meta = entry.meta || getActivityCategoryMeta(entry.category)
+                        const isSystemEntry = entry.kind === 'system'
+                        const isManualEntry = entry.kind === 'comment'
+                        return (
+                          <div key={entry.id} className={`flex ${isManualEntry ? 'justify-end' : 'justify-start'}`}>
+                            <article
+                              className={`max-w-[min(100%,46rem)] rounded-[15px] border px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] ${
+                                isSystemEntry
+                                  ? 'border-borderSoft bg-white/80'
+                                  : isManualEntry
+                                    ? 'border-primary/20 bg-primarySoft'
+                                    : `${meta.card} bg-white`
+                              }`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <span className={`mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ring-1 ${meta.icon}`}>
+                                  {createElement(meta.Icon, { size: 16 })}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <strong className="truncate text-sm text-textStrong">{entry.authorName}</strong>
+                                        <span className="text-xs text-textMuted">{entry.roleLabel}</span>
+                                      </div>
+                                      <p className="mt-1 text-sm font-semibold text-textStrong">{entry.title}</p>
+                                      <p className="mt-1 text-[0.72rem] text-textMuted">{formatDateTime(entry.createdAt)}</p>
+                                    </div>
+                                    <div className="flex shrink-0 flex-wrap gap-2">
+                                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${meta.badge}`}>
+                                        {getConversationTypeLabel(entry.messageType)}
+                                      </span>
+                                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getConversationVisibilityClasses(entry.visibility)}`}>
+                                        {getConversationVisibilityLabel(entry.visibility)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${isSystemEntry ? 'text-textMuted' : 'text-textBody'}`}>
+                                    {entry.body}
+                                  </p>
+                                  {entry.attachmentName ? (
+                                    <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-[10px] border border-borderSoft bg-white/70 px-3 py-2 text-xs font-semibold text-textStrong">
+                                      <Paperclip size={13} className="shrink-0 text-textMuted" />
+                                      <span className="truncate">{entry.attachmentName}</span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </article>
+                          </div>
+                        )
+                      })}
+                      {!overviewConversationEntries.length ? (
+                        <p className="rounded-[14px] border border-dashed border-borderDefault bg-white px-4 py-6 text-sm text-textMuted">
+                          Conversation updates will appear here as the transaction progresses.
+                        </p>
+                      ) : null}
+                    </div>
+                    <form onSubmit={handleAddDiscussion} className="mt-4 rounded-[14px] border border-borderSoft bg-white p-3">
                       <Field
                         as="textarea"
                         rows={3}
@@ -7932,60 +8157,6 @@ function AttorneyTransactionDetail() {
                         </Button>
                       </div>
                     </form>
-                    <div className="max-h-[540px] space-y-3 overflow-y-auto pr-2">
-                      {overviewConversationEntries.map((entry) => {
-                        const meta = entry.meta || getActivityCategoryMeta(entry.category)
-                        const isSystemEntry = entry.kind === 'system'
-                        return (
-                          <article
-                            key={entry.id}
-                            className={`rounded-[15px] border px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] ${
-                              isSystemEntry ? 'border-borderSoft bg-surfaceAlt/70' : `${meta.card} bg-white`
-                            }`}
-                          >
-                            <div className="flex items-start gap-3">
-                              <span className={`mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-[12px] ring-1 ${meta.icon}`}>
-                                {createElement(meta.Icon, { size: 16 })}
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <strong className="truncate text-sm text-textStrong">{entry.authorName}</strong>
-                                      <span className="text-xs text-textMuted">{entry.roleLabel}</span>
-                                    </div>
-                                    <p className="mt-1 text-sm font-semibold text-textStrong">{entry.title}</p>
-                                    <p className="mt-1 text-[0.72rem] text-textMuted">{formatDateTime(entry.createdAt)}</p>
-                                  </div>
-                                  <div className="flex shrink-0 flex-wrap gap-2">
-                                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${meta.badge}`}>
-                                      {getConversationTypeLabel(entry.messageType)}
-                                    </span>
-                                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getConversationVisibilityClasses(entry.visibility)}`}>
-                                      {getConversationVisibilityLabel(entry.visibility)}
-                                    </span>
-                                  </div>
-                                </div>
-                                <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${isSystemEntry ? 'text-textMuted' : 'text-textBody'}`}>
-                                  {entry.body}
-                                </p>
-                                {entry.attachmentName ? (
-                                  <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2 text-xs font-semibold text-textStrong">
-                                    <Paperclip size={13} className="shrink-0 text-textMuted" />
-                                    <span className="truncate">{entry.attachmentName}</span>
-                                  </div>
-                                ) : null}
-                              </div>
-                            </div>
-                          </article>
-                        )
-                      })}
-                      {!overviewConversationEntries.length ? (
-                        <p className="rounded-[14px] border border-dashed border-borderDefault bg-surfaceAlt px-4 py-6 text-sm text-textMuted">
-                          Conversation updates will appear here as the transaction progresses.
-                        </p>
-                      ) : null}
-                    </div>
                   </section>
                 ) : null}
               </div>
@@ -9381,7 +9552,7 @@ function AttorneyTransactionDetail() {
                   </div>
                 </div>
 
-                <div className="max-h-[72vh] overflow-y-auto px-4 py-5 pr-3">
+                <div className="px-4 py-5">
                   {groupedActivityFeed.map((group) => (
                     <div key={group.label} className="mb-6 last:mb-0">
                       <div className="mb-4 flex items-center gap-3">
