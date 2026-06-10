@@ -3185,6 +3185,9 @@ function AgentListingDetail() {
       },
     ]
   }, [commissionWorkspace.hasData, listingRecord, mandateWorkspace.isSigned, mandateWorkspace.status, sellerProfile.completionPercent])
+  const completedFollowUpCount = followUpActions.filter((action) => action.complete).length
+  const listingFollowUpsComplete = !followUpActions.length || followUpActions.every((action) => action.complete)
+  const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete
 
   useEffect(() => {
     setCommissionDraft({
@@ -5778,15 +5781,16 @@ function AgentListingDetail() {
             </div>
           </nav>
 
-          <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+          {shouldShowListingFollowUps ? (
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <h2 className="text-base font-semibold text-[#142132]">Listing Follow-Ups</h2>
                 <p className="mt-1 text-sm text-[#607387]">Complete a Quick Add listing here without restarting seller onboarding.</p>
               </div>
               <StatusPill
-                status={followUpActions.every((action) => action.complete) ? 'done' : 'pending'}
-                label={`${followUpActions.filter((action) => action.complete).length}/${followUpActions.length} complete`}
+                status={listingFollowUpsComplete ? 'done' : 'pending'}
+                label={`${completedFollowUpCount}/${followUpActions.length} complete`}
               />
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -5800,7 +5804,8 @@ function AgentListingDetail() {
                 />
               ))}
             </div>
-          </section>
+            </section>
+          ) : null}
 
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-6">

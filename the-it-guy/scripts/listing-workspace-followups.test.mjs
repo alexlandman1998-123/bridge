@@ -41,6 +41,24 @@ assert.match(
 
 assert.match(
   source,
+  /const listingFollowUpsComplete = !followUpActions\.length \|\| followUpActions\.every\(\(action\) => action\.complete\)/,
+  'Follow-up panel should disappear once every action is complete.',
+)
+
+assert.match(
+  source,
+  /const shouldShowListingFollowUps = sellerWorkspaceTab === 'overview' && !listingFollowUpsComplete/,
+  'Follow-up panel should only appear on the seller overview tab while incomplete.',
+)
+
+assert.match(
+  source,
+  /\{shouldShowListingFollowUps \? \([\s\S]*Listing Follow-Ups/,
+  'Follow-up panel render should be guarded by the overview/incomplete condition.',
+)
+
+assert.match(
+  source,
   /handleSignedMandateUpload/,
   'Signed mandate upload should have a dedicated handler.',
 )

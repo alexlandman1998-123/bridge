@@ -528,7 +528,6 @@ function Auth({ onDevBypass = null }) {
           <div className="auth-hero-orbit" aria-hidden="true" />
           <div className="auth-hero-top">
             <p className="auth-brand">bridge.</p>
-            <span className="auth-live-pill">LIVE MARKET PULSE</span>
           </div>
           <h1>The Property Industry,<br /> <span>Connected.</span></h1>
           <p>Real-time infrastructure powering every transaction, every professional, every day.</p>
