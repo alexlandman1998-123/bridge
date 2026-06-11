@@ -808,19 +808,19 @@ function FunnelStageList({ stages = [] }) {
         const progress = leadCount ? Math.round((Number(stage.count || 0) / leadCount) * 100) : stage.key === 'leads' ? 100 : 0
         const conversion = stage.conversionToNext === null || stage.conversionToNext === undefined ? null : Number(stage.conversionToNext)
         return (
-          <article key={stage.key || stage.label} className="grid min-h-[92px] grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-4 border-b border-[rgba(15,23,42,0.08)] px-5 py-4 last:border-b-0 xl:min-h-[104px]">
+          <article key={stage.key || stage.label} className="grid min-h-[92px] grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-4 border-b border-[rgba(15,23,42,0.08)] px-5 py-4 last:border-b-0 xl:min-h-[100px]">
             <span className={`grid h-12 w-12 place-items-center rounded-full ${style.iconClass}`}>
               <Icon size={22} strokeWidth={2.2} />
             </span>
             <div className="min-w-0">
               <p className="truncate text-[15px] font-semibold leading-5 text-[#101828]">{stage.label}</p>
-              <p className="mt-1 text-[28px] font-bold leading-none text-[#10213f] tabular-nums sm:text-[32px]">{formatCount(stage.count)}</p>
+              <p className="mt-1 text-[28px] font-semibold leading-none text-[#10213f] tabular-nums sm:text-[30px]">{formatCount(stage.count)}</p>
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e9eef7]">
                 <div className={`h-full rounded-full ${style.barClass}`} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
               </div>
             </div>
             <div className="min-w-[74px] text-right">
-              <p className={`text-[1.18rem] font-bold leading-6 tabular-nums ${stage.key === 'otp' ? 'text-[#10213f]' : style.textClass}`}>
+              <p className={`text-[1.08rem] font-semibold leading-6 tabular-nums ${stage.key === 'otp' ? 'text-[#10213f]' : style.textClass}`}>
                 {conversion === null ? '—' : `${Math.round(conversion)}%`}
               </p>
               <p className="mt-1 text-[0.72rem] font-medium leading-4 text-[#5f7087]">{conversion === null ? 'Final stage' : 'to next stage'}</p>
@@ -842,8 +842,8 @@ function ConversionHeroRing({ data = {} }) {
   const otpCount = data.stages?.find((stage) => stage.key === 'otp')?.count
 
   return (
-    <section className="flex min-h-[420px] min-w-0 flex-col items-center justify-center border-[rgba(15,23,42,0.08)] bg-white px-5 py-8 text-center lg:min-h-[440px] xl:border-x xl:px-6">
-      <div className="relative h-[150px] w-[150px] md:h-[180px] md:w-[180px] xl:h-[220px] xl:w-[220px]">
+    <section className="flex min-h-[400px] min-w-0 flex-col items-center justify-center border-[rgba(15,23,42,0.08)] bg-white px-5 py-8 text-center lg:min-h-[430px] 2xl:border-x 2xl:px-6">
+      <div className="relative h-[150px] w-[150px] md:h-[180px] md:w-[180px] 2xl:h-[220px] 2xl:w-[220px]">
         <svg viewBox="0 0 220 220" className="h-full w-full -rotate-90" role="img" aria-label={`Lead to OTP conversion ${percent}%`}>
           <circle cx="110" cy="110" r={radius} fill="none" stroke="#e8edf5" strokeWidth="14" />
           <circle
@@ -859,8 +859,8 @@ function ConversionHeroRing({ data = {} }) {
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <p className="text-[48px] font-bold leading-none text-[#1f5fe5] tabular-nums md:text-[56px] xl:text-[64px]">{percent}<span className="text-[0.58em]">%</span></p>
-          <p className="mt-3 text-sm font-semibold leading-5 text-[#101828] md:text-base">Lead → OTP<br />Conversion</p>
+          <p className="text-[48px] font-semibold leading-none text-[#1f5fe5] tabular-nums md:text-[56px] 2xl:text-[62px]">{percent}<span className="text-[0.58em]">%</span></p>
+          <p className="mt-3 text-sm font-semibold leading-5 text-[#101828] md:text-[0.95rem]">Lead → OTP<br />Conversion</p>
         </div>
       </div>
 
@@ -871,11 +871,11 @@ function ConversionHeroRing({ data = {} }) {
       <div className="mt-8 grid w-full max-w-[280px] grid-cols-2 border-t border-[rgba(15,23,42,0.08)] pt-5">
         <div className="border-r border-[rgba(15,23,42,0.08)] px-3">
           <p className="text-sm font-medium text-[#52657a]">Total Leads</p>
-          <p className="mt-2 text-[1.55rem] font-bold leading-none text-[#10213f] tabular-nums">{formatCompactMetric(leadCount)}</p>
+          <p className="mt-2 text-[1.45rem] font-semibold leading-none text-[#10213f] tabular-nums">{formatCompactMetric(leadCount)}</p>
         </div>
         <div className="px-3">
           <p className="text-sm font-medium text-[#52657a]">Total OTPs</p>
-          <p className="mt-2 text-[1.55rem] font-bold leading-none text-[#10213f] tabular-nums">{formatCompactMetric(otpCount)}</p>
+          <p className="mt-2 text-[1.45rem] font-semibold leading-none text-[#10213f] tabular-nums">{formatCompactMetric(otpCount)}</p>
         </div>
       </div>
     </section>
@@ -886,7 +886,7 @@ function FunnelKpiCard({ icon: Icon, label, value, trend, trendGood = true, deta
   const style = SALES_FUNNEL_KPI_TONES[tone] || SALES_FUNNEL_KPI_TONES.blue
   const isGood = trendGood
   return (
-    <article className="relative flex min-h-[180px] flex-col rounded-[18px] border border-[rgba(15,23,42,0.08)] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.045)] lg:p-6">
+    <article className="relative flex min-h-[172px] flex-col rounded-[18px] border border-[rgba(15,23,42,0.08)] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.04)] lg:p-6">
       <div className="flex items-start justify-between gap-3">
         <span className={`grid h-11 w-11 place-items-center rounded-full ${style.iconClass}`}>
           {Icon ? <Icon size={20} strokeWidth={2.1} /> : null}
@@ -897,12 +897,12 @@ function FunnelKpiCard({ icon: Icon, label, value, trend, trendGood = true, deta
           </button>
         ) : null}
       </div>
-      <p className="mt-4 text-[0.92rem] font-semibold leading-5 text-[#101828]">{label}</p>
-      <p className={`mt-2 text-[2rem] font-bold leading-none tracking-normal tabular-nums ${style.valueClass}`}>{value}</p>
-      <p className={`mt-3 inline-flex items-center gap-1 text-sm font-semibold ${isGood ? 'text-[#0f8a4b]' : 'text-[#c92a2a]'}`}>{trend}</p>
+      <p className="mt-4 text-[0.9rem] font-semibold leading-5 text-[#101828]">{label}</p>
+      <p className={`mt-2 break-words text-[1.8rem] font-semibold leading-[1.05] tracking-normal tabular-nums ${style.valueClass}`}>{value}</p>
+      <p className={`mt-3 inline-flex items-center gap-1 text-[0.86rem] font-semibold ${isGood ? 'text-[#0f8a4b]' : 'text-[#c92a2a]'}`}>{trend}</p>
       <div className="mt-auto border-t border-[rgba(15,23,42,0.08)] pt-4">
         <p className="text-sm font-medium text-[#52657a]">{detailLabel}</p>
-        <p className="mt-1 text-[0.95rem] font-bold leading-5 text-[#10213f]">{detailValue}</p>
+        <p className="mt-1 text-[0.92rem] font-semibold leading-5 text-[#10213f]">{detailValue}</p>
       </div>
     </article>
   )
@@ -968,21 +968,21 @@ function AiInsightBanner({ insight = {} }) {
   return (
     <section className="grid min-h-[128px] grid-cols-1 items-center gap-5 overflow-hidden rounded-[20px] bg-[radial-gradient(circle_at_0%_50%,rgba(37,99,235,0.35),transparent_30%),linear-gradient(135deg,#071226_0%,#0b1f46_55%,#102a5c_100%)] px-5 py-5 text-white shadow-[0_18px_42px_rgba(7,18,38,0.2)] md:grid-cols-[1.4fr_1px_1fr_auto] md:gap-7 md:px-8 md:py-7">
       <div className="flex min-w-0 items-start gap-4">
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/10 text-[#79b8ff] shadow-[0_0_28px_rgba(77,148,255,0.45)]">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/12 text-[#bfdbfe] shadow-[0_0_28px_rgba(77,148,255,0.45)]">
           <Sparkles size={24} />
         </span>
         <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#58a6ff]">AI Insight</p>
-          <p className="mt-2 text-lg font-bold leading-7 text-white">{message}</p>
-          <p className="mt-1 text-[0.95rem] leading-6 text-white/82">{detail}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#93c5fd]">AI Insight</p>
+          <p className="mt-2 text-lg font-semibold leading-7 text-white">{message}</p>
+          <p className="mt-1 text-[0.95rem] leading-6 text-[#dbeafe]">{detail}</p>
         </div>
       </div>
       <span className="hidden h-full w-px bg-white/25 md:block" />
       <div className="min-w-0">
-        <p className="text-sm font-bold text-[#58a6ff]">Recommended action</p>
-        <p className="mt-2 text-[0.95rem] leading-6 text-white/88">Review mandates with no activity in the last 14 days</p>
+        <p className="text-sm font-semibold text-[#93c5fd]">Recommended action</p>
+        <p className="mt-2 text-[0.95rem] leading-6 text-[#eef5ff]">Review mandates with no activity in the last 14 days</p>
       </div>
-      <button type="button" disabled title="Recommendation workflow coming soon" className="inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-full border border-white/25 bg-white/5 text-white opacity-80 shadow-sm">
+      <button type="button" disabled title="Recommendation workflow coming soon" className="inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-full border border-white/35 bg-white/10 text-white opacity-90 shadow-sm">
         <ArrowRight size={22} />
       </button>
     </section>
@@ -992,14 +992,14 @@ function AiInsightBanner({ insight = {} }) {
 function PrincipalSalesFunnelCard({ data = {}, agents = [], dateRange = 'last_30_days', onDateRangeChange }) {
   const stages = Array.isArray(data.stages) ? data.stages : []
   return (
-    <section className="rounded-[20px] border border-[rgba(15,23,42,0.08)] bg-white p-4 shadow-[0_22px_60px_rgba(15,23,42,0.065)] sm:p-6 xl:p-8">
+    <section className="rounded-[20px] border border-[rgba(15,23,42,0.08)] bg-white p-4 shadow-[0_22px_60px_rgba(15,23,42,0.06)] sm:p-6 xl:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-[1.35rem] font-bold leading-tight text-[#081735] sm:text-[1.55rem]">Sales Funnel (Lead → OTP)</h2>
+            <h2 className="text-[1.3rem] font-semibold leading-tight text-[#081735] sm:text-[1.45rem]">Sales Funnel (Lead → OTP)</h2>
             <Info size={17} className="text-[#5f7087]" />
           </div>
-          <p className="mt-2 text-[0.98rem] leading-6 text-[#52657a]">Track how leads are progressing towards signed OTP</p>
+          <p className="mt-2 text-[0.95rem] leading-6 text-[#52657a]">Track how leads are progressing towards signed OTP</p>
         </div>
 
         <FilterDropdown
@@ -1011,14 +1011,14 @@ function PrincipalSalesFunnelCard({ data = {}, agents = [], dateRange = 'last_30
         />
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-[minmax(360px,1.35fr)_minmax(260px,0.85fr)_minmax(360px,1.25fr)]">
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2 2xl:grid-cols-[minmax(360px,1.28fr)_minmax(260px,0.86fr)_minmax(380px,1.34fr)]">
         <div className="order-2 min-w-0 lg:order-1">
           <FunnelStageList stages={stages} />
         </div>
         <div className="order-1 min-w-0 lg:order-2">
           <ConversionHeroRing data={data} />
         </div>
-        <div className="order-3 min-w-0 lg:col-span-2 xl:col-span-1">
+        <div className="order-3 min-w-0 lg:col-span-2 2xl:col-span-1">
           <FunnelKpiGrid data={data} agents={agents} />
         </div>
       </div>
@@ -1080,48 +1080,6 @@ function TransactionHealthOverview({ data = {} }) {
         <button type="button" disabled title="Coming soon" className="inline-flex h-10 cursor-not-allowed items-center gap-2 rounded-xl border border-warning bg-white/70 px-3 text-sm font-semibold text-textMuted opacity-75">
           View Transaction Details <ArrowRight size={14} />
         </button>
-      </div>
-    </section>
-  )
-}
-
-function ActiveTransactionDistribution({ data = {}, totalActive = 0, compact = false }) {
-  const rows = Array.isArray(data.activeDistribution) ? data.activeDistribution : []
-  const activeTotal = Number(totalActive || 0)
-  const distributionTotal = rows.reduce((sum, row) => sum + Number(row.count || 0), 0)
-  const gradient = !activeTotal && !distributionTotal ? '' : rows.reduce((state, row) => {
-    const style = TRANSACTION_STAGE_STYLES[row.key] || TRANSACTION_STAGE_STYLES.otp
-    const start = state.cursor
-    const end = start + Number(row.percentage || 0)
-    return {
-      cursor: end,
-      parts: [...state.parts, `var(--color-${style.dotClass.replace('bg-', '')}) ${start}% ${end}%`],
-    }
-  }, { cursor: 0, parts: [] }).parts.join(', ')
-  return (
-    <section className={`${dashboardCardClass} ${compact ? 'px-4 py-4' : dashboardCardPadding} flex ${compact ? 'min-h-[174px]' : 'min-h-[270px]'} flex-col`}>
-      <h2 className="text-[1.08rem] font-semibold text-textStrong">Active Transactions</h2>
-      <div className={`${compact ? 'mt-4 gap-3 sm:grid-cols-[96px_minmax(0,1fr)] xl:grid-cols-[96px_minmax(0,1fr)] 2xl:grid-cols-[104px_minmax(0,1fr)]' : 'mt-5 gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:grid-cols-1 2xl:grid-cols-[150px_minmax(0,1fr)]'} grid flex-1 items-center`}>
-        <div className={`${compact ? 'h-[96px] w-[96px] 2xl:h-[104px] 2xl:w-[104px]' : 'h-[150px] w-[150px]'} relative mx-auto rounded-full`} style={{ background: gradient ? `conic-gradient(${gradient})` : 'conic-gradient(var(--color-bg-muted) 0% 100%)' }}>
-          <div className={`${compact ? 'inset-[23px] 2xl:inset-[25px]' : 'inset-[34px]'} absolute grid place-items-center rounded-full bg-white text-center shadow-inner`}>
-            <div>
-              <p className={`${compact ? 'text-[1.15rem]' : 'text-[1.55rem]'} font-semibold leading-none text-textStrong`}>{formatCount(activeTotal)}</p>
-              <p className="mt-1 text-xs font-semibold text-textMuted">Active</p>
-            </div>
-          </div>
-        </div>
-        <div className={`${compact ? 'gap-2' : 'gap-3'} grid min-w-0 content-center`}>
-          {rows.map((row) => {
-            const style = TRANSACTION_STAGE_STYLES[row.key] || TRANSACTION_STAGE_STYLES.otp
-            return (
-              <div key={row.key} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-sm">
-                <span className={`h-2.5 w-2.5 rounded-full ${style.dotClass}`} />
-                <span className="truncate font-semibold text-textBody">{row.label}</span>
-                <span className="font-semibold text-textStrong tabular-nums">{formatPercent(row.percentage)}</span>
-              </div>
-            )
-          })}
-        </div>
       </div>
     </section>
   )
@@ -1597,20 +1555,12 @@ function PipelineSalesOverview({ data, dateRange, onDateRangeChange, overviewMod
 
       {activeTab === 'overview' ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
-            <div className="min-w-0">
-              <PrincipalSalesFunnelCard
-                data={data.pipeline.salesFunnel || {}}
-                agents={data.agentPerformance || []}
-                dateRange={dateRange}
-                onDateRangeChange={onDateRangeChange}
-              />
-            </div>
-            <aside className="grid min-w-0 content-start gap-6">
-              <ActiveTransactionDistribution data={data.transactions.health || {}} totalActive={data.kpis.activeTransactions} compact />
-              <PipelineHealthPanel items={data.pipeline.health || []} compact />
-            </aside>
-          </div>
+          <PrincipalSalesFunnelCard
+            data={data.pipeline.salesFunnel || {}}
+            agents={data.agentPerformance || []}
+            dateRange={dateRange}
+            onDateRangeChange={onDateRangeChange}
+          />
           <TransactionHealthOverview data={data.transactions.health || {}} />
           <ActiveTransactionsSlider rows={data.activeTransactions || []} />
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

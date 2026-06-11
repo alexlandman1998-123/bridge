@@ -255,6 +255,56 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
   return []
 }
 
+async function fetchProfileAvatarsForOrganisationUsers(rows = []) {
+  if (!isSupabaseConfigured || !supabase) return { byUserId: {}, byEmail: {} }
+  const userIds = [...new Set(rows.map((row) => normalizeText(row?.user_id || row?.userId)).filter(Boolean))]
+  const emails = [...new Set(rows.map((row) => normalizeKey(row?.email)).filter(Boolean))]
+  if (!userIds.length && !emails.length) return { byUserId: {}, byEmail: {} }
+
+  async function fetchProfilesBy(column, values) {
+    if (!values.length) return []
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, email, avatar_url')
+      .in(column, values)
+      .limit(1000)
+
+    if (error) {
+      if (isMissingSourceError(error) || getMissingColumnName(error) === 'avatar_url') return []
+      throw error
+    }
+
+    return Array.isArray(data) ? data : []
+  }
+
+  const [profilesById, profilesByEmail] = await Promise.all([
+    fetchProfilesBy('id', userIds),
+    fetchProfilesBy('email', emails),
+  ])
+
+  return [...profilesById, ...profilesByEmail].reduce((accumulator, row) => {
+    const avatarUrl = normalizeText(row?.avatar_url)
+    if (!avatarUrl) return accumulator
+    const id = normalizeText(row?.id)
+    const email = normalizeKey(row?.email)
+    if (id) accumulator.byUserId[id] = avatarUrl
+    if (email) accumulator.byEmail[email] = avatarUrl
+    return accumulator
+  }, { byUserId: {}, byEmail: {} })
+}
+
+async function enrichOrganisationUsersWithProfileAvatars(rows = []) {
+  const avatarLookup = await fetchProfileAvatarsForOrganisationUsers(rows)
+  return rows.map((row) => ({
+    ...row,
+    avatar_url:
+      normalizeText(row?.avatar_url) ||
+      avatarLookup.byUserId[normalizeText(row?.user_id)] ||
+      avatarLookup.byEmail[normalizeKey(row?.email)] ||
+      '',
+  }))
+}
+
 function getDealValue(row = {}) {
   return getDashboardTransactionPrice(row)
 }
@@ -1323,7 +1373,7 @@ export async function getPrincipalDashboardData({
     safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000 }),
     safeSelect('document_packet_events', 'id, packet_id, organisation_id, event_type, event_payload_json, created_by, created_at', { agencyId: resolvedAgencyId, order: 'created_at', limit: 300 }),
     safeSelect('organisation_users', [
-      'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at',
+      'id, organisation_id, user_id, branch_id, first_name, last_name, email, avatar_url, role, workspace_role, organisation_role, status, last_active_at, created_at, updated_at',
       'id, organisation_id, user_id, first_name, last_name, email, role, status, last_active_at, created_at, updated_at',
     ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500 }),
     safeSelect('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1200 }),
@@ -1345,9 +1395,10 @@ export async function getPrincipalDashboardData({
           (scopedActorEmail && assignedEmail === scopedActorEmail),
         )
       })
+  const enrichedOrganisationUsers = await enrichOrganisationUsersWithProfileAvatars(allOrganisationUsers)
   const transactions = scopedAllTransactions.filter((row) => isScopedToBranch(row, selectedBranchId, 'assigned_branch_id'))
   const leads = allLeads.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
-  const organisationUsers = allOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
+  const organisationUsers = enrichedOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const transactionIds = new Set(transactions.map((row) => normalizeText(row.id)).filter(Boolean))
   const leadIds = new Set(leads.map((row) => normalizeText(row.lead_id)).filter(Boolean))
   const documentPackets = allDocumentPackets.filter((packet) => {

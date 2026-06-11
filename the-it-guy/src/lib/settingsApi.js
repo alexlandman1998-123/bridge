@@ -4252,27 +4252,43 @@ function normalizeOrganisationUserRow(row) {
   }
 }
 
-async function fetchOrganisationUserProfileAvatars(client, userIds = []) {
-  const ids = [...new Set(userIds.map((id) => normalizeText(id)).filter(Boolean))]
-  if (!ids.length) return {}
+async function fetchOrganisationUserProfileAvatars(client, rows = []) {
+  const userIds = [...new Set(rows.map((row) => normalizeText(row?.user_id || row?.userId)).filter(Boolean))]
+  const emails = [...new Set(rows.map((row) => normalizeEmail(row?.email)).filter(Boolean))]
+  if (!userIds.length && !emails.length) return { byUserId: {}, byEmail: {} }
 
-  const { data, error } = await client
-    .from('profiles')
-    .select('id, avatar_url')
-    .in('id', ids)
+  async function fetchProfilesBy(column, values) {
+    if (!values.length) return []
 
-  if (error) {
-    if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'avatar_url') || isPermissionDeniedError(error)) {
-      return {}
+    const { data, error } = await client
+      .from('profiles')
+      .select('id, email, avatar_url')
+      .in(column, values)
+
+    if (error) {
+      if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'avatar_url') || isPermissionDeniedError(error)) {
+        return []
+      }
+      throw error
     }
-    throw error
+
+    return Array.isArray(data) ? data : []
   }
 
-  return (data || []).reduce((accumulator, row) => {
+  const [profilesById, profilesByEmail] = await Promise.all([
+    fetchProfilesBy('id', userIds),
+    fetchProfilesBy('email', emails),
+  ])
+
+  return [...profilesById, ...profilesByEmail].reduce((accumulator, row) => {
+    const avatarUrl = normalizeText(row?.avatar_url)
+    if (!avatarUrl) return accumulator
     const id = normalizeText(row?.id)
-    if (id) accumulator[id] = normalizeText(row?.avatar_url)
+    const email = normalizeEmail(row?.email)
+    if (id) accumulator.byUserId[id] = avatarUrl
+    if (email) accumulator.byEmail[email] = avatarUrl
     return accumulator
-  }, {})
+  }, { byUserId: {}, byEmail: {} })
 }
 
 export async function listOrganisationUsers() {
@@ -4322,10 +4338,14 @@ export async function listOrganisationUsers() {
       throw error
     }
 
-    const avatarByUserId = await fetchOrganisationUserProfileAvatars(client, (data || []).map((row) => row?.user_id))
+    const avatarLookup = await fetchOrganisationUserProfileAvatars(client, data || [])
     return (data || []).map((row) => normalizeOrganisationUserRow({
       ...row,
-      avatar_url: avatarByUserId[normalizeText(row?.user_id)] || '',
+      avatar_url:
+        normalizeText(row?.avatar_url) ||
+        avatarLookup.byUserId[normalizeText(row?.user_id)] ||
+        avatarLookup.byEmail[normalizeEmail(row?.email)] ||
+        '',
     }))
   })()
     .then((users) => {
