@@ -154,13 +154,15 @@ function getAuthInvitePath({ token = '', email = '', mode = '' } = {}) {
 function InviteDetailList({ details = [] }) {
   if (!details.length) return null
   return (
-    <dl className="grid gap-3 border-y border-borderSoft bg-surfaceAlt px-6 py-5 sm:grid-cols-3 sm:px-8">
-      {details.map((item) => (
-        <div key={item.label} className="min-w-0">
-          <dt className="text-label font-semibold uppercase text-textMuted">{item.label}</dt>
-          <dd className="mt-1 truncate text-base font-semibold text-textStrong">{item.value}</dd>
+    <dl className="border-y border-borderSoft bg-[#fbfcfe] px-6 py-6 sm:px-8">
+      <div className="grid overflow-hidden rounded-control border border-borderSoft bg-surface shadow-surface sm:grid-cols-3">
+        {details.map((item, index) => (
+        <div key={item.label} className={`min-w-0 px-5 py-4 ${index > 0 ? 'border-t border-borderSoft sm:border-l sm:border-t-0' : ''}`}>
+          <dt className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-textSoft">{item.label}</dt>
+          <dd className="mt-2 truncate text-[1.05rem] font-semibold leading-6 text-textStrong">{item.value}</dd>
         </div>
-      ))}
+        ))}
+      </div>
     </dl>
   )
 }
@@ -189,16 +191,16 @@ function InviteBrandStrip({ workspaceName = '', workspaceLogoUrl = '' }) {
     <div className="flex items-center justify-between gap-4 border-b border-borderSoft px-5 py-5 sm:px-7">
       <div className="flex min-w-0 items-center">
         {workspaceLogoUrl ? (
-          <img src={workspaceLogoUrl} alt={`${inviterName} logo`} className="h-16 w-24 rounded-control border border-borderSoft bg-surface object-contain p-2 shadow-surface sm:h-20 sm:w-32" />
+          <img src={workspaceLogoUrl} alt={`${inviterName} logo`} className="h-20 w-36 object-contain object-left sm:h-24 sm:w-44" />
         ) : (
-          <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-control border border-borderSoft bg-primarySoft text-xl font-semibold text-primary shadow-surface sm:h-20 sm:w-32">
+          <div className="flex h-20 w-36 shrink-0 items-center justify-center rounded-control bg-primarySoft text-2xl font-semibold text-primary sm:h-24 sm:w-44">
             {getInitials(inviterName)}
           </div>
         )}
       </div>
 
       <div className="flex shrink-0 items-center justify-end">
-        <img src="/brand/bridge_9_white_background.png" alt="Bridge9" className="h-10 w-[100px] object-contain object-right sm:h-12 sm:w-[120px]" />
+        <img src="/brand/bridge_9_white_background.png" alt="Bridge9" className="h-8 w-[82px] object-contain object-right sm:h-9 sm:w-[96px]" />
       </div>
     </div>
   )
