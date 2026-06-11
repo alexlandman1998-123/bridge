@@ -1,5 +1,5 @@
 import { ArrowRight, Building2, CheckCircle2, Mail, ShieldAlert } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import { acceptInvite, getInviteByToken, InviteValidationError } from '../services/inviteService'
@@ -7,6 +7,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const PENDING_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 const PENDING_INVITE_EMAIL_STORAGE_KEY = 'itg:pending-org-invite-email'
+const PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY = 'itg:pending-org-invite-auto-accept-token'
 const CLEAR_PENDING_INVITE_REASONS = new Set(['not_found', 'expired', 'revoked', 'already_accepted'])
 
 function normalizeText(value) {
@@ -112,6 +113,7 @@ function clearPendingInviteToken() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(PENDING_INVITE_TOKEN_STORAGE_KEY)
   window.sessionStorage.removeItem(PENDING_INVITE_EMAIL_STORAGE_KEY)
+  window.sessionStorage.removeItem(PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY)
 }
 
 function rememberPendingInvite({ token = '', email = '' } = {}) {
@@ -120,6 +122,23 @@ function rememberPendingInvite({ token = '', email = '' } = {}) {
   const safeEmail = normalizeText(email).toLowerCase()
   if (safeToken) window.sessionStorage.setItem(PENDING_INVITE_TOKEN_STORAGE_KEY, safeToken)
   if (safeEmail) window.sessionStorage.setItem(PENDING_INVITE_EMAIL_STORAGE_KEY, safeEmail)
+}
+
+function rememberPendingInviteAutoAccept(token = '') {
+  if (typeof window === 'undefined') return
+  const safeToken = normalizeText(token)
+  if (safeToken) window.sessionStorage.setItem(PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY, safeToken)
+}
+
+function clearPendingInviteAutoAccept() {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY)
+}
+
+function shouldAutoAcceptInvite(token = '') {
+  if (typeof window === 'undefined') return false
+  const safeToken = normalizeText(token)
+  return Boolean(safeToken && window.sessionStorage.getItem(PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY) === safeToken)
 }
 
 function getAuthInvitePath({ token = '', email = '', mode = '' } = {}) {
@@ -177,10 +196,6 @@ function InviteBrandStrip({ workspaceName = '', workspaceLogoUrl = '' }) {
           </div>
         )}
       </div>
-
-      <span className="hidden shrink-0 rounded-full border border-borderSoft bg-mutedBg px-3 py-1 text-label font-semibold uppercase text-textMuted sm:inline-flex">
-        via
-      </span>
 
       <div className="flex shrink-0 items-center justify-end">
         <img src="/brand/bridge_9_white_background.png" alt="Bridge9" className="h-10 w-[100px] object-contain object-right sm:h-12 sm:w-[120px]" />
@@ -338,12 +353,13 @@ export default function InviteResolver() {
     }
   }, [pendingInviteWrongAccount, reason])
 
-  async function handleAccept() {
+  const handleAccept = useCallback(async () => {
     const safeToken = normalizeText(token)
     if (!safeToken) return
     if (!sessionEmail) {
       rememberPendingInvite({ token: safeToken, email: invitedEmail })
-      navigate(getAuthInvitePath({ token: safeToken, email: invitedEmail }))
+      rememberPendingInviteAutoAccept(safeToken)
+      navigate(getAuthInvitePath({ token: safeToken, email: invitedEmail, mode: 'signup' }))
       return
     }
 
@@ -354,6 +370,7 @@ export default function InviteResolver() {
       setAcceptedResult(result)
       clearPendingInviteToken()
     } catch (acceptError) {
+      clearPendingInviteAutoAccept()
       if (acceptError instanceof InviteValidationError) {
         setReason(acceptError.code)
         setError(getInviteErrorMessage(acceptError, { sessionEmail, invitedEmail }))
@@ -363,7 +380,15 @@ export default function InviteResolver() {
     } finally {
       setSaving(false)
     }
-  }
+  }, [invitedEmail, navigate, sessionEmail, token])
+
+  useEffect(() => {
+    const safeToken = normalizeText(token)
+    if (!safeToken || saving || acceptedResult) return
+    if (reason || pendingInviteWrongAccount || !signedInAsInvitedEmail) return
+    if (!shouldAutoAcceptInvite(safeToken)) return
+    void handleAccept()
+  }, [acceptedResult, handleAccept, pendingInviteWrongAccount, reason, saving, signedInAsInvitedEmail, token])
 
   async function handleSwitchAccount() {
     const safeToken = normalizeText(token)
@@ -501,18 +526,13 @@ export default function InviteResolver() {
             <p className="text-center text-helper text-textMuted">Signed in as {sessionEmail}</p>
           ) : (
             <p className="text-center text-helper text-textMuted">
-              Sign in, or create an account with the invited email address, to continue.
+              Continue with the invited email address. Bridge will apply the workspace and role from this invite.
             </p>
           )}
           <div className="flex flex-wrap justify-center gap-2">
             <Button type="button" onClick={() => void handleAccept()} disabled={saving}>
-              {saving ? 'Accepting…' : sessionEmail ? 'Accept Invite' : 'Sign in'}
+              {saving ? 'Accepting…' : 'Accept invite'}
             </Button>
-            {!sessionEmail ? (
-              <SecondaryInviteLink to={getAuthInvitePath({ token, email: invitedEmail, mode: 'signup' })}>
-                Create account
-              </SecondaryInviteLink>
-            ) : null}
           </div>
         </InviteActionPanel>
 

@@ -86,10 +86,12 @@ matches(
 
 for (const marker of [
   'itg:pending-org-invite-email',
+  'itg:pending-org-invite-auto-accept-token',
   'CLEAR_PENDING_INVITE_REASONS',
   "new Set(['not_found', 'expired', 'revoked', 'already_accepted'])",
-  'Create account',
-  'getAuthInvitePath({ token, email: invitedEmail, mode: \'signup\' })',
+  'rememberPendingInviteAutoAccept(safeToken)',
+  "navigate(getAuthInvitePath({ token: safeToken, email: invitedEmail, mode: 'signup' }))",
+  "'Accept invite'",
 ]) {
   includes(inviteResolver, marker, `Invite resolver should preserve Phase 3/4 auth handoff behavior: ${marker}`)
 }
