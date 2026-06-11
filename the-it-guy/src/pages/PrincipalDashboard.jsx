@@ -660,20 +660,64 @@ function PipelineFunnelPanel({ rows = [] }) {
 function PipelineHealthPanel({ items = [] }) {
   const navigate = useNavigate()
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[420px]`}>
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex min-h-[420px] flex-col`}>
       <h2 className="text-[1.08rem] font-semibold text-[#101828]">Pipeline Health</h2>
-      <div className="mt-5 space-y-3">
+      <div className="mt-5 grid flex-1 auto-rows-fr gap-3">
         {items.map((item) => (
           <button
             key={item.key}
             type="button"
             onClick={() => item.href ? navigate(item.href) : null}
-            className="flex w-full items-center justify-between gap-4 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
+            className="flex h-full min-h-[58px] w-full items-center justify-between gap-4 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
           >
             <span className="min-w-0 truncate text-sm font-semibold text-[#344054]">{item.label}</span>
             <span className={`rounded-full px-3 py-1 text-sm font-semibold tabular-nums ${item.count ? 'bg-[#fff2f0] text-[#b42318]' : 'bg-[#edfdf3] text-[#16894f]'}`}>{formatCount(item.count)}</span>
           </button>
         ))}
+      </div>
+    </section>
+  )
+}
+
+function AgentSnapshotPanel({ rows = [] }) {
+  const navigate = useNavigate()
+  const topRows = rows.slice(0, 4)
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[1.05rem] font-semibold text-[#101828]">Agent Snapshot</h2>
+          <p className="mt-1 text-sm text-[#667085]">Pipeline ownership and conversion signals.</p>
+        </div>
+        <button type="button" onClick={() => navigate('/agents')} className="h-9 shrink-0 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
+          View agents
+        </button>
+      </div>
+
+      <div className="mt-4 grid flex-1 auto-rows-fr gap-3">
+        {topRows.length ? topRows.map((agent, index) => (
+          <button
+            key={`${agent.agentId || agent.agentName}-${index}`}
+            type="button"
+            onClick={() => agent.agentId ? navigate(`/agents/${agent.agentId}`) : navigate('/agents')}
+            className="grid h-full min-h-[76px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
+          >
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#101828]">{agent.agentName}</p>
+              <p className="mt-1 text-xs font-medium text-[#667085]">
+                {formatCount(agent.activeDeals)} active · {formatCount(agent.registeredCount)} registered
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-semibold text-[#101828]">{formatCurrency(agent.pipelineValue, { compact: true })}</p>
+              <p className="mt-1 text-xs font-medium text-[#667085]">{formatPercent(agent.conversionRate)} conversion</p>
+            </div>
+          </button>
+        )) : (
+          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">
+            No agent performance data yet.
+          </div>
+        )}
       </div>
     </section>
   )
@@ -799,18 +843,21 @@ function RevenueSourceCards({ rows = [] }) {
   )
 }
 
-function RevenueForecastCards({ forecast }) {
+function RevenueForecastCards({ forecast, layout = 'grid' }) {
   const cards = [
     { label: 'Expected Commission', value: forecast?.expectedCommission },
     { label: 'Likely Revenue', value: forecast?.likelyRevenue },
     { label: 'Committed Revenue', value: forecast?.committedRevenue },
   ]
+  const stacked = layout === 'stacked'
   return (
-    <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <section className={stacked ? 'grid h-full grid-cols-1 gap-3' : 'grid grid-cols-1 gap-4 md:grid-cols-3'}>
       {cards.map((card) => (
-        <article key={card.label} className={`${dashboardCardClass} p-4`}>
+        <article key={card.label} className={`${dashboardCardClass} ${stacked ? 'flex min-h-[92px] flex-col justify-center p-4' : 'p-4'}`}>
           <p className="text-sm font-semibold text-[#344054]">{card.label}</p>
-          <p className="mt-3 text-[1.55rem] font-semibold leading-none text-[#101828]">{formatCurrency(card.value, { compact: true })}</p>
+          <p className={`${stacked ? 'mt-2 text-[1.35rem]' : 'mt-3 text-[1.55rem]'} font-semibold leading-none tracking-[-0.025em] text-[#101828] tabular-nums`}>
+            {formatCurrency(card.value, { compact: true })}
+          </p>
         </article>
       ))}
     </section>
@@ -866,11 +913,16 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
           </div>
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <TransactionFlowRail rows={data.transactions.flow || []} />
-            <RevenueForecastCards forecast={data.revenue.forecast} />
+            <RevenueForecastCards forecast={data.revenue.forecast} layout="stacked" />
           </div>
+          <ActiveTransactionsSlider rows={data.activeTransactions || []} />
           <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <RecentActivityFeed rows={data.recentActivity} />
+            <AgentSnapshotPanel rows={data.agentPerformance || []} />
+          </section>
+          <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <TransactionAlertsPanel rows={[...(data.overview?.urgentAlerts || [])]} />
+            <AttentionRequiredCard attention={data.attentionRequired || {}} />
           </section>
         </>
       ) : null}
