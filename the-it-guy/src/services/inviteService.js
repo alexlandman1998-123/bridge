@@ -30,7 +30,8 @@ export class InviteValidationError extends Error {
   }
 }
 
-function requireClient() {
+function requireClient(clientOverride = null) {
+  if (clientOverride) return clientOverride
   if (!isSupabaseConfigured || !supabase) {
     throw new InviteValidationError('invite_backend_unavailable')
   }
@@ -71,6 +72,45 @@ function normalizeInviteRow(row = {}) {
     updatedAt: row.updated_at || null,
     workspace: row.organisations || null,
   }
+}
+
+function isMissingInviteSchemaError(error) {
+  return String(error?.code || '').toUpperCase() === '42P01' || String(error?.message || '').toLowerCase().includes('invites')
+}
+
+function isMissingInviteLookupRpcError(error) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase()
+  return code === '42883' || code === 'PGRST202' || message.includes('bridge_lookup_invite_by_token')
+}
+
+function isRlsVisibilityError(error) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = `${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`.toLowerCase()
+  return code === '42501' || message.includes('permission denied') || message.includes('violates row-level security')
+}
+
+function resolveInviteContext(invite = {}) {
+  if (!invite.id) return { ok: false, reason: 'not_found', invite: null }
+  if (invite.status === INVITE_STATUSES.revoked) return { ok: false, reason: 'revoked', invite }
+  if (invite.status === INVITE_STATUSES.accepted) return { ok: false, reason: 'already_accepted', invite }
+  const expiresAt = invite.expiresAt ? new Date(invite.expiresAt).getTime() : null
+  if (Number.isFinite(expiresAt) && expiresAt < Date.now()) return { ok: false, reason: 'expired', invite }
+  return { ok: true, reason: '', invite }
+}
+
+async function getInviteByTokenViaLookupRpc(client, safeToken) {
+  if (!safeToken || typeof client?.rpc !== 'function') return null
+  const result = await client.rpc('bridge_lookup_invite_by_token', { p_token: safeToken })
+  if (result.error) {
+    if (isMissingInviteLookupRpcError(result.error)) return null
+    throw result.error
+  }
+  const payload = result.data || {}
+  if (!payload.success) {
+    return { ok: false, reason: payload.code || 'not_found', invite: null }
+  }
+  return resolveInviteContext(normalizeInviteRow(payload.invite || {}))
 }
 
 export function resolveInviteAction(invite = {}) {
@@ -118,8 +158,8 @@ export function assertInviteCanBeAccepted(invite = {}, user = {}) {
   return true
 }
 
-export async function getInviteByToken(token) {
-  const client = requireClient()
+export async function getInviteByToken(token, options = {}) {
+  const client = requireClient(options.client)
   const safeToken = normalizeText(token)
   if (!safeToken) return { ok: false, reason: 'missing_token', invite: null }
 
@@ -130,19 +170,22 @@ export async function getInviteByToken(token) {
     .maybeSingle()
 
   if (result.error) {
-    if (String(result.error.code || '').toUpperCase() === '42P01' || String(result.error.message || '').toLowerCase().includes('invites')) {
+    if (isRlsVisibilityError(result.error)) {
+      const rpcContext = await getInviteByTokenViaLookupRpc(client, safeToken)
+      if (rpcContext) return rpcContext
+    }
+    if (isMissingInviteSchemaError(result.error)) {
       return { ok: false, reason: 'invite_schema_missing', invite: null }
     }
     throw result.error
   }
 
   const invite = normalizeInviteRow(result.data || {})
-  if (!invite.id) return { ok: false, reason: 'not_found', invite: null }
-  if (invite.status === INVITE_STATUSES.revoked) return { ok: false, reason: 'revoked', invite }
-  if (invite.status === INVITE_STATUSES.accepted) return { ok: false, reason: 'already_accepted', invite }
-  const expiresAt = invite.expiresAt ? new Date(invite.expiresAt).getTime() : null
-  if (Number.isFinite(expiresAt) && expiresAt < Date.now()) return { ok: false, reason: 'expired', invite }
-  return { ok: true, reason: '', invite }
+  if (!invite.id) {
+    const rpcContext = await getInviteByTokenViaLookupRpc(client, safeToken)
+    if (rpcContext) return rpcContext
+  }
+  return resolveInviteContext(invite)
 }
 
 export async function createInvite(payload = {}) {
