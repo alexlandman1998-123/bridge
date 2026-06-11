@@ -26,7 +26,7 @@ import {
   Users,
   WalletCards,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import { useAuthSession } from '../context/AuthSessionContext'
@@ -729,7 +729,7 @@ function formatSignedDelta(value, { suffix = '', empty = '—' } = {}) {
   return `${sign}${Math.abs(numeric)}${suffix}`
 }
 
-function FunnelKpiCard({ icon: Icon, label, value, subtext, trend, tone = 'blue', inverseTrend = false, trendSuffix = '' }) {
+function FunnelKpiCard({ icon, label, value, subtext, trend, tone = 'blue', inverseTrend = false, trendSuffix = '' }) {
   const style = SALES_FUNNEL_KPI_TONES[tone] || SALES_FUNNEL_KPI_TONES.blue
   const hasTrend = trend !== null && trend !== undefined && Number.isFinite(Number(trend))
   const trendValue = hasTrend ? Math.round(Number(trend)) : null
@@ -737,13 +737,13 @@ function FunnelKpiCard({ icon: Icon, label, value, subtext, trend, tone = 'blue'
   const TrendIcon = hasTrend && trendValue < 0 ? TrendingDown : TrendingUp
 
   return (
-    <article className={`min-h-[148px] rounded-2xl border ${style.borderClass} bg-white p-4 shadow-sm shadow-slate-200/40`}>
-      <span className={`grid h-10 w-10 place-items-center rounded-2xl ${style.iconClass}`}>
-        <Icon size={20} />
+    <article className={`min-h-[120px] rounded-2xl border ${style.borderClass} bg-white p-3.5 shadow-sm shadow-slate-200/40`}>
+      <span className={`grid h-9 w-9 place-items-center rounded-xl ${style.iconClass}`}>
+        {icon ? createElement(icon, { size: 18 }) : null}
       </span>
-      <p className="mt-4 text-sm font-semibold leading-5 text-textStrong">{label}</p>
-      <p className={`mt-2 text-[2rem] font-semibold leading-none tracking-normal tabular-nums ${style.valueClass}`}>{value}</p>
-      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+      <p className="mt-3 text-[0.82rem] font-semibold leading-5 text-textStrong">{label}</p>
+      <p className={`mt-1.5 text-[1.65rem] font-semibold leading-none tracking-normal tabular-nums ${style.valueClass}`}>{value}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <span className="font-medium text-textMuted">{subtext}</span>
         {hasTrend ? (
           <span className={`inline-flex items-center gap-1 font-semibold ${goodTrend ? 'text-success' : 'text-danger'}`}>
@@ -770,16 +770,16 @@ function SalesFunnelOverview({ data = {} }) {
         </div>
       </div>
 
-      <div className="mt-7 grid gap-7 xl:grid-cols-[minmax(260px,0.85fr)_minmax(360px,1fr)] xl:items-center">
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(220px,0.72fr)_minmax(320px,1fr)] xl:items-start">
         <div className="min-w-0">
-          <div className="mx-auto flex w-full max-w-[286px] flex-col items-center">
+          <div className="mx-auto flex w-full max-w-[250px] flex-col items-center">
             {stages.map((stage, index) => {
               const width = Math.max(48, 100 - index * 11)
               const color = SALES_FUNNEL_TONES[index] || 'var(--color-primary)'
               return (
                 <div key={stage.key} className="flex w-full flex-col items-center">
                   <article
-                    className="grid min-h-[74px] place-items-center px-5 text-center text-white shadow-sm"
+                    className="grid min-h-[54px] place-items-center px-4 text-center text-white shadow-sm"
                     style={{
                       width: `${width}%`,
                       clipPath: 'polygon(7% 0, 93% 0, 84% 100%, 16% 100%)',
@@ -787,28 +787,28 @@ function SalesFunnelOverview({ data = {} }) {
                     }}
                   >
                     <span>
-                      <span className="block text-[1.75rem] font-semibold leading-none tabular-nums text-white">{formatCount(stage.count)}</span>
-                      <span className="mt-1 block text-sm font-semibold leading-5 text-white">{stage.label}</span>
+                      <span className="block text-[1.35rem] font-semibold leading-none tabular-nums text-white">{formatCount(stage.count)}</span>
+                      <span className="mt-0.5 block text-xs font-semibold leading-4 text-white">{stage.label}</span>
                     </span>
                   </article>
                   {index < stages.length - 1 ? (
-                    <div className="flex min-h-[42px] flex-col items-center justify-center text-center">
-                      <span className="text-sm font-semibold text-textStrong tabular-nums">{formatPercent(stage.conversionToNext)}</span>
-                      <span className="text-[1.25rem] leading-none text-textMuted">↓</span>
+                    <div className="flex min-h-[28px] flex-col items-center justify-center text-center">
+                      <span className="text-xs font-semibold leading-4 text-textStrong tabular-nums">{formatPercent(stage.conversionToNext)}</span>
+                      <span className="text-base leading-none text-textMuted">↓</span>
                     </div>
                   ) : null}
                 </div>
               )
             })}
           </div>
-          <div className="mx-auto mt-6 flex min-h-[54px] w-full max-w-[420px] items-center justify-center rounded-2xl border border-borderSoft bg-mutedBg/80 px-4 text-center shadow-inner">
-            <p className="text-base font-semibold text-textStrong">
-              Lead → OTP Conversion: <span className="text-[1.55rem] text-primary tabular-nums">{formatPercent(data.leadToOtpConversion)}</span>
+          <div className="mx-auto mt-4 flex min-h-[46px] w-full max-w-[340px] items-center justify-center rounded-2xl border border-borderSoft bg-mutedBg/80 px-4 text-center shadow-inner">
+            <p className="text-sm font-semibold text-textStrong">
+              Lead → OTP Conversion: <span className="text-[1.35rem] text-primary tabular-nums">{formatPercent(data.leadToOtpConversion)}</span>
             </p>
           </div>
         </div>
 
-        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
           <FunnelKpiCard
             icon={LineChart}
             label="Lead → OTP Conversion"
@@ -848,9 +848,9 @@ function SalesFunnelOverview({ data = {} }) {
         </div>
       </div>
 
-      <div className="mt-6 flex items-start gap-3 rounded-2xl border border-[#dce8f6] bg-[#f3f8ff] px-4 py-4 text-sm text-[#52657a]">
-        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-white text-primary shadow-sm">
-          <Lightbulb size={17} />
+      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#dce8f6] bg-[#f3f8ff] px-4 py-3 text-sm text-[#52657a]">
+        <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-white text-primary shadow-sm">
+          <Lightbulb size={15} />
         </span>
         <p className="leading-6">
           <span className="font-semibold text-textStrong">{insight.message || 'Funnel movement is holding steady.'}</span>
@@ -930,24 +930,24 @@ function ActiveTransactionDistribution({ data = {}, totalActive = 0, compact = f
     }
   }, { cursor: 0, parts: [] }).parts.join(', ')
   return (
-    <section className={`${dashboardCardClass} ${compact ? 'px-4 py-4' : dashboardCardPadding} flex ${compact ? 'min-h-[190px]' : 'min-h-[270px]'} flex-col`}>
+    <section className={`${dashboardCardClass} ${compact ? 'px-4 py-4' : dashboardCardPadding} flex ${compact ? 'min-h-[174px]' : 'min-h-[270px]'} flex-col`}>
       <h2 className="text-[1.08rem] font-semibold text-textStrong">Active Transactions</h2>
-      <div className={`${compact ? 'mt-4 gap-3 sm:grid-cols-[112px_minmax(0,1fr)] xl:grid-cols-[112px_minmax(0,1fr)] 2xl:grid-cols-[112px_minmax(0,1fr)]' : 'mt-5 gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:grid-cols-1 2xl:grid-cols-[150px_minmax(0,1fr)]'} grid flex-1 items-center`}>
-        <div className={`${compact ? 'h-[112px] w-[112px]' : 'h-[150px] w-[150px]'} relative mx-auto rounded-full`} style={{ background: gradient ? `conic-gradient(${gradient})` : 'conic-gradient(var(--color-bg-muted) 0% 100%)' }}>
-          <div className={`${compact ? 'inset-[27px]' : 'inset-[34px]'} absolute grid place-items-center rounded-full bg-white text-center shadow-inner`}>
+      <div className={`${compact ? 'mt-4 gap-3 sm:grid-cols-[96px_minmax(0,1fr)] xl:grid-cols-[96px_minmax(0,1fr)] 2xl:grid-cols-[104px_minmax(0,1fr)]' : 'mt-5 gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:grid-cols-1 2xl:grid-cols-[150px_minmax(0,1fr)]'} grid flex-1 items-center`}>
+        <div className={`${compact ? 'h-[96px] w-[96px] 2xl:h-[104px] 2xl:w-[104px]' : 'h-[150px] w-[150px]'} relative mx-auto rounded-full`} style={{ background: gradient ? `conic-gradient(${gradient})` : 'conic-gradient(var(--color-bg-muted) 0% 100%)' }}>
+          <div className={`${compact ? 'inset-[23px] 2xl:inset-[25px]' : 'inset-[34px]'} absolute grid place-items-center rounded-full bg-white text-center shadow-inner`}>
             <div>
-              <p className={`${compact ? 'text-[1.25rem]' : 'text-[1.55rem]'} font-semibold leading-none text-textStrong`}>{formatCount(activeTotal)}</p>
+              <p className={`${compact ? 'text-[1.15rem]' : 'text-[1.55rem]'} font-semibold leading-none text-textStrong`}>{formatCount(activeTotal)}</p>
               <p className="mt-1 text-xs font-semibold text-textMuted">Active</p>
             </div>
           </div>
         </div>
-        <div className={`${compact ? 'gap-2.5' : 'gap-3'} grid content-center`}>
+        <div className={`${compact ? 'gap-2' : 'gap-3'} grid min-w-0 content-center`}>
           {rows.map((row) => {
             const style = TRANSACTION_STAGE_STYLES[row.key] || TRANSACTION_STAGE_STYLES.otp
             return (
               <div key={row.key} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-sm">
                 <span className={`h-2.5 w-2.5 rounded-full ${style.dotClass}`} />
-                <span className="font-semibold text-textBody">{row.label}</span>
+                <span className="truncate font-semibold text-textBody">{row.label}</span>
                 <span className="font-semibold text-textStrong tabular-nums">{formatPercent(row.percentage)}</span>
               </div>
             )
@@ -1428,11 +1428,11 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
 
       {activeTab === 'overview' ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
+          <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
             <div className="min-w-0">
               <SalesFunnelOverview data={data.pipeline.salesFunnel || {}} />
             </div>
-            <aside className="grid min-w-0 content-stretch gap-6">
+            <aside className="grid min-w-0 content-start gap-6">
               <ActiveTransactionDistribution data={data.transactions.health || {}} totalActive={data.kpis.activeTransactions} compact />
               <PipelineHealthPanel items={data.pipeline.health || []} compact />
             </aside>
