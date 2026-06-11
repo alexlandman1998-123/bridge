@@ -247,6 +247,7 @@ function HeaderBar({ onLogout, user }) {
   const hidePremiumHeaderTitle =
     location.pathname.startsWith('/pipeline/leads') ||
     location.pathname.startsWith('/agency/branches') ||
+    (role === 'agent' && (location.pathname === '/dashboard' || location.pathname === '/')) ||
     isPremiumAttorneyOperations
   const developerHideTitle =
     role === 'developer' &&
@@ -342,9 +343,6 @@ function HeaderBar({ onLogout, user }) {
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
   const showPersonaSwitcher = role !== 'bond_originator' && !isAgentWorkspaceRole && !isAgentsDirectoryRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
-  const agentDashboardOwnsHeader =
-    role === 'agent' &&
-    (location.pathname === '/dashboard' || location.pathname === '/')
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const notificationsControl = (
     <div className="relative flex-none" ref={notificationsRef}>
@@ -476,10 +474,6 @@ function HeaderBar({ onLogout, user }) {
       ) : null}
     </div>
   )
-
-  if (agentDashboardOwnsHeader) {
-    return null
-  }
 
   if (isAttorneyDashboardRoute) {
     return (

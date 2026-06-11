@@ -91,6 +91,7 @@ for (const marker of [
   "new Set(['not_found', 'expired', 'revoked', 'already_accepted'])",
   'rememberPendingInviteAutoAccept(safeToken)',
   "navigate(getAuthInvitePath({ token: safeToken, email: invitedEmail, mode: 'signup' }))",
+  "navigate(getInviteTarget(invite), { replace: true })",
   "'Accept invite'",
 ]) {
   includes(inviteResolver, marker, `Invite resolver should preserve Phase 3/4 auth handoff behavior: ${marker}`)

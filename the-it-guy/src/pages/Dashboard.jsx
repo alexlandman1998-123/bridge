@@ -819,7 +819,6 @@ function Dashboard() {
   })
   const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
   const [organisationIdForAppointments, setOrganisationIdForAppointments] = useState('')
-  const [agentViewOverride, setAgentViewOverride] = useState('auto')
   const [principalTimeFilter, setPrincipalTimeFilter] = useState('this_week')
   const [principalCrmSnapshot, setPrincipalCrmSnapshot] = useState({ leads: [], leadActivities: [] })
   const [principalCanvassingSnapshot, setPrincipalCanvassingSnapshot] = useState({ prospects: [], activities: [] })
@@ -841,15 +840,9 @@ function Dashboard() {
     appRole: role,
     membershipRole: normalizedMembershipRole,
   })
-  // Keep principal/owner workspace preview available during beta even on agent memberships.
-  const canPreviewPrincipalAgentView = role === 'agent'
   const resolvedAgentViewMode = role !== 'agent'
     ? 'agent'
-    : agentViewOverride === 'auto'
-      ? (principalFromMembership ? 'principal' : 'agent')
-      : agentViewOverride === 'principal' && !canPreviewPrincipalAgentView
-        ? 'agent'
-        : agentViewOverride
+    : (principalFromMembership ? 'principal' : 'agent')
   const isPrincipalAgentView = role === 'agent' && resolvedAgentViewMode === 'principal'
   const agentDataScope = isPrincipalAgentView ? 'principal' : 'agent'
 
@@ -3266,40 +3259,6 @@ function renderActiveTransactionsBlock({
 
           {isAgentRole ? (
             <>
-              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-[1.02rem] font-semibold tracking-[-0.02em] text-[#142132]">
-                      {isPrincipalAgentView ? 'Principal Workspace' : 'Agent Workspace'}
-                    </h3>
-                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">
-                      {isPrincipalAgentView
-                        ? 'Organisation-wide visibility across branches, agents, and transaction performance.'
-                      : 'Personal execution workspace focused on your assigned pipeline and transactions.'}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <QuickCreateDropdown />
-                    <span className={DASHBOARD_CHIP_CLASS}>
-                      {isPrincipalAgentView ? 'Principal / Owner View' : 'Assigned Agent View'}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <label className="text-[0.75rem] font-semibold uppercase tracking-[0.08em] text-[#6b7d93]">Agent View</label>
-                  <select
-                    className="min-h-[36px] min-w-[210px] rounded-[10px] border border-[#d8e3ef] bg-white px-3 py-1.5 text-sm font-semibold text-[#35546c]"
-                    value={agentViewOverride}
-                    onChange={(event) => setAgentViewOverride(event.target.value)}
-                  >
-                    <option value="auto">Auto ({principalFromMembership ? 'Principal' : 'Agent'})</option>
-                    {canPreviewPrincipalAgentView ? <option value="principal">Principal / Owner</option> : null}
-                    <option value="agent">Assigned Agent</option>
-                  </select>
-                </div>
-              </section>
-
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 {isPrincipalAgentView ? (
                   principalExecutiveAnalytics ? (

@@ -163,6 +163,11 @@ export async function getInviteByToken(token, options = {}) {
   const safeToken = normalizeText(token)
   if (!safeToken) return { ok: false, reason: 'missing_token', invite: null }
 
+  if (options.preferPublicLookup) {
+    const rpcContext = await getInviteByTokenViaLookupRpc(client, safeToken)
+    if (rpcContext) return rpcContext
+  }
+
   const result = await client
     .from('invites')
     .select('id, invite_type, status, token, expires_at, inviter_user_id, target_workspace_id, target_workspace_role, target_transaction_id, target_transaction_role, target_branch_id, target_team_id, email, phone, invitee_user_id, metadata, accepted_at, accepted_by_user_id, revoked_at, revoked_by_user_id, created_at, updated_at, organisations:target_workspace_id(id, name, display_name, type, logo_url)')

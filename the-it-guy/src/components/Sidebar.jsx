@@ -62,6 +62,7 @@ const ICON_BY_KEY = {
   enquiries: ClipboardList,
   pipeline_overview: KanbanSquare,
   pipeline_leads: KanbanSquare,
+  pipeline_enquiries: ClipboardList,
   pipeline_canvassing: ClipboardList,
   pipeline_calendar: CalendarDays,
   calendar: CalendarDays,
@@ -259,7 +260,7 @@ function Sidebar() {
           : role === 'attorney'
             ? [{ key: 'organizations', label: 'Organizations', to: '/organizations' }, { key: 'settings', label: 'Settings', to: '/settings' }, { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' }]
             : role === 'agent'
-              ? [{ key: 'organizations', label: 'Organizations', to: '/organizations' }, { key: 'settings', label: 'Settings', to: '/settings' }]
+              ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
               : role === 'client'
                 ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
                 : role === 'bond_originator'

@@ -87,6 +87,21 @@ const inviteRow = {
 
 {
   const client = createClient({
+    directResponse: { data: inviteRow, error: null },
+    rpcResponse: { data: { success: true, invite: inviteRow }, error: null },
+  })
+  const context = await getInviteByToken('token-123', { client, preferPublicLookup: true })
+  assert.equal(context.ok, true, 'logged-out invite resolution should use the public lookup first')
+  assert.equal(context.invite.email, 'agent@example.com')
+  assert.deepEqual(
+    client.calls.map((call) => call.type),
+    ['rpc'],
+    'public-lookup-first invite resolution should skip the direct invites query',
+  )
+}
+
+{
+  const client = createClient({
     directResponse: { data: null, error: { code: '42501', message: 'permission denied for table invites' } },
     rpcResponse: { data: { success: true, invite: inviteRow }, error: null },
   })

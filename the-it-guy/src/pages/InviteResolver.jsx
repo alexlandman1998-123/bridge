@@ -289,7 +289,7 @@ export default function InviteResolver() {
         signedInEmail = normalizeText(user?.email).toLowerCase()
         setSessionUserId(normalizeText(user?.id))
         setSessionEmail(signedInEmail)
-        const context = await getInviteByToken(safeToken)
+        const context = await getInviteByToken(safeToken, { preferPublicLookup: !signedInEmail })
         if (!active) return
         setInviteContext(context.invite || null)
         setReason(context.ok ? '' : context.reason || 'not_found')
@@ -348,6 +348,11 @@ export default function InviteResolver() {
       clearPendingInviteToken()
     }
   }, [acceptedInviteBelongsToSession])
+
+  useEffect(() => {
+    if (!acceptedInviteBelongsToSession) return
+    navigate(getInviteTarget(invite), { replace: true })
+  }, [acceptedInviteBelongsToSession, invite, navigate])
 
   useEffect(() => {
     if (CLEAR_PENDING_INVITE_REASONS.has(reason) && !pendingInviteWrongAccount) {
