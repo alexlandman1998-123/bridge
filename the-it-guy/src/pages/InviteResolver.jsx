@@ -167,19 +167,15 @@ function InviteBrandStrip({ workspaceName = '', workspaceLogoUrl = '' }) {
   const inviterName = normalizeText(workspaceName) || 'Inviting workspace'
 
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-borderSoft px-5 py-4 sm:px-7">
-      <div className="flex min-w-0 items-center gap-3">
+    <div className="flex items-center justify-between gap-4 border-b border-borderSoft px-5 py-5 sm:px-7">
+      <div className="flex min-w-0 items-center">
         {workspaceLogoUrl ? (
-          <img src={workspaceLogoUrl} alt={`${inviterName} logo`} className="h-11 w-11 rounded-control border border-borderSoft bg-surface object-contain p-1.5" />
+          <img src={workspaceLogoUrl} alt={`${inviterName} logo`} className="h-16 w-24 rounded-control border border-borderSoft bg-surface object-contain p-2 shadow-surface sm:h-20 sm:w-32" />
         ) : (
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-borderSoft bg-primarySoft text-sm font-semibold text-primary">
+          <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-control border border-borderSoft bg-primarySoft text-xl font-semibold text-primary shadow-surface sm:h-20 sm:w-32">
             {getInitials(inviterName)}
           </div>
         )}
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-textStrong">{inviterName}</p>
-          <p className="text-label font-semibold uppercase text-textMuted">Inviting party</p>
-        </div>
       </div>
 
       <span className="hidden shrink-0 rounded-full border border-borderSoft bg-mutedBg px-3 py-1 text-label font-semibold uppercase text-textMuted sm:inline-flex">
@@ -187,7 +183,7 @@ function InviteBrandStrip({ workspaceName = '', workspaceLogoUrl = '' }) {
       </span>
 
       <div className="flex shrink-0 items-center justify-end">
-        <img src="/brand/bridge_9_white_background.png" alt="Bridge9" className="h-9 w-[90px] object-contain object-right" />
+        <img src="/brand/bridge_9_white_background.png" alt="Bridge9" className="h-10 w-[100px] object-contain object-right sm:h-12 sm:w-[120px]" />
       </div>
     </div>
   )
