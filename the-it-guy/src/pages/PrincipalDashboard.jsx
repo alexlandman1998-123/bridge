@@ -701,21 +701,21 @@ function SalesFunnelOverview({ data = {} }) {
   const stages = Array.isArray(data.stages) ? data.stages : []
   const maxCount = Math.max(1, ...stages.map((stage) => Number(stage.count || 0)))
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[500px]`}>
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[560px]`}>
       <div>
         <h2 className="text-[1.12rem] font-semibold text-textStrong">Sales Funnel (Lead → OTP)</h2>
         <p className="mt-1 text-sm text-textMuted">How effectively are we creating transactions?</p>
       </div>
 
-      <div className="mt-6 grid gap-7 lg:grid-cols-[minmax(230px,0.9fr)_minmax(0,1.1fr)] lg:items-center">
-        <div className="mx-auto flex w-full max-w-[360px] flex-col items-center gap-2.5">
+      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(230px,0.9fr)_minmax(0,1.1fr)] lg:items-center">
+        <div className="mx-auto flex w-full max-w-[380px] flex-col items-center gap-3">
           {stages.map((stage, index) => {
             const width = Math.max(42, 100 - index * 11)
             const color = SALES_FUNNEL_TONES[index] || 'var(--color-primary)'
             return (
               <article
                 key={stage.key}
-                className="relative grid min-h-[54px] place-items-center px-5 text-center text-sm font-semibold text-white shadow-sm"
+                className="relative grid min-h-[62px] place-items-center px-5 text-center text-sm font-semibold text-white shadow-sm"
                 style={{
                   width: `${width}%`,
                   clipPath: 'polygon(7% 0, 93% 0, 84% 100%, 16% 100%)',
@@ -742,7 +742,7 @@ function SalesFunnelOverview({ data = {} }) {
             {stages.map((stage, index) => {
               const width = Math.max(4, (Number(stage.count || 0) / maxCount) * 100)
               return (
-                <article key={stage.key} className="grid grid-cols-[minmax(0,1fr)_92px_104px] items-center gap-3 py-3">
+                <article key={stage.key} className="grid grid-cols-[minmax(0,1fr)_92px_104px] items-center gap-3 py-4">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-textStrong">{stage.label}</p>
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-mutedBg">
@@ -1333,16 +1333,16 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
               <SalesFunnelOverview data={data.pipeline.salesFunnel || {}} />
             </div>
             <aside className="grid min-w-0 content-stretch gap-6">
-              <PipelineHealthPanel items={data.pipeline.health || []} compact />
               <ActiveTransactionDistribution data={data.transactions.health || {}} totalActive={data.kpis.activeTransactions} compact />
+              <PipelineHealthPanel items={data.pipeline.health || []} compact />
             </aside>
           </div>
           <TransactionHealthOverview data={data.transactions.health || {}} />
+          <ActiveTransactionsSlider rows={data.activeTransactions || []} />
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <AgentSnapshotPanel rows={data.agentPerformance || []} />
             <TopPerformersThisMonthPanel rows={data.agentPerformance || []} />
           </div>
-          <ActiveTransactionsSlider rows={data.activeTransactions || []} />
         </div>
       ) : null}
       {activeTab === 'pipeline' ? (

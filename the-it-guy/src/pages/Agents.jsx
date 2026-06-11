@@ -2135,7 +2135,7 @@ function AttentionAgentsPanel({ rows = [], onView }) {
   )
 }
 
-function InvitedAgentsPanel({ rows = [], onShowPending, onResendInvite, onCopyInviteLink, onRevokeInvite }) {
+function InvitedAgentsPanel({ rows = [], actionSlot = null, onShowPending, onResendInvite, onCopyInviteLink, onRevokeInvite }) {
   return (
     <article className="overflow-hidden rounded-2xl border border-[#dde6f1] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[#edf2f7] px-4 py-4">
@@ -2145,6 +2145,7 @@ function InvitedAgentsPanel({ rows = [], onShowPending, onResendInvite, onCopyIn
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span className="rounded-full border border-[#e7ddf7] bg-[#f7f1ff] px-3 py-1 text-xs font-semibold text-[#5c3a9d]">{rows.length} pending</span>
+          {actionSlot}
           <Button type="button" size="sm" variant="secondary" onClick={onShowPending}>Show pending</Button>
         </div>
       </div>
@@ -4595,14 +4596,15 @@ export function AgentsPage() {
     </div>
   )
 
+  const inviteAgentAction = canManageDirectory ? (
+    <Button type="button" size="sm" onClick={openAgentInviteModal}>
+      <Plus size={15} />
+      Add Agent
+    </Button>
+  ) : null
+
   const agentDirectoryActions = (
     <>
-      {canManageDirectory ? (
-        <Button type="button" size="sm" onClick={openAgentInviteModal}>
-          <Plus size={15} />
-          Add Agent
-        </Button>
-      ) : null}
       {agentDirectoryViewToggle}
     </>
   )
@@ -4727,6 +4729,7 @@ export function AgentsPage() {
         <section className="space-y-4">
           <InvitedAgentsPanel
             rows={invitedAgentRows}
+            actionSlot={inviteAgentAction}
             onShowPending={() => setStatusFilter(AGENT_INVITE_STATUS.PENDING_INVITE)}
             onResendInvite={handleResendAgentInvite}
             onCopyInviteLink={handleCopyAgentInviteLink}
