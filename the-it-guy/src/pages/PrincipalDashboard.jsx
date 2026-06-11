@@ -9,16 +9,21 @@ import {
   ChevronDown,
   CircleDollarSign,
   Clock3,
+  Eye,
   FileSignature,
   FileText,
+  Info,
   Landmark,
   LayoutGrid,
-  Lightbulb,
   LineChart,
   LogOut,
   Loader2,
+  MoreHorizontal,
   Settings,
   ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Tag,
   Target,
   TrendingDown,
   TrendingUp,
@@ -26,7 +31,7 @@ import {
   Users,
   WalletCards,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import { useAuthSession } from '../context/AuthSessionContext'
@@ -652,34 +657,64 @@ function PipelineHealthPanel({ items = [], compact = false }) {
   )
 }
 
-const SALES_FUNNEL_TONES = [
-  'var(--color-primary)',
-  'var(--color-info)',
-  'var(--color-primary-hover)',
-  'var(--color-warning)',
-  'var(--color-danger)',
-]
-
 const SALES_FUNNEL_KPI_TONES = {
   blue: {
-    iconClass: 'bg-primarySoft text-primary',
-    valueClass: 'text-primary',
-    borderClass: 'border-primary/10',
+    iconClass: 'bg-[#eaf2ff] text-[#1769d1]',
+    valueClass: 'text-[#1769d1]',
+    accentClass: 'bg-[#1769d1]',
   },
   red: {
-    iconClass: 'bg-dangerSoft text-danger',
-    valueClass: 'text-danger',
-    borderClass: 'border-danger/10',
+    iconClass: 'bg-[#fff1f1] text-[#c92a2a]',
+    valueClass: 'text-[#c92a2a]',
+    accentClass: 'bg-[#c92a2a]',
   },
   green: {
-    iconClass: 'bg-successSoft text-success',
-    valueClass: 'text-success',
-    borderClass: 'border-success/10',
+    iconClass: 'bg-[#e9f8f0] text-[#0f8a4b]',
+    valueClass: 'text-[#0f8a4b]',
+    accentClass: 'bg-[#0f8a4b]',
   },
   purple: {
     iconClass: 'bg-[#f1eafe] text-[#7c3aed]',
     valueClass: 'text-[#7c3aed]',
-    borderClass: 'border-[#eadcff]',
+    accentClass: 'bg-[#7c3aed]',
+  },
+  amber: {
+    iconClass: 'bg-[#fff6e6] text-[#d98b00]',
+    valueClass: 'text-[#101828]',
+    accentClass: 'bg-[#d98b00]',
+  },
+}
+
+const SALES_FUNNEL_STAGE_STYLES = {
+  leads: {
+    icon: Users,
+    iconClass: 'bg-[#edf4ff] text-[#1769d1]',
+    textClass: 'text-[#1769d1]',
+    barClass: 'bg-[#1769d1]',
+  },
+  mandates: {
+    icon: FileText,
+    iconClass: 'bg-[#edf4ff] text-[#1f5fd1]',
+    textClass: 'text-[#1f5fd1]',
+    barClass: 'bg-[#1f5fd1]',
+  },
+  viewings: {
+    icon: Eye,
+    iconClass: 'bg-[#edf1f7] text-[#17375f]',
+    textClass: 'text-[#17375f]',
+    barClass: 'bg-[#17375f]',
+  },
+  offers: {
+    icon: Tag,
+    iconClass: 'bg-[#fff6e6] text-[#d98b00]',
+    textClass: 'text-[#d98b00]',
+    barClass: 'bg-[#d98b00]',
+  },
+  otp: {
+    icon: ShieldCheck,
+    iconClass: 'bg-[#e9f8f0] text-[#0f8a4b]',
+    textClass: 'text-[#0f8a4b]',
+    barClass: 'bg-[#0f8a4b]',
   },
 }
 
@@ -721,141 +756,264 @@ const TRANSACTION_STAGE_STYLES = {
   },
 }
 
-function formatSignedDelta(value, { suffix = '', empty = '—' } = {}) {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) return empty
-  const numeric = Math.round(Number(value))
-  if (!numeric) return `0${suffix}`
-  const sign = numeric > 0 ? '+' : '-'
-  return `${sign}${Math.abs(numeric)}${suffix}`
+function formatCompactMetric(value, formatter = formatCount) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
+  return formatter(value)
 }
 
-function FunnelKpiCard({ icon, label, value, subtext, trend, tone = 'blue', inverseTrend = false, trendSuffix = '' }) {
-  const style = SALES_FUNNEL_KPI_TONES[tone] || SALES_FUNNEL_KPI_TONES.blue
-  const hasTrend = trend !== null && trend !== undefined && Number.isFinite(Number(trend))
-  const trendValue = hasTrend ? Math.round(Number(trend)) : null
-  const goodTrend = hasTrend ? (inverseTrend ? trendValue <= 0 : trendValue >= 0) : false
-  const TrendIcon = hasTrend && trendValue < 0 ? TrendingDown : TrendingUp
+function formatDeltaText(value, { suffix = '', label = 'vs last month', empty = `— ${label}` } = {}) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return {
+      direction: 'flat',
+      text: empty,
+    }
+  }
+  const numeric = Math.round(Number(value))
+  const direction = numeric > 0 ? 'up' : numeric < 0 ? 'down' : 'flat'
+  return {
+    direction,
+    text: `${numeric > 0 ? '↑' : numeric < 0 ? '↓' : '—'} ${Math.abs(numeric)}${suffix} ${label}`,
+  }
+}
+
+function getTopFunnelAgent(rows = []) {
+  const agents = Array.isArray(rows) ? rows.filter((agent) => agent && agent.agentName && agent.agentName !== 'Unassigned') : []
+  return agents
+    .slice()
+    .sort((left, right) =>
+      Number(right.conversionRate || 0) - Number(left.conversionRate || 0) ||
+      Number(right.otpCount || 0) - Number(left.otpCount || 0) ||
+      Number(right.pipelineValue || 0) - Number(left.pipelineValue || 0),
+    )[0] || null
+}
+
+function FunnelStageList({ stages = [] }) {
+  const leadCount = Number(stages.find((stage) => stage.key === 'leads')?.count || stages[0]?.count || 0)
+  return (
+    <section className="min-w-0 rounded-[18px] border border-[rgba(15,23,42,0.08)] bg-white">
+      {stages.map((stage) => {
+        const style = SALES_FUNNEL_STAGE_STYLES[stage.key] || SALES_FUNNEL_STAGE_STYLES.leads
+        const Icon = style.icon
+        const progress = leadCount ? Math.round((Number(stage.count || 0) / leadCount) * 100) : stage.key === 'leads' ? 100 : 0
+        const conversion = stage.conversionToNext === null || stage.conversionToNext === undefined ? null : Number(stage.conversionToNext)
+        return (
+          <article key={stage.key || stage.label} className="grid min-h-[92px] grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-4 border-b border-[rgba(15,23,42,0.08)] px-5 py-4 last:border-b-0 xl:min-h-[104px]">
+            <span className={`grid h-12 w-12 place-items-center rounded-full ${style.iconClass}`}>
+              <Icon size={22} strokeWidth={2.2} />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-[15px] font-semibold leading-5 text-[#101828]">{stage.label}</p>
+              <p className="mt-1 text-[28px] font-bold leading-none text-[#10213f] tabular-nums sm:text-[32px]">{formatCount(stage.count)}</p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e9eef7]">
+                <div className={`h-full rounded-full ${style.barClass}`} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+              </div>
+            </div>
+            <div className="min-w-[74px] text-right">
+              <p className={`text-[1.18rem] font-bold leading-6 tabular-nums ${stage.key === 'otp' ? 'text-[#10213f]' : style.textClass}`}>
+                {conversion === null ? '—' : `${Math.round(conversion)}%`}
+              </p>
+              <p className="mt-1 text-[0.72rem] font-medium leading-4 text-[#5f7087]">{conversion === null ? 'Final stage' : 'to next stage'}</p>
+            </div>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
+function ConversionHeroRing({ data = {} }) {
+  const percent = Number.isFinite(Number(data.leadToOtpConversion)) ? Math.max(0, Math.min(100, Math.round(Number(data.leadToOtpConversion)))) : 0
+  const radius = 96
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (percent / 100) * circumference
+  const trend = formatDeltaText(data.leadToOtpConversionTrend, { suffix: 'pp', label: 'vs last month', empty: '— vs last month' })
+  const leadCount = data.stages?.find((stage) => stage.key === 'leads')?.count
+  const otpCount = data.stages?.find((stage) => stage.key === 'otp')?.count
 
   return (
-    <article className={`min-h-[120px] rounded-2xl border ${style.borderClass} bg-white p-3.5 shadow-sm shadow-slate-200/40`}>
-      <span className={`grid h-9 w-9 place-items-center rounded-xl ${style.iconClass}`}>
-        {icon ? createElement(icon, { size: 18 }) : null}
+    <section className="flex min-h-[420px] min-w-0 flex-col items-center justify-center border-[rgba(15,23,42,0.08)] bg-white px-5 py-8 text-center lg:min-h-[440px] xl:border-x xl:px-6">
+      <div className="relative h-[150px] w-[150px] md:h-[180px] md:w-[180px] xl:h-[220px] xl:w-[220px]">
+        <svg viewBox="0 0 220 220" className="h-full w-full -rotate-90" role="img" aria-label={`Lead to OTP conversion ${percent}%`}>
+          <circle cx="110" cy="110" r={radius} fill="none" stroke="#e8edf5" strokeWidth="14" />
+          <circle
+            cx="110"
+            cy="110"
+            r={radius}
+            fill="none"
+            stroke="#1f5fe5"
+            strokeWidth="14"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <p className="text-[48px] font-bold leading-none text-[#1f5fe5] tabular-nums md:text-[56px] xl:text-[64px]">{percent}<span className="text-[0.58em]">%</span></p>
+          <p className="mt-3 text-sm font-semibold leading-5 text-[#101828] md:text-base">Lead → OTP<br />Conversion</p>
+        </div>
+      </div>
+
+      <span className={`mt-6 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-semibold ${trend.direction === 'down' ? 'bg-[#fff1f1] text-[#c92a2a]' : 'bg-[#eaf8ef] text-[#0f8a4b]'}`}>
+        {trend.text}
       </span>
-      <p className="mt-3 text-[0.82rem] font-semibold leading-5 text-textStrong">{label}</p>
-      <p className={`mt-1.5 text-[1.65rem] font-semibold leading-none tracking-normal tabular-nums ${style.valueClass}`}>{value}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-        <span className="font-medium text-textMuted">{subtext}</span>
-        {hasTrend ? (
-          <span className={`inline-flex items-center gap-1 font-semibold ${goodTrend ? 'text-success' : 'text-danger'}`}>
-            <TrendIcon size={13} />
-            {formatSignedDelta(trendValue, { suffix: trendSuffix })}
-          </span>
-        ) : (
-          <span className="font-medium text-textMuted">—</span>
-        )}
+
+      <div className="mt-8 grid w-full max-w-[280px] grid-cols-2 border-t border-[rgba(15,23,42,0.08)] pt-5">
+        <div className="border-r border-[rgba(15,23,42,0.08)] px-3">
+          <p className="text-sm font-medium text-[#52657a]">Total Leads</p>
+          <p className="mt-2 text-[1.55rem] font-bold leading-none text-[#10213f] tabular-nums">{formatCompactMetric(leadCount)}</p>
+        </div>
+        <div className="px-3">
+          <p className="text-sm font-medium text-[#52657a]">Total OTPs</p>
+          <p className="mt-2 text-[1.55rem] font-bold leading-none text-[#10213f] tabular-nums">{formatCompactMetric(otpCount)}</p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function FunnelKpiCard({ icon: Icon, label, value, trend, trendGood = true, detailLabel, detailValue, tone = 'blue', showMenu = true }) {
+  const style = SALES_FUNNEL_KPI_TONES[tone] || SALES_FUNNEL_KPI_TONES.blue
+  const isGood = trendGood
+  return (
+    <article className="relative flex min-h-[180px] flex-col rounded-[18px] border border-[rgba(15,23,42,0.08)] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.045)] lg:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <span className={`grid h-11 w-11 place-items-center rounded-full ${style.iconClass}`}>
+          {Icon ? <Icon size={20} strokeWidth={2.1} /> : null}
+        </span>
+        {showMenu ? (
+          <button type="button" disabled title="More options coming soon" className="hidden h-8 w-8 cursor-not-allowed items-center justify-center rounded-full text-[#5f7087] opacity-75 sm:inline-flex">
+            <MoreHorizontal size={18} />
+          </button>
+        ) : null}
+      </div>
+      <p className="mt-4 text-[0.92rem] font-semibold leading-5 text-[#101828]">{label}</p>
+      <p className={`mt-2 text-[2rem] font-bold leading-none tracking-normal tabular-nums ${style.valueClass}`}>{value}</p>
+      <p className={`mt-3 inline-flex items-center gap-1 text-sm font-semibold ${isGood ? 'text-[#0f8a4b]' : 'text-[#c92a2a]'}`}>{trend}</p>
+      <div className="mt-auto border-t border-[rgba(15,23,42,0.08)] pt-4">
+        <p className="text-sm font-medium text-[#52657a]">{detailLabel}</p>
+        <p className="mt-1 text-[0.95rem] font-bold leading-5 text-[#10213f]">{detailValue}</p>
       </div>
     </article>
   )
 }
 
-function SalesFunnelOverview({ data = {} }) {
-  const stages = Array.isArray(data.stages) ? data.stages : []
-  const insight = data.insight || {}
+function FunnelKpiGrid({ data = {}, agents = [] }) {
+  const topAgent = getTopFunnelAgent(agents)
+  const lostTrend = formatDeltaText(data.lostDealsTrend, { label: 'vs last month' })
+  const averageDaysTrend = formatDeltaText(data.averageDaysToOtpTrend, { label: 'vs last month' })
+  const pipelineTrend = formatDeltaText(data.pipelineValueTrend, { suffix: '%', label: 'vs last month' })
+  const topAgentConversion = topAgent ? formatPercent(topAgent.conversionRate, '—') : '—'
+  const topAgentOtpCount = topAgent?.otpCount === null || topAgent?.otpCount === undefined ? '—' : formatCount(topAgent.otpCount)
+
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding}`}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-[1.12rem] font-semibold text-textStrong">Sales Funnel (Lead → OTP)</h2>
-          <p className="mt-1 text-sm text-textMuted">How effectively are we creating transactions?</p>
-        </div>
-      </div>
+    <section className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2">
+      <FunnelKpiCard
+        icon={LineChart}
+        label="Lost Deals"
+        value={formatCompactMetric(data.lostDeals)}
+        trend={lostTrend.text}
+        trendGood={lostTrend.direction === 'down' || lostTrend.direction === 'flat'}
+        detailLabel="Most losses"
+        detailValue={data.insight?.fromLabel && data.insight?.toLabel ? `${data.insight.fromLabel} → ${data.insight.toLabel}` : '—'}
+        tone="red"
+      />
+      <FunnelKpiCard
+        icon={Clock3}
+        label="Avg Days to OTP"
+        value={data.averageDaysToOtp === null || data.averageDaysToOtp === undefined ? '—' : formatCount(data.averageDaysToOtp)}
+        trend={averageDaysTrend.text}
+        trendGood={averageDaysTrend.direction === 'down' || averageDaysTrend.direction === 'flat'}
+        detailLabel="Industry Avg"
+        detailValue="82 days"
+        tone="green"
+      />
+      <FunnelKpiCard
+        icon={CircleDollarSign}
+        label="Pipeline Value (OTP)"
+        value={formatCurrency(data.pipelineValue, { compact: true, empty: '—' })}
+        trend={pipelineTrend.text}
+        trendGood={pipelineTrend.direction === 'up' || pipelineTrend.direction === 'flat'}
+        detailLabel="Expected commission"
+        detailValue=" "
+        tone="purple"
+      />
+      <FunnelKpiCard
+        icon={Target}
+        label="Top Performing Agent"
+        value={topAgent?.agentName || '—'}
+        trend={`${topAgentConversion} conversion`}
+        trendGood
+        detailLabel="Top"
+        detailValue={`${topAgentOtpCount} OTPs this month`}
+        tone="amber"
+      />
+    </section>
+  )
+}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(220px,0.72fr)_minmax(320px,1fr)] xl:items-start">
-        <div className="min-w-0">
-          <div className="mx-auto flex w-full max-w-[250px] flex-col items-center">
-            {stages.map((stage, index) => {
-              const width = Math.max(48, 100 - index * 11)
-              const color = SALES_FUNNEL_TONES[index] || 'var(--color-primary)'
-              return (
-                <div key={stage.key} className="flex w-full flex-col items-center">
-                  <article
-                    className="grid min-h-[54px] place-items-center px-4 text-center text-white shadow-sm"
-                    style={{
-                      width: `${width}%`,
-                      clipPath: 'polygon(7% 0, 93% 0, 84% 100%, 16% 100%)',
-                      background: `linear-gradient(180deg, ${color}, color-mix(in srgb, ${color} 82%, white))`,
-                    }}
-                  >
-                    <span>
-                      <span className="block text-[1.35rem] font-semibold leading-none tabular-nums text-white">{formatCount(stage.count)}</span>
-                      <span className="mt-0.5 block text-xs font-semibold leading-4 text-white">{stage.label}</span>
-                    </span>
-                  </article>
-                  {index < stages.length - 1 ? (
-                    <div className="flex min-h-[28px] flex-col items-center justify-center text-center">
-                      <span className="text-xs font-semibold leading-4 text-textStrong tabular-nums">{formatPercent(stage.conversionToNext)}</span>
-                      <span className="text-base leading-none text-textMuted">↓</span>
-                    </div>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-          <div className="mx-auto mt-4 flex min-h-[46px] w-full max-w-[340px] items-center justify-center rounded-2xl border border-borderSoft bg-mutedBg/80 px-4 text-center shadow-inner">
-            <p className="text-sm font-semibold text-textStrong">
-              Lead → OTP Conversion: <span className="text-[1.35rem] text-primary tabular-nums">{formatPercent(data.leadToOtpConversion)}</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-          <FunnelKpiCard
-            icon={LineChart}
-            label="Lead → OTP Conversion"
-            value={formatPercent(data.leadToOtpConversion)}
-            subtext="vs last month"
-            trend={data.leadToOtpConversionTrend}
-            trendSuffix="pp"
-            tone="blue"
-          />
-          <FunnelKpiCard
-            icon={AlertTriangle}
-            label="Lost Deals"
-            value={formatCount(data.lostDeals)}
-            subtext="vs last month"
-            trend={data.lostDealsTrend}
-            inverseTrend
-            tone="red"
-          />
-          <FunnelKpiCard
-            icon={Clock3}
-            label="Avg Days to OTP"
-            value={data.averageDaysToOtp === null || data.averageDaysToOtp === undefined ? '—' : formatCount(data.averageDaysToOtp)}
-            subtext="days"
-            trend={data.averageDaysToOtpTrend}
-            inverseTrend
-            tone="green"
-          />
-          <FunnelKpiCard
-            icon={CircleDollarSign}
-            label="Pipeline Value (OTP)"
-            value={formatCurrency(data.pipelineValue, { compact: true })}
-            subtext="Expected commission"
-            trend={data.pipelineValueTrend}
-            trendSuffix="%"
-            tone="purple"
-          />
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#dce8f6] bg-[#f3f8ff] px-4 py-3 text-sm text-[#52657a]">
-        <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-white text-primary shadow-sm">
-          <Lightbulb size={15} />
+function AiInsightBanner({ insight = {} }) {
+  const message = insight.message || 'Funnel movement is holding steady. Keep agent follow-up cadence consistent across every stage.'
+  const detail = insight.detail || 'Review stage activity and keep follow-up cadence consistent.'
+  return (
+    <section className="grid min-h-[128px] grid-cols-1 items-center gap-5 overflow-hidden rounded-[20px] bg-[radial-gradient(circle_at_0%_50%,rgba(37,99,235,0.35),transparent_30%),linear-gradient(135deg,#071226_0%,#0b1f46_55%,#102a5c_100%)] px-5 py-5 text-white shadow-[0_18px_42px_rgba(7,18,38,0.2)] md:grid-cols-[1.4fr_1px_1fr_auto] md:gap-7 md:px-8 md:py-7">
+      <div className="flex min-w-0 items-start gap-4">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/10 text-[#79b8ff] shadow-[0_0_28px_rgba(77,148,255,0.45)]">
+          <Sparkles size={24} />
         </span>
-        <p className="leading-6">
-          <span className="font-semibold text-textStrong">{insight.message || 'Funnel movement is holding steady.'}</span>
-          {insight.detail ? <span className="ml-1">{insight.detail}</span> : null}
-        </p>
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-[#58a6ff]">AI Insight</p>
+          <p className="mt-2 text-lg font-bold leading-7 text-white">{message}</p>
+          <p className="mt-1 text-[0.95rem] leading-6 text-white/82">{detail}</p>
+        </div>
+      </div>
+      <span className="hidden h-full w-px bg-white/25 md:block" />
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-[#58a6ff]">Recommended action</p>
+        <p className="mt-2 text-[0.95rem] leading-6 text-white/88">Review mandates with no activity in the last 14 days</p>
+      </div>
+      <button type="button" disabled title="Recommendation workflow coming soon" className="inline-flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-full border border-white/25 bg-white/5 text-white opacity-80 shadow-sm">
+        <ArrowRight size={22} />
+      </button>
+    </section>
+  )
+}
+
+function PrincipalSalesFunnelCard({ data = {}, agents = [], dateRange = 'last_30_days', onDateRangeChange }) {
+  const stages = Array.isArray(data.stages) ? data.stages : []
+  return (
+    <section className="rounded-[20px] border border-[rgba(15,23,42,0.08)] bg-white p-4 shadow-[0_22px_60px_rgba(15,23,42,0.065)] sm:p-6 xl:p-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-[1.35rem] font-bold leading-tight text-[#081735] sm:text-[1.55rem]">Sales Funnel (Lead → OTP)</h2>
+            <Info size={17} className="text-[#5f7087]" />
+          </div>
+          <p className="mt-2 text-[0.98rem] leading-6 text-[#52657a]">Track how leads are progressing towards signed OTP</p>
+        </div>
+
+        <FilterDropdown
+          icon={CalendarDays}
+          value={dateRange}
+          options={PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label }))}
+          onChange={onDateRangeChange}
+          ariaLabel="Filter sales funnel by date range"
+        />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-[minmax(360px,1.35fr)_minmax(260px,0.85fr)_minmax(360px,1.25fr)]">
+        <div className="order-2 min-w-0 lg:order-1">
+          <FunnelStageList stages={stages} />
+        </div>
+        <div className="order-1 min-w-0 lg:order-2">
+          <ConversionHeroRing data={data} />
+        </div>
+        <div className="order-3 min-w-0 lg:col-span-2 xl:col-span-1">
+          <FunnelKpiGrid data={data} agents={agents} />
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <AiInsightBanner insight={data.insight || {}} />
       </div>
     </section>
   )
@@ -1405,7 +1563,7 @@ function CommissionForecastChart({ rows = [] }) {
   )
 }
 
-function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
+function PipelineSalesOverview({ data, dateRange, onDateRangeChange, overviewMode, onOverviewModeChange }) {
   const activeTab = overviewMode || 'overview'
   return (
     <section className="space-y-4">
@@ -1430,7 +1588,12 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
         <div className="space-y-6">
           <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
             <div className="min-w-0">
-              <SalesFunnelOverview data={data.pipeline.salesFunnel || {}} />
+              <PrincipalSalesFunnelCard
+                data={data.pipeline.salesFunnel || {}}
+                agents={data.agentPerformance || []}
+                dateRange={dateRange}
+                onDateRangeChange={onDateRangeChange}
+              />
             </div>
             <aside className="grid min-w-0 content-start gap-6">
               <ActiveTransactionDistribution data={data.transactions.health || {}} totalActive={data.kpis.activeTransactions} compact />
@@ -1822,7 +1985,7 @@ function RecentActivityFeed({ rows }) {
 
 function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
   const { profile, currentMembership, workspaceRole, workspaceType } = useWorkspace()
-  const [dateRange, setDateRange] = useState('this_month')
+  const [dateRange, setDateRange] = useState('last_30_days')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
   const [overviewMode, setOverviewMode] = useState('overview')
   const [resolvedAgencyId, setResolvedAgencyId] = useState(agencyId)
@@ -1959,7 +2122,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
         {data ? (
           <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
             <PrincipalKpiRow data={data} />
-            <PipelineSalesOverview data={data} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
+            <PipelineSalesOverview data={data} dateRange={dateRange} onDateRangeChange={setDateRange} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
             <p className="pb-2 text-center text-xs text-[#667085]">
               <Loader2 size={12} className="mr-1 inline-block" />
               Data last updated: {lastUpdated || 'just now'}

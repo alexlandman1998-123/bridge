@@ -1470,6 +1470,10 @@ export async function getPrincipalDashboardData({
 
   const registeredTransactionsInRange = completedTransactions.filter((row) => isBetween(getTransactionCompletedAt(row), range.start, range.end))
   const previousRegisteredTransactions = completedTransactions.filter((row) => isBetween(getTransactionCompletedAt(row), range.previousStart, range.previousEnd))
+  const agentAcceptedOtpRows = [...activeTransactions, ...registeredTransactionsInRange].filter((row) => {
+    const status = getTransactionStatusText(row)
+    return status.includes('otp') || status.includes('signed') || status.includes('accepted')
+  })
   const registeredThisMonth = registeredTransactionsInRange.length
   const pendingRegistration = activeTransactions.filter((row) => {
     const status = getTransactionStatusText(row)
@@ -1503,6 +1507,7 @@ export async function getPrincipalDashboardData({
       pipelineValue: 0,
       activeDeals: 0,
       registeredCount: 0,
+      otpCount: 0,
       leads: 0,
       buyerLeads: 0,
       mandates: 0,
@@ -1521,6 +1526,12 @@ export async function getPrincipalDashboardData({
     const key = getAgentKeyFromTransaction(row)
     const existing = agentMap.get(key) || createPerformanceRow(key, row)
     existing.registeredCount += 1
+    agentMap.set(key, existing)
+  }
+  for (const row of agentAcceptedOtpRows) {
+    const key = getAgentKeyFromTransaction(row)
+    const existing = agentMap.get(key) || createPerformanceRow(key, row)
+    existing.otpCount += 1
     agentMap.set(key, existing)
   }
   for (const lead of selectedLeads) {
@@ -1553,6 +1564,7 @@ export async function getPrincipalDashboardData({
           .reduce((sum, row) => sum + getDealValue(row), 0),
       ),
       conversionRate: percentage(agent.converted, agent.leads),
+      otpCount: agent.otpCount,
       leads: agent.leads,
       buyerLeads: agent.buyerLeads,
       mandates: agent.mandates,
