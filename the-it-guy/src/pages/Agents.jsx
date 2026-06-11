@@ -3112,19 +3112,6 @@ function buildWorkspaceListingStatuses(listings) {
   })
 }
 
-function getActivityGroupLabel(timestamp) {
-  if (!timestamp) return 'Recent'
-  const value = new Date(timestamp)
-  if (Number.isNaN(value.getTime())) return 'Recent'
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const eventDay = new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()
-  const oneDay = 24 * 60 * 60 * 1000
-  if (eventDay === today) return 'Today'
-  if (eventDay === today - oneDay) return 'Yesterday'
-  return 'Earlier'
-}
-
 function WorkspaceHeroMetric({ label, value, helper = '' }) {
   return (
     <div className="min-w-0 border-t border-[#e5edf6] pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
@@ -3161,8 +3148,8 @@ function DealsByStageCard({ stages }) {
   const maxValue = Math.max(1, ...stages.map((item) => Number(item.count) || 0))
   const total = stages.reduce((sum, item) => sum + (Number(item.count) || 0), 0)
   return (
-    <WorkspaceCard title="Deals by Stage">
-      <div className="space-y-3">
+    <WorkspaceCard title="Deals by Stage" className="min-h-[260px]">
+      <div className="space-y-3.5">
         {stages.map((stage) => {
           const width = `${Math.max(6, Math.round(((Number(stage.count) || 0) / maxValue) * 100))}%`
           return (
@@ -3188,13 +3175,13 @@ function ListingsOverviewCard({ statuses, total }) {
   const active = statuses.find((item) => item.label === 'Active')?.count || 0
   const activeRatio = total ? Math.round((active / total) * 100) : 0
   return (
-    <WorkspaceCard title="Listings Overview">
-      <div className="grid min-w-0 gap-5 sm:grid-cols-[132px_minmax(0,1fr)] sm:items-center lg:grid-cols-1 xl:grid-cols-[132px_minmax(0,1fr)]">
+    <WorkspaceCard title="Listings Overview" className="min-h-[260px]">
+      <div className="grid min-w-0 gap-6 sm:grid-cols-[148px_minmax(0,1fr)] sm:items-center lg:grid-cols-1 xl:grid-cols-[148px_minmax(0,1fr)] 2xl:grid-cols-[164px_minmax(0,1fr)]">
         <div
-          className="mx-auto grid h-32 w-32 place-items-center rounded-full"
+          className="mx-auto grid h-36 w-36 place-items-center rounded-full 2xl:h-40 2xl:w-40"
           style={{ background: `conic-gradient(#16894f 0 ${activeRatio}%, #1769d1 ${activeRatio}% ${Math.min(100, activeRatio + 24)}%, #f2b72f ${Math.min(100, activeRatio + 24)}% ${Math.min(100, activeRatio + 38)}%, #d7dee8 ${Math.min(100, activeRatio + 38)}% 100%)` }}
         >
-          <div className="grid h-20 w-20 place-items-center rounded-full bg-white text-center shadow-sm">
+          <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-sm 2xl:h-28 2xl:w-28">
             <span>
               <span className="block text-2xl font-semibold tracking-[-0.04em] text-[#10243a]">{total}</span>
               <span className="block text-[0.68rem] font-medium text-[#6f839a]">Total</span>
@@ -3219,57 +3206,12 @@ function ListingsOverviewCard({ statuses, total }) {
 
 function FinancialPerformanceCard({ rows }) {
   return (
-    <WorkspaceCard title="Financial Performance">
-      <div className="space-y-1">
+    <WorkspaceCard title="Financial Performance" className="min-h-[260px]">
+      <div className="space-y-2">
         {rows.map(([label, value]) => (
           <DetailInfoRow key={label} label={label} value={value} />
         ))}
       </div>
-    </WorkspaceCard>
-  )
-}
-
-function ActivityFeedCard({ activity, onViewAll }) {
-  const groups = activity.reduce((accumulator, item) => {
-    const label = getActivityGroupLabel(item.timestamp)
-    if (!accumulator.has(label)) accumulator.set(label, [])
-    accumulator.get(label).push(item)
-    return accumulator
-  }, new Map())
-  const orderedGroups = ['Today', 'Yesterday', 'Earlier', 'Recent'].filter((label) => groups.has(label))
-
-  return (
-    <WorkspaceCard title="Activity Feed" actionLabel="View All" className="xl:row-span-2">
-      {activity.length ? (
-        <div className="space-y-6">
-          {orderedGroups.map((group) => (
-            <div key={group}>
-              <p className="mb-3 text-sm font-semibold text-[#20364d]">{group}</p>
-              <div className="space-y-4">
-                {groups.get(group).map((item) => {
-                  const Icon = item.icon
-                  return (
-                    <div key={item.id} className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)_56px] gap-3">
-                      <span className={`mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full ${item.tone}`}>
-                        <Icon size={14} />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-[#334960]">{item.label}: {item.record}</p>
-                      </div>
-                      <span className="text-right text-xs font-medium text-[#8294aa]">{formatRelativeActivity(item.timestamp)}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-          <button type="button" onClick={onViewAll} className="border-t border-[#edf2f7] pt-4 text-sm font-semibold text-[#1769d1] hover:text-[#0f4f9f]">
-            View more activity
-          </button>
-        </div>
-      ) : (
-        <p className="rounded-xl bg-[#f8fbff] px-4 py-3 text-sm text-[#61778f]">No recent activity recorded for this agent.</p>
-      )}
     </WorkspaceCard>
   )
 }
@@ -3506,7 +3448,7 @@ function AgentWorkspace({ agent }) {
       </section>
 
       <nav className="min-w-0 max-w-full overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white p-2 shadow-sm">
-        <div className="flex w-max min-w-full items-center gap-1">
+        <div className="flex min-w-max items-center gap-1 lg:min-w-full">
           {AGENT_WORKSPACE_TABS.map((tab) => {
             const Icon = tab.icon
             return (
@@ -3514,7 +3456,7 @@ function AgentWorkspace({ agent }) {
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
-                className={`inline-flex min-h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3.5 text-sm font-semibold transition ${
+                className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3.5 text-sm font-semibold transition lg:flex-1 ${
                   effectiveActiveTab === tab.key
                     ? 'bg-[#0f2742] text-white shadow-sm'
                     : 'text-[#405870] hover:bg-[#f6f9fc] hover:text-[#10243a]'
@@ -3538,13 +3480,10 @@ function AgentWorkspace({ agent }) {
             </div>
           </WorkspaceCard>
 
-          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,0.7fr)_minmax(320px,0.3fr)]">
-            <div className="grid min-w-0 gap-4 lg:grid-cols-3">
-              <DealsByStageCard stages={dealStages} />
-              <ListingsOverviewCard statuses={listingStatuses} total={allListings.length} />
-              <FinancialPerformanceCard rows={financialRows} />
-            </div>
-            <ActivityFeedCard activity={recentActivity} onViewAll={() => openPlaceholder('activity')} />
+          <div className="grid min-w-0 gap-4 lg:grid-cols-3 2xl:gap-5">
+            <DealsByStageCard stages={dealStages} />
+            <ListingsOverviewCard statuses={listingStatuses} total={allListings.length} />
+            <FinancialPerformanceCard rows={financialRows} />
           </div>
 
           <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
