@@ -2034,7 +2034,7 @@ function TopPerformersPanel({ rows = [], metric = 'pipelineValue', metricOptions
   const podiumRows = [rows[1], rows[0], rows[2]].filter(Boolean)
 
   return (
-    <article className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+    <article className="h-full min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-[#10243a]">Top Performers This Month</h2>
@@ -2082,15 +2082,9 @@ function AttentionAgentsPanel({ rows = [], onView }) {
     Medium: 'bg-[#fff8eb] text-[#946215]',
     Low: 'bg-[#f8fbff] text-[#60758d]',
   }
-  const getActivityLevel = (row) => {
-    const volume = Number(row.agent?.performance?.activityVolume || 0)
-    if (volume >= 8) return 'High'
-    if (volume >= 3) return 'Medium'
-    return 'Low'
-  }
 
   return (
-    <article className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+    <article className="flex h-full max-h-[368px] min-w-0 flex-col rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-[#10243a]">Agents Requiring Attention</h2>
@@ -2098,23 +2092,20 @@ function AttentionAgentsPanel({ rows = [], onView }) {
         </div>
         <button type="button" className="shrink-0 text-xs font-semibold text-[#1769d1]">View watchlist</button>
       </div>
-      <div className="mt-4 overflow-x-auto">
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
         {rows.length ? (
-          <table className="w-full min-w-[620px] text-left">
+          <table className="w-full table-fixed text-left">
             <thead className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#71859c]">
               <tr className="border-b border-[#edf2f7]">
-                <th className="px-2 py-2">Agent</th>
-                <th className="px-2 py-2">Pipeline</th>
-                <th className="px-2 py-2">Activity</th>
-                <th className="px-2 py-2">Overdue</th>
-                <th className="px-2 py-2">Last Active</th>
-                <th className="px-2 py-2 text-right">Status</th>
+                <th className="w-[42%] px-2 py-2">Agent</th>
+                <th className="w-[18%] px-2 py-2">Pipeline</th>
+                <th className="w-[22%] px-2 py-2">Last Active</th>
+                <th className="w-[18%] px-2 py-2 text-right">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf2f7] text-sm">
               {rows.map((row) => {
                 const performance = row.agent?.performance || {}
-                const activityLevel = getActivityLevel(row)
                 return (
                   <tr key={row.id} className="cursor-pointer hover:bg-[#f8fbff]" onClick={() => onView(row.agent)}>
                     <td className="px-2 py-3">
@@ -2126,9 +2117,7 @@ function AttentionAgentsPanel({ rows = [], onView }) {
                         </div>
                       </div>
                     </td>
-                    <td className="px-2 py-3 font-semibold text-[#10243a]">{formatCompactCurrency(performance.pipelineValue)}</td>
-                    <td className="px-2 py-3 text-[#10243a]">{activityLevel}</td>
-                    <td className="px-2 py-3 font-semibold text-[#10243a]">{performance.overdueFollowUps || 0}</td>
+                    <td className="truncate px-2 py-3 font-semibold text-[#10243a]">{formatCompactCurrency(performance.pipelineValue)}</td>
                     <td className="px-2 py-3 text-[#60758d]">{formatRelativeActivity(performance.lastActivityAt)}</td>
                     <td className="px-2 py-3 text-right">
                       <span className={`inline-flex rounded-full px-3 py-1 text-[0.66rem] font-semibold ${statusClass[row.severity] || statusClass.Low}`}>Needs attention</span>
@@ -4577,6 +4566,14 @@ export function AgentsPage() {
     )
   }
 
+  const openAgentInviteModal = () => {
+    setActionMessage('')
+    setActionError('')
+    setInviteSentContext({ email: '', link: '' })
+    resetInviteForm()
+    setInviteModalOpen(true)
+  }
+
   const agentDirectoryViewToggle = (
     <div className="inline-flex rounded-xl border border-[#d9e3ef] bg-white p-1 shadow-sm">
       <button
@@ -4598,42 +4595,23 @@ export function AgentsPage() {
     </div>
   )
 
+  const agentDirectoryActions = (
+    <>
+      {canManageDirectory ? (
+        <Button type="button" size="sm" onClick={openAgentInviteModal}>
+          <Plus size={15} />
+          Add Agent
+        </Button>
+      ) : null}
+      {agentDirectoryViewToggle}
+    </>
+  )
+
   return (
     <section className="space-y-5">
       {canManageDirectory ? (
         <>
-          <section className="flex flex-col gap-4 rounded-2xl border border-[#dde6f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8a9bb0]">Principal Workspace</p>
-              <h1 className="mt-1 text-[1.65rem] font-semibold tracking-[-0.035em] text-[#0f2237]">Agent Command Centre</h1>
-            </div>
-            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-              <DirectorySelect
-                label="Date range"
-                value={dateRange}
-                onChange={setDateRange}
-                options={AGENT_DATE_RANGE_OPTIONS.map((range) => ({ value: range.value, label: range.label }))}
-              />
-              {canManageDirectory ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => {
-                    setActionMessage('')
-                    setActionError('')
-                    setInviteSentContext({ email: '', link: '' })
-                    resetInviteForm()
-                    setInviteModalOpen(true)
-                  }}
-                >
-                  <Plus size={15} />
-                  Add Agent
-                </Button>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="grid gap-2 rounded-2xl border border-[#dde6f1] bg-white p-3 shadow-sm md:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(142px,auto))_auto]">
+          <section className="grid grid-cols-1 gap-2 rounded-2xl border border-[#dde6f1] bg-white p-3 shadow-sm sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(142px,auto))_auto]">
             <label className="min-w-0">
               <span className="sr-only">Search agents</span>
               <input
@@ -4643,6 +4621,12 @@ export function AgentsPage() {
                 placeholder="Search agent, email, phone or branch..."
               />
             </label>
+            <DirectorySelect
+              label="Date range"
+              value={dateRange}
+              onChange={setDateRange}
+              options={AGENT_DATE_RANGE_OPTIONS.map((range) => ({ value: range.value, label: range.label }))}
+            />
             <DirectorySelect
               label="Branch / office"
               value={branchFilter}
@@ -4754,7 +4738,7 @@ export function AgentsPage() {
               <AgentCommandCardGrid
                 rows={commandCentreModel.agentsTable}
                 canManage={canManageDirectory}
-                actionSlot={agentDirectoryViewToggle}
+                actionSlot={agentDirectoryActions}
                 onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
                 onEditRole={openRoleEditor}
                 onDeactivate={(agent) => openConfirm('deactivate', agent)}
@@ -4769,7 +4753,7 @@ export function AgentsPage() {
                 canManage={canManageDirectory}
                 sortBy={sortBy}
                 onSort={setSortBy}
-                actionSlot={agentDirectoryViewToggle}
+                actionSlot={agentDirectoryActions}
                 onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
                 onEditRole={openRoleEditor}
                 onDeactivate={(agent) => openConfirm('deactivate', agent)}

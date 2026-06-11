@@ -1110,18 +1110,29 @@ function RevenueHero({ data }) {
   const hasTarget = hero.target !== null && hero.target !== undefined
   const targetPercent = hasTarget ? Math.max(0, Math.min(100, Number(hero.targetPercent || 0))) : 0
   const achievedValue = hasTarget ? hero.achieved : hero.revenueThisMonth
+  const salesValueThisMonth = hero.salesValueThisMonth ?? data?.registeredValue ?? 0
   const trend = hero.trendVsLastMonth
   return (
     <section className="min-h-[430px] overflow-hidden rounded-2xl border border-white/20 bg-[linear-gradient(135deg,#4f46e5_0%,#2f80ed_52%,#69b7ff_100%)] p-4 text-white shadow-sm sm:p-5">
       <div className="flex min-h-[390px] flex-col justify-between gap-6">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_180px_minmax(210px,0.34fr)] lg:items-center xl:grid-cols-[minmax(0,1fr)_200px_260px]">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-white/75">Revenue This Month</p>
+            <p className="text-sm font-semibold text-white/75">Commission Revenue This Month</p>
             <p className="mt-4 text-[2.75rem] font-semibold leading-none text-white sm:text-[3.35rem]">{formatCurrency(hero.revenueThisMonth)}</p>
-            <p className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-white/90">
-            {trend === null || trend === undefined ? '—' : `${trend > 0 ? '↗' : '↘'} ${Math.abs(Math.round(trend))}%`}
-              <span className="font-medium text-white/70">vs last month</span>
-            </p>
+            <div className="mt-5 grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
+              <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-white/60">Sales Value</p>
+                <p className="mt-2 text-xl font-semibold leading-none text-white">{formatCurrency(salesValueThisMonth, { compact: true })}</p>
+                <p className="mt-1 text-xs font-medium text-white/60">Registered sale value</p>
+              </div>
+              <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-white/60">Commission Trend</p>
+                <p className="mt-2 inline-flex items-center gap-1 text-xl font-semibold leading-none text-white">
+                  {trend === null || trend === undefined ? '—' : `${trend > 0 ? '↗' : '↘'} ${Math.abs(Math.round(trend))}%`}
+                </p>
+                <p className="mt-1 text-xs font-medium text-white/60">vs last month</p>
+              </div>
+            </div>
           </div>
 
           <div className="grid place-items-center lg:place-items-end">
@@ -1291,16 +1302,24 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
       </div>
 
       {activeTab === 'overview' ? (
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
-          <div className="space-y-5">
-            <SalesFunnelOverview data={data.pipeline.salesFunnel || {}} />
-            <TransactionHealthOverview data={data.transactions.health || {}} />
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
+            <div className="min-w-0 space-y-6">
+              <SalesFunnelOverview data={data.pipeline.salesFunnel || {}} />
+              <TransactionHealthOverview data={data.transactions.health || {}} />
+            </div>
+            <aside className="min-w-0 space-y-6">
+              <PipelineHealthPanel items={data.pipeline.health || []} compact />
+              <ActiveTransactionDistribution data={data.transactions.health || {}} totalActive={data.kpis.activeTransactions} />
+              <DealVelocityPanel rows={data.transactions.health?.velocity || []} />
+            </aside>
           </div>
-          <aside className="space-y-5">
-            <PipelineHealthPanel items={data.pipeline.health || []} compact />
-            <ActiveTransactionDistribution data={data.transactions.health || {}} totalActive={data.kpis.activeTransactions} />
-            <DealVelocityPanel rows={data.transactions.health?.velocity || []} />
-          </aside>
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
+            <div className="min-w-0">
+              <ActiveTransactionsSlider rows={data.activeTransactions || []} />
+            </div>
+            <AgentSnapshotPanel rows={data.agentPerformance || []} />
+          </div>
         </div>
       ) : null}
       {activeTab === 'pipeline' ? (

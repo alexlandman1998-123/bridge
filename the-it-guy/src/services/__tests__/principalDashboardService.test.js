@@ -147,6 +147,8 @@ function lead(overrides = {}) {
   })
   assert.equal(completedMetrics.overview.pipelineSnapshot.activeCount, 1, 'completed rows should not inflate active transaction count')
   assert.equal(completedMetrics.pipeline.funnel.find((row) => row.key === 'registrations').count, 1, 'completed rows should count as registrations')
+  assert.equal(completedMetrics.revenue.hero.salesValueThisMonth, 2_000_000, 'revenue hero should expose registered sales value separately from commission')
+  assert.equal(completedMetrics.revenue.hero.revenueThisMonth, 60_000, 'revenue hero should keep commission revenue as the primary revenue amount')
 }
 
 {

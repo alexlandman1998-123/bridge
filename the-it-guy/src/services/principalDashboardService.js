@@ -886,6 +886,7 @@ export function getResidentialDashboardMetrics({
   const likelyRevenue = Math.round(sumBy(activeTransactions, (row) => getCommissionAmount(row, commissionByTransaction) * getPipelineStageWeight(row)))
   const committedRevenue = Math.round(sumBy(activeTransactions.filter((row) => getPipelineStageWeight(row) >= REVENUE_FORECAST_WEIGHTS.otp), (row) => getCommissionAmount(row, commissionByTransaction)))
   const revenueThisMonth = sumBy(registeredTransactionsInRange, (row) => getCommissionAmount(row, commissionByTransaction))
+  const salesValueThisMonth = sumBy(registeredTransactionsInRange, getDealValue)
   const previousMonthCommission = sumBy(completedTransactions.filter((row) => isBetween(getTransactionCompletedAt(row), range.previousStart, range.previousEnd)), (row) => getCommissionAmount(row, commissionByTransaction))
   const revenueTarget = null
   const salesCommissionSource = revenueThisMonth > 0 ? revenueThisMonth : expectedCommission
@@ -961,6 +962,7 @@ export function getResidentialDashboardMetrics({
     revenue: {
       hero: {
         revenueThisMonth,
+        salesValueThisMonth,
         target: revenueTarget,
         achieved: revenueTarget ? revenueThisMonth : null,
         targetPercent: revenueTarget ? percentage(revenueThisMonth, revenueTarget) : null,
@@ -1088,6 +1090,7 @@ function buildEmptyDashboard() {
       byAgent: [],
       hero: {
         revenueThisMonth: 0,
+        salesValueThisMonth: 0,
         target: null,
         achieved: null,
         targetPercent: null,

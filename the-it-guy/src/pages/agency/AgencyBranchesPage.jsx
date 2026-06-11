@@ -1,5 +1,4 @@
 import {
-  Activity,
   AlertTriangle,
   ArrowDownRight,
   ArrowRight,
@@ -29,9 +28,6 @@ import { createBranch, getBranches } from '../../services/agencyBranchService'
 
 const PERFORMANCE_FILTERS = [
   { key: 'all', label: 'All Branches' },
-  { key: 'top', label: 'Top Performers' },
-  { key: 'stable', label: 'Stable' },
-  { key: 'attention', label: 'Needs Attention' },
 ]
 
 function normalizeText(value) {
@@ -282,8 +278,8 @@ function StatusBadge({ children, tone = 'slate' }) {
 
 function HealthRing({ score, label, size = 'lg' }) {
   const value = Math.max(0, Math.min(100, Number(score || 0)))
-  const dimensionClass = size === 'sm' ? 'h-16 w-16' : 'h-24 w-24'
-  const labelClass = size === 'sm' ? 'text-[1.05rem]' : 'text-[1.8rem]'
+  const dimensionClass = size === 'sm' ? 'h-16 w-16' : size === 'md' ? 'h-20 w-20' : 'h-24 w-24'
+  const labelClass = size === 'sm' ? 'text-[1.05rem]' : size === 'md' ? 'text-[1.45rem]' : 'text-[1.8rem]'
   const color = value >= 75 ? '#1fb86a' : value >= 60 ? '#f59e0b' : value >= 45 ? '#f97316' : '#ef4444'
 
   return (
@@ -607,7 +603,9 @@ export default function AgencyBranchesPage() {
 
   const topBranch = enrichedRows[0] || null
   const attentionBranch = useMemo(() => {
-    return [...enrichedRows].sort((left, right) => toNumber(left.health?.score) - toNumber(right.health?.score))[0] || null
+    return [...enrichedRows]
+      .filter((row) => row.health?.needsAttention)
+      .sort((left, right) => toNumber(left.health?.score) - toNumber(right.health?.score))[0] || null
   }, [enrichedRows])
 
   const filteredRows = useMemo(() => {
@@ -637,25 +635,13 @@ export default function AgencyBranchesPage() {
 
   return (
     <section className="flex flex-col gap-5 pb-8">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="text-[0.73rem] font-semibold uppercase tracking-[0.14em] text-[#6e8299]">Agency / Branches</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <h1 className="text-[1.85rem] font-semibold tracking-[-0.045em] text-[#102236]">Agency Overview</h1>
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d9e4ef] bg-white text-[#315f8f]">
-              <Activity size={15} />
-            </span>
-          </div>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[#60758d]">Monitor branch performance, network concentration, and the offices that need principal intervention.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => navigate('/settings/users', { state: { openInvite: true } })}>
-            <Users size={16} />Invite Principal / Manager
-          </Button>
-          <Button onClick={() => setShowCreateModal(true)}>
-            <Plus size={16} />New Branch
-          </Button>
-        </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" onClick={() => navigate('/settings/users', { state: { openInvite: true } })}>
+          <Users size={16} />Invite Principal / Manager
+        </Button>
+        <Button onClick={() => setShowCreateModal(true)}>
+          <Plus size={16} />New Branch
+        </Button>
       </div>
 
       {error ? <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
@@ -704,11 +690,11 @@ export default function AgencyBranchesPage() {
             </article>
 
             <article className="rounded-[20px] border border-[#cfe0ff] bg-[#f8fbff] p-5 shadow-[0_14px_34px_rgba(40,116,220,0.08)]">
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                <HealthRing score={network.agencyHealth} label={network.agencyHealth >= 75 ? 'Good' : network.agencyHealth >= 60 ? 'Fair' : 'Watch'} />
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                <HealthRing score={network.agencyHealth} label={network.agencyHealth >= 75 ? 'Good' : network.agencyHealth >= 60 ? 'Fair' : 'Watch'} size="md" />
                 <div className="min-w-0">
                   <p className="text-[0.72rem] font-semibold uppercase tracking-[0.13em] text-[#2874dc]">Agency Health Score</p>
-                  <h2 className="mt-3 text-[1rem] font-semibold text-[#102236]">{network.agencyHealth >= 75 ? 'Your network is performing well' : network.agencyHealth >= 60 ? 'Your network is stable' : 'Your network needs intervention'}</h2>
+                  <h2 className="mt-2 text-[1rem] font-semibold text-[#102236]">{network.agencyHealth >= 75 ? 'Your network is performing well' : network.agencyHealth >= 60 ? 'Your network is stable' : 'Your network needs intervention'}</h2>
                   <div className="mt-3 grid gap-2 text-sm text-[#50667e]">
                     <span className="inline-flex items-center gap-2"><CheckCircle2 size={15} className="text-[#12a05c]" />{network.activeBranches} active branches</span>
                     <span className="inline-flex items-center gap-2"><CheckCircle2 size={15} className="text-[#12a05c]" />{network.activeAgents} active agents</span>
@@ -719,8 +705,8 @@ export default function AgencyBranchesPage() {
             </article>
           </section>
 
-          <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
-            <article className="rounded-[20px] border border-[#dfe7f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,35,55,0.06)]">
+          <section className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
+            <article className="flex h-full flex-col rounded-[20px] border border-[#dfe7f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,35,55,0.06)]">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-[0.72rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">Branch Performance</p>
@@ -728,7 +714,7 @@ export default function AgencyBranchesPage() {
                 </div>
                 <StatusBadge tone="blue">{enrichedRows.length} branches</StatusBadge>
               </div>
-              <div className="mt-4">
+              <div className="mt-4 flex-1">
                 {enrichedRows.length ? <RankingTable rows={enrichedRows} onOpenBranch={openBranch} /> : (
                   <div className="rounded-[16px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-8 text-center text-sm text-[#66758b]">No branch performance data yet.</div>
                 )}
@@ -736,7 +722,7 @@ export default function AgencyBranchesPage() {
               <Button variant="secondary" className="mt-4 w-full" onClick={() => navigate('/agency/analytics')}>View Full Analytics <ArrowRight size={15} /></Button>
             </article>
 
-            <article className="rounded-[20px] border border-[#dfe7f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,35,55,0.06)]">
+            <article className="flex h-full flex-col rounded-[20px] border border-[#dfe7f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,35,55,0.06)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[0.72rem] font-semibold uppercase tracking-[0.13em] text-[#7b8ca2]">Branch Health</p>
@@ -744,7 +730,7 @@ export default function AgencyBranchesPage() {
                 </div>
                 <Gauge size={20} className="text-[#315f8f]" />
               </div>
-              <div className="mt-4">
+              <div className="mt-4 flex-1">
                 {enrichedRows.length ? (
                   <BranchHealthList rows={[...enrichedRows].sort((left, right) => left.health.score - right.health.score)} onOpenBranch={openBranch} />
                 ) : (

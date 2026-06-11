@@ -61,7 +61,6 @@ export const APP_NAV_BY_ROLE = {
     { key: 'transactions', label: 'Transactions', to: '/units' },
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'pipeline', label: 'Pipeline', to: '/pipeline' },
-    { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'snags', label: 'Snags', to: '/snags' },
     { key: 'reports', label: 'Reports', to: '/reports' },
@@ -97,7 +96,6 @@ export const APP_NAV_BY_ROLE = {
     { key: 'transactions', label: 'Transactions', to: '/transactions' },
     { key: 'calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
     { key: 'clients', label: 'Clients', to: '/clients' },
-    { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
@@ -502,15 +500,13 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     {
       key: 'agency',
       label: 'Agency',
-      to: isBranchManager ? '/agency/branch-command-centre' : '/agency/branches',
+      to: '/agency/branches',
       activeMatch: ['/agency', '/agents/reporting'],
       children: [
-        { key: 'agency_branch_command', label: 'Branch Command', to: '/agency/branch-command-centre' },
         { key: 'agency_branches', label: 'Branches', to: '/agency/branches' },
         ...(!isBranchManager
           ? [
               { key: 'agency_agents', label: 'Agents', to: '/agency/agents' },
-              { key: 'agency_governance', label: 'Governance', to: '/agency/governance' },
               { key: 'agency_analytics', label: 'Analytics', to: '/agency/analytics' },
               { key: 'agents_reporting', label: 'Reports', to: '/agents/reporting' },
             ]
@@ -518,7 +514,6 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
       ],
     },
     { key: 'clients', label: 'Clients', to: '/clients' },
-    { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'reports', label: 'Reports', to: '/reports' },
   ]
