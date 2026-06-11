@@ -290,6 +290,15 @@ function PrincipalDashboardHeader({
     .join('')
     .slice(0, 2)
     .toUpperCase()
+  const avatarUrl = String(
+    profile?.avatarUrl ||
+      profile?.avatar_url ||
+      profile?.profilePhotoUrl ||
+      profile?.profile_photo_url ||
+      profile?.photoUrl ||
+      profile?.photo_url ||
+      '',
+  ).trim()
 
   useEffect(() => {
     function handlePointerDown(event) {
@@ -336,7 +345,9 @@ function PrincipalDashboardHeader({
             className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-2.5 shadow-sm transition hover:border-[#bfd0e4] hover:bg-[#f8fbff]"
             onClick={() => setAccountMenuOpen((open) => !open)}
           >
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#0f172a] text-xs font-semibold text-white">{initials}</span>
+            <span className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-[#0f172a] text-xs font-semibold text-white">
+              {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : initials}
+            </span>
             <ChevronDown size={14} className="text-[#526981]" />
           </button>
 

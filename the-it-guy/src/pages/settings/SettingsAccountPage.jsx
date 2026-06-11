@@ -100,7 +100,7 @@ async function createProfileAvatarFile(file) {
 }
 
 export default function SettingsAccountPage() {
-  const { refreshProfile } = useWorkspace()
+  const { refreshProfile, updateLocalProfile } = useWorkspace()
   const [form, setForm] = useState(null)
   const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' })
   const [loading, setLoading] = useState(true)
@@ -174,8 +174,11 @@ export default function SettingsAccountPage() {
       setAvatarProcessing(true)
       const avatarFile = await createProfileAvatarFile(file)
       const upload = await uploadAccountAvatar({ file: avatarFile })
-      const saved = await updateAccountSettings({ ...form, avatarUrl: upload.resolvedUrl })
-      setForm(saved)
+      const avatarUrl = upload.resolvedUrl
+      const saved = await updateAccountSettings({ ...form, avatarUrl })
+      const nextForm = { ...saved, avatarUrl: saved.avatarUrl || avatarUrl }
+      setForm(nextForm)
+      updateLocalProfile({ avatarUrl: nextForm.avatarUrl, avatar_url: nextForm.avatarUrl })
       setMessage('Profile picture saved.')
     } catch (uploadError) {
       setAvatarError(uploadError.message)
@@ -193,6 +196,7 @@ export default function SettingsAccountPage() {
       setAvatarError('')
       const saved = await updateAccountSettings({ ...form, avatarUrl: '' })
       setForm(saved)
+      updateLocalProfile({ avatarUrl: '', avatar_url: '' })
       setMessage('Profile picture removed.')
     } catch (removeError) {
       setAvatarError(removeError.message)

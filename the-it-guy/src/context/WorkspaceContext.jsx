@@ -11,6 +11,7 @@ const WorkspaceContext = createContext(null)
 const AGENCY_WORKFLOW_MODE_STORAGE_KEY = 'itg:agency-workflow-mode:v1'
 const DEFAULT_AGENCY_WORKFLOW_MODE = 'agent'
 const UNRESOLVED_WORKSPACE = { id: '', name: 'Workspace setup required', type: '' }
+const EMPTY_PROFILE_PATCH = {}
 
 function normalizeAgencyWorkflowMode(value, fallback = DEFAULT_AGENCY_WORKFLOW_MODE) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -39,7 +40,13 @@ function resolveWorkspaceStatus(authState) {
 
 export function WorkspaceProvider({ children }) {
   const { authState, selectWorkspace } = useAuthSession()
-  const profile = authState.profile || null
+  const rawProfile = authState.profile || null
+  const [profilePatchState, setProfilePatchState] = useState({ userId: '', patch: {} })
+  const activeProfilePatch = profilePatchState.userId === rawProfile?.id ? profilePatchState.patch : EMPTY_PROFILE_PATCH
+  const profile = useMemo(
+    () => (rawProfile ? { ...rawProfile, ...activeProfilePatch } : null),
+    [activeProfilePatch, rawProfile],
+  )
   const signupIntent = authState.signupIntent || null
   const onboardingState = authState.onboardingState || null
   const userId = authState.user?.id || null
@@ -145,6 +152,14 @@ export function WorkspaceProvider({ children }) {
     authState.refreshAuthState?.()
   }, [authState])
 
+  const updateLocalProfile = useCallback((patch = {}) => {
+    const profileId = rawProfile?.id || ''
+    setProfilePatchState((previous) => ({
+      userId: profileId,
+      patch: previous.userId === profileId ? { ...previous.patch, ...patch } : { ...patch },
+    }))
+  }, [rawProfile?.id])
+
   const saveProfileDraft = useCallback(
     async (payload = {}) => {
       if (!authState.user?.id) {
@@ -232,6 +247,7 @@ export function WorkspaceProvider({ children }) {
       getPermissionScope: (permission) => getPermissionScope(permission, permissionContext),
       refreshProfile,
       retryWorkspaceBootstrap,
+      updateLocalProfile,
       saveProfileDraft,
     }),
     [
@@ -241,9 +257,13 @@ export function WorkspaceProvider({ children }) {
       authState.currentWorkspace,
       authState.memberships,
       authState.pendingMemberships,
+      authState.permissions,
       authState.onboardingRequiredReason,
       onboardingState,
       authState.suspendedMemberships,
+      authState.workspaceDiagnostics,
+      authState.workspaceResolution,
+      authState.workspaceRole,
       authState.workspaceType,
       baseRole,
       onboardingCompleted,
@@ -260,6 +280,7 @@ export function WorkspaceProvider({ children }) {
       setWorkspace,
       setupState,
       signupIntent,
+      updateLocalProfile,
       workspace,
       workspaceReady,
       workspaceStatus,
