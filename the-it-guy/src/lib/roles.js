@@ -54,7 +54,7 @@ export const APP_ROLE_ONBOARDING_OPTIONS = [
   { value: 'bond_originator', label: APP_ROLE_LABELS.bond_originator, description: 'Finance pipeline, lender updates, and bond document management.' },
 ]
 
-function createAgentPipelineNav({ includeEnquiries = true } = {}) {
+function createAgentPipelineNav() {
   return {
     key: 'pipeline',
     label: 'Pipeline',
@@ -62,7 +62,6 @@ function createAgentPipelineNav({ includeEnquiries = true } = {}) {
     activeMatch: ['/pipeline', '/pipeline/leads', '/pipeline/enquiries', '/pipeline/canvassing', '/pipeline/calendar', '/calendar'],
     children: [
       { key: 'pipeline_leads', label: 'Leads', to: '/pipeline/leads' },
-      ...(includeEnquiries ? [{ key: 'pipeline_enquiries', label: 'Enquiries', to: '/pipeline/enquiries' }] : []),
       { key: 'pipeline_canvassing', label: 'Canvassing', to: '/pipeline/canvassing' },
       { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
     ],
@@ -493,7 +492,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
   return [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'transactions', label: 'Transactions', to: '/transactions' },
-    createAgentPipelineNav({ includeEnquiries: false }),
+    createAgentPipelineNav(),
     {
       key: 'listings',
       label: 'Listings',
