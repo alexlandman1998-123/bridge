@@ -733,10 +733,13 @@ export function getResidentialDashboardMetrics({
   const revenueThisMonth = sumBy(registeredTransactionsInRange, (row) => getCommissionAmount(row, commissionByTransaction))
   const previousMonthCommission = sumBy(completedTransactions.filter((row) => isBetween(getTransactionCompletedAt(row), range.previousStart, range.previousEnd)), (row) => getCommissionAmount(row, commissionByTransaction))
   const revenueTarget = null
+  const salesCommissionSource = revenueThisMonth > 0 ? revenueThisMonth : expectedCommission
+  const transferRevenueSource = sumBy(registeredTransactionsInRange.filter((row) => getCommandStage(row) === 'complete'), (row) => getCommissionAmount(row, commissionByTransaction))
+  const bondRevenueSource = sumBy(registeredTransactionsInRange.filter((row) => getFinanceBucket(row) === 'bond'), (row) => getCommissionAmount(row, commissionByTransaction))
   const revenueSources = [
-    { key: 'sales_commission', label: 'Sales Commission', value: revenueThisMonth, enabled: revenueThisMonth > 0 || expectedCommission > 0 },
-    { key: 'transfer_revenue', label: 'Transfer Revenue', value: sumBy(registeredTransactionsInRange.filter((row) => getCommandStage(row) === 'complete'), (row) => getCommissionAmount(row, commissionByTransaction)), enabled: transferSubprocesses.length > 0 },
-    { key: 'bond_revenue', label: 'Bond Revenue', value: sumBy(registeredTransactionsInRange.filter((row) => getFinanceBucket(row) === 'bond'), (row) => getCommissionAmount(row, commissionByTransaction)), enabled: activeTransactions.some((row) => getFinanceBucket(row) === 'bond') },
+    { key: 'sales_commission', label: 'Sales Commission', value: salesCommissionSource, enabled: salesCommissionSource > 0 },
+    { key: 'transfer_revenue', label: 'Transfer Revenue', value: transferRevenueSource, enabled: transferRevenueSource > 0 },
+    { key: 'bond_revenue', label: 'Bond Revenue', value: bondRevenueSource, enabled: bondRevenueSource > 0 },
     { key: 'rental_revenue', label: 'Rental Revenue', value: 0, enabled: false },
     { key: 'commercial_revenue', label: 'Commercial Revenue', value: 0, enabled: false },
   ].filter((source) => source.enabled)
