@@ -6613,11 +6613,13 @@ button.agency-setup-row-card:hover {
 
 .auth-page:not(.onboarding-page) .signup-step-panel {
   animation: authStepIn 240ms ease both;
+  min-height: 0;
 }
 
 .auth-page:not(.onboarding-page) .signup-choice-stack {
   display: grid;
   gap: 12px;
+  min-height: 0;
 }
 
 .auth-page:not(.onboarding-page) .signup-section-heading {
@@ -6641,10 +6643,34 @@ button.agency-setup-row-card:hover {
   line-height: 1.45;
 }
 
+.auth-page:not(.onboarding-page) .signup-role-grid-wrap {
+  min-height: 0;
+  max-height: clamp(268px, 40vh, 360px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 6px 8px 2px;
+  margin: 0 -6px -2px -2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 116, 138, 0.28) transparent;
+}
+
+.auth-page:not(.onboarding-page) .signup-role-grid-wrap::-webkit-scrollbar {
+  width: 7px;
+}
+
+.auth-page:not(.onboarding-page) .signup-role-grid-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.auth-page:not(.onboarding-page) .signup-role-grid-wrap::-webkit-scrollbar-thumb {
+  background: rgba(99, 116, 138, 0.25);
+  border-radius: 999px;
+}
+
 .auth-page:not(.onboarding-page) .signup-role-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 9px;
 }
 
 .auth-page:not(.onboarding-page) .signup-role-card,
@@ -6662,14 +6688,10 @@ button.agency-setup-row-card:hover {
 }
 
 .auth-page:not(.onboarding-page) .signup-role-card {
-  min-height: 106px;
-  padding: 14px;
+  min-height: 78px;
+  padding: 12px;
   display: grid;
-  align-content: start;
-}
-
-.auth-page:not(.onboarding-page) .signup-role-card:nth-child(5) {
-  grid-column: span 2;
+  align-content: center;
 }
 
 .auth-page:not(.onboarding-page) .signup-role-card:hover,
@@ -6712,14 +6734,15 @@ button.agency-setup-row-card:hover {
 
 .auth-page:not(.onboarding-page) .signup-role-card-main {
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
-  align-items: start;
+  align-items: center;
 }
 
 .auth-page:not(.onboarding-page) .signup-role-card-icon,
 .auth-page:not(.onboarding-page) .signup-position-icon {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.3rem;
+  height: 2.3rem;
   border: 0;
   border-radius: 16px;
   display: inline-flex;
@@ -6754,19 +6777,33 @@ button.agency-setup-row-card:hover {
   display: block;
   color: #0b1426;
   font-family: var(--font-ui);
-  font-size: 0.94rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  line-height: 1.18;
+  line-height: 1.15;
 }
 
 .auth-page:not(.onboarding-page) .signup-role-card-main span span,
 .auth-page:not(.onboarding-page) .signup-position-card span span {
   display: block;
-  margin-top: 6px;
+  margin-top: 5px;
   color: #52657e;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 400;
-  line-height: 1.34;
+  line-height: 1.3;
+}
+
+.auth-page:not(.onboarding-page) .signup-role-card-main > span:last-child > strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.auth-page:not(.onboarding-page) .signup-role-card-main > span:last-child > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
 }
 
 .auth-page:not(.onboarding-page) .signup-position-grid {
@@ -7209,12 +7246,12 @@ button.agency-setup-row-card:hover {
   }
 
   .auth-page:not(.onboarding-page) .signup-role-grid {
-    gap: 10px;
+    gap: 9px;
   }
 
   .auth-page:not(.onboarding-page) .signup-role-card {
-    min-height: 114px;
-    padding: 14px;
+    min-height: 78px;
+    padding: 12px;
     border-radius: 16px;
   }
 
@@ -7224,21 +7261,21 @@ button.agency-setup-row-card:hover {
 
   .auth-page:not(.onboarding-page) .signup-role-card-icon,
   .auth-page:not(.onboarding-page) .signup-position-icon {
-    width: 2.65rem;
-    height: 2.65rem;
+    width: 2.2rem;
+    height: 2.2rem;
     border-radius: 14px;
   }
 
   .auth-page:not(.onboarding-page) .signup-role-card strong,
   .auth-page:not(.onboarding-page) .signup-position-card strong {
-    font-size: 0.92rem;
+    font-size: 0.86rem;
   }
 
   .auth-page:not(.onboarding-page) .signup-role-card-main span span,
   .auth-page:not(.onboarding-page) .signup-position-card span span {
-    margin-top: 6px;
-    font-size: 0.8rem;
-    line-height: 1.3;
+    margin-top: 4px;
+    font-size: 0.74rem;
+    line-height: 1.25;
   }
 
   .auth-page:not(.onboarding-page) .signup-step-panel > .auth-submit,
@@ -7447,13 +7484,16 @@ button.agency-setup-row-card:hover {
     grid-template-columns: 1fr;
   }
 
-  .auth-page:not(.onboarding-page) .signup-role-card:nth-child(5) {
-    grid-column: auto;
+  .auth-page:not(.onboarding-page) .signup-role-grid-wrap {
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    margin: 0;
   }
 
   .auth-page:not(.onboarding-page) .signup-role-card {
-    min-height: 126px;
-    padding: 18px;
+    min-height: 88px;
+    padding: 14px;
   }
 
   .auth-page:not(.onboarding-page) .auth-action-row {

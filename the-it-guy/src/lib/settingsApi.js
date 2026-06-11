@@ -12,6 +12,7 @@ import { normalizeOrganisationMembershipRole } from './organisationAccess'
 import { normalizeAppRole } from './roles'
 import {
   BRANDING_BUCKET_CANDIDATES,
+  PROFILE_AVATAR_BUCKET_CANDIDATES,
   clearSupabaseLocalAuthState,
   invokeEdgeFunction,
   isSupabaseConfigured,
@@ -65,6 +66,8 @@ const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailWorkflowChanges: true,
   inAppNotifications: true,
 }
+
+const PROFILE_AVATAR_UPLOAD_CONTENT_TYPE = 'image/jpeg'
 
 const DEFAULT_ORGANISATION_SETTINGS = {
   onboardingRules: {
@@ -2444,6 +2447,8 @@ export async function updateAccountSettings(input = {}) {
         avatarUrl: input.avatarUrl,
       })
 
+      clearOrganisationRuntimeCache()
+
       return normalizeAccountSettings(
         {
           id: user.id,
@@ -2461,11 +2466,71 @@ export async function updateAccountSettings(input = {}) {
     throw error
   }
 
+  clearOrganisationRuntimeCache()
+
   return normalizeAccountSettings(data, {
     id: user.id,
     email: user.email,
     role: input.role || 'viewer',
   })
+}
+
+export async function uploadAccountAvatar({ file } = {}) {
+  const selectedFile = typeof Blob !== 'undefined' && file instanceof Blob ? file : null
+  if (!selectedFile) {
+    throw new Error('Select a valid profile picture before uploading.')
+  }
+
+  const client = requireClient()
+  const user = await getAuthenticatedUser()
+  const extension = normalizeFileExtension(file?.name, 'jpg')
+  const safeExtension = extension === 'jpeg' ? 'jpg' : extension
+  const objectPath = `${user.id}/avatar-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${safeExtension}`
+  let uploadedBucket = ''
+  let uploadError = null
+
+  for (const bucketName of PROFILE_AVATAR_BUCKET_CANDIDATES) {
+    const { error } = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
+      upsert: true,
+      cacheControl: '31536000',
+      contentType: selectedFile.type || PROFILE_AVATAR_UPLOAD_CONTENT_TYPE,
+    })
+
+    if (!error) {
+      uploadedBucket = bucketName
+      uploadError = null
+      break
+    }
+
+    if (isMissingStorageBucketError(error)) {
+      uploadError = error
+      continue
+    }
+
+    throw error
+  }
+
+  if (!uploadedBucket) {
+    const checked = PROFILE_AVATAR_BUCKET_CANDIDATES.join(', ')
+    if (uploadError) {
+      throw new Error(`Unable to upload profile picture. Checked storage buckets: ${checked}. Run the profile avatar storage migration for this environment.`)
+    }
+    throw new Error('Unable to upload profile picture.')
+  }
+
+  const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
+  const publicUrl = normalizeText(publicUrlData?.publicUrl)
+
+  if (!publicUrl) {
+    throw new Error('Profile picture uploaded, but Bridge could not resolve its public URL.')
+  }
+
+  return {
+    bucket: uploadedBucket,
+    path: objectPath,
+    publicUrl,
+    resolvedUrl: publicUrl,
+  }
 }
 
 export async function changePassword({ password }) {

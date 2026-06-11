@@ -678,38 +678,40 @@ function Auth({ onDevBypass = null }) {
                     <div className="signup-section-heading">
                       <strong>What best describes you?</strong>
                     </div>
-                    <div className="signup-role-grid">
-                    {orderedBusinessTypeOptions.map((option, index) => {
-                      const active = businessType === option.value
-                      const RoleIcon = ROLE_ICONS[option.value] || Building2
-                      const display = ROLE_DISPLAY_COPY[option.value] || option
-                      const selectRole = () => {
-                        setBusinessType(option.value)
-                        setPosition('')
-                        setError('')
-                      }
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={`signup-role-card ${active ? 'active' : ''}`}
-                          aria-pressed={active}
-                          onClick={selectRole}
-                          onKeyDown={(event) => handleKeyboardSelect(event, selectRole)}
-                        >
-                          {active ? <span className="signup-role-card-selected" aria-label="Selected"><Check size={14} /></span> : null}
-                          <span className="signup-role-card-main">
-                            <span className={`signup-role-card-icon role-tone-${index + 1}`}>
-                              <RoleIcon size={22} />
-                            </span>
-                            <span>
-                              <strong>{display.label}</strong>
-                              <span>{display.description}</span>
-                            </span>
-                          </span>
-                        </button>
-                      )
-                    })}
+                    <div className="signup-role-grid-wrap">
+                      <div className="signup-role-grid">
+                        {orderedBusinessTypeOptions.map((option, index) => {
+                          const active = businessType === option.value
+                          const RoleIcon = ROLE_ICONS[option.value] || Building2
+                          const display = ROLE_DISPLAY_COPY[option.value] || option
+                          const selectRole = () => {
+                            setBusinessType(option.value)
+                            setPosition('')
+                            setError('')
+                          }
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`signup-role-card ${active ? 'active' : ''}`}
+                              aria-pressed={active}
+                              onClick={selectRole}
+                              onKeyDown={(event) => handleKeyboardSelect(event, selectRole)}
+                            >
+                              {active ? <span className="signup-role-card-selected" aria-label="Selected"><Check size={14} /></span> : null}
+                              <span className="signup-role-card-main">
+                                <span className={`signup-role-card-icon role-tone-${index + 1}`}>
+                                  <RoleIcon size={22} />
+                                </span>
+                                <span>
+                                  <strong>{display.label}</strong>
+                                  <span>{display.description}</span>
+                                </span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
                     <button
                       type="button"

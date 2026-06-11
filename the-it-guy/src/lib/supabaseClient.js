@@ -381,3 +381,14 @@ export const BRANDING_BUCKET = configuredBrandingBuckets[0] || DOCUMENTS_BUCKET
 export const BRANDING_BUCKET_CANDIDATES = Array.from(
   new Set([BRANDING_BUCKET, ...configuredBrandingBuckets, ...DOCUMENTS_BUCKET_CANDIDATES, 'organisation-branding'].filter(Boolean)),
 )
+
+const configuredProfileAvatarBuckets = [
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET || processEnv.VITE_SUPABASE_PROFILE_AVATAR_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_PROFILE_AVATAR_BUCKET || processEnv.VITE_PROFILE_AVATAR_BUCKET),
+]
+
+export const PROFILE_AVATAR_BUCKET = configuredProfileAvatarBuckets[0] || 'profile-avatars'
+
+export const PROFILE_AVATAR_BUCKET_CANDIDATES = Array.from(
+  new Set([PROFILE_AVATAR_BUCKET, ...configuredProfileAvatarBuckets, 'profile-avatars'].filter(Boolean)),
+)

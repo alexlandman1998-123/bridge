@@ -657,8 +657,81 @@ function buildForecastBuckets(transactions = [], commissionByTransaction = new M
   }))
 }
 
-function buildSalesFunnelMetrics(funnel = []) {
+function buildSalesFunnelInsight(stages = []) {
+  const drops = stages.slice(0, -1).map((stage, index) => {
+    const next = stages[index + 1] || {}
+    return {
+      key: `${stage.key}_to_${next.key}`,
+      fromLabel: stage.label,
+      toLabel: next.label,
+      drop: Math.max(0, toNumber(stage.count) - toNumber(next.count)),
+      conversion: stage.count ? percentage(next.count, stage.count) : 0,
+    }
+  })
+  const largestDrop = drops.slice().sort((left, right) => right.drop - left.drop || left.conversion - right.conversion)[0] || null
+
+  if (!largestDrop || largestDrop.drop <= 0) {
+    return {
+      key: 'healthy_momentum',
+      message: 'Funnel movement is holding steady. Keep agent follow-up cadence consistent across every stage.',
+    }
+  }
+
+  const specificMessage = {
+    mandates_to_viewings: 'Focus on generating more viewings from active mandates.',
+    viewings_to_offers: 'Viewings are not converting into offers. Review pricing and buyer qualification.',
+    offers_to_otp: 'Offer acceptance rate is below average. Coach agents on offer quality and closing objections.',
+  }[largestDrop.key]
+
+  return {
+    ...largestDrop,
+    message: specificMessage || `Focus on converting ${largestDrop.fromLabel.toLowerCase()} into ${largestDrop.toLabel.toLowerCase()}.`,
+    detail: `${formatCountForSentence(largestDrop.drop)} ${largestDrop.drop === 1 ? 'deal was' : 'deals were'} lost between ${largestDrop.fromLabel} and ${largestDrop.toLabel}.`,
+  }
+}
+
+function formatCountForSentence(value) {
+  return String(Math.max(0, Math.round(toNumber(value))))
+}
+
+function buildAverageDaysToOtp(acceptedOtpRows = [], leadRows = [], now = new Date()) {
+  const leadsByTransactionId = new Map()
+  for (const lead of leadRows) {
+    const transactionId = normalizeText(lead.converted_transaction_id)
+    if (transactionId && !leadsByTransactionId.has(transactionId)) leadsByTransactionId.set(transactionId, lead)
+  }
+
+  const durations = acceptedOtpRows
+    .map((row) => {
+      const linkedLead = leadsByTransactionId.get(normalizeText(row.id))
+      const start = linkedLead?.created_at || row.created_at
+      const end = getStageEnteredAt(row) || row.updated_at || now
+      return daysBetween(start, end)
+    })
+    .filter((value) => Number.isFinite(value))
+
+  const result = average(durations)
+  return result === null ? null : Math.round(result)
+}
+
+function buildSalesFunnelMetrics(funnel = [], {
+  previousFunnel = [],
+  currentAcceptedOtpRows = [],
+  previousAcceptedOtpRows = [],
+  currentLeadRows = [],
+  previousLeadRows = [],
+  commissionByTransaction = new Map(),
+  now = new Date(),
+} = {}) {
   const rows = funnel
+    .filter((stage) => ['leads', 'mandates', 'viewings', 'offers', 'acceptedOtps'].includes(stage.key))
+    .map((stage) => ({
+      key: stage.key === 'acceptedOtps' ? 'otp' : stage.key,
+      label: stage.key === 'acceptedOtps' ? 'OTP' : stage.label,
+      count: stage.count,
+      value: stage.value,
+    }))
+  const previousRows = previousFunnel
     .filter((stage) => ['leads', 'mandates', 'viewings', 'offers', 'acceptedOtps'].includes(stage.key))
     .map((stage) => ({
       key: stage.key === 'acceptedOtps' ? 'otp' : stage.key,
@@ -668,12 +741,36 @@ function buildSalesFunnelMetrics(funnel = []) {
     }))
   const leadCount = rows.find((row) => row.key === 'leads')?.count || 0
   const otpCount = rows.find((row) => row.key === 'otp')?.count || 0
-  return {
-    stages: rows.map((row) => ({
+  const previousLeadCount = previousRows.find((row) => row.key === 'leads')?.count || 0
+  const previousOtpCount = previousRows.find((row) => row.key === 'otp')?.count || 0
+  const leadToOtpConversion = leadCount ? Math.round((otpCount / leadCount) * 100) : 0
+  const previousLeadToOtpConversion = previousLeadCount ? Math.round((previousOtpCount / previousLeadCount) * 100) : 0
+  const lostDeals = Math.max(0, leadCount - otpCount)
+  const previousLostDeals = Math.max(0, previousLeadCount - previousOtpCount)
+  const averageDaysToOtp = buildAverageDaysToOtp(currentAcceptedOtpRows, currentLeadRows, now)
+  const previousAverageDaysToOtp = buildAverageDaysToOtp(previousAcceptedOtpRows, previousLeadRows, now)
+  const pipelineValue = sumBy(currentAcceptedOtpRows, (row) => getCommissionAmount(row, commissionByTransaction))
+  const previousPipelineValue = sumBy(previousAcceptedOtpRows, (row) => getCommissionAmount(row, commissionByTransaction))
+  const stages = rows.map((row, index) => {
+    const next = rows[index + 1] || null
+    return {
       ...row,
       conversionRate: leadCount ? Math.round((toNumber(row.count) / leadCount) * 100) : row.key === 'leads' ? 100 : 0,
-    })),
-    leadToOtpConversion: leadCount ? Math.round((otpCount / leadCount) * 100) : 0,
+      conversionToNext: next ? percentage(next.count, row.count) : null,
+    }
+  })
+
+  return {
+    stages,
+    leadToOtpConversion,
+    leadToOtpConversionTrend: previousLeadCount ? leadToOtpConversion - previousLeadToOtpConversion : null,
+    lostDeals,
+    lostDealsTrend: previousLeadCount ? lostDeals - previousLostDeals : null,
+    averageDaysToOtp,
+    averageDaysToOtpTrend: averageDaysToOtp !== null && previousAverageDaysToOtp ? averageDaysToOtp - previousAverageDaysToOtp : null,
+    pipelineValue,
+    pipelineValueTrend: trend(pipelineValue, previousPipelineValue),
+    insight: buildSalesFunnelInsight(stages),
   }
 }
 
@@ -776,19 +873,33 @@ export function getResidentialDashboardMetrics({
   const mandatePackets = documentPackets.filter((packet) => normalizeKey(`${packet.packet_type} ${packet.title}`).includes('mandate'))
 
   const leadRows = selectedLeads.length ? selectedLeads : leads.filter((lead) => isBetween(lead.created_at, range.start, range.end))
+  const previousLeadRows = leads.filter((lead) => isBetween(lead.created_at, range.previousStart, range.previousEnd))
   const mandateLeadRows = leadRows.filter((lead) => {
+    const status = normalizeKey(`${lead.status} ${lead.stage} ${lead.seller_onboarding_status}`)
+    return Boolean(lead.mandate_packet_id || lead.listing_id || status.includes('mandate') || status.includes('seller_onboarding'))
+  })
+  const previousMandateLeadRows = previousLeadRows.filter((lead) => {
     const status = normalizeKey(`${lead.status} ${lead.stage} ${lead.seller_onboarding_status}`)
     return Boolean(lead.mandate_packet_id || lead.listing_id || status.includes('mandate') || status.includes('seller_onboarding'))
   })
   const buyerLeadRows = leadRows.filter(isBuyerLead)
   const viewingLeadRows = leadRows.filter((lead) => normalizeKey(`${lead.status} ${lead.stage}`).includes('viewing') || normalizeKey(`${lead.status} ${lead.stage}`).includes('appointment'))
+  const previousViewingLeadRows = previousLeadRows.filter((lead) => normalizeKey(`${lead.status} ${lead.stage}`).includes('viewing') || normalizeKey(`${lead.status} ${lead.stage}`).includes('appointment'))
   const offerRows = allPipelineTransactions.filter((row) => {
     const status = getTransactionStatusText(row)
     return status.includes('offer') || status.includes('negotiat')
   })
+  const previousOfferRows = allPipelineTransactions.filter((row) => {
+    const status = getTransactionStatusText(row)
+    return (status.includes('offer') || status.includes('negotiat')) && isBetween(row.created_at, range.previousStart, range.previousEnd)
+  })
   const acceptedOtpRows = allPipelineTransactions.filter((row) => {
     const status = getTransactionStatusText(row)
     return status.includes('otp') || status.includes('signed') || status.includes('accepted')
+  })
+  const previousAcceptedOtpRows = allPipelineTransactions.filter((row) => {
+    const status = getTransactionStatusText(row)
+    return (status.includes('otp') || status.includes('signed') || status.includes('accepted')) && isBetween(row.created_at, range.previousStart, range.previousEnd)
   })
   const registrationRows = registeredTransactionsInRange.length
     ? registeredTransactionsInRange
@@ -803,6 +914,15 @@ export function getResidentialDashboardMetrics({
     { key: 'registrations', label: 'Registrations', rows: registrationRows, value: sumBy(registrationRows, getDealValue) },
   ]
   const funnel = funnelSeeds.map((stage, index) => buildFunnelRow(stage, funnelSeeds[index + 1]?.rows?.length || 0))
+  const previousFunnelSeeds = [
+    { key: 'leads', label: 'Leads', rows: previousLeadRows, value: sumBy(previousLeadRows, (lead) => lead.estimated_value || lead.budget) },
+    { key: 'mandates', label: 'Mandates', rows: previousMandateLeadRows, value: sumBy(previousMandateLeadRows, (lead) => lead.estimated_value || lead.budget) },
+    { key: 'viewings', label: 'Viewings', rows: previousViewingLeadRows, value: sumBy(previousViewingLeadRows, (lead) => lead.estimated_value || lead.budget) },
+    { key: 'offers', label: 'Offers', rows: previousOfferRows, value: sumBy(previousOfferRows, getDealValue) },
+    { key: 'acceptedOtps', label: 'Accepted OTPs', rows: previousAcceptedOtpRows, value: sumBy(previousAcceptedOtpRows, getDealValue) },
+    { key: 'registrations', label: 'Registrations', rows: [], value: 0 },
+  ]
+  const previousFunnel = previousFunnelSeeds.map((stage, index) => buildFunnelRow(stage, previousFunnelSeeds[index + 1]?.rows?.length || 0))
 
   const noActivityRows = activeTransactions.filter((row) => daysBetween(row.last_meaningful_activity_at || row.updated_at || row.created_at, now) >= 14)
   const expiringOtpRows = activeTransactions.filter((row) => {
@@ -864,7 +984,15 @@ export function getResidentialDashboardMetrics({
       percentage: percentage(rows.length, Math.max(1, activeTransactions.length)),
     }
   })
-  const salesFunnel = buildSalesFunnelMetrics(funnel)
+  const salesFunnel = buildSalesFunnelMetrics(funnel, {
+    previousFunnel,
+    currentAcceptedOtpRows: acceptedOtpRows,
+    previousAcceptedOtpRows,
+    currentLeadRows: leadRows,
+    previousLeadRows,
+    commissionByTransaction,
+    now,
+  })
   const transactionHealth = buildTransactionHealthMetrics(transactionFlow, activeTransactions, now)
   const commandCentre = [
     { key: 'otp', label: 'OTP', count: transactionFlow.find((row) => row.key === 'otp')?.count || 0 },
@@ -1055,8 +1183,19 @@ function buildEmptyDashboard() {
       salesFunnel: {
         stages: RESIDENTIAL_FUNNEL_STAGES
           .filter((stage) => stage.key !== 'registrations')
-          .map((stage) => ({ key: stage.key === 'acceptedOtps' ? 'otp' : stage.key, label: stage.key === 'acceptedOtps' ? 'OTP' : stage.label, count: 0, value: 0, conversionRate: stage.key === 'leads' ? 100 : 0 })),
+          .map((stage) => ({ key: stage.key === 'acceptedOtps' ? 'otp' : stage.key, label: stage.key === 'acceptedOtps' ? 'OTP' : stage.label, count: 0, value: 0, conversionRate: stage.key === 'leads' ? 100 : 0, conversionToNext: null })),
         leadToOtpConversion: 0,
+        leadToOtpConversionTrend: null,
+        lostDeals: 0,
+        lostDealsTrend: null,
+        averageDaysToOtp: null,
+        averageDaysToOtpTrend: null,
+        pipelineValue: 0,
+        pipelineValueTrend: null,
+        insight: {
+          key: 'healthy_momentum',
+          message: 'Funnel movement is holding steady. Keep agent follow-up cadence consistent across every stage.',
+        },
       },
       health: [],
       topAgents: [],

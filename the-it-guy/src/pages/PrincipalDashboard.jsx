@@ -13,6 +13,7 @@ import {
   FileText,
   Landmark,
   LayoutGrid,
+  Lightbulb,
   LineChart,
   LogOut,
   Loader2,
@@ -659,6 +660,29 @@ const SALES_FUNNEL_TONES = [
   'var(--color-danger)',
 ]
 
+const SALES_FUNNEL_KPI_TONES = {
+  blue: {
+    iconClass: 'bg-primarySoft text-primary',
+    valueClass: 'text-primary',
+    borderClass: 'border-primary/10',
+  },
+  red: {
+    iconClass: 'bg-dangerSoft text-danger',
+    valueClass: 'text-danger',
+    borderClass: 'border-danger/10',
+  },
+  green: {
+    iconClass: 'bg-successSoft text-success',
+    valueClass: 'text-success',
+    borderClass: 'border-success/10',
+  },
+  purple: {
+    iconClass: 'bg-[#f1eafe] text-[#7c3aed]',
+    valueClass: 'text-[#7c3aed]',
+    borderClass: 'border-[#eadcff]',
+  },
+}
+
 const TRANSACTION_STAGE_STYLES = {
   otp: {
     icon: FileSignature,
@@ -697,65 +721,141 @@ const TRANSACTION_STAGE_STYLES = {
   },
 }
 
+function formatSignedDelta(value, { suffix = '', empty = '—' } = {}) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return empty
+  const numeric = Math.round(Number(value))
+  if (!numeric) return `0${suffix}`
+  const sign = numeric > 0 ? '+' : '-'
+  return `${sign}${Math.abs(numeric)}${suffix}`
+}
+
+function FunnelKpiCard({ icon: Icon, label, value, subtext, trend, tone = 'blue', inverseTrend = false, trendSuffix = '' }) {
+  const style = SALES_FUNNEL_KPI_TONES[tone] || SALES_FUNNEL_KPI_TONES.blue
+  const hasTrend = trend !== null && trend !== undefined && Number.isFinite(Number(trend))
+  const trendValue = hasTrend ? Math.round(Number(trend)) : null
+  const goodTrend = hasTrend ? (inverseTrend ? trendValue <= 0 : trendValue >= 0) : false
+  const TrendIcon = hasTrend && trendValue < 0 ? TrendingDown : TrendingUp
+
+  return (
+    <article className={`min-h-[148px] rounded-2xl border ${style.borderClass} bg-white p-4 shadow-sm shadow-slate-200/40`}>
+      <span className={`grid h-10 w-10 place-items-center rounded-2xl ${style.iconClass}`}>
+        <Icon size={20} />
+      </span>
+      <p className="mt-4 text-sm font-semibold leading-5 text-textStrong">{label}</p>
+      <p className={`mt-2 text-[2rem] font-semibold leading-none tracking-normal tabular-nums ${style.valueClass}`}>{value}</p>
+      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className="font-medium text-textMuted">{subtext}</span>
+        {hasTrend ? (
+          <span className={`inline-flex items-center gap-1 font-semibold ${goodTrend ? 'text-success' : 'text-danger'}`}>
+            <TrendIcon size={13} />
+            {formatSignedDelta(trendValue, { suffix: trendSuffix })}
+          </span>
+        ) : (
+          <span className="font-medium text-textMuted">—</span>
+        )}
+      </div>
+    </article>
+  )
+}
+
 function SalesFunnelOverview({ data = {} }) {
   const stages = Array.isArray(data.stages) ? data.stages : []
-  const maxCount = Math.max(1, ...stages.map((stage) => Number(stage.count || 0)))
+  const insight = data.insight || {}
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[560px]`}>
-      <div>
-        <h2 className="text-[1.12rem] font-semibold text-textStrong">Sales Funnel (Lead → OTP)</h2>
-        <p className="mt-1 text-sm text-textMuted">How effectively are we creating transactions?</p>
+    <section className={`${dashboardCardClass} ${dashboardCardPadding}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-[1.12rem] font-semibold text-textStrong">Sales Funnel (Lead → OTP)</h2>
+          <p className="mt-1 text-sm text-textMuted">How effectively are we creating transactions?</p>
+        </div>
       </div>
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(230px,0.9fr)_minmax(0,1.1fr)] lg:items-center">
-        <div className="mx-auto flex w-full max-w-[380px] flex-col items-center gap-3">
-          {stages.map((stage, index) => {
-            const width = Math.max(42, 100 - index * 11)
-            const color = SALES_FUNNEL_TONES[index] || 'var(--color-primary)'
-            return (
-              <article
-                key={stage.key}
-                className="relative grid min-h-[62px] place-items-center px-5 text-center text-sm font-semibold text-white shadow-sm"
-                style={{
-                  width: `${width}%`,
-                  clipPath: 'polygon(7% 0, 93% 0, 84% 100%, 16% 100%)',
-                  background: `linear-gradient(180deg, ${color}, color-mix(in srgb, ${color} 82%, white))`,
-                }}
-              >
-                <span className="text-white">{stage.label}</span>
-                <span className="absolute right-[15%] text-base font-semibold tabular-nums text-white">{formatCount(stage.count)}</span>
-              </article>
-            )
-          })}
-          <p className="mt-3 text-sm font-semibold text-primary">
-            Lead → OTP Conversion: {formatPercent(data.leadToOtpConversion)}
-          </p>
-        </div>
-
+      <div className="mt-7 grid gap-7 xl:grid-cols-[minmax(260px,0.85fr)_minmax(360px,1fr)] xl:items-center">
         <div className="min-w-0">
-          <div className="grid grid-cols-[minmax(0,1fr)_92px_104px] gap-3 border-b border-borderSoft pb-3 text-[0.72rem] font-semibold uppercase tracking-[0.04em] text-textMuted">
-            <span>Stage</span>
-            <span className="text-right">Count</span>
-            <span className="text-right">Conversion</span>
-          </div>
-          <div className="divide-y divide-borderSoft">
+          <div className="mx-auto flex w-full max-w-[286px] flex-col items-center">
             {stages.map((stage, index) => {
-              const width = Math.max(4, (Number(stage.count || 0) / maxCount) * 100)
+              const width = Math.max(48, 100 - index * 11)
+              const color = SALES_FUNNEL_TONES[index] || 'var(--color-primary)'
               return (
-                <article key={stage.key} className="grid grid-cols-[minmax(0,1fr)_92px_104px] items-center gap-3 py-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-textStrong">{stage.label}</p>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-mutedBg">
-                      <span className="block h-full rounded-full" style={{ width: `${width}%`, background: SALES_FUNNEL_TONES[index] || 'var(--color-primary)' }} />
+                <div key={stage.key} className="flex w-full flex-col items-center">
+                  <article
+                    className="grid min-h-[74px] place-items-center px-5 text-center text-white shadow-sm"
+                    style={{
+                      width: `${width}%`,
+                      clipPath: 'polygon(7% 0, 93% 0, 84% 100%, 16% 100%)',
+                      background: `linear-gradient(180deg, ${color}, color-mix(in srgb, ${color} 82%, white))`,
+                    }}
+                  >
+                    <span>
+                      <span className="block text-[1.75rem] font-semibold leading-none tabular-nums text-white">{formatCount(stage.count)}</span>
+                      <span className="mt-1 block text-sm font-semibold leading-5 text-white">{stage.label}</span>
+                    </span>
+                  </article>
+                  {index < stages.length - 1 ? (
+                    <div className="flex min-h-[42px] flex-col items-center justify-center text-center">
+                      <span className="text-sm font-semibold text-textStrong tabular-nums">{formatPercent(stage.conversionToNext)}</span>
+                      <span className="text-[1.25rem] leading-none text-textMuted">↓</span>
                     </div>
-                  </div>
-                  <span className="text-right text-sm font-semibold text-textStrong tabular-nums">{formatCount(stage.count)}</span>
-                  <span className="text-right text-sm font-semibold text-textBody tabular-nums">{formatPercent(stage.conversionRate)}</span>
-                </article>
+                  ) : null}
+                </div>
               )
             })}
           </div>
+          <div className="mx-auto mt-6 flex min-h-[54px] w-full max-w-[420px] items-center justify-center rounded-2xl border border-borderSoft bg-mutedBg/80 px-4 text-center shadow-inner">
+            <p className="text-base font-semibold text-textStrong">
+              Lead → OTP Conversion: <span className="text-[1.55rem] text-primary tabular-nums">{formatPercent(data.leadToOtpConversion)}</span>
+            </p>
+          </div>
         </div>
+
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+          <FunnelKpiCard
+            icon={LineChart}
+            label="Lead → OTP Conversion"
+            value={formatPercent(data.leadToOtpConversion)}
+            subtext="vs last month"
+            trend={data.leadToOtpConversionTrend}
+            trendSuffix="pp"
+            tone="blue"
+          />
+          <FunnelKpiCard
+            icon={AlertTriangle}
+            label="Lost Deals"
+            value={formatCount(data.lostDeals)}
+            subtext="vs last month"
+            trend={data.lostDealsTrend}
+            inverseTrend
+            tone="red"
+          />
+          <FunnelKpiCard
+            icon={Clock3}
+            label="Avg Days to OTP"
+            value={data.averageDaysToOtp === null || data.averageDaysToOtp === undefined ? '—' : formatCount(data.averageDaysToOtp)}
+            subtext="days"
+            trend={data.averageDaysToOtpTrend}
+            inverseTrend
+            tone="green"
+          />
+          <FunnelKpiCard
+            icon={CircleDollarSign}
+            label="Pipeline Value (OTP)"
+            value={formatCurrency(data.pipelineValue, { compact: true })}
+            subtext="Expected commission"
+            trend={data.pipelineValueTrend}
+            trendSuffix="%"
+            tone="purple"
+          />
+        </div>
+      </div>
+
+      <div className="mt-6 flex items-start gap-3 rounded-2xl border border-[#dce8f6] bg-[#f3f8ff] px-4 py-4 text-sm text-[#52657a]">
+        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-white text-primary shadow-sm">
+          <Lightbulb size={17} />
+        </span>
+        <p className="leading-6">
+          <span className="font-semibold text-textStrong">{insight.message || 'Funnel movement is holding steady.'}</span>
+          {insight.detail ? <span className="ml-1">{insight.detail}</span> : null}
+        </p>
       </div>
     </section>
   )

@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, Search, Users } from 'lucide-react'
+import { Bell, ChevronDown, Plus, Search, Users } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -74,7 +74,14 @@ function getPageTitle(pathname, stateTitle, role) {
 }
 
 function getUserInitials(user) {
-  const fullName = String(user?.user_metadata?.full_name || user?.user_metadata?.name || '').trim()
+  const fullName = String(
+    user?.fullName ||
+      user?.full_name ||
+      [user?.firstName || user?.first_name, user?.lastName || user?.last_name].filter(Boolean).join(' ') ||
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.name ||
+      '',
+  ).trim()
   if (fullName) {
     const parts = fullName.split(/\s+/).slice(0, 2)
     return parts.map((part) => part[0]?.toUpperCase() || '').join('')
@@ -343,6 +350,7 @@ function HeaderBar({ onLogout, user }) {
   const isAgentWorkspaceRole = role === 'agent' || role === 'principal' || role === 'headquarters'
   const showPersonaSwitcher = role !== 'bond_originator' && !isAgentWorkspaceRole && !isAgentsDirectoryRoute
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
+  const isClientsWorkspaceRoute = location.pathname === '/clients' || location.pathname === '/bond/clients'
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const notificationsControl = (
     <div className="relative flex-none" ref={notificationsRef}>
@@ -515,6 +523,30 @@ function HeaderBar({ onLogout, user }) {
               placeholder="Search matters, clients, documents..."
             />
           </div>
+          {notificationsControl}
+          {avatarControl}
+        </div>
+      </header>
+    )
+  }
+
+  if (isClientsWorkspaceRoute) {
+    return (
+      <header className="no-print ui-shell-header ui-shell-header-premium">
+        <div className="ui-shell-dashboard-title">
+          <h2>Clients</h2>
+          <span>Manage all your buyers, sellers and investors in one place.</span>
+        </div>
+
+        <div className="ui-shell-actions ui-shell-actions-premium">
+          <button
+            type="button"
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[12px] bg-[#0f2742] px-5 text-sm font-semibold text-white shadow-[0_12px_26px_rgba(15,39,66,0.18)] transition hover:bg-[#173a5e]"
+            onClick={() => window.dispatchEvent(new Event('itg:open-add-client'))}
+          >
+            <Plus size={16} />
+            Add Client
+          </button>
           {notificationsControl}
           {avatarControl}
         </div>
