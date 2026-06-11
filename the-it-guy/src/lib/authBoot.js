@@ -1,23 +1,15 @@
 import { getOrCreateUserProfile } from './api'
 import { isSupabaseConfigured, supabase } from './supabaseClient'
 import { normalizeCanonicalAppRole, isCanonicalAppRole } from '../constants/appRoles'
-import { MEMBERSHIP_STATUSES, isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
 import { ONBOARDING_REQUIRED_REASONS, ONBOARDING_STATUSES } from '../constants/onboardingStatuses'
-import { getDefaultBranchScope, normalizeBranchScope } from '../constants/workspaceUnits'
-import { WORKSPACE_TYPES, inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
+import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
+import { SIGNUP_INTENT_STATUSES } from '../constants/signupIntents'
 import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding } from './signupIntent'
 import { getOnboardingState } from '../services/onboarding/onboardingEngine'
 import { resolveCurrentWorkspace } from '../services/workspaceResolutionService'
-import { resolveWorkspaceRole } from '../services/roleResolutionService'
-
-const ACTIVE_MEMBERSHIP_STATUSES = new Set([MEMBERSHIP_STATUSES.active])
 
 function normalizeText(value) {
   return String(value || '').trim()
-}
-
-function normalizeEmail(value) {
-  return normalizeText(value).toLowerCase()
 }
 
 function getNowMs() {
@@ -51,268 +43,6 @@ async function runAuthBootStep(label, task, metadata = {}) {
     })
     throw error
   }
-}
-
-function isMissingTableError(error, tableName = '') {
-  if (!error) return false
-  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
-  const code = String(error.code || '').toLowerCase()
-  return code === '42p01' || code === 'pgrst205' || (message.includes('table') && message.includes(String(tableName).toLowerCase()))
-}
-
-function isMissingColumnError(error, columnName = '') {
-  if (!error) return false
-  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
-  const code = String(error.code || '').toLowerCase()
-  return code === '42703' || code === 'pgrst204' || (message.includes('column') && message.includes(String(columnName).toLowerCase()))
-}
-
-function isRecoverableSchemaError(error, tableName = '', columnName = '') {
-  return isMissingTableError(error, tableName) || (columnName ? isMissingColumnError(error, columnName) : false)
-}
-
-function normalizeOrganisationRow(row = null, fallback = {}) {
-  if (!row) return null
-  const inferredType = normalizeWorkspaceType(row.type, inferWorkspaceTypeFromAppRole(fallback.appRole))
-  return {
-    id: row.id,
-    type: inferredType || inferWorkspaceTypeFromAppRole(fallback.appRole),
-    name: normalizeText(row.display_name || row.name) || 'Workspace',
-    legalName: normalizeText(row.legal_name || row.name),
-    email: normalizeEmail(row.company_email || row.support_email),
-    phone: normalizeText(row.company_phone || row.support_phone),
-    raw: row,
-  }
-}
-
-function normalizeAttorneyFirmRow(row = null) {
-  if (!row) return null
-  return {
-    id: row.id,
-    type: WORKSPACE_TYPES.attorneyFirm,
-    name: normalizeText(row.name) || 'Attorney Firm',
-    legalName: normalizeText(row.name),
-    email: normalizeEmail(row.email),
-    phone: normalizeText(row.phone),
-    raw: row,
-  }
-}
-
-function createMembershipRecord({
-  id,
-  source,
-  userId,
-  workspaceId,
-  workspace,
-  workspaceType,
-  appRole,
-  role,
-  status,
-  branchId = null,
-  primaryBranchId = null,
-  branchScope = '',
-  departmentId = null,
-  invitedBy = null,
-  joinedAt = null,
-  acceptedAt = null,
-  raw = null,
-}) {
-  const normalizedWorkspaceType = normalizeWorkspaceType(workspaceType, inferWorkspaceTypeFromAppRole(appRole))
-  const normalizedStatus = normalizeMembershipStatus(status)
-  const workspaceRole = resolveWorkspaceRole(
-    { workspace_role: role, role, app_role: appRole, workspace_type: normalizedWorkspaceType },
-    { appRole, workspaceType: normalizedWorkspaceType },
-  )
-  return {
-    id,
-    source,
-    userId,
-    workspaceId,
-    workspace,
-    workspaceType: normalizedWorkspaceType,
-    appRole: normalizeCanonicalAppRole(appRole),
-    role: workspaceRole,
-    workspaceRole,
-    rawRole: normalizeText(role).toLowerCase(),
-    status: normalizedStatus,
-    isActive: ACTIVE_MEMBERSHIP_STATUSES.has(normalizedStatus),
-    branchId: branchId || primaryBranchId,
-    primaryBranchId: primaryBranchId || branchId,
-    branchScope: normalizeBranchScope(branchScope, getDefaultBranchScope(workspaceRole, { appRole, workspaceType: normalizedWorkspaceType })),
-    departmentId,
-    invitedBy,
-    joinedAt,
-    acceptedAt,
-    raw,
-  }
-}
-
-async function fetchOrganisationRows(client, organisationIds = [], appRole = '') {
-  const ids = Array.from(new Set(organisationIds.map((id) => normalizeText(id)).filter(Boolean)))
-  if (!ids.length) return new Map()
-
-  let query = await client
-    .from('organisations')
-    .select('id, name, display_name, company_email, company_phone, support_email, support_phone, legal_name, type')
-    .in('id', ids)
-
-  if (query.error && isMissingColumnError(query.error, 'type')) {
-    query = await client
-      .from('organisations')
-      .select('id, name, display_name, company_email, company_phone, support_email, support_phone')
-      .in('id', ids)
-  }
-
-  if (query.error) {
-    if (isMissingTableError(query.error, 'organisations')) return new Map()
-    throw query.error
-  }
-
-  return new Map((query.data || []).map((row) => [row.id, normalizeOrganisationRow(row, { appRole })]))
-}
-
-async function fetchOrganisationMemberships(client, user, profile) {
-  const appRole = normalizeCanonicalAppRole(profile?.role)
-  const byUserId = await client
-    .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, first_name, last_name, email, role, workspace_role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at')
-    .eq('user_id', user.id)
-
-  if (byUserId.error) {
-    if (isRecoverableSchemaError(byUserId.error, 'organisation_users', 'organisation_id')) return []
-    throw byUserId.error
-  }
-
-  const userEmail = normalizeEmail(user.email || profile?.email)
-  let invitedRows = []
-  if (userEmail) {
-    const byEmail = await client
-      .from('organisation_users')
-      .select('id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, first_name, last_name, email, role, workspace_role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at')
-      .eq('email', userEmail)
-      .in('status', [MEMBERSHIP_STATUSES.invited, MEMBERSHIP_STATUSES.pending])
-
-    if (!byEmail.error) {
-      invitedRows = byEmail.data || []
-    } else if (!isRecoverableSchemaError(byEmail.error, 'organisation_users', 'status')) {
-      throw byEmail.error
-    }
-  }
-
-  const rowsById = new Map()
-  for (const row of [...(byUserId.data || []), ...invitedRows]) {
-    if (row?.id) rowsById.set(row.id, row)
-  }
-
-  const rows = Array.from(rowsById.values())
-  const organisationRows = await fetchOrganisationRows(client, rows.map((row) => row.organisation_id), appRole)
-
-  return rows.map((row) => {
-    const workspaceType = inferWorkspaceTypeFromAppRole(appRole)
-    const workspace = organisationRows.get(row.organisation_id) || null
-
-    return createMembershipRecord({
-      id: row.id,
-      source: 'organisation_users',
-      userId: row.user_id || null,
-      workspaceId: row.organisation_id || null,
-      workspace,
-      workspaceType: workspace?.type || workspaceType,
-      appRole,
-      role: row.workspace_role || row.organisation_role || row.role,
-      status: row.status,
-      branchId: row.branch_id || null,
-      primaryBranchId: row.primary_branch_id || row.branch_id || null,
-      branchScope: row.branch_scope || null,
-      invitedBy: row.invited_by_user_id || null,
-      joinedAt: row.joined_at || null,
-      acceptedAt: row.accepted_at || null,
-      raw: row,
-    })
-  })
-}
-
-async function fetchAttorneyMemberships(client, user, profile) {
-  const profileFirmId = normalizeText(profile?.primaryAttorneyFirmId)
-
-  const query = await client
-    .from('attorney_firm_members')
-    .select('id, firm_id, user_id, department_id, role, status, invited_by, joined_at, created_at, updated_at')
-    .eq('user_id', user.id)
-
-  if (query.error) {
-    if (isMissingTableError(query.error, 'attorney_firm_members')) return []
-    throw query.error
-  }
-
-  const rows = query.data || []
-  const firmIds = Array.from(new Set([...rows.map((row) => row.firm_id), profileFirmId].map((id) => normalizeText(id)).filter(Boolean)))
-  let firmsById = new Map()
-
-  if (firmIds.length) {
-    const firmQuery = await client
-      .from('attorney_firms')
-      .select('id, name, email, phone, created_by, is_active')
-      .in('id', firmIds)
-
-    if (firmQuery.error) {
-      if (!isMissingTableError(firmQuery.error, 'attorney_firms')) throw firmQuery.error
-    } else {
-      firmsById = new Map((firmQuery.data || []).map((row) => [row.id, normalizeAttorneyFirmRow(row)]))
-    }
-  }
-
-  const membershipRows = [...rows]
-  if (profileFirmId && !membershipRows.some((row) => row.firm_id === profileFirmId) && firmsById.has(profileFirmId)) {
-    const firm = firmsById.get(profileFirmId)
-    const isCreatedByUser = firm?.raw?.created_by === user.id
-    membershipRows.push({
-      id: `attorney-profile-primary-${profileFirmId}-${user.id}`,
-      firm_id: profileFirmId,
-      user_id: user.id,
-      role: isCreatedByUser ? 'firm_admin' : 'attorney',
-      status: isCreatedByUser ? MEMBERSHIP_STATUSES.active : MEMBERSHIP_STATUSES.pending,
-      department_id: null,
-      joined_at: null,
-    })
-  }
-
-  return membershipRows.map((row) => {
-    const workspace = firmsById.get(row.firm_id) || null
-    return createMembershipRecord({
-      id: row.id,
-      source: 'attorney_firm_members',
-      userId: row.user_id || null,
-      workspaceId: row.firm_id || null,
-      workspace,
-      workspaceType: WORKSPACE_TYPES.attorneyFirm,
-      appRole: 'attorney',
-      role: row.role,
-      status: row.status,
-      departmentId: row.department_id || null,
-      invitedBy: row.invited_by || null,
-      joinedAt: row.joined_at || null,
-      raw: row,
-    })
-  })
-}
-
-function sortMemberships(left, right) {
-  if (left.workspace && !right.workspace) return -1
-  if (!left.workspace && right.workspace) return 1
-  const leftKey = `${left.workspaceType || ''}:${left.workspace?.name || ''}:${left.workspaceId || ''}:${left.id || ''}`
-  const rightKey = `${right.workspaceType || ''}:${right.workspace?.name || ''}:${right.workspaceId || ''}:${right.id || ''}`
-  return leftKey.localeCompare(rightKey)
-}
-
-function chooseCurrentMembership(activeMemberships = [], selectedWorkspaceId = '') {
-  if (!activeMemberships.length) return null
-  const selectedId = normalizeText(selectedWorkspaceId)
-  if (selectedId) {
-    const selected = activeMemberships.find((membership) => membership.workspace && (membership.workspaceId === selectedId || membership.id === selectedId))
-    if (selected) return selected
-  }
-  return [...activeMemberships].sort(sortMemberships)[0] || null
 }
 
 function profileNeedsRepair(profile) {
@@ -408,13 +138,13 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       userId: user.id,
     }),
   ])
-  const signupIntent = loadedSignupIntent
+  const signupIntent = loadedSignupIntent && loadedSignupIntent.status !== SIGNUP_INTENT_STATUSES.readyForOnboarding
     ? await runAuthBootStep(
         'signupIntent.markReady',
         () => markSignupIntentReadyForOnboarding({ user, intent: loadedSignupIntent }),
         { userId: user.id },
       )
-    : null
+    : loadedSignupIntent || null
   const appRole = normalizeCanonicalAppRole(profile?.role)
 
   if (!isCanonicalAppRole(appRole)) {

@@ -37,10 +37,13 @@ function isMissingSignupIntentsTable(error) {
 function isMissingSignupIntentContractColumn(error) {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
+  const status = Number(error.status || error.statusCode || 0)
   const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
   return (
     code === '42703' ||
     code === 'pgrst204' ||
+    (status === 400 && message.includes('schema cache') && message.includes('signup_intents')) ||
+    (status === 400 && message.includes('column') && message.includes('signup_intents')) ||
     CONTRACT_SIGNUP_INTENT_COLUMNS.some((column) => message.includes(column))
   )
 }

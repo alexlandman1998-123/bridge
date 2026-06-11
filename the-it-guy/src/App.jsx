@@ -592,7 +592,7 @@ function AppLayout({ onLogout, session = null, user }) {
   )
 }
 
-const WORKSPACE_GATE_TIMEOUT_MS = 15000
+const WORKSPACE_GATE_SLOW_MS = 30000
 
 function AccessDenied({ title = 'Access restricted', message = 'You do not have access to this area.' }) {
   return <AccessState type="denied" title={title} description={message} />
@@ -614,7 +614,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   const location = useLocation()
   const { authState } = useAuthSession()
   const { retryWorkspaceBootstrap } = useWorkspace()
-  const [loadingTimedOut, setLoadingTimedOut] = useState(false)
+  const [loadingSlow, setLoadingSlow] = useState(false)
   const didHandleSessionMismatchRef = useRef(false)
   const authLoading = authState.status === 'loading'
   const session = authState.session
@@ -626,19 +626,19 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   useEffect(() => {
     if (!waitingOnWorkspace) {
       const resetFrameId = window.requestAnimationFrame(() => {
-        setLoadingTimedOut(false)
+        setLoadingSlow(false)
       })
       return () => window.cancelAnimationFrame(resetFrameId)
     }
     const timeoutId = window.setTimeout(() => {
-      setLoadingTimedOut(true)
-      console.error('[AUTH] gate:timeout', {
+      setLoadingSlow(true)
+      console.warn('[AUTH] gate:slow', {
         authLoading,
         hasSession: Boolean(session),
         authStatus: authState.status,
         path: location.pathname,
       })
-    }, WORKSPACE_GATE_TIMEOUT_MS)
+    }, WORKSPACE_GATE_SLOW_MS)
     return () => window.clearTimeout(timeoutId)
   }, [authLoading, authState.status, location.pathname, session, waitingOnWorkspace])
 
@@ -672,17 +672,18 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   }, [onLogout, sessionOutOfSync])
 
   if (waitingOnWorkspace) {
-    if (loadingTimedOut) {
+    if (loadingSlow) {
       return (
         <section className="auth-loading-screen">
           <div className="auth-loading-card">
-            <h2>We couldn’t load your workspace.</h2>
-            <p>{profileError || 'Authentication or workspace setup took too long. Please retry.'}</p>
+            <h2>Still preparing your workspace…</h2>
+            <p>Bridge is still loading your profile, workspace, and permissions. This can take longer after schema updates.</p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 className="auth-primary-cta"
                 onClick={() => {
+                  setLoadingSlow(false)
                   onRetryBootstrap?.()
                   retryWorkspaceBootstrap?.()
                 }}
