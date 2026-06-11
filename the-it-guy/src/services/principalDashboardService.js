@@ -403,6 +403,10 @@ function getAgentKeyFromLead(row = {}) {
   return normalizeText(row.assigned_user_id || row.assigned_agent_id || row.created_by || row.assigned_agent_email || 'unassigned').toLowerCase()
 }
 
+function getAgentKeyFromTask(row = {}) {
+  return normalizeText(row.assigned_user_id || row.assigned_agent_id || row.owner_user_id || row.created_by || row.assigned_agent_email || 'unassigned').toLowerCase()
+}
+
 function getAgentName(row = {}, usersByKey = new Map()) {
   const key = getAgentKeyFromTransaction(row)
   const user = usersByKey.get(key) || usersByKey.get(normalizeText(row.assigned_agent_email).toLowerCase())
@@ -591,6 +595,21 @@ function buildFunnelRow({ key, label, rows = [], value = 0 }, nextCount = 0) {
   }
 }
 
+function isOpenTask(row = {}) {
+  const status = normalizeKey(row.status)
+  return !DONE_DOCUMENT_STATUSES.includes(status) && !['done', 'closed', 'cancelled', 'canceled'].includes(status)
+}
+
+function isBuyerLead(row = {}) {
+  const text = normalizeKey(`${row.lead_type} ${row.lead_category} ${row.category} ${row.status} ${row.stage} ${row.seller_onboarding_status}`)
+  if (text.includes('seller') || text.includes('mandate') || text.includes('seller_onboarding')) return false
+  return true
+}
+
+function getBuyerLeadStage(row = {}) {
+  return normalizeKey(`${row.status} ${row.stage}`)
+}
+
 function buildForecastBuckets(transactions = [], commissionByTransaction = new Map(), now = new Date()) {
   const buckets = Array.from({ length: 3 }).map((_, index) => {
     const date = addMonths(startOfMonth(now), index)
@@ -656,6 +675,7 @@ export function getResidentialDashboardMetrics({
     const status = normalizeKey(`${lead.status} ${lead.stage} ${lead.seller_onboarding_status}`)
     return Boolean(lead.mandate_packet_id || lead.listing_id || status.includes('mandate') || status.includes('seller_onboarding'))
   })
+  const buyerLeadRows = leadRows.filter(isBuyerLead)
   const viewingLeadRows = leadRows.filter((lead) => normalizeKey(`${lead.status} ${lead.stage}`).includes('viewing') || normalizeKey(`${lead.status} ${lead.stage}`).includes('appointment'))
   const offerRows = allPipelineTransactions.filter((row) => {
     const status = getTransactionStatusText(row)
@@ -690,6 +710,34 @@ export function getResidentialDashboardMetrics({
     return text.includes('buyer') || text.includes('purchaser')
   })
   const atRiskRows = activeTransactions.filter((row) => isDelayed(row, now) || getTransactionHealth(row).key !== 'on_track')
+  const noActivityRowsByAgent = new Map()
+  const atRiskRowsByAgent = new Map()
+  for (const row of noActivityRows) {
+    const key = getAgentKeyFromTransaction(row)
+    noActivityRowsByAgent.set(key, (noActivityRowsByAgent.get(key) || 0) + 1)
+  }
+  for (const row of atRiskRows) {
+    const key = getAgentKeyFromTransaction(row)
+    atRiskRowsByAgent.set(key, (atRiskRowsByAgent.get(key) || 0) + 1)
+  }
+  const overdueTasksByAgent = new Map()
+  for (const task of tasks) {
+    const dueDate = toDate(task.due_date || task.dueDate)
+    if (!dueDate || dueDate >= startOfDay(now) || !isOpenTask(task)) continue
+    const key = getAgentKeyFromTask(task)
+    overdueTasksByAgent.set(key, (overdueTasksByAgent.get(key) || 0) + 1)
+  }
+  const buyerLeadsByAgent = new Map()
+  const mandatesByAgent = new Map()
+  const convertedLeadsByAgent = new Map()
+  const totalLeadsByAgent = new Map()
+  for (const lead of leadRows) {
+    const key = getAgentKeyFromLead(lead)
+    totalLeadsByAgent.set(key, (totalLeadsByAgent.get(key) || 0) + 1)
+    if (isBuyerLead(lead)) buyerLeadsByAgent.set(key, (buyerLeadsByAgent.get(key) || 0) + 1)
+    if (mandateLeadRows.includes(lead)) mandatesByAgent.set(key, (mandatesByAgent.get(key) || 0) + 1)
+    if (isConvertedLead(lead)) convertedLeadsByAgent.set(key, (convertedLeadsByAgent.get(key) || 0) + 1)
+  }
 
   const pipelineHealth = [
     { key: 'at_risk', label: 'At Risk Deals', count: atRiskRows.length, href: '/transactions?risk=at-risk' },
@@ -759,6 +807,41 @@ export function getResidentialDashboardMetrics({
         dealCount: agent.activeDeals,
         trend: agent.pipelineTrend ?? null,
       })),
+      agentCoaching: agentPerformance.slice(0, 6).map((agent) => {
+        const key = normalizeText(agent.agentKey || agent.agentId || agent.email || agent.agentName).toLowerCase()
+        const issueCount = (atRiskRowsByAgent.get(key) || 0) + (noActivityRowsByAgent.get(key) || 0) + (overdueTasksByAgent.get(key) || 0)
+        return {
+          agentId: agent.agentId,
+          agentName: agent.agentName,
+          pipelineValue: agent.pipelineValue,
+          activeDeals: agent.activeDeals,
+          buyerLeads: agent.buyerLeads || buyerLeadsByAgent.get(key) || agent.leads || 0,
+          mandates: agent.mandates || mandatesByAgent.get(key) || 0,
+          conversionRate: agent.conversionRate ?? percentage(convertedLeadsByAgent.get(key) || 0, totalLeadsByAgent.get(key) || 0),
+          atRiskCount: atRiskRowsByAgent.get(key) || 0,
+          noActivityCount: noActivityRowsByAgent.get(key) || 0,
+          overdueTasks: overdueTasksByAgent.get(key) || 0,
+          nextAction: issueCount
+            ? issueCount === (overdueTasksByAgent.get(key) || 0) ? 'Follow-up overdue' : 'Review stalled deals'
+            : agent.activeDeals ? 'Keep momentum' : 'Needs new pipeline',
+        }
+      }),
+      buyerLeadInsights: [
+        { key: 'new_buyer_leads', label: 'Buyer Leads', value: buyerLeadRows.length, detail: 'Captured in range', tone: 'blue' },
+        { key: 'matched_buyers', label: 'Matched Buyers', value: buyerLeadRows.filter((lead) => normalizeText(lead.listing_id) || isConvertedLead(lead)).length, detail: 'Linked to listing or deal', tone: 'green' },
+        { key: 'unmatched_buyers', label: 'Unmatched Buyers', value: buyerLeadRows.filter((lead) => !normalizeText(lead.listing_id) && !isConvertedLead(lead)).length, detail: 'Need stock match', tone: 'amber' },
+        { key: 'ready_to_view', label: 'Ready to View', value: buyerLeadRows.filter((lead) => {
+          const stage = getBuyerLeadStage(lead)
+          return stage.includes('qualified') || stage.includes('viewing') || stage.includes('appointment')
+        }).length, detail: 'Qualified or viewing stage', tone: 'green' },
+        { key: 'no_follow_up', label: 'No Follow-Up 7+ Days', value: buyerLeadRows.filter((lead) => daysBetween(lead.updated_at || lead.created_at, now) >= 7 && !isConvertedLead(lead)).length, detail: 'Open buyer leads', tone: 'red' },
+      ],
+      mandateInsights: [
+        { key: 'active_mandates', label: 'Active Mandates', value: mandateLeadRows.length + mandatePackets.length, detail: 'Leads and packets', tone: 'blue' },
+        { key: 'unsigned_mandates', label: 'Unsigned Mandates', value: mandatePackets.filter((packet) => OPEN_PACKET_STATUSES.includes(normalizeKey(packet.status))).length + mandateLeadRows.filter((lead) => ['sent', 'in_progress', 'viewed'].includes(normalizeKey(lead.seller_onboarding_status))).length, detail: 'Seller action needed', tone: 'amber' },
+        { key: 'mandates_no_buyer_activity', label: 'No Buyer Activity', value: mandateLeadRows.filter((lead) => daysBetween(lead.updated_at || lead.created_at, now) >= 14 && !getBuyerLeadStage(lead).includes('viewing') && !getBuyerLeadStage(lead).includes('offer')).length, detail: 'Mandates stale 14+ days', tone: 'red' },
+        { key: 'hot_matches', label: 'Hot Buyer Matches', value: viewingLeadRows.length + offerRows.length, detail: 'Viewings or offers in motion', tone: 'green' },
+      ],
       mappingNotes: 'Pipeline funnel maps leads from lead status/stage, mandates from mandate packets/listing links/seller onboarding, viewings from viewing or appointment status, offers from transaction offer statuses, accepted OTPs from OTP/signed/accepted statuses or OTP packets, and registrations from registered/completed transactions.',
     },
     transactions: {
@@ -853,6 +936,12 @@ function buildEmptyDashboard() {
       pendingRegistration: 0,
       avgDealValue: null,
       winRate: 0,
+      funnel: RESIDENTIAL_FUNNEL_STAGES.map((stage) => ({ ...stage, count: 0, value: 0, conversionToNext: null })),
+      health: [],
+      topAgents: [],
+      agentCoaching: [],
+      buyerLeadInsights: [],
+      mandateInsights: [],
     },
     transactions: {
       totalActive: 0,
@@ -1138,8 +1227,9 @@ export async function getPrincipalDashboardData({
   const createPerformanceRow = (key, row = {}) => {
     const user = usersByKey.get(key)
     return {
+      agentKey: key || 'unassigned',
       agentId: user?.agentId || normalizeText(row.assigned_user_id || row.assigned_agent_id || row.owner_user_id || row.created_by),
-      agentName: getAgentName(row, usersByKey),
+      agentName: user?.agentName || normalizeText(row.assigned_agent) || normalizeText(row.assigned_agent_email) || normalizeText(row.assigned_agent_name) || 'Unassigned',
       avatarUrl: user?.avatarUrl || '',
       role: user?.role || '',
       roleLabel: user?.roleLabel || getReportingRoleLabel(user?.role),
@@ -1147,6 +1237,8 @@ export async function getPrincipalDashboardData({
       activeDeals: 0,
       registeredCount: 0,
       leads: 0,
+      buyerLeads: 0,
+      mandates: 0,
       converted: 0,
       responseRate: null,
     }
@@ -1168,11 +1260,16 @@ export async function getPrincipalDashboardData({
     const key = getAgentKeyFromLead(lead)
     const existing = agentMap.get(key) || createPerformanceRow(key, lead)
     existing.leads += 1
+    if (isBuyerLead(lead)) existing.buyerLeads += 1
+    if (normalizeText(lead.mandate_packet_id) || normalizeText(lead.listing_id) || normalizeKey(`${lead.status} ${lead.stage} ${lead.seller_onboarding_status}`).includes('mandate')) {
+      existing.mandates += 1
+    }
     if (isConvertedLead(lead)) existing.converted += 1
     agentMap.set(key, existing)
   }
   const agentPerformance = [...agentMap.values()]
     .map((agent) => ({
+      agentKey: agent.agentKey,
       agentId: agent.agentId,
       agentName: agent.agentName,
       avatarUrl: agent.avatarUrl,
@@ -1182,13 +1279,16 @@ export async function getPrincipalDashboardData({
       activeDeals: agent.activeDeals,
       pipelineTrend: trend(
         activeTransactions
-          .filter((row) => getAgentKeyFromTransaction(row) === getAgentKeyFromTransaction({ assigned_user_id: agent.agentId, assigned_agent_email: agent.agentName }) && isBetween(row.created_at, range.start, range.end))
+          .filter((row) => getAgentKeyFromTransaction(row) === agent.agentKey && isBetween(row.created_at, range.start, range.end))
           .reduce((sum, row) => sum + getDealValue(row), 0),
         activeTransactions
-          .filter((row) => getAgentKeyFromTransaction(row) === getAgentKeyFromTransaction({ assigned_user_id: agent.agentId, assigned_agent_email: agent.agentName }) && isBetween(row.created_at, range.previousStart, range.previousEnd))
+          .filter((row) => getAgentKeyFromTransaction(row) === agent.agentKey && isBetween(row.created_at, range.previousStart, range.previousEnd))
           .reduce((sum, row) => sum + getDealValue(row), 0),
       ),
       conversionRate: percentage(agent.converted, agent.leads),
+      leads: agent.leads,
+      buyerLeads: agent.buyerLeads,
+      mandates: agent.mandates,
       registeredCount: agent.registeredCount,
       responseRate: agent.responseRate,
     }))

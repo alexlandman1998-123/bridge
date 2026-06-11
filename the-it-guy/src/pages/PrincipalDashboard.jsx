@@ -576,42 +576,6 @@ function RevenueOverviewChart({ data }) {
   )
 }
 
-function RevenueAgentCard({ data }) {
-  const rows = Array.isArray(data?.byAgent) ? data.byAgent : []
-  return (
-    <div className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[330px] flex-col`}>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-[#101828]">Top Performing Agents</p>
-        <span className="text-xs font-semibold text-[#667085]">Commission</span>
-      </div>
-      <div className="mt-4 grid flex-1 auto-rows-fr gap-3">
-        {rows.length ? rows.slice(0, 5).map((agent, index) => (
-          <div key={agent.agentId || agent.agentName} className="grid min-h-[54px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
-            <span className="grid h-6 w-6 place-items-center rounded-full bg-[#eef4ff] text-[0.72rem] font-semibold text-[#3d63dd]">{agent.rank || index + 1}</span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[#101828]">{agent.agentName}</p>
-              <p className="mt-0.5 text-xs text-[#667085]">{formatCount(agent.count)} registrations</p>
-            </div>
-            <div className="text-right">
-              <p className="whitespace-nowrap text-sm font-semibold text-[#101828]">{formatCurrency(agent.commission, { compact: true })}</p>
-              <p className="mt-0.5 whitespace-nowrap text-xs text-[#667085]">{formatCurrency(agent.salesValue, { compact: true })}</p>
-            </div>
-          </div>
-        )) : (
-          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">
-            No revenue data for this date range.
-          </div>
-        )}
-      </div>
-      {rows.length ? (
-        <button type="button" className="mt-4 h-10 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
-          View full leaderboard
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
 function EmptyPanel({ title, action }) {
   return (
     <div className="flex min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center">
@@ -732,30 +696,106 @@ function AgentSnapshotPanel({ rows = [] }) {
   )
 }
 
-function TopAgentsByPipeline({ rows = [] }) {
+function InsightToneIcon({ tone }) {
+  const toneClasses = {
+    blue: 'bg-[#edf5ff] text-[#1769d1]',
+    green: 'bg-[#ecfdf3] text-[#16894f]',
+    amber: 'bg-[#fff7ea] text-[#9a5b13]',
+    red: 'bg-[#fff2f0] text-[#b42318]',
+  }
+  const Icon = tone === 'red' || tone === 'amber' ? AlertTriangle : tone === 'green' ? CheckCircle2 : Target
+  return (
+    <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${toneClasses[tone] || toneClasses.blue}`}>
+      <Icon size={16} />
+    </span>
+  )
+}
+
+function PrincipalInsightCards({ title, copy, rows = [] }) {
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[300px] flex-col`}>
+      <div>
+        <h2 className="text-[1.08rem] font-semibold text-[#101828]">{title}</h2>
+        <p className="mt-1 text-sm text-[#667085]">{copy}</p>
+      </div>
+      <div className="mt-5 grid flex-1 auto-rows-fr gap-3 sm:grid-cols-2">
+        {rows.length ? rows.map((row) => (
+          <article key={row.key} className="grid min-h-[104px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3">
+            <InsightToneIcon tone={row.tone} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold leading-5 text-[#344054]">{row.label}</p>
+              <p className="mt-1 text-xs font-medium leading-4 text-[#667085]">{row.detail}</p>
+            </div>
+            <span className="text-[1.45rem] font-semibold leading-none tracking-[-0.035em] text-[#101828] tabular-nums">{formatCount(row.value)}</span>
+          </article>
+        )) : (
+          <div className="col-span-full flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">
+            No insight data for this date range.
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function AgentPerformanceCoachingTable({ rows = [] }) {
+  const navigate = useNavigate()
   return (
     <section className={`${dashboardCardClass} ${dashboardCardPadding}`}>
-      <h2 className="text-[1.08rem] font-semibold text-[#101828]">Top Agents by Pipeline Value</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[1.08rem] font-semibold text-[#101828]">Agent Performance & Coaching</h2>
+          <p className="mt-1 text-sm text-[#667085]">Principal view of ownership, conversion, and intervention points.</p>
+        </div>
+        <button type="button" onClick={() => navigate('/agents')} className="h-9 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
+          View agents
+        </button>
+      </div>
       <div className="mt-4 overflow-x-auto">
-        <table className="min-w-[620px] w-full text-left text-sm">
+        <table className="min-w-[760px] w-full text-left text-sm">
           <thead className="text-[0.72rem] uppercase tracking-[0.04em] text-[#667085]">
             <tr className="border-b border-[#edf2f7]">
               <th className="py-3 font-semibold">Agent</th>
-              <th className="py-3 font-semibold">Pipeline Value</th>
-              <th className="py-3 font-semibold">Deal Count</th>
-              <th className="py-3 font-semibold text-right">Trend</th>
+              <th className="py-3 font-semibold">Pipeline</th>
+              <th className="py-3 font-semibold">Deals</th>
+              <th className="py-3 font-semibold">Buyer Leads</th>
+              <th className="py-3 font-semibold">Mandates</th>
+              <th className="py-3 font-semibold">Conversion</th>
+              <th className="py-3 font-semibold">Attention</th>
+              <th className="py-3 font-semibold text-right">Next Action</th>
             </tr>
           </thead>
           <tbody>
             {rows.length ? rows.map((agent, index) => (
-              <tr key={`${agent.agentId || agent.agentName}-${index}`} className="border-b border-[#edf2f7] last:border-0">
-                <td className="py-3 font-semibold text-[#101828]">{agent.agentName}</td>
+              <tr
+                key={`${agent.agentId || agent.agentName}-${index}`}
+                onClick={() => agent.agentId ? navigate(`/agents/${agent.agentId}`) : navigate('/agents')}
+                className="cursor-pointer border-b border-[#edf2f7] last:border-0 hover:bg-[#f8fafc]"
+              >
+                <td className="py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#edf5ff] text-xs font-semibold text-[#1769d1]">{agent.agentName.slice(0, 2).toUpperCase()}</span>
+                    <span className="font-semibold text-[#101828]">{agent.agentName}</span>
+                  </div>
+                </td>
                 <td className="py-3 text-[#344054]">{formatCurrency(agent.pipelineValue, { compact: true })}</td>
-                <td className="py-3 text-[#344054]">{formatCount(agent.dealCount)}</td>
-                <td className="py-3 text-right"><TrendBadge value={agent.trend} /></td>
+                <td className="py-3 text-[#344054]">{formatCount(agent.activeDeals)}</td>
+                <td className="py-3 text-[#344054]">{formatCount(agent.buyerLeads)}</td>
+                <td className="py-3 text-[#344054]">{formatCount(agent.mandates)}</td>
+                <td className="py-3 text-[#344054]">{formatPercent(agent.conversionRate)}</td>
+                <td className="py-3">
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ${
+                    agent.atRiskCount || agent.noActivityCount || agent.overdueTasks
+                      ? 'bg-[#fff2f0] text-[#b42318]'
+                      : 'bg-[#edfdf3] text-[#16894f]'
+                  }`}>
+                    {formatCount((agent.atRiskCount || 0) + (agent.noActivityCount || 0) + (agent.overdueTasks || 0))}
+                  </span>
+                </td>
+                <td className="py-3 text-right text-[#344054]">{agent.nextAction}</td>
               </tr>
             )) : (
-              <tr><td colSpan="4" className="h-[160px] text-center text-sm text-[#667085]">No agent pipeline data yet.</td></tr>
+              <tr><td colSpan="8" className="h-[160px] text-center text-sm text-[#667085]">No agent performance data yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -836,48 +876,79 @@ function TransactionAlertsPanel({ rows = [] }) {
 
 function RevenueHero({ data }) {
   const hero = data?.hero || {}
+  const agents = Array.isArray(data?.topAgents) ? data.topAgents : Array.isArray(data?.byAgent) ? data.byAgent : []
   const hasTarget = hero.target !== null && hero.target !== undefined
   const targetPercent = hasTarget ? Math.max(0, Math.min(100, Number(hero.targetPercent || 0))) : 0
   const achievedValue = hasTarget ? hero.achieved : hero.revenueThisMonth
   const trend = hero.trendVsLastMonth
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[330px] overflow-hidden bg-[linear-gradient(135deg,#4f46e5_0%,#2f80ed_55%,#74b5ff_100%)] text-white`}>
-      <div className="grid h-full gap-6 md:grid-cols-[minmax(0,1fr)_180px_minmax(170px,0.52fr)] md:items-center">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-white/75">Revenue This Month</p>
-          <p className="mt-4 text-[2.6rem] font-semibold leading-none tracking-[-0.04em] sm:text-[3.1rem]">{formatCurrency(hero.revenueThisMonth)}</p>
-          <p className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-white/90">
+    <section className="min-h-[430px] overflow-hidden rounded-2xl border border-white/20 bg-[linear-gradient(135deg,#4f46e5_0%,#2f80ed_52%,#69b7ff_100%)] p-4 text-white shadow-sm sm:p-5">
+      <div className="flex min-h-[390px] flex-col justify-between gap-6">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_180px_minmax(210px,0.34fr)] lg:items-center xl:grid-cols-[minmax(0,1fr)_200px_260px]">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white/75">Revenue This Month</p>
+            <p className="mt-4 text-[2.75rem] font-semibold leading-none text-white sm:text-[3.35rem]">{formatCurrency(hero.revenueThisMonth)}</p>
+            <p className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-white/90">
             {trend === null || trend === undefined ? '—' : `${trend > 0 ? '↗' : '↘'} ${Math.abs(Math.round(trend))}%`}
-            <span className="font-medium text-white/70">vs last month</span>
-          </p>
-        </div>
+              <span className="font-medium text-white/70">vs last month</span>
+            </p>
+          </div>
 
-        <div className="grid place-items-center">
-          <div
-            className="grid h-[146px] w-[146px] place-items-center rounded-full"
-            style={{ background: `conic-gradient(#ffffff ${targetPercent * 3.6}deg, rgba(255,255,255,0.28) 0deg)` }}
-          >
-            <div className="grid h-[108px] w-[108px] place-items-center rounded-full bg-white/15 text-center shadow-inner backdrop-blur">
-              <div>
-                <p className="text-[1.65rem] font-semibold leading-none">{hasTarget ? formatPercent(targetPercent) : '—'}</p>
-                <p className="mt-1 text-[0.72rem] font-semibold text-white/75">{hasTarget ? 'of target' : 'no target'}</p>
+          <div className="grid place-items-center lg:place-items-end">
+            <div
+              className="grid h-[156px] w-[156px] place-items-center rounded-full"
+              style={{ background: `conic-gradient(#ffffff ${targetPercent * 3.6}deg, rgba(255,255,255,0.28) 0deg)` }}
+            >
+              <div className="grid h-[116px] w-[116px] place-items-center rounded-full bg-white/15 text-center text-white shadow-inner backdrop-blur">
+                <div>
+                  <p className="text-[1.75rem] font-semibold leading-none text-white">{hasTarget ? formatPercent(targetPercent) : '—'}</p>
+                  <p className="mt-1 text-[0.72rem] font-semibold text-white/75">{hasTarget ? 'of target' : 'no target'}</p>
+                </div>
               </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-white/15 bg-white/10 p-4 text-white backdrop-blur">
+            <div>
+              <p className="text-xs font-semibold text-white/65">Target</p>
+              <p className="mt-1 text-lg font-semibold text-white">{hasTarget ? formatCurrency(hero.target) : 'No target set'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-white/65">Achieved</p>
+              <p className="mt-1 text-lg font-semibold text-white">{formatCurrency(achievedValue)}</p>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-white/20">
+              <div className="h-full rounded-full bg-white/80" style={{ width: `${hasTarget ? targetPercent : 0}%` }} />
             </div>
           </div>
         </div>
 
-        <div className="space-y-4 rounded-2xl border border-white/15 bg-white/10 p-4">
-          <div>
-            <p className="text-xs font-semibold text-white/65">Target</p>
-            <p className="mt-1 text-lg font-semibold">{hasTarget ? formatCurrency(hero.target) : 'No target set'}</p>
+        <div className="rounded-2xl border border-white/15 bg-white/10 p-3 text-white backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <h2 className="text-sm font-semibold text-white">Top Performing Agents</h2>
+            <span className="text-xs font-semibold text-white/70">Commission</span>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-white/65">Achieved</p>
-            <p className="mt-1 text-lg font-semibold">{formatCurrency(achievedValue)}</p>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-white/20">
-            <div className="h-full rounded-full bg-white/80" style={{ width: `${hasTarget ? targetPercent : 0}%` }} />
-          </div>
+          {agents.length ? (
+            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
+              {agents.slice(0, 5).map((agent, index) => (
+                <article key={agent.agentId || agent.agentName} className="grid min-h-[86px] grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-xl border border-white/15 bg-white/10 p-3 text-white">
+                  <span className="grid h-7 w-7 place-items-center rounded-full bg-white/20 text-xs font-semibold text-white">{agent.rank || index + 1}</span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">{agent.agentName}</p>
+                    <p className="mt-1 text-xs text-white/65">{formatCount(agent.count)} registrations</p>
+                    <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="whitespace-nowrap text-sm font-semibold text-white">{formatCurrency(agent.commission, { compact: true })}</p>
+                      <p className="whitespace-nowrap text-xs text-white/65">{formatCurrency(agent.salesValue, { compact: true })}</p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-xl border border-dashed border-white/20 px-4 py-6 text-center text-sm font-medium text-white/75">
+              No revenue data for this date range.
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -888,25 +959,27 @@ function RevenueSourceCards({ rows = [] }) {
   const total = Math.max(1, rows.reduce((sum, source) => sum + Number(source.value || 0), 0))
   const sourceColors = ['#2f80ed', '#22a06b', '#f59e0b', '#7657d8']
   return (
-    <section className="space-y-3">
+    <section className={`${dashboardCardClass} ${dashboardCardPadding}`}>
       <h2 className="text-[1.08rem] font-semibold text-[#101828]">Revenue by Source</h2>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {rows.length ? rows.map((source, index) => {
-        const percentageOfTotal = Math.round((Number(source.value || 0) / total) * 100)
-        return (
-        <article key={source.key} className={`${dashboardCardClass} p-4`}>
-          <p className="text-sm font-semibold text-[#344054]">{source.label}</p>
-          <p className="mt-3 text-[1.45rem] font-semibold leading-none text-[#101828]">{formatCurrency(source.value, { compact: true })}</p>
-          <div className="mt-5 flex items-center justify-between text-[0.7rem] font-semibold text-[#667085]">
-            <span>{percentageOfTotal}%</span>
-            <span>{formatCurrency(total, { compact: true })} total</span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#edf2f7]">
-            <div className="h-full rounded-full" style={{ width: `${Math.max(percentageOfTotal, Number(source.value || 0) > 0 ? 4 : 0)}%`, background: sourceColors[index % sourceColors.length] }} />
-          </div>
-        </article>
-        )
-      }) : <div className="md:col-span-2 xl:col-span-4"><EmptyPanel title="No revenue data for this period" /></div>}
+      <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-4">
+        {rows.length ? rows.map((source, index) => {
+          const percentageOfTotal = Math.round((Number(source.value || 0) / total) * 100)
+          return (
+            <article key={source.key} className="flex min-h-[150px] flex-col justify-between rounded-2xl border border-[#edf2f7] bg-[#fbfdff] p-4">
+              <p className="text-sm font-semibold text-[#344054]">{source.label}</p>
+              <div>
+                <p className="mt-3 text-[1.55rem] font-semibold leading-none text-[#101828]">{formatCurrency(source.value, { compact: true })}</p>
+                <div className="mt-5 flex items-center justify-between gap-3 text-[0.7rem] font-semibold text-[#667085]">
+                  <span>{percentageOfTotal}%</span>
+                  <span>{formatCurrency(total, { compact: true })} total</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#edf2f7]">
+                  <div className="h-full rounded-full" style={{ width: `${Math.max(percentageOfTotal, Number(source.value || 0) > 0 ? 4 : 0)}%`, background: sourceColors[index % sourceColors.length] }} />
+                </div>
+              </div>
+            </article>
+          )
+        }) : <EmptyPanel title="No revenue data for this period" />}
       </div>
     </section>
   )
@@ -925,22 +998,22 @@ function RevenueForecastCards({ forecast, layout = 'grid' }) {
     { Icon: ShieldAlert, tone: 'bg-[#eefbf6] text-[#0f766e]' },
   ]
   return (
-    <section className={`${stacked ? 'grid h-full grid-cols-1 gap-3' : `${dashboardCardClass} ${dashboardCardPadding}`}`}>
+    <section className={`${stacked ? 'grid h-full grid-cols-1 gap-3' : `${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[310px] flex-col`}`}>
       {!stacked ? <h2 className="text-[1.08rem] font-semibold text-[#101828]">Revenue Forecast</h2> : null}
-      <div className={stacked ? 'contents' : 'mt-5 grid grid-cols-1 gap-4 md:grid-cols-3'}>
-      {cards.map((card, index) => {
-        const Icon = iconConfig[index].Icon
-        return (
-        <article key={card.label} className={stacked ? `${dashboardCardClass} flex min-h-[92px] flex-col justify-center p-4` : 'rounded-2xl border border-[#edf2f7] bg-[#fbfdff] p-4'}>
-          {!stacked ? <span className={`grid h-9 w-9 place-items-center rounded-xl ${iconConfig[index].tone}`}><Icon size={16} /></span> : null}
-          <p className="text-sm font-semibold text-[#344054]">{card.label}</p>
-          <p className={`${stacked ? 'mt-2 text-[1.35rem]' : 'mt-3 text-[1.55rem]'} font-semibold leading-none tracking-[-0.025em] text-[#101828] tabular-nums`}>
-            {formatCurrency(card.value, { compact: true })}
-          </p>
-          {!stacked ? <p className="mt-3 text-xs font-medium text-[#667085]">Live scoped forecast</p> : null}
-        </article>
-        )
-      })}
+      <div className={stacked ? 'contents' : 'mt-5 grid flex-1 grid-cols-1 gap-4 md:grid-cols-3'}>
+        {cards.map((card, index) => {
+          const Icon = iconConfig[index].Icon
+          return (
+            <article key={card.label} className={stacked ? `${dashboardCardClass} flex min-h-[92px] flex-col justify-center p-4` : 'flex min-h-[210px] flex-col justify-center rounded-2xl border border-[#edf2f7] bg-[#fbfdff] p-4'}>
+              {!stacked ? <span className={`grid h-9 w-9 place-items-center rounded-xl ${iconConfig[index].tone}`}><Icon size={16} /></span> : null}
+              <p className="text-sm font-semibold text-[#344054]">{card.label}</p>
+              <p className={`${stacked ? 'mt-2 text-[1.35rem]' : 'mt-3 text-[1.55rem]'} font-semibold leading-none tracking-[-0.025em] text-[#101828] tabular-nums`}>
+                {formatCurrency(card.value, { compact: true })}
+              </p>
+              {!stacked ? <p className="mt-3 text-xs font-medium text-[#667085]">Live scoped forecast</p> : null}
+            </article>
+          )
+        })}
       </div>
     </section>
   )
@@ -949,9 +1022,9 @@ function RevenueForecastCards({ forecast, layout = 'grid' }) {
 function CommissionForecastChart({ rows = [] }) {
   const maxValue = Math.max(1, ...rows.map((row) => Number(row.expectedCommission || 0)))
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[330px]`}>
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[310px] flex-col`}>
       <h2 className="text-[1.08rem] font-semibold text-[#101828]">Commission Forecast <span className="text-sm font-medium text-[#667085]">(Next 3 Months)</span></h2>
-      <div className="mt-6 flex min-h-[210px] items-end gap-5 border-b border-[#d9e3ef] px-2">
+      <div className="mt-6 flex flex-1 items-end gap-5 border-b border-[#d9e3ef] px-2">
         {rows.map((row) => (
           <div key={row.key} className="flex flex-1 flex-col items-center gap-2">
             <div className="flex h-[178px] w-full items-end rounded-t-xl bg-[#eef2f7] px-4 pt-4">
@@ -1014,7 +1087,19 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
             <PipelineFunnelPanel rows={data.pipeline.funnel || []} />
             <PipelineHealthPanel items={data.pipeline.health || []} />
           </div>
-          <TopAgentsByPipeline rows={data.pipeline.topAgents || []} />
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <PrincipalInsightCards
+              title="Buyer Lead Insights"
+              copy="Where buyer demand needs matching or follow-up."
+              rows={data.pipeline.buyerLeadInsights || []}
+            />
+            <PrincipalInsightCards
+              title="Mandate Insights"
+              copy="Seller stock quality and mandate movement."
+              rows={data.pipeline.mandateInsights || []}
+            />
+          </div>
+          <AgentPerformanceCoachingTable rows={data.pipeline.agentCoaching || []} />
         </>
       ) : null}
       {activeTab === 'transactions' ? (
@@ -1032,10 +1117,7 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
       ) : null}
       {activeTab === 'revenue' ? (
         <>
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <RevenueHero data={data.revenue} />
-            <RevenueAgentCard data={{ byAgent: data.revenue.topAgents || data.revenue.byAgent || [] }} />
-          </div>
+          <RevenueHero data={data.revenue} />
           <RevenueSourceCards rows={data.revenue.sources || []} />
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <RevenueForecastCards forecast={data.revenue.forecast} />

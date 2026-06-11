@@ -81,6 +81,8 @@ function lead(overrides = {}) {
   assert.equal(scopedMetrics.overview.pipelineSnapshot.activeCount, 1, 'branch-scoped rows should not be widened')
   assert.equal(scopedMetrics.pipeline.funnel.find((row) => row.key === 'leads').count, 1, 'date-filtered leads should feed the funnel')
   assert.equal(scopedMetrics.revenue.forecast.likelyRevenue, 40_800, 'OTP weighted likely revenue should use configured weights')
+  assert.equal(scopedMetrics.pipeline.buyerLeadInsights.find((row) => row.key === 'new_buyer_leads').value, 1, 'buyer lead insight should use scoped leads')
+  assert.equal(scopedMetrics.pipeline.agentCoaching[0].buyerLeads, 1, 'agent coaching should include buyer lead ownership')
 }
 
 {
@@ -101,6 +103,7 @@ function lead(overrides = {}) {
     now,
   })
   assert.equal(multiAgentMetrics.pipeline.topAgents[0].agentName, 'Agent B', 'top agents should support multi-agent data')
+  assert.equal(multiAgentMetrics.pipeline.agentCoaching[0].agentName, 'Agent B', 'agent coaching should follow principal pipeline ranking')
 }
 
 {
