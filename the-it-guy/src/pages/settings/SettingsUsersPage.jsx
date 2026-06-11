@@ -7,18 +7,19 @@ import {
   assignOrganisationUserCommissionProfile,
   deactivateOrganisationUser,
   fetchOrganisationSettings,
-  inviteOrganisationUser,
   listOrganisationCommissionStructures,
   listOrganisationUserCommissionProfiles,
   listOrganisationUsers,
   updateOrganisationUserRole,
 } from '../../lib/settingsApi'
+import { createWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
 import {
   SettingsBanner,
   SettingsEmptyState,
   SettingsLoadingState,
   SettingsPageHeader,
   SettingsSectionCard,
+  SettingsToggleRow,
   settingsActionRowClass,
   settingsFieldClass,
   settingsFieldSpanClass,
@@ -26,6 +27,13 @@ import {
   settingsPageClass,
   settingsTableClass,
 } from './settingsUi'
+import {
+  listCommercialAccessManagementState,
+  listCommercialAccessRequests,
+  reviewCommercialAccessRequest,
+  setCommercialOrganisationModuleEnabled,
+  setCommercialUserAccess,
+} from '../../modules/commercial/services/commercialApi'
 
 const ROLE_OPTIONS = [
   { value: 'owner', label: 'Organisation Owner' },
@@ -43,6 +51,26 @@ const ROLE_OPTIONS = [
   { value: 'viewer', label: 'Viewer' },
 ]
 
+function formatCommercialAuditAction(action = '') {
+  const label = String(action || '')
+    .replace(/^commercial_/, '')
+    .replaceAll('_', ' ')
+    .trim()
+  return label ? label.charAt(0).toUpperCase() + label.slice(1) : 'Commercial access update'
+}
+
+function getCommercialAuditSubject(event = {}) {
+  const metadata = event.metadata || {}
+  return (
+    metadata.targetEmail ||
+    metadata.requesterEmail ||
+    metadata.targetUserId ||
+    metadata.requesterUserId ||
+    event.targetId ||
+    'Commercial workspace'
+  )
+}
+
 export default function SettingsUsersPage() {
   const { can } = useWorkspace()
   const [, setMembershipRole] = useState('viewer')
@@ -50,9 +78,14 @@ export default function SettingsUsersPage() {
   const [users, setUsers] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [commissionProfiles, setCommissionProfiles] = useState([])
+  const [commercialAccessRequests, setCommercialAccessRequests] = useState([])
+  const [commercialAccessManagement, setCommercialAccessManagement] = useState({ organisationModuleStatus: null, users: [], auditEvents: [] })
   const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: 'agent', commissionStructureId: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [reviewingRequestId, setReviewingRequestId] = useState('')
+  const [savingCommercialModule, setSavingCommercialModule] = useState(false)
+  const [savingCommercialUserId, setSavingCommercialUserId] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
 
@@ -80,16 +113,20 @@ export default function SettingsUsersPage() {
   const loadUsers = useCallback(async () => {
     try {
       setLoading(true)
-      const [response, context, structureRows, profileRows] = await Promise.all([
+      const [response, context, structureRows, profileRows, commercialRequests, commercialManagement] = await Promise.all([
         listOrganisationUsers(),
         fetchOrganisationSettings(),
         listOrganisationCommissionStructures(),
         listOrganisationUserCommissionProfiles(),
+        listCommercialAccessRequests({ status: 'pending' }).catch(() => []),
+        listCommercialAccessManagementState().catch(() => ({ organisationModuleStatus: null, users: [], auditEvents: [] })),
       ])
       setUsers(response)
       setMembershipRole(context.membershipRole || 'viewer')
       setCommissionStructures(Array.isArray(structureRows) ? structureRows : [])
       setCommissionProfiles(Array.isArray(profileRows) ? profileRows : [])
+      setCommercialAccessRequests(Array.isArray(commercialRequests) ? commercialRequests : [])
+      setCommercialAccessManagement(commercialManagement || { organisationModuleStatus: null, users: [], auditEvents: [] })
     } catch (loadError) {
       setError(loadError.message)
     } finally {
@@ -107,19 +144,22 @@ export default function SettingsUsersPage() {
     try {
       setSaving(true)
       setError('')
-      const invitedUser = await inviteOrganisationUser(inviteForm)
-      const commissionStructureId = String(inviteForm.commissionStructureId || '').trim()
-      if (commissionStructureId) {
-        await assignOrganisationUserCommissionProfile({
-          organisationUserId: invitedUser?.id || '',
-          userId: invitedUser?.userId || '',
-          email: invitedUser?.email || inviteForm.email || '',
-          commissionStructureId,
-        })
-      }
+      const selectedCommissionStructure =
+        commissionStructureById.get(String(inviteForm.commissionStructureId || '').trim()) ||
+        defaultCommissionStructure ||
+        null
+      const inviteResult = await createWorkspaceUserInvite({
+        firstName: inviteForm.firstName,
+        lastName: inviteForm.lastName,
+        email: inviteForm.email,
+        role: inviteForm.role,
+        commissionStructureId: selectedCommissionStructure?.id || '',
+        commissionStructureName: selectedCommissionStructure?.name || '',
+        source: 'settings_users_invite',
+      })
       setInviteForm({ firstName: '', lastName: '', email: '', role: 'agent', commissionStructureId: '' })
       await loadUsers()
-      setMessage('User invite saved.')
+      setMessage(inviteResult.reusedExistingInvite ? 'Existing pending invite resent.' : 'User invite sent.')
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -164,6 +204,76 @@ export default function SettingsUsersPage() {
       setError(saveError.message)
     }
   }
+
+  async function handleCommercialAccessReview(requestId, decision) {
+    if (!canEdit) return
+    try {
+      setReviewingRequestId(requestId)
+      setError('')
+      const result = await reviewCommercialAccessRequest(requestId, { decision })
+      await loadUsers()
+      const requesterNotified = Number(result?.notificationResult?.notificationCount || 0) > 0
+      const requesterEmailed = Number(result?.notificationResult?.emailCount || 0) > 0
+      setMessage(
+        requesterEmailed
+          ? decision === 'approved'
+            ? 'Commercial access approved and requester emailed.'
+            : 'Commercial access request rejected and requester emailed.'
+          : requesterNotified
+          ? decision === 'approved'
+            ? 'Commercial access approved and requester notified.'
+            : 'Commercial access request rejected and requester notified.'
+          : decision === 'approved'
+            ? 'Commercial access approved.'
+            : 'Commercial access request rejected.',
+      )
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setReviewingRequestId('')
+    }
+  }
+
+  async function handleCommercialModuleToggle(enabled) {
+    if (!canEdit) return
+    try {
+      setSavingCommercialModule(true)
+      setError('')
+      await setCommercialOrganisationModuleEnabled(enabled)
+      await loadUsers()
+      setMessage(enabled ? 'Commercial module enabled for this organisation.' : 'Commercial module disabled for this organisation.')
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setSavingCommercialModule(false)
+    }
+  }
+
+  async function handleCommercialUserAccessChange(organisationUserId, enabled) {
+    if (!canEdit) return
+    try {
+      setSavingCommercialUserId(organisationUserId)
+      setError('')
+      await setCommercialUserAccess(organisationUserId, enabled)
+      await loadUsers()
+      setMessage(enabled ? 'Commercial access granted.' : 'Commercial access removed.')
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setSavingCommercialUserId('')
+    }
+  }
+
+  const commercialAccessByUserId = useMemo(() => {
+    const map = new Map()
+    for (const row of commercialAccessManagement.users || []) {
+      if (row.organisationUserId) map.set(row.organisationUserId, row)
+    }
+    return map
+  }, [commercialAccessManagement.users])
+
+  const commercialModuleActive = commercialAccessManagement.organisationModuleStatus?.enabled === true
+  const commercialAuditEvents = commercialAccessManagement.auditEvents || []
 
   return (
     <div className={settingsPageClass}>
@@ -250,6 +360,138 @@ export default function SettingsUsersPage() {
           ) : null}
         </form>
       </SettingsSectionCard>
+
+      {canEdit && commercialAccessRequests.length ? (
+        <SettingsSectionCard
+          title="Commercial access requests"
+          description="Approve agents who asked to use the Commercial workspace. Approval enables Commercial for the organisation if it is not active yet."
+        >
+          <div className="divide-y divide-[#e9eff5] overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
+            {commercialAccessRequests.map((request) => (
+              <div key={request.id} className="grid gap-3 px-5 py-4 lg:grid-cols-[1.2fr_1.2fr_1fr] lg:items-center">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-[#162334]">{request.requesterName || request.requesterEmail}</p>
+                  <p className="text-sm text-[#51657b]">{request.requesterEmail}</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="inline-flex rounded-full border border-[#f3d9a8] bg-[#fff8ec] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#a16207]">
+                    Pending Commercial access
+                  </span>
+                  <p className="text-xs text-[#7b8da6]">
+                    Requested {request.createdAt ? new Date(request.createdAt).toLocaleDateString() : 'recently'}
+                  </p>
+                  {request.metadata?.last_nudged_at ? (
+                    <p className="text-xs text-[#7b8da6]">
+                      Last reminded {new Date(request.metadata.last_nudged_at).toLocaleDateString()}
+                      {request.metadata?.nudge_count ? ` · ${request.metadata.nudge_count} reminder${Number(request.metadata.nudge_count) === 1 ? '' : 's'}` : ''}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2 lg:justify-end">
+                  <Button
+                    type="button"
+                    onClick={() => handleCommercialAccessReview(request.id, 'approved')}
+                    disabled={reviewingRequestId === request.id}
+                  >
+                    {reviewingRequestId === request.id ? 'Reviewing…' : 'Approve'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => handleCommercialAccessReview(request.id, 'rejected')}
+                    disabled={reviewingRequestId === request.id}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SettingsSectionCard>
+      ) : null}
+
+      {canEdit ? (
+        <SettingsSectionCard
+          title="Commercial module access"
+          description="Control whether Commercial is enabled for the organisation and which users can open the Commercial workspace."
+        >
+          <div className="rounded-2xl border border-[#e4ebf3] bg-white px-5">
+            <SettingsToggleRow
+              title="Enable Commercial for this organisation"
+              description="When disabled, no user can open Commercial even if they have an assigned Commercial membership."
+              checked={commercialModuleActive}
+              disabled={savingCommercialModule}
+              onChange={handleCommercialModuleToggle}
+            />
+          </div>
+
+          <div className="divide-y divide-[#e9eff5] overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
+            {(users || []).map((userRow) => {
+              const commercialAccess = commercialAccessByUserId.get(userRow.id)
+              const hasCommercialAccess = Boolean(commercialAccess?.hasCommercialAccess)
+              const savingUser = savingCommercialUserId === userRow.id
+              return (
+                <div key={`commercial-${userRow.id}`} className="grid gap-3 px-5 py-4 lg:grid-cols-[1.2fr_1fr_1fr] lg:items-center">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-[#162334]">{userRow.fullName || userRow.email}</p>
+                    <p className="text-sm text-[#51657b]">{userRow.email}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <span className={[
+                      'inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em]',
+                      hasCommercialAccess ? 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]' : 'border-[#d7e3ef] bg-white text-[#51657b]',
+                    ].join(' ')}>
+                      {hasCommercialAccess ? 'Commercial assigned' : 'No Commercial access'}
+                    </span>
+                    {commercialAccess?.source ? (
+                      <p className="text-xs text-[#7b8da6]">Source: {commercialAccess.source.replaceAll('_', ' ')}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                    <Button
+                      type="button"
+                      variant={hasCommercialAccess ? 'ghost' : 'secondary'}
+                      disabled={savingUser || userRow.status === 'deactivated'}
+                      onClick={() => handleCommercialUserAccessChange(userRow.id, !hasCommercialAccess)}
+                    >
+                      {savingUser ? 'Saving…' : hasCommercialAccess ? 'Remove Commercial' : 'Grant Commercial'}
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
+            <div className="border-b border-[#e9eff5] px-5 py-4">
+              <h3 className="text-sm font-semibold text-[#162334]">Recent Commercial access history</h3>
+              <p className="mt-1 text-sm text-[#51657b]">A short audit trail of Commercial requests, approvals, and manual access changes.</p>
+            </div>
+            {commercialAuditEvents.length ? (
+              <div className="divide-y divide-[#e9eff5]">
+                {commercialAuditEvents.map((event) => (
+                  <div key={event.id || `${event.action}-${event.createdAt}`} className="grid gap-2 px-5 py-4 lg:grid-cols-[1.1fr_1fr_0.8fr] lg:items-center">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-[#162334]">{formatCommercialAuditAction(event.action)}</p>
+                      <p className="text-sm text-[#51657b]">{getCommercialAuditSubject(event)}</p>
+                    </div>
+                    <p className="text-sm text-[#51657b]">
+                      {event.metadata?.source ? `Source: ${String(event.metadata.source).replaceAll('_', ' ')}` : event.targetType?.replaceAll('_', ' ') || 'Commercial access'}
+                    </p>
+                    <p className="text-sm text-[#7b8da6] lg:text-right">
+                      {event.createdAt ? new Date(event.createdAt).toLocaleString() : 'Recently'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="px-5 py-5">
+                <p className="text-sm text-[#51657b]">No Commercial access history yet.</p>
+              </div>
+            )}
+          </div>
+        </SettingsSectionCard>
+      ) : null}
 
       <SettingsSectionCard title="Users" description="Manage role access for the current organisation workspace.">
         {loading ? <SettingsLoadingState label="Loading users…" compact /> : null}

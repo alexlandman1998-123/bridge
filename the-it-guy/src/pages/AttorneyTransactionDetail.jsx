@@ -5318,7 +5318,7 @@ function AttorneyTransactionDetail() {
     setBondApplicationPdfBusy(true)
     let pdfContainer = null
     try {
-      const { default: html2pdf } = await import('html2pdf.js')
+      const { default: html2pdf } = await import('html2pdf.js/src/index.js')
       const pdfDocument = new window.DOMParser().parseFromString(
         buildBondApplicationPdfHtml(bondApplicationViewModel, new Date().toISOString()),
         'text/html',

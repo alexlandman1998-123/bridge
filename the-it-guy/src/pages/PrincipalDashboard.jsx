@@ -65,6 +65,7 @@ const FINANCE_COLORS = {
 }
 
 const OVERVIEW_MODES = [
+  { key: 'overview', label: 'Overview' },
   { key: 'pipeline', label: 'Pipeline' },
   { key: 'transactions', label: 'Transactions' },
   { key: 'revenue', label: 'Revenue' },
@@ -402,13 +403,12 @@ function PrincipalKpiCard({ icon, label, value, trend, inverse = false, tone = '
 
 function PrincipalKpiRow({ data }) {
   const kpis = data.kpis
-  const dateLabel = data?.filters?.dateRange?.label || 'This Month'
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       <PrincipalKpiCard icon={PieChart} label="Pipeline Value" value={formatCurrency(kpis.pipelineValue, { compact: true })} trend={kpis.trends.pipelineValue} />
-      <PrincipalKpiCard icon={Users} label="Active Transactions" value={formatCount(kpis.activeTransactions)} trend={kpis.trends.activeTransactions} tone="green" />
       <PrincipalKpiCard icon={BriefcaseBusiness} label="Expected Commission" value={kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true })} trend={kpis.trends.expectedCommission} tone="orange" />
-      <PrincipalKpiCard icon={CalendarDays} label={`Closing ${dateLabel}`} value={formatCount(kpis.closingThisMonth)} trend={kpis.trends.closingThisMonth} tone="purple" />
+      <PrincipalKpiCard icon={Users} label="Active Transactions" value={formatCount(kpis.activeTransactions)} trend={kpis.trends.activeTransactions} tone="green" />
+      <PrincipalKpiCard icon={LineChart} label="Forecast Revenue" value={formatCurrency(kpis.forecastRevenue, { compact: true })} trend={kpis.trends.forecastRevenue} tone="purple" />
       <PrincipalKpiCard icon={Target} label="Lead → Deal Conversion" value={formatPercent(kpis.leadToDealConversion)} trend={kpis.trends.leadToDealConversion} tone="green" />
     </section>
   )
@@ -603,63 +603,306 @@ function RevenueAgentCard({ data }) {
   )
 }
 
-function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
-  const dateLabel = data?.filters?.dateRange?.label || 'This Month'
-  const metrics = [
-    { label: `Registered ${dateLabel}`, value: formatCount(data.pipeline.registeredThisMonth), trend: null },
-    { label: 'Pending Registration', value: formatCount(data.pipeline.pendingRegistration), trend: null },
-    { label: 'Avg. Deal Value', value: data.pipeline.avgDealValue === null ? '—' : formatCurrency(data.pipeline.avgDealValue, { compact: true }), trend: null },
-    { label: 'Win Rate', value: formatPercent(data.pipeline.winRate), trend: null },
-  ]
+function EmptyPanel({ title, action }) {
   return (
-    <section className="space-y-4">
-      <div className="flex flex-col gap-3 px-1 md:flex-row md:items-center md:justify-between">
-        <h2 className="text-[1.08rem] font-semibold text-[#101828]">Pipeline & Sales Overview</h2>
-        <div className="inline-flex h-9 w-fit rounded-xl border border-[#d9e3ef] bg-[#f8fafc] p-1 text-xs font-semibold text-[#52657a]" role="tablist" aria-label="Overview mode">
-          {OVERVIEW_MODES.map((mode) => {
-            const active = overviewMode === mode.key
-            return (
-              <button
-                key={mode.key}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => onOverviewModeChange(mode.key)}
-                className={`rounded-lg px-3 py-1.5 transition ${active ? 'bg-white text-[#1769d1] shadow-sm' : 'hover:text-[#24364b]'}`}
-              >
-                {mode.label}
-              </button>
-            )
-          })}
+    <div className="flex min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center">
+      <p className="text-sm font-semibold text-[#344054]">{title}</p>
+      {action ? <p className="mt-1 text-xs text-[#667085]">{action}</p> : null}
+    </div>
+  )
+}
+
+function PipelineFunnelPanel({ rows = [] }) {
+  const maxCount = Math.max(1, ...rows.map((row) => Number(row.count || 0)))
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[420px]`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[1.08rem] font-semibold text-[#101828]">Pipeline Funnel</h2>
+          <p className="mt-1 text-sm text-[#667085]">Live progression from lead capture to registration.</p>
+        </div>
+        <span className="rounded-full border border-[#d9e3ef] bg-[#f8fafc] px-3 py-1 text-xs font-semibold text-[#52657a]">Live scoped data</span>
+      </div>
+      <div className="mt-6 space-y-3">
+        {rows.length ? rows.map((stage, index) => {
+          const width = Math.max(8, (Number(stage.count || 0) / maxCount) * 100)
+          return (
+            <article key={stage.key} className="rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#101828]">{stage.label}</p>
+                  <p className="mt-0.5 text-xs text-[#667085]">{formatCurrency(stage.value, { compact: true })}</p>
+                </div>
+                <div className="flex items-center gap-3 text-right">
+                  <span className="text-[1.2rem] font-semibold tabular-nums text-[#101828]">{formatCount(stage.count)}</span>
+                  <span className="w-[86px] rounded-full border border-[#d9e3ef] bg-white px-2 py-1 text-xs font-semibold text-[#52657a]">
+                    {stage.conversionToNext === null ? 'Final' : `${stage.conversionToNext}% next`}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#edf2f7]">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${width}%`,
+                    background: `linear-gradient(90deg, ${['#1769d1', '#7c5cff', '#f59e0b', '#169b52', '#0f766e', '#64748b'][index] || '#1769d1'}, #dbeafe)`,
+                  }}
+                />
+              </div>
+            </article>
+          )
+        }) : <EmptyPanel title="No pipeline activity yet" action="Create lead" />}
+      </div>
+    </section>
+  )
+}
+
+function PipelineHealthPanel({ items = [] }) {
+  const navigate = useNavigate()
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[420px]`}>
+      <h2 className="text-[1.08rem] font-semibold text-[#101828]">Pipeline Health</h2>
+      <div className="mt-5 space-y-3">
+        {items.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => item.href ? navigate(item.href) : null}
+            className="flex w-full items-center justify-between gap-4 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
+          >
+            <span className="min-w-0 truncate text-sm font-semibold text-[#344054]">{item.label}</span>
+            <span className={`rounded-full px-3 py-1 text-sm font-semibold tabular-nums ${item.count ? 'bg-[#fff2f0] text-[#b42318]' : 'bg-[#edfdf3] text-[#16894f]'}`}>{formatCount(item.count)}</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function TopAgentsByPipeline({ rows = [] }) {
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding}`}>
+      <h2 className="text-[1.08rem] font-semibold text-[#101828]">Top Agents by Pipeline Value</h2>
+      <div className="mt-4 overflow-x-auto">
+        <table className="min-w-[620px] w-full text-left text-sm">
+          <thead className="text-[0.72rem] uppercase tracking-[0.04em] text-[#667085]">
+            <tr className="border-b border-[#edf2f7]">
+              <th className="py-3 font-semibold">Agent</th>
+              <th className="py-3 font-semibold">Pipeline Value</th>
+              <th className="py-3 font-semibold">Deal Count</th>
+              <th className="py-3 font-semibold text-right">Trend</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length ? rows.map((agent, index) => (
+              <tr key={`${agent.agentId || agent.agentName}-${index}`} className="border-b border-[#edf2f7] last:border-0">
+                <td className="py-3 font-semibold text-[#101828]">{agent.agentName}</td>
+                <td className="py-3 text-[#344054]">{formatCurrency(agent.pipelineValue, { compact: true })}</td>
+                <td className="py-3 text-[#344054]">{formatCount(agent.dealCount)}</td>
+                <td className="py-3 text-right"><TrendBadge value={agent.trend} /></td>
+              </tr>
+            )) : (
+              <tr><td colSpan="4" className="h-[160px] text-center text-sm text-[#667085]">No agent pipeline data yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}
+
+function TransactionCommandCentre({ rows = [] }) {
+  const tones = ['#1769d1', '#7c5cff', '#0f766e', '#169b52', '#f59e0b', '#dc3e37']
+  return (
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
+      {rows.map((item, index) => (
+        <article key={item.key} className={`${dashboardCardClass} min-h-[116px] p-4`}>
+          <span className="grid h-9 w-9 place-items-center rounded-xl" style={{ color: tones[index], background: `${tones[index]}14` }}>
+            <ArrowRight size={17} />
+          </span>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.04em] text-[#667085]">{item.label}</p>
+          <p className="mt-1 text-[1.65rem] font-semibold leading-none text-[#101828] tabular-nums">{formatCount(item.count)}</p>
+        </article>
+      ))}
+    </section>
+  )
+}
+
+function TransactionFlowRail({ rows = [] }) {
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding}`}>
+      <h2 className="text-[1.08rem] font-semibold text-[#101828]">Transaction Flow</h2>
+      <div className="mt-6 grid gap-3 md:grid-cols-5">
+        {rows.map((stage, index) => (
+          <article key={stage.key} className="relative min-h-[132px] rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] p-4">
+            {index < rows.length - 1 ? <span className="absolute right-[-18px] top-1/2 z-10 hidden h-px w-8 bg-[#cfdbe8] md:block" /> : null}
+            <p className="text-sm font-semibold text-[#101828]">{stage.label}</p>
+            <p className="mt-3 text-[1.7rem] font-semibold leading-none text-[#101828] tabular-nums">{formatCount(stage.count)}</p>
+            <p className="mt-2 text-xs font-medium text-[#667085]">{formatPercent(stage.percentage)} of active</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function TransactionAlertsPanel({ rows = [] }) {
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[320px]`}>
+      <h2 className="text-[1.08rem] font-semibold text-[#101828]">Transaction Alerts</h2>
+      <div className="mt-4 space-y-3">
+        {rows.map((item) => (
+          <div key={item.key} className="flex items-center justify-between gap-3 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3">
+            <span className="text-sm font-semibold text-[#344054]">{item.label}</span>
+            <span className={`rounded-full px-3 py-1 text-sm font-semibold tabular-nums ${item.count ? 'bg-[#fff7ea] text-[#9a5b13]' : 'bg-[#edfdf3] text-[#16894f]'}`}>{formatCount(item.count)}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function RevenueHero({ data }) {
+  const hero = data?.hero || {}
+  const hasTarget = hero.target !== null && hero.target !== undefined
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} overflow-hidden bg-[#101828] text-white`}>
+      <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-white/65">Revenue This Month</p>
+          <p className="mt-2 text-[2.6rem] font-semibold leading-none tracking-[-0.04em]">{formatCurrency(hero.revenueThisMonth)}</p>
+          <div className="mt-4 flex flex-wrap gap-2 text-sm">
+            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Target: {hasTarget ? formatCurrency(hero.target) : 'No revenue target set'}</span>
+            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">Achieved: {hasTarget ? formatCurrency(hero.achieved) : '—'}</span>
+            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">{hasTarget ? `${formatPercent(hero.targetPercent)} of target` : 'Target disabled'}</span>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-white/15 bg-white/10 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-white/60">Trend vs last month</p>
+          <p className="mt-2 text-[1.7rem] font-semibold">{hero.trendVsLastMonth === null || hero.trendVsLastMonth === undefined ? '—' : `${hero.trendVsLastMonth > 0 ? '+' : ''}${Math.round(hero.trendVsLastMonth)}%`}</p>
         </div>
       </div>
-      {overviewMode === 'pipeline' ? (
+    </section>
+  )
+}
+
+function RevenueSourceCards({ rows = [] }) {
+  return (
+    <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {rows.length ? rows.map((source) => (
+        <article key={source.key} className={`${dashboardCardClass} p-4`}>
+          <p className="text-sm font-semibold text-[#344054]">{source.label}</p>
+          <p className="mt-3 text-[1.55rem] font-semibold leading-none text-[#101828]">{formatCurrency(source.value, { compact: true })}</p>
+        </article>
+      )) : <div className="md:col-span-3"><EmptyPanel title="No revenue data for this period" /></div>}
+    </section>
+  )
+}
+
+function RevenueForecastCards({ forecast }) {
+  const cards = [
+    { label: 'Expected Commission', value: forecast?.expectedCommission },
+    { label: 'Likely Revenue', value: forecast?.likelyRevenue },
+    { label: 'Committed Revenue', value: forecast?.committedRevenue },
+  ]
+  return (
+    <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {cards.map((card) => (
+        <article key={card.label} className={`${dashboardCardClass} p-4`}>
+          <p className="text-sm font-semibold text-[#344054]">{card.label}</p>
+          <p className="mt-3 text-[1.55rem] font-semibold leading-none text-[#101828]">{formatCurrency(card.value, { compact: true })}</p>
+        </article>
+      ))}
+    </section>
+  )
+}
+
+function CommissionForecastChart({ rows = [] }) {
+  const maxValue = Math.max(1, ...rows.map((row) => Number(row.expectedCommission || 0)))
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[320px]`}>
+      <h2 className="text-[1.08rem] font-semibold text-[#101828]">Commission Forecast</h2>
+      <div className="mt-6 flex min-h-[190px] items-end gap-4">
+        {rows.map((row) => (
+          <div key={row.key} className="flex flex-1 flex-col items-center gap-2">
+            <div className="flex h-[160px] w-full items-end rounded-t-xl bg-[#eef2f7]">
+              <div className="w-full rounded-t-xl bg-[#1769d1]" style={{ height: `${Math.max(4, (Number(row.expectedCommission || 0) / maxValue) * 100)}%` }} />
+            </div>
+            <p className="text-xs font-semibold text-[#344054]">{row.label}</p>
+            <p className="text-xs text-[#667085]">{formatCurrency(row.expectedCommission, { compact: true })} · {row.confidence}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
+  const activeTab = overviewMode || 'overview'
+  return (
+    <section className="space-y-4">
+      <div className={`${dashboardCardClass} p-1.5`}>
+        <div className="grid grid-cols-2 gap-1 text-sm font-semibold text-[#52657a] md:grid-cols-4" role="tablist" aria-label="Dashboard sections">
+          {OVERVIEW_MODES.map((mode) => (
+            <button
+              key={mode.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === mode.key}
+              onClick={() => onOverviewModeChange(mode.key)}
+              className={`min-h-[42px] rounded-xl px-3 transition ${activeTab === mode.key ? 'bg-[#101828] text-white shadow-sm' : 'hover:bg-[#f8fafc] hover:text-[#24364b]'}`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === 'overview' ? (
         <>
           <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <PipelineStageChart stages={data.pipeline.stages} />
-            <FinanceTypeDonut items={data.pipeline.financeTypes} totalValue={data.pipeline.totalValue} />
+            <PipelineFunnelPanel rows={(data.pipeline.funnel || []).slice(0, 4)} />
+            <PipelineHealthPanel items={data.pipeline.health || []} />
           </div>
-          <div className={`${dashboardCardClass} grid gap-3 p-3 sm:p-4 md:grid-cols-4`}>
-            {metrics.map((metric, index) => (
-              <div key={metric.label} className={`px-3 py-2 ${index ? 'md:border-l md:border-[#edf2f7]' : ''}`}>
-                <p className="text-xs font-medium text-[#667085]">{metric.label}</p>
-                <p className="mt-2 text-[1.25rem] font-semibold text-[#101828]">{metric.value}</p>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <TransactionFlowRail rows={data.transactions.flow || []} />
+            <RevenueForecastCards forecast={data.revenue.forecast} />
+          </div>
+          <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <RecentActivityFeed rows={data.recentActivity} />
+            <TransactionAlertsPanel rows={[...(data.overview?.urgentAlerts || [])]} />
+          </section>
+        </>
+      ) : null}
+      {activeTab === 'pipeline' ? (
+        <>
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <PipelineFunnelPanel rows={data.pipeline.funnel || []} />
+            <PipelineHealthPanel items={data.pipeline.health || []} />
+          </div>
+          <TopAgentsByPipeline rows={data.pipeline.topAgents || []} />
+        </>
+      ) : null}
+      {activeTab === 'transactions' ? (
+        <>
+          <TransactionCommandCentre rows={data.transactions.commandCentre || []} />
+          <TransactionFlowRail rows={data.transactions.flow || []} />
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <TransactionAlertsPanel rows={data.transactions.alerts || []} />
+            <RecentActivityFeed rows={data.recentActivity} />
           </div>
         </>
       ) : null}
-      {overviewMode === 'transactions' ? (
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <TransactionsOverviewChart data={data.transactions} />
-          <TransactionsSummaryCard data={data.transactions} />
-        </div>
-      ) : null}
-      {overviewMode === 'revenue' ? (
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <RevenueOverviewChart data={data.revenue} />
-          <RevenueAgentCard data={data.revenue} />
-        </div>
+      {activeTab === 'revenue' ? (
+        <>
+          <RevenueHero data={data.revenue} />
+          <RevenueSourceCards rows={data.revenue.sources || []} />
+          <RevenueForecastCards forecast={data.revenue.forecast} />
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <CommissionForecastChart rows={data.revenue.forecastChart || []} />
+            <RevenueAgentCard data={{ byAgent: data.revenue.topAgents || data.revenue.byAgent || [] }} />
+          </div>
+        </>
       ) : null}
     </section>
   )
@@ -996,11 +1239,10 @@ function RecentActivityFeed({ rows }) {
 }
 
 function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
-  const navigate = useNavigate()
   const { profile, currentMembership, workspaceRole, workspaceType } = useWorkspace()
   const [dateRange, setDateRange] = useState('this_month')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
-  const [overviewMode, setOverviewMode] = useState('pipeline')
+  const [overviewMode, setOverviewMode] = useState('overview')
   const [resolvedAgencyId, setResolvedAgencyId] = useState(agencyId)
   const [agencyResolutionComplete, setAgencyResolutionComplete] = useState(Boolean(agencyId))
   const [data, setData] = useState(null)
@@ -1132,21 +1374,10 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
 
         {isInitialLoading ? <DashboardSkeleton /> : null}
 
-        {!loading && data?.meta?.isEmpty ? <DashboardEmptyState onRetry={loadDashboard} onNavigate={navigate} filtered={Boolean(data?.meta?.hasAnyRecords)} /> : null}
-
-        {data && !data.meta?.isEmpty ? (
+        {data ? (
           <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
             <PrincipalKpiRow data={data} />
             <PipelineSalesOverview data={data} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
-            <ActiveTransactionsSlider rows={data.activeTransactions || []} />
-            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <AgentPerformanceTable rows={data.agentPerformance} />
-              <AttentionRequiredCard attention={data.attentionRequired} />
-            </section>
-            <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <LeadIntelligenceTable rows={data.leadIntelligence} />
-              <RecentActivityFeed rows={data.recentActivity} />
-            </section>
             <p className="pb-2 text-center text-xs text-[#667085]">
               <Loader2 size={12} className="mr-1 inline-block" />
               Data last updated: {lastUpdated || 'just now'}

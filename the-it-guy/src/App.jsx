@@ -171,6 +171,7 @@ const PipelineOverviewPage = lazy(() => import('./pages/PipelineOverviewPage'))
 const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
 const PartnerPortalPage = lazy(() => import('./pages/PartnerPortalPage'))
 const PartnersPage = lazy(() => import('./pages/PartnersPage'))
+const OrganizationWorkspacePage = lazy(() => import('./pages/OrganizationWorkspacePage'))
 const PlatformDiagnosticsPage = lazy(() => import('./pages/PlatformDiagnosticsPage'))
 const TransactionRoutingRolloutPage = lazy(() => import('./pages/TransactionRoutingRolloutPage'))
 const WorkflowMigrationValidationPage = lazy(() => import('./pages/WorkflowMigrationValidationPage'))
@@ -187,6 +188,7 @@ const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
 const SettingsOrganisationPage = lazy(() => import('./pages/settings/SettingsOrganisationPage'))
 const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/SettingsPreferredPartnersPage'))
+const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
@@ -195,6 +197,7 @@ const SignerPortal = lazy(() => import('./pages/SignerPortal'))
 const Snags = lazy(() => import('./pages/Snags'))
 const Team = lazy(() => import('./pages/Team'))
 const TransactionStatusShare = lazy(() => import('./pages/TransactionStatusShare'))
+const TransactionPartnerInvitePage = lazy(() => import('./pages/TransactionPartnerInvitePage'))
 const UnitDetail = lazy(() => import('./pages/UnitDetail'))
 const Units = lazy(() => import('./pages/Units'))
 
@@ -2251,6 +2254,26 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/organizations"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <AppErrorBoundary scope="organizations-module" title="Organizations module failed to load">
+                      <OrganizationWorkspacePage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/organizations/:organizationId"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <AppErrorBoundary scope="organizations-module" title="Organizations module failed to load">
+                      <OrganizationWorkspacePage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/handover"
                 element={
                   <RoleRoute allowedRoles={['client']}>
@@ -2318,6 +2341,14 @@ function AppRoutes() {
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
                       <SettingsPreferredPartnersPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="partner-directory"
+                  element={
+                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                      <SettingsPartnerProspectsPage />
                     </RoleRoute>
                   }
                 />
@@ -2452,6 +2483,7 @@ function AppRoutes() {
           <Route path="/offers/session/:token" element={<PostViewingOfferPortal />} />
           <Route path="/offers/:token" element={<BuyerOfferSubmission />} />
           <Route path="/seller/offers/review/:token" element={<SellerOfferReviewPage />} />
+          <Route path="/transaction-invite/:token" element={<TokenRouteGate><TransactionPartnerInvitePage /></TokenRouteGate>} />
           <Route path="/invite/:token" element={<TokenRouteGate><InviteResolver /></TokenRouteGate>} />
           <Route
             path="/agent/invite/:token"

@@ -29,13 +29,11 @@ import {
   buildAgentInviteLink,
 } from '../../lib/agentInviteService'
 import {
-  assignOrganisationUserCommissionProfile,
   fetchOrganisationSettings,
   listOrganisationCommissionStructures,
 } from '../../lib/settingsApi'
-import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../../lib/whatsapp'
-import { createInvite } from '../../services/inviteService'
+import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import { createWorkspaceUserInvite, resendWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
 import { getAgentLeaderboard } from '../../services/branchAnalyticsService'
 import { getBranch, getBranchListings, getBranchTransactions, updateBranch } from '../../services/agencyBranchService'
 
@@ -76,41 +74,6 @@ function formatPercent(value) {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric)) return '0%'
   return `${Math.round(numeric)}%`
-}
-
-function buildInviteMessage({ invite, inviteLink }) {
-  const agentName = `${invite?.firstName || ''} ${invite?.surname || ''}`.trim() || 'Agent'
-  const orgName = invite?.organisationName || 'your organisation'
-  return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Bridge 9.\n\nComplete your agent onboarding here:\n${inviteLink}\n\n- Bridge`
-}
-
-async function sendBranchInviteEmail({ invite, organisationName }) {
-  const recipientEmail = normalizeText(invite?.email)
-  const inviteLink = buildAgentInviteLink(invite?.token)
-  if (!recipientEmail) {
-    throw new Error('Invite email address is missing.')
-  }
-  if (!inviteLink) {
-    throw new Error('Invite link is missing.')
-  }
-  if (!isSupabaseConfigured) {
-    throw new Error('Email sending is unavailable because Supabase is not configured.')
-  }
-
-  const emailResult = await invokeEdgeFunction('send-email', {
-    body: {
-      type: 'branch_invite',
-      to: recipientEmail,
-      inviteeName: invite?.name || `${invite?.firstName || ''} ${invite?.surname || ''}`.trim(),
-      organisationName: organisationName || invite?.organisationName || 'Bridge Organisation',
-      workspaceRole: invite?.roleLabel || formatRoleLabel(invite?.role || 'agent'),
-      inviteLink,
-    },
-  })
-  if (emailResult?.error) {
-    throw emailResult.error
-  }
-  return inviteLink
 }
 
 function normalizeAgentInviteRole(value) {
@@ -433,39 +396,6 @@ function BranchAgentInviteModal({
     setForm((previous) => ({ ...previous, [key]: value }))
   }
 
-  async function sendInviteNotifications(invite) {
-    const inviteLink = buildAgentInviteLink(invite?.token)
-    const inviteMessage = buildInviteMessage({ invite, inviteLink })
-    const recipientEmail = normalizeText(invite?.email)
-    const recipientPhone = formatSouthAfricanWhatsAppNumber(invite?.mobile)
-
-    if (recipientEmail && isSupabaseConfigured) {
-      try {
-        await sendBranchInviteEmail({
-          invite,
-          organisationName: invite?.organisationName || organisation?.name || 'Bridge Organisation',
-        })
-      } catch (sendError) {
-        console.error('[Branch Agent Invite] email send failed', sendError)
-        throw new Error(sendError?.message || 'Invite was created, but the email could not be sent. Please retry sending the invite.')
-      }
-    }
-
-    if (recipientPhone) {
-      try {
-        await sendWhatsAppNotification({
-          to: recipientPhone,
-          role: 'agent_invite',
-          message: inviteMessage,
-        })
-      } catch (sendError) {
-        console.error('[Branch Agent Invite] WhatsApp send failed', sendError)
-      }
-    }
-
-    return inviteLink
-  }
-
   async function handleSubmit(event) {
     event.preventDefault()
     if (!normalizeText(form.firstName) || !normalizeText(form.surname) || !normalizeText(form.email) || !normalizeText(form.mobile)) {
@@ -489,46 +419,27 @@ function BranchAgentInviteModal({
       setError('')
       const resolvedWorkspaceRole = normalizeAgentInviteRole(form.role)
       const resolvedRoleLabel = formatRoleLabel(resolvedWorkspaceRole)
-      const inviteResult = await createInvite({
-        invite_type: 'branch_invite',
-        expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-        target_workspace_id: organisation?.id || branch?.organisationId,
-        target_workspace_role: resolvedWorkspaceRole,
-        target_branch_id: branch?.id,
-        email: form.email,
-        phone: form.mobile,
-        metadata: {
-          source: 'branch_workspace_agent_invite',
-          first_name: normalizeText(form.firstName),
-          last_name: normalizeText(form.surname),
-          mobile: normalizeText(form.mobile),
-          branch_name: branch?.name || '',
-          role: resolvedWorkspaceRole,
-          role_label: resolvedRoleLabel,
-          commission_structure_id: selectedCommissionStructure.id,
-          commission_structure_name: selectedCommissionStructure.name,
-          notes: normalizeText(form.notes),
-          invited_by_name: profile?.fullName || profile?.name || profile?.email || '',
-        },
-      })
-      const invite = {
-        id: inviteResult.invite_id,
-        token: inviteResult.token,
-        firstName: form.firstName,
-        surname: form.surname,
-        email: form.email,
-        mobile: form.mobile,
+      const inviteResult = await createWorkspaceUserInvite({
+        workspaceId: organisation?.id || branch?.organisationId,
         organisationName: organisation?.name || 'Bridge Organisation',
-        branchName: branch?.name || '',
         role: resolvedWorkspaceRole,
         roleLabel: resolvedRoleLabel,
-      }
-
-      await assignOrganisationUserCommissionProfile({
+        branchId: branch?.id,
+        branchName: branch?.name || '',
         email: form.email,
+        mobile: form.mobile,
+        firstName: form.firstName,
+        lastName: form.surname,
         commissionStructureId: selectedCommissionStructure.id,
+        commissionStructureName: selectedCommissionStructure.name,
+        notes: form.notes,
+        invitedByName: profile?.fullName || profile?.name || profile?.email || '',
+        source: 'branch_workspace_agent_invite',
+        metadata: {
+          branch_id: branch?.id || '',
+        },
       })
-      await sendInviteNotifications(invite)
+      const invite = inviteResult.invite
       onSent?.(invite)
       onClose?.()
     } catch (inviteError) {
@@ -712,9 +623,9 @@ function BranchInviteDetailModal({
       setSaving(true)
       setError('')
       setMessage('')
-      await sendBranchInviteEmail({
-        invite,
-        organisationName: organisation?.name || 'Bridge Organisation',
+      await resendWorkspaceUserInvite({
+        ...invite,
+        organisationName: organisation?.name || invite?.organisationName || 'Bridge Organisation',
       })
       setMessage(`Invite resent to ${invite.email}.`)
       onResent?.()

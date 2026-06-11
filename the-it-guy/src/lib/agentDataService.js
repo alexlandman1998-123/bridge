@@ -1,5 +1,5 @@
 import { OFFER_STATUS, readAgentPrivateListings, readAgentSellerLeads } from './agentListingStorage'
-import { getAgentDemoTransactionRowsFromStorage } from './agentDemoSeed'
+import { getAgentDemoTransactionRowsFromStorage } from './agentDemoTransactionStorage'
 import { isUnsafeFallbackAllowed } from './envValidation'
 import {
   getDashboardPipelineValue,

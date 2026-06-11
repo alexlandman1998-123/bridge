@@ -1,5 +1,5 @@
 import { MOCK_DATA_ENABLED } from '../../lib/mockData'
-import { getAgentDemoTransactionRowsFromStorage } from '../../lib/agentDemoSeed'
+import { getAgentDemoTransactionRowsFromStorage } from '../../lib/agentDemoTransactionStorage'
 import { getDerivedAgentTransactionRowsFromListings } from '../../lib/agentDataService'
 
 function isoHoursAgo(hours) {

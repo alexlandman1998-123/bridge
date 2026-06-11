@@ -6,6 +6,8 @@ import { acceptInvite, getInviteByToken, InviteValidationError } from '../servic
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const PENDING_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
+const PENDING_INVITE_EMAIL_STORAGE_KEY = 'itg:pending-org-invite-email'
+const CLEAR_PENDING_INVITE_REASONS = new Set(['not_found', 'expired', 'revoked', 'already_accepted'])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -92,6 +94,25 @@ function getInviteTarget(invite = {}) {
 function clearPendingInviteToken() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(PENDING_INVITE_TOKEN_STORAGE_KEY)
+  window.sessionStorage.removeItem(PENDING_INVITE_EMAIL_STORAGE_KEY)
+}
+
+function rememberPendingInvite({ token = '', email = '' } = {}) {
+  if (typeof window === 'undefined') return
+  const safeToken = normalizeText(token)
+  const safeEmail = normalizeText(email).toLowerCase()
+  if (safeToken) window.sessionStorage.setItem(PENDING_INVITE_TOKEN_STORAGE_KEY, safeToken)
+  if (safeEmail) window.sessionStorage.setItem(PENDING_INVITE_EMAIL_STORAGE_KEY, safeEmail)
+}
+
+function getAuthInvitePath({ token = '', email = '', mode = '' } = {}) {
+  const safeToken = normalizeText(token)
+  const params = new URLSearchParams()
+  params.set('next', `/invite/${safeToken}`)
+  const safeEmail = normalizeText(email).toLowerCase()
+  if (safeEmail) params.set('email', safeEmail)
+  if (mode) params.set('mode', mode)
+  return `/auth?${params.toString()}`
 }
 
 function InviteDetailList({ details = [] }) {
@@ -124,9 +145,7 @@ export default function InviteResolver() {
     let active = true
     async function loadInvite() {
       const safeToken = normalizeText(token)
-      if (typeof window !== 'undefined' && safeToken) {
-        window.sessionStorage.setItem(PENDING_INVITE_TOKEN_STORAGE_KEY, safeToken)
-      }
+      rememberPendingInvite({ token: safeToken })
       if (!safeToken) {
         setReason('not_found')
         setLoading(false)
@@ -138,25 +157,28 @@ export default function InviteResolver() {
         return
       }
 
+      let signedInEmail = ''
       try {
         const sessionResult = await supabase.auth.getSession()
         if (!active) return
         const user = sessionResult?.data?.session?.user || null
-        const signedInEmail = normalizeText(user?.email).toLowerCase()
+        signedInEmail = normalizeText(user?.email).toLowerCase()
         setSessionUserId(normalizeText(user?.id))
         setSessionEmail(signedInEmail)
-        if (!signedInEmail) {
-          setInviteContext({ token: safeToken })
-          setLoading(false)
-          return
-        }
         const context = await getInviteByToken(safeToken)
         if (!active) return
         setInviteContext(context.invite || null)
         setReason(context.ok ? '' : context.reason || 'not_found')
+        if (context.invite?.email) {
+          rememberPendingInvite({ token: safeToken, email: context.invite.email })
+        }
       } catch (loadError) {
         if (!active) return
-        setError(loadError?.message || 'Unable to load this invite.')
+        if (!signedInEmail) {
+          setInviteContext({ token: safeToken })
+        } else {
+          setError(loadError?.message || 'Unable to load this invite.')
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -202,14 +224,18 @@ export default function InviteResolver() {
     }
   }, [acceptedInviteBelongsToSession])
 
+  useEffect(() => {
+    if (CLEAR_PENDING_INVITE_REASONS.has(reason) && !pendingInviteWrongAccount) {
+      clearPendingInviteToken()
+    }
+  }, [pendingInviteWrongAccount, reason])
+
   async function handleAccept() {
     const safeToken = normalizeText(token)
     if (!safeToken) return
     if (!sessionEmail) {
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem(PENDING_INVITE_TOKEN_STORAGE_KEY, safeToken)
-      }
-      navigate(`/auth?next=${encodeURIComponent(`/invite/${safeToken}`)}`)
+      rememberPendingInvite({ token: safeToken, email: invitedEmail })
+      navigate(getAuthInvitePath({ token: safeToken, email: invitedEmail }))
       return
     }
 
@@ -233,11 +259,9 @@ export default function InviteResolver() {
 
   async function handleSwitchAccount() {
     const safeToken = normalizeText(token)
-    if (typeof window !== 'undefined' && safeToken) {
-      window.sessionStorage.setItem(PENDING_INVITE_TOKEN_STORAGE_KEY, safeToken)
-    }
+    rememberPendingInvite({ token: safeToken, email: invitedEmail })
     await supabase?.auth?.signOut?.()
-    navigate(`/auth?next=${encodeURIComponent(`/invite/${safeToken}`)}`, { replace: true })
+    navigate(getAuthInvitePath({ token: safeToken, email: invitedEmail }), { replace: true })
   }
 
   if (loading) {
@@ -344,8 +368,13 @@ export default function InviteResolver() {
           </p>
         )}
         <Button type="button" onClick={() => void handleAccept()} disabled={saving}>
-          {saving ? 'Accepting…' : sessionEmail ? 'Accept Invite' : 'Sign in or Create Account'}
+          {saving ? 'Accepting…' : sessionEmail ? 'Accept Invite' : 'Sign in'}
         </Button>
+        {!sessionEmail ? (
+          <Link to={getAuthInvitePath({ token, email: invitedEmail, mode: 'signup' })} className="inline-flex rounded-control border border-borderDefault px-4 py-2 text-secondary font-semibold text-textStrong">
+            Create account
+          </Link>
+        ) : null}
       </div>
 
       {error ? <p className="rounded-control border border-danger/30 bg-dangerSoft px-3 py-2 text-secondary text-danger">{error}</p> : null}

@@ -8,6 +8,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  Copy,
   DollarSign,
   Edit3,
   FileText,
@@ -44,7 +45,6 @@ import { listAppointmentsAsync } from '../lib/agencyPipelineService'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import {
-  assignOrganisationUserCommissionProfile,
   deactivateOrganisationUser,
   fetchOrganisationSettings,
   listOrganisationCommissionStructures,
@@ -81,6 +81,12 @@ import {
   recordAgentTransferMembershipTransition,
   validateTransferRetentionStrategy,
 } from '../services/agentTransferService'
+import {
+  createWorkspaceUserInvite,
+  listWorkspaceUserInvites,
+  resendWorkspaceUserInvite,
+  revokeWorkspaceUserInvite,
+} from '../services/workspaceUserInviteService'
 
 const PRIVATE_LISTINGS_STORAGE_KEY = 'itg:agent-private-listings:v1'
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -601,6 +607,51 @@ function normalizeOrganisationUserAgent(user = {}, context = {}) {
     lastActiveAt: user.lastActiveAt || null,
     inviteId: '',
     inviteToken: '',
+    deals: [],
+    developmentListings: [],
+    privateListings: [],
+    pipelineRows: [],
+    appointments: [],
+    metrics: buildEmptyAgentMetrics(),
+    recentDeals: [],
+  }
+}
+
+function normalizeInviteAgentRow(invite = {}, context = {}) {
+  const email = normalizeIdentityEmail(invite.email)
+  const id = normalizeAgentRecordId(invite.id || invite.inviteId || email)
+  if (!id && !email) return null
+  const firstName = String(invite.firstName || invite.first_name || '').trim()
+  const lastName = String(invite.lastName || invite.surname || invite.last_name || '').trim()
+  const name = String(invite.name || [firstName, lastName].filter(Boolean).join(' ') || email || 'Invited agent').trim()
+  const status = normalizeAgentDirectoryStatus(invite.status || AGENT_INVITE_STATUS.PENDING_INVITE)
+  const organisationId = normalizeAgentRecordId(invite.organisationId || invite.targetWorkspaceId || context.organisationId || '')
+  const organisationName = String(invite.organisationName || context.organisationName || 'Bridge Organisation').trim()
+  const branchName = String(invite.branchName || invite.office || '').trim()
+  return {
+    id: id || email,
+    organisationUserId: '',
+    userId: '',
+    name,
+    email,
+    phone: invite.phone || invite.mobile || '',
+    avatarUrl: getAgentAvatarUrl(invite),
+    profilePhotoUrl: getAgentAvatarUrl(invite),
+    office: branchName || organisationName,
+    branchId: invite.branchId || null,
+    branchName,
+    organisationId,
+    organisationName,
+    role: String(invite.role || 'agent').trim().toLowerCase() || 'agent',
+    status,
+    invitedAt: invite.invitedAt || invite.createdAt || null,
+    activatedAt: invite.activatedAt || null,
+    lastActiveAt: null,
+    inviteId: invite.inviteId || invite.id || '',
+    inviteToken: invite.inviteToken || invite.token || '',
+    inviteLink: invite.inviteLink || buildAgentInviteLink(invite.inviteToken || invite.token),
+    isPendingInvite: status === AGENT_INVITE_STATUS.PENDING_INVITE,
+    isCanonicalInvite: Boolean(invite.isCanonicalInvite),
     deals: [],
     developmentListings: [],
     privateListings: [],
@@ -2325,7 +2376,19 @@ function AgentPerformanceCard({ agent, canManage = false, onView, onEditRole, on
   )
 }
 
-function AgentPerformanceTable({ rows = [], canManage = false, sortBy = 'pipeline', onSort, onView, onEditRole, onDeactivate, onTransfer }) {
+function AgentPerformanceTable({
+  rows = [],
+  canManage = false,
+  sortBy = 'pipeline',
+  onSort,
+  onView,
+  onEditRole,
+  onDeactivate,
+  onTransfer,
+  onResendInvite,
+  onCopyInviteLink,
+  onRevokeInvite,
+}) {
   const headers = [
     { key: 'name', label: 'Agent' },
     { key: 'branch', label: 'Branch' },
@@ -2370,6 +2433,7 @@ function AgentPerformanceTable({ rows = [], canManage = false, sortBy = 'pipelin
             {rows.map((row) => {
               const performance = row.performance || {}
               const statusClassName = row.statusClassName || getAgentStatusMeta(row.agent || {}).className
+              const pendingInvite = row.statusKey === AGENT_INVITE_STATUS.PENDING_INVITE || row.agent?.isPendingInvite
               return (
                 <tr key={`${row.id}-${row.branchId || 'branch'}-performance-row`} className="cursor-pointer hover:bg-[#f8fbff]" onClick={() => onView(row.agent)}>
                   <td className="px-4 py-3">
@@ -2396,10 +2460,20 @@ function AgentPerformanceTable({ rows = [], canManage = false, sortBy = 'pipelin
                     <div className="flex justify-end gap-1.5">
                       <a className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" href={row.phone ? `tel:${row.phone}` : undefined} onClick={(event) => event.stopPropagation()} aria-label="Call agent"><Phone size={15} /></a>
                       <a className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" href={row.email ? `mailto:${row.email}` : undefined} onClick={(event) => event.stopPropagation()} aria-label="Email agent"><Mail size={15} /></a>
-                      <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" onClick={(event) => { event.stopPropagation(); onView(row.agent) }} aria-label="Schedule"><CalendarDays size={15} /></button>
-                      {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onEditRole(row.agent) }}>Role</Button> : null}
-                      {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onTransfer(row.agent) }}>Transfer</Button> : null}
-                      {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onDeactivate(row.agent) }}><MoreHorizontal size={15} /></Button> : null}
+                      {pendingInvite ? (
+                        <>
+                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onResendInvite?.(row.agent) }}><Send size={14} />Resend</Button> : null}
+                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onCopyInviteLink?.(row.agent) }}><Copy size={14} />Copy</Button> : null}
+                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onRevokeInvite?.(row.agent) }}><XCircle size={14} />Revoke</Button> : null}
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" onClick={(event) => { event.stopPropagation(); onView(row.agent) }} aria-label="Schedule"><CalendarDays size={15} /></button>
+                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onEditRole(row.agent) }}>Role</Button> : null}
+                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onTransfer(row.agent) }}>Transfer</Button> : null}
+                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onDeactivate(row.agent) }}><MoreHorizontal size={15} /></Button> : null}
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -3395,10 +3469,10 @@ export function AgentsPage() {
       setError('')
 
       const directory = readAgentDirectory()
-      const invites = readAgentInvites()
+      const legacyInvites = readAgentInvites()
       const localPrivateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const localPipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
-      const [performanceSources, commissionStructureRows] = await Promise.all([
+      const [performanceSources, commissionStructureRows, canonicalInvites] = await Promise.all([
         loadAgentPerformanceSources({
           canManageDirectory,
           profile,
@@ -3408,7 +3482,12 @@ export function AgentsPage() {
           localPipelineRows,
         }),
         canManageDirectory ? listOrganisationCommissionStructures().catch(() => []) : Promise.resolve([]),
+        canManageDirectory ? listWorkspaceUserInvites({ includeInactive: false }).catch((inviteError) => {
+          console.warn('[Agents] canonical invites unavailable', inviteError)
+          return []
+        }) : Promise.resolve([]),
       ])
+      const invites = [...legacyInvites, ...(Array.isArray(canonicalInvites) ? canonicalInvites : [])]
       const transactionRowsSource = performanceSources.transactions
       const privateListings = performanceSources.listings
       const pipelineRows = performanceSources.leads
@@ -3467,7 +3546,25 @@ export function AgentsPage() {
           organisationName: performanceSources.organisationSettings?.organisation?.name || directory?.agency?.name,
         }))
         .filter(Boolean)
-      const mergedAgents = mergeAgentRows(mappedAgents, organisationAgentRows)
+      let mergedAgents = mergeAgentRows(mappedAgents, organisationAgentRows)
+      const existingActiveEmails = new Set(
+        mergedAgents
+          .filter((agent) => String(agent?.status || '').trim().toLowerCase() === AGENT_INVITE_STATUS.ACTIVE)
+          .map((agent) => normalizeIdentityEmail(agent.email))
+          .filter(Boolean),
+      )
+      const pendingInviteAgentRows = invites
+        .filter((invite) => normalizeAgentDirectoryStatus(invite?.status) === AGENT_INVITE_STATUS.PENDING_INVITE)
+        .filter((invite) => {
+          const email = normalizeIdentityEmail(invite?.email)
+          return email && !existingActiveEmails.has(email)
+        })
+        .map((invite) => normalizeInviteAgentRow(invite, {
+          organisationId: performanceSources.organisationSettings?.organisation?.id || directory?.agency?.id,
+          organisationName: performanceSources.organisationSettings?.organisation?.name || directory?.agency?.name,
+        }))
+        .filter(Boolean)
+      mergedAgents = mergeAgentRows(mergedAgents, pendingInviteAgentRows)
       const profileEmail = String(profile?.email || '').trim().toLowerCase()
       const profileId = String(profile?.id || profileEmail || '').trim().toLowerCase()
       const principalAlreadyListed = mergedAgents.some((agent) => {
@@ -3697,6 +3794,7 @@ export function AgentsPage() {
     () => [
       { value: 'all', label: 'All Statuses' },
       { value: 'active', label: 'Active' },
+      { value: 'pending_invite', label: 'Pending Invite' },
       { value: 'needs_attention', label: 'Needs Attention' },
       { value: 'inactive', label: 'Inactive' },
       { value: 'on_leave', label: 'On Leave' },
@@ -3909,39 +4007,32 @@ export function AgentsPage() {
 
       const selectedOrganisation = organisationOptions.find((option) => option.id === String(inviteForm.organisationId || '').trim().toLowerCase())
       const selectedBranch = inviteBranchOptions.find((branch) => branch.id === String(inviteForm.branchId || '').trim())
-      const selectedCommissionStructure = activeCommissionStructureOptions.find((structure) => structure.id === String(inviteForm.commissionStructureId || '').trim())
-      const created = createAgentInvite({
+      const selectedCommissionStructure =
+        activeCommissionStructureOptions.find((structure) => structure.id === String(inviteForm.commissionStructureId || '').trim()) ||
+        defaultCommissionStructure
+      const created = await createWorkspaceUserInvite({
         firstName: inviteForm.firstName,
-        surname: inviteForm.surname,
+        lastName: inviteForm.surname,
         email: inviteForm.email,
         mobile: inviteForm.mobile,
-        organisationId: selectedOrganisation?.id || inviteForm.organisationId,
+        workspaceId: selectedOrganisation?.id || inviteForm.organisationId,
         organisationName: selectedOrganisation?.name || inviteForm.organisationName,
         branchId: selectedBranch?.id || '',
-        office: selectedBranch?.name || inviteForm.office,
-        commissionStructureId: selectedCommissionStructure?.id || '',
-        commissionStructureName: selectedCommissionStructure?.name || '',
+        branchName: selectedBranch?.name || inviteForm.office,
+        commissionStructureId: selectedCommissionStructure?.id,
+        commissionStructureName: selectedCommissionStructure?.name,
         role: inviteForm.role,
         notes: inviteForm.notes,
-        invitedByUserId: profile?.id || '',
-        invitedByEmail: profile?.email || '',
         invitedByName: profile?.fullName || profile?.name || profile?.email || '',
+        source: 'agents_page_add_agent',
       })
 
-      if (selectedCommissionStructure?.id) {
-        await assignOrganisationUserCommissionProfile({
-          email: inviteForm.email,
-          commissionStructureId: selectedCommissionStructure.id,
-        })
-      }
-
-      await sendInviteNotifications(created.invite)
-      markAgentInviteSent(created.invite.id)
-
-      setActionMessage('Agent invite sent. The agent has been sent an onboarding link to verify and activate their Bridge profile.')
+      setActionMessage(created.reusedExistingInvite
+        ? 'This agent already had a pending invite, so Bridge resent the existing onboarding link.'
+        : 'Agent invite sent. The agent has been sent an onboarding link to verify and activate their Bridge profile.')
       setInviteSentContext({
         email: created.invite?.email || inviteForm.email.trim(),
-        link: buildAgentInviteLink(created.invite?.token),
+        link: created.inviteLink || buildAgentInviteLink(created.invite?.token),
       })
       setInviteModalOpen(false)
       resetInviteForm()
@@ -3980,6 +4071,50 @@ export function AgentsPage() {
       setActionError(roleError?.message || 'Unable to update role.')
     } finally {
       setRoleEditSubmitting(false)
+    }
+  }
+
+  async function handleCopyAgentInviteLink(agent) {
+    const link = agent?.inviteLink || buildAgentInviteLink(agent?.inviteToken)
+    if (!link) {
+      setActionError('Invite link is not available for this row.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(link)
+      setActionError('')
+      setActionMessage('Invite link copied.')
+      setInviteSentContext({
+        email: agent?.email || '',
+        link,
+      })
+    } catch {
+      setActionError('Unable to copy the invite link from this browser.')
+    }
+  }
+
+  async function handleResendAgentInvite(agent) {
+    if (!agent?.inviteId && !agent?.inviteToken) {
+      setActionError('Invite details are missing for this row.')
+      return
+    }
+    try {
+      setActionError('')
+      setActionMessage('')
+      const result = agent.isCanonicalInvite
+        ? await resendWorkspaceUserInvite(agent)
+        : { inviteLink: await sendInviteNotifications(agent) }
+      if (!agent.isCanonicalInvite && agent.inviteId) {
+        markAgentInviteSent(agent.inviteId)
+      }
+      setActionMessage(`Invite resent to ${agent.email}.`)
+      setInviteSentContext({
+        email: agent.email || '',
+        link: result.inviteLink || agent.inviteLink || buildAgentInviteLink(agent.inviteToken),
+      })
+      await loadData()
+    } catch (resendError) {
+      setActionError(resendError?.message || 'Unable to resend invite.')
     }
   }
 
@@ -4215,7 +4350,11 @@ export function AgentsPage() {
         })
         setActionMessage('Agent removed from organisation.')
       } else if (type === 'revoke') {
-        revokeAgentInvite(agent.inviteId)
+        if (agent.isCanonicalInvite) {
+          await revokeWorkspaceUserInvite(agent)
+        } else {
+          revokeAgentInvite(agent.inviteId)
+        }
         setActionMessage('Invite revoked.')
       }
 
@@ -4403,6 +4542,9 @@ export function AgentsPage() {
               onEditRole={openRoleEditor}
               onDeactivate={(agent) => openConfirm('deactivate', agent)}
               onTransfer={(agent) => openTransferWizard(agent)}
+              onResendInvite={handleResendAgentInvite}
+              onCopyInviteLink={handleCopyAgentInviteLink}
+              onRevokeInvite={(agent) => openConfirm('revoke', agent)}
             />
           ) : (
             <section className="rounded-2xl border border-dashed border-[#c9d8e8] bg-white px-5 py-12 text-center shadow-sm">

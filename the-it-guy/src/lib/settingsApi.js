@@ -21,7 +21,9 @@ import {
 import {
   buildDefaultAgencyOnboarding,
   createAgencyInviteDraft,
+  isCommercialAgencyType,
   mergeAgencyOnboardingDraft,
+  normalizeAgencyType,
   normalizeBranchAgentCount,
   normalizeBranchManagerName,
 } from './agencyOnboarding'
@@ -1430,6 +1432,8 @@ function buildAgencyOnboardingStorageRecord({
 function buildAtomicAgencyOnboardingPayload({ mergedDraft = {}, context = {}, user = null, intent = null } = {}) {
   const info = mergedDraft.agencyInformation || {}
   const principal = mergedDraft.principalInformation || {}
+  const agencyType = normalizeAgencyType(info.agencyType)
+  const hasCommercialModule = isCommercialAgencyType(agencyType)
   const principalName = normalizeText(principal.principalFullName || context.profile?.fullName)
   const principalParts = principalName.split(/\s+/).filter(Boolean)
   const principalFirstName = principalParts[0] || context.profile?.firstName || ''
@@ -1439,6 +1443,20 @@ function buildAtomicAgencyOnboardingPayload({ mergedDraft = {}, context = {}, us
     ...DEFAULT_ORGANISATION_SETTINGS,
     ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
     agencyOnboarding: mergedDraft,
+    agencyType,
+    enabledModules: {
+      ...(safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS).enabledModules || {}),
+      residential: agencyType !== 'commercial',
+      commercial: hasCommercialModule,
+    },
+    commercialWorkspace: {
+      ...(safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS).commercialWorkspace || {}),
+      status: hasCommercialModule ? 'active' : 'disabled',
+      source: hasCommercialModule ? 'signup' : 'not_selected',
+      mode: agencyType === 'commercial' ? 'commercial_only' : agencyType === 'mixed' ? 'mixed_residential_commercial' : 'residential_only',
+      signupOnboardingPath: normalizeText(intent?.onboarding_path),
+      enabledAt: hasCommercialModule ? new Date().toISOString() : null,
+    },
     organisationBranches: mergedDraft.branchStructure?.branches || [],
     organisationPermissions: mergedDraft.permissions || {},
   }
@@ -1498,6 +1516,135 @@ function buildAtomicAgencyOnboardingPayload({ mergedDraft = {}, context = {}, us
     settings,
     invites,
   }
+}
+
+function buildCommercialSignupMembershipMetadata({ agencyType = '', intent = null, mergedDraft = {}, userId = '' } = {}) {
+  const normalizedAgencyType = normalizeAgencyType(agencyType)
+  return {
+    module: 'commercial',
+    module_context: 'commercial',
+    source: 'signup',
+    signup_onboarding_path: normalizeText(intent?.onboarding_path),
+    agency_type: normalizedAgencyType,
+    commercial_mode: normalizedAgencyType === 'commercial' ? 'commercial_only' : 'mixed_residential_commercial',
+    activated_at: new Date().toISOString(),
+    activated_by: normalizeText(userId),
+    business_name: normalizeText(mergedDraft?.agencyInformation?.agencyName),
+  }
+}
+
+function buildCommercialOrganisationModuleMetadata({ agencyType = '', intent = null, mergedDraft = {}, userId = '' } = {}) {
+  const normalizedAgencyType = normalizeAgencyType(agencyType)
+  return {
+    module: 'commercial',
+    source: 'signup',
+    signup_onboarding_path: normalizeText(intent?.onboarding_path),
+    agency_type: normalizedAgencyType,
+    commercial_mode: normalizedAgencyType === 'commercial' ? 'commercial_only' : 'mixed_residential_commercial',
+    enabled_at: new Date().toISOString(),
+    enabled_by: normalizeText(userId),
+    business_name: normalizeText(mergedDraft?.agencyInformation?.agencyName),
+  }
+}
+
+async function assertCommercialSignupSchemaInstalled(client) {
+  const probes = [
+    { table: 'organisation_modules', fields: 'id, organisation_id, module_key, status, source, metadata', label: 'commercial organisation module entitlement' },
+    { table: 'organisation_users', fields: 'id, module_context, module_metadata', label: 'organisation commercial activation columns' },
+    { table: 'commercial_teams', fields: 'id', label: 'commercial teams' },
+    { table: 'commercial_landlords', fields: 'id', label: 'commercial landlords' },
+  ]
+
+  for (const probe of probes) {
+    const result = await client.from(probe.table).select(probe.fields).limit(1)
+    if (!result.error) continue
+    if (
+      isMissingTableError(result.error, probe.table) ||
+      isMissingColumnError(result.error, 'module_context') ||
+      isMissingColumnError(result.error, 'module_metadata') ||
+      isMissingColumnError(result.error, 'module_key') ||
+      isMissingColumnError(result.error, 'status') ||
+      isMissingColumnError(result.error, 'source')
+    ) {
+      throw new Error(`Commercial is not installed on this environment. Missing ${probe.label}. Contact platform support.`)
+    }
+    throw result.error
+  }
+}
+
+async function activateCommercialOrganisationModuleForAgencySignup(client, { workspaceId = '', userId = '', agencyType = '', intent = null, mergedDraft = {} } = {}) {
+  const normalizedAgencyType = normalizeAgencyType(agencyType)
+  if (!isCommercialAgencyType(normalizedAgencyType)) return { activated: false, skipped: 'not_commercial_signup' }
+  if (!workspaceId || !userId) return { activated: false, skipped: 'missing_workspace_or_user' }
+
+  const nowIso = new Date().toISOString()
+  const metadata = buildCommercialOrganisationModuleMetadata({ agencyType: normalizedAgencyType, intent, mergedDraft, userId })
+  const upsert = await client
+    .from('organisation_modules')
+    .upsert(
+      {
+        organisation_id: workspaceId,
+        module_key: 'commercial',
+        status: 'active',
+        source: 'signup',
+        enabled_by: userId,
+        enabled_at: nowIso,
+        disabled_by: null,
+        disabled_at: null,
+        metadata,
+      },
+      { onConflict: 'organisation_id,module_key' },
+    )
+    .select('id, organisation_id, module_key, status, source, enabled_by, enabled_at, metadata')
+    .maybeSingle()
+
+  if (upsert.error) {
+    if (
+      isMissingTableError(upsert.error, 'organisation_modules') ||
+      isMissingColumnError(upsert.error, 'module_key') ||
+      isMissingColumnError(upsert.error, 'status')
+    ) {
+      throw new Error('Commercial entitlement setup is not installed on this environment. Contact platform support.')
+    }
+    throw upsert.error
+  }
+
+  return { activated: upsert.data?.status === 'active', module: upsert.data || null }
+}
+
+async function activateCommercialMembershipForAgencySignup(client, { workspaceId = '', userId = '', agencyType = '', intent = null, mergedDraft = {} } = {}) {
+  const normalizedAgencyType = normalizeAgencyType(agencyType)
+  if (!isCommercialAgencyType(normalizedAgencyType)) return { activated: false, skipped: 'not_commercial_signup' }
+  if (!workspaceId || !userId) return { activated: false, skipped: 'missing_workspace_or_user' }
+
+  const metadata = buildCommercialSignupMembershipMetadata({ agencyType: normalizedAgencyType, intent, mergedDraft, userId })
+  let update = await client
+    .from('organisation_users')
+    .update({
+      module_context: 'commercial',
+      module_metadata: metadata,
+    })
+    .eq('organisation_id', workspaceId)
+    .eq('user_id', userId)
+    .select('id, organisation_id, user_id, module_context, module_metadata')
+    .maybeSingle()
+
+  if (update.error && isMissingColumnError(update.error, 'module_metadata')) {
+    update = await client
+      .from('organisation_users')
+      .update({ module_context: 'commercial' })
+      .eq('organisation_id', workspaceId)
+      .eq('user_id', userId)
+      .select('id, organisation_id, user_id, module_context')
+      .maybeSingle()
+  }
+
+  if (update.error && isMissingColumnError(update.error, 'module_context')) {
+    throw new Error('Commercial is not installed on this environment. Contact platform support.')
+  }
+
+  if (update.error) throw update.error
+  return { activated: Boolean(update.data?.id), membership: update.data || null }
 }
 
 function createAtomicOnboardingError(rpcResult = {}, fallbackMessage = 'Agency setup failed.') {
@@ -2591,6 +2738,10 @@ export async function completeAgencyOnboarding(input = {}) {
 
   const user = await getAuthenticatedUser()
   const intent = await loadSignupIntentForUser({ user })
+  const agencyType = normalizeAgencyType(mergedDraft?.agencyInformation?.agencyType)
+  if (isCommercialAgencyType(agencyType)) {
+    await assertCommercialSignupSchemaInstalled(client)
+  }
   const principalEmail = normalizeEmail(user.email || context.profile?.email || mergedDraft?.principalInformation?.emailAddress)
   if (!principalEmail) {
     throw new Error('Organisation onboarding cannot complete without a valid principal email address.')
@@ -2635,9 +2786,25 @@ export async function completeAgencyOnboarding(input = {}) {
     workspaceId: workspaceResolution.currentWorkspace?.id || completion.workspace_id || null,
   })
 
+  const workspaceId = workspaceResolution.currentWorkspace?.id || completion.workspace_id || completion.organisation_id
+  const commercialModuleActivation = await activateCommercialOrganisationModuleForAgencySignup(client, {
+    workspaceId,
+    userId: user.id,
+    agencyType,
+    intent,
+    mergedDraft,
+  })
+  const commercialActivation = await activateCommercialMembershipForAgencySignup(client, {
+    workspaceId,
+    userId: user.id,
+    agencyType,
+    intent,
+    mergedDraft,
+  })
+
   const inviteEmailDelivery = await dispatchAgencyInviteEmails({
     client,
-    workspaceId: workspaceResolution.currentWorkspace?.id || completion.workspace_id || completion.organisation_id,
+    workspaceId,
     mergedDraft,
     organisationName: workspaceResolution.currentWorkspace?.name || completion.organisation?.display_name || completion.organisation?.name || mergedDraft?.agencyInformation?.agencyName,
     inviterName: mergedDraft?.principalInformation?.principalFullName || context.profile?.fullName || user.email,
@@ -2660,6 +2827,8 @@ export async function completeAgencyOnboarding(input = {}) {
     membershipRole: workspaceResolution.currentMembership?.workspaceRole || workspaceResolution.currentMembership?.role || 'principal',
     workspaceResolution,
     completion,
+    commercialModuleActivation,
+    commercialActivation,
     inviteEmailDelivery,
     persisted: true,
   }

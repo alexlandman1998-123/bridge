@@ -95,6 +95,17 @@ function resolveInviteTokenFromLocation(location) {
   return String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
 }
 
+function normalizeAuthEmail(value = '') {
+  return String(value || '').trim().toLowerCase()
+}
+
+function resolveInviteEmailFromLocation(location) {
+  const queryEmail = new URLSearchParams(location.search).get('email')
+  if (queryEmail) return normalizeAuthEmail(queryEmail)
+  if (typeof window === 'undefined') return ''
+  return normalizeAuthEmail(window.sessionStorage.getItem('itg:pending-org-invite-email'))
+}
+
 const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
 const RESEND_COOLDOWN_SECONDS = 90
 const RESEND_COOLDOWN_STORAGE_KEY = 'itg:auth:resend-cooldown-until'
@@ -105,6 +116,8 @@ const SIGNUP_STEPS = [
 ]
 const ROLE_ICONS = {
   [SIGNUP_BUSINESS_TYPES.agency]: Building2,
+  [SIGNUP_BUSINESS_TYPES.commercialBrokerage]: Landmark,
+  [SIGNUP_BUSINESS_TYPES.mixedAgency]: Building2,
   [SIGNUP_BUSINESS_TYPES.developer]: Hammer,
   [SIGNUP_BUSINESS_TYPES.attorney]: Scale,
   [SIGNUP_BUSINESS_TYPES.bondOriginator]: WalletCards,
@@ -113,8 +126,16 @@ const ROLE_ICONS = {
 const POSITION_ICON = Landmark
 const ROLE_DISPLAY_COPY = {
   [SIGNUP_BUSINESS_TYPES.agency]: {
-    label: 'Estate Agency',
-    description: 'Sell properties and manage transactions',
+    label: 'Residential Estate Agency',
+    description: 'Residential sales, rentals and transactions',
+  },
+  [SIGNUP_BUSINESS_TYPES.commercialBrokerage]: {
+    label: 'Commercial Real Estate Brokerage',
+    description: 'Commercial listings, tenants and deals',
+  },
+  [SIGNUP_BUSINESS_TYPES.mixedAgency]: {
+    label: 'Mixed Residential + Commercial Agency',
+    description: 'One agency across both property lines',
   },
   [SIGNUP_BUSINESS_TYPES.attorney]: {
     label: 'Attorney Firm',
@@ -135,6 +156,8 @@ const ROLE_DISPLAY_COPY = {
 }
 const ROLE_DISPLAY_ORDER = [
   SIGNUP_BUSINESS_TYPES.agency,
+  SIGNUP_BUSINESS_TYPES.commercialBrokerage,
+  SIGNUP_BUSINESS_TYPES.mixedAgency,
   SIGNUP_BUSINESS_TYPES.attorney,
   SIGNUP_BUSINESS_TYPES.developer,
   SIGNUP_BUSINESS_TYPES.bondOriginator,
@@ -161,7 +184,9 @@ function getOrderedBusinessTypeOptions() {
 
 function getBusinessSetupCopy(businessTypeLabel = 'workspace') {
   const normalized = businessTypeLabel || 'workspace'
-  if (normalized === 'Estate Agency') return 'Tell us about your agency'
+  if (normalized === 'Residential Estate Agency') return 'Tell us about your residential agency'
+  if (normalized === 'Commercial Real Estate Brokerage') return 'Tell us about your commercial brokerage'
+  if (normalized === 'Mixed Residential + Commercial Agency') return 'Tell us about your mixed agency'
   if (normalized === 'Attorney Firm') return 'Tell us about your firm'
   if (normalized === 'Developer') return 'Tell us about your development company'
   if (normalized === 'Bond Originator') return 'Tell us about your bond business'
@@ -211,7 +236,7 @@ function resolveInitialCooldownUntil() {
 function Auth({ onDevBypass = null }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const [mode, setMode] = useState('login')
+  const [mode, setMode] = useState(() => (new URLSearchParams(location.search).get('mode') === 'signup' ? 'signup' : 'login'))
   const [signupStep, setSignupStep] = useState(0)
   const [businessType, setBusinessType] = useState('')
   const [position, setPosition] = useState('')
@@ -230,11 +255,13 @@ function Auth({ onDevBypass = null }) {
 
   const redirectTo = useMemo(() => getRedirectPath(location), [location])
   const inviteToken = useMemo(() => resolveInviteTokenFromLocation(location), [location])
+  const invitedEmail = useMemo(() => resolveInviteEmailFromLocation(location), [location])
   const inviteDrivenSignup = Boolean(inviteToken)
   const currentIntent = useMemo(() => {
-    if (!position) return null
+    const resolvedPosition = position || (inviteDrivenSignup ? 'agency_operational' : '')
+    if (!resolvedPosition) return null
     return buildSignupIntent({
-      position,
+      position: resolvedPosition,
       inviteToken,
       source: inviteDrivenSignup ? SIGNUP_INTENT_SOURCE.inviteLink : SIGNUP_INTENT_SOURCE.publicSignup,
     })
@@ -260,6 +287,13 @@ function Auth({ onDevBypass = null }) {
     }, 1000)
     return () => window.clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (!inviteDrivenSignup || mode !== 'signup') return
+    if (!businessType) setBusinessType(SIGNUP_BUSINESS_TYPES.agency)
+    if (!position) setPosition('agency_operational')
+    if (signupStep < 2) setSignupStep(2)
+  }, [businessType, inviteDrivenSignup, mode, position, signupStep])
 
   useEffect(() => {
     if (!resendCooldownActive && resendCooldownUntil > 0 && typeof window !== 'undefined') {
@@ -298,6 +332,15 @@ function Auth({ onDevBypass = null }) {
   }, [inviteDrivenSignup])
 
   useEffect(() => {
+    if (!inviteDrivenSignup || !invitedEmail) return
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('itg:pending-org-invite-email', invitedEmail)
+    }
+    setEmail(invitedEmail)
+    setPendingVerificationEmail(invitedEmail)
+  }, [inviteDrivenSignup, invitedEmail])
+
+  useEffect(() => {
     if (mode !== 'signup' || typeof window === 'undefined') return undefined
     const frame = window.requestAnimationFrame(() => {
       window.scrollTo({ top: 0, left: 0 })
@@ -315,6 +358,11 @@ function Auth({ onDevBypass = null }) {
 
     if (!email.trim()) {
       setError('Email is required.')
+      return
+    }
+
+    if (inviteDrivenSignup && invitedEmail && normalizeAuthEmail(email) !== invitedEmail) {
+      setError(`This invite is for ${invitedEmail}. Sign in or create an account with that email address to continue.`)
       return
     }
 
@@ -482,7 +530,9 @@ function Auth({ onDevBypass = null }) {
     try {
       setResendLoading(true)
       setError('')
-      const emailRedirectTo = resolveEmailVerificationRedirectTo()
+      const emailRedirectTo = resolveEmailVerificationRedirectTo(
+        resolvePendingInvitePath() || (currentIntent ? resolveSignupIntentRoute(currentIntent) : '/setup'),
+      )
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
         email: targetEmail,
@@ -812,8 +862,13 @@ function Auth({ onDevBypass = null }) {
                       onChange={(event) => setEmail(event.target.value)}
                       placeholder="you@company.com"
                       autoComplete="email"
+                      readOnly={inviteDrivenSignup && Boolean(invitedEmail)}
+                      aria-readonly={inviteDrivenSignup && Boolean(invitedEmail)}
                       required
                     />
+                    {inviteDrivenSignup && invitedEmail ? (
+                      <span className="mt-1 block text-xs font-medium text-[#60758d]">This invite is locked to {invitedEmail}.</span>
+                    ) : null}
                   </label>
 
                   <label>

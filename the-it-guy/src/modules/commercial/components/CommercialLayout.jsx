@@ -1,11 +1,10 @@
-import { Bell, Building2, CheckCircle2, Home, Loader2, Search } from 'lucide-react'
+import { AlertTriangle, Bell, Building2, CheckCircle2, Home, Loader2, Search } from 'lucide-react'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../../../components/QuickCreateDropdown'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
-import { useWorkspace } from '../../../context/WorkspaceContext'
 import { COMMERCIAL_BOTTOM_NAV_ITEMS, COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_GROUPS, isCommercialNavItemActive } from '../commercialNavigation'
-import { activateCommercialWorkspaceForCurrentUser, resolveCommercialAccessContext } from '../services/commercialApi'
+import { activateCommercialWorkspaceForCurrentUser, isCommercialPlatformInstallError, remindCommercialAccessReviewersForCurrentUser, requestCommercialAccessForCurrentUser, resolveCommercialAccessContext } from '../services/commercialApi'
 import CommercialBranding from './CommercialBranding'
 import CommercialSidebar from './CommercialSidebar'
 
@@ -26,11 +25,11 @@ function CommercialPageSkeleton() {
 function CommercialLayout() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { role } = useWorkspace()
   const contentScrollRef = useRef(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [accessState, setAccessState] = useState({ loading: true, allowed: false, message: '' })
+  const [accessState, setAccessState] = useState({ loading: true, allowed: false, reason: '', message: '' })
   const [activationState, setActivationState] = useState({ loading: false, error: '', success: false })
+  const [requestState, setRequestState] = useState({ loading: false, reminding: false, error: '', success: false, reminderSuccess: false, reusedExistingRequest: false, reviewerCount: 0, emailCount: 0, notificationSkippedReason: '' })
   const currentPath = `${location.pathname}${location.search || ''}`
   const mobileNavItems = useMemo(
     () => [COMMERCIAL_DASHBOARD_NAV_ITEM, ...COMMERCIAL_NAV_GROUPS.flatMap((group) => group.items), ...COMMERCIAL_BOTTOM_NAV_ITEMS],
@@ -40,24 +39,27 @@ function CommercialLayout() {
   useEffect(() => {
     let cancelled = false
     async function loadCommercialAccess() {
-      if (role === 'platform_admin') {
-        if (!cancelled) setAccessState({ loading: false, allowed: true, message: '' })
-        return
-      }
       try {
         const scope = await resolveCommercialAccessContext()
         if (!cancelled) {
           setAccessState({
             loading: false,
             allowed: Boolean(scope?.hasCommercialAccess),
-            message: scope?.hasCommercialAccess ? '' : 'You need Commercial workspace access before opening the Commercial brokerage module.',
+            reason: scope?.hasCommercialAccess ? '' : scope?.organisationCommercialEnabled === false ? 'organisation_module_disabled' : 'access_required',
+            message: scope?.hasCommercialAccess
+              ? ''
+              : scope?.organisationCommercialEnabled === false
+                ? 'Commercial is not enabled for this workspace yet. Ask your principal to enable Commercial for the organisation first.'
+                : 'You need Commercial workspace access before opening the Commercial brokerage module.',
           })
         }
       } catch (error) {
         if (!cancelled) {
+          const platformInstallMissing = isCommercialPlatformInstallError(error)
           setAccessState({
             loading: false,
             allowed: false,
+            reason: platformInstallMissing ? 'platform_install_missing' : 'access_error',
             message: error?.message || 'Commercial workspace access could not be verified.',
           })
         }
@@ -67,7 +69,7 @@ function CommercialLayout() {
     return () => {
       cancelled = true
     }
-  }, [role])
+  }, [])
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -89,7 +91,7 @@ function CommercialLayout() {
       if (!scope?.hasCommercialAccess) {
         throw new Error('Commercial setup was saved, but access could not be verified yet.')
       }
-      setAccessState({ loading: false, allowed: true, message: '' })
+      setAccessState({ loading: false, allowed: true, reason: '', message: '' })
       setActivationState({ loading: false, error: '', success: true })
     } catch (error) {
       setActivationState({
@@ -97,6 +99,60 @@ function CommercialLayout() {
         error: error?.message || 'Commercial setup could not be completed.',
         success: false,
       })
+    }
+  }
+
+  async function handleRequestCommercialAccess() {
+    setRequestState({ loading: true, reminding: false, error: '', success: false, reminderSuccess: false, reusedExistingRequest: false, reviewerCount: 0, emailCount: 0, notificationSkippedReason: '' })
+    try {
+      const result = await requestCommercialAccessForCurrentUser()
+      setRequestState({
+        loading: false,
+        reminding: false,
+        error: '',
+        success: true,
+        reminderSuccess: false,
+        reusedExistingRequest: Boolean(result?.reusedExistingRequest),
+        reviewerCount: Number(result?.reviewerCount || 0),
+        emailCount: Number(result?.notificationResult?.emailCount || 0),
+        notificationSkippedReason: result?.notificationResult?.skippedReason || '',
+      })
+    } catch (error) {
+      setRequestState({
+        loading: false,
+        reminding: false,
+        error: error?.message || 'Commercial access request could not be sent.',
+        success: false,
+        reminderSuccess: false,
+        reusedExistingRequest: false,
+        reviewerCount: 0,
+        emailCount: 0,
+        notificationSkippedReason: '',
+      })
+    }
+  }
+
+  async function handleRemindCommercialAccessReviewers() {
+    setRequestState((previous) => ({ ...previous, reminding: true, error: '', reminderSuccess: false }))
+    try {
+      const result = await remindCommercialAccessReviewersForCurrentUser()
+      setRequestState((previous) => ({
+        ...previous,
+        reminding: false,
+        success: true,
+        reminderSuccess: true,
+        reusedExistingRequest: true,
+        reviewerCount: Number(result?.reviewerCount || 0),
+        emailCount: Number(result?.notificationResult?.emailCount || 0),
+        notificationSkippedReason: result?.notificationResult?.skippedReason || '',
+      }))
+    } catch (error) {
+      setRequestState((previous) => ({
+        ...previous,
+        reminding: false,
+        error: error?.message || 'Commercial access reminder could not be sent.',
+        reminderSuccess: false,
+      }))
     }
   }
 
@@ -112,18 +168,31 @@ function CommercialLayout() {
   }
 
   if (!accessState.allowed) {
+    const platformInstallMissing = accessState.reason === 'platform_install_missing'
+    const organisationModuleDisabled = accessState.reason === 'organisation_module_disabled'
+    const canRequestCommercial = !platformInstallMissing && ['organisation_module_disabled', 'access_required'].includes(accessState.reason)
+    const canSelfActivateCommercial = !platformInstallMissing && accessState.reason === 'access_error'
+    const accessTitle = platformInstallMissing
+      ? 'Commercial needs platform setup'
+      : organisationModuleDisabled
+        ? 'Commercial is not enabled for this workspace'
+        : 'Set up Commercial workspace'
     return (
       <section className="flex min-h-screen items-center justify-center bg-[#f6f8fb] px-4 py-8 text-[#102236]">
         <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)] sm:p-7">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#eef5fb] text-[#123b61]">
-              <Building2 size={22} />
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${platformInstallMissing || organisationModuleDisabled ? 'bg-amber-50 text-amber-700' : 'bg-[#eef5fb] text-[#123b61]'}`}>
+              {platformInstallMissing || organisationModuleDisabled ? <AlertTriangle size={22} /> : <Building2 size={22} />}
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold uppercase text-slate-400">Commercial brokerage</p>
-              <h1 className="mt-1 text-2xl font-semibold">Set up Commercial workspace</h1>
+              <h1 className="mt-1 text-2xl font-semibold">{accessTitle}</h1>
               <p className="mt-2 text-sm leading-6 text-slate-500">
-                {accessState.message || 'Commercial is not active on this account yet.'} Activate Commercial to open the brokerage module for landlords, tenants, vacancies, requirements, deals, Heads of Terms, leases, and documents.
+                {platformInstallMissing
+                  ? `${accessState.message || 'Commercial is not installed on this environment. Contact platform support.'} A platform administrator needs to install the Commercial database setup before any principal or agent can activate it for a workspace.`
+                  : organisationModuleDisabled
+                    ? `${accessState.message || 'Commercial is not enabled for this workspace yet.'} Once the organisation module is active, eligible users can be assigned Commercial access.`
+                    : `${accessState.message || 'Commercial is not active on this account yet.'} Activate Commercial to open the brokerage module for landlords, tenants, vacancies, requirements, deals, Heads of Terms, leases, and documents.`}
               </p>
               <div className="mt-5 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
                 {['Commercial records and pipeline', 'Brokerage document centre', 'Heads of Terms and lease flow', 'Broker and branch visibility'].map((item) => (
@@ -138,21 +207,65 @@ function CommercialLayout() {
                   {activationState.error}
                 </p>
               ) : null}
+              {requestState.error ? (
+                <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+                  {requestState.error}
+                </p>
+              ) : null}
               {activationState.success ? (
                 <p className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">
                   Commercial is active. Opening your workspace now.
                 </p>
               ) : null}
+              {requestState.success ? (
+                <p className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">
+                  {requestState.reusedExistingRequest
+                    ? requestState.reminderSuccess
+                      ? requestState.reviewerCount > 0
+                        ? `Reminder sent. ${requestState.reviewerCount === 1 ? 'Principal' : `${requestState.reviewerCount} principals`} notified${requestState.emailCount ? requestState.emailCount === 1 ? ' by email too' : `, ${requestState.emailCount} by email` : ''}.`
+                        : 'Reminder noted. Ask your principal to approve it in Settings > Users.'
+                      : 'Your Commercial access request is already waiting for principal approval.'
+                    : requestState.reviewerCount > 0
+                      ? requestState.reviewerCount === 1
+                        ? `Commercial access request sent. Principal notified${requestState.emailCount ? ' by email too' : ''}.`
+                        : `Commercial access request sent. ${requestState.reviewerCount} principals notified${requestState.emailCount ? `, ${requestState.emailCount} by email` : ''}.`
+                      : 'Commercial access request sent to your principal. Ask them to approve it in Settings > Users.'}
+                </p>
+              ) : null}
               <div className="mt-6 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={handleActivateCommercial}
-                  disabled={activationState.loading}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {activationState.loading ? <Loader2 size={16} className="animate-spin" /> : <Building2 size={16} />}
-                  Activate Commercial
-                </button>
+                {canRequestCommercial ? (
+                  <button
+                    type="button"
+                    onClick={handleRequestCommercialAccess}
+                    disabled={requestState.loading || requestState.reminding}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {requestState.loading ? <Loader2 size={16} className="animate-spin" /> : <Bell size={16} />}
+                    Request Commercial access
+                  </button>
+                ) : null}
+                {canRequestCommercial && requestState.reusedExistingRequest ? (
+                  <button
+                    type="button"
+                    onClick={handleRemindCommercialAccessReviewers}
+                    disabled={requestState.loading || requestState.reminding}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:border-blue-200 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {requestState.reminding ? <Loader2 size={16} className="animate-spin" /> : <Bell size={16} />}
+                    Remind principal
+                  </button>
+                ) : null}
+                {canSelfActivateCommercial ? (
+                  <button
+                    type="button"
+                    onClick={handleActivateCommercial}
+                    disabled={activationState.loading}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {activationState.loading ? <Loader2 size={16} className="animate-spin" /> : <Building2 size={16} />}
+                    Activate Commercial
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => navigate('/settings/organisation')}

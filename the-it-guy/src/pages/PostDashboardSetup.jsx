@@ -20,7 +20,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import OnboardingProgressLayout from '../components/onboarding/OnboardingProgressLayout'
 import { APP_ROLE_LABELS } from '../lib/roles'
 import { ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
-import { SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
+import { SIGNUP_ONBOARDING_PATHS, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { WORKSPACE_KINDS, WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import {
   AGENCY_BUSINESS_FOCUS_OPTIONS,
@@ -29,7 +29,9 @@ import {
   buildDefaultAgencyOnboarding,
   createAgencyBranchDraft,
   createAgencyInviteDraft,
+  isCommercialAgencyType,
   mergeAgencyOnboardingDraft,
+  normalizeAgencyType,
 } from '../lib/agencyOnboarding'
 import {
   completeAgencyOnboarding,
@@ -127,6 +129,38 @@ function getWorkspaceNoun(workspaceType = '') {
   if (workspaceType === WORKSPACE_TYPES.attorneyFirm) return 'attorney firm'
   if (workspaceType === WORKSPACE_TYPES.bondOriginator) return 'bond originator business'
   return 'workspace'
+}
+
+function getAgencyTypeForSignupIntent(intent = null) {
+  const onboardingPath = normalizeText(intent?.onboarding_path)
+  if (onboardingPath === SIGNUP_ONBOARDING_PATHS.commercialOwner || onboardingPath === SIGNUP_ONBOARDING_PATHS.commercialBroker) return 'commercial'
+  if (onboardingPath === SIGNUP_ONBOARDING_PATHS.mixedAgencyOwner || onboardingPath === SIGNUP_ONBOARDING_PATHS.mixedAgencyOperational) return 'mixed'
+  return 'residential'
+}
+
+function getAgencySetupLabel(agencyType = '') {
+  const normalized = normalizeAgencyType(agencyType)
+  if (normalized === 'commercial') return 'commercial brokerage'
+  if (normalized === 'mixed') return 'mixed agency'
+  return 'agency'
+}
+
+function getAgencySetupTitle(agencyType = '') {
+  const normalized = normalizeAgencyType(agencyType)
+  if (normalized === 'commercial') return 'Set up your commercial brokerage'
+  if (normalized === 'mixed') return 'Set up your mixed agency workspace'
+  return 'Set up your agency workspace'
+}
+
+function getAgencySetupDescription(agencyType = '') {
+  const normalized = normalizeAgencyType(agencyType)
+  if (normalized === 'commercial') {
+    return 'Create the commercial brokerage profile your brokers will enter: business details, branches, branding, permissions, and team invitations.'
+  }
+  if (normalized === 'mixed') {
+    return 'Create one operating profile for residential and commercial teams: agency details, branches, branding, permissions, and invitations.'
+  }
+  return 'Create the operating profile your agents will enter: agency details, branches, branding, permissions, and team invitations.'
 }
 
 function getDefaultForm(intent, profile) {
@@ -380,11 +414,14 @@ function getDashboardPath(appRole = '') {
 function getAgencyDraftDefaults(intent, profile) {
   const defaultDraft = buildDefaultAgencyOnboarding(profile)
   const companyName = normalizeText(profile?.companyName)
+  const signupAgencyType = getAgencyTypeForSignupIntent(intent)
   return mergeAgencyOnboardingDraft(defaultDraft, {
     agencyInformation: {
       ...defaultDraft.agencyInformation,
       agencyName: companyName || defaultDraft.agencyInformation.agencyName,
       tradingName: companyName || defaultDraft.agencyInformation.tradingName,
+      agencyType: signupAgencyType,
+      businessFocus: signupAgencyType === 'commercial' ? 'sales_rentals' : defaultDraft.agencyInformation.businessFocus,
       mainOfficeNumber: normalizeText(profile?.phoneNumber) || defaultDraft.agencyInformation.mainOfficeNumber,
       mainEmailAddress: normalizeText(profile?.email) || defaultDraft.agencyInformation.mainEmailAddress,
     },
@@ -525,16 +562,19 @@ export default function PostDashboardSetup() {
   )
   const agencyCurrentStep = AGENCY_SETUP_STEPS[agencyStepIndex] || AGENCY_SETUP_STEPS[0]
   const bondCurrentStep = BOND_SETUP_STEPS[bondStepIndex] || BOND_SETUP_STEPS[0]
+  const agencySignupType = getAgencyTypeForSignupIntent(intent)
+  const agencySetupType = agencyDraft?.agencyInformation?.agencyType || agencySignupType
+  const agencySetupLabel = getAgencySetupLabel(agencySetupType)
   const pageTitle = useMemo(() => {
-    if (isAgencyPrincipalSetup) return 'Set up your agency workspace'
+    if (isAgencyPrincipalSetup) return getAgencySetupTitle(agencySetupType)
     if (isBondOwnerSetup) return 'Set up your bond originator business'
     if (canCreateWorkspace) return `Create your ${workspaceNoun}`
     if (canAcceptInvite) return 'Accept your workspace invite'
     if (canJoinOrRequest) return `Join a ${workspaceNoun}`
     return 'Workspace setup'
-  }, [canAcceptInvite, canCreateWorkspace, canJoinOrRequest, isAgencyPrincipalSetup, isBondOwnerSetup, workspaceNoun])
+  }, [agencySetupType, canAcceptInvite, canCreateWorkspace, canJoinOrRequest, isAgencyPrincipalSetup, isBondOwnerSetup, workspaceNoun])
   const pageDescription = isAgencyPrincipalSetup
-    ? 'Create the operating profile your agents will enter: agency details, branches, branding, permissions, and team invitations.'
+    ? getAgencySetupDescription(agencySetupType)
     : isBondOwnerSetup
       ? 'Choose the originator setup type, then capture the owner, operating, and launch-team details Bridge needs to create a complete bond workspace.'
       : 'Bridge has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
@@ -845,15 +885,17 @@ export default function PostDashboardSetup() {
       refreshAuthState?.()
       const organisationName = result.organisation?.displayName || result.organisation?.name || agencyDraft.agencyInformation.agencyName
       const resumedCopy = result.completion?.resumed_duplicate_workspace ? ' Existing setup resumed and repaired.' : ''
+      const completedAgencyType = normalizeAgencyType(result.onboarding?.agencyInformation?.agencyType || agencyDraft.agencyInformation?.agencyType)
+      const targetPath = completedAgencyType === 'commercial' ? '/commercial' : '/dashboard'
       const inviteWarnings = result.inviteEmailDelivery?.warnings || []
       const inviteCopy = inviteWarnings.length
         ? ` ${inviteWarnings[0]}`
         : result.inviteEmailDelivery?.sent?.length
           ? ` ${result.inviteEmailDelivery.sent.length} invite email${result.inviteEmailDelivery.sent.length === 1 ? '' : 's'} sent.`
           : ''
-      setMessage(`${organisationName} is ready.${resumedCopy}${inviteCopy} Opening your dashboard...`)
+      setMessage(`${organisationName} is ready.${resumedCopy}${inviteCopy} Opening your ${completedAgencyType === 'commercial' ? 'Commercial workspace' : 'dashboard'}...`)
       window.setTimeout(() => {
-        navigate('/dashboard', { replace: true })
+        navigate(targetPath, { replace: true })
       }, 500)
     } catch (setupError) {
       setError(setupError?.message || 'Agency setup failed.')
@@ -1283,7 +1325,7 @@ export default function PostDashboardSetup() {
         <div className="agency-setup-card">
           <SetupSectionHeader
             eyebrow="Foundation"
-            title="Agency profile"
+            title={isCommercialAgencyType(agency.agencyType) ? `${agencySetupLabel[0].toUpperCase()}${agencySetupLabel.slice(1)} profile` : 'Agency profile'}
             copy="This becomes the legal and operational identity for the workspace."
             icon={Building2}
           />
@@ -1522,14 +1564,14 @@ export default function PostDashboardSetup() {
       <div className="agency-setup-card">
         <SetupSectionHeader
           eyebrow="Final check"
-          title="Create the agency workspace"
+          title={`Create the ${agencySetupLabel} workspace`}
           copy="Bridge will create the organisation, save this setup, activate the principal account, and queue the team invitations."
           icon={CheckCircle2}
         />
         <div className="agency-review-grid">
           <div>
             <Building2 size={18} />
-            <span>Agency</span>
+            <span>{isCommercialAgencyType(agency.agencyType) ? agencySetupLabel : 'Agency'}</span>
             <strong>{agency.agencyName || 'Not set'}</strong>
             <small>{agency.province || 'Province missing'}</small>
           </div>
@@ -1568,7 +1610,7 @@ export default function PostDashboardSetup() {
           <aside className="agency-setup-command">
             <div>
               <p className="agency-setup-kicker">Principal setup</p>
-              <h2>{agency.agencyName || 'New agency'}</h2>
+              <h2>{agency.agencyName || `New ${agencySetupLabel}`}</h2>
               <span>{APP_ROLE_LABELS[intent.app_role] || 'Agent'} · {intendedRole.replace(/_/g, ' ')}</span>
             </div>
             <div className="agency-setup-progress">

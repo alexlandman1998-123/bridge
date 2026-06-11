@@ -15,6 +15,24 @@ const OPEN_PACKET_STATUSES = ['draft', 'generated', 'ready', 'sent', 'viewed', '
 const FINANCE_PROCESS_KEYS = ['finance', 'bond', 'bond_origination', 'bond_originator']
 const ATTORNEY_PROCESS_KEYS = ['attorney', 'transfer', 'conveyancing']
 const ALL_BRANCHES_ID = 'all'
+const RESIDENTIAL_FUNNEL_STAGES = [
+  { key: 'leads', label: 'Leads' },
+  { key: 'mandates', label: 'Mandates' },
+  { key: 'viewings', label: 'Viewings' },
+  { key: 'offers', label: 'Offers' },
+  { key: 'acceptedOtps', label: 'Accepted OTPs' },
+  { key: 'registrations', label: 'Registrations' },
+]
+const REVENUE_FORECAST_WEIGHTS = {
+  lead: 0.08,
+  mandate: 0.18,
+  viewing: 0.28,
+  offer: 0.45,
+  otp: 0.68,
+  finance: 0.78,
+  transfer: 0.9,
+  registration: 1,
+}
 
 export const PRINCIPAL_DASHBOARD_DATE_PRESETS = [
   { key: 'this_month', label: 'This Month' },
@@ -248,6 +266,8 @@ function getTransactionStatusText(row = {}) {
     row.stage,
     row.operational_state,
     row.attorney_stage,
+    row.risk_status,
+    row.current_sub_stage_summary,
   ].map(normalizeKey).join(' ')
 }
 
@@ -258,6 +278,10 @@ function isRegisteredTransaction(row = {}) {
 
 function getTransactionCompletedAt(row = {}) {
   return row.registered_at || row.registration_date || row.completed_at || null
+}
+
+function getExpectedRegistrationAt(row = {}) {
+  return row.expected_transfer_date || row.target_registration_date || row.registration_date || row.expected_registration_date || null
 }
 
 function getStageBucket(row = {}) {
@@ -517,6 +541,272 @@ function buildAgentRevenueRows(transactions = [], usersByKey = new Map(), commis
     .slice(0, 6)
 }
 
+function getPipelineStageWeight(row = {}) {
+  const status = getTransactionStatusText(row)
+  if (isRegisteredTransaction(row)) return REVENUE_FORECAST_WEIGHTS.registration
+  if (status.includes('transfer') || status.includes('lodg') || status.includes('registration')) return REVENUE_FORECAST_WEIGHTS.transfer
+  if (status.includes('finance') || status.includes('bond')) return REVENUE_FORECAST_WEIGHTS.finance
+  if (status.includes('otp') || status.includes('signed') || status.includes('accepted')) return REVENUE_FORECAST_WEIGHTS.otp
+  if (status.includes('offer') || status.includes('negotiat')) return REVENUE_FORECAST_WEIGHTS.offer
+  if (status.includes('viewing') || status.includes('appointment')) return REVENUE_FORECAST_WEIGHTS.viewing
+  if (status.includes('mandate')) return REVENUE_FORECAST_WEIGHTS.mandate
+  return REVENUE_FORECAST_WEIGHTS.lead
+}
+
+function isDelayed(row = {}, now = new Date()) {
+  const status = getTransactionStatusText(row)
+  const expected = toDate(getExpectedRegistrationAt(row))
+  return Boolean(
+    status.includes('delay') ||
+    status.includes('blocked') ||
+    (expected && expected < startOfDay(now) && !isRegisteredTransaction(row)),
+  )
+}
+
+function getCommandStage(row = {}) {
+  const status = getTransactionStatusText(row)
+  if (isRegisteredTransaction(row)) return 'complete'
+  if (status.includes('registration') || status.includes('lodg')) return 'registration'
+  if (status.includes('transfer') || status.includes('attorney') || status.includes('convey')) return 'transfer'
+  if (status.includes('finance') || status.includes('bond') || status.includes('bank')) return 'finance'
+  return 'otp'
+}
+
+function countByPredicate(rows = [], predicate) {
+  return rows.filter(predicate).length
+}
+
+function sumBy(rows = [], mapper) {
+  return rows.reduce((sum, row) => sum + toNumber(mapper(row)), 0)
+}
+
+function buildFunnelRow({ key, label, rows = [], value = 0 }, nextCount = 0) {
+  const count = rows.length
+  return {
+    key,
+    label,
+    count,
+    value,
+    conversionToNext: count ? Math.round((nextCount / count) * 100) : null,
+  }
+}
+
+function buildForecastBuckets(transactions = [], commissionByTransaction = new Map(), now = new Date()) {
+  const buckets = Array.from({ length: 3 }).map((_, index) => {
+    const date = addMonths(startOfMonth(now), index)
+    return {
+      key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+      label: date.toLocaleDateString('en-ZA', { month: 'short' }),
+      expectedCommission: 0,
+      transactionCount: 0,
+      confidence: 'Estimated',
+    }
+  })
+  const fallbackDates = new Set()
+  for (const row of transactions) {
+    let expectedDate = toDate(getExpectedRegistrationAt(row))
+    if (!expectedDate) {
+      const stageWeight = getPipelineStageWeight(row)
+      const monthsOut = stageWeight >= REVENUE_FORECAST_WEIGHTS.transfer ? 1 : stageWeight >= REVENUE_FORECAST_WEIGHTS.finance ? 2 : 3
+      expectedDate = addMonths(startOfMonth(now), monthsOut - 1)
+      fallbackDates.add(normalizeText(row.id))
+    }
+    const key = `${expectedDate.getFullYear()}-${String(expectedDate.getMonth() + 1).padStart(2, '0')}`
+    const bucket = buckets.find((item) => item.key === key)
+    if (!bucket) continue
+    bucket.expectedCommission += getCommissionAmount(row, commissionByTransaction) * getPipelineStageWeight(row)
+    bucket.transactionCount += 1
+  }
+  return buckets.map((bucket) => ({
+    ...bucket,
+    expectedCommission: Math.round(bucket.expectedCommission),
+    confidence: fallbackDates.size ? 'Estimated' : 'Dated',
+  }))
+}
+
+export function getResidentialDashboardMetrics({
+  activeTransactions = [],
+  completedTransactions = [],
+  registeredTransactionsInRange = [],
+  leads = [],
+  selectedLeads = [],
+  documentRequests = [],
+  subprocesses = [],
+  documentPackets = [],
+  documents = [],
+  tasks = [],
+  agentPerformance = [],
+  usersByKey = new Map(),
+  commissionByTransaction = new Map(),
+  range = resolveDateRange('this_month'),
+  now = new Date(),
+} = {}) {
+  const allPipelineTransactions = [...activeTransactions, ...registeredTransactionsInRange]
+  const openDocumentRequests = documentRequests.filter((request) => {
+    const status = normalizeKey(request.status)
+    return RISK_DOCUMENT_STATUSES.includes(status) && !DONE_DOCUMENT_STATUSES.includes(status)
+  })
+  const financeSubprocesses = subprocesses.filter((row) => FINANCE_PROCESS_KEYS.some((key) => normalizeKey(row.process_type).includes(key)))
+  const transferSubprocesses = subprocesses.filter((row) => ATTORNEY_PROCESS_KEYS.some((key) => normalizeKey(row.process_type).includes(key)))
+  const otpPackets = documentPackets.filter((packet) => normalizeKey(`${packet.packet_type} ${packet.title}`).includes('otp'))
+  const mandatePackets = documentPackets.filter((packet) => normalizeKey(`${packet.packet_type} ${packet.title}`).includes('mandate'))
+
+  const leadRows = selectedLeads.length ? selectedLeads : leads.filter((lead) => isBetween(lead.created_at, range.start, range.end))
+  const mandateLeadRows = leadRows.filter((lead) => {
+    const status = normalizeKey(`${lead.status} ${lead.stage} ${lead.seller_onboarding_status}`)
+    return Boolean(lead.mandate_packet_id || lead.listing_id || status.includes('mandate') || status.includes('seller_onboarding'))
+  })
+  const viewingLeadRows = leadRows.filter((lead) => normalizeKey(`${lead.status} ${lead.stage}`).includes('viewing') || normalizeKey(`${lead.status} ${lead.stage}`).includes('appointment'))
+  const offerRows = allPipelineTransactions.filter((row) => {
+    const status = getTransactionStatusText(row)
+    return status.includes('offer') || status.includes('negotiat')
+  })
+  const acceptedOtpRows = allPipelineTransactions.filter((row) => {
+    const status = getTransactionStatusText(row)
+    return status.includes('otp') || status.includes('signed') || status.includes('accepted')
+  })
+  const registrationRows = registeredTransactionsInRange.length
+    ? registeredTransactionsInRange
+    : completedTransactions.filter((row) => isBetween(getTransactionCompletedAt(row), range.start, range.end))
+
+  const funnelSeeds = [
+    { key: 'leads', label: 'Leads', rows: leadRows, value: sumBy(leadRows, (lead) => lead.estimated_value || lead.budget) },
+    { key: 'mandates', label: 'Mandates', rows: [...mandateLeadRows, ...mandatePackets], value: sumBy(mandateLeadRows, (lead) => lead.estimated_value || lead.budget) },
+    { key: 'viewings', label: 'Viewings', rows: viewingLeadRows, value: sumBy(viewingLeadRows, (lead) => lead.estimated_value || lead.budget) },
+    { key: 'offers', label: 'Offers', rows: offerRows, value: sumBy(offerRows, getDealValue) },
+    { key: 'acceptedOtps', label: 'Accepted OTPs', rows: acceptedOtpRows.length ? acceptedOtpRows : otpPackets, value: sumBy(acceptedOtpRows, getDealValue) },
+    { key: 'registrations', label: 'Registrations', rows: registrationRows, value: sumBy(registrationRows, getDealValue) },
+  ]
+  const funnel = funnelSeeds.map((stage, index) => buildFunnelRow(stage, funnelSeeds[index + 1]?.rows?.length || 0))
+
+  const noActivityRows = activeTransactions.filter((row) => daysBetween(row.last_meaningful_activity_at || row.updated_at || row.created_at, now) >= 14)
+  const expiringOtpRows = activeTransactions.filter((row) => {
+    const status = getTransactionStatusText(row)
+    const expected = toDate(getExpectedRegistrationAt(row))
+    return (status.includes('otp') || status.includes('signed')) && expected && expected >= startOfDay(now) && expected < addDays(startOfDay(now), 14)
+  })
+  const waitingBuyerRows = activeTransactions.filter((row) => {
+    const text = normalizeKey(`${row.waiting_on_role} ${row.next_action} ${row.current_sub_stage_summary}`)
+    return text.includes('buyer') || text.includes('purchaser')
+  })
+  const atRiskRows = activeTransactions.filter((row) => isDelayed(row, now) || getTransactionHealth(row).key !== 'on_track')
+
+  const pipelineHealth = [
+    { key: 'at_risk', label: 'At Risk Deals', count: atRiskRows.length, href: '/transactions?risk=at-risk' },
+    { key: 'no_activity', label: 'No Activity 14+ Days', count: noActivityRows.length, href: '/transactions?filter=no-activity' },
+    { key: 'otp_expiring', label: 'OTP Expiring < 14 Days', count: expiringOtpRows.length, href: '/transactions?stage=otp' },
+    { key: 'waiting_on_buyer', label: 'Waiting on Buyer', count: waitingBuyerRows.length, href: '/transactions?waiting=buyer' },
+    { key: 'waiting_documents', label: 'Waiting on Documents', count: openDocumentRequests.length, href: '/transactions?filter=documents' },
+  ]
+
+  const commandStages = ['otp', 'finance', 'transfer', 'registration', 'complete']
+  const completeInRange = registeredTransactionsInRange
+  const transactionFlowRows = [...activeTransactions, ...completeInRange]
+  const transactionFlow = commandStages.map((key) => {
+    const rows = transactionFlowRows.filter((row) => getCommandStage(row) === key)
+    return {
+      key,
+      label: key === 'otp' ? 'OTP' : key[0].toUpperCase() + key.slice(1),
+      count: rows.length,
+      percentage: percentage(rows.length, Math.max(1, activeTransactions.length)),
+    }
+  })
+  const commandCentre = [
+    { key: 'otp', label: 'OTP', count: transactionFlow.find((row) => row.key === 'otp')?.count || 0 },
+    { key: 'finance', label: 'Finance', count: transactionFlow.find((row) => row.key === 'finance')?.count || 0 },
+    { key: 'transfer', label: 'Transfer', count: transactionFlow.find((row) => row.key === 'transfer')?.count || 0 },
+    { key: 'registration', label: 'Registration', count: transactionFlow.find((row) => row.key === 'registration')?.count || 0 },
+    { key: 'delayed', label: 'Delayed', count: countByPredicate(activeTransactions, (row) => isDelayed(row, now)) },
+    { key: 'at_risk', label: 'At Risk', count: atRiskRows.length },
+  ]
+
+  const transactionAlerts = [
+    { key: 'buyer_docs', label: 'Buyer Docs Outstanding', count: openDocumentRequests.filter((row) => normalizeKey(`${row.assigned_to_role} ${row.document_type} ${row.title}`).includes('buyer')).length },
+    { key: 'bond_approval', label: 'Awaiting Bond Approval', count: financeSubprocesses.filter((row) => !COMPLETED_STATES.includes(normalizeKey(row.status))).length },
+    { key: 'transfer_duty', label: 'Awaiting Transfer Duty', count: openDocumentRequests.filter((row) => normalizeKey(`${row.document_type} ${row.title}`).includes('transfer_duty')).length },
+    { key: 'attorney_followup', label: 'Attorney Follow-Up', count: transferSubprocesses.filter((row) => !COMPLETED_STATES.includes(normalizeKey(row.status)) && daysBetween(row.updated_at, now) >= 7).length + tasks.filter((task) => normalizeKey(`${task.title} ${task.status}`).includes('attorney') && !DONE_DOCUMENT_STATUSES.includes(normalizeKey(task.status))).length },
+  ]
+
+  const expectedCommission = sumBy(activeTransactions, (row) => getCommissionAmount(row, commissionByTransaction))
+  const likelyRevenue = Math.round(sumBy(activeTransactions, (row) => getCommissionAmount(row, commissionByTransaction) * getPipelineStageWeight(row)))
+  const committedRevenue = Math.round(sumBy(activeTransactions.filter((row) => getPipelineStageWeight(row) >= REVENUE_FORECAST_WEIGHTS.otp), (row) => getCommissionAmount(row, commissionByTransaction)))
+  const revenueThisMonth = sumBy(registeredTransactionsInRange, (row) => getCommissionAmount(row, commissionByTransaction))
+  const previousMonthCommission = sumBy(completedTransactions.filter((row) => isBetween(getTransactionCompletedAt(row), range.previousStart, range.previousEnd)), (row) => getCommissionAmount(row, commissionByTransaction))
+  const revenueTarget = null
+  const revenueSources = [
+    { key: 'sales_commission', label: 'Sales Commission', value: revenueThisMonth, enabled: revenueThisMonth > 0 || expectedCommission > 0 },
+    { key: 'transfer_revenue', label: 'Transfer Revenue', value: sumBy(registeredTransactionsInRange.filter((row) => getCommandStage(row) === 'complete'), (row) => getCommissionAmount(row, commissionByTransaction)), enabled: transferSubprocesses.length > 0 },
+    { key: 'bond_revenue', label: 'Bond Revenue', value: sumBy(registeredTransactionsInRange.filter((row) => getFinanceBucket(row) === 'bond'), (row) => getCommissionAmount(row, commissionByTransaction)), enabled: activeTransactions.some((row) => getFinanceBucket(row) === 'bond') },
+    { key: 'rental_revenue', label: 'Rental Revenue', value: 0, enabled: false },
+    { key: 'commercial_revenue', label: 'Commercial Revenue', value: 0, enabled: false },
+  ].filter((source) => source.enabled)
+
+  return {
+    kpis: {
+      forecastRevenue: likelyRevenue,
+      forecastRevenueTrend: trend(likelyRevenue, previousMonthCommission),
+    },
+    pipeline: {
+      funnel,
+      health: pipelineHealth,
+      topAgents: agentPerformance.slice(0, 5).map((agent) => ({
+        agentId: agent.agentId,
+        agentName: agent.agentName,
+        pipelineValue: agent.pipelineValue,
+        dealCount: agent.activeDeals,
+        trend: agent.pipelineTrend ?? null,
+      })),
+      mappingNotes: 'Pipeline funnel maps leads from lead status/stage, mandates from mandate packets/listing links/seller onboarding, viewings from viewing or appointment status, offers from transaction offer statuses, accepted OTPs from OTP/signed/accepted statuses or OTP packets, and registrations from registered/completed transactions.',
+    },
+    transactions: {
+      commandCentre,
+      flow: transactionFlow,
+      alerts: transactionAlerts,
+    },
+    revenue: {
+      hero: {
+        revenueThisMonth,
+        target: revenueTarget,
+        achieved: revenueTarget ? revenueThisMonth : null,
+        targetPercent: revenueTarget ? percentage(revenueThisMonth, revenueTarget) : null,
+        trendVsLastMonth: trend(revenueThisMonth, previousMonthCommission),
+      },
+      sources: revenueSources,
+      forecast: {
+        expectedCommission,
+        likelyRevenue,
+        committedRevenue,
+        weights: REVENUE_FORECAST_WEIGHTS,
+      },
+      forecastChart: buildForecastBuckets(activeTransactions, commissionByTransaction, now),
+      topAgents: buildAgentRevenueRows([...registeredTransactionsInRange, ...activeTransactions], usersByKey, commissionByTransaction).map((agent, index) => ({
+        ...agent,
+        rank: index + 1,
+      })),
+      hasRevenueData: revenueThisMonth > 0 || expectedCommission > 0 || likelyRevenue > 0,
+    },
+    overview: {
+      pipelineSnapshot: {
+        value: sumBy(activeTransactions, getDealValue),
+        activeCount: activeTransactions.length,
+        topStage: funnel.slice().sort((left, right) => right.value - left.value || right.count - left.count)[0] || null,
+      },
+      transactionHealthSnapshot: {
+        activeCount: activeTransactions.length,
+        atRiskCount: atRiskRows.length,
+        delayedCount: countByPredicate(activeTransactions, (row) => isDelayed(row, now)),
+      },
+      revenueSnapshot: {
+        expectedCommission,
+        likelyRevenue,
+        committedRevenue,
+      },
+      urgentAlerts: [...pipelineHealth, ...transactionAlerts].filter((item) => Number(item.count || 0) > 0).slice(0, 6),
+      recentActivityCount: documents.length + documentPackets.length,
+    },
+  }
+}
+
 function buildEmptyDashboard() {
   return {
     filters: {
@@ -528,6 +818,7 @@ function buildEmptyDashboard() {
       pipelineValue: 0,
       activeTransactions: 0,
       expectedCommission: null,
+      forecastRevenue: 0,
       closingThisMonth: 0,
       avgDealCycleDays: null,
       leadToDealConversion: 0,
@@ -535,6 +826,7 @@ function buildEmptyDashboard() {
         pipelineValue: null,
         activeTransactions: null,
         expectedCommission: null,
+        forecastRevenue: null,
         closingThisMonth: null,
         avgDealCycleDays: null,
         leadToDealConversion: null,
@@ -566,6 +858,9 @@ function buildEmptyDashboard() {
       cancelledInRange: 0,
       movement: null,
       stages: [],
+      commandCentre: [],
+      flow: [],
+      alerts: [],
     },
     activeTransactions: [],
     revenue: {
@@ -574,6 +869,23 @@ function buildEmptyDashboard() {
       expectedCommission: null,
       monthly: [],
       byAgent: [],
+      hero: {
+        revenueThisMonth: 0,
+        target: null,
+        achieved: null,
+        targetPercent: null,
+        trendVsLastMonth: null,
+      },
+      sources: [],
+      forecast: {
+        expectedCommission: 0,
+        likelyRevenue: 0,
+        committedRevenue: 0,
+        weights: REVENUE_FORECAST_WEIGHTS,
+      },
+      forecastChart: [],
+      topAgents: [],
+      hasRevenueData: false,
     },
     overview: {
       pipeline: {},
@@ -631,8 +943,8 @@ export async function getPrincipalDashboardData({
   assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, updated_at, created_at, is_active',
-    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, waiting_on_role, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active',
+    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
   ]
 
   const [
@@ -689,12 +1001,14 @@ export async function getPrincipalDashboardData({
     documentRequests,
     documents,
     subprocesses,
+    tasks,
     linkedDocumentPackets,
     linkedTransactionCommissions,
   ] = await Promise.all([
     safeSelectByIds('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', [...transactionIds], { order: 'updated_at', limit: 1500 }),
     safeSelectByIds('documents', 'id, transaction_id, name, category, uploaded_by_email, uploaded_by_role, created_at', [...transactionIds], { order: 'created_at', limit: 300 }),
     safeSelectByIds('transaction_subprocesses', 'id, transaction_id, process_type, owner_type, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
+    safeSelectByIds('tasks', 'task_id, id, transaction_id, lead_id, title, due_date, status, priority, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
     safeSelectByIds('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1000 }),
     safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200 }),
   ])
@@ -863,6 +1177,14 @@ export async function getPrincipalDashboardData({
       roleLabel: agent.roleLabel,
       pipelineValue: agent.pipelineValue,
       activeDeals: agent.activeDeals,
+      pipelineTrend: trend(
+        activeTransactions
+          .filter((row) => getAgentKeyFromTransaction(row) === getAgentKeyFromTransaction({ assigned_user_id: agent.agentId, assigned_agent_email: agent.agentName }) && isBetween(row.created_at, range.start, range.end))
+          .reduce((sum, row) => sum + getDealValue(row), 0),
+        activeTransactions
+          .filter((row) => getAgentKeyFromTransaction(row) === getAgentKeyFromTransaction({ assigned_user_id: agent.agentId, assigned_agent_email: agent.agentName }) && isBetween(row.created_at, range.previousStart, range.previousEnd))
+          .reduce((sum, row) => sum + getDealValue(row), 0),
+      ),
       conversionRate: percentage(agent.converted, agent.leads),
       registeredCount: agent.registeredCount,
       responseRate: agent.responseRate,
@@ -912,6 +1234,22 @@ export async function getPrincipalDashboardData({
     monthly: monthlyRevenue,
     byAgent: buildAgentRevenueRows(registeredTransactionsInRange, usersByKey, commissionByTransaction),
   }
+  const residentialMetrics = getResidentialDashboardMetrics({
+    activeTransactions,
+    completedTransactions,
+    registeredTransactionsInRange,
+    leads,
+    selectedLeads,
+    documentRequests: scopedDocumentRequests,
+    subprocesses: scopedSubprocesses,
+    documentPackets: effectiveDocumentPackets,
+    documents: scopedDocuments,
+    tasks,
+    agentPerformance,
+    usersByKey,
+    commissionByTransaction,
+    range,
+  })
 
   const transactionsById = new Map(transactions.map((row) => [normalizeText(row.id), row]))
   const sourceMap = new Map()
@@ -1017,6 +1355,7 @@ export async function getPrincipalDashboardData({
       pipelineValue,
       activeTransactions: activeTransactions.length,
       expectedCommission,
+      forecastRevenue: residentialMetrics.kpis.forecastRevenue,
       closingThisMonth,
       avgDealCycleDays,
       leadToDealConversion,
@@ -1024,6 +1363,7 @@ export async function getPrincipalDashboardData({
         pipelineValue: trend(currentPipelineValue, previousPipelineValue),
         activeTransactions: trend(currentActiveTransactions, previousActiveTransactions),
         expectedCommission: expectedCommission === null ? null : trend(currentCommission, previousCommission),
+        forecastRevenue: residentialMetrics.kpis.forecastRevenueTrend,
         closingThisMonth: trend(closingThisMonth, previousClosingThisMonth),
         avgDealCycleDays: null,
         leadToDealConversion: previousLeadConversion ? leadToDealConversion - previousLeadConversion : null,
@@ -1037,10 +1377,17 @@ export async function getPrincipalDashboardData({
       pendingRegistration,
       avgDealValue,
       winRate,
+      ...residentialMetrics.pipeline,
     },
-    transactions: transactionsOverview,
+    transactions: {
+      ...transactionsOverview,
+      ...residentialMetrics.transactions,
+    },
     activeTransactions: activeTransactionCards,
-    revenue: revenueOverview,
+    revenue: {
+      ...revenueOverview,
+      ...residentialMetrics.revenue,
+    },
     overview: {
       pipeline: {
         totalValue: pipelineValue,
@@ -1050,9 +1397,17 @@ export async function getPrincipalDashboardData({
         pendingRegistration,
         avgDealValue,
         winRate,
+        ...residentialMetrics.pipeline,
       },
-      transactions: transactionsOverview,
-      revenue: revenueOverview,
+      transactions: {
+        ...transactionsOverview,
+        ...residentialMetrics.transactions,
+      },
+      revenue: {
+        ...revenueOverview,
+        ...residentialMetrics.revenue,
+      },
+      ...residentialMetrics.overview,
     },
     pipelineByType: financeTypes,
     agentPerformance,

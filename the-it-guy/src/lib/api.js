@@ -283,6 +283,8 @@ export const TRANSACTION_EVENT_TYPES = [
   'cancellation_attorney_assigned',
   'attorney_assignment_created',
   'bond_application_created',
+  'CommercialAccessRequested',
+  'CommercialAccessReviewed',
   'roleplayer_visibility_granted',
   'roleplayer_reassigned',
 ]
@@ -295,6 +297,8 @@ export const TRANSACTION_NOTIFICATION_TYPES = [
   'registration_completed',
   'overdue_missing_docs',
   'additional_document_requested',
+  'commercial_access_request',
+  'commercial_access_decision',
 ]
 export const DOCUMENT_REQUEST_STATUS_TYPES = ['requested', 'uploaded', 'under_review', 'reviewed', 'rejected', 'completed', 'cancelled']
 export const DOCUMENT_REQUEST_PRIORITY_TYPES = ['required', 'important', 'optional', 'normal', 'urgent']
@@ -19543,6 +19547,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
         selectionSource: normalizedSource,
         preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
         partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
+        partnerConnectionId: normalizeNullableUuid(item?.partnerConnectionId || item?.connectionId || partner.partnerConnectionId || partner.connectionId),
         partnerOrganisationId: normalizeNullableUuid(
           item?.partnerOrganisationId ||
             item?.organisationId ||
@@ -19569,6 +19574,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
           selectionSource: normalizedSource,
           preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
           partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
+          partnerConnectionId: normalizeNullableUuid(item?.partnerConnectionId || item?.connectionId || partner.partnerConnectionId || partner.connectionId),
           partnerOrganisationId: normalizeNullableUuid(
             item?.partnerOrganisationId ||
               item?.organisationId ||
@@ -21915,6 +21921,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const deferFinanceType = Boolean(options?.deferFinanceType)
   const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [])
   const primaryPartnerSelection = rolePlayerSelections.find((item) => item.partnerOrganisationId || item.partnerRelationshipId) || null
+  const hierarchyScope =
+    options?.hierarchyScope && typeof options.hierarchyScope === 'object'
+      ? options.hierarchyScope
+      : {}
+  const assignedRegionId = normalizeNullableUuid(hierarchyScope.regionId || hierarchyScope.region_id)
+  const assignedBranchId = normalizeNullableUuid(hierarchyScope.branchId || hierarchyScope.branch_id)
   const normalizedFinanceType = deferFinanceType
     ? normalizeFinanceType(setup.financeType || '', { allowUnknown: true })
     : normalizeFinanceType(setup.financeType || 'cash')
@@ -22020,6 +22032,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
     relationship_owner_user_id: actorProfile.userId || null,
     partner_relationship_id: primaryPartnerSelection?.partnerRelationshipId || null,
+    assigned_region_id: assignedRegionId || null,
+    assigned_branch_id: assignedBranchId || null,
     owner_user_id: actorProfile.userId || null,
     access_level: normalizeTransactionAccessLevel(setup.accessLevel, transactionType === 'private_property' ? 'private' : 'shared'),
     is_active: true,
@@ -22058,6 +22072,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
     relationship_owner_user_id: actorProfile.userId || null,
     partner_relationship_id: primaryPartnerSelection?.partnerRelationshipId || null,
+    assigned_region_id: assignedRegionId || null,
+    assigned_branch_id: assignedBranchId || null,
     next_action: status.nextAction || finance.nextAction || null,
     comment: status.nextAction || finance.nextAction || null,
     gross_commission_percentage: snapshotGrossCommissionPercentage,
@@ -22154,6 +22170,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'referral_source_organisation_id') ||
       isMissingColumnError(transactionResult.error, 'relationship_owner_user_id') ||
       isMissingColumnError(transactionResult.error, 'partner_relationship_id') ||
+      isMissingColumnError(transactionResult.error, 'assigned_region_id') ||
+      isMissingColumnError(transactionResult.error, 'assigned_branch_id') ||
       isMissingColumnError(transactionResult.error, 'gross_commission_percentage') ||
       isMissingColumnError(transactionResult.error, 'gross_commission_amount') ||
       isMissingColumnError(transactionResult.error, 'agent_split_percentage_snapshot') ||
@@ -22193,6 +22211,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.referral_source_organisation_id
     delete fallbackPayload.relationship_owner_user_id
     delete fallbackPayload.partner_relationship_id
+    delete fallbackPayload.assigned_region_id
+    delete fallbackPayload.assigned_branch_id
     delete fallbackPayload.gross_commission_percentage
     delete fallbackPayload.gross_commission_amount
     delete fallbackPayload.agent_split_percentage_snapshot

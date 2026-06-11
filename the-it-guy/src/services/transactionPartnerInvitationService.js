@@ -1,0 +1,530 @@
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+
+export const TRANSACTION_PARTNER_INVITATION_ROLES = Object.freeze({
+  transferAttorney: 'transfer_attorney',
+  bondOriginator: 'bond_originator',
+  developer: 'developer',
+  other: 'other',
+})
+
+export const TRANSACTION_PARTNER_ROLE_LABELS = Object.freeze({
+  transfer_attorney: 'Transfer Attorney',
+  bond_originator: 'Bond Originator',
+  developer: 'Developer',
+  other: 'Transaction Partner',
+})
+
+const ROLE_PLAYER_ROLE_TYPE = Object.freeze({
+  transfer_attorney: 'transfer_attorney',
+  bond_originator: 'bond_originator',
+  developer: 'developer_contact',
+  other: 'other',
+})
+
+const PARTICIPANT_ROLE_SHAPE = Object.freeze({
+  transfer_attorney: { roleType: 'attorney', legalRole: 'transfer', transactionRole: 'transfer_attorney' },
+  bond_originator: { roleType: 'bond_originator', legalRole: 'none', transactionRole: 'bond_originator' },
+  developer: { roleType: 'developer', legalRole: 'none', transactionRole: 'developer_contact' },
+  other: { roleType: 'external_collaborator', legalRole: 'none', transactionRole: 'external_collaborator' },
+})
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PROSPECT_STATUS_LABELS = Object.freeze({
+  invited: 'Pending',
+  joined: 'Joined',
+  declined: 'Declined',
+  inactive: 'Inactive',
+})
+
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
+function sanitizePostgrestSearchTerm(value) {
+  return normalizeText(value).replace(/[%,()]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+export function normalizeTransactionPartnerInvitationRole(value) {
+  const normalized = normalizeText(value).toLowerCase()
+  const compact = normalized.replace(/[\s-]+/g, '_')
+  if (normalized === 'attorney' || normalized === 'conveyancer' || normalized === 'transfer') return 'transfer_attorney'
+  if (compact === 'bond' || compact === 'originator' || compact === 'bondoriginator' || compact === 'bond_originator') return 'bond_originator'
+  if (compact === 'developer_contact') return 'developer'
+  if (Object.values(TRANSACTION_PARTNER_INVITATION_ROLES).includes(compact)) return compact
+  return 'other'
+}
+
+export function getTransactionPartnerRoleLabel(roleType) {
+  return TRANSACTION_PARTNER_ROLE_LABELS[normalizeTransactionPartnerInvitationRole(roleType)] || TRANSACTION_PARTNER_ROLE_LABELS.other
+}
+
+export function normalizePartnerProspectRole(value) {
+  const roleType = normalizeTransactionPartnerInvitationRole(value)
+  if (roleType === 'transfer_attorney') return 'attorney'
+  if (roleType === 'bond_originator') return 'bond_originator'
+  if (roleType === 'developer') return 'developer'
+  return 'other'
+}
+
+function toCamelProspect(row = {}) {
+  const status = normalizeText(row.status).toLowerCase() || 'invited'
+  const invitationCount = Number(row.invitation_count || row.invitationCount || 0)
+  const acceptedCount = Number(row.accepted_invitation_count || row.acceptedInvitationCount || 0)
+  return {
+    id: row.id || '',
+    roleType: normalizePartnerProspectRole(row.role_type || row.roleType),
+    transactionRoleType: normalizeTransactionPartnerInvitationRole(row.role_type || row.roleType),
+    companyName: normalizeText(row.company_name || row.companyName),
+    contactName: normalizeText(row.contact_name || row.contactName),
+    email: normalizeText(row.email).toLowerCase(),
+    phone: normalizeText(row.phone),
+    status,
+    statusLabel: PROSPECT_STATUS_LABELS[status] || 'Pending',
+    bridgeUserId: row.bridge_user_id || row.bridgeUserId || null,
+    joinedAt: row.joined_at || row.joinedAt || null,
+    firstInvitedAt: row.first_invited_at || row.firstInvitedAt || null,
+    lastInvitedAt: row.last_invited_at || row.lastInvitedAt || row.last_invitation_date || row.lastInvitationDate || null,
+    invitationCount,
+    acceptedInvitationCount: acceptedCount,
+    declinedInvitationCount: Number(row.declined_invitation_count || row.declinedInvitationCount || 0),
+    transactionCount: Number(row.transaction_count || row.transactionCount || 0),
+    lastTransactionDate: row.last_transaction_date || row.lastTransactionDate || null,
+    firstSeenDate: row.first_seen_date || row.firstSeenDate || row.created_at || row.createdAt || null,
+    possibleDuplicateOf: row.possible_duplicate_of || row.possibleDuplicateOf || null,
+    duplicateReviewStatus: row.duplicate_review_status || row.duplicateReviewStatus || 'none',
+    acceptanceRate: invitationCount > 0 ? Math.round((acceptedCount / invitationCount) * 100) : 0,
+    createdAt: row.created_at || row.createdAt || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
+  }
+}
+
+export function normalizePartnerProspect(row = {}) {
+  return toCamelProspect(row)
+}
+
+export function normalizeTransactionPartnerInvitationDraft(input = {}) {
+  const roleType = normalizeTransactionPartnerInvitationRole(input.roleType || input.role_type)
+  const companyName = normalizeText(input.companyName || input.company_name)
+  const contactName = normalizeText(input.contactName || input.contact_name)
+  const email = normalizeText(input.email).toLowerCase()
+  const phone = normalizeText(input.phone)
+
+  return {
+    roleType,
+    companyName,
+    contactName,
+    email,
+    phone,
+  }
+}
+
+export function validateTransactionPartnerInvitationDraft(input = {}) {
+  const draft = normalizeTransactionPartnerInvitationDraft(input)
+  const errors = {}
+  if (!draft.companyName) errors.companyName = 'Company name is required.'
+  if (!draft.contactName) errors.contactName = 'Contact name is required.'
+  if (!draft.email) errors.email = 'Email address is required.'
+  if (draft.email && !EMAIL_PATTERN.test(draft.email)) errors.email = 'Enter a valid email address.'
+  return { valid: Object.keys(errors).length === 0, errors, draft }
+}
+
+function filterProspectRows(rows = [], { roleType = '', query = '', limit = 20 } = {}) {
+  const normalizedRole = roleType ? normalizePartnerProspectRole(roleType) : ''
+  const needle = normalizeText(query).toLowerCase()
+  return rows
+    .map(toCamelProspect)
+    .filter((row) => !normalizedRole || row.roleType === normalizedRole)
+    .filter((row) => {
+      if (!needle) return true
+      return [row.companyName, row.contactName, row.email, row.phone].some((value) => String(value || '').toLowerCase().includes(needle))
+    })
+    .sort((left, right) => {
+      if (left.status === 'joined' && right.status !== 'joined') return -1
+      if (right.status === 'joined' && left.status !== 'joined') return 1
+      if (right.transactionCount !== left.transactionCount) return right.transactionCount - left.transactionCount
+      return String(left.companyName).localeCompare(String(right.companyName))
+    })
+    .slice(0, limit)
+}
+
+export function filterPartnerProspectsForSearch(rows = [], options = {}) {
+  return filterProspectRows(rows, options)
+}
+
+function requireClient() {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Supabase is not configured for partner invitations.')
+  }
+  return supabase
+}
+
+function getOrigin() {
+  if (typeof window === 'undefined') return ''
+  return window.location.origin
+}
+
+function invitationUrlForToken(token) {
+  const origin = getOrigin()
+  return token ? `${origin}/transaction-invite/${token}` : ''
+}
+
+async function getCurrentUserId(client) {
+  const result = await client.auth.getUser()
+  return result?.data?.user?.id || null
+}
+
+async function logInvitationEvent(client, { transactionId, eventType, userId, invitation, metadata = {} }) {
+  if (!transactionId) return null
+  const payload = {
+    transaction_id: transactionId,
+    event_type: eventType,
+    event_data: {
+      invitationId: invitation?.id || null,
+      roleType: invitation?.role_type || invitation?.roleType || null,
+      companyName: invitation?.company_name || invitation?.companyName || null,
+      contactName: invitation?.contact_name || invitation?.contactName || null,
+      email: invitation?.email || null,
+      ...metadata,
+    },
+    created_by: userId || null,
+    created_by_role: 'agent',
+  }
+
+  const result = await client.from('transaction_events').insert(payload)
+  if (result.error) {
+    const message = String(result.error.message || '').toLowerCase()
+    if (message.includes('transaction_events') || result.error.code === '42P01' || result.error.code === '42501') return null
+    throw result.error
+  }
+  return result.data || null
+}
+
+async function upsertPendingRolePlayer(client, { transactionId, invitation, actorUserId }) {
+  const roleType = normalizeTransactionPartnerInvitationRole(invitation.role_type || invitation.roleType)
+  const rolePlayerRoleType = ROLE_PLAYER_ROLE_TYPE[roleType] || 'other'
+  const email = normalizeText(invitation.email).toLowerCase()
+  const nowIso = new Date().toISOString()
+  const payload = {
+    transaction_id: transactionId,
+    role_type: rolePlayerRoleType,
+    selection_source: 'invited_partner',
+    partner_name: invitation.company_name || invitation.companyName || null,
+    contact_person: invitation.contact_name || invitation.contactName || null,
+    email_address: email || null,
+    phone_number: invitation.phone || null,
+    status: 'pending',
+    assignment_status: 'pending_acceptance',
+    assigned_by: actorUserId || null,
+    transaction_partner_invitation_id: invitation.id || null,
+    partner_prospect_id: invitation.partner_prospect_id || invitation.partnerProspectId || null,
+    removed_at: null,
+    snapshot_json: {
+      source: 'transaction_partner_invitation',
+      invitationId: invitation.id || null,
+      partnerProspectId: invitation.partner_prospect_id || invitation.partnerProspectId || null,
+      roleType,
+      pendingAcceptance: true,
+    },
+    updated_at: nowIso,
+  }
+
+  let existing = await client
+    .from('transaction_role_players')
+    .select('id')
+    .eq('transaction_id', transactionId)
+    .eq('role_type', rolePlayerRoleType)
+    .limit(1)
+
+  if (existing.error && existing.error.code === '42P01') return null
+  if (existing.error) throw existing.error
+
+  const existingId = existing.data?.[0]?.id || null
+  const query = existingId
+    ? client.from('transaction_role_players').update(payload).eq('id', existingId).select('id').maybeSingle()
+    : client.from('transaction_role_players').insert({ ...payload, created_at: nowIso }).select('id').maybeSingle()
+
+  const result = await query
+  if (result.error) {
+    const fallback = { ...payload }
+    for (const key of Object.keys(fallback)) {
+      if (String(result.error.message || '').includes(key)) delete fallback[key]
+    }
+    const fallbackQuery = existingId
+      ? client.from('transaction_role_players').update(fallback).eq('id', existingId).select('id').maybeSingle()
+      : client.from('transaction_role_players').insert({ ...fallback, created_at: nowIso }).select('id').maybeSingle()
+    const fallbackResult = await fallbackQuery
+    if (fallbackResult.error && fallbackResult.error.code !== '42P01') throw fallbackResult.error
+    return fallbackResult.data || null
+  }
+  return result.data || null
+}
+
+async function upsertInvitedParticipant(client, { transactionId, invitation, actorUserId }) {
+  const roleType = normalizeTransactionPartnerInvitationRole(invitation.role_type || invitation.roleType)
+  const shape = PARTICIPANT_ROLE_SHAPE[roleType] || PARTICIPANT_ROLE_SHAPE.other
+  const email = normalizeText(invitation.email).toLowerCase()
+  const nowIso = new Date().toISOString()
+  const payload = {
+    transaction_id: transactionId,
+    role_type: shape.roleType,
+    legal_role: shape.legalRole,
+    transaction_role: shape.transactionRole,
+    status: 'invited',
+    user_id: null,
+    participant_name: invitation.contact_name || invitation.contactName || invitation.company_name || invitation.companyName || null,
+    participant_email: email || null,
+    invited_by_user_id: actorUserId || null,
+    invited_at: nowIso,
+    accepted_at: null,
+    removed_at: null,
+    visibility_scope: 'shared',
+    is_internal: false,
+    participant_scope: 'transaction',
+    assignment_source: 'partner_invitation',
+    transaction_partner_invitation_id: invitation.id || null,
+    partner_prospect_id: invitation.partner_prospect_id || invitation.partnerProspectId || null,
+    can_view: true,
+    can_comment: true,
+    can_upload_documents: true,
+    can_edit_finance_workflow: roleType === 'bond_originator',
+    can_edit_attorney_workflow: roleType === 'transfer_attorney',
+    can_edit_core_transaction: false,
+    updated_at: nowIso,
+  }
+
+  const result = await client
+    .from('transaction_participants')
+    .upsert(payload, { onConflict: 'transaction_id,role_type,legal_role' })
+    .select('id')
+
+  if (result.error) {
+    if (result.error.code === '42P01') return null
+    const fallback = { ...payload }
+    for (const key of Object.keys(fallback)) {
+      if (String(result.error.message || '').includes(key)) delete fallback[key]
+    }
+    const fallbackResult = await client
+      .from('transaction_participants')
+      .upsert(fallback, { onConflict: fallback.legal_role ? 'transaction_id,role_type,legal_role' : 'transaction_id,role_type' })
+      .select('id')
+    if (fallbackResult.error && fallbackResult.error.code !== '42P01') throw fallbackResult.error
+    return fallbackResult.data?.[0] || null
+  }
+
+  return result.data?.[0] || null
+}
+
+async function sendInvitationEmail({ transactionId, invitation, invitationUrl }) {
+  const email = normalizeText(invitation.email).toLowerCase()
+  if (!email) return { sent: false, reason: 'missing_email' }
+
+  const { data, error } = await invokeEdgeFunction('send-email', {
+    body: {
+      type: 'transaction_partner_invitation',
+      transactionId,
+      to: email,
+      roleType: invitation.role_type || invitation.roleType,
+      roleLabel: getTransactionPartnerRoleLabel(invitation.role_type || invitation.roleType),
+      companyName: invitation.company_name || invitation.companyName,
+      contactName: invitation.contact_name || invitation.contactName,
+      partnerProspectId: invitation.partner_prospect_id || invitation.partnerProspectId || null,
+      reusedProspect: Boolean(invitation.partner_prospect_id || invitation.partnerProspectId),
+      invitationLink: invitationUrl,
+    },
+  })
+  if (error) return { sent: false, error }
+  return data || { sent: true }
+}
+
+export async function createTransactionPartnerInvitation(input = {}) {
+  const client = requireClient()
+  const transactionId = normalizeText(input.transactionId || input.transaction_id)
+  if (!transactionId) throw new Error('Transaction is required.')
+
+  const validation = validateTransactionPartnerInvitationDraft(input)
+  if (!validation.valid) {
+    const firstError = Object.values(validation.errors)[0] || 'Invitation details are incomplete.'
+    throw new Error(firstError)
+  }
+
+  const actorUserId = input.invitedByUserId || input.invited_by_user_id || (await getCurrentUserId(client))
+  const token = crypto.randomUUID()
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+  const insertPayload = {
+    transaction_id: transactionId,
+    partner_prospect_id: input.partnerProspectId || input.partner_prospect_id || null,
+    role_type: validation.draft.roleType,
+    company_name: validation.draft.companyName,
+    contact_name: validation.draft.contactName,
+    email: validation.draft.email,
+    phone: validation.draft.phone || null,
+    status: 'pending',
+    invited_by_user_id: actorUserId || null,
+    invitation_token: token,
+    expires_at: expiresAt,
+    metadata: input.metadata && typeof input.metadata === 'object' ? input.metadata : {},
+  }
+
+  const result = await client
+    .from('transaction_partner_invitations')
+    .insert(insertPayload)
+    .select('id, transaction_id, partner_prospect_id, role_type, company_name, contact_name, email, phone, status, invitation_token, expires_at, created_at')
+    .single()
+
+  if (result.error) {
+    if (result.error.code === '42P01') {
+      throw new Error('Transaction partner invitations are not set up yet. Run the Phase 1 migration and refresh.')
+    }
+    throw result.error
+  }
+
+  let invitation = result.data
+  let partnerProspect = null
+  try {
+    const prospectResult = await client.rpc('bridge_upsert_partner_prospect_for_invitation', {
+      p_transaction_id: transactionId,
+      p_invitation_id: invitation.id,
+      p_role_type: validation.draft.roleType,
+      p_company_name: validation.draft.companyName,
+      p_contact_name: validation.draft.contactName,
+      p_email: validation.draft.email,
+      p_phone: validation.draft.phone || null,
+      p_actor_user_id: actorUserId || null,
+    })
+    if (prospectResult.error) throw prospectResult.error
+    partnerProspect = normalizePartnerProspect(prospectResult.data?.prospect || {})
+    invitation = {
+      ...invitation,
+      partner_prospect_id: partnerProspect.id || invitation.partner_prospect_id || null,
+    }
+  } catch (prospectError) {
+    const message = String(prospectError?.message || '').toLowerCase()
+    if (!message.includes('bridge_upsert_partner_prospect_for_invitation') && prospectError?.code !== '42883') {
+      throw prospectError
+    }
+  }
+  await upsertPendingRolePlayer(client, { transactionId, invitation, actorUserId })
+  await upsertInvitedParticipant(client, { transactionId, invitation, actorUserId })
+  await logInvitationEvent(client, {
+    transactionId,
+    eventType: 'Invitation Sent',
+    userId: actorUserId,
+    invitation,
+  })
+
+  const invitationUrl = invitationUrlForToken(invitation.invitation_token || token)
+  const emailResult = await sendInvitationEmail({ transactionId, invitation, invitationUrl })
+
+  return {
+    invitation,
+    partnerProspect,
+    invitationUrl,
+    emailResult,
+  }
+}
+
+export async function searchPartnerProspects(options = {}) {
+  const client = requireClient()
+  const roleType = normalizePartnerProspectRole(options.roleType || options.role_type)
+  const query = sanitizePostgrestSearchTerm(options.query)
+  const limit = Math.max(1, Math.min(Number(options.limit || 12), 50))
+
+  let builder = client
+    .from('partner_prospects')
+    .select('id, role_type, company_name, contact_name, email, phone, status, bridge_user_id, joined_at, first_invited_at, last_invited_at, last_invitation_date, invitation_count, accepted_invitation_count, declined_invitation_count, transaction_count, last_transaction_date, first_seen_date, possible_duplicate_of, duplicate_review_status, created_at, updated_at')
+    .eq('role_type', roleType)
+    .order('transaction_count', { ascending: false })
+    .order('company_name', { ascending: true })
+    .limit(limit)
+
+  if (query) {
+    builder = builder.or(`company_name.ilike.%${query}%,contact_name.ilike.%${query}%,email.ilike.%${query}%`)
+  }
+
+  const result = await builder
+  if (result.error) {
+    if (result.error.code === '42P01') return []
+    throw result.error
+  }
+  return filterProspectRows(result.data || [], { roleType, query, limit })
+}
+
+export async function listPartnerProspects(options = {}) {
+  const client = requireClient()
+  const roleType = options.roleType || options.role_type ? normalizePartnerProspectRole(options.roleType || options.role_type) : ''
+  const limit = Math.max(1, Math.min(Number(options.limit || 100), 500))
+
+  let builder = client
+    .from('partner_prospects')
+    .select('id, role_type, company_name, contact_name, email, phone, status, bridge_user_id, joined_at, first_invited_at, last_invited_at, last_invitation_date, invitation_count, accepted_invitation_count, declined_invitation_count, transaction_count, last_transaction_date, first_seen_date, possible_duplicate_of, duplicate_review_status, created_at, updated_at')
+    .order('transaction_count', { ascending: false })
+    .order('company_name', { ascending: true })
+    .limit(limit)
+
+  if (roleType) builder = builder.eq('role_type', roleType)
+
+  const result = await builder
+  if (result.error) {
+    if (result.error.code === '42P01') return []
+    throw result.error
+  }
+  return filterProspectRows(result.data || [], { roleType, limit })
+}
+
+export async function applyPartnerProspectToTransaction({ transactionId, partnerProspectId, roleType } = {}) {
+  const client = requireClient()
+  const safeTransactionId = normalizeText(transactionId)
+  const safeProspectId = normalizeText(partnerProspectId)
+  if (!safeTransactionId) throw new Error('Transaction is required.')
+  if (!safeProspectId) throw new Error('Partner prospect is required.')
+
+  const result = await client.rpc('bridge_use_partner_prospect_on_transaction', {
+    p_transaction_id: safeTransactionId,
+    p_partner_prospect_id: safeProspectId,
+    p_role_type: normalizeTransactionPartnerInvitationRole(roleType),
+  })
+  if (result.error) throw result.error
+  if (!result.data?.success) throw new Error(result.data?.code || 'Unable to use this partner prospect.')
+  return result.data
+}
+
+export async function getTransactionPartnerInvitationByToken(token) {
+  const client = requireClient()
+  const result = await client.rpc('bridge_get_transaction_partner_invitation', { p_token: normalizeText(token) })
+  if (result.error) throw result.error
+  return result.data || { ok: false, reason: 'not_found' }
+}
+
+export async function acceptTransactionPartnerInvitation({ token, profile = {} } = {}) {
+  const client = requireClient()
+  const result = await client.rpc('bridge_accept_transaction_partner_invitation', {
+    p_token: normalizeText(token),
+    p_profile: profile && typeof profile === 'object' ? profile : {},
+  })
+  if (result.error) throw result.error
+  if (!result.data?.success) {
+    throw new Error(result.data?.code || 'Unable to accept this invitation.')
+  }
+  return result.data
+}
+
+export async function declineTransactionPartnerInvitation(token) {
+  const client = requireClient()
+  const result = await client.rpc('bridge_decline_transaction_partner_invitation', { p_token: normalizeText(token) })
+  if (result.error) throw result.error
+  if (!result.data?.success) throw new Error(result.data?.code || 'Unable to decline this invitation.')
+  return result.data
+}
+
+export async function resendTransactionPartnerInvitation(invitationId) {
+  const client = requireClient()
+  const result = await client.rpc('bridge_resend_transaction_partner_invitation', { p_invitation_id: invitationId })
+  if (result.error) throw result.error
+  if (!result.data?.success) throw new Error(result.data?.code || 'Unable to resend this invitation.')
+
+  const invitationUrl = invitationUrlForToken(result.data.token)
+  return {
+    ...result.data,
+    invitationUrl,
+  }
+}

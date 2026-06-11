@@ -35,6 +35,31 @@ export type SendBondOriginatorBuyerIntroPayload = {
   metadata?: JsonRecord;
 };
 
+export type SendCommercialAccessNotificationPayload = {
+  type:
+    | "commercial_access_notification"
+    | "commercial_access_request"
+    | "commercial_access_decision";
+  to: string;
+  recipientName?: string;
+  recipient_name?: string;
+  eventKind?: "request" | "decision" | string;
+  event_kind?: "request" | "decision" | string;
+  decision?: "approved" | "rejected" | string;
+  requestId?: string;
+  request_id?: string;
+  requesterName?: string;
+  requester_name?: string;
+  requesterEmail?: string;
+  requester_email?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  actionLink?: string;
+  action_link?: string;
+  subject?: string;
+  message?: string;
+};
+
 export type SendReservationDepositPayload = {
   type: "reservation_deposit";
   transactionId: string;
@@ -78,6 +103,29 @@ export type SendWorkspaceInvitePayload = {
   workspace_role?: string;
   supportEmail?: string;
   support_email?: string;
+};
+
+export type SendTransactionPartnerInvitationPayload = {
+  type: "transaction_partner_invitation" | "partner_transaction_invite";
+  transactionId?: string;
+  transaction_id?: string;
+  to: string;
+  roleType?: string;
+  role_type?: string;
+  roleLabel?: string;
+  role_label?: string;
+  companyName?: string;
+  company_name?: string;
+  contactName?: string;
+  contact_name?: string;
+  invitationLink?: string;
+  invitation_link?: string;
+  invitedByOrganisation?: string;
+  invited_by_organisation?: string;
+  partnerProspectId?: string | null;
+  partner_prospect_id?: string | null;
+  reusedProspect?: boolean;
+  reused_prospect?: boolean;
 };
 
 export type SendSellerOnboardingPayload = {

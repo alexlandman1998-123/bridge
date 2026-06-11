@@ -13,12 +13,14 @@ import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleBondIntakeNotificationEmail } from "./handlers/bondIntakeNotification.ts";
 import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBuyerIntro.ts";
+import { handleCommercialAccessNotificationEmail } from "./handlers/commercialAccessNotification.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
 import { handleSellerOfferReviewEmail } from "./handlers/sellerOfferReview.ts";
 import {
   handleTransactionRoleplayerHandoffEmail,
   handleTransactionRoleplayerIntroEmail,
 } from "./handlers/transactionRoleplayerIntro.ts";
+import { handleTransactionPartnerInvitationEmail } from "./handlers/transactionPartnerInvitation.ts";
 import type {
   SendAppointmentEmailPayload,
   SendBondIntakeNotificationPayload,
@@ -26,6 +28,7 @@ import type {
   SendBuyerOfferLinkPayload,
   SendBuyerOfferSubmittedAgentPayload,
   SendClientOnboardingPayload,
+  SendCommercialAccessNotificationPayload,
   SendLegacyTestPayload,
   SendOfferDecisionNotificationPayload,
   SendOnboardingSubmittedPayload,
@@ -38,6 +41,7 @@ import type {
   SendSellerOnboardingSubmittedPayload,
   SendTransactionRoleplayerHandoffPayload,
   SendTransactionRoleplayerIntroPayload,
+  SendTransactionPartnerInvitationPayload,
   SendWorkspaceInvitePayload,
 } from "./types.ts";
 import { corsHeaders, jsonResponse } from "./utils/http.ts";
@@ -322,6 +326,42 @@ Deno.serve(async (req: Request) => {
 
     if (
       [
+        "commercial_access_notification",
+        "commercial_access_request",
+        "commercial_access_decision",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "commercial_access_notification",
+        requestedType: type,
+        recipient: recipient || null,
+      });
+      return await handleCommercialAccessNotificationEmail({
+        ...(payload as SendCommercialAccessNotificationPayload),
+        type: "commercial_access_notification",
+      });
+    }
+
+    if (
+      [
+        "transaction_partner_invitation",
+        "partner_transaction_invite",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "transaction_partner_invitation",
+        recipient: recipient || null,
+        transactionId: transactionId || null,
+      });
+      return await handleTransactionPartnerInvitationEmail({
+        ...(payload as SendTransactionPartnerInvitationPayload),
+        type: "transaction_partner_invitation",
+        transactionId,
+      });
+    }
+
+    if (
+      [
         "transaction_roleplayer_intro",
         "roleplayer_intro",
         "transaction_handoff_intro",
@@ -432,6 +472,7 @@ Deno.serve(async (req: Request) => {
           "offer_decision_notification",
           "bond_intake_notification",
           "bond_originator_buyer_intro",
+          "commercial_access_notification",
           "transaction_roleplayer_intro",
           "transaction_roleplayer_handoff",
           "workspace_invite",
@@ -472,6 +513,7 @@ Deno.serve(async (req: Request) => {
         "offer_decision_notification",
         "bond_intake_notification",
         "bond_originator_buyer_intro",
+        "commercial_access_notification",
         "transaction_roleplayer_intro",
         "transaction_roleplayer_handoff",
         "workspace_invite",

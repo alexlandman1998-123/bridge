@@ -15,6 +15,10 @@ function excludes(source, marker, message) {
 
 const commercialApi = await read('../src/modules/commercial/services/commercialApi.js')
 for (const marker of [
+  'export async function getCommercialPlatformInstallStatus',
+  'COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE',
+  'Commercial is not installed on this environment. Contact platform support.',
+  'await assertCommercialPlatformInstalled({ forceRefresh })',
   'export async function activateCommercialWorkspaceForCurrentUser',
   "module_context: 'commercial'",
   "module: 'commercial'",
@@ -37,6 +41,9 @@ excludes(
 
 const commercialLayout = await read('../src/modules/commercial/components/CommercialLayout.jsx')
 for (const marker of [
+  'isCommercialPlatformInstallError',
+  'Commercial needs platform setup',
+  'platform administrator needs to install the Commercial database setup',
   'Set up Commercial workspace',
   'Activate Commercial',
   'activateCommercialWorkspaceForCurrentUser',

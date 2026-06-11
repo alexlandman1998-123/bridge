@@ -6026,6 +6026,7 @@ function UnitDetail() {
   })()
   const isUploadingDocumentInModal = Boolean(uploadingDocumentKey)
   const attorneyParticipant = (transactionParticipants || []).find((item) => item.roleType === 'attorney') || null
+  const bondOriginatorParticipant = (transactionParticipants || []).find((item) => item.roleType === 'bond_originator') || null
   const reservationRequirementStatus = String(reservationRequirement?.status || '').trim().toLowerCase()
   const canAccessReservationProof = Boolean(reservationProofDocument?.url || reservationProofDocument?.file_path)
   const purchaserNameForOtp =
@@ -6155,11 +6156,15 @@ function UnitDetail() {
     transaction?.attorney ||
     attorneyParticipant?.participantName ||
     'Not assigned'
+  const transferAttorneyStatusLabel =
+    attorneyParticipant?.stakeholderStatus === 'invited' ? 'Pending Acceptance' : attorneyParticipant?.stakeholderStatus === 'active' ? 'Active' : ''
   const bondAttorneyDisplayName =
     stageForm.bond_originator ||
     transaction?.bond_originator ||
-    transactionParticipants?.find((item) => item.roleType === 'bond_attorney')?.participantName ||
+    bondOriginatorParticipant?.participantName ||
     'Not assigned'
+  const bondOriginatorStatusLabel =
+    bondOriginatorParticipant?.stakeholderStatus === 'invited' ? 'Pending Acceptance' : bondOriginatorParticipant?.stakeholderStatus === 'active' ? 'Active' : ''
   const targetRegistrationLabel =
     formatDate(transaction?.expected_transfer_date || transaction?.registration_date || transaction?.registered_at || transaction?.completed_at)
   const bondAmountLabel = hasCapturedFinancials && transaction?.bond_amount ? currency.format(Number(transaction.bond_amount || 0)) : 'Not captured'
@@ -6645,8 +6650,8 @@ function UnitDetail() {
               { label: 'Buyer', value: buyer?.name || 'Buyer pending', icon: UserRound },
               { label: 'Seller', value: sellerDisplayName, icon: UserRound },
               { label: 'Assigned Agent', value: assignedAgentDisplayName, icon: Building2 },
-              { label: 'Transfer Attorney', value: transferAttorneyDisplayName, icon: Scale },
-              { label: 'Bond Attorney', value: bondAttorneyDisplayName, icon: Landmark },
+              { label: 'Transfer Attorney', value: transferAttorneyDisplayName, subtext: transferAttorneyStatusLabel, icon: Scale },
+              { label: 'Bond Originator', value: bondAttorneyDisplayName, subtext: bondOriginatorStatusLabel, icon: Landmark },
               { label: 'Last Updated', value: displayedLatestUpdatedLabel, icon: Clock3 },
             ].map((item) => {
               const Icon = item.icon
@@ -6658,6 +6663,7 @@ function UnitDetail() {
                   <span className="min-w-0">
                     <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{item.label}</span>
                     <strong className="mt-0.5 block truncate text-sm font-semibold text-[#1d3144]">{item.value}</strong>
+                    {item.subtext ? <span className="mt-1 block text-xs font-semibold text-[#60758d]">{item.subtext}</span> : null}
                   </span>
                 </div>
               )

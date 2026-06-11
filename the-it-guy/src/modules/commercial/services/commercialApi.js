@@ -1,5 +1,6 @@
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../../lib/settingsApi'
-import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
+import { recordSecurityAuditEvent } from '../../../services/auditLogService'
 import { normalizeCommercialLifecycleStage } from '../commercialWorkflow'
 
 const TABLES = {
@@ -49,13 +50,37 @@ const COMMERCIAL_HIERARCHY_COLUMNS = ['branch_id', 'team_id', 'broker_id']
 const COMMERCIAL_DOCUMENT_WORKFLOW_COLUMNS = ['version_number', 'supersedes_document_id', 'expires_at', 'reviewed_by', 'reviewed_at', 'priority', 'requested_by', 'completed_document_id']
 const COMMERCIAL_LEASING_WORKFLOW_COLUMNS = ['vacancy_id', 'heads_of_terms_id', 'sent_at', 'accepted_at', 'rejected_at', 'signed_at', 'converted_at']
 const COMMERCIAL_SCOPE_CACHE_TTL_MS = 60 * 1000
+const COMMERCIAL_PLATFORM_INSTALL_CACHE_TTL_MS = 5 * 60 * 1000
+const COMMERCIAL_MODULE_KEY = 'commercial'
+export const COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE = 'Commercial is not installed on this environment. Contact platform support.'
 const COMMERCIAL_HQ_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'admin', 'admin_staff', 'manager', 'hq_manager', 'commercial_hq_admin', 'commercial_hq_manager', 'super_admin'])
 const COMMERCIAL_BRANCH_ROLES = new Set(['branch_manager', 'branch_admin', 'regional_manager'])
 const COMMERCIAL_TEAM_ROLES = new Set(['team_leader', 'team_manager', 'commercial_team_leader'])
 const COMMERCIAL_BROKER_ROLES = new Set(['broker', 'commercial_broker', 'agent', 'senior_agent'])
 const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
+const COMMERCIAL_ACCESS_REVIEWER_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'admin', 'super_admin'])
+const COMMERCIAL_ACCESS_AUDIT_ACTIONS = Object.freeze({
+  requested: 'commercial_access_requested',
+  approved: 'commercial_access_approved',
+  rejected: 'commercial_access_rejected',
+  reminded: 'commercial_access_reminded',
+  moduleEnabled: 'commercial_module_enabled',
+  moduleDisabled: 'commercial_module_disabled',
+  userGranted: 'commercial_user_access_granted',
+  userRevoked: 'commercial_user_access_revoked',
+})
+const COMMERCIAL_ACCESS_AUDIT_ACTION_LIST = Object.freeze(Object.values(COMMERCIAL_ACCESS_AUDIT_ACTIONS))
+const REQUIRED_COMMERCIAL_PLATFORM_PROBES = [
+  { table: 'organisation_modules', fields: 'id, organisation_id, module_key, status, source, metadata', label: 'commercial organisation module entitlement' },
+  { table: 'commercial_access_requests', fields: 'id, organisation_id, requester_user_id, status', label: 'commercial access request workflow' },
+  { table: 'organisation_users', fields: 'id, module_context, module_metadata', label: 'organisation commercial activation columns' },
+  { table: 'commercial_teams', fields: 'id', label: 'commercial teams' },
+  ...Object.values(TABLES).map((table) => ({ table, fields: 'id', label: table })),
+]
 let commercialScopeCache = null
 let commercialScopeInflight = null
+let commercialPlatformInstallCache = null
+let commercialPlatformInstallInflight = null
 
 export const COMMERCIAL_TABLES = TABLES
 
@@ -191,6 +216,980 @@ function isAuthSessionMissingError(error) {
   return message.includes('auth session missing') || message.includes('missing auth session')
 }
 
+function isUniqueConstraintError(error) {
+  return normalizeText(error?.code).toUpperCase() === '23505' || normalizeLower(error?.message).includes('duplicate key')
+}
+
+function isMissingAuditSchemaError(error) {
+  if (!error) return false
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeLower(`${error.message || ''} ${error.details || ''} ${error.hint || ''}`)
+  return code === '42P01' || code === 'PGRST205' || message.includes('security_audit_events')
+}
+
+function isMissingCommercialNotificationError(error) {
+  if (!error) return false
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeLower(`${error.message || ''} ${error.details || ''} ${error.hint || ''}`)
+  return (
+    code === '42P01' ||
+    code === 'PGRST202' ||
+    code === 'PGRST205' ||
+    message.includes('bridge_notify_commercial_access_request') ||
+    message.includes('bridge_notify_commercial_access_decision') ||
+    message.includes('bridge_nudge_commercial_access_request') ||
+    message.includes('transaction_notifications')
+  )
+}
+
+function createCommercialPlatformInstallError(status = {}) {
+  const missing = Array.isArray(status?.missing) ? status.missing.filter(Boolean) : []
+  const error = new Error(COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE)
+  error.code = 'commercial_platform_not_installed'
+  error.installStatus = status
+  error.details = missing.length ? `Missing commercial setup: ${missing.join(', ')}` : COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE
+  return error
+}
+
+export function isCommercialPlatformInstallError(error) {
+  return normalizeText(error?.code) === 'commercial_platform_not_installed' ||
+    normalizeText(error?.message) === COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE
+}
+
+export async function getCommercialPlatformInstallStatus({ forceRefresh = false } = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      installed: false,
+      reason: 'supabase_not_configured',
+      missing: ['Supabase connection'],
+      message: 'Commercial setup requires Supabase to be configured.',
+    }
+  }
+
+  if (!forceRefresh && commercialPlatformInstallCache && commercialPlatformInstallCache.expiresAt > Date.now()) {
+    return commercialPlatformInstallCache.value
+  }
+  if (!forceRefresh && commercialPlatformInstallInflight) return commercialPlatformInstallInflight
+
+  commercialPlatformInstallInflight = (async () => {
+    const missing = []
+    for (const probe of REQUIRED_COMMERCIAL_PLATFORM_PROBES) {
+      const result = await supabase
+        .from(probe.table)
+        .select(probe.fields)
+        .limit(1)
+
+      if (!result.error) continue
+      if (isMissingCommercialTableError(result.error) || isCommercialSchemaMismatchError(result.error)) {
+        missing.push(probe.label)
+        continue
+      }
+      throw result.error
+    }
+
+    const status = {
+      installed: missing.length === 0,
+      reason: missing.length ? 'schema_missing' : 'installed',
+      missing,
+      message: missing.length ? COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE : '',
+    }
+    commercialPlatformInstallCache = { value: status, expiresAt: Date.now() + COMMERCIAL_PLATFORM_INSTALL_CACHE_TTL_MS }
+    return status
+  })().finally(() => {
+    commercialPlatformInstallInflight = null
+  })
+
+  return commercialPlatformInstallInflight
+}
+
+async function assertCommercialPlatformInstalled({ forceRefresh = false } = {}) {
+  const status = await getCommercialPlatformInstallStatus({ forceRefresh })
+  if (!status.installed) throw createCommercialPlatformInstallError(status)
+  return status
+}
+
+function createCommercialOrganisationDisabledStatus(organisationId = '', row = null) {
+  return {
+    organisationId: normalizeText(organisationId),
+    moduleKey: COMMERCIAL_MODULE_KEY,
+    enabled: false,
+    status: normalizeLower(row?.status) || 'disabled',
+    source: normalizeText(row?.source),
+    row,
+  }
+}
+
+export async function getCommercialOrganisationModuleStatus({ organisationId = '', forceRefresh = false } = {}) {
+  await assertCommercialPlatformInstalled({ forceRefresh })
+  const resolvedOrganisationId = normalizeText(organisationId) || normalizeText((await resolveCommercialOrganisationContext()).organisationId)
+  if (!resolvedOrganisationId || !isSupabaseConfigured || !supabase) {
+    return createCommercialOrganisationDisabledStatus(resolvedOrganisationId)
+  }
+
+  const query = await supabase
+    .from('organisation_modules')
+    .select('id, organisation_id, module_key, status, source, enabled_by, enabled_at, requested_by, requested_at, disabled_by, disabled_at, metadata')
+    .eq('organisation_id', resolvedOrganisationId)
+    .eq('module_key', COMMERCIAL_MODULE_KEY)
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingCommercialTableError(query.error) || isCommercialSchemaMismatchError(query.error)) {
+      throw createCommercialPlatformInstallError({
+        installed: false,
+        reason: 'schema_missing',
+        missing: ['commercial organisation module entitlement'],
+      })
+    }
+    throw query.error
+  }
+
+  const row = query.data || null
+  const status = normalizeLower(row?.status) || 'disabled'
+  return {
+    organisationId: resolvedOrganisationId,
+    moduleKey: COMMERCIAL_MODULE_KEY,
+    enabled: status === 'active',
+    status,
+    source: normalizeText(row?.source),
+    row,
+  }
+}
+
+function normalizeCommercialAccessRequest(row = {}) {
+  const metadata = parseJsonObject(row.metadata)
+  return {
+    id: normalizeText(row.id),
+    organisationId: normalizeText(row.organisation_id),
+    requesterUserId: normalizeText(row.requester_user_id),
+    requesterMembershipId: normalizeText(row.requester_membership_id),
+    requesterEmail: normalizeText(row.requester_email),
+    requesterName: normalizeText(row.requester_name),
+    moduleKey: normalizeText(row.module_key) || COMMERCIAL_MODULE_KEY,
+    status: normalizeLower(row.status || 'pending'),
+    message: normalizeText(row.request_message),
+    principalNote: normalizeText(row.principal_note),
+    reviewedBy: normalizeText(row.reviewed_by),
+    reviewedAt: row.reviewed_at || null,
+    metadata,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }
+}
+
+function buildCommercialAccessRequestMetadata({ scope = {}, organisationModuleStatus = null } = {}) {
+  return {
+    source: 'commercial_blocked_access_prompt',
+    organisation_module_status: organisationModuleStatus?.status || 'disabled',
+    organisation_module_source: organisationModuleStatus?.source || '',
+    membership_role: scope?.membershipRole || '',
+    requested_at: new Date().toISOString(),
+  }
+}
+
+function buildCommercialAccessApprovalMetadata({ request = {}, reviewerId = '' } = {}) {
+  return {
+    module: COMMERCIAL_MODULE_KEY,
+    module_context: COMMERCIAL_MODULE_KEY,
+    source: 'commercial_access_request',
+    request_id: normalizeText(request.id),
+    approved_at: new Date().toISOString(),
+    approved_by: normalizeText(reviewerId),
+  }
+}
+
+function buildCommercialManualGrantMetadata({ organisationUserId = '', reviewerId = '' } = {}) {
+  return {
+    module: COMMERCIAL_MODULE_KEY,
+    module_context: COMMERCIAL_MODULE_KEY,
+    source: 'manual_grant',
+    organisation_user_id: normalizeText(organisationUserId),
+    granted_at: new Date().toISOString(),
+    granted_by: normalizeText(reviewerId),
+  }
+}
+
+function buildCommercialManualRevokeMetadata({ organisationUserId = '', reviewerId = '' } = {}) {
+  return {
+    source: 'manual_revoke',
+    organisation_user_id: normalizeText(organisationUserId),
+    revoked_at: new Date().toISOString(),
+    revoked_by: normalizeText(reviewerId),
+    previous_module: COMMERCIAL_MODULE_KEY,
+  }
+}
+
+function assertCommercialAccessReviewer(context = {}) {
+  const role = normalizeLower(context.membershipRole || context.membership?.role || 'viewer')
+  if (!COMMERCIAL_ACCESS_REVIEWER_ROLES.has(role)) {
+    throw new Error('Only a principal or workspace administrator can review Commercial access requests.')
+  }
+}
+
+function normalizeCommercialAccessAssignment(row = {}) {
+  const metadata = parseJsonObject(row.module_metadata || row.moduleMetadata || row.metadata)
+  return {
+    organisationUserId: normalizeText(row.id),
+    organisationId: normalizeText(row.organisation_id),
+    userId: normalizeText(row.user_id),
+    email: normalizeText(row.email),
+    fullName: [normalizeText(row.first_name), normalizeText(row.last_name)].filter(Boolean).join(' ') || normalizeText(row.email),
+    role: normalizeLower(row.workspace_role || row.organisation_role || row.role || 'viewer'),
+    status: normalizeLower(row.status || 'invited'),
+    hasCommercialAccess: isCommercialMembershipRow(row),
+    moduleContext: normalizeLower(row.module_context),
+    source: normalizeText(metadata.source),
+    updatedAt: row.updated_at || null,
+  }
+}
+
+function normalizeCommercialAccessAuditEvent(row = {}) {
+  const metadata = parseJsonObject(row.metadata)
+  return {
+    id: normalizeText(row.id),
+    userId: normalizeText(row.user_id),
+    workspaceId: normalizeText(row.workspace_id),
+    action: normalizeText(row.action),
+    targetType: normalizeText(row.target_type),
+    targetId: normalizeText(row.target_id),
+    metadata,
+    createdAt: row.created_at || null,
+  }
+}
+
+function normalizeCommercialAccessNotificationResult(rows = []) {
+  const normalizedRows = Array.isArray(rows) ? rows : []
+  const recipients = normalizedRows
+    .map((row) => ({
+      notificationId: normalizeText(row.notification_id || row.notificationId || row.id),
+      userId: normalizeText(row.recipient_user_id || row.recipientUserId || row.user_id),
+      email: normalizeText(row.recipient_email || row.recipientEmail || row.email).toLowerCase(),
+      name: normalizeText(row.recipient_name || row.recipientName || row.name),
+    }))
+    .filter((row) => row.userId)
+  const notifiedUserIds = normalizedRows
+    .map((row) => normalizeText(row.recipient_user_id || row.recipientUserId || row.user_id))
+    .filter(Boolean)
+  return {
+    notificationCount: notifiedUserIds.length,
+    notifiedUserIds,
+    recipients,
+    emailCount: 0,
+    emailSkippedReason: '',
+    skippedReason: '',
+  }
+}
+
+function buildCommercialAccessActionLink(actionRoute = '/settings/users') {
+  const route = normalizeText(actionRoute) || '/settings/users'
+  if (typeof window === 'undefined' || !window.location?.origin) return route
+  return `${window.location.origin}${route.startsWith('/') ? route : `/${route}`}`
+}
+
+async function sendCommercialAccessNotificationEmails({
+  recipients = [],
+  request = {},
+  eventKind = 'request',
+  decision = '',
+  organisationName = '',
+  actionRoute = '/settings/users',
+} = {}) {
+  const deliverableRecipients = (recipients || []).filter((recipient) => recipient.email)
+  if (!deliverableRecipients.length) {
+    return { emailCount: 0, emailSkippedReason: 'no_email_recipients' }
+  }
+
+  let emailCount = 0
+  for (const recipient of deliverableRecipients) {
+    try {
+      const response = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'commercial_access_notification',
+          to: recipient.email,
+          recipientName: recipient.name,
+          eventKind,
+          decision,
+          requestId: request.id,
+          requesterName: request.requesterName,
+          requesterEmail: request.requesterEmail,
+          organisationName: organisationName || 'Bridge workspace',
+          actionLink: buildCommercialAccessActionLink(actionRoute),
+        },
+      })
+      const sendError = response?.error || response?.data?.error
+      if (sendError) {
+        console.warn('[Commercial access notifications] email was not sent.', sendError)
+        continue
+      }
+      if (response?.data?.sent !== false) emailCount += 1
+    } catch (error) {
+      console.warn('[Commercial access notifications] email failed.', error)
+    }
+  }
+
+  return {
+    emailCount,
+    emailSkippedReason: emailCount ? '' : 'email_delivery_failed',
+  }
+}
+
+function recordCommercialAccessAudit({
+  userId = '',
+  workspaceId = '',
+  action = '',
+  targetType = '',
+  targetId = '',
+  metadata = {},
+} = {}) {
+  void recordSecurityAuditEvent({
+    userId,
+    workspaceId,
+    action,
+    targetType,
+    targetId,
+    metadata: {
+      module: COMMERCIAL_MODULE_KEY,
+      ...metadata,
+    },
+  }).catch((error) => {
+    if (!isMissingAuditSchemaError(error)) {
+      console.warn('[Commercial access audit] event was not persisted.', error)
+    }
+  })
+}
+
+async function notifyCommercialAccessReviewers(request = {}, { organisationName = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase || !request?.id) {
+    return { notificationCount: 0, notifiedUserIds: [], skippedReason: 'notification_unavailable' }
+  }
+
+  const result = await supabase.rpc('bridge_notify_commercial_access_request', {
+    p_request_id: request.id,
+  })
+
+  if (result.error) {
+    if (isMissingCommercialNotificationError(result.error)) {
+      return { notificationCount: 0, notifiedUserIds: [], skippedReason: 'notification_helper_missing' }
+    }
+    console.warn('[Commercial access notifications] reviewer notification failed.', result.error)
+    return { notificationCount: 0, notifiedUserIds: [], skippedReason: 'notification_failed' }
+  }
+
+  const notificationResult = normalizeCommercialAccessNotificationResult(result.data)
+  const emailResult = notificationResult.notificationCount
+    ? await sendCommercialAccessNotificationEmails({
+        recipients: notificationResult.recipients,
+        request,
+        eventKind: 'request',
+        organisationName,
+        actionRoute: '/settings/users',
+      })
+    : { emailCount: 0, emailSkippedReason: 'no_reviewers_found' }
+  const mergedResult = { ...notificationResult, ...emailResult }
+  return mergedResult.notificationCount
+    ? mergedResult
+    : { ...mergedResult, skippedReason: 'no_reviewers_found' }
+}
+
+async function notifyCommercialAccessRequesterDecision(request = {}, { organisationName = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase || !request?.id) {
+    return { notificationCount: 0, notifiedUserIds: [], skippedReason: 'notification_unavailable' }
+  }
+
+  const result = await supabase.rpc('bridge_notify_commercial_access_decision', {
+    p_request_id: request.id,
+  })
+
+  if (result.error) {
+    if (isMissingCommercialNotificationError(result.error)) {
+      return { notificationCount: 0, notifiedUserIds: [], skippedReason: 'notification_helper_missing' }
+    }
+    console.warn('[Commercial access notifications] requester decision notification failed.', result.error)
+    return { notificationCount: 0, notifiedUserIds: [], skippedReason: 'notification_failed' }
+  }
+
+  const notificationResult = normalizeCommercialAccessNotificationResult(result.data)
+  const actionRoute = request.status === 'approved' ? '/commercial' : '/dashboard'
+  const emailResult = notificationResult.notificationCount
+    ? await sendCommercialAccessNotificationEmails({
+        recipients: notificationResult.recipients,
+        request,
+        eventKind: 'decision',
+        decision: request.status,
+        organisationName,
+        actionRoute,
+      })
+    : { emailCount: 0, emailSkippedReason: 'requester_not_notified' }
+  const mergedResult = { ...notificationResult, ...emailResult }
+  return mergedResult.notificationCount
+    ? mergedResult
+    : { ...mergedResult, skippedReason: 'requester_not_notified' }
+}
+
+async function nudgeCommercialAccessReviewers(request = {}, { organisationName = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase || !request?.id) {
+    return { notificationCount: 0, notifiedUserIds: [], skippedReason: 'notification_unavailable' }
+  }
+
+  const result = await supabase.rpc('bridge_nudge_commercial_access_request', {
+    p_request_id: request.id,
+  })
+
+  if (result.error) {
+    if (isMissingCommercialNotificationError(result.error)) {
+      return { notificationCount: 0, notifiedUserIds: [], skippedReason: 'notification_helper_missing' }
+    }
+    console.warn('[Commercial access notifications] reviewer reminder failed.', result.error)
+    return { notificationCount: 0, notifiedUserIds: [], skippedReason: 'notification_failed' }
+  }
+
+  const notificationResult = normalizeCommercialAccessNotificationResult(result.data)
+  const emailResult = notificationResult.notificationCount
+    ? await sendCommercialAccessNotificationEmails({
+        recipients: notificationResult.recipients,
+        request,
+        eventKind: 'reminder',
+        organisationName,
+        actionRoute: '/settings/users',
+      })
+    : { emailCount: 0, emailSkippedReason: 'no_reviewers_found' }
+  const mergedResult = { ...notificationResult, ...emailResult }
+  return mergedResult.notificationCount
+    ? mergedResult
+    : { ...mergedResult, skippedReason: 'no_reviewers_found' }
+}
+
+async function findPendingCommercialAccessRequest(organisationId, userId) {
+  if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
+  const query = await supabase
+    .from('commercial_access_requests')
+    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .eq('organisation_id', organisationId)
+    .eq('requester_user_id', userId)
+    .eq('module_key', COMMERCIAL_MODULE_KEY)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (query.error) {
+    if (isMissingCommercialTableError(query.error) || isCommercialSchemaMismatchError(query.error)) return null
+    throw query.error
+  }
+  return query.data ? normalizeCommercialAccessRequest(query.data) : null
+}
+
+export async function requestCommercialAccessForCurrentUser({ message = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Commercial setup requires Supabase to be configured.')
+  }
+
+  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  const context = await resolveCommercialOrganisationContext()
+  const userId = context.userId || await getCurrentUserId()
+  const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Bridge workspace'
+  if (!context.organisationId || !userId) {
+    throw new Error('An active organisation membership is required before Commercial access can be requested.')
+  }
+
+  const currentScope = await resolveCommercialAccessContext({ forceRefresh: true }).catch(() => null)
+  if (currentScope?.hasCommercialAccess) {
+    return { status: 'already_active', request: null, reviewerCount: 0 }
+  }
+
+  const member = await findCurrentOrganisationMembership(context.organisationId, userId)
+  if (!member?.id) {
+    throw new Error('We could not find your organisation membership for this Commercial access request.')
+  }
+
+  const existing = await findPendingCommercialAccessRequest(context.organisationId, userId)
+  if (existing?.id) {
+    const notificationResult = await notifyCommercialAccessReviewers(existing, { organisationName })
+    return {
+      status: 'pending',
+      request: existing,
+      reviewerCount: notificationResult.notificationCount,
+      notificationResult,
+      reusedExistingRequest: true,
+    }
+  }
+
+  const requesterName = [normalizeText(member.first_name), normalizeText(member.last_name)].filter(Boolean).join(' ') || normalizeText(member.email)
+  const organisationModuleStatus = currentScope?.commercialModuleStatus || await getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh: true })
+  const payload = {
+    organisation_id: context.organisationId,
+    requester_user_id: userId,
+    requester_membership_id: member.id,
+    requester_email: normalizeText(member.email || context.profile?.email),
+    requester_name: requesterName,
+    module_key: COMMERCIAL_MODULE_KEY,
+    status: 'pending',
+    request_message: normalizeText(message) || null,
+    metadata: buildCommercialAccessRequestMetadata({ scope: context, organisationModuleStatus }),
+  }
+
+  const insert = await supabase
+    .from('commercial_access_requests')
+    .insert(payload)
+    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .single()
+
+  if (insert.error) {
+    if (isUniqueConstraintError(insert.error)) {
+      const pending = await findPendingCommercialAccessRequest(context.organisationId, userId)
+      const notificationResult = await notifyCommercialAccessReviewers(pending, { organisationName })
+      return {
+        status: 'pending',
+        request: pending,
+        reviewerCount: notificationResult.notificationCount,
+        notificationResult,
+        reusedExistingRequest: true,
+      }
+    }
+    if (isMissingCommercialTableError(insert.error) || isCommercialSchemaMismatchError(insert.error)) {
+      throw createCommercialPlatformInstallError({
+        installed: false,
+        reason: 'schema_missing',
+        missing: ['commercial access request workflow'],
+      })
+    }
+    throw insert.error
+  }
+
+  const request = normalizeCommercialAccessRequest(insert.data)
+  const notificationResult = await notifyCommercialAccessReviewers(request, { organisationName })
+
+  recordCommercialAccessAudit({
+    userId,
+    workspaceId: context.organisationId,
+    action: COMMERCIAL_ACCESS_AUDIT_ACTIONS.requested,
+    targetType: 'commercial_access_request',
+    targetId: request.id,
+    metadata: {
+      requesterUserId: userId,
+      requesterMembershipId: member.id,
+      requesterEmail: payload.requester_email,
+      organisationModuleStatus: organisationModuleStatus?.status || 'disabled',
+      reviewerNotificationCount: notificationResult.notificationCount,
+      reviewerNotificationSkippedReason: notificationResult.skippedReason || null,
+      reviewerEmailCount: notificationResult.emailCount,
+      reviewerEmailSkippedReason: notificationResult.emailSkippedReason || null,
+    },
+  })
+
+  return {
+    status: 'pending',
+    request,
+    reviewerCount: notificationResult.notificationCount,
+    notificationResult,
+  }
+}
+
+export async function remindCommercialAccessReviewersForCurrentUser() {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Commercial setup requires Supabase to be configured.')
+  }
+
+  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  const context = await resolveCommercialOrganisationContext()
+  const userId = context.userId || await getCurrentUserId()
+  const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Bridge workspace'
+  if (!context.organisationId || !userId) {
+    throw new Error('An active organisation membership is required before Commercial access can be reminded.')
+  }
+
+  const request = await findPendingCommercialAccessRequest(context.organisationId, userId)
+  if (!request?.id) {
+    throw new Error('There is no pending Commercial access request to remind.')
+  }
+
+  const notificationResult = await nudgeCommercialAccessReviewers(request, { organisationName })
+  recordCommercialAccessAudit({
+    userId,
+    workspaceId: context.organisationId,
+    action: COMMERCIAL_ACCESS_AUDIT_ACTIONS.reminded,
+    targetType: 'commercial_access_request',
+    targetId: request.id,
+    metadata: {
+      requesterUserId: userId,
+      requesterEmail: request.requesterEmail,
+      reminderNotificationCount: notificationResult.notificationCount,
+      reminderNotificationSkippedReason: notificationResult.skippedReason || null,
+      reminderEmailCount: notificationResult.emailCount,
+      reminderEmailSkippedReason: notificationResult.emailSkippedReason || null,
+    },
+  })
+
+  return {
+    status: 'reminded',
+    request,
+    reviewerCount: notificationResult.notificationCount,
+    notificationResult,
+  }
+}
+
+export async function listCommercialAccessRequests({ status = 'pending' } = {}) {
+  if (!isSupabaseConfigured || !supabase) return []
+  await assertCommercialPlatformInstalled({ forceRefresh: false })
+  const context = await resolveCommercialOrganisationContext()
+  if (!context.organisationId) return []
+  assertCommercialAccessReviewer(context)
+
+  let query = supabase
+    .from('commercial_access_requests')
+    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .eq('organisation_id', context.organisationId)
+    .eq('module_key', COMMERCIAL_MODULE_KEY)
+    .order('created_at', { ascending: false })
+
+  const normalizedStatus = normalizeLower(status)
+  if (normalizedStatus && normalizedStatus !== 'all') {
+    query = query.eq('status', normalizedStatus)
+  }
+
+  const result = await query
+  if (result.error) {
+    if (isMissingCommercialTableError(result.error) || isCommercialSchemaMismatchError(result.error)) return []
+    throw result.error
+  }
+  return (result.data || []).map(normalizeCommercialAccessRequest)
+}
+
+export async function reviewCommercialAccessRequest(requestId, { decision = 'approved', note = '' } = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Commercial setup requires Supabase to be configured.')
+  }
+
+  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  const context = await resolveCommercialOrganisationContext()
+  assertCommercialAccessReviewer(context)
+  const userId = context.userId || await getCurrentUserId()
+  const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Bridge workspace'
+  const normalizedDecision = normalizeLower(decision) === 'rejected' ? 'rejected' : 'approved'
+
+  const requestQuery = await supabase
+    .from('commercial_access_requests')
+    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .eq('id', requestId)
+    .eq('organisation_id', context.organisationId)
+    .eq('module_key', COMMERCIAL_MODULE_KEY)
+    .maybeSingle()
+
+  if (requestQuery.error) throw requestQuery.error
+  const request = requestQuery.data ? normalizeCommercialAccessRequest(requestQuery.data) : null
+  if (!request?.id) throw new Error('Commercial access request was not found.')
+  if (request.status !== 'pending') throw new Error('Commercial access request has already been reviewed.')
+
+  let membership = null
+  if (normalizedDecision === 'approved') {
+    const nowIso = new Date().toISOString()
+    const moduleUpsert = await supabase
+      .from('organisation_modules')
+      .upsert(
+        {
+          organisation_id: request.organisationId,
+          module_key: COMMERCIAL_MODULE_KEY,
+          status: 'active',
+          source: 'principal_request',
+          enabled_by: userId,
+          enabled_at: nowIso,
+          disabled_by: null,
+          disabled_at: null,
+          metadata: {
+            source: 'commercial_access_request_approval',
+            request_id: request.id,
+            requester_user_id: request.requesterUserId,
+            approved_by: userId,
+            approved_at: nowIso,
+          },
+        },
+        { onConflict: 'organisation_id,module_key' },
+      )
+
+    if (moduleUpsert.error) throw moduleUpsert.error
+
+    const membershipPayload = {
+      module_context: COMMERCIAL_MODULE_KEY,
+      module_metadata: buildCommercialAccessApprovalMetadata({ request, reviewerId: userId }),
+    }
+    let membershipUpdate = supabase
+      .from('organisation_users')
+      .update(membershipPayload)
+      .eq('organisation_id', request.organisationId)
+      .eq('user_id', request.requesterUserId)
+
+    if (request.requesterMembershipId) {
+      membershipUpdate = membershipUpdate.eq('id', request.requesterMembershipId)
+    }
+
+    let updatedMembership = await membershipUpdate
+      .select('id, organisation_id, user_id, module_context, module_metadata, role, workspace_role, organisation_role, status, email')
+      .maybeSingle()
+
+    if (updatedMembership.error && isMissingCommercialActivationColumn(updatedMembership.error)) {
+      updatedMembership = await supabase
+        .from('organisation_users')
+        .update({ module_context: COMMERCIAL_MODULE_KEY })
+        .eq('organisation_id', request.organisationId)
+        .eq('user_id', request.requesterUserId)
+        .select('id, organisation_id, user_id, module_context, role, workspace_role, organisation_role, status, email')
+        .maybeSingle()
+    }
+
+    if (updatedMembership.error) throw updatedMembership.error
+    membership = updatedMembership.data || null
+  }
+
+  const review = await supabase
+    .from('commercial_access_requests')
+    .update({
+      status: normalizedDecision,
+      principal_note: normalizeText(note) || null,
+      reviewed_by: userId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', request.id)
+    .eq('organisation_id', request.organisationId)
+    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .maybeSingle()
+
+  if (review.error) throw review.error
+  const reviewedRequest = normalizeCommercialAccessRequest(review.data || requestQuery.data)
+  const notificationResult = await notifyCommercialAccessRequesterDecision(reviewedRequest, { organisationName })
+
+  recordCommercialAccessAudit({
+    userId,
+    workspaceId: request.organisationId,
+    action: normalizedDecision === 'approved' ? COMMERCIAL_ACCESS_AUDIT_ACTIONS.approved : COMMERCIAL_ACCESS_AUDIT_ACTIONS.rejected,
+    targetType: 'commercial_access_request',
+    targetId: request.id,
+    metadata: {
+      requesterUserId: request.requesterUserId,
+      requesterMembershipId: request.requesterMembershipId,
+      requesterEmail: request.requesterEmail,
+      decision: normalizedDecision,
+      note: normalizeText(note) || null,
+      requesterNotificationCount: notificationResult.notificationCount,
+      requesterNotificationSkippedReason: notificationResult.skippedReason || null,
+      requesterEmailCount: notificationResult.emailCount,
+      requesterEmailSkippedReason: notificationResult.emailSkippedReason || null,
+    },
+  })
+  commercialScopeCache = null
+  return {
+    request: reviewedRequest,
+    membership,
+    notificationResult,
+  }
+}
+
+export async function listCommercialAccessManagementState() {
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      organisationModuleStatus: createCommercialOrganisationDisabledStatus(),
+      users: [],
+      auditEvents: [],
+    }
+  }
+
+  await assertCommercialPlatformInstalled({ forceRefresh: false })
+  const context = await resolveCommercialOrganisationContext()
+  if (!context.organisationId) {
+    return {
+      organisationModuleStatus: createCommercialOrganisationDisabledStatus(),
+      users: [],
+      auditEvents: [],
+    }
+  }
+  assertCommercialAccessReviewer(context)
+
+  const [organisationModuleStatus, usersQuery, auditEvents] = await Promise.all([
+    getCommercialOrganisationModuleStatus({ organisationId: context.organisationId }),
+    supabase
+      .from('organisation_users')
+      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, module, module_type, workspace_type, module_metadata, metadata, updated_at')
+      .eq('organisation_id', context.organisationId)
+      .neq('status', 'deactivated')
+      .order('created_at', { ascending: true }),
+    listCommercialAccessAuditEvents({ limit: 8 }).catch(() => []),
+  ])
+
+  if (usersQuery.error) {
+    if (isMissingCommercialTableError(usersQuery.error) || isCommercialSchemaMismatchError(usersQuery.error)) {
+      throw createCommercialPlatformInstallError({
+        installed: false,
+        reason: 'schema_missing',
+        missing: ['organisation commercial activation columns'],
+      })
+    }
+    throw usersQuery.error
+  }
+
+  return {
+    organisationModuleStatus,
+    users: (usersQuery.data || []).map(normalizeCommercialAccessAssignment),
+    auditEvents,
+  }
+}
+
+export async function listCommercialAccessAuditEvents({ limit = 20 } = {}) {
+  if (!isSupabaseConfigured || !supabase) return []
+  const context = await resolveCommercialOrganisationContext()
+  if (!context.organisationId) return []
+  assertCommercialAccessReviewer(context)
+
+  const result = await supabase
+    .from('security_audit_events')
+    .select('id, user_id, workspace_id, action, target_type, target_id, metadata, created_at')
+    .eq('workspace_id', context.organisationId)
+    .in('action', COMMERCIAL_ACCESS_AUDIT_ACTION_LIST)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(Math.max(Number(limit) || 20, 1), 50))
+
+  if (result.error) {
+    if (isMissingAuditSchemaError(result.error)) return []
+    throw result.error
+  }
+
+  return (result.data || []).map(normalizeCommercialAccessAuditEvent)
+}
+
+export async function setCommercialOrganisationModuleEnabled(enabled = true) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Commercial setup requires Supabase to be configured.')
+  }
+
+  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  const context = await resolveCommercialOrganisationContext()
+  assertCommercialAccessReviewer(context)
+  const userId = context.userId || await getCurrentUserId()
+  if (!context.organisationId || !userId) {
+    throw new Error('An active principal membership is required to manage Commercial access.')
+  }
+
+  const nowIso = new Date().toISOString()
+  const payload = {
+    organisation_id: context.organisationId,
+    module_key: COMMERCIAL_MODULE_KEY,
+    status: enabled ? 'active' : 'disabled',
+    source: 'manual',
+    metadata: {
+      source: enabled ? 'manual_enable' : 'manual_disable',
+      actor_user_id: userId,
+      changed_at: nowIso,
+    },
+  }
+
+  if (enabled) {
+    payload.enabled_by = userId
+    payload.enabled_at = nowIso
+    payload.disabled_by = null
+    payload.disabled_at = null
+  } else {
+    payload.disabled_by = userId
+    payload.disabled_at = nowIso
+  }
+
+  const result = await supabase
+    .from('organisation_modules')
+    .upsert(payload, { onConflict: 'organisation_id,module_key' })
+    .select('id, organisation_id, module_key, status, source, enabled_by, enabled_at, requested_by, requested_at, disabled_by, disabled_at, metadata')
+    .maybeSingle()
+
+  if (result.error) throw result.error
+  recordCommercialAccessAudit({
+    userId,
+    workspaceId: context.organisationId,
+    action: enabled ? COMMERCIAL_ACCESS_AUDIT_ACTIONS.moduleEnabled : COMMERCIAL_ACCESS_AUDIT_ACTIONS.moduleDisabled,
+    targetType: 'organisation_module',
+    targetId: result.data?.id || context.organisationId,
+    metadata: {
+      status: enabled ? 'active' : 'disabled',
+      source: 'manual',
+    },
+  })
+  commercialScopeCache = null
+  return getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh: true })
+}
+
+export async function setCommercialUserAccess(organisationUserId, enabled = true) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Commercial setup requires Supabase to be configured.')
+  }
+
+  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  const context = await resolveCommercialOrganisationContext()
+  assertCommercialAccessReviewer(context)
+  const reviewerId = context.userId || await getCurrentUserId()
+  const safeOrganisationUserId = normalizeText(organisationUserId)
+  if (!context.organisationId || !reviewerId || !safeOrganisationUserId) {
+    throw new Error('A valid organisation user is required to manage Commercial access.')
+  }
+
+  const existing = await supabase
+    .from('organisation_users')
+    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, module, module_type, workspace_type, module_metadata, metadata')
+    .eq('id', safeOrganisationUserId)
+    .eq('organisation_id', context.organisationId)
+    .maybeSingle()
+
+  if (existing.error) throw existing.error
+  if (!existing.data?.id) throw new Error('Organisation user not found.')
+
+  if (enabled) {
+    const moduleStatus = await getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh: true })
+    if (!moduleStatus.enabled) {
+      await setCommercialOrganisationModuleEnabled(true)
+    }
+  }
+
+  const payload = enabled
+    ? {
+        module_context: COMMERCIAL_MODULE_KEY,
+        module_metadata: buildCommercialManualGrantMetadata({ organisationUserId: safeOrganisationUserId, reviewerId }),
+      }
+    : {
+        module_context: null,
+        module_metadata: buildCommercialManualRevokeMetadata({ organisationUserId: safeOrganisationUserId, reviewerId }),
+      }
+
+  let result = await supabase
+    .from('organisation_users')
+    .update(payload)
+    .eq('id', safeOrganisationUserId)
+    .eq('organisation_id', context.organisationId)
+    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, module, module_type, workspace_type, module_metadata, metadata, updated_at')
+    .maybeSingle()
+
+  if (result.error && isMissingCommercialActivationColumn(result.error)) {
+    result = await supabase
+      .from('organisation_users')
+      .update({ module_context: enabled ? COMMERCIAL_MODULE_KEY : null })
+      .eq('id', safeOrganisationUserId)
+      .eq('organisation_id', context.organisationId)
+      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, updated_at')
+      .maybeSingle()
+  }
+
+  if (result.error) throw result.error
+  recordCommercialAccessAudit({
+    userId: reviewerId,
+    workspaceId: context.organisationId,
+    action: enabled ? COMMERCIAL_ACCESS_AUDIT_ACTIONS.userGranted : COMMERCIAL_ACCESS_AUDIT_ACTIONS.userRevoked,
+    targetType: 'organisation_user',
+    targetId: safeOrganisationUserId,
+    metadata: {
+      targetUserId: normalizeText(existing.data?.user_id) || null,
+      targetEmail: normalizeText(existing.data?.email) || null,
+      previousCommercialAccess: isCommercialMembershipRow(existing.data),
+      nextCommercialAccess: Boolean(enabled),
+      source: enabled ? 'manual_grant' : 'manual_revoke',
+    },
+  })
+  commercialScopeCache = null
+  return normalizeCommercialAccessAssignment(result.data)
+}
+
 async function getCurrentUserId() {
   if (!isSupabaseConfigured || !supabase?.auth?.getUser) return null
   const { data } = await supabase.auth.getUser()
@@ -259,16 +1258,25 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
   if (!forceRefresh && commercialScopeInflight) return commercialScopeInflight
 
   commercialScopeInflight = (async () => {
+    await assertCommercialPlatformInstalled({ forceRefresh })
     const context = await resolveCommercialOrganisationContext()
     const userId = context.userId || await getCurrentUserId()
-    const membership = await findCurrentCommercialMembership(context.organisationId, userId).catch(() => null)
-    const role = normalizeLower(membership?.workspace_role || membership?.organisation_role || membership?.role || context.membershipRole || 'viewer')
     const isPlatformAdmin = normalizeLower(context.profile?.role) === 'platform_admin' || normalizeLower(context.membershipRole) === 'platform_admin'
-    const hasCommercialAccess = isPlatformAdmin || Boolean(membership?.id && isCommercialMembershipRow(membership))
+    const commercialModuleStatus = await getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh })
+    const organisationCommercialEnabled = isPlatformAdmin || Boolean(commercialModuleStatus.enabled)
+    const membership = organisationCommercialEnabled
+      ? await findCurrentCommercialMembership(context.organisationId, userId).catch(() => null)
+      : null
+    const role = normalizeLower(membership?.workspace_role || membership?.organisation_role || membership?.role || context.membershipRole || 'viewer')
+    const memberHasCommercialAccess = Boolean(membership?.id && isCommercialMembershipRow(membership))
+    const hasCommercialAccess = isPlatformAdmin || (organisationCommercialEnabled && memberHasCommercialAccess)
     const scope = {
       ...context,
       userId,
       membership,
+      commercialModuleStatus,
+      organisationCommercialEnabled,
+      memberHasCommercialAccess,
       membershipRole: isPlatformAdmin ? 'platform_admin' : role,
       branchId: normalizeText(membership?.primary_branch_id || membership?.branch_id),
       teamId: normalizeText(membership?.team_id),
@@ -335,10 +1343,20 @@ export async function activateCommercialWorkspaceForCurrentUser() {
     throw new Error('Commercial setup requires Supabase to be configured.')
   }
 
+  await assertCommercialPlatformInstalled({ forceRefresh: true })
+
   const context = await resolveCommercialOrganisationContext()
   const userId = context.userId || await getCurrentUserId()
   if (!context.organisationId || !userId) {
     throw new Error('An active organisation membership is required before Commercial can be activated.')
+  }
+
+  const commercialModuleStatus = await getCommercialOrganisationModuleStatus({
+    organisationId: context.organisationId,
+    forceRefresh: true,
+  })
+  if (!commercialModuleStatus.enabled) {
+    throw new Error('Commercial is not enabled for this workspace. Ask your principal to enable Commercial before activating your Commercial role.')
   }
 
   const existingCommercialMembership = await findCurrentCommercialMembership(context.organisationId, userId).catch(() => null)
@@ -367,7 +1385,7 @@ export async function activateCommercialWorkspaceForCurrentUser() {
 
   if (update.error && isMissingCommercialActivationColumn(update.error)) {
     if (getMissingCommercialColumn(update.error) === 'module_context') {
-      throw new Error('Commercial setup is not installed for this workspace yet.')
+      throw createCommercialPlatformInstallError({ installed: false, reason: 'schema_missing', missing: ['organisation_users.module_context'] })
     }
     const fallback = await supabase
       .from('organisation_users')

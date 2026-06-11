@@ -1279,7 +1279,7 @@ async function ensureSellerClientPortalContext(client, { listing = {}, onboardin
 }
 
 function createListingReference() {
-  const timestamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 12)
+  const timestamp = new Date().toISOString().replace(/[.:TZ-]/g, '').slice(0, 12)
   const randomPart = Math.random().toString(36).slice(2, 6).toUpperCase()
   return `PRV-${timestamp}-${randomPart}`
 }

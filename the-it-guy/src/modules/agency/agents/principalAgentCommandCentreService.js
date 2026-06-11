@@ -1,6 +1,6 @@
 import { AGENT_DATE_RANGE_OPTIONS, buildAgentPerformanceModel } from './agentPerformanceUtils.js'
 
-const ACTIVE_STATUS_VALUES = new Set(['active', 'accepted', 'onboarding_started', 'invite_sent', 'pending_invite'])
+const ACTIVE_STATUS_VALUES = new Set(['active', 'accepted', 'onboarding_started'])
 const INACTIVE_STATUS_SIGNALS = ['inactive', 'disabled', 'revoked', 'expired', 'deleted', 'archived']
 const RESPONSE_TIME_THRESHOLD_HOURS = 24
 
@@ -41,6 +41,7 @@ function getAgentBranchId(agent = {}) {
 function getAgentStatus(agent = {}) {
   const status = normalizeKey(agent.status || agent.inviteStatus || agent.membershipStatus)
   if (INACTIVE_STATUS_SIGNALS.some((signal) => status.includes(signal))) return 'inactive'
+  if (status.includes('pending') || status.includes('invite') || status.includes('invited')) return 'pending_invite'
   if (status.includes('leave')) return 'on_leave'
   if (!status || ACTIVE_STATUS_VALUES.has(status)) return 'active'
   return status
@@ -158,6 +159,7 @@ function shouldIncludeAgent(agent = {}, { organisationId = '', branchId = 'all',
   const agentStatus = getAgentStatus(agent)
   if (status === 'inactive') return agentStatus === 'inactive'
   if (status === 'on_leave') return agentStatus === 'on_leave'
+  if (status === 'pending_invite') return agentStatus === 'pending_invite'
   if (status === 'active') return agentStatus === 'active'
   if (!includeInactive && agentStatus === 'inactive') return false
   return true
@@ -253,7 +255,7 @@ export function getPrincipalAgentCommandCentre({
     }
     const branch = branchMap.get(key)
     const attention = attentionByAgent.get(agent.id || agent.email || agent.displayName)
-    branch.activeAgents += getAgentStatus(agent) === 'inactive' ? 0 : 1
+    branch.activeAgents += getAgentStatus(agent) === 'active' ? 1 : 0
     branch.pipelineValue += toNumber(agent.performance?.pipelineValue)
     branch.transactions += toNumber(agent.performance?.activeTransactions || agent.performance?.deals)
     branch.conversionTotal += toNumber(agent.performance?.conversionRate)
@@ -313,6 +315,7 @@ export function getPrincipalAgentCommandCentre({
 
   const attentionAgents = modelAgents
     .map((agent) => {
+      if (getAgentStatus(agent) === 'pending_invite') return null
       const attention = attentionByAgent.get(agent.id || agent.email || agent.displayName) || buildAttentionReasons(agent, teamAverageConversion, now)
       return {
         id: agent.id || agent.email || agent.displayName,
@@ -329,7 +332,7 @@ export function getPrincipalAgentCommandCentre({
         agent,
       }
     })
-    .filter((row) => row.reasons.length)
+    .filter((row) => row?.reasons?.length)
     .sort((left, right) => {
       const severityRank = { High: 3, Medium: 2, Low: 1 }
       return (severityRank[right.severity] || 0) - (severityRank[left.severity] || 0) || right.overdueFollowUps - left.overdueFollowUps

@@ -14,6 +14,14 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
+import {
+  createTransactionPartnerInvitation,
+  applyPartnerProspectToTransaction,
+  filterPartnerProspectsForSearch,
+  listPartnerProspects,
+  validateTransactionPartnerInvitationDraft,
+} from '../services/transactionPartnerInvitationService'
+import { listTransactionPartnerConnectionOptions } from '../services/partnerNetworkService'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -138,6 +146,82 @@ function pickFirstValue(...values) {
   return ''
 }
 
+function createInitialPartnerInvitationDrafts() {
+  return {
+    transfer_attorney: {
+      companyName: '',
+      contactName: '',
+      email: '',
+      phone: '',
+    },
+    bond_originator: {
+      companyName: '',
+      contactName: '',
+      email: '',
+      phone: '',
+    },
+  }
+}
+
+function createInitialPartnerInvitationModes() {
+  return {
+    transfer_attorney: 'existing',
+    bond_originator: 'existing',
+  }
+}
+
+function createInitialPartnerProspectState() {
+  return {
+    transfer_attorney: null,
+    bond_originator: null,
+  }
+}
+
+function createInitialPartnerProspectQueries() {
+  return {
+    transfer_attorney: '',
+    bond_originator: '',
+  }
+}
+
+function createInitialPartnerConnectionOptions() {
+  return {
+    transfer_attorney: [],
+    bond_originator: [],
+  }
+}
+
+function mergePartnerConnectionOptions(connectionOptions = [], legacyOptions = []) {
+  const byKey = new Map()
+  const options = [...connectionOptions, ...legacyOptions]
+  options.forEach((option) => {
+    const key = option.organisationId || option.partnerOrganisationId || option.partnerOrganizationId || option.companyName || option.id
+    if (!key || byKey.has(key)) return
+    byKey.set(key, option)
+  })
+  return [...byKey.values()]
+}
+
+function getActivePartnerInvitationDrafts(modes, drafts) {
+  return ['transfer_attorney', 'bond_originator']
+    .filter((roleType) => modes?.[roleType] === 'invite')
+    .map((roleType) => ({
+      roleType,
+      ...(drafts?.[roleType] || {}),
+    }))
+}
+
+function prospectToInvitationDraft(roleType, prospect = {}) {
+  return {
+    roleType,
+    partnerProspectId: prospect.id || null,
+    companyName: prospect.companyName || '',
+    contactName: prospect.contactName || prospect.companyName || '',
+    email: prospect.email || '',
+    phone: prospect.phone || '',
+  }
+}
+
 function Field({ label, error, hint, fullWidth = false, children }) {
   const control = isValidElement(children)
     ? cloneElement(children, {
@@ -157,6 +241,78 @@ function Field({ label, error, hint, fullWidth = false, children }) {
       {control}
       {error ? <small className="text-xs font-medium text-[#b42318]">{error}</small> : null}
     </label>
+  )
+}
+
+function PartnerProspectPicker({
+  label,
+  query,
+  onQueryChange,
+  prospects,
+  selectedProspect,
+  onSelect,
+  loading,
+}) {
+  return (
+    <div className="space-y-2">
+      <Field label={label} hint="Search firms already referenced on Bridge. Selecting a pending firm pre-fills and resends the transaction invitation.">
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="Search by firm, contact, or email"
+        />
+      </Field>
+      <div className="space-y-2">
+        {loading ? <p className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-xs font-semibold text-[#6b7d93]">Loading reusable firms...</p> : null}
+        {!loading && prospects.length ? (
+          prospects.map((prospect) => {
+            const selected = selectedProspect?.id === prospect.id
+            return (
+              <button
+                key={prospect.id}
+                type="button"
+                className={`w-full rounded-[14px] border px-3 py-2.5 text-left transition ${
+                  selected
+                    ? 'border-[#142132] bg-[#f4f7fb] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
+                    : 'border-[#e3ebf4] bg-white hover:border-[#cbd8e6] hover:bg-[#fbfdff]'
+                }`}
+                onClick={() => onSelect(prospect)}
+              >
+                <span className="flex items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <strong className="block truncate text-sm font-semibold text-[#142132]">{prospect.companyName}</strong>
+                    <span className="mt-0.5 block truncate text-xs text-[#60758d]">
+                      {prospect.contactName || prospect.email || 'No contact captured yet'}
+                    </span>
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] ${
+                      prospect.status === 'joined'
+                        ? 'bg-[#e8f7ee] text-[#1f7a45]'
+                        : prospect.status === 'declined'
+                          ? 'bg-[#fff1f0] text-[#b42318]'
+                          : 'bg-[#eef4fb] text-[#35546c]'
+                    }`}
+                  >
+                    {prospect.statusLabel}
+                  </span>
+                </span>
+                <span className="mt-2 block text-xs text-[#7b8ba5]">
+                  Used on {prospect.transactionCount || 0} transaction{Number(prospect.transactionCount || 0) === 1 ? '' : 's'}
+                  {prospect.duplicateReviewStatus === 'possible_duplicate' ? ' • Possible duplicate' : ''}
+                </span>
+              </button>
+            )
+          })
+        ) : null}
+        {!loading && query.trim() && !prospects.length ? (
+          <p className="rounded-[12px] border border-dashed border-[#d7e2ee] bg-[#fbfdff] px-3 py-2 text-xs leading-5 text-[#6b7d93]">
+            No reusable firm found. Use Invite New to create the prospect from this transaction.
+          </p>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
@@ -180,6 +336,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const [units, setUnits] = useState([])
   const [partnerSnapshot, setPartnerSnapshot] = useState(null)
   const [loadingPartners, setLoadingPartners] = useState(false)
+  const [partnerConnectionOptions, setPartnerConnectionOptions] = useState(createInitialPartnerConnectionOptions)
+  const [loadingPartnerConnections, setLoadingPartnerConnections] = useState(false)
   const [loadingMeta, setLoadingMeta] = useState(false)
   const [loadingUnits, setLoadingUnits] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -187,6 +345,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const [saveError, setSaveError] = useState('')
   const [createdTransaction, setCreatedTransaction] = useState(null)
   const [reservationDecisionTouched, setReservationDecisionTouched] = useState(false)
+  const [partnerInvitationModes, setPartnerInvitationModes] = useState(createInitialPartnerInvitationModes)
+  const [partnerInvitationDrafts, setPartnerInvitationDrafts] = useState(createInitialPartnerInvitationDrafts)
+  const [partnerProspects, setPartnerProspects] = useState([])
+  const [loadingPartnerProspects, setLoadingPartnerProspects] = useState(false)
+  const [partnerProspectQueries, setPartnerProspectQueries] = useState(createInitialPartnerProspectQueries)
+  const [selectedPartnerProspects, setSelectedPartnerProspects] = useState(createInitialPartnerProspectState)
 
   useEffect(() => {
     if (!open) {
@@ -198,6 +362,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     setForm(createInitialForm(initialDevelopmentId))
     setCreatedTransaction(null)
     setReservationDecisionTouched(false)
+    setPartnerInvitationModes(createInitialPartnerInvitationModes())
+    setPartnerInvitationDrafts(createInitialPartnerInvitationDrafts())
+    setPartnerConnectionOptions(createInitialPartnerConnectionOptions())
+    setPartnerProspects([])
+    setPartnerProspectQueries(createInitialPartnerProspectQueries())
+    setSelectedPartnerProspects(createInitialPartnerProspectState())
 
     if (!isSupabaseConfigured) {
       return
@@ -252,6 +422,65 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       active = false
     }
   }, [currentMembership, open, organisation?.id, organisation?.type, profile, role, workspace?.id, workspaceType])
+
+  useEffect(() => {
+    if (!open || !isSupabaseConfigured) return
+    const organizationId = organisation?.id || workspace?.id || ''
+    if (!organizationId) return
+    let active = true
+
+    async function loadPartnerConnections() {
+      try {
+        setLoadingPartnerConnections(true)
+        const [attorneyOptions, originatorOptions] = await Promise.all([
+          listTransactionPartnerConnectionOptions({ organizationId, roleType: 'transfer_attorney' }),
+          listTransactionPartnerConnectionOptions({ organizationId, roleType: 'bond_originator' }),
+        ])
+        if (!active) return
+        setPartnerConnectionOptions({
+          transfer_attorney: attorneyOptions,
+          bond_originator: originatorOptions,
+        })
+      } catch (error) {
+        if (active) {
+          console.warn('[NewTransactionWizard] partner connections unavailable', error)
+        }
+      } finally {
+        if (active) setLoadingPartnerConnections(false)
+      }
+    }
+
+    void loadPartnerConnections()
+
+    return () => {
+      active = false
+    }
+  }, [open, organisation?.id, workspace?.id])
+
+  useEffect(() => {
+    if (!open || !isSupabaseConfigured) return
+    let active = true
+
+    async function loadPartnerProspects() {
+      try {
+        setLoadingPartnerProspects(true)
+        const rows = await listPartnerProspects({ limit: 120 })
+        if (active) setPartnerProspects(rows)
+      } catch (error) {
+        if (active) {
+          console.warn('[NewTransactionWizard] partner prospects unavailable', error)
+        }
+      } finally {
+        if (active) setLoadingPartnerProspects(false)
+      }
+    }
+
+    void loadPartnerProspects()
+
+    return () => {
+      active = false
+    }
+  }, [open])
 
   useEffect(() => {
     if (!open || !form.setup.developmentId || !isSupabaseConfigured) {
@@ -334,25 +563,33 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     hasDevelopmentReservationDefault &&
     selectedReservationAmount !== null &&
     Number(selectedReservationAmount) === Number(developmentDefaultReservationAmount)
-  const attorneyPartnerOptions = useMemo(
+  const legacyAttorneyPartnerOptions = useMemo(
     () =>
       getPartnerAssignmentOptions(partnerSnapshot || {}, 'transfer_attorney', {
         organisationId: organisation?.id || workspace?.id || '',
         role,
         profile,
         currentMembership,
-      }),
+    }),
     [currentMembership, organisation?.id, partnerSnapshot, profile, role, workspace?.id],
   )
-  const bondOriginatorPartnerOptions = useMemo(
+  const legacyBondOriginatorPartnerOptions = useMemo(
     () =>
       getPartnerAssignmentOptions(partnerSnapshot || {}, 'bond_originator', {
         organisationId: organisation?.id || workspace?.id || '',
         role,
         profile,
         currentMembership,
-      }),
+    }),
     [currentMembership, organisation?.id, partnerSnapshot, profile, role, workspace?.id],
+  )
+  const attorneyPartnerOptions = useMemo(
+    () => mergePartnerConnectionOptions(partnerConnectionOptions.transfer_attorney, legacyAttorneyPartnerOptions),
+    [legacyAttorneyPartnerOptions, partnerConnectionOptions.transfer_attorney],
+  )
+  const bondOriginatorPartnerOptions = useMemo(
+    () => mergePartnerConnectionOptions(partnerConnectionOptions.bond_originator, legacyBondOriginatorPartnerOptions),
+    [legacyBondOriginatorPartnerOptions, partnerConnectionOptions.bond_originator],
   )
   const selectedAttorneyPartner = useMemo(
     () => attorneyPartnerOptions.find((partner) => partner.id === form.finance.attorneyPartnerRelationshipId) || null,
@@ -361,6 +598,24 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const selectedBondOriginatorPartner = useMemo(
     () => bondOriginatorPartnerOptions.find((partner) => partner.id === form.finance.bondOriginatorPartnerRelationshipId) || null,
     [bondOriginatorPartnerOptions, form.finance.bondOriginatorPartnerRelationshipId],
+  )
+  const attorneyPartnerProspects = useMemo(
+    () =>
+      filterPartnerProspectsForSearch(partnerProspects, {
+        roleType: 'transfer_attorney',
+        query: partnerProspectQueries.transfer_attorney,
+        limit: 5,
+      }),
+    [partnerProspectQueries.transfer_attorney, partnerProspects],
+  )
+  const bondOriginatorPartnerProspects = useMemo(
+    () =>
+      filterPartnerProspectsForSearch(partnerProspects, {
+        roleType: 'bond_originator',
+        query: partnerProspectQueries.bond_originator,
+        limit: 5,
+      }),
+    [partnerProspectQueries.bond_originator, partnerProspects],
   )
 
   useEffect(() => {
@@ -371,14 +626,24 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       const nextFinance = { ...previous.finance }
       let changed = false
 
-      if (defaultAttorney && !nextFinance.attorney && !nextFinance.attorneyPartnerRelationshipId) {
+      if (
+        partnerInvitationModes.transfer_attorney === 'existing' &&
+        defaultAttorney &&
+        !nextFinance.attorney &&
+        !nextFinance.attorneyPartnerRelationshipId
+      ) {
         nextFinance.attorney = defaultAttorney.companyName
         nextFinance.attorneyEmail = defaultAttorney.email || ''
         nextFinance.attorneyPartnerRelationshipId = defaultAttorney.id
         changed = true
       }
 
-      if (defaultBondOriginator && !nextFinance.bondOriginator && !nextFinance.bondOriginatorPartnerRelationshipId) {
+      if (
+        partnerInvitationModes.bond_originator === 'existing' &&
+        defaultBondOriginator &&
+        !nextFinance.bondOriginator &&
+        !nextFinance.bondOriginatorPartnerRelationshipId
+      ) {
         nextFinance.bondOriginator = defaultBondOriginator.companyName
         nextFinance.bondOriginatorEmail = defaultBondOriginator.email || ''
         nextFinance.bondOriginatorPartnerRelationshipId = defaultBondOriginator.id
@@ -387,7 +652,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
 
       return changed ? { ...previous, finance: nextFinance } : previous
     })
-  }, [attorneyPartnerOptions, bondOriginatorPartnerOptions, open, partnerSnapshot])
+  }, [attorneyPartnerOptions, bondOriginatorPartnerOptions, open, partnerInvitationModes.bond_originator, partnerInvitationModes.transfer_attorney, partnerSnapshot])
 
   useEffect(() => {
     if (!open || !form.setup.developmentId || isPrivateMatter || reservationDecisionTouched) {
@@ -557,6 +822,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       field === 'attorneyPartnerRelationshipId'
         ? attorneyPartnerOptions.find((item) => item.id === partnerId)
         : bondOriginatorPartnerOptions.find((item) => item.id === partnerId)
+    const roleType = field === 'attorneyPartnerRelationshipId' ? 'transfer_attorney' : 'bond_originator'
+
+    setSelectedPartnerProspects((previous) => ({
+      ...previous,
+      [roleType]: null,
+    }))
 
     setForm((previous) => ({
       ...previous,
@@ -574,6 +845,95 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             }),
       },
     }))
+  }
+
+  function setPartnerProspectQuery(roleType, value) {
+    setPartnerProspectQueries((previous) => ({
+      ...previous,
+      [roleType]: value,
+    }))
+  }
+
+  function selectPartnerProspect(roleType, prospect) {
+    setSelectedPartnerProspects((previous) => ({
+      ...previous,
+      [roleType]: prospect,
+    }))
+
+    setForm((previous) => {
+      const nextFinance = { ...previous.finance }
+      if (roleType === 'transfer_attorney') {
+        nextFinance.attorney = prospect?.companyName || ''
+        nextFinance.attorneyEmail = prospect?.email || ''
+        nextFinance.attorneyPartnerRelationshipId = ''
+      }
+      if (roleType === 'bond_originator') {
+        nextFinance.bondOriginator = prospect?.companyName || ''
+        nextFinance.bondOriginatorEmail = prospect?.email || ''
+        nextFinance.bondOriginatorPartnerRelationshipId = ''
+      }
+      return { ...previous, finance: nextFinance }
+    })
+  }
+
+  function setPartnerInvitationMode(roleType, mode) {
+    const normalizedMode = mode === 'invite' ? 'invite' : 'existing'
+    setPartnerInvitationModes((previous) => ({
+      ...previous,
+      [roleType]: normalizedMode,
+    }))
+    if (normalizedMode === 'invite') {
+      setSelectedPartnerProspects((previous) => ({
+        ...previous,
+        [roleType]: null,
+      }))
+    }
+
+    setForm((previous) => {
+      const nextFinance = { ...previous.finance }
+      if (roleType === 'transfer_attorney') {
+        nextFinance.attorneyPartnerRelationshipId = ''
+        if (normalizedMode === 'invite') {
+          nextFinance.attorney = partnerInvitationDrafts.transfer_attorney.companyName
+          nextFinance.attorneyEmail = partnerInvitationDrafts.transfer_attorney.email
+        }
+      }
+      if (roleType === 'bond_originator') {
+        nextFinance.bondOriginatorPartnerRelationshipId = ''
+        if (normalizedMode === 'invite') {
+          nextFinance.bondOriginator = partnerInvitationDrafts.bond_originator.companyName
+          nextFinance.bondOriginatorEmail = partnerInvitationDrafts.bond_originator.email
+        }
+      }
+      return { ...previous, finance: nextFinance }
+    })
+  }
+
+  function setPartnerInvitationDraftField(roleType, field, value) {
+    setPartnerInvitationDrafts((previous) => ({
+      ...previous,
+      [roleType]: {
+        ...(previous[roleType] || {}),
+        [field]: value,
+      },
+    }))
+
+    if (field === 'companyName' || field === 'email') {
+      setForm((previous) => {
+        const nextFinance = { ...previous.finance }
+        if (roleType === 'transfer_attorney' && partnerInvitationModes.transfer_attorney === 'invite') {
+          if (field === 'companyName') nextFinance.attorney = value
+          if (field === 'email') nextFinance.attorneyEmail = value
+          nextFinance.attorneyPartnerRelationshipId = ''
+        }
+        if (roleType === 'bond_originator' && partnerInvitationModes.bond_originator === 'invite') {
+          if (field === 'companyName') nextFinance.bondOriginator = value
+          if (field === 'email') nextFinance.bondOriginatorEmail = value
+          nextFinance.bondOriginatorPartnerRelationshipId = ''
+        }
+        return { ...previous, finance: nextFinance }
+      })
+    }
   }
 
   function setReservationRequired(required) {
@@ -661,6 +1021,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       if (form.setup.agentInvolved && form.setup.assignedAgentEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.assignedAgentEmail)) {
         nextErrors.assignedAgentEmail = 'Enter a valid agent email address.'
       }
+
+      for (const draft of getActivePartnerInvitationDrafts(partnerInvitationModes, partnerInvitationDrafts)) {
+        const validation = validateTransactionPartnerInvitationDraft(draft)
+        Object.entries(validation.errors).forEach(([field, message]) => {
+          nextErrors[`${draft.roleType}.${field}`] = message
+        })
+      }
     }
 
     setErrors(nextErrors)
@@ -691,50 +1058,157 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       setSaveError('')
       setSaving(true)
       const buyerName = `${form.setup.buyerFirstName} ${form.setup.buyerLastName}`.trim()
+      const activePartnerInvitations = getActivePartnerInvitationDrafts(partnerInvitationModes, partnerInvitationDrafts)
+      const activePartnerProspects = ['transfer_attorney', 'bond_originator']
+        .map((roleType) => ({
+          roleType,
+          prospect: partnerInvitationModes[roleType] === 'existing' ? selectedPartnerProspects[roleType] : null,
+        }))
+        .filter((item) => Boolean(item.prospect?.id))
+      const financeForSave = {
+        ...form.finance,
+      }
+      const invitedTransferAttorney = activePartnerInvitations.find((item) => item.roleType === 'transfer_attorney')
+      const invitedBondOriginator = activePartnerInvitations.find((item) => item.roleType === 'bond_originator')
+      const prospectTransferAttorney = activePartnerProspects.find((item) => item.roleType === 'transfer_attorney')?.prospect
+      const prospectBondOriginator = activePartnerProspects.find((item) => item.roleType === 'bond_originator')?.prospect
+      if (invitedTransferAttorney) {
+        financeForSave.attorney = invitedTransferAttorney.companyName
+        financeForSave.attorneyEmail = invitedTransferAttorney.email
+        financeForSave.attorneyPartnerRelationshipId = ''
+      } else if (prospectTransferAttorney) {
+        financeForSave.attorney = prospectTransferAttorney.companyName
+        financeForSave.attorneyEmail = prospectTransferAttorney.email || ''
+        financeForSave.attorneyPartnerRelationshipId = ''
+      }
+      if (invitedBondOriginator) {
+        financeForSave.bondOriginator = invitedBondOriginator.companyName
+        financeForSave.bondOriginatorEmail = invitedBondOriginator.email
+        financeForSave.bondOriginatorPartnerRelationshipId = ''
+      } else if (prospectBondOriginator) {
+        financeForSave.bondOriginator = prospectBondOriginator.companyName
+        financeForSave.bondOriginatorEmail = prospectBondOriginator.email || ''
+        financeForSave.bondOriginatorPartnerRelationshipId = ''
+      }
+      const hierarchyScope = {
+        regionId: currentMembership?.regionId || currentMembership?.region_id || '',
+        branchId:
+          currentMembership?.primaryBranchId ||
+          currentMembership?.primary_branch_id ||
+          currentMembership?.branchId ||
+          currentMembership?.branch_id ||
+          '',
+      }
       const result = await createTransactionFromWizard({
         setup: {
           ...form.setup,
           buyerName,
         },
-        finance: form.finance,
+        finance: financeForSave,
         status: {
           ...form.status,
           nextAction: form.status.nextAction || (form.setup.allowIncomplete ? 'Complete stakeholder setup and assign legal roles.' : 'Send onboarding link to client.'),
         },
         options: {
           allowIncomplete: Boolean(form.setup.allowIncomplete),
+          hierarchyScope,
           rolePlayers: [
-            selectedAttorneyPartner
+            partnerInvitationModes.transfer_attorney === 'existing' && selectedAttorneyPartner
               ? {
                   roleType: 'transfer_attorney',
                   source: 'connected_partner',
                   selectionSource: selectedAttorneyPartner.relationshipType === 'preferred' ? 'preferred_partner' : 'connected_partner',
                   preferredPartnerId: null,
                   partnerRelationshipId: selectedAttorneyPartner.relationshipId,
+                  partnerConnectionId: selectedAttorneyPartner.connectionId || null,
                   partnerOrganisationId: selectedAttorneyPartner.organisationId,
                   partner: {
                     companyName: selectedAttorneyPartner.companyName,
                     email: selectedAttorneyPartner.email,
+                    partnerConnectionId: selectedAttorneyPartner.connectionId || null,
                   },
                 }
               : null,
-            selectedBondOriginatorPartner
+            partnerInvitationModes.bond_originator === 'existing' && selectedBondOriginatorPartner
               ? {
                   roleType: 'bond_originator',
                   source: 'connected_partner',
                   selectionSource: selectedBondOriginatorPartner.relationshipType === 'preferred' ? 'preferred_partner' : 'connected_partner',
                   preferredPartnerId: null,
                   partnerRelationshipId: selectedBondOriginatorPartner.relationshipId,
+                  partnerConnectionId: selectedBondOriginatorPartner.connectionId || null,
                   partnerOrganisationId: selectedBondOriginatorPartner.organisationId,
                   partner: {
                     companyName: selectedBondOriginatorPartner.companyName,
                     email: selectedBondOriginatorPartner.email,
+                    partnerConnectionId: selectedBondOriginatorPartner.connectionId || null,
                   },
                 }
               : null,
           ].filter(Boolean),
         },
       })
+
+      const partnerInvitationResults = []
+      const partnerInvitationWarnings = []
+      const partnerProspectResults = []
+      for (const { roleType, prospect } of activePartnerProspects) {
+        try {
+          if (prospect.status === 'joined' && prospect.bridgeUserId) {
+            const reuseResult = await applyPartnerProspectToTransaction({
+              transactionId: result.transactionId,
+              partnerProspectId: prospect.id,
+              roleType,
+            })
+            partnerProspectResults.push({ roleType, prospect, result: reuseResult })
+            continue
+          }
+
+          const invitationDraft = prospectToInvitationDraft(roleType, prospect)
+          const invitationResult = await createTransactionPartnerInvitation({
+            transactionId: result.transactionId,
+            ...invitationDraft,
+            metadata: {
+              source: 'partner_prospect_reuse',
+              buyerName,
+              partnerProspectId: prospect.id,
+            },
+          })
+          partnerInvitationResults.push(invitationResult)
+          partnerProspectResults.push({ roleType, prospect, invitation: invitationResult.invitation })
+          if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+            partnerInvitationWarnings.push(
+              `${prospect.companyName}: prospect reused, but email delivery needs attention.`,
+            )
+          }
+        } catch (prospectError) {
+          partnerInvitationWarnings.push(
+            `${prospect.companyName || prospect.email}: ${prospectError.message || 'partner prospect could not be reused.'}`,
+          )
+        }
+      }
+      for (const draft of activePartnerInvitations) {
+        try {
+          const invitationResult = await createTransactionPartnerInvitation({
+            transactionId: result.transactionId,
+            ...draft,
+            metadata: {
+              source: 'new_transaction_wizard',
+              buyerName,
+            },
+          })
+          partnerInvitationResults.push(invitationResult)
+          if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+            partnerInvitationWarnings.push(
+              `${draft.companyName}: invitation saved, but email delivery needs attention.`,
+            )
+          }
+        } catch (invitationError) {
+          partnerInvitationWarnings.push(
+            `${draft.companyName || draft.email}: ${invitationError.message || 'invitation could not be created.'}`,
+          )
+        }
+      }
 
       let onboarding = result?.onboardingToken
         ? {
@@ -774,6 +1248,9 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         buyerEmail: form.setup.buyerEmail.trim(),
         allowIncomplete: Boolean(form.setup.allowIncomplete),
         onboardingEmailSent: null,
+        partnerInvitations: partnerInvitationResults,
+        partnerProspects: partnerProspectResults,
+        partnerInvitationWarnings,
       })
 
       // Do not block transaction creation UX on post-create email automation.
@@ -1438,41 +1915,187 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                           Preferred and approved organisations are reusable defaults for transaction setup.
                         </p>
                       </div>
-                      {loadingPartners ? <span className="text-xs font-semibold text-[#6b7d93]">Loading partners...</span> : null}
+                      {loadingPartners || loadingPartnerConnections ? <span className="text-xs font-semibold text-[#6b7d93]">Loading partners...</span> : null}
                     </div>
 
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <Field label="Attorney Selection">
-                        <select
-                          value={form.finance.attorneyPartnerRelationshipId || ''}
-                          onChange={(event) => selectPartnerField('attorneyPartnerRelationshipId', event.target.value)}
-                        >
-                          <option value="">Select connected attorney</option>
-                          {attorneyPartnerOptions.map((partner) => (
-                            <option key={partner.id} value={partner.id}>
-                              {partner.companyName}
-                              {partner.relationshipType === 'preferred' ? ' • Preferred' : ''}
-                            </option>
-                          ))}
-                          <option value="__add_partner__">Add New Partner</option>
-                        </select>
-                      </Field>
+                      <div className="space-y-3 rounded-[16px] border border-[#dbe4ef] bg-white p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-[#142132]">Transfer Attorney</p>
+                          <div className="inline-flex rounded-[12px] border border-[#dbe4ef] bg-[#f8fbff] p-1">
+                            {[
+                              { key: 'existing', label: 'Existing' },
+                              { key: 'invite', label: 'Invite New' },
+                            ].map((option) => (
+                              <button
+                                key={option.key}
+                                type="button"
+                                className={`rounded-[9px] px-3 py-1.5 text-xs font-semibold transition ${
+                                  partnerInvitationModes.transfer_attorney === option.key
+                                    ? 'bg-[#142132] text-white shadow-[0_6px_16px_rgba(15,23,42,0.16)]'
+                                    : 'text-[#60758d]'
+                                }`}
+                                onClick={() => setPartnerInvitationMode('transfer_attorney', option.key)}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
-                      <Field label="Bond Originator Selection">
-                        <select
-                          value={form.finance.bondOriginatorPartnerRelationshipId || ''}
-                          onChange={(event) => selectPartnerField('bondOriginatorPartnerRelationshipId', event.target.value)}
-                        >
-                          <option value="">Select connected bond originator</option>
-                          {bondOriginatorPartnerOptions.map((partner) => (
-                            <option key={partner.id} value={partner.id}>
-                              {partner.companyName}
-                              {partner.relationshipType === 'preferred' ? ' • Preferred' : ''}
-                            </option>
-                          ))}
-                          <option value="__add_partner__">Add New Partner</option>
-                        </select>
-                      </Field>
+                        {partnerInvitationModes.transfer_attorney === 'existing' ? (
+                          <div className="space-y-3">
+                            <Field label="Connected Attorney">
+                              <select
+                                value={form.finance.attorneyPartnerRelationshipId || ''}
+                                onChange={(event) => selectPartnerField('attorneyPartnerRelationshipId', event.target.value)}
+                              >
+                                <option value="">Select connected attorney</option>
+                                {attorneyPartnerOptions.map((partner) => (
+                                  <option key={partner.id} value={partner.id}>
+                                    {partner.companyName}
+                                    {partner.relationshipType === 'preferred' ? ' • Preferred' : ''}
+                                    {partner.source === 'partner_connection' && partner.relationshipType !== 'preferred' ? ' • Connected' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </Field>
+                            <PartnerProspectPicker
+                              label="Reusable Attorney Prospect"
+                              query={partnerProspectQueries.transfer_attorney}
+                              onQueryChange={(value) => setPartnerProspectQuery('transfer_attorney', value)}
+                              prospects={attorneyPartnerProspects}
+                              selectedProspect={selectedPartnerProspects.transfer_attorney}
+                              onSelect={(prospect) => selectPartnerProspect('transfer_attorney', prospect)}
+                              loading={loadingPartnerProspects}
+                            />
+                          </div>
+                        ) : (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Field label="Company" error={errors['transfer_attorney.companyName']}>
+                              <input
+                                type="text"
+                                value={partnerInvitationDrafts.transfer_attorney.companyName}
+                                onChange={(event) => setPartnerInvitationDraftField('transfer_attorney', 'companyName', event.target.value)}
+                                placeholder="Tucker Attorneys"
+                              />
+                            </Field>
+                            <Field label="Contact" error={errors['transfer_attorney.contactName']}>
+                              <input
+                                type="text"
+                                value={partnerInvitationDrafts.transfer_attorney.contactName}
+                                onChange={(event) => setPartnerInvitationDraftField('transfer_attorney', 'contactName', event.target.value)}
+                                placeholder="Sarah Jones"
+                              />
+                            </Field>
+                            <Field label="Email" error={errors['transfer_attorney.email']}>
+                              <input
+                                type="email"
+                                value={partnerInvitationDrafts.transfer_attorney.email}
+                                onChange={(event) => setPartnerInvitationDraftField('transfer_attorney', 'email', event.target.value)}
+                                placeholder="sarah@tucker.co.za"
+                              />
+                            </Field>
+                            <Field label="Phone">
+                              <input
+                                type="tel"
+                                value={partnerInvitationDrafts.transfer_attorney.phone}
+                                onChange={(event) => setPartnerInvitationDraftField('transfer_attorney', 'phone', event.target.value)}
+                                placeholder="082 xxx xxxx"
+                              />
+                            </Field>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-3 rounded-[16px] border border-[#dbe4ef] bg-white p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-[#142132]">Bond Originator</p>
+                          <div className="inline-flex rounded-[12px] border border-[#dbe4ef] bg-[#f8fbff] p-1">
+                            {[
+                              { key: 'existing', label: 'Existing' },
+                              { key: 'invite', label: 'Invite New' },
+                            ].map((option) => (
+                              <button
+                                key={option.key}
+                                type="button"
+                                className={`rounded-[9px] px-3 py-1.5 text-xs font-semibold transition ${
+                                  partnerInvitationModes.bond_originator === option.key
+                                    ? 'bg-[#142132] text-white shadow-[0_6px_16px_rgba(15,23,42,0.16)]'
+                                    : 'text-[#60758d]'
+                                }`}
+                                onClick={() => setPartnerInvitationMode('bond_originator', option.key)}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {partnerInvitationModes.bond_originator === 'existing' ? (
+                          <div className="space-y-3">
+                            <Field label="Connected Bond Originator">
+                              <select
+                                value={form.finance.bondOriginatorPartnerRelationshipId || ''}
+                                onChange={(event) => selectPartnerField('bondOriginatorPartnerRelationshipId', event.target.value)}
+                              >
+                                <option value="">Select connected bond originator</option>
+                                {bondOriginatorPartnerOptions.map((partner) => (
+                                  <option key={partner.id} value={partner.id}>
+                                    {partner.companyName}
+                                    {partner.relationshipType === 'preferred' ? ' • Preferred' : ''}
+                                    {partner.source === 'partner_connection' && partner.relationshipType !== 'preferred' ? ' • Connected' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </Field>
+                            <PartnerProspectPicker
+                              label="Reusable Originator Prospect"
+                              query={partnerProspectQueries.bond_originator}
+                              onQueryChange={(value) => setPartnerProspectQuery('bond_originator', value)}
+                              prospects={bondOriginatorPartnerProspects}
+                              selectedProspect={selectedPartnerProspects.bond_originator}
+                              onSelect={(prospect) => selectPartnerProspect('bond_originator', prospect)}
+                              loading={loadingPartnerProspects}
+                            />
+                          </div>
+                        ) : (
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <Field label="Company" error={errors['bond_originator.companyName']}>
+                              <input
+                                type="text"
+                                value={partnerInvitationDrafts.bond_originator.companyName}
+                                onChange={(event) => setPartnerInvitationDraftField('bond_originator', 'companyName', event.target.value)}
+                                placeholder="BetterBond Sandton"
+                              />
+                            </Field>
+                            <Field label="Contact" error={errors['bond_originator.contactName']}>
+                              <input
+                                type="text"
+                                value={partnerInvitationDrafts.bond_originator.contactName}
+                                onChange={(event) => setPartnerInvitationDraftField('bond_originator', 'contactName', event.target.value)}
+                                placeholder="Michael Naidoo"
+                              />
+                            </Field>
+                            <Field label="Email" error={errors['bond_originator.email']}>
+                              <input
+                                type="email"
+                                value={partnerInvitationDrafts.bond_originator.email}
+                                onChange={(event) => setPartnerInvitationDraftField('bond_originator', 'email', event.target.value)}
+                                placeholder="michael@betterbond.co.za"
+                              />
+                            </Field>
+                            <Field label="Phone">
+                              <input
+                                type="tel"
+                                value={partnerInvitationDrafts.bond_originator.phone}
+                                onChange={(event) => setPartnerInvitationDraftField('bond_originator', 'phone', event.target.value)}
+                                placeholder="082 xxx xxxx"
+                              />
+                            </Field>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1567,6 +2190,49 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                 The transaction was created, but the onboarding link is not available yet.
               </p>
             )}
+
+            {createdTransaction.partnerInvitations?.length ? (
+              <section className="rounded-[20px] border border-[#cdddf0] bg-white px-4 py-3">
+                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Partner Invitations</span>
+                <div className="mt-3 space-y-2">
+                  {createdTransaction.partnerInvitations.map((item) => (
+                    <div key={item.invitation?.id || item.invitationUrl} className="rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2">
+                      <strong className="block text-sm font-semibold text-[#142132]">
+                        {item.invitation?.company_name || item.invitation?.companyName || 'Invited partner'}
+                      </strong>
+                      <span className="mt-1 block text-xs text-[#60758d]">
+                        Pending Acceptance
+                        {item.invitationUrl ? ` • ${item.invitationUrl}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {createdTransaction.partnerProspects?.some((item) => item.result?.accessGranted) ? (
+              <section className="rounded-[20px] border border-[#d8e7dc] bg-white px-4 py-3">
+                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Reusable Partners</span>
+                <div className="mt-3 space-y-2">
+                  {createdTransaction.partnerProspects
+                    .filter((item) => item.result?.accessGranted)
+                    .map((item) => (
+                      <div key={item.prospect?.id || item.roleType} className="rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2">
+                        <strong className="block text-sm font-semibold text-[#142132]">{item.prospect?.companyName || 'Reusable partner'}</strong>
+                        <span className="mt-1 block text-xs text-[#60758d]">Active on this transaction</span>
+                      </div>
+                    ))}
+                </div>
+              </section>
+            ) : null}
+
+            {createdTransaction.partnerInvitationWarnings?.length ? (
+              <section className="rounded-[18px] border border-[#f5d7a8] bg-[#fff8eb] px-4 py-3 text-sm leading-6 text-[#8a5a12]">
+                {createdTransaction.partnerInvitationWarnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </section>
+            ) : null}
 
             <div className="flex flex-wrap gap-3">
               <Button variant="secondary" onClick={handleCopyOnboardingLink} disabled={!onboardingUrl}>

@@ -7,6 +7,7 @@ import {
   Handshake,
   Home,
   Mail,
+  Network,
   SlidersHorizontal,
   Route,
   Shield,
@@ -34,10 +35,22 @@ const SETTINGS_CARDS = [
     icon: Building2,
   },
   {
+    to: '/organizations',
+    title: 'Organizations',
+    description: 'Create or join firms, approve members, and link historical partner prospects.',
+    icon: Building2,
+  },
+  {
     to: '/settings/preferred-partners',
     title: 'Preferred Partners',
     description: 'Manage approved bond and legal partners available during deal setup.',
     icon: Handshake,
+  },
+  {
+    to: '/settings/partner-directory',
+    title: 'Partner Directory',
+    description: 'Reuse firms first seen through transaction invitations without granting broader company access.',
+    icon: Network,
   },
   {
     to: '/settings/partner-routing-rules',

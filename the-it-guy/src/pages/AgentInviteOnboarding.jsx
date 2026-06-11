@@ -70,6 +70,12 @@ export default function AgentInviteOnboarding() {
           if (!active) return
           signedInEmail = String(sessionResult?.data?.session?.user?.email || '').trim().toLowerCase()
           setSessionUserEmail(signedInEmail)
+          if (!signedInEmail && !LOCAL_INVITE_FALLBACK_ENABLED) {
+            setInviteSource('workspace')
+            setInvite({ token, organisationName: 'your workspace', role: 'agent', email: '' })
+            setLoading(false)
+            return
+          }
           if (signedInEmail) {
             const workspaceInviteContext = await getWorkspaceInviteByToken(token)
             if (!active) return

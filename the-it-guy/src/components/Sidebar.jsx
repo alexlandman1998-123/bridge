@@ -102,6 +102,7 @@ const ICON_BY_KEY = {
   intelligence_beta: BrainCircuit,
   documents: Files,
   partners: Handshake,
+  organizations: Building2,
   attorney_matters: Files,
   attorney_matters_all: Files,
   attorney_matters_transfer: SwitchCamera,
@@ -254,14 +255,16 @@ function Sidebar() {
     () =>
       filterNavigationItems(
         role === 'developer'
-          ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
+          ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'organizations', label: 'Organizations', to: '/organizations' }, { key: 'settings', label: 'Settings', to: '/settings' }]
           : role === 'attorney'
-            ? [{ key: 'settings', label: 'Settings', to: '/settings' }, { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' }]
+            ? [{ key: 'organizations', label: 'Organizations', to: '/organizations' }, { key: 'settings', label: 'Settings', to: '/settings' }, { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' }]
             : role === 'agent'
-              ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
+              ? [{ key: 'organizations', label: 'Organizations', to: '/organizations' }, { key: 'settings', label: 'Settings', to: '/settings' }]
               : role === 'client'
                 ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
-                : [{ key: 'settings', label: 'Settings', to: '/settings' }],
+                : role === 'bond_originator'
+                  ? [{ key: 'organizations', label: 'Organizations', to: '/organizations' }, { key: 'settings', label: 'Settings', to: '/settings' }]
+                  : [{ key: 'settings', label: 'Settings', to: '/settings' }],
         workspaceContext,
       ),
     [role, workspaceContext],

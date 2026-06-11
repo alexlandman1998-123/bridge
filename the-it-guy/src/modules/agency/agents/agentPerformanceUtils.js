@@ -245,6 +245,7 @@ function formatHours(value) {
 
 function getBaseStatusKey(agent = {}) {
   const raw = normalizeKey(agent.status)
+  if (raw.includes('pending') || raw.includes('invite') || raw.includes('invited')) return 'pending_invite'
   if (raw.includes('leave')) return 'on_leave'
   if (raw.includes('revoked') || raw.includes('inactive') || raw.includes('disabled') || raw.includes('expired')) return 'inactive'
   return 'active'
@@ -260,6 +261,7 @@ function getStatusKey(agent = {}, attentionFlags = []) {
 function getStatusLabel(statusKey = '') {
   if (statusKey === 'inactive') return 'Inactive'
   if (statusKey === 'on_leave') return 'On Leave'
+  if (statusKey === 'pending_invite') return 'Pending Invite'
   if (statusKey === 'needs_attention') return 'Needs Attention'
   return 'Active'
 }
@@ -267,6 +269,7 @@ function getStatusLabel(statusKey = '') {
 function getStatusClass(statusKey = '') {
   if (statusKey === 'inactive') return 'border-[#e6d5d2] bg-[#fff6f5] text-[#9a4038]'
   if (statusKey === 'on_leave') return 'border-[#e7ddf7] bg-[#f7f1ff] text-[#5c3a9d]'
+  if (statusKey === 'pending_invite') return 'border-[#e7ddf7] bg-[#f7f1ff] text-[#5c3a9d]'
   if (statusKey === 'needs_attention') return 'border-[#f0dfb8] bg-[#fff8eb] text-[#8a641d]'
   return 'border-[#d7e7dd] bg-[#edf9f1] text-[#1d7d45]'
 }

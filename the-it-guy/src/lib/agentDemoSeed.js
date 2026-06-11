@@ -6,6 +6,7 @@ import {
   SELLER_ONBOARDING_STATUS,
 } from './agentListingStorage'
 import { isUnsafeFallbackAllowed } from './envValidation'
+import { KEY_AGENT_DEMO_TRANSACTIONS } from './agentDemoTransactionStorage'
 import { MOCK_DATA_ENABLED } from './mockData'
 
 const SEED_VERSION = '2026-04-30-agent-demo-v3'
@@ -15,7 +16,6 @@ const KEY_AGENT_DIRECTORY = 'itg:agent-directory:v1'
 const KEY_PRIVATE_LISTINGS = 'itg:agent-private-listings:v1'
 const KEY_DELETED_LISTINGS = 'itg:agent-deleted-listings:v1'
 const KEY_PIPELINE = 'itg:pipeline-leads:v1'
-const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 
 const AGENCY = {
   id: 'agency-bridge-realty-group',
@@ -524,12 +524,6 @@ export function ensureAgentModuleDemoSeed({ profileEmail = '' } = {}) {
     seededAt: new Date().toISOString(),
   })
   return true
-}
-
-export function getAgentDemoTransactionRowsFromStorage() {
-  if (!MOCK_DATA_ENABLED) return []
-  const rows = readJson(KEY_AGENT_DEMO_TRANSACTIONS, [])
-  return Array.isArray(rows) ? rows : []
 }
 
 export function clearLegacyAgentDemoSeedData() {

@@ -5,6 +5,8 @@ import { WORKSPACE_TYPES } from './workspaceTypes'
 
 export const SIGNUP_BUSINESS_TYPES = Object.freeze({
   agency: 'agency',
+  commercialBrokerage: 'commercial_brokerage',
+  mixedAgency: 'mixed_agency',
   developer: 'developer',
   attorney: 'attorney',
   bondOriginator: 'bond_originator',
@@ -22,6 +24,10 @@ export const SIGNUP_ONBOARDING_PATHS = Object.freeze({
   agencyOwner: 'agency_owner',
   agencyBranchManager: 'agency_branch_manager',
   agencyOperational: 'agency_operational',
+  commercialOwner: 'commercial_owner',
+  commercialBroker: 'commercial_broker',
+  mixedAgencyOwner: 'mixed_agency_owner',
+  mixedAgencyOperational: 'mixed_agency_operational',
   developerOwner: 'developer_owner',
   developerOperational: 'developer_operational',
   attorneyOwner: 'attorney_owner',
@@ -55,8 +61,18 @@ export const SIGNUP_INTENT_SOURCE = Object.freeze({
 export const BUSINESS_TYPE_OPTIONS = Object.freeze([
   {
     value: SIGNUP_BUSINESS_TYPES.agency,
-    label: 'Estate Agency',
-    description: 'For principals, branch teams, agents, and agency admin staff.',
+    label: 'Residential Estate Agency',
+    description: 'For residential principals, branch teams, agents, and agency admin staff.',
+  },
+  {
+    value: SIGNUP_BUSINESS_TYPES.commercialBrokerage,
+    label: 'Commercial Real Estate Brokerage',
+    description: 'For commercial brokerage principals, brokers, landlords, tenants, and deal teams.',
+  },
+  {
+    value: SIGNUP_BUSINESS_TYPES.mixedAgency,
+    label: 'Mixed Residential + Commercial Agency',
+    description: 'For agencies running residential and commercial property teams in one organisation.',
   },
   {
     value: SIGNUP_BUSINESS_TYPES.developer,
@@ -96,6 +112,30 @@ export const POSITION_OPTIONS_BY_BUSINESS_TYPE = Object.freeze({
       value: 'agency_operational',
       label: 'I am an agent/admin staff member',
       description: 'Join by invite or request approval from the agency.',
+    },
+  ],
+  [SIGNUP_BUSINESS_TYPES.commercialBrokerage]: [
+    {
+      value: 'commercial_owner',
+      label: 'I own/manage the commercial brokerage',
+      description: 'Create the commercial brokerage workspace in the next setup step.',
+    },
+    {
+      value: 'commercial_broker',
+      label: 'I am a commercial broker/admin staff member',
+      description: 'Join by invite or request approval from the brokerage principal.',
+    },
+  ],
+  [SIGNUP_BUSINESS_TYPES.mixedAgency]: [
+    {
+      value: 'mixed_agency_owner',
+      label: 'I own/manage the mixed agency',
+      description: 'Create one workspace with residential and commercial modules prepared.',
+    },
+    {
+      value: 'mixed_agency_operational',
+      label: 'I work in the mixed agency team',
+      description: 'Join by invite or request access from the agency principal.',
     },
   ],
   [SIGNUP_BUSINESS_TYPES.developer]: [
@@ -166,6 +206,38 @@ export const SIGNUP_POSITION_INTENT_MAP = Object.freeze({
     intended_org_role: ORG_ROLES.agent,
     authority_level: SIGNUP_AUTHORITY_LEVELS.operational,
     onboarding_path: SIGNUP_ONBOARDING_PATHS.agencyOperational,
+    workspace_action: SIGNUP_WORKSPACE_ACTIONS.joinOrRequestWorkspace,
+  },
+  commercial_owner: {
+    app_role: APP_ROLES.agent,
+    workspace_type: WORKSPACE_TYPES.agency,
+    intended_org_role: ORG_ROLES.principal,
+    authority_level: SIGNUP_AUTHORITY_LEVELS.ownerManagement,
+    onboarding_path: SIGNUP_ONBOARDING_PATHS.commercialOwner,
+    workspace_action: SIGNUP_WORKSPACE_ACTIONS.createWorkspace,
+  },
+  commercial_broker: {
+    app_role: APP_ROLES.agent,
+    workspace_type: WORKSPACE_TYPES.agency,
+    intended_org_role: ORG_ROLES.agent,
+    authority_level: SIGNUP_AUTHORITY_LEVELS.operational,
+    onboarding_path: SIGNUP_ONBOARDING_PATHS.commercialBroker,
+    workspace_action: SIGNUP_WORKSPACE_ACTIONS.joinOrRequestWorkspace,
+  },
+  mixed_agency_owner: {
+    app_role: APP_ROLES.agent,
+    workspace_type: WORKSPACE_TYPES.agency,
+    intended_org_role: ORG_ROLES.principal,
+    authority_level: SIGNUP_AUTHORITY_LEVELS.ownerManagement,
+    onboarding_path: SIGNUP_ONBOARDING_PATHS.mixedAgencyOwner,
+    workspace_action: SIGNUP_WORKSPACE_ACTIONS.createWorkspace,
+  },
+  mixed_agency_operational: {
+    app_role: APP_ROLES.agent,
+    workspace_type: WORKSPACE_TYPES.agency,
+    intended_org_role: ORG_ROLES.agent,
+    authority_level: SIGNUP_AUTHORITY_LEVELS.operational,
+    onboarding_path: SIGNUP_ONBOARDING_PATHS.mixedAgencyOperational,
     workspace_action: SIGNUP_WORKSPACE_ACTIONS.joinOrRequestWorkspace,
   },
   developer_owner: {

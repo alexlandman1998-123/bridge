@@ -6,6 +6,18 @@ export const AGENCY_TYPE_OPTIONS = [
   { value: 'mixed', label: 'Mixed' },
 ]
 
+export const COMMERCIAL_AGENCY_TYPES = new Set(['commercial', 'mixed'])
+
+export function normalizeAgencyType(value = '', fallback = 'residential') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (AGENCY_TYPE_OPTIONS.some((option) => option.value === normalized)) return normalized
+  return fallback
+}
+
+export function isCommercialAgencyType(value = '') {
+  return COMMERCIAL_AGENCY_TYPES.has(normalizeAgencyType(value))
+}
+
 export const AGENCY_BUSINESS_FOCUS_OPTIONS = [
   { value: 'sales', label: 'Sales' },
   { value: 'rentals', label: 'Rentals' },
