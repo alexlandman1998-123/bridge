@@ -605,7 +605,7 @@ function Auth({ onDevBypass = null }) {
           </div>
         </section>
 
-        <section className="auth-card">
+        <section className={`auth-card ${inviteDrivenSignup ? 'invite-auth-card' : ''}`}>
           {mode === 'login' && securityLogoutMessage ? (
             <p className="auth-feedback success">You were signed out for security. Please log in again.</p>
           ) : null}
@@ -820,8 +820,14 @@ function Auth({ onDevBypass = null }) {
                   <>
                     <div className="auth-card-head compact">
                       <span className="auth-card-eyebrow">STEP 3 OF 3</span>
-                      <h2>Create your secure account</h2>
-                      <p>{selectedBusinessTypeLabel ? `${selectedBusinessTypeLabel} workspace setup will continue after verification.` : 'Workspace setup will continue after verification.'}</p>
+                      <h2>{inviteDrivenSignup ? 'Create your account' : 'Create your secure account'}</h2>
+                      <p>
+                        {inviteDrivenSignup
+                          ? 'Complete these details and Bridge will return you to the invitation.'
+                          : selectedBusinessTypeLabel
+                            ? `${selectedBusinessTypeLabel} workspace setup will continue after verification.`
+                            : 'Workspace setup will continue after verification.'}
+                      </p>
                     </div>
                     <div className="auth-field-grid">
                       <label>
@@ -910,12 +916,14 @@ function Auth({ onDevBypass = null }) {
                             : 'After verification, Bridge will guide you to join or request access to the right workspace.'}
                       </p>
                     ) : null}
-                    <div className="auth-action-row">
-                      <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(1)}>
-                        <ArrowLeft size={14} />
-                        Back to position
-                      </button>
-                    </div>
+                    {!inviteDrivenSignup ? (
+                      <div className="auth-action-row">
+                        <button type="button" className="auth-secondary-cta" onClick={() => setSignupStep(1)}>
+                          <ArrowLeft size={14} />
+                          Back to position
+                        </button>
+                      </div>
+                    ) : null}
                   </>
                 ) : null}
               </>
@@ -945,7 +953,8 @@ function Auth({ onDevBypass = null }) {
             </div>
           ) : null}
 
-          <div className="auth-footer">
+          {!inviteDrivenSignup ? (
+            <div className="auth-footer">
             <span>
               {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
             </span>
@@ -956,8 +965,11 @@ function Auth({ onDevBypass = null }) {
               {mode === 'login' ? 'Create one' : 'Sign in'}
             </button>
           </div>
+          ) : null}
 
-          <p className="auth-trust-line"><Shield size={14} /> Trusted by property professionals across South Africa</p>
+          {!inviteDrivenSignup ? (
+            <p className="auth-trust-line"><Shield size={14} /> Trusted by property professionals across South Africa</p>
+          ) : null}
 
           {!isSupabaseConfigured ? (
             <p className="auth-demo-note">
@@ -965,7 +977,7 @@ function Auth({ onDevBypass = null }) {
             </p>
           ) : null}
 
-          {isDevAuthBypassEnabled() ? (
+          {isDevAuthBypassEnabled() && !inviteDrivenSignup ? (
             <div className="mt-6 rounded-[24px] border border-[#d8e2f0] bg-[#f4f7fb] p-4">
               <div className="mb-3">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6f87a7]">Local Dev Bypass</h3>

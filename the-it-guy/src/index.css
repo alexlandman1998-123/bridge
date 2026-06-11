@@ -6798,6 +6798,29 @@ button.agency-setup-row-card:hover {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.auth-page:not(.onboarding-page) .invite-auth-card {
+  gap: 18px;
+  overflow: auto;
+}
+
+.auth-page:not(.onboarding-page) .invite-auth-card .auth-form {
+  gap: 16px;
+}
+
+.auth-page:not(.onboarding-page) .invite-auth-card .auth-card-head h2 {
+  font-size: clamp(2rem, 2.8vw, 2.55rem);
+}
+
+.auth-page:not(.onboarding-page) .invite-auth-card .auth-field-grid,
+.auth-page:not(.onboarding-page) .invite-auth-card .auth-field-grid.single {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.auth-page:not(.onboarding-page) .invite-auth-card .auth-submit {
+  margin-top: 2px;
+}
+
 .auth-page:not(.onboarding-page) .auth-field-stack {
   display: grid;
   gap: 14px;
