@@ -1998,11 +1998,10 @@ function PerformanceKpiStrip({ kpis }) {
     { label: 'Pipeline Value', value: formatCompactCurrency(kpis.pipelineValue ?? kpis.totalPipelineValue), helper: 'Active assigned value', icon: ArrowRight, tone: 'bg-[#eef4ff] text-[#315adf]' },
     { label: 'Transactions', value: kpis.transactions ?? kpis.activeTransactions, helper: 'Active deals', icon: BriefcaseBusiness, tone: 'bg-[#f3efff] text-[#7657d8]' },
     { label: 'Conversion Rate', value: `${(kpis.conversionRate ?? kpis.averageConversionRate) || 0}%`, helper: 'Network conversion', icon: Trophy, tone: 'bg-[#fff7e8] text-[#a46313]' },
-    { label: 'Commission MTD', value: kpis.commissionMtd === null || kpis.commissionMtd === undefined ? 'N/A' : formatCompactCurrency(kpis.commissionMtd), helper: 'Registered month to date', icon: DollarSign, tone: 'bg-[#f0fbf5] text-[#1d7d45]' },
   ]
 
   return (
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       {cards.map((card) => {
         const Icon = card.icon
         return (
@@ -2024,53 +2023,6 @@ function PerformanceKpiStrip({ kpis }) {
   )
 }
 
-function BranchPerformanceScroller({ branches = [] }) {
-  return (
-    <section className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-[#10243a]">Branch Performance</h2>
-          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Office-level performance inside the selected scope.</p>
-        </div>
-        <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">{branches.length} offices</span>
-      </div>
-      <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
-        {branches.map((branch) => (
-          <article key={branch.id} className="min-w-[250px] rounded-2xl border border-[#e2ebf5] bg-[#fbfdff] p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="truncate text-sm font-semibold text-[#10243a]">{branch.name}</h3>
-                <p className="mt-1 text-xs text-[#6d8299]">{branch.attentionCount || 0} need attention</p>
-              </div>
-              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#edf5ff] text-[#1769d1]">
-                <Building2 size={16} />
-              </span>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-xl bg-white px-3 py-2">
-                <p className="text-[#71859c]">Agents</p>
-                <p className="mt-1 font-semibold text-[#10243a]">{branch.activeAgents}</p>
-              </div>
-              <div className="rounded-xl bg-white px-3 py-2">
-                <p className="text-[#71859c]">Pipeline</p>
-                <p className="mt-1 font-semibold text-[#10243a]">{formatCompactCurrency(branch.pipelineValue)}</p>
-              </div>
-              <div className="rounded-xl bg-white px-3 py-2">
-                <p className="text-[#71859c]">Transactions</p>
-                <p className="mt-1 font-semibold text-[#10243a]">{branch.transactions}</p>
-              </div>
-              <div className="rounded-xl bg-white px-3 py-2">
-                <p className="text-[#71859c]">Conversion</p>
-                <p className="mt-1 font-semibold text-[#10243a]">{branch.conversionRate || 0}%</p>
-              </div>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  )
-}
-
 function TopPerformersPanel({ rows = [], metric = 'pipelineValue', metricOptions = LEADERBOARD_METRICS, onMetricChange, onView }) {
   const renderMetric = (row) => {
     if (metric === 'conversionRate') return `${row.metricValue || 0}%`
@@ -2079,11 +2031,13 @@ function TopPerformersPanel({ rows = [], metric = 'pipelineValue', metricOptions
     return formatCompactCurrency(row.metricValue)
   }
 
+  const podiumRows = [rows[1], rows[0], rows[2]].filter(Boolean)
+
   return (
     <article className="min-w-0 rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-[#10243a]">Top Performers</h2>
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">Top Performers This Month</h2>
           <p className="mt-0.5 text-xs text-[#6d8299]">Ranked by the selected performance metric.</p>
         </div>
         <DirectorySelect
@@ -2093,26 +2047,29 @@ function TopPerformersPanel({ rows = [], metric = 'pipelineValue', metricOptions
           options={metricOptions.map((item) => ({ value: item.value, label: item.label }))}
         />
       </div>
-      <div className="mt-4 divide-y divide-[#edf2f7]">
-        {rows.length ? rows.map((row) => (
-          <button key={row.id} type="button" className="grid w-full grid-cols-[34px_minmax(0,1fr)_96px] items-center gap-3 py-3 text-left hover:bg-[#f8fbff]" onClick={() => onView(row.agent)}>
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#eef5ff] text-xs font-semibold text-[#1769d1]">{row.rank}</span>
-            <span className="min-w-0">
-              <span className="flex min-w-0 items-center gap-2">
-                <AgentAvatar agent={row} className="h-8 w-8 border border-[#d7e2ef] bg-white text-[0.68rem] font-semibold text-[#245076]" />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold text-[#10243a]">{row.name}</span>
-                  <span className="block truncate text-xs text-[#6d8299]">{formatRoleLabel(row.role)} · {row.branchName || 'Current Office'}</span>
-                </span>
-              </span>
-              <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-[#edf2f7]">
-                <span className="block h-full rounded-full bg-[#1769d1]" style={{ width: `${Math.max(5, row.progress || 0)}%` }} />
-              </span>
+      <div className="mt-5 grid gap-3 md:grid-cols-3 md:items-end">
+        {podiumRows.length ? podiumRows.map((row) => (
+          <button
+            key={row.id}
+            type="button"
+            className={`relative min-h-[178px] rounded-2xl border bg-[linear-gradient(180deg,#ffffff,#fbfdff)] p-4 text-center transition hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)] ${row.rank === 1 ? 'border-[#f3c665] md:min-h-[208px] md:pb-6' : 'border-[#dfe8f2]'}`}
+            onClick={() => onView(row.agent)}
+          >
+            <span className={`absolute left-1/2 top-0 inline-flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${row.rank === 1 ? 'border-[#f3c665] bg-[#ffc247] text-white' : row.rank === 2 ? 'border-[#cbd6e4] bg-[#8ca0b5] text-white' : 'border-[#d8b28b] bg-[#c98342] text-white'}`}>
+              {row.rank}
             </span>
-            <span className="text-right text-xs font-semibold text-[#10243a]">{renderMetric(row)}</span>
+            <AgentAvatar agent={row} className={`mx-auto mt-4 border border-[#d7e2ef] bg-white font-semibold text-[#245076] ${row.rank === 1 ? 'h-16 w-16 text-base' : 'h-14 w-14 text-sm'}`} />
+            <h3 className="mt-3 truncate text-sm font-semibold text-[#10243a]">{row.name}</h3>
+            <p className="mt-1 truncate text-xs text-[#6d8299]">{row.branchName || 'Current Office'}</p>
+            <p className={`mt-3 font-semibold tracking-[-0.03em] text-[#10243a] ${row.rank === 1 ? 'text-[1.45rem]' : 'text-[1.2rem]'}`}>{renderMetric(row)}</p>
+            <div className="mt-3 flex items-center justify-center gap-1 text-xs font-semibold text-[#16894f]">
+              <ArrowRight size={13} className="-rotate-45" />
+              <span>{Math.max(0, row.progress || 0)}%</span>
+              <span className="font-medium text-[#71859c]">of leader</span>
+            </div>
           </button>
         )) : (
-          <p className="rounded-xl bg-[#f8fbff] px-3 py-6 text-center text-sm text-[#6b7f97]">No ranked performance data yet.</p>
+          <p className="rounded-xl bg-[#f8fbff] px-3 py-6 text-center text-sm text-[#6b7f97] md:col-span-3">No ranked performance data yet.</p>
         )}
       </div>
     </article>
@@ -2120,10 +2077,16 @@ function TopPerformersPanel({ rows = [], metric = 'pipelineValue', metricOptions
 }
 
 function AttentionAgentsPanel({ rows = [], onView }) {
-  const severityClass = {
-    High: 'border-[#f1c9c9] bg-[#fff4f4] text-[#a03c3c]',
-    Medium: 'border-[#f0dfb8] bg-[#fff8eb] text-[#8a641d]',
-    Low: 'border-[#dbe6f2] bg-[#f8fbff] text-[#60758d]',
+  const statusClass = {
+    High: 'bg-[#fff4f4] text-[#b42318]',
+    Medium: 'bg-[#fff8eb] text-[#946215]',
+    Low: 'bg-[#f8fbff] text-[#60758d]',
+  }
+  const getActivityLevel = (row) => {
+    const volume = Number(row.agent?.performance?.activityVolume || 0)
+    if (volume >= 8) return 'High'
+    if (volume >= 3) return 'Medium'
+    return 'Low'
   }
 
   return (
@@ -2131,32 +2094,126 @@ function AttentionAgentsPanel({ rows = [], onView }) {
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold text-[#10243a]">Agents Requiring Attention</h2>
-          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Coaching signals from activity, follow-ups and conversion.</p>
+          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Operational watchlist across your visible branches.</p>
         </div>
-        <span className="shrink-0 rounded-full border border-[#f0dfb8] bg-[#fff8eb] px-3 py-1 text-xs font-semibold text-[#8a641d]">{rows.length} watch</span>
+        <button type="button" className="shrink-0 text-xs font-semibold text-[#1769d1]">View watchlist</button>
       </div>
-      <div className="mt-4 divide-y divide-[#edf2f7]">
-        {rows.length ? rows.map((row) => (
-          <div key={row.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-3">
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <AgentAvatar agent={row} className="h-8 w-8 bg-[#fff7ed] text-xs font-semibold text-[#9a5b13]" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#10243a]">{row.name}</p>
-                  <p className="truncate text-xs text-[#6d8299]">{row.primaryReason}</p>
-                </div>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${severityClass[row.severity] || severityClass.Low}`}>{row.severity} risk</span>
-                <span className="text-xs font-semibold text-[#60758d]">{row.suggestedAction}</span>
-              </div>
-            </div>
-            <Button type="button" size="sm" variant="secondary" onClick={() => onView(row.agent)}>Open</Button>
-          </div>
-        )) : (
+      <div className="mt-4 overflow-x-auto">
+        {rows.length ? (
+          <table className="w-full min-w-[620px] text-left">
+            <thead className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#71859c]">
+              <tr className="border-b border-[#edf2f7]">
+                <th className="px-2 py-2">Agent</th>
+                <th className="px-2 py-2">Pipeline</th>
+                <th className="px-2 py-2">Activity</th>
+                <th className="px-2 py-2">Overdue</th>
+                <th className="px-2 py-2">Last Active</th>
+                <th className="px-2 py-2 text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf2f7] text-sm">
+              {rows.map((row) => {
+                const performance = row.agent?.performance || {}
+                const activityLevel = getActivityLevel(row)
+                return (
+                  <tr key={row.id} className="cursor-pointer hover:bg-[#f8fbff]" onClick={() => onView(row.agent)}>
+                    <td className="px-2 py-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <AgentAvatar agent={row} className="h-8 w-8 bg-[#eef5ff] text-xs font-semibold text-[#1769d1]" />
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-[#10243a]">{row.name}</p>
+                          <p className="truncate text-xs text-[#6d8299]">{row.primaryReason}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-2 py-3 font-semibold text-[#10243a]">{formatCompactCurrency(performance.pipelineValue)}</td>
+                    <td className="px-2 py-3 text-[#10243a]">{activityLevel}</td>
+                    <td className="px-2 py-3 font-semibold text-[#10243a]">{performance.overdueFollowUps || 0}</td>
+                    <td className="px-2 py-3 text-[#60758d]">{formatRelativeActivity(performance.lastActivityAt)}</td>
+                    <td className="px-2 py-3 text-right">
+                      <span className={`inline-flex rounded-full px-3 py-1 text-[0.66rem] font-semibold ${statusClass[row.severity] || statusClass.Low}`}>Needs attention</span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        ) : (
           <p className="rounded-xl bg-[#f8fbff] px-3 py-6 text-center text-sm text-[#6b7f97]">No intervention items right now.</p>
         )}
       </div>
+    </article>
+  )
+}
+
+function InvitedAgentsPanel({ rows = [], onShowPending, onResendInvite, onCopyInviteLink, onRevokeInvite }) {
+  return (
+    <article className="overflow-hidden rounded-2xl border border-[#dde6f1] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[#edf2f7] px-4 py-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">Invited Agents</h2>
+          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Pending invitations that have not been accepted yet.</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="rounded-full border border-[#e7ddf7] bg-[#f7f1ff] px-3 py-1 text-xs font-semibold text-[#5c3a9d]">{rows.length} pending</span>
+          <Button type="button" size="sm" variant="secondary" onClick={onShowPending}>Show pending</Button>
+        </div>
+      </div>
+      {rows.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left">
+            <thead className="bg-[#f8fbff] text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#71859c]">
+              <tr>
+                <th className="px-4 py-3">Invitee</th>
+                <th className="px-4 py-3">Branch</th>
+                <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Invited</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf2f7] text-sm text-[#22384c]">
+              {rows.map((agent) => {
+                const statusMeta = getAgentStatusMeta(agent)
+                return (
+                  <tr key={`${agent.id || agent.email}-pending-invite`}>
+                    <td className="px-4 py-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <AgentAvatar agent={agent} className="h-9 w-9 border border-[#d7e2ef] bg-white text-xs font-semibold text-[#245076]" />
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-[#10243a]">{agent.name || 'Invited agent'}</p>
+                          <p className="truncate text-xs text-[#60758d]">{agent.email || 'No email added'}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">{agent.office || agent.branchName || 'Current Office'}</td>
+                    <td className="px-4 py-3">{formatRoleLabel(agent.role)}</td>
+                    <td className="px-4 py-3">{formatDate(agent.invitedAt)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${statusMeta.className}`}>{statusMeta.label}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1.5">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => onResendInvite?.(agent)}><Send size={14} />Resend</Button>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => onCopyInviteLink?.(agent)}><Copy size={14} />Copy</Button>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => onRevokeInvite?.(agent)}><XCircle size={14} />Revoke</Button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="px-4 py-8 text-center">
+          <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f7f1ff] text-[#5c3a9d]">
+            <Send size={20} />
+          </span>
+          <h3 className="mt-3 text-sm font-semibold text-[#10243a]">No pending agent invites</h3>
+          <p className="mt-1 text-sm text-[#6d8299]">Invited agents will appear here until they accept their invitation.</p>
+        </div>
+      )}
     </article>
   )
 }
@@ -2381,6 +2438,9 @@ function AgentPerformanceTable({
   canManage = false,
   sortBy = 'pipeline',
   onSort,
+  title = 'All Agents',
+  helper = 'Manage agents across every branch in your visible scope.',
+  actionSlot = null,
   onView,
   onEditRole,
   onDeactivate,
@@ -2404,12 +2464,15 @@ function AgentPerformanceTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[#dde6f1] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[#edf2f7] px-4 py-4">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[#edf2f7] px-4 py-4">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold text-[#10243a]">Agent Performance Table</h2>
-          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Sortable, filter-aware operating view for principal oversight.</p>
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">{title}</h2>
+          <p className="mt-0.5 truncate text-xs text-[#6d8299]">{helper}</p>
         </div>
-        <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">{rows.length} agents</span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">{rows.length} agents</span>
+          {actionSlot}
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1160px] text-left">
@@ -2481,6 +2544,99 @@ function AgentPerformanceTable({
             })}
           </tbody>
         </table>
+      </div>
+    </div>
+  )
+}
+
+function AgentCommandCardGrid({
+  rows = [],
+  canManage = false,
+  actionSlot = null,
+  onView,
+  onEditRole,
+  onDeactivate,
+  onTransfer,
+  onResendInvite,
+  onCopyInviteLink,
+  onRevokeInvite,
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-[#dde6f1] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[#edf2f7] px-4 py-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-[#10243a]">All Agents</h2>
+          <p className="mt-0.5 truncate text-xs text-[#6d8299]">Card view for branch-aware agent management.</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">{rows.length} agents</span>
+          {actionSlot}
+        </div>
+      </div>
+      <div className="grid gap-4 p-4 md:grid-cols-2 2xl:grid-cols-3">
+        {rows.map((row) => {
+          const performance = row.performance || {}
+          const pendingInvite = row.statusKey === AGENT_INVITE_STATUS.PENDING_INVITE || row.agent?.isPendingInvite
+          const statusClassName = row.statusClassName || getAgentStatusMeta(row.agent || {}).className
+          return (
+            <article key={`${row.id}-${row.branchId || 'branch'}-command-card`} className="flex min-h-[260px] flex-col rounded-2xl border border-[#e1e9f3] bg-[linear-gradient(180deg,#ffffff,#fbfdff)] p-4">
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <AgentAvatar agent={row} className="h-12 w-12 border border-[#d7e2ef] bg-white text-sm font-semibold text-[#245076]" />
+                  <div className="min-w-0">
+                    <h3 className="truncate text-sm font-semibold text-[#10243a]">{row.name || 'Agent'}</h3>
+                    <p className="truncate text-xs text-[#60758d]">{formatRoleLabel(row.role)} · {row.branchName || 'Current Office'}</p>
+                    <p className="truncate text-xs text-[#8294aa]">{row.email || 'No email added'}</p>
+                  </div>
+                </div>
+                <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${statusClassName}`}>{row.statusLabel || 'Active'}</span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 divide-x divide-[#e4ebf4] rounded-2xl border border-[#edf2f7] bg-white py-3">
+                <div className="px-3">
+                  <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Pipeline</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-[#10243a]">{formatCompactCurrency(performance.pipelineValue)}</p>
+                </div>
+                <div className="px-3">
+                  <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Deals</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{performance.deals || 0}</p>
+                </div>
+                <div className="px-3">
+                  <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Conversion</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{performance.conversionRate || 0}%</p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-2 text-xs text-[#60758d]">
+                <p className="flex items-center justify-between gap-3">
+                  <span>Last active</span>
+                  <span className="font-semibold text-[#10243a]">{formatRelativeActivity(performance.lastActivityAt)}</span>
+                </p>
+                <p className="flex items-center justify-between gap-3">
+                  <span>Follow-ups overdue</span>
+                  <span className={`font-semibold ${performance.overdueFollowUps ? 'text-[#b42318]' : 'text-[#16894f]'}`}>{performance.overdueFollowUps || 0}</span>
+                </p>
+              </div>
+
+              <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
+                <Button type="button" size="sm" onClick={() => onView(row.agent)}>Open</Button>
+                {pendingInvite ? (
+                  <>
+                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onResendInvite?.(row.agent)}><Send size={14} />Resend</Button> : null}
+                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onCopyInviteLink?.(row.agent)}><Copy size={14} />Copy</Button> : null}
+                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onRevokeInvite?.(row.agent)}><XCircle size={14} />Revoke</Button> : null}
+                  </>
+                ) : (
+                  <>
+                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onEditRole(row.agent)}>Role</Button> : null}
+                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onTransfer(row.agent)}>Transfer</Button> : null}
+                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onDeactivate(row.agent)}><MoreHorizontal size={15} /></Button> : null}
+                  </>
+                )}
+              </div>
+            </article>
+          )
+        })}
       </div>
     </div>
   )
@@ -3399,6 +3555,7 @@ export function AgentsPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortBy, setSortBy] = useState('pipeline')
   const [searchTerm, setSearchTerm] = useState('')
+  const [agentDirectoryView, setAgentDirectoryView] = useState('table')
   const [agents, setAgents] = useState([])
   const [agentDirectory, setAgentDirectory] = useState(() => readAgentDirectory())
   const [agentInvites, setAgentInvites] = useState(() => readAgentInvites())
@@ -3832,6 +3989,39 @@ export function AgentsPage() {
     }),
     [agentDirectory?.agency?.id, agents, appointmentRows, branchFilter, branches, dateRange, effectiveStatusFilter, leadActivities, leadRows, leaderboardMetric, listingRows, officeFilter, organisationFilter, profile?.id, roleFilter, searchTerm, sortBy, taskRows, transactionRows],
   )
+
+  const invitedAgentRows = useMemo(() => {
+    const selectedOrganisationId = organisationFilter === EMPTY_ORGANISATION.id
+      ? String(agentDirectory?.agency?.id || '').trim().toLowerCase()
+      : String(organisationFilter || '').trim().toLowerCase()
+    const selectedBranchId = String(branchFilter || 'all').trim().toLowerCase()
+    const selectedOffice = String(officeFilter || 'all').trim().toLowerCase()
+    const selectedRole = String(roleFilter || 'all').trim().toLowerCase()
+    const query = String(searchTerm || '').trim().toLowerCase()
+
+    return agents
+      .filter((agent) => normalizeAgentDirectoryStatus(agent?.status) === AGENT_INVITE_STATUS.PENDING_INVITE || agent?.isPendingInvite)
+      .filter((agent) => {
+        const agentOrganisationId = String(agent?.organisationId || '').trim().toLowerCase()
+        if (selectedOrganisationId && selectedOrganisationId !== 'all' && agentOrganisationId && agentOrganisationId !== selectedOrganisationId) return false
+
+        const agentBranchId = String(agent?.branchId || '').trim().toLowerCase()
+        const agentOffice = String(agent?.office || agent?.branchName || '').trim().toLowerCase()
+        if (selectedBranchId !== 'all' && agentBranchId !== selectedBranchId && agentOffice !== selectedBranchId) return false
+        if (selectedOffice !== 'all' && agentOffice !== selectedOffice) return false
+        if (selectedRole !== 'all' && String(agent?.role || '').trim().toLowerCase() !== selectedRole) return false
+        if (!query) return true
+        return [
+          agent?.name,
+          agent?.email,
+          agent?.phone,
+          agent?.office,
+          agent?.branchName,
+          agent?.organisationName,
+        ].some((value) => String(value || '').toLowerCase().includes(query))
+      })
+      .sort((left, right) => (new Date(right?.invitedAt || 0).getTime() || 0) - (new Date(left?.invitedAt || 0).getTime() || 0))
+  }, [agentDirectory?.agency?.id, agents, branchFilter, officeFilter, organisationFilter, roleFilter, searchTerm])
 
   const offboardingDestinationAgents = useMemo(
     () =>
@@ -4387,15 +4577,35 @@ export function AgentsPage() {
     )
   }
 
+  const agentDirectoryViewToggle = (
+    <div className="inline-flex rounded-xl border border-[#d9e3ef] bg-white p-1 shadow-sm">
+      <button
+        type="button"
+        className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition ${agentDirectoryView === 'table' ? 'bg-[#0f2742] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f7fafc]'}`}
+        onClick={() => setAgentDirectoryView('table')}
+      >
+        <List size={14} />
+        Table
+      </button>
+      <button
+        type="button"
+        className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition ${agentDirectoryView === 'cards' ? 'bg-[#0f2742] text-white shadow-sm' : 'text-[#60758d] hover:bg-[#f7fafc]'}`}
+        onClick={() => setAgentDirectoryView('cards')}
+      >
+        <Grid2X2 size={14} />
+        Cards
+      </button>
+    </div>
+  )
+
   return (
     <section className="space-y-5">
       {canManageDirectory ? (
         <>
-          <section className="flex flex-col gap-4 rounded-2xl border border-[#dde6f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] lg:flex-row lg:items-start lg:justify-between">
+          <section className="flex flex-col gap-4 rounded-2xl border border-[#dde6f1] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#8a9bb0]">Principal Workspace</p>
               <h1 className="mt-1 text-[1.65rem] font-semibold tracking-[-0.035em] text-[#0f2237]">Agent Command Centre</h1>
-              <p className="mt-1 text-sm leading-6 text-[#667a92]">Network performance, coaching signals and operational ownership across your visible agent scope.</p>
             </div>
             <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
               <DirectorySelect
@@ -4423,7 +4633,7 @@ export function AgentsPage() {
             </div>
           </section>
 
-          <section className="sticky top-0 z-20 grid gap-2 rounded-2xl border border-[#dde6f1] bg-white/95 p-3 shadow-sm backdrop-blur md:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(142px,auto))_auto]">
+          <section className="grid gap-2 rounded-2xl border border-[#dde6f1] bg-white p-3 shadow-sm md:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(142px,auto))_auto]">
             <label className="min-w-0">
               <span className="sr-only">Search agents</span>
               <input
@@ -4477,7 +4687,6 @@ export function AgentsPage() {
           </section>
 
           <PerformanceKpiStrip kpis={commandCentreModel.kpis} />
-          <BranchPerformanceScroller branches={commandCentreModel.branchPerformance} />
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <TopPerformersPanel
               rows={commandCentreModel.topPerformers}
@@ -4532,20 +4741,44 @@ export function AgentsPage() {
 
       {!loading && canManageDirectory ? (
         <section className="space-y-4">
+          <InvitedAgentsPanel
+            rows={invitedAgentRows}
+            onShowPending={() => setStatusFilter(AGENT_INVITE_STATUS.PENDING_INVITE)}
+            onResendInvite={handleResendAgentInvite}
+            onCopyInviteLink={handleCopyAgentInviteLink}
+            onRevokeInvite={(agent) => openConfirm('revoke', agent)}
+          />
+
           {commandCentreModel.agentsTable.length ? (
-            <AgentPerformanceTable
-              rows={commandCentreModel.agentsTable}
-              canManage={canManageDirectory}
-              sortBy={sortBy}
-              onSort={setSortBy}
-              onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
-              onEditRole={openRoleEditor}
-              onDeactivate={(agent) => openConfirm('deactivate', agent)}
-              onTransfer={(agent) => openTransferWizard(agent)}
-              onResendInvite={handleResendAgentInvite}
-              onCopyInviteLink={handleCopyAgentInviteLink}
-              onRevokeInvite={(agent) => openConfirm('revoke', agent)}
-            />
+            agentDirectoryView === 'cards' ? (
+              <AgentCommandCardGrid
+                rows={commandCentreModel.agentsTable}
+                canManage={canManageDirectory}
+                actionSlot={agentDirectoryViewToggle}
+                onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+                onEditRole={openRoleEditor}
+                onDeactivate={(agent) => openConfirm('deactivate', agent)}
+                onTransfer={(agent) => openTransferWizard(agent)}
+                onResendInvite={handleResendAgentInvite}
+                onCopyInviteLink={handleCopyAgentInviteLink}
+                onRevokeInvite={(agent) => openConfirm('revoke', agent)}
+              />
+            ) : (
+              <AgentPerformanceTable
+                rows={commandCentreModel.agentsTable}
+                canManage={canManageDirectory}
+                sortBy={sortBy}
+                onSort={setSortBy}
+                actionSlot={agentDirectoryViewToggle}
+                onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
+                onEditRole={openRoleEditor}
+                onDeactivate={(agent) => openConfirm('deactivate', agent)}
+                onTransfer={(agent) => openTransferWizard(agent)}
+                onResendInvite={handleResendAgentInvite}
+                onCopyInviteLink={handleCopyAgentInviteLink}
+                onRevokeInvite={(agent) => openConfirm('revoke', agent)}
+              />
+            )
           ) : (
             <section className="rounded-2xl border border-dashed border-[#c9d8e8] bg-white px-5 py-12 text-center shadow-sm">
               <span className="mx-auto inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#edf5ff] text-[#1769d1]">

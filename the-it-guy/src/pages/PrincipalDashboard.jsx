@@ -11,11 +11,11 @@ import {
   Clock3,
   FileSignature,
   FileText,
+  Landmark,
   LayoutGrid,
   LineChart,
   LogOut,
   Loader2,
-  PieChart,
   Settings,
   ShieldAlert,
   Target,
@@ -404,12 +404,11 @@ function PrincipalKpiCard({ icon, label, value, trend, inverse = false, tone = '
 function PrincipalKpiRow({ data }) {
   const kpis = data.kpis
   return (
-    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-      <PrincipalKpiCard icon={PieChart} label="Pipeline Value" value={formatCurrency(kpis.pipelineValue, { compact: true })} trend={kpis.trends.pipelineValue} />
-      <PrincipalKpiCard icon={BriefcaseBusiness} label="Expected Commission" value={kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true })} trend={kpis.trends.expectedCommission} tone="orange" />
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <PrincipalKpiCard icon={Users} label="Active Transactions" value={formatCount(kpis.activeTransactions)} trend={kpis.trends.activeTransactions} tone="green" />
-      <PrincipalKpiCard icon={LineChart} label="Forecast Revenue" value={formatCurrency(kpis.forecastRevenue, { compact: true })} trend={kpis.trends.forecastRevenue} tone="purple" />
-      <PrincipalKpiCard icon={Target} label="Lead → Deal Conversion" value={formatPercent(kpis.leadToDealConversion)} trend={kpis.trends.leadToDealConversion} tone="green" />
+      <PrincipalKpiCard icon={UserRound} label="New Leads" value={formatCount(kpis.newLeads)} trend={kpis.trends.newLeads} tone="indigo" />
+      <PrincipalKpiCard icon={BriefcaseBusiness} label="Expected Commission" value={kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true })} trend={kpis.trends.expectedCommission} tone="orange" />
+      <PrincipalKpiCard icon={LineChart} label="Likely Revenue" value={formatCurrency(kpis.likelyRevenue ?? kpis.forecastRevenue, { compact: true })} trend={kpis.trends.likelyRevenue ?? kpis.trends.forecastRevenue} tone="purple" />
     </section>
   )
 }
@@ -630,23 +629,254 @@ function PipelineFunnelPanel({ rows = [] }) {
   )
 }
 
-function PipelineHealthPanel({ items = [] }) {
+function PipelineHealthPanel({ items = [], compact = false }) {
   const navigate = useNavigate()
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex min-h-[420px] flex-col`}>
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex ${compact ? 'min-h-[260px]' : 'min-h-[420px]'} flex-col`}>
       <h2 className="text-[1.08rem] font-semibold text-[#101828]">Pipeline Health</h2>
-      <div className="mt-5 grid flex-1 auto-rows-fr gap-3">
+      <div className={`${compact ? 'mt-4 gap-2.5' : 'mt-5 gap-3'} grid flex-1 auto-rows-fr`}>
         {items.map((item) => (
           <button
             key={item.key}
             type="button"
             onClick={() => item.href ? navigate(item.href) : null}
-            className="flex h-full min-h-[58px] w-full items-center justify-between gap-4 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
+            className="flex h-full min-h-[52px] w-full items-center justify-between gap-4 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
           >
             <span className="min-w-0 truncate text-sm font-semibold text-[#344054]">{item.label}</span>
             <span className={`rounded-full px-3 py-1 text-sm font-semibold tabular-nums ${item.count ? 'bg-[#fff2f0] text-[#b42318]' : 'bg-[#edfdf3] text-[#16894f]'}`}>{formatCount(item.count)}</span>
           </button>
         ))}
+      </div>
+    </section>
+  )
+}
+
+const SALES_FUNNEL_TONES = [
+  'var(--color-primary)',
+  'var(--color-info)',
+  'var(--color-primary-hover)',
+  'var(--color-warning)',
+  'var(--color-danger)',
+]
+
+const TRANSACTION_STAGE_STYLES = {
+  otp: {
+    icon: FileSignature,
+    iconClass: 'bg-dangerSoft text-danger',
+    accentClass: 'border-danger bg-dangerSoft',
+    barClass: 'bg-danger',
+    dotClass: 'bg-danger',
+  },
+  finance: {
+    icon: Landmark,
+    iconClass: 'bg-primarySoft text-primary',
+    accentClass: 'border-primary bg-primarySoft',
+    barClass: 'bg-primary',
+    dotClass: 'bg-primary',
+  },
+  transfer: {
+    icon: BriefcaseBusiness,
+    iconClass: 'bg-infoSoft text-info',
+    accentClass: 'border-info bg-infoSoft',
+    barClass: 'bg-info',
+    dotClass: 'bg-info',
+  },
+  registration: {
+    icon: FileText,
+    iconClass: 'bg-successSoft text-success',
+    accentClass: 'border-success bg-successSoft',
+    barClass: 'bg-success',
+    dotClass: 'bg-success',
+  },
+  complete: {
+    icon: CheckCircle2,
+    iconClass: 'bg-mutedBg text-textMuted',
+    accentClass: 'border-borderStrong bg-mutedBg/80',
+    barClass: 'bg-textMuted',
+    dotClass: 'bg-textMuted',
+  },
+}
+
+function SalesFunnelOverview({ data = {} }) {
+  const stages = Array.isArray(data.stages) ? data.stages : []
+  const maxCount = Math.max(1, ...stages.map((stage) => Number(stage.count || 0)))
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[390px]`}>
+      <div>
+        <h2 className="text-[1.12rem] font-semibold text-textStrong">Sales Funnel (Lead → OTP)</h2>
+        <p className="mt-1 text-sm text-textMuted">How effectively are we creating transactions?</p>
+      </div>
+
+      <div className="mt-6 grid gap-7 lg:grid-cols-[minmax(230px,0.9fr)_minmax(0,1.1fr)] lg:items-center">
+        <div className="mx-auto flex w-full max-w-[360px] flex-col items-center gap-2.5">
+          {stages.map((stage, index) => {
+            const width = Math.max(42, 100 - index * 11)
+            const color = SALES_FUNNEL_TONES[index] || 'var(--color-primary)'
+            return (
+              <article
+                key={stage.key}
+                className="relative grid min-h-[54px] place-items-center px-5 text-center text-sm font-semibold text-white shadow-sm"
+                style={{
+                  width: `${width}%`,
+                  clipPath: 'polygon(7% 0, 93% 0, 84% 100%, 16% 100%)',
+                  background: `linear-gradient(180deg, ${color}, color-mix(in srgb, ${color} 82%, white))`,
+                }}
+              >
+                <span className="text-white">{stage.label}</span>
+                <span className="absolute right-[15%] text-base font-semibold tabular-nums text-white">{formatCount(stage.count)}</span>
+              </article>
+            )
+          })}
+          <p className="mt-3 text-sm font-semibold text-primary">
+            Lead → OTP Conversion: {formatPercent(data.leadToOtpConversion)}
+          </p>
+        </div>
+
+        <div className="min-w-0">
+          <div className="grid grid-cols-[minmax(0,1fr)_92px_104px] gap-3 border-b border-borderSoft pb-3 text-[0.72rem] font-semibold uppercase tracking-[0.04em] text-textMuted">
+            <span>Stage</span>
+            <span className="text-right">Count</span>
+            <span className="text-right">Conversion</span>
+          </div>
+          <div className="divide-y divide-borderSoft">
+            {stages.map((stage, index) => {
+              const width = Math.max(4, (Number(stage.count || 0) / maxCount) * 100)
+              return (
+                <article key={stage.key} className="grid grid-cols-[minmax(0,1fr)_92px_104px] items-center gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-textStrong">{stage.label}</p>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-mutedBg">
+                      <span className="block h-full rounded-full" style={{ width: `${width}%`, background: SALES_FUNNEL_TONES[index] || 'var(--color-primary)' }} />
+                    </div>
+                  </div>
+                  <span className="text-right text-sm font-semibold text-textStrong tabular-nums">{formatCount(stage.count)}</span>
+                  <span className="text-right text-sm font-semibold text-textBody tabular-nums">{formatPercent(stage.conversionRate)}</span>
+                </article>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function TransactionHealthOverview({ data = {} }) {
+  const rows = Array.isArray(data.flow) ? data.flow : []
+  const bottleneck = data.bottleneck || null
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[330px]`}>
+      <div>
+        <h2 className="text-[1.12rem] font-semibold text-textStrong">Transaction Health (OTP → Registration)</h2>
+        <p className="mt-1 text-sm text-textMuted">How effectively are we completing transactions?</p>
+      </div>
+
+      <div className="mt-6 grid gap-3 md:grid-cols-5">
+        {rows.map((stage, index) => {
+          const style = TRANSACTION_STAGE_STYLES[stage.key] || TRANSACTION_STAGE_STYLES.otp
+          const Icon = style.icon
+          return (
+            <article key={stage.key} className={`relative min-h-[142px] rounded-2xl border bg-white p-4 text-center shadow-sm ${stage.isHighestVolume ? `${style.accentClass} shadow-[0_16px_35px_rgba(39,76,105,0.12)]` : 'border-borderSoft'}`}>
+              {stage.isHighestVolume ? <span className="absolute inset-x-6 -bottom-2 h-1 rounded-full bg-warning" /> : null}
+              {index < rows.length - 1 ? (
+                <span className="absolute right-[-18px] top-1/2 z-10 hidden h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-borderSoft bg-white text-textMuted shadow-sm md:flex">
+                  <ArrowRight size={18} />
+                </span>
+              ) : null}
+              <span className={`mx-auto grid h-10 w-10 place-items-center rounded-xl ${style.iconClass}`}>
+                <Icon size={18} />
+              </span>
+              <p className="mt-3 text-[0.78rem] font-semibold leading-4 text-textStrong">{stage.label}</p>
+              <p className="mt-2 text-[1.7rem] font-semibold leading-none text-textStrong tabular-nums">{formatCount(stage.count)}</p>
+              <p className="mt-2 text-xs font-semibold text-textMuted">{formatPercent(stage.percentage)} of active</p>
+            </article>
+          )
+        })}
+      </div>
+
+      <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-warning bg-warningSoft px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-warning text-white">
+            <AlertTriangle size={16} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-textStrong">
+              Current Bottleneck: {bottleneck?.label || 'None'}
+            </p>
+            <p className="mt-1 text-sm text-textMuted">
+              {bottleneck ? `${formatCount(bottleneck.count || 0)} transactions · avg ${Number(bottleneck.averageDays || 0).toFixed(1)} days in stage` : 'No active bottleneck detected in the selected scope.'}
+            </p>
+          </div>
+        </div>
+        <button type="button" disabled title="Coming soon" className="inline-flex h-10 cursor-not-allowed items-center gap-2 rounded-xl border border-warning bg-white/70 px-3 text-sm font-semibold text-textMuted opacity-75">
+          View Transaction Details <ArrowRight size={14} />
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function ActiveTransactionDistribution({ data = {}, totalActive = 0 }) {
+  const rows = Array.isArray(data.activeDistribution) ? data.activeDistribution : []
+  const activeTotal = Number(totalActive || 0)
+  const distributionTotal = rows.reduce((sum, row) => sum + Number(row.count || 0), 0)
+  const gradient = !activeTotal && !distributionTotal ? '' : rows.reduce((state, row) => {
+    const style = TRANSACTION_STAGE_STYLES[row.key] || TRANSACTION_STAGE_STYLES.otp
+    const start = state.cursor
+    const end = start + Number(row.percentage || 0)
+    return {
+      cursor: end,
+      parts: [...state.parts, `var(--color-${style.dotClass.replace('bg-', '')}) ${start}% ${end}%`],
+    }
+  }, { cursor: 0, parts: [] }).parts.join(', ')
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[270px]`}>
+      <h2 className="text-[1.08rem] font-semibold text-textStrong">Active Transactions</h2>
+      <div className="mt-5 grid gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:grid-cols-1 2xl:grid-cols-[150px_minmax(0,1fr)]">
+        <div className="relative mx-auto h-[150px] w-[150px] rounded-full" style={{ background: gradient ? `conic-gradient(${gradient})` : 'conic-gradient(var(--color-bg-muted) 0% 100%)' }}>
+          <div className="absolute inset-[34px] grid place-items-center rounded-full bg-white text-center shadow-inner">
+            <div>
+              <p className="text-[1.55rem] font-semibold leading-none text-textStrong">{formatCount(activeTotal)}</p>
+              <p className="mt-1 text-xs font-semibold text-textMuted">Active</p>
+            </div>
+          </div>
+        </div>
+        <div className="grid content-center gap-3">
+          {rows.map((row) => {
+            const style = TRANSACTION_STAGE_STYLES[row.key] || TRANSACTION_STAGE_STYLES.otp
+            return (
+              <div key={row.key} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-sm">
+                <span className={`h-2.5 w-2.5 rounded-full ${style.dotClass}`} />
+                <span className="font-semibold text-textBody">{row.label}</span>
+                <span className="font-semibold text-textStrong tabular-nums">{formatPercent(row.percentage)}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function DealVelocityPanel({ rows = [] }) {
+  const maxDays = Math.max(1, ...rows.map((row) => Number(row.averageDays || 0)))
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[270px]`}>
+      <h2 className="text-[1.08rem] font-semibold text-textStrong">Deal Velocity <span className="text-sm font-medium text-textMuted">(Avg Days in Stage)</span></h2>
+      <div className="mt-5 space-y-4">
+        {rows.map((row) => {
+          const style = TRANSACTION_STAGE_STYLES[row.key] || TRANSACTION_STAGE_STYLES.otp
+          const width = Math.max(5, (Number(row.averageDays || 0) / maxDays) * 100)
+          return (
+            <div key={row.key} className="grid grid-cols-[82px_minmax(0,1fr)_64px] items-center gap-3">
+              <span className="text-sm font-semibold text-textBody">{row.label}</span>
+              <div className="h-2 overflow-hidden rounded-full bg-mutedBg">
+                <span className={`block h-full rounded-full ${style.barClass}`} style={{ width: `${width}%` }} />
+              </div>
+              <span className="text-right text-sm font-semibold text-textStrong tabular-nums">{Number(row.averageDays || 0).toFixed(row.averageDays % 1 ? 1 : 0)} days</span>
+            </div>
+          )
+        })}
       </div>
     </section>
   )
@@ -1061,25 +1291,17 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
       </div>
 
       {activeTab === 'overview' ? (
-        <>
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <PipelineFunnelPanel rows={(data.pipeline.funnel || []).slice(0, 4)} />
-            <PipelineHealthPanel items={data.pipeline.health || []} />
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
+          <div className="space-y-5">
+            <SalesFunnelOverview data={data.pipeline.salesFunnel || {}} />
+            <TransactionHealthOverview data={data.transactions.health || {}} />
           </div>
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <TransactionFlowRail rows={data.transactions.flow || []} />
-            <RevenueForecastCards forecast={data.revenue.forecast} layout="stacked" />
-          </div>
-          <ActiveTransactionsSlider rows={data.activeTransactions || []} />
-          <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <RecentActivityFeed rows={data.recentActivity} />
-            <AgentSnapshotPanel rows={data.agentPerformance || []} />
-          </section>
-          <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <TransactionAlertsPanel rows={[...(data.overview?.urgentAlerts || [])]} />
-            <AttentionRequiredCard attention={data.attentionRequired || {}} />
-          </section>
-        </>
+          <aside className="space-y-5">
+            <PipelineHealthPanel items={data.pipeline.health || []} compact />
+            <ActiveTransactionDistribution data={data.transactions.health || {}} totalActive={data.kpis.activeTransactions} />
+            <DealVelocityPanel rows={data.transactions.health?.velocity || []} />
+          </aside>
+        </div>
       ) : null}
       {activeTab === 'pipeline' ? (
         <>

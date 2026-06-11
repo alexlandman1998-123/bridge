@@ -576,6 +576,20 @@ function getCommandStage(row = {}) {
   return 'otp'
 }
 
+function getStageEnteredAt(row = {}) {
+  return (
+    row.entered_stage_at ||
+    row.stage_entered_at ||
+    row.current_stage_entered_at ||
+    row.stage_changed_at ||
+    row.last_stage_changed_at ||
+    row.last_meaningful_activity_at ||
+    row.updated_at ||
+    row.created_at ||
+    null
+  )
+}
+
 function countByPredicate(rows = [], predicate) {
   return rows.filter(predicate).length
 }
@@ -641,6 +655,97 @@ function buildForecastBuckets(transactions = [], commissionByTransaction = new M
     expectedCommission: Math.round(bucket.expectedCommission),
     confidence: fallbackDates.size ? 'Estimated' : 'Dated',
   }))
+}
+
+function buildSalesFunnelMetrics(funnel = []) {
+  const rows = funnel
+    .filter((stage) => ['leads', 'mandates', 'viewings', 'offers', 'acceptedOtps'].includes(stage.key))
+    .map((stage) => ({
+      key: stage.key === 'acceptedOtps' ? 'otp' : stage.key,
+      label: stage.key === 'acceptedOtps' ? 'OTP' : stage.label,
+      count: stage.count,
+      value: stage.value,
+    }))
+  const leadCount = rows.find((row) => row.key === 'leads')?.count || 0
+  const otpCount = rows.find((row) => row.key === 'otp')?.count || 0
+  return {
+    stages: rows.map((row) => ({
+      ...row,
+      conversionRate: leadCount ? Math.round((toNumber(row.count) / leadCount) * 100) : row.key === 'leads' ? 100 : 0,
+    })),
+    leadToOtpConversion: leadCount ? Math.round((otpCount / leadCount) * 100) : 0,
+  }
+}
+
+function buildTransactionHealthMetrics(transactionFlow = [], activeTransactions = [], now = new Date()) {
+  const healthStages = ['otp', 'finance', 'transfer', 'registration', 'complete']
+  const activeStageRows = activeTransactions.reduce((state, row) => {
+    const key = getCommandStage(row)
+    if (!state.has(key)) state.set(key, [])
+    state.get(key).push(row)
+    return state
+  }, new Map())
+  const maxCount = Math.max(0, ...transactionFlow.map((row) => toNumber(row.count)))
+  const flow = healthStages.map((key) => {
+    const source = transactionFlow.find((row) => row.key === key) || { key, label: key === 'otp' ? 'OTP' : key[0].toUpperCase() + key.slice(1), count: 0, percentage: 0 }
+    return {
+      ...source,
+      isHighestVolume: maxCount > 0 && toNumber(source.count) === maxCount,
+    }
+  })
+  const activeDistribution = flow
+    .filter((row) => row.key !== 'complete')
+    .map((row) => ({
+      key: row.key,
+      label: row.label,
+      count: row.count,
+      percentage: row.percentage,
+    }))
+
+  const velocity = healthStages
+    .filter((key) => key !== 'complete')
+    .map((key) => {
+      const rows = activeStageRows.get(key) || []
+      const averageDays = average(rows.map((row) => daysBetween(getStageEnteredAt(row), now))) || 0
+      const flowRow = flow.find((row) => row.key === key)
+      return {
+        key,
+        label: flowRow?.label || (key === 'otp' ? 'OTP' : key[0].toUpperCase() + key.slice(1)),
+        count: flowRow?.count || 0,
+        averageDays: Math.round(averageDays * 10) / 10,
+      }
+    })
+  const maxAverageDays = Math.max(0, ...velocity.map((row) => row.averageDays))
+  const highestVolume = flow
+    .filter((row) => row.key !== 'complete')
+    .slice()
+    .sort((left, right) => toNumber(right.count) - toNumber(left.count))[0] || null
+  const slowestStage = velocity
+    .slice()
+    .sort((left, right) => toNumber(right.averageDays) - toNumber(left.averageDays))[0] || null
+  const hasActiveOperationalWork = activeTransactions.length > 0 || velocity.some((row) => row.averageDays > 0)
+  const bottleneck = !hasActiveOperationalWork
+    ? null
+    : slowestStage?.averageDays > 0
+    ? slowestStage
+    : highestVolume
+      ? {
+          key: highestVolume.key,
+          label: highestVolume.label,
+          count: highestVolume.count,
+          averageDays: velocity.find((row) => row.key === highestVolume.key)?.averageDays || 0,
+        }
+      : null
+
+  return {
+    flow,
+    activeDistribution,
+    velocity: velocity.map((row) => ({
+      ...row,
+      percentage: maxAverageDays ? Math.round((row.averageDays / maxAverageDays) * 100) : 0,
+    })),
+    bottleneck,
+  }
 }
 
 export function getResidentialDashboardMetrics({
@@ -759,6 +864,8 @@ export function getResidentialDashboardMetrics({
       percentage: percentage(rows.length, Math.max(1, activeTransactions.length)),
     }
   })
+  const salesFunnel = buildSalesFunnelMetrics(funnel)
+  const transactionHealth = buildTransactionHealthMetrics(transactionFlow, activeTransactions, now)
   const commandCentre = [
     { key: 'otp', label: 'OTP', count: transactionFlow.find((row) => row.key === 'otp')?.count || 0 },
     { key: 'finance', label: 'Finance', count: transactionFlow.find((row) => row.key === 'finance')?.count || 0 },
@@ -799,6 +906,7 @@ export function getResidentialDashboardMetrics({
     },
     pipeline: {
       funnel,
+      salesFunnel,
       health: pipelineHealth,
       topAgents: agentPerformance.slice(0, 5).map((agent) => ({
         agentId: agent.agentId,
@@ -847,6 +955,7 @@ export function getResidentialDashboardMetrics({
     transactions: {
       commandCentre,
       flow: transactionFlow,
+      health: transactionHealth,
       alerts: transactionAlerts,
     },
     revenue: {
@@ -903,16 +1012,20 @@ function buildEmptyDashboard() {
     kpis: {
       pipelineValue: 0,
       activeTransactions: 0,
+      newLeads: 0,
       expectedCommission: null,
       forecastRevenue: 0,
+      likelyRevenue: 0,
       closingThisMonth: 0,
       avgDealCycleDays: null,
       leadToDealConversion: 0,
       trends: {
         pipelineValue: null,
         activeTransactions: null,
+        newLeads: null,
         expectedCommission: null,
         forecastRevenue: null,
+        likelyRevenue: null,
         closingThisMonth: null,
         avgDealCycleDays: null,
         leadToDealConversion: null,
@@ -937,6 +1050,12 @@ function buildEmptyDashboard() {
       avgDealValue: null,
       winRate: 0,
       funnel: RESIDENTIAL_FUNNEL_STAGES.map((stage) => ({ ...stage, count: 0, value: 0, conversionToNext: null })),
+      salesFunnel: {
+        stages: RESIDENTIAL_FUNNEL_STAGES
+          .filter((stage) => stage.key !== 'registrations')
+          .map((stage) => ({ key: stage.key === 'acceptedOtps' ? 'otp' : stage.key, label: stage.key === 'acceptedOtps' ? 'OTP' : stage.label, count: 0, value: 0, conversionRate: stage.key === 'leads' ? 100 : 0 })),
+        leadToOtpConversion: 0,
+      },
       health: [],
       topAgents: [],
       agentCoaching: [],
@@ -952,6 +1071,12 @@ function buildEmptyDashboard() {
       stages: [],
       commandCentre: [],
       flow: [],
+      health: {
+        flow: ['otp', 'finance', 'transfer', 'registration', 'complete'].map((key) => ({ key, label: key === 'otp' ? 'OTP' : key[0].toUpperCase() + key.slice(1), count: 0, percentage: 0, isHighestVolume: false })),
+        activeDistribution: ['otp', 'finance', 'transfer', 'registration'].map((key) => ({ key, label: key === 'otp' ? 'OTP' : key[0].toUpperCase() + key.slice(1), count: 0, percentage: 0 })),
+        velocity: ['otp', 'finance', 'transfer', 'registration'].map((key) => ({ key, label: key === 'otp' ? 'OTP' : key[0].toUpperCase() + key.slice(1), count: 0, averageDays: 0, percentage: 0 })),
+        bottleneck: null,
+      },
       alerts: [],
     },
     activeTransactions: [],
@@ -1035,7 +1160,7 @@ export async function getPrincipalDashboardData({
   assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, waiting_on_role, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, waiting_on_role, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, entered_stage_at, stage_entered_at, current_stage_entered_at, stage_changed_at, last_stage_changed_at, last_meaningful_activity_at, updated_at, created_at, is_active',
     'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
   ]
 
@@ -1457,16 +1582,20 @@ export async function getPrincipalDashboardData({
     kpis: {
       pipelineValue,
       activeTransactions: activeTransactions.length,
+      newLeads: selectedLeads.length,
       expectedCommission,
       forecastRevenue: residentialMetrics.kpis.forecastRevenue,
+      likelyRevenue: residentialMetrics.revenue.forecast.likelyRevenue,
       closingThisMonth,
       avgDealCycleDays,
       leadToDealConversion,
       trends: {
         pipelineValue: trend(currentPipelineValue, previousPipelineValue),
         activeTransactions: trend(currentActiveTransactions, previousActiveTransactions),
+        newLeads: trend(selectedLeads.length, previousLeads.length),
         expectedCommission: expectedCommission === null ? null : trend(currentCommission, previousCommission),
         forecastRevenue: residentialMetrics.kpis.forecastRevenueTrend,
+        likelyRevenue: residentialMetrics.kpis.forecastRevenueTrend,
         closingThisMonth: trend(closingThisMonth, previousClosingThisMonth),
         avgDealCycleDays: null,
         leadToDealConversion: previousLeadConversion ? leadToDealConversion - previousLeadConversion : null,
