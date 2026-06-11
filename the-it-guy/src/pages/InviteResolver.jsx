@@ -200,7 +200,7 @@ function InviteBrandStrip({ workspaceName = '', workspaceLogoUrl = '' }) {
       </div>
 
       <div className="flex shrink-0 items-center justify-end">
-        <img src="/brand/bridge_9_white_background.png" alt="Bridge9" className="h-8 w-[82px] object-contain object-right sm:h-9 sm:w-[96px]" />
+        <img src="/brand/bridge_9_white_background.png" alt="Bridge9" className="h-20 w-36 object-contain object-right sm:h-24 sm:w-44" />
       </div>
     </div>
   )
