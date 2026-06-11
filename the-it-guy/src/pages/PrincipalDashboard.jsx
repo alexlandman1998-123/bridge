@@ -632,15 +632,15 @@ function PipelineFunnelPanel({ rows = [] }) {
 function PipelineHealthPanel({ items = [], compact = false }) {
   const navigate = useNavigate()
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex ${compact ? 'min-h-[260px]' : 'min-h-[420px]'} flex-col`}>
+    <section className={`${dashboardCardClass} ${compact ? 'px-3.5 py-3.5' : dashboardCardPadding} flex ${compact ? 'min-h-[250px]' : 'min-h-[420px]'} flex-col`}>
       <h2 className="text-[1.08rem] font-semibold text-[#101828]">Pipeline Health</h2>
-      <div className={`${compact ? 'mt-4 gap-2.5' : 'mt-5 gap-3'} grid flex-1 auto-rows-fr`}>
+      <div className={`${compact ? 'mt-3 gap-2' : 'mt-5 gap-3'} grid flex-1 auto-rows-fr`}>
         {items.map((item) => (
           <button
             key={item.key}
             type="button"
             onClick={() => item.href ? navigate(item.href) : null}
-            className="flex h-full min-h-[52px] w-full items-center justify-between gap-4 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
+            className={`${compact ? 'min-h-[38px] rounded-xl px-3 py-2' : 'min-h-[52px] rounded-2xl px-4 py-3'} flex h-full w-full items-center justify-between gap-4 border border-[#e3ebf5] bg-[#fbfdff] text-left transition hover:border-[#bfd0e4] hover:bg-white`}
           >
             <span className="min-w-0 truncate text-sm font-semibold text-[#344054]">{item.label}</span>
             <span className={`rounded-full px-3 py-1 text-sm font-semibold tabular-nums ${item.count ? 'bg-[#fff2f0] text-[#b42318]' : 'bg-[#edfdf3] text-[#16894f]'}`}>{formatCount(item.count)}</span>
@@ -701,7 +701,7 @@ function SalesFunnelOverview({ data = {} }) {
   const stages = Array.isArray(data.stages) ? data.stages : []
   const maxCount = Math.max(1, ...stages.map((stage) => Number(stage.count || 0)))
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[390px]`}>
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[500px]`}>
       <div>
         <h2 className="text-[1.12rem] font-semibold text-textStrong">Sales Funnel (Lead → OTP)</h2>
         <p className="mt-1 text-sm text-textMuted">How effectively are we creating transactions?</p>
@@ -816,7 +816,7 @@ function TransactionHealthOverview({ data = {} }) {
   )
 }
 
-function ActiveTransactionDistribution({ data = {}, totalActive = 0 }) {
+function ActiveTransactionDistribution({ data = {}, totalActive = 0, compact = false }) {
   const rows = Array.isArray(data.activeDistribution) ? data.activeDistribution : []
   const activeTotal = Number(totalActive || 0)
   const distributionTotal = rows.reduce((sum, row) => sum + Number(row.count || 0), 0)
@@ -830,18 +830,18 @@ function ActiveTransactionDistribution({ data = {}, totalActive = 0 }) {
     }
   }, { cursor: 0, parts: [] }).parts.join(', ')
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[270px]`}>
+    <section className={`${dashboardCardClass} ${compact ? 'px-4 py-4' : dashboardCardPadding} flex ${compact ? 'min-h-[190px]' : 'min-h-[270px]'} flex-col`}>
       <h2 className="text-[1.08rem] font-semibold text-textStrong">Active Transactions</h2>
-      <div className="mt-5 grid gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:grid-cols-1 2xl:grid-cols-[150px_minmax(0,1fr)]">
-        <div className="relative mx-auto h-[150px] w-[150px] rounded-full" style={{ background: gradient ? `conic-gradient(${gradient})` : 'conic-gradient(var(--color-bg-muted) 0% 100%)' }}>
-          <div className="absolute inset-[34px] grid place-items-center rounded-full bg-white text-center shadow-inner">
+      <div className={`${compact ? 'mt-4 gap-3 sm:grid-cols-[112px_minmax(0,1fr)] xl:grid-cols-[112px_minmax(0,1fr)] 2xl:grid-cols-[112px_minmax(0,1fr)]' : 'mt-5 gap-4 sm:grid-cols-[150px_minmax(0,1fr)] xl:grid-cols-1 2xl:grid-cols-[150px_minmax(0,1fr)]'} grid flex-1 items-center`}>
+        <div className={`${compact ? 'h-[112px] w-[112px]' : 'h-[150px] w-[150px]'} relative mx-auto rounded-full`} style={{ background: gradient ? `conic-gradient(${gradient})` : 'conic-gradient(var(--color-bg-muted) 0% 100%)' }}>
+          <div className={`${compact ? 'inset-[27px]' : 'inset-[34px]'} absolute grid place-items-center rounded-full bg-white text-center shadow-inner`}>
             <div>
-              <p className="text-[1.55rem] font-semibold leading-none text-textStrong">{formatCount(activeTotal)}</p>
+              <p className={`${compact ? 'text-[1.25rem]' : 'text-[1.55rem]'} font-semibold leading-none text-textStrong`}>{formatCount(activeTotal)}</p>
               <p className="mt-1 text-xs font-semibold text-textMuted">Active</p>
             </div>
           </div>
         </div>
-        <div className="grid content-center gap-3">
+        <div className={`${compact ? 'gap-2.5' : 'gap-3'} grid content-center`}>
           {rows.map((row) => {
             const style = TRANSACTION_STAGE_STYLES[row.key] || TRANSACTION_STAGE_STYLES.otp
             return (
@@ -853,30 +853,6 @@ function ActiveTransactionDistribution({ data = {}, totalActive = 0 }) {
             )
           })}
         </div>
-      </div>
-    </section>
-  )
-}
-
-function DealVelocityPanel({ rows = [] }) {
-  const maxDays = Math.max(1, ...rows.map((row) => Number(row.averageDays || 0)))
-  return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[270px]`}>
-      <h2 className="text-[1.08rem] font-semibold text-textStrong">Deal Velocity <span className="text-sm font-medium text-textMuted">(Avg Days in Stage)</span></h2>
-      <div className="mt-5 space-y-4">
-        {rows.map((row) => {
-          const style = TRANSACTION_STAGE_STYLES[row.key] || TRANSACTION_STAGE_STYLES.otp
-          const width = Math.max(5, (Number(row.averageDays || 0) / maxDays) * 100)
-          return (
-            <div key={row.key} className="grid grid-cols-[82px_minmax(0,1fr)_64px] items-center gap-3">
-              <span className="text-sm font-semibold text-textBody">{row.label}</span>
-              <div className="h-2 overflow-hidden rounded-full bg-mutedBg">
-                <span className={`block h-full rounded-full ${style.barClass}`} style={{ width: `${width}%` }} />
-              </div>
-              <span className="text-right text-sm font-semibold text-textStrong tabular-nums">{Number(row.averageDays || 0).toFixed(row.averageDays % 1 ? 1 : 0)} days</span>
-            </div>
-          )
-        })}
       </div>
     </section>
   )
@@ -919,6 +895,55 @@ function AgentSnapshotPanel({ rows = [] }) {
         )) : (
           <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">
             No agent performance data yet.
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function TopPerformersThisMonthPanel({ rows = [] }) {
+  const navigate = useNavigate()
+  const topRows = [...rows]
+    .sort((left, right) => Number(right.pipelineValue || 0) - Number(left.pipelineValue || 0))
+    .slice(0, 4)
+  const leaderValue = Math.max(1, ...topRows.map((agent) => Number(agent.pipelineValue || 0)))
+
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[1.05rem] font-semibold text-[#101828]">Top Performers This Month</h2>
+          <p className="mt-1 text-sm text-[#667085]">Ranked by active pipeline value.</p>
+        </div>
+        <button type="button" onClick={() => navigate('/agency/agents')} className="h-9 shrink-0 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
+          View agents
+        </button>
+      </div>
+
+      <div className="mt-4 grid flex-1 auto-rows-fr gap-3">
+        {topRows.length ? topRows.map((agent, index) => {
+          const progress = Math.max(5, Math.round((Number(agent.pipelineValue || 0) / leaderValue) * 100))
+          return (
+            <button
+              key={`${agent.agentId || agent.agentName}-top-${index}`}
+              type="button"
+              onClick={() => agent.agentId ? navigate(`/agents/${agent.agentId}`) : navigate('/agency/agents')}
+              className="grid h-full min-h-[76px] grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
+            >
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#fff7e8] text-xs font-semibold text-[#a16207]">{index + 1}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-[#101828]">{agent.agentName}</span>
+                <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-[#e5edf6]">
+                  <span className="block h-full rounded-full bg-[#c1842e]" style={{ width: `${progress}%` }} />
+                </span>
+              </span>
+              <span className="text-right text-sm font-semibold text-[#101828]">{formatCurrency(agent.pipelineValue, { compact: true })}</span>
+            </button>
+          )
+        }) : (
+          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">
+            No performer data yet.
           </div>
         )}
       </div>
@@ -1304,22 +1329,20 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
       {activeTab === 'overview' ? (
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
-            <div className="min-w-0 space-y-6">
+            <div className="min-w-0">
               <SalesFunnelOverview data={data.pipeline.salesFunnel || {}} />
-              <TransactionHealthOverview data={data.transactions.health || {}} />
             </div>
-            <aside className="min-w-0 space-y-6">
+            <aside className="grid min-w-0 content-stretch gap-6">
               <PipelineHealthPanel items={data.pipeline.health || []} compact />
-              <ActiveTransactionDistribution data={data.transactions.health || {}} totalActive={data.kpis.activeTransactions} />
-              <DealVelocityPanel rows={data.transactions.health?.velocity || []} />
+              <ActiveTransactionDistribution data={data.transactions.health || {}} totalActive={data.kpis.activeTransactions} compact />
             </aside>
           </div>
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,8fr)_minmax(320px,4fr)]">
-            <div className="min-w-0">
-              <ActiveTransactionsSlider rows={data.activeTransactions || []} />
-            </div>
+          <TransactionHealthOverview data={data.transactions.health || {}} />
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <AgentSnapshotPanel rows={data.agentPerformance || []} />
+            <TopPerformersThisMonthPanel rows={data.agentPerformance || []} />
           </div>
+          <ActiveTransactionsSlider rows={data.activeTransactions || []} />
         </div>
       ) : null}
       {activeTab === 'pipeline' ? (
@@ -1418,7 +1441,6 @@ function ActiveTransactionsSlider({ rows = [] }) {
       <div className="flex flex-col gap-3 px-1 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-[1.08rem] font-semibold text-[#101828]">Active Transactions</h2>
-          <p className="mt-1 text-sm text-[#667085]">Live operational movement across active deals.</p>
         </div>
         <button type="button" onClick={() => navigate('/transactions')} className="h-9 w-fit rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
           View all transactions

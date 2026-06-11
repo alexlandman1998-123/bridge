@@ -483,9 +483,8 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     {
       key: 'pipeline',
       label: 'Pipeline',
-      to: '/pipeline/overview',
+      to: '/pipeline/leads',
       children: [
-        { key: 'pipeline_overview', label: 'Overview', to: '/pipeline/overview' },
         { key: 'pipeline_leads', label: 'Leads', to: '/pipeline/leads' },
         { key: 'pipeline_canvassing', label: 'Canvassing', to: '/pipeline/canvassing' },
         { key: 'pipeline_calendar', label: 'Calendar', to: '/pipeline/calendar' },
