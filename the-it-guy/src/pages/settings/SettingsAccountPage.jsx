@@ -176,7 +176,6 @@ export default function SettingsAccountPage() {
       const upload = await uploadAccountAvatar({ file: avatarFile })
       const saved = await updateAccountSettings({ ...form, avatarUrl: upload.resolvedUrl })
       setForm(saved)
-      await refreshProfile()
       setMessage('Profile picture saved.')
     } catch (uploadError) {
       setAvatarError(uploadError.message)
@@ -194,7 +193,6 @@ export default function SettingsAccountPage() {
       setAvatarError('')
       const saved = await updateAccountSettings({ ...form, avatarUrl: '' })
       setForm(saved)
-      await refreshProfile()
       setMessage('Profile picture removed.')
     } catch (removeError) {
       setAvatarError(removeError.message)
