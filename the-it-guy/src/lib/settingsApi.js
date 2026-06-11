@@ -1558,7 +1558,7 @@ function buildCommercialOrganisationModuleMetadata({ agencyType = '', intent = n
   }
 }
 
-function buildAgencyOnboardingSettings({ context = {}, mergedDraft = {} } = {}) {
+function buildAgencyOnboardingSettings({ context = {}, mergedDraft = {}, commercialInstalled = null } = {}) {
   const rawAgencyType = normalizeText(mergedDraft?.agencyInformation?.agencyType).toLowerCase()
   const existingSettings = safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS)
 
@@ -1573,7 +1573,8 @@ function buildAgencyOnboardingSettings({ context = {}, mergedDraft = {} } = {}) 
   }
 
   const agencyType = normalizeAgencyType(rawAgencyType)
-  const hasCommercialModule = isCommercialAgencyType(agencyType)
+  const requestedCommercialModule = isCommercialAgencyType(agencyType)
+  const hasCommercialModule = requestedCommercialModule && commercialInstalled !== false
 
   return {
     ...DEFAULT_ORGANISATION_SETTINGS,
@@ -1587,8 +1588,8 @@ function buildAgencyOnboardingSettings({ context = {}, mergedDraft = {} } = {}) 
     },
     commercialWorkspace: {
       ...(existingSettings.commercialWorkspace || {}),
-      status: hasCommercialModule ? 'active' : 'disabled',
-      source: hasCommercialModule ? 'settings' : 'not_selected',
+      status: hasCommercialModule ? 'active' : requestedCommercialModule ? 'unavailable' : 'disabled',
+      source: hasCommercialModule ? 'settings' : requestedCommercialModule ? 'commercial_not_installed' : 'not_selected',
       mode: agencyType === 'commercial' ? 'commercial_only' : agencyType === 'mixed' ? 'mixed_residential_commercial' : 'residential_only',
       enabledAt: hasCommercialModule ? new Date().toISOString() : existingSettings.commercialWorkspace?.enabledAt || null,
     },
@@ -1620,6 +1621,10 @@ async function assertCommercialSignupSchemaInstalled(client) {
     }
     throw result.error
   }
+}
+
+function isCommercialSignupSchemaMissingError(error) {
+  return String(error?.message || '').includes('Commercial is not installed on this environment.')
 }
 
 async function activateCommercialOrganisationModuleForAgencySignup(client, { workspaceId = '', userId = '', agencyType = '', intent = null, mergedDraft = {}, source = 'signup' } = {}) {
@@ -2806,7 +2811,37 @@ export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
     }
   }
 
-  const mergedSettings = buildAgencyOnboardingSettings({ context, mergedDraft })
+  const agencyType = normalizeAgencyType(mergedDraft?.agencyInformation?.agencyType)
+  const shouldSyncCommercialAccess = Boolean(options?.syncCommercialAccess && isCommercialAgencyType(agencyType))
+  let commercialSync = {
+    attempted: shouldSyncCommercialAccess,
+    installed: null,
+    skipped: false,
+    message: '',
+  }
+
+  if (shouldSyncCommercialAccess) {
+    try {
+      await assertCommercialSignupSchemaInstalled(client)
+      commercialSync = { ...commercialSync, installed: true }
+    } catch (commercialError) {
+      if (!isCommercialSignupSchemaMissingError(commercialError)) {
+        throw commercialError
+      }
+      commercialSync = {
+        ...commercialSync,
+        installed: false,
+        skipped: true,
+        message: commercialError.message || 'Commercial is not installed on this environment.',
+      }
+    }
+  }
+
+  const mergedSettings = buildAgencyOnboardingSettings({
+    context,
+    mergedDraft,
+    commercialInstalled: shouldSyncCommercialAccess ? commercialSync.installed === true : null,
+  })
 
   const { error } = await client
     .from('organisation_settings')
@@ -2822,9 +2857,7 @@ export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
     throw error
   }
 
-  const agencyType = normalizeAgencyType(mergedDraft?.agencyInformation?.agencyType)
-  if (options?.syncCommercialAccess && isCommercialAgencyType(agencyType)) {
-    await assertCommercialSignupSchemaInstalled(client)
+  if (shouldSyncCommercialAccess && commercialSync.installed) {
     const user = await getAuthenticatedUser()
     const settingsActivationIntent = {
       commercial_activation_source: 'settings_update',
@@ -2846,6 +2879,11 @@ export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
       mergedDraft,
       source: 'manual',
     })
+    commercialSync = {
+      ...commercialSync,
+      skipped: false,
+      message: '',
+    }
   }
 
   clearOrganisationRuntimeCache()
@@ -2853,6 +2891,7 @@ export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
     onboarding: mergedDraft,
     organisation: context.organisation,
     membershipRole: context.membershipRole,
+    commercialSync,
     persisted: true,
   }
 }

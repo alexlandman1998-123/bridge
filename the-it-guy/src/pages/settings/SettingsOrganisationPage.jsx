@@ -375,7 +375,11 @@ export default function SettingsOrganisationPage() {
         window.dispatchEvent(new Event('itg:organisation-branding-updated'))
       }
 
-      setMessage(copy.saved)
+      if (onboardingResponse?.commercialSync?.skipped) {
+        setMessage(`${copy.saved} Commercial access was not activated because the Commercial module is not installed on this environment.`)
+      } else {
+        setMessage(copy.saved)
+      }
     } catch (saveError) {
       setError(saveError.message)
     } finally {
