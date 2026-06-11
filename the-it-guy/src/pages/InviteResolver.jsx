@@ -1,4 +1,4 @@
-import { CheckCircle2, Mail, ShieldAlert } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, Mail, ShieldAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -50,6 +50,23 @@ function formatInviteRoleLabel(value = '') {
 
 function getInviteBranchName(invite = {}) {
   return normalizeText(invite?.metadata?.branch_name || invite?.metadata?.branchName || invite?.metadata?.office_name || invite?.metadata?.officeName)
+}
+
+function getInitials(value = '') {
+  const parts = normalizeText(value).split(/\s+/).filter(Boolean)
+  if (!parts.length) return 'BR'
+  return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
+}
+
+function getInviteWorkspaceLogoUrl(invite = {}) {
+  return normalizeText(
+    invite?.workspace?.logo_url ||
+      invite?.workspace?.logoUrl ||
+      invite?.metadata?.organisation_logo_url ||
+      invite?.metadata?.organisationLogoUrl ||
+      invite?.metadata?.workspace_logo_url ||
+      invite?.metadata?.workspaceLogoUrl,
+  )
 }
 
 function getInviteUnavailableMessage(reason = '') {
@@ -118,14 +135,108 @@ function getAuthInvitePath({ token = '', email = '', mode = '' } = {}) {
 function InviteDetailList({ details = [] }) {
   if (!details.length) return null
   return (
-    <dl className="grid gap-2 rounded-control border border-borderSoft bg-surfaceAlt p-4 sm:grid-cols-3">
+    <dl className="grid gap-3 border-y border-borderSoft bg-surfaceAlt px-6 py-5 sm:grid-cols-3 sm:px-8">
       {details.map((item) => (
         <div key={item.label} className="min-w-0">
           <dt className="text-label font-semibold uppercase text-textMuted">{item.label}</dt>
-          <dd className="mt-1 truncate text-secondary font-semibold text-textStrong">{item.value}</dd>
+          <dd className="mt-1 truncate text-base font-semibold text-textStrong">{item.value}</dd>
         </div>
       ))}
     </dl>
+  )
+}
+
+function InvitePageShell({ children }) {
+  return (
+    <main className="flex min-h-[100dvh] items-center justify-center bg-mutedBg px-4 py-10 sm:px-6">
+      {children}
+    </main>
+  )
+}
+
+function InviteCard({ children }) {
+  return (
+    <section className="w-full max-w-[760px] overflow-hidden rounded-surface-xl border border-borderDefault bg-surface shadow-modal">
+      <div className="h-1.5 bg-primary" />
+      {children}
+    </section>
+  )
+}
+
+function InviteBrandStrip({ workspaceName = '', workspaceLogoUrl = '' }) {
+  const inviterName = normalizeText(workspaceName) || 'Inviting workspace'
+
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-borderSoft px-5 py-4 sm:px-7">
+      <div className="flex min-w-0 items-center gap-3">
+        {workspaceLogoUrl ? (
+          <img src={workspaceLogoUrl} alt={`${inviterName} logo`} className="h-11 w-11 rounded-control border border-borderSoft bg-surface object-contain p-1.5" />
+        ) : (
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-borderSoft bg-primarySoft text-sm font-semibold text-primary">
+            {getInitials(inviterName)}
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-textStrong">{inviterName}</p>
+          <p className="text-label font-semibold uppercase text-textMuted">Inviting party</p>
+        </div>
+      </div>
+
+      <span className="hidden shrink-0 rounded-full border border-borderSoft bg-mutedBg px-3 py-1 text-label font-semibold uppercase text-textMuted sm:inline-flex">
+        via
+      </span>
+
+      <div className="flex shrink-0 items-center justify-end">
+        <img src="/brand/bridge_9_white_background.png" alt="Bridge9" className="h-9 w-[90px] object-contain object-right" />
+      </div>
+    </div>
+  )
+}
+
+function InviteHeader({ icon, eyebrow = 'Bridge Invite', title, subtitle, tone = 'primary' }) {
+  const iconClassName = tone === 'danger'
+    ? 'bg-dangerSoft text-danger'
+    : tone === 'success'
+      ? 'bg-successSoft text-success'
+      : 'bg-primarySoft text-primary'
+
+  return (
+    <header className="flex flex-col items-center gap-4 px-6 pb-6 pt-8 text-center sm:px-8">
+      <div className={`flex h-12 w-12 items-center justify-center rounded-control ${iconClassName}`}>
+        {icon}
+      </div>
+      <div className="max-w-[560px] space-y-2">
+        <span className="text-label font-semibold uppercase tracking-[0.18em] text-textMuted">{eyebrow}</span>
+        <h1 className="text-page-title font-semibold text-textStrong">{title}</h1>
+        {subtitle ? <p className="text-secondary leading-6 text-textMuted">{subtitle}</p> : null}
+      </div>
+    </header>
+  )
+}
+
+function InviteActionPanel({ children }) {
+  return (
+    <div className="px-6 py-6 sm:px-8">
+      <div className="space-y-4 rounded-control border border-borderSoft bg-mutedBg p-5">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function InviteFooter({ children }) {
+  return (
+    <footer className="flex items-center justify-center gap-2 border-t border-borderSoft px-6 py-4 text-center text-helper text-textMuted sm:px-8">
+      {children}
+    </footer>
+  )
+}
+
+function SecondaryInviteLink({ to, children }) {
+  return (
+    <Link to={to} className="inline-flex min-h-[42px] items-center justify-center rounded-control border border-borderDefault bg-surface px-4 py-2 text-secondary font-semibold text-textStrong shadow-surface transition hover:border-borderStrong hover:bg-mutedBg">
+      {children}
+    </Link>
   )
 }
 
@@ -197,6 +308,7 @@ export default function InviteResolver() {
   const acceptedInviteBelongsToSession = Boolean(reason === 'already_accepted' && (signedInAsInvitedEmail || acceptedBySignedInUser))
   const pendingInviteWrongAccount = Boolean(reason === '' && sessionEmail && invitedEmail && !signedInAsInvitedEmail)
   const workspaceName = normalizeText(invite?.workspace?.display_name || invite?.workspace?.name)
+  const workspaceLogoUrl = getInviteWorkspaceLogoUrl(invite)
   const branchName = getInviteBranchName(invite)
   const roleLabel = invite ? formatInviteRoleLabel(invite?.metadata?.role_label || invite?.targetWorkspaceRole || invite?.metadata?.role) : ''
   const inviteDetails = useMemo(() => {
@@ -265,123 +377,159 @@ export default function InviteResolver() {
   }
 
   if (loading) {
-    return <section className="mx-auto max-w-[720px] rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">Loading invite…</section>
+    return (
+      <InvitePageShell>
+        <InviteCard>
+          <InviteBrandStrip />
+          <InviteHeader
+            icon={<Mail size={22} />}
+            title="Loading invite"
+            subtitle="Checking the invite details before you continue."
+          />
+        </InviteCard>
+      </InvitePageShell>
+    )
   }
 
   if (acceptedResult) {
     const target = getRedirectTarget(acceptedResult)
     return (
-      <section className="mx-auto max-w-[720px] space-y-4 rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">
-        <div className="flex items-center gap-2 text-success">
-          <CheckCircle2 size={18} />
-          <h1 className="text-page-title font-semibold">Invite accepted</h1>
-        </div>
-        <p className="text-secondary text-textMuted">Your access has been created and verified.</p>
-        <Link to={target} className="inline-flex rounded-control bg-primary px-4 py-2 text-secondary font-semibold text-white">
-          Continue
-        </Link>
-      </section>
+      <InvitePageShell>
+        <InviteCard>
+          <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
+          <InviteHeader
+            icon={<CheckCircle2 size={22} />}
+            title="Invite accepted"
+            subtitle="Your access has been created and verified."
+            tone="success"
+          />
+          <InviteActionPanel>
+            <Link to={target} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-control bg-primary px-5 py-2.5 text-secondary font-semibold text-white shadow-surface transition hover:bg-primaryHover">
+              Continue <ArrowRight size={16} />
+            </Link>
+          </InviteActionPanel>
+        </InviteCard>
+      </InvitePageShell>
     )
   }
 
   if (acceptedInviteBelongsToSession) {
     const target = getInviteTarget(invite)
     return (
-      <section className="mx-auto max-w-[720px] space-y-4 rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">
-        <div className="flex items-center gap-2 text-success">
-          <CheckCircle2 size={18} />
-          <h1 className="text-page-title font-semibold">You’re already connected</h1>
-        </div>
-        <p className="text-secondary text-textMuted">
-          This invite has already been accepted for {invitedEmail || 'your account'}. Continue into Bridge to access the workspace.
-        </p>
-        <Link to={target} className="inline-flex rounded-control bg-primary px-4 py-2 text-secondary font-semibold text-white">
-          Continue to Bridge
-        </Link>
-      </section>
+      <InvitePageShell>
+        <InviteCard>
+          <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
+          <InviteHeader
+            icon={<CheckCircle2 size={22} />}
+            title="You’re already connected"
+            subtitle={`This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Bridge to access the workspace.`}
+            tone="success"
+          />
+          <InviteActionPanel>
+            <Link to={target} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-control bg-primary px-5 py-2.5 text-secondary font-semibold text-white shadow-surface transition hover:bg-primaryHover">
+              Continue to Bridge <ArrowRight size={16} />
+            </Link>
+          </InviteActionPanel>
+        </InviteCard>
+      </InvitePageShell>
     )
   }
 
   if (pendingInviteWrongAccount) {
     return (
-      <section className="mx-auto max-w-[720px] space-y-4 rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">
-        <div className="flex items-center gap-2 text-danger">
-          <ShieldAlert size={18} />
-          <h1 className="text-page-title font-semibold">Wrong account</h1>
-        </div>
-        <p className="text-secondary text-textMuted">
-          This invite is for <strong>{invitedEmail}</strong>, but you are signed in as <strong>{sessionEmail}</strong>.
-        </p>
-        <InviteDetailList details={inviteDetails} />
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={() => void handleSwitchAccount()}>
-            Switch account
-          </Button>
-          <Link to="/dashboard" className="inline-flex rounded-control border border-borderDefault px-4 py-2 text-secondary font-semibold text-textStrong">
-            Back to Bridge
-          </Link>
-        </div>
-      </section>
+      <InvitePageShell>
+        <InviteCard>
+          <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
+          <InviteHeader
+            icon={<ShieldAlert size={22} />}
+            title="Wrong account"
+            subtitle={<>This invite is for <strong>{invitedEmail}</strong>, but you are signed in as <strong>{sessionEmail}</strong>.</>}
+            tone="danger"
+          />
+          <InviteDetailList details={inviteDetails} />
+          <InviteActionPanel>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button type="button" onClick={() => void handleSwitchAccount()}>
+                Switch account
+              </Button>
+              <SecondaryInviteLink to="/dashboard">Back to Bridge</SecondaryInviteLink>
+            </div>
+          </InviteActionPanel>
+        </InviteCard>
+      </InvitePageShell>
     )
   }
 
   if (reason && reason !== 'not_authenticated') {
     return (
-      <section className="mx-auto max-w-[720px] space-y-4 rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">
-        <div className="flex items-center gap-2 text-danger">
-          <ShieldAlert size={18} />
-          <h1 className="text-page-title font-semibold">{getInviteTitle(reason)}</h1>
-        </div>
-        <p className="text-secondary text-textMuted">
-          {getInviteUnavailableMessage(reason)}
-        </p>
-        <InviteDetailList details={inviteDetails} />
-        {error ? <p className="rounded-control border border-danger/30 bg-dangerSoft px-3 py-2 text-secondary text-danger">{error}</p> : null}
-        <Link to="/dashboard" className="inline-flex rounded-control border border-borderDefault px-4 py-2 text-secondary font-semibold text-textStrong">
-          Back to Bridge
-        </Link>
-      </section>
+      <InvitePageShell>
+        <InviteCard>
+          <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
+          <InviteHeader
+            icon={<ShieldAlert size={22} />}
+            title={getInviteTitle(reason)}
+            subtitle={getInviteUnavailableMessage(reason)}
+            tone="danger"
+          />
+          <InviteDetailList details={inviteDetails} />
+          <InviteActionPanel>
+            {error ? <p className="rounded-control border border-danger/30 bg-dangerSoft px-3 py-2 text-secondary text-danger">{error}</p> : null}
+            <div className="flex justify-center">
+              <SecondaryInviteLink to="/dashboard">Back to Bridge</SecondaryInviteLink>
+            </div>
+          </InviteActionPanel>
+        </InviteCard>
+      </InvitePageShell>
     )
   }
 
   return (
-    <section className="mx-auto max-w-[720px] space-y-4 rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">
-      <div className="space-y-1.5">
-        <span className="text-label font-semibold uppercase text-textMuted">Bridge Invite</span>
-        <h1 className="text-page-title font-semibold text-textStrong">Accept Invite</h1>
-        <p className="text-secondary text-textMuted">{invitePurpose}</p>
-      </div>
+    <InvitePageShell>
+      <InviteCard>
+        <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
+        <InviteHeader
+          icon={<Building2 size={22} />}
+          title="Accept Invite"
+          subtitle={invitePurpose}
+        />
 
-      <InviteDetailList details={inviteDetails} />
+        <InviteDetailList details={inviteDetails} />
 
-      <div className="space-y-3 rounded-control border border-borderSoft bg-surfaceAlt p-4">
-        {invitedEmail ? (
-          <p className="text-secondary text-textBody">
-            This invite is for <strong>{invitedEmail}</strong>.
-          </p>
+        <InviteActionPanel>
+          {invitedEmail ? (
+            <p className="text-center text-secondary text-textBody">
+              This invite is for <strong>{invitedEmail}</strong>.
+            </p>
+          ) : null}
+          {sessionEmail ? (
+            <p className="text-center text-helper text-textMuted">Signed in as {sessionEmail}</p>
+          ) : (
+            <p className="text-center text-helper text-textMuted">
+              Sign in, or create an account with the invited email address, to continue.
+            </p>
+          )}
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button type="button" onClick={() => void handleAccept()} disabled={saving}>
+              {saving ? 'Accepting…' : sessionEmail ? 'Accept Invite' : 'Sign in'}
+            </Button>
+            {!sessionEmail ? (
+              <SecondaryInviteLink to={getAuthInvitePath({ token, email: invitedEmail, mode: 'signup' })}>
+                Create account
+              </SecondaryInviteLink>
+            ) : null}
+          </div>
+        </InviteActionPanel>
+
+        {error ? (
+          <div className="px-6 pb-4 sm:px-8">
+            <p className="rounded-control border border-danger/30 bg-dangerSoft px-3 py-2 text-secondary text-danger">{error}</p>
+          </div>
         ) : null}
-        {sessionEmail ? (
-          <p className="text-helper text-textMuted">Signed in as {sessionEmail}</p>
-        ) : (
-          <p className="text-helper text-textMuted">
-            Sign in, or create an account with the invited email address, to continue.
-          </p>
-        )}
-        <Button type="button" onClick={() => void handleAccept()} disabled={saving}>
-          {saving ? 'Accepting…' : sessionEmail ? 'Accept Invite' : 'Sign in'}
-        </Button>
-        {!sessionEmail ? (
-          <Link to={getAuthInvitePath({ token, email: invitedEmail, mode: 'signup' })} className="inline-flex rounded-control border border-borderDefault px-4 py-2 text-secondary font-semibold text-textStrong">
-            Create account
-          </Link>
-        ) : null}
-      </div>
-
-      {error ? <p className="rounded-control border border-danger/30 bg-dangerSoft px-3 py-2 text-secondary text-danger">{error}</p> : null}
-      <p className="inline-flex items-center gap-2 text-helper text-textMuted">
-        <Mail size={14} />
-        Invite acceptance is validated against the signed-in email.
-      </p>
-    </section>
+        <InviteFooter>
+          <Mail size={14} />
+          <span>Invite acceptance is validated against the signed-in email.</span>
+        </InviteFooter>
+      </InviteCard>
+    </InvitePageShell>
   )
 }

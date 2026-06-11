@@ -59,7 +59,7 @@ const inviteRow = {
   metadata: { first_name: 'Invite', last_name: 'Agent', role_label: 'Agent' },
   created_at: '2026-06-11T00:00:00.000Z',
   updated_at: '2026-06-11T00:00:00.000Z',
-  organisations: { id: 'workspace-1', name: 'ABC Realty', display_name: 'ABC Realty', type: 'agency' },
+  organisations: { id: 'workspace-1', name: 'ABC Realty', display_name: 'ABC Realty', type: 'agency', logo_url: 'https://cdn.example.com/abc-logo.png' },
 }
 
 {
@@ -70,6 +70,7 @@ const inviteRow = {
   const context = await getInviteByToken('token-123', { client })
   assert.equal(context.ok, true, 'visible direct invite rows should still resolve')
   assert.equal(context.invite.email, 'agent@example.com')
+  assert.equal(context.invite.workspace.logo_url, 'https://cdn.example.com/abc-logo.png')
   assert.equal(client.calls.some((call) => call.type === 'rpc'), false, 'direct matches should not call the public lookup RPC')
 }
 

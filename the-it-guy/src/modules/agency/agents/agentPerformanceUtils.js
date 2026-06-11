@@ -23,6 +23,7 @@ export const LEADERBOARD_METRICS = [
 const ACTIVE_TRANSACTION_BLOCKLIST = ['registered', 'cancelled', 'canceled', 'archived', 'deleted', 'lost']
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const ACTIVITY_TYPES = ['calls', 'viewings', 'followUps', 'emails', 'meetings', 'notes']
+const STALE_LEAD_DAYS = 7
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -131,10 +132,6 @@ function resolveRowAgent(row = {}, agentLookup = new Map()) {
   return null
 }
 
-function getBranchId(row = {}) {
-  return normalizeKey(row.branchId || row.branch_id || row.branch?.id || row.organisationBranchId || row.office)
-}
-
 function getAgentBranchId(agent = {}) {
   return normalizeKey(agent.branchId || agent.branch_id || agent.office || agent.organisationName)
 }
@@ -151,6 +148,15 @@ function getTransactionStage(row = {}) {
     transaction.current_main_stage,
     transaction.lifecycle_state,
   ].filter(Boolean).join(' '))
+}
+
+function getActiveStageKey(row = {}) {
+  const stage = getTransactionStage(row)
+  if (stage.includes('register')) return 'registration'
+  if (stage.includes('transfer') || stage.includes('lodg')) return 'transfer'
+  if (stage.includes('finance') || stage.includes('bond') || stage.includes('bank')) return 'finance'
+  if (stage.includes('otp') || stage.includes('offer') || stage.includes('sale agreement')) return 'otp'
+  return 'otp'
 }
 
 function isActiveTransaction(row = {}) {
@@ -197,8 +203,28 @@ function getTransactionDate(row = {}) {
   return transaction.registered_at || transaction.registration_date || transaction.completed_at || transaction.updated_at || transaction.created_at || row.updatedAt || row.createdAt
 }
 
+function getTransactionCreatedDate(row = {}) {
+  const transaction = row.transaction || row
+  return transaction.created_at || transaction.createdAt || row.created_at || row.createdAt
+}
+
+function getTransactionRegisteredDate(row = {}) {
+  const transaction = row.transaction || row
+  return transaction.registered_at || transaction.registration_date || transaction.completed_at || row.registeredAt || row.completedAt
+}
+
 function getLeadDate(row = {}) {
   return row.createdAt || row.created_at || row.updatedAt || row.updated_at
+}
+
+function isOtpLead(row = {}) {
+  const signal = normalizeKey(`${row.stage || ''} ${row.status || ''} ${row.outcome || ''} ${row.nextAction || ''} ${row.next_action || ''}`)
+  return signal.includes('otp') || signal.includes('signed') || signal.includes('accepted offer') || signal.includes('offer accepted') || signal.includes('converted') || signal.includes('deal')
+}
+
+function isOpenLead(row = {}) {
+  const signal = normalizeKey(`${row.stage || ''} ${row.status || ''}`)
+  return !['converted', 'registered', 'closed', 'lost', 'cancelled', 'canceled', 'archived', 'deleted'].some((blocked) => signal.includes(blocked))
 }
 
 function getTaskDueDate(row = {}) {
@@ -338,16 +364,29 @@ export function buildAgentPerformanceModel({
         pipelineValue: 0,
         deals: 0,
         listings: 0,
-        conversionRate: 0,
+        conversionRate: null,
+        conversionDelta: null,
         registrations: 0,
         totalOpportunities: 0,
+        totalLeads: 0,
+        otpSignedCount: 0,
         nextFollowUps: 0,
         overdueFollowUps: 0,
+        staleLeads: 0,
         responseTimeHours: null,
         responseTimeLabel: 'N/A',
         activityVolume: 0,
         commissionMtd: null,
         activeTransactions: 0,
+        activeTransactionCount: 0,
+        activeListingCount: 0,
+        stageCounts: {
+          otp: 0,
+          finance: 0,
+          transfer: 0,
+          registration: 0,
+        },
+        registrationDays: [],
         activeToday: false,
         lastActivityAt: null,
         sparkline: [],
@@ -395,9 +434,14 @@ export function buildAgentPerformanceModel({
     if (!bucket) continue
     const key = getAgentKeys(bucket)[0]
     leadCount.set(key, (leadCount.get(key) || 0) + 1)
-    const signal = normalizeKey(`${lead.stage || ''} ${lead.status || ''}`)
-    if (signal.includes('converted') || signal.includes('deal') || signal.includes('registered')) {
+    bucket.performance.totalLeads += 1
+    if (isOtpLead(lead)) {
       convertedLeadCount.set(key, (convertedLeadCount.get(key) || 0) + 1)
+      bucket.performance.otpSignedCount += 1
+    }
+    const created = parseDate(getLeadDate(lead))
+    if (created && isOpenLead(lead) && (now.getTime() - created.getTime()) / 86400000 > STALE_LEAD_DAYS) {
+      bucket.performance.staleLeads += 1
     }
     if (isWithinRange(getLeadDate(lead), range)) {
       bucket.performance.totalOpportunities += 1
@@ -415,11 +459,21 @@ export function buildAgentPerformanceModel({
     if (active) {
       bucket.performance.pipelineValue += value
       bucket.performance.activeTransactions += 1
+      bucket.performance.activeTransactionCount += 1
+      const stageKey = getActiveStageKey(transaction)
+      bucket.performance.stageCounts[stageKey] = (bucket.performance.stageCounts[stageKey] || 0) + 1
     }
     if (inRange) {
       bucket.performance.deals += 1
       bucket.performance.totalOpportunities += 1
       if (registered) bucket.performance.registrations += 1
+    }
+    if (registered) {
+      const created = parseDate(getTransactionCreatedDate(transaction))
+      const registeredAt = parseDate(getTransactionRegisteredDate(transaction))
+      if (created && registeredAt && registeredAt >= created) {
+        bucket.performance.registrationDays.push((registeredAt.getTime() - created.getTime()) / 86400000)
+      }
     }
     if (registered && isWithinRange(getTransactionDate(transaction), resolveAgentDateRange('month_to_date'))) {
       const explicitCommission = toNumber((transaction.transaction || transaction).agent_commission_amount || transaction.agentCommissionAmount)
@@ -439,6 +493,7 @@ export function buildAgentPerformanceModel({
     const status = normalizeKey(listing.status || listing.listingStatus || listing.listing_status)
     if (!['deleted', 'archived', 'withdrawn', 'sold'].some((blocked) => status.includes(blocked))) {
       bucket.performance.listings += 1
+      bucket.performance.activeListingCount += 1
       bucket.performance.pipelineValue += getListingValue(listing)
     }
     registerEvent(bucket, {
@@ -506,9 +561,9 @@ export function buildAgentPerformanceModel({
 
   const allEvents = []
   for (const [key, bucket] of rowsByAgent.entries()) {
-    const opportunities = bucket.performance.totalOpportunities || leadCount.get(key) || bucket.performance.deals
-    const registrations = bucket.performance.registrations || convertedLeadCount.get(key) || 0
-    bucket.performance.conversionRate = percentage(registrations, opportunities)
+    const leadsTotal = leadCount.get(key) || bucket.performance.totalLeads || 0
+    const otpSigned = convertedLeadCount.get(key) || bucket.performance.otpSignedCount || 0
+    bucket.performance.conversionRate = leadsTotal ? percentage(otpSigned, leadsTotal) : null
     bucket.performance.responseTimeHours = average(responseSamples.get(key) || [])
     bucket.performance.responseTimeLabel = formatHours(bucket.performance.responseTimeHours)
     bucket.performance.sparkline = buildSparkline(agentEvents.get(key) || [], range)
@@ -519,10 +574,9 @@ export function buildAgentPerformanceModel({
     const lastActivity = parseDate(bucket.performance.lastActivityAt)
     const inactiveForDays = lastActivity ? (now.getTime() - lastActivity.getTime()) / 86400000 : Infinity
     if (inactiveForDays > 7) bucket.attentionFlags.push('No activity in 7 days')
-    if (bucket.performance.listings <= 0) bucket.attentionFlags.push('No active listings')
+    if (bucket.performance.activeTransactions <= 0 && bucket.performance.pipelineValue > 0) bucket.attentionFlags.push('Pipeline without active transactions')
     if (bucket.performance.overdueFollowUps > 0) bucket.attentionFlags.push(`${bucket.performance.overdueFollowUps} overdue follow-up${bucket.performance.overdueFollowUps === 1 ? '' : 's'}`)
-    if (bucket.performance.conversionRate < 10 && opportunities > 0) bucket.attentionFlags.push('Low conversion rate')
-    if (bucket.performance.pipelineValue <= 0) bucket.attentionFlags.push('No pipeline')
+    if (bucket.performance.staleLeads > 0) bucket.attentionFlags.push(`${bucket.performance.staleLeads} stale lead${bucket.performance.staleLeads === 1 ? '' : 's'}`)
 
     const statusKey = getStatusKey(bucket, bucket.attentionFlags)
     bucket.statusMeta = {
@@ -557,7 +611,11 @@ export function buildAgentPerformanceModel({
   const activeToday = modelAgents.filter((agent) => agent.performance.activeToday).length
   const totalPipelineValue = modelAgents.reduce((sum, agent) => sum + agent.performance.pipelineValue, 0)
   const activeTransactions = modelAgents.reduce((sum, agent) => sum + agent.performance.activeTransactions, 0)
-  const averageConversionRate = totalAgents ? Math.round(modelAgents.reduce((sum, agent) => sum + agent.performance.conversionRate, 0) / totalAgents) : 0
+  const conversionValues = modelAgents
+    .map((agent) => agent.performance.conversionRate)
+    .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+  const averageConversionRate = conversionValues.length ? Math.round(conversionValues.reduce((sum, value) => sum + value, 0) / conversionValues.length) : null
+  const averageRegistrationDays = average(modelAgents.flatMap((agent) => agent.performance.registrationDays || []))
   const responseValues = modelAgents
     .map((agent) => agent.performance.responseTimeHours)
     .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
@@ -589,6 +647,7 @@ export function buildAgentPerformanceModel({
       totalPipelineValue,
       activeTransactions,
       averageConversionRate,
+      avgDaysToRegistration: averageRegistrationDays === null ? null : Math.round(averageRegistrationDays),
       averageResponseTimeLabel: formatHours(averageResponseTime),
       commissionMtd: commissionValues.length ? commissionValues.reduce((sum, value) => sum + value, 0) : null,
     },

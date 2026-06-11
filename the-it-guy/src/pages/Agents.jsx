@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Clock3,
   Copy,
+  Download,
   DollarSign,
   Edit3,
   FileText,
@@ -67,7 +68,7 @@ import {
   updateAgentRole,
 } from '../lib/agentInviteService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
-import { AGENT_DATE_RANGE_OPTIONS, LEADERBOARD_METRICS } from '../modules/agency/agents/agentPerformanceUtils'
+import { LEADERBOARD_METRICS } from '../modules/agency/agents/agentPerformanceUtils'
 import { loadAgentPerformanceSources } from '../modules/agency/agents/agentPerformanceDataService'
 import { getPrincipalAgentCommandCentre } from '../modules/agency/agents/principalAgentCommandCentreService'
 import {
@@ -1069,6 +1070,46 @@ function formatRelativeActivity(value) {
   return `${Math.round(diffHours / 24)}d ago`
 }
 
+function formatCompactActivity(value) {
+  if (!value) return { label: 'No activity', tone: 'danger' }
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return { label: 'No activity', tone: 'danger' }
+  const diffDays = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000))
+  if (diffDays <= 0) return { label: 'Today', tone: 'active' }
+  if (diffDays === 1) return { label: 'Yesterday', tone: 'active' }
+  if (diffDays <= 7) return { label: `${diffDays} days ago`, tone: 'warning' }
+  return { label: `${diffDays} days ago`, tone: 'danger' }
+}
+
+function formatConversionRate(value) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
+  return `${Math.round(Number(value))}%`
+}
+
+function MiniTrendLine({ values = [] }) {
+  const points = Array.isArray(values) ? values.map(Number).filter((value) => Number.isFinite(value)) : []
+  if (points.length < 2 || points.every((value) => value === points[0])) return null
+  const width = 88
+  const height = 24
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const range = Math.max(1, max - min)
+  const step = width / Math.max(1, points.length - 1)
+  const path = points
+    .map((value, index) => {
+      const x = index * step
+      const y = height - ((value - min) / range) * (height - 4) - 2
+      return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
+
+  return (
+    <svg className="mt-2 h-6 w-[88px] text-success" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 function DirectorySelect({ label, value, onChange, options }) {
   return (
     <label className="min-w-[150px] flex-1 sm:flex-none">
@@ -1991,32 +2032,34 @@ function AgentTransferWizard({
   )
 }
 
-function PerformanceKpiStrip({ kpis }) {
+function PerformanceKpiStrip({ kpis, onAttentionClick }) {
   const cards = [
-    { label: 'Total Agents', value: kpis.totalAgents, helper: 'In selected scope', icon: Users, tone: 'bg-[#edf5ff] text-[#1769d1]' },
-    { label: 'Active Today', value: kpis.activeToday, helper: 'Logged activity today', icon: CheckCircle2, tone: 'bg-[#ecfdf3] text-[#16894f]' },
-    { label: 'Pipeline Value', value: formatCompactCurrency(kpis.pipelineValue ?? kpis.totalPipelineValue), helper: 'Active assigned value', icon: ArrowRight, tone: 'bg-[#eef4ff] text-[#315adf]' },
-    { label: 'Transactions', value: kpis.transactions ?? kpis.activeTransactions, helper: 'Active deals', icon: BriefcaseBusiness, tone: 'bg-[#f3efff] text-[#7657d8]' },
-    { label: 'Conversion Rate', value: `${(kpis.conversionRate ?? kpis.averageConversionRate) || 0}%`, helper: 'Network conversion', icon: Trophy, tone: 'bg-[#fff7e8] text-[#a46313]' },
+    { label: 'Total Pipeline Value', value: formatCompactCurrency(kpis.pipelineValue ?? kpis.totalPipelineValue), helper: 'Across visible agents', icon: ArrowRight, tone: 'bg-infoSoft text-info' },
+    { label: 'Active Transactions', value: kpis.transactions ?? kpis.activeTransactions ?? 0, helper: 'In-flight deals', icon: BriefcaseBusiness, tone: 'bg-successSoft text-success' },
+    { label: 'Avg. Conversion Rate', value: formatConversionRate(kpis.conversionRate ?? kpis.averageConversionRate), helper: 'Leads → OTP', icon: Trophy, tone: 'bg-primarySoft text-primary' },
+    { label: 'Avg. Days to Registration', value: kpis.avgDaysToRegistration ?? '—', helper: 'Avg. days', icon: Clock3, tone: 'bg-warningSoft text-warning' },
+    { label: 'Agents Needing Attention', value: kpis.agentsNeedingAttention ?? 0, helper: 'No activity > 7 days', icon: AlertTriangle, tone: 'bg-dangerSoft text-danger', onClick: onAttentionClick },
   ]
 
   return (
     <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
       {cards.map((card) => {
         const Icon = card.icon
+        const Tag = card.onClick ? 'button' : 'article'
         return (
-          <article key={card.label} className="min-w-0 rounded-2xl border border-[#dfe7f1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <Tag key={card.label} type={card.onClick ? 'button' : undefined} onClick={card.onClick} className="min-h-[122px] min-w-0 rounded-2xl border border-borderDefault bg-surface px-4 py-4 text-left shadow-surface transition hover:border-borderStrong hover:bg-mutedBg/40">
             <div className="flex min-w-0 items-center gap-2.5">
               <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${card.tone}`}>
                 <Icon size={15} />
               </span>
               <div className="min-w-0">
-                <p className="truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">{card.label}</p>
-                <p className="mt-1 truncate text-[1.16rem] font-semibold leading-none tracking-[-0.025em] text-[#10243a]">{card.value}</p>
-                <p className="mt-1 truncate text-[0.68rem] text-[#71859c]">{card.helper}</p>
+                <p className="truncate text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-textMuted">{card.label}</p>
+                <p className="mt-2 truncate text-[1.45rem] font-semibold leading-none tracking-[-0.035em] text-textStrong">{card.value}</p>
+                <p className="mt-2 truncate text-xs text-textMuted">{card.helper}</p>
+                {card.onClick ? <p className="mt-2 text-xs font-semibold text-primary">View agents</p> : null}
               </div>
             </div>
-          </article>
+          </Tag>
         )
       })}
     </section>
@@ -2432,24 +2475,22 @@ function AgentPerformanceTable({
   helper = 'Manage agents across every branch in your visible scope.',
   actionSlot = null,
   onView,
-  onEditRole,
   onDeactivate,
-  onTransfer,
+  onViewTransactions,
+  onAssignLead,
+  onSendMessage,
   onResendInvite,
   onCopyInviteLink,
   onRevokeInvite,
 }) {
   const headers = [
     { key: 'name', label: 'Agent' },
-    { key: 'branch', label: 'Branch' },
-    { key: 'role', label: 'Role' },
-    { key: 'pipeline', label: 'Pipeline' },
-    { key: 'deals', label: 'Deals' },
+    { key: 'pipeline', label: 'Pipeline Value' },
+    { key: 'deals', label: 'Active Transactions' },
     { key: 'listings', label: 'Listings' },
     { key: 'conversion', label: 'Conversion' },
+    { key: 'stageMix', label: 'Stage Mix' },
     { key: 'lastActivity', label: 'Last Activity' },
-    { key: 'followUps', label: 'Follow-ups' },
-    { key: 'status', label: 'Status' },
   ]
 
   return (
@@ -2464,12 +2505,22 @@ function AgentPerformanceTable({
           {actionSlot}
         </div>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1160px] text-left">
-          <thead className="bg-[#f6f9fc] text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#70849d]">
+      <div className="hidden lg:block">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[23%]" />
+            <col className="w-[14%]" />
+            <col className="w-[10%]" />
+            <col className="w-[8%]" />
+            <col className="w-[11%]" />
+            <col className="w-[17%]" />
+            <col className="w-[11%]" />
+            <col className="w-[6%]" />
+          </colgroup>
+          <thead className="bg-[#f6f9fc] text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#70849d]">
             <tr>
               {headers.map((header) => (
-                <th key={header.key} className="px-4 py-3">
+                <th key={header.key} className={`px-3 py-3 ${header.key === 'stageMix' ? 'hidden xl:table-cell' : ''}`}>
                   <button
                     type="button"
                     className={`inline-flex rounded-lg px-1 py-0.5 text-left transition hover:bg-white hover:text-[#1769d1] ${sortBy === header.key ? 'text-[#1769d1]' : ''}`}
@@ -2485,47 +2536,67 @@ function AgentPerformanceTable({
           <tbody className="divide-y divide-[#e8eef5] text-sm text-[#22384c]">
             {rows.map((row) => {
               const performance = row.performance || {}
-              const statusClassName = row.statusClassName || getAgentStatusMeta(row.agent || {}).className
               const pendingInvite = row.statusKey === AGENT_INVITE_STATUS.PENDING_INVITE || row.agent?.isPendingInvite
+              const activity = formatCompactActivity(performance.lastActivityAt)
               return (
                 <tr key={`${row.id}-${row.branchId || 'branch'}-performance-row`} className="cursor-pointer hover:bg-[#f8fbff]" onClick={() => onView(row.agent)}>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-4">
                     <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={(event) => { event.stopPropagation(); onView(row.agent) }}>
                       <AgentAvatar agent={row} className="h-9 w-9 border border-[#d7e2ef] bg-[#f8fbff] text-xs font-semibold text-[#245076]" />
                       <span className="min-w-0">
-                        <span className="block truncate font-semibold text-[#142132]">{row.name || 'Agent'}</span>
-                        <span className="block truncate text-xs text-[#60758d]">{row.email || 'No email added'}</span>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate font-semibold text-[#142132]">{row.name || 'Agent'}</span>
+                          {row.needsAttention ? <AlertTriangle size={13} className="shrink-0 text-warning" aria-label="Needs attention" /> : null}
+                        </span>
+                        <span className="block truncate text-xs text-[#60758d]">{formatRoleLabel(row.role)}</span>
+                        <span className="block truncate text-xs text-[#60758d]">{row.branchName || 'Current Office'}</span>
                       </span>
                     </button>
                   </td>
-                  <td className="px-4 py-3">{row.branchName || 'Current Office'}</td>
-                  <td className="px-4 py-3">{formatRoleLabel(row.role)}</td>
-                  <td className="px-4 py-3 font-semibold">{formatCompactCurrency(performance.pipelineValue)}</td>
-                  <td className="px-4 py-3">{performance.deals || 0}</td>
-                  <td className="px-4 py-3">{performance.listings || 0}</td>
-                  <td className="px-4 py-3">{performance.conversionRate || 0}%</td>
-                  <td className="px-4 py-3">{formatRelativeActivity(performance.lastActivityAt)}</td>
-                  <td className="px-4 py-3">
-                    <span className={performance.overdueFollowUps ? 'font-semibold text-[#9a4038]' : ''}>{performance.overdueFollowUps || 0}</span>
+                  <td className="px-3 py-4">
+                    <p className="font-semibold text-[#10243a]">{formatCompactCurrency(performance.pipelineValue)}</p>
+                    <MiniTrendLine values={performance.sparkline} />
                   </td>
-                  <td className="px-4 py-3"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${statusClassName}`}>{row.statusLabel || 'Active'}</span></td>
+                  <td className="px-3 py-4 text-center font-semibold text-[#10243a]">{performance.activeTransactionCount ?? performance.activeTransactions ?? 0}</td>
+                  <td className="px-3 py-4 text-center font-semibold text-[#10243a]">{performance.activeListingCount ?? performance.listings ?? 0}</td>
+                  <td className="px-3 py-4">
+                    <p className="font-semibold text-[#10243a]">{formatConversionRate(performance.conversionRate)}</p>
+                    {performance.conversionDelta !== null && performance.conversionDelta !== undefined ? (
+                      <p className={`mt-1 text-xs font-semibold ${Number(performance.conversionDelta) >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {Number(performance.conversionDelta) >= 0 ? '↑' : '↓'} {Math.abs(Math.round(Number(performance.conversionDelta)))}pp
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="hidden px-3 py-4 xl:table-cell">
+                    <StageMixChips counts={performance.stageCounts} onSelect={(stage) => onViewTransactions?.(row.agent, stage)} />
+                  </td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1.5">
+                    <span className="inline-flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-[#344054]">
+                      <span className={`h-2 w-2 rounded-full ${activity.tone === 'active' ? 'bg-success' : activity.tone === 'warning' ? 'bg-warning' : 'bg-danger'}`} />
+                      {activity.label}
+                    </span>
+                  </td>
+                  <td className="px-3 py-4">
+                    <div className="flex justify-end gap-1">
                       <a className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" href={row.phone ? `tel:${row.phone}` : undefined} onClick={(event) => event.stopPropagation()} aria-label="Call agent"><Phone size={15} /></a>
                       <a className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" href={row.email ? `mailto:${row.email}` : undefined} onClick={(event) => event.stopPropagation()} aria-label="Email agent"><Mail size={15} /></a>
                       {pendingInvite ? (
-                        <>
-                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onResendInvite?.(row.agent) }}><Send size={14} />Resend</Button> : null}
-                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onCopyInviteLink?.(row.agent) }}><Copy size={14} />Copy</Button> : null}
-                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onRevokeInvite?.(row.agent) }}><XCircle size={14} />Revoke</Button> : null}
-                        </>
+                        <AgentRowActions
+                          canManage={canManage}
+                          pendingInvite
+                          onResend={() => onResendInvite?.(row.agent)}
+                          onCopy={() => onCopyInviteLink?.(row.agent)}
+                          onRevoke={() => onRevokeInvite?.(row.agent)}
+                        />
                       ) : (
-                        <>
-                          <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" onClick={(event) => { event.stopPropagation(); onView(row.agent) }} aria-label="Schedule"><CalendarDays size={15} /></button>
-                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onEditRole(row.agent) }}>Role</Button> : null}
-                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onTransfer(row.agent) }}>Transfer</Button> : null}
-                          {canManage ? <Button type="button" size="sm" variant="secondary" onClick={(event) => { event.stopPropagation(); onDeactivate(row.agent) }}><MoreHorizontal size={15} /></Button> : null}
-                        </>
+                        <AgentRowActions
+                          canManage={canManage}
+                          onView={() => onView(row.agent)}
+                          onTransactions={() => onViewTransactions?.(row.agent)}
+                          onAssignLead={() => onAssignLead?.(row.agent)}
+                          onSendMessage={() => onSendMessage?.(row.agent)}
+                          onDeactivate={() => onDeactivate(row.agent)}
+                        />
                       )}
                     </div>
                   </td>
@@ -2535,7 +2606,159 @@ function AgentPerformanceTable({
           </tbody>
         </table>
       </div>
+      <div className="grid gap-3 p-4 lg:hidden">
+        {rows.map((row) => (
+          <AgentTableMobileCard
+            key={`${row.id}-${row.branchId || 'branch'}-mobile-card`}
+            row={row}
+            canManage={canManage}
+            onView={onView}
+            onViewTransactions={onViewTransactions}
+            onAssignLead={onAssignLead}
+            onSendMessage={onSendMessage}
+            onDeactivate={onDeactivate}
+            onResendInvite={onResendInvite}
+            onCopyInviteLink={onCopyInviteLink}
+            onRevokeInvite={onRevokeInvite}
+          />
+        ))}
+      </div>
     </div>
+  )
+}
+
+function StageMixChips({ counts = {}, onSelect }) {
+  const stages = [
+    { key: 'otp', label: 'OTP', className: 'border-info/20 bg-infoSoft text-info' },
+    { key: 'finance', label: 'FIN', className: 'border-primary/20 bg-primarySoft text-primary' },
+    { key: 'transfer', label: 'TRF', className: 'border-warning/20 bg-warningSoft text-warning' },
+    { key: 'registration', label: 'REG', className: 'border-success/20 bg-successSoft text-success' },
+  ]
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {stages.map((stage) => (
+        <button
+          key={stage.key}
+          type="button"
+          className={`inline-flex min-w-[46px] flex-col items-center rounded-lg border px-2 py-1 text-[0.62rem] font-semibold leading-tight transition hover:brightness-95 ${stage.className}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            onSelect?.(stage.key)
+          }}
+        >
+          <span className="text-sm leading-none tabular-nums">{Number(counts?.[stage.key] || 0)}</span>
+          <span>{stage.label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function AgentRowActions({
+  canManage = false,
+  pendingInvite = false,
+  onView,
+  onTransactions,
+  onAssignLead,
+  onSendMessage,
+  onDeactivate,
+  onResend,
+  onCopy,
+  onRevoke,
+}) {
+  const [open, setOpen] = useState(false)
+  const run = (event, action) => {
+    event.stopPropagation()
+    setOpen(false)
+    action?.()
+  }
+
+  return (
+    <div className="relative">
+      <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#526981] hover:bg-[#edf5ff] hover:text-[#1769d1]" onClick={(event) => { event.stopPropagation(); setOpen((value) => !value) }} aria-label="More actions">
+        <MoreHorizontal size={16} />
+      </button>
+      {open ? (
+        <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-44 rounded-2xl border border-[#dce6f0] bg-white p-2 text-left shadow-[0_18px_40px_rgba(15,23,42,0.15)]">
+          {pendingInvite ? (
+            <>
+              {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={(event) => run(event, onResend)}>Resend invite</button> : null}
+              {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={(event) => run(event, onCopy)}>Copy invite link</button> : null}
+              {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-danger hover:bg-dangerSoft" onClick={(event) => run(event, onRevoke)}>Revoke</button> : null}
+            </>
+          ) : (
+            <>
+              <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={(event) => run(event, onView)}>View Agent</button>
+              <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={(event) => run(event, onTransactions)}>View Transactions</button>
+              {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={(event) => run(event, onAssignLead)}>Assign Lead</button> : null}
+              <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={(event) => run(event, onSendMessage)}>Send Message</button>
+              {canManage ? <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-danger hover:bg-dangerSoft" onClick={(event) => run(event, onDeactivate)}>Deactivate</button> : null}
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function AgentTableMobileCard({
+  row,
+  canManage,
+  onView,
+  onViewTransactions,
+  onAssignLead,
+  onSendMessage,
+  onDeactivate,
+  onResendInvite,
+  onCopyInviteLink,
+  onRevokeInvite,
+}) {
+  const performance = row.performance || {}
+  const pendingInvite = row.statusKey === AGENT_INVITE_STATUS.PENDING_INVITE || row.agent?.isPendingInvite
+  const activity = formatCompactActivity(performance.lastActivityAt)
+
+  return (
+    <article className="rounded-2xl border border-[#e1e9f3] bg-[linear-gradient(180deg,#ffffff,#fbfdff)] p-4">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={() => onView(row.agent)}>
+          <AgentAvatar agent={row} className="h-11 w-11 border border-[#d7e2ef] bg-white text-sm font-semibold text-[#245076]" />
+          <span className="min-w-0">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-sm font-semibold text-[#10243a]">{row.name || 'Agent'}</span>
+              {row.needsAttention ? <AlertTriangle size={13} className="shrink-0 text-warning" aria-label="Needs attention" /> : null}
+            </span>
+            <span className="block truncate text-xs text-[#60758d]">{formatRoleLabel(row.role)}</span>
+            <span className="block truncate text-xs text-[#60758d]">{row.branchName || 'Current Office'}</span>
+          </span>
+        </button>
+        <AgentRowActions
+          canManage={canManage}
+          pendingInvite={pendingInvite}
+          onView={() => onView(row.agent)}
+          onTransactions={() => onViewTransactions?.(row.agent)}
+          onAssignLead={() => onAssignLead?.(row.agent)}
+          onSendMessage={() => onSendMessage?.(row.agent)}
+          onDeactivate={() => onDeactivate(row.agent)}
+          onResend={() => onResendInvite?.(row.agent)}
+          onCopy={() => onCopyInviteLink?.(row.agent)}
+          onRevoke={() => onRevokeInvite?.(row.agent)}
+        />
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <AgentMetricCard label="Pipeline Value" value={formatCompactCurrency(performance.pipelineValue)} />
+        <AgentMetricCard label="Active Transactions" value={performance.activeTransactionCount ?? performance.activeTransactions ?? 0} />
+        <AgentMetricCard label="Listings" value={performance.activeListingCount ?? performance.listings ?? 0} />
+        <AgentMetricCard label="Conversion" value={formatConversionRate(performance.conversionRate)} />
+      </div>
+      <div className="mt-4">
+        <StageMixChips counts={performance.stageCounts} onSelect={(stage) => onViewTransactions?.(row.agent, stage)} />
+      </div>
+      <p className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#344054]">
+        <span className={`h-2 w-2 rounded-full ${activity.tone === 'active' ? 'bg-success' : activity.tone === 'warning' ? 'bg-warning' : 'bg-danger'}`} />
+        {activity.label}
+      </p>
+    </article>
   )
 }
 
@@ -2544,9 +2767,10 @@ function AgentCommandCardGrid({
   canManage = false,
   actionSlot = null,
   onView,
-  onEditRole,
   onDeactivate,
-  onTransfer,
+  onViewTransactions,
+  onAssignLead,
+  onSendMessage,
   onResendInvite,
   onCopyInviteLink,
   onRevokeInvite,
@@ -2567,19 +2791,34 @@ function AgentCommandCardGrid({
         {rows.map((row) => {
           const performance = row.performance || {}
           const pendingInvite = row.statusKey === AGENT_INVITE_STATUS.PENDING_INVITE || row.agent?.isPendingInvite
-          const statusClassName = row.statusClassName || getAgentStatusMeta(row.agent || {}).className
+          const activity = formatCompactActivity(performance.lastActivityAt)
           return (
             <article key={`${row.id}-${row.branchId || 'branch'}-command-card`} className="flex min-h-[260px] flex-col rounded-2xl border border-[#e1e9f3] bg-[linear-gradient(180deg,#ffffff,#fbfdff)] p-4">
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <AgentAvatar agent={row} className="h-12 w-12 border border-[#d7e2ef] bg-white text-sm font-semibold text-[#245076]" />
                   <div className="min-w-0">
-                    <h3 className="truncate text-sm font-semibold text-[#10243a]">{row.name || 'Agent'}</h3>
-                    <p className="truncate text-xs text-[#60758d]">{formatRoleLabel(row.role)} · {row.branchName || 'Current Office'}</p>
+                    <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-[#10243a]">
+                      <span className="truncate">{row.name || 'Agent'}</span>
+                      {row.needsAttention ? <AlertTriangle size={13} className="shrink-0 text-warning" aria-label="Needs attention" /> : null}
+                    </h3>
+                    <p className="truncate text-xs text-[#60758d]">{formatRoleLabel(row.role)}</p>
+                    <p className="truncate text-xs text-[#60758d]">{row.branchName || 'Current Office'}</p>
                     <p className="truncate text-xs text-[#8294aa]">{row.email || 'No email added'}</p>
                   </div>
                 </div>
-                <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${statusClassName}`}>{row.statusLabel || 'Active'}</span>
+                <AgentRowActions
+                  canManage={canManage}
+                  pendingInvite={pendingInvite}
+                  onView={() => onView(row.agent)}
+                  onTransactions={() => onViewTransactions?.(row.agent)}
+                  onAssignLead={() => onAssignLead?.(row.agent)}
+                  onSendMessage={() => onSendMessage?.(row.agent)}
+                  onDeactivate={() => onDeactivate(row.agent)}
+                  onResend={() => onResendInvite?.(row.agent)}
+                  onCopy={() => onCopyInviteLink?.(row.agent)}
+                  onRevoke={() => onRevokeInvite?.(row.agent)}
+                />
               </div>
 
               <div className="mt-4 grid grid-cols-3 divide-x divide-[#e4ebf4] rounded-2xl border border-[#edf2f7] bg-white py-3">
@@ -2589,22 +2828,25 @@ function AgentCommandCardGrid({
                 </div>
                 <div className="px-3">
                   <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Deals</p>
-                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{performance.deals || 0}</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{performance.activeTransactionCount ?? performance.activeTransactions ?? 0}</p>
                 </div>
                 <div className="px-3">
                   <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#71859c]">Conversion</p>
-                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{performance.conversionRate || 0}%</p>
+                  <p className="mt-1 text-sm font-semibold text-[#10243a]">{formatConversionRate(performance.conversionRate)}</p>
                 </div>
+              </div>
+
+              <div className="mt-4">
+                <StageMixChips counts={performance.stageCounts} onSelect={(stage) => onViewTransactions?.(row.agent, stage)} />
               </div>
 
               <div className="mt-4 space-y-2 text-xs text-[#60758d]">
                 <p className="flex items-center justify-between gap-3">
                   <span>Last active</span>
-                  <span className="font-semibold text-[#10243a]">{formatRelativeActivity(performance.lastActivityAt)}</span>
-                </p>
-                <p className="flex items-center justify-between gap-3">
-                  <span>Follow-ups overdue</span>
-                  <span className={`font-semibold ${performance.overdueFollowUps ? 'text-[#b42318]' : 'text-[#16894f]'}`}>{performance.overdueFollowUps || 0}</span>
+                  <span className="inline-flex items-center gap-2 font-semibold text-[#10243a]">
+                    <span className={`h-2 w-2 rounded-full ${activity.tone === 'active' ? 'bg-success' : activity.tone === 'warning' ? 'bg-warning' : 'bg-danger'}`} />
+                    {activity.label}
+                  </span>
                 </p>
               </div>
 
@@ -2617,11 +2859,7 @@ function AgentCommandCardGrid({
                     {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onRevokeInvite?.(row.agent)}><XCircle size={14} />Revoke</Button> : null}
                   </>
                 ) : (
-                  <>
-                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onEditRole(row.agent)}>Role</Button> : null}
-                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onTransfer(row.agent)}>Transfer</Button> : null}
-                    {canManage ? <Button type="button" size="sm" variant="secondary" onClick={() => onDeactivate(row.agent)}><MoreHorizontal size={15} /></Button> : null}
-                  </>
+                  null
                 )}
               </div>
             </article>
@@ -3537,9 +3775,9 @@ export function AgentsPage() {
   const [listingRows, setListingRows] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [branchFilter, setBranchFilter] = useState('all')
-  const [dateRange, setDateRange] = useState('last_30_days')
+  const dateRange = 'last_30_days'
   const [leaderboardMetric, setLeaderboardMetric] = useState('pipelineValue')
-  const [officeFilter, setOfficeFilter] = useState('all')
+  const officeFilter = 'all'
   const [organisationFilter, setOrganisationFilter] = useState(EMPTY_ORGANISATION.id)
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -3927,27 +4165,10 @@ export function AgentsPage() {
     })
   }, [activeCommissionStructureOptions])
 
-  const officeOptions = useMemo(() => {
-    const items = [...new Set(agents.map((agent) => agent.office).filter(Boolean))]
-    return ['all', ...items]
-  }, [agents])
-
   const roleOptions = useMemo(() => {
     const items = [...new Set(agents.map((agent) => String(agent.role || 'agent').trim().toLowerCase()).filter(Boolean))]
     return ['all', ...items]
   }, [agents])
-
-  const statusOptions = useMemo(
-    () => [
-      { value: 'all', label: 'All Statuses' },
-      { value: 'active', label: 'Active' },
-      { value: 'pending_invite', label: 'Pending Invite' },
-      { value: 'needs_attention', label: 'Needs Attention' },
-      { value: 'inactive', label: 'Inactive' },
-      { value: 'on_leave', label: 'On Leave' },
-    ],
-    [],
-  )
 
   const effectiveStatusFilter = statusFilter
 
@@ -4224,12 +4445,6 @@ export function AgentsPage() {
     }
   }
 
-  function openRoleEditor(agent) {
-    setRoleEditTarget(agent)
-    setRoleEditValue(String(agent?.role || 'agent').trim().toLowerCase() || 'agent')
-    setRoleEditOpen(true)
-  }
-
   async function handleSaveRole() {
     if (!roleEditTarget) return
     try {
@@ -4394,14 +4609,6 @@ export function AgentsPage() {
     } finally {
       setTransferLoading(false)
     }
-  }
-
-  async function openTransferWizard(agent) {
-    setActionError('')
-    setActionMessage('')
-    setTransferError('')
-    setTransferWizard({ open: true, agent, discovery: null })
-    await loadTransferDiscovery(agent)
   }
 
   function closeTransferWizard() {
@@ -4603,76 +4810,82 @@ export function AgentsPage() {
     </Button>
   ) : null
 
-  const agentDirectoryActions = (
-    <>
-      {agentDirectoryViewToggle}
-    </>
-  )
+  function handleExportAgentRows() {
+    const header = ['Agent', 'Role', 'Branch', 'Pipeline Value', 'Active Transactions', 'Listings', 'Conversion', 'Last Activity']
+    const rows = commandCentreModel.agentsTable.map((row) => {
+      const performance = row.performance || {}
+      return [
+        row.name || '',
+        formatRoleLabel(row.role),
+        row.branchName || 'Current Office',
+        Number(performance.pipelineValue || 0),
+        Number(performance.activeTransactionCount ?? performance.activeTransactions ?? 0),
+        Number(performance.activeListingCount ?? performance.listings ?? 0),
+        performance.conversionRate === null || performance.conversionRate === undefined ? '' : `${Math.round(Number(performance.conversionRate))}%`,
+        formatCompactActivity(performance.lastActivityAt).label,
+      ]
+    })
+    const csv = [header, ...rows]
+      .map((line) => line.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `agents-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <section className="space-y-5">
       {canManageDirectory ? (
         <>
-          <section className="grid grid-cols-1 gap-2 rounded-2xl border border-[#dde6f1] bg-white p-3 shadow-sm sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(142px,auto))_auto]">
-            <label className="min-w-0">
-              <span className="sr-only">Search agents</span>
-              <input
-                className="h-10 w-full rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm outline-none transition placeholder:text-[#9aaabd] focus:border-[#1f4f78] focus:ring-2 focus:ring-[#1f4f78]/10"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search agent, email, phone or branch..."
-              />
-            </label>
-            <DirectorySelect
-              label="Date range"
-              value={dateRange}
-              onChange={setDateRange}
-              options={AGENT_DATE_RANGE_OPTIONS.map((range) => ({ value: range.value, label: range.label }))}
-            />
-            <DirectorySelect
-              label="Branch / office"
-              value={branchFilter}
-              onChange={setBranchFilter}
-              options={commandCentreModel.filterOptions.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
-            />
-            <DirectorySelect
-              label="Office"
-              value={officeFilter}
-              onChange={setOfficeFilter}
-              options={officeOptions.map((office) => ({ value: office, label: office === 'all' ? 'All Offices' : office }))}
-            />
-            <DirectorySelect
-              label="Role"
-              value={roleFilter}
-              onChange={setRoleFilter}
-              options={roleOptions.map((item) => ({ value: item, label: item === 'all' ? 'All Roles' : formatRoleLabel(item) }))}
-            />
-            <DirectorySelect
-              label="Status"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={statusOptions}
-            />
-            <button
-              type="button"
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm transition hover:bg-[#f7fafc]"
-              onClick={() => {
-                setBranchFilter('all')
-                setOfficeFilter('all')
-                setRoleFilter('all')
-                setStatusFilter('all')
-                setDateRange('last_30_days')
-                setLeaderboardMetric('pipelineValue')
-                setSortBy('pipeline')
-                setSearchTerm('')
-              }}
-            >
-              <SlidersHorizontal size={15} />
-              Reset
-            </button>
+          <section className="rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <h1 className="text-[1.45rem] font-semibold tracking-[-0.035em] text-[#10243a]">All Agents</h1>
+                <p className="mt-1 text-sm text-[#526981]">Manage agents across every branch in your visible scope.</p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center xl:justify-end">
+                <label className="min-w-0 sm:w-[320px]">
+                  <span className="sr-only">Search agents</span>
+                  <input
+                    className="h-10 w-full rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm outline-none transition placeholder:text-[#9aaabd] focus:border-[#1f4f78] focus:ring-2 focus:ring-[#1f4f78]/10"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="Search agents by name, email, branch..."
+                  />
+                </label>
+                <DirectorySelect
+                  label="Branch / office"
+                  value={branchFilter}
+                  onChange={setBranchFilter}
+                  options={commandCentreModel.filterOptions.branches.map((branch) => ({ value: branch.id, label: branch.name }))}
+                />
+                <DirectorySelect
+                  label="Role"
+                  value={roleFilter}
+                  onChange={setRoleFilter}
+                  options={roleOptions.map((item) => ({ value: item, label: item === 'all' ? 'All Roles' : formatRoleLabel(item) }))}
+                />
+                {agentDirectoryViewToggle}
+                <button
+                  type="button"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] shadow-sm transition hover:bg-[#f7fafc]"
+                  onClick={handleExportAgentRows}
+                >
+                  <Download size={15} />
+                  Export
+                </button>
+                {inviteAgentAction}
+              </div>
+            </div>
           </section>
 
-          <PerformanceKpiStrip kpis={commandCentreModel.kpis} />
+          <PerformanceKpiStrip kpis={commandCentreModel.kpis} onAttentionClick={() => setStatusFilter('needs_attention')} />
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <TopPerformersPanel
               rows={commandCentreModel.topPerformers}
@@ -4741,11 +4954,13 @@ export function AgentsPage() {
               <AgentCommandCardGrid
                 rows={commandCentreModel.agentsTable}
                 canManage={canManageDirectory}
-                actionSlot={agentDirectoryActions}
                 onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
-                onEditRole={openRoleEditor}
                 onDeactivate={(agent) => openConfirm('deactivate', agent)}
-                onTransfer={(agent) => openTransferWizard(agent)}
+                onViewTransactions={(agent, stage) => navigate(`/transactions?agent=${encodeURIComponent(agent.id || agent.email || '')}${stage ? `&stage=${encodeURIComponent(stage)}` : ''}`)}
+                onAssignLead={(agent) => navigate(`/pipeline/leads?assignAgent=${encodeURIComponent(agent.id || agent.email || '')}`)}
+                onSendMessage={(agent) => {
+                  if (agent?.email) window.location.href = `mailto:${agent.email}`
+                }}
                 onResendInvite={handleResendAgentInvite}
                 onCopyInviteLink={handleCopyAgentInviteLink}
                 onRevokeInvite={(agent) => openConfirm('revoke', agent)}
@@ -4756,11 +4971,13 @@ export function AgentsPage() {
                 canManage={canManageDirectory}
                 sortBy={sortBy}
                 onSort={setSortBy}
-                actionSlot={agentDirectoryActions}
                 onView={(agent) => navigate(`/agency/agents/${encodeURIComponent(agent.id)}`)}
-                onEditRole={openRoleEditor}
                 onDeactivate={(agent) => openConfirm('deactivate', agent)}
-                onTransfer={(agent) => openTransferWizard(agent)}
+                onViewTransactions={(agent, stage) => navigate(`/transactions?agent=${encodeURIComponent(agent.id || agent.email || '')}${stage ? `&stage=${encodeURIComponent(stage)}` : ''}`)}
+                onAssignLead={(agent) => navigate(`/pipeline/leads?assignAgent=${encodeURIComponent(agent.id || agent.email || '')}`)}
+                onSendMessage={(agent) => {
+                  if (agent?.email) window.location.href = `mailto:${agent.email}`
+                }}
                 onResendInvite={handleResendAgentInvite}
                 onCopyInviteLink={handleCopyAgentInviteLink}
                 onRevokeInvite={(agent) => openConfirm('revoke', agent)}

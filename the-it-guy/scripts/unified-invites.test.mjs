@@ -8,6 +8,7 @@ const branchInviteHardeningMigration = fs.readFileSync(path.join(root, '../supab
 const branchInviteAcceptanceMigration = fs.readFileSync(path.join(root, '../supabase/migrations/202606090012_branch_invite_acceptance_metadata.sql'), 'utf8')
 const inviteCommissionReconciliationMigration = fs.readFileSync(path.join(root, '../supabase/migrations/202606090013_invite_commission_profile_reconciliation.sql'), 'utf8')
 const inviteBranchMembersMigration = fs.readFileSync(path.join(root, '../supabase/migrations/202606090014_invite_branch_members_sync.sql'), 'utf8')
+const publicInviteLookupMigration = fs.readFileSync(path.join(root, '../supabase/migrations/202606110001_public_invite_token_lookup.sql'), 'utf8')
 const inviteService = fs.readFileSync(path.join(root, 'src/services/inviteService.js'), 'utf8')
 const workspaceService = fs.readFileSync(path.join(root, 'src/services/workspaceService.js'), 'utf8')
 const app = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8')
@@ -35,6 +36,7 @@ assert.match(inviteService, /assertInviteCanBeAccepted/i, 'client-side invite va
 assert.match(inviteService, /invite_email_mismatch/i, 'client-side email mismatch guard must exist')
 assert.match(inviteService, /resolveInviteAction/i, 'invite action resolver must exist')
 assert.match(inviteService, /bridge_accept_invite/i, 'invite service must call canonical RPC')
+assert.match(inviteService, /bridge_lookup_invite_by_token/i, 'invite service must use public token lookup when RLS hides invite rows')
 
 assert.match(workspaceService, /createInvite\(/, 'workspace invite creation must mirror canonical invites')
 assert.match(workspaceService, /acceptInvite\(inviteToken/, 'workspace invite acceptance must use canonical acceptInvite first')
@@ -88,6 +90,12 @@ assert.match(inviteBranchMembersMigration, /branch_member_synced_from_invite/i, 
 assert.match(inviteBranchMembersMigration, /create trigger invites_sync_branch_member/i, 'accepted invites must trigger branch member sync')
 assert.match(inviteBranchMembersMigration, /when v_membership_role in \('super_admin', 'admin', 'admin_staff'\) then 'admin'/i, 'branch member sync must map admin roles into branch_members role constraint')
 assert.match(inviteBranchMembersMigration, /set status = status,\s*updated_at = now\(\)/i, 'branch member sync migration must backfill accepted branch invites')
+
+assert.match(publicInviteLookupMigration, /create or replace function public\.bridge_lookup_invite_by_token\(p_token text\)/i, 'public invite lookup RPC must exist for logged-out invite validation')
+assert.match(publicInviteLookupMigration, /security definer/i, 'public invite lookup must run as security definer so logged-out invite pages can validate tokens')
+assert.match(publicInviteLookupMigration, /'logo_url', o\.logo_url/i, 'public invite lookup must return inviter logo branding for invite pages')
+assert.match(publicInviteLookupMigration, /grant execute on function public\.bridge_lookup_invite_by_token\(text\) to anon, authenticated/i, 'public invite lookup must be callable by anon and authenticated users')
+assert.match(publicInviteLookupMigration, /notify pgrst, 'reload schema'/i, 'public invite lookup migration must reload the PostgREST schema cache')
 
 assert.match(agencyBranchWorkspacePage, /BRANCH_AGENT_ROLE_VALUES/i, 'branch invite UI must define branch-safe role options')
 assert.match(agencyBranchWorkspacePage, /branchAgentRoleOptions\.map/i, 'branch invite UI must render branch-safe role options')

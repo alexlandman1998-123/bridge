@@ -29,7 +29,8 @@ begin
       'id', o.id,
       'name', o.name,
       'display_name', o.display_name,
-      'type', o.type
+      'type', o.type,
+      'logo_url', o.logo_url
     )
     into v_workspace
     from public.organisations o
@@ -68,5 +69,7 @@ end;
 $$;
 
 grant execute on function public.bridge_lookup_invite_by_token(text) to anon, authenticated;
+
+notify pgrst, 'reload schema';
 
 commit;

@@ -124,14 +124,14 @@ function sortAgents(rows = [], sortBy = 'pipeline') {
   return sorted
 }
 
-function buildAttentionReasons(agent = {}, teamAverageConversion = 0, now = new Date()) {
+function buildAttentionReasons(agent = {}, now = new Date()) {
   const performance = agent.performance || {}
   const reasons = []
   if (daysSince(performance.lastActivityAt, now) > 7) reasons.push('No activity in 7 days')
+  if (toNumber(performance.activeTransactionCount || performance.activeTransactions) === 0 && toNumber(performance.pipelineValue) > 0) reasons.push('Pipeline without active transactions')
   if (toNumber(performance.overdueFollowUps) > 0) reasons.push('Overdue follow-ups')
+  if (toNumber(performance.staleLeads) > 0) reasons.push('Stale leads')
   if (Number.isFinite(Number(performance.responseTimeHours)) && Number(performance.responseTimeHours) > RESPONSE_TIME_THRESHOLD_HOURS) reasons.push('Slow response time')
-  if (toNumber(performance.activityVolume) <= 0 && toNumber(performance.pipelineValue) > 0) reasons.push('No pipeline movement')
-  if (teamAverageConversion > 0 && toNumber(performance.conversionRate) < teamAverageConversion * 0.6) reasons.push('Low conversion')
 
   const uniqueReasons = [...new Set([...(agent.attentionFlags || []), ...reasons])]
   const severity = uniqueReasons.length >= 2 || toNumber(performance.overdueFollowUps) > 3
@@ -227,16 +227,23 @@ export function getPrincipalAgentCommandCentre({
   const totalAgents = modelAgents.length
   const activeToday = modelAgents.filter((agent) => agent.performance?.activeToday || isToday(agent.performance?.lastActivityAt, now)).length
   const pipelineValue = modelAgents.reduce((sum, agent) => sum + toNumber(agent.performance?.pipelineValue), 0)
-  const transactionsCount = modelAgents.reduce((sum, agent) => sum + toNumber(agent.performance?.activeTransactions || agent.performance?.deals), 0)
-  const conversionRate = totalAgents ? Math.round(modelAgents.reduce((sum, agent) => sum + toNumber(agent.performance?.conversionRate), 0) / totalAgents) : 0
+  const transactionsCount = modelAgents.reduce((sum, agent) => sum + toNumber(agent.performance?.activeTransactionCount || agent.performance?.activeTransactions || agent.performance?.deals), 0)
+  const conversionValues = modelAgents
+    .map((agent) => agent.performance?.conversionRate)
+    .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+  const conversionRate = conversionValues.length ? Math.round(conversionValues.reduce((sum, value) => sum + toNumber(value), 0) / conversionValues.length) : null
+  const registrationDayValues = modelAgents.flatMap((agent) => Array.isArray(agent.performance?.registrationDays) ? agent.performance.registrationDays : [])
+    .filter((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
+  const avgDaysToRegistration = registrationDayValues.length
+    ? Math.round(registrationDayValues.reduce((sum, value) => sum + Number(value), 0) / registrationDayValues.length)
+    : model.kpis.avgDaysToRegistration ?? null
   const commissionMtdValues = modelAgents
     .map((agent) => agent.performance?.commissionMtd)
     .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
   const commissionMtd = commissionMtdValues.length ? commissionMtdValues.reduce((sum, value) => sum + toNumber(value), 0) : null
 
-  const teamAverageConversion = totalAgents ? modelAgents.reduce((sum, agent) => sum + toNumber(agent.performance?.conversionRate), 0) / totalAgents : 0
   const attentionByAgent = new Map()
-  modelAgents.forEach((agent) => attentionByAgent.set(agent.id || agent.email || agent.displayName, buildAttentionReasons(agent, teamAverageConversion, now)))
+  modelAgents.forEach((agent) => attentionByAgent.set(agent.id || agent.email || agent.displayName, buildAttentionReasons(agent, now)))
 
   const branchMap = new Map()
   for (const agent of modelAgents) {
@@ -257,7 +264,7 @@ export function getPrincipalAgentCommandCentre({
     const attention = attentionByAgent.get(agent.id || agent.email || agent.displayName)
     branch.activeAgents += getAgentStatus(agent) === 'active' ? 1 : 0
     branch.pipelineValue += toNumber(agent.performance?.pipelineValue)
-    branch.transactions += toNumber(agent.performance?.activeTransactions || agent.performance?.deals)
+    branch.transactions += toNumber(agent.performance?.activeTransactionCount || agent.performance?.activeTransactions || agent.performance?.deals)
     branch.conversionTotal += toNumber(agent.performance?.conversionRate)
     branch.conversionCount += 1
     branch.attentionCount += attention?.reasons?.length ? 1 : 0
@@ -316,7 +323,7 @@ export function getPrincipalAgentCommandCentre({
   const attentionAgents = modelAgents
     .map((agent) => {
       if (getAgentStatus(agent) === 'pending_invite') return null
-      const attention = attentionByAgent.get(agent.id || agent.email || agent.displayName) || buildAttentionReasons(agent, teamAverageConversion, now)
+      const attention = attentionByAgent.get(agent.id || agent.email || agent.displayName) || buildAttentionReasons(agent, now)
       return {
         id: agent.id || agent.email || agent.displayName,
         name: agent.displayName || getAgentName(agent),
@@ -351,6 +358,7 @@ export function getPrincipalAgentCommandCentre({
       branchName: agent.branchName,
       role: agent.role || 'agent',
       performance: agent.performance || {},
+      needsAttention: (attentionByAgent.get(agent.id || agent.email || agent.displayName)?.reasons || []).length > 0,
       statusKey: agent.statusMeta?.key || getAgentStatus(agent),
       statusLabel: agent.statusMeta?.label || getAgentStatus(agent),
       statusClassName: agent.statusMeta?.className || '',
@@ -371,6 +379,8 @@ export function getPrincipalAgentCommandCentre({
       activeTransactions: transactionsCount,
       conversionRate,
       averageConversionRate: conversionRate,
+      avgDaysToRegistration,
+      agentsNeedingAttention: attentionAgents.length,
       commissionMtd,
     },
     branchPerformance,
