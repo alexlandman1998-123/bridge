@@ -355,7 +355,7 @@ export default function SettingsOrganisationPage() {
         saveAgencyOnboardingDraft({
           ...state.onboarding,
           organisationType: isBondOriginator ? 'bond_originator' : state.onboarding?.organisationType,
-        }),
+        }, { syncCommercialAccess: true }),
       ])
 
       const nextState = {

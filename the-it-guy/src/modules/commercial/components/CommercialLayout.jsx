@@ -45,11 +45,19 @@ function CommercialLayout() {
           setAccessState({
             loading: false,
             allowed: Boolean(scope?.hasCommercialAccess),
-            reason: scope?.hasCommercialAccess ? '' : scope?.organisationCommercialEnabled === false ? 'organisation_module_disabled' : 'access_required',
+            reason: scope?.hasCommercialAccess
+              ? ''
+              : scope?.organisationCommercialEnabled === false
+                ? scope?.canReviewCommercialAccess && scope?.organisationSettingsCommercialEnabled
+                  ? 'organisation_module_ready_to_activate'
+                  : 'organisation_module_disabled'
+                : 'access_required',
             message: scope?.hasCommercialAccess
               ? ''
               : scope?.organisationCommercialEnabled === false
-                ? 'Commercial is not enabled for this workspace yet. Ask your principal to enable Commercial for the organisation first.'
+                ? scope?.canReviewCommercialAccess && scope?.organisationSettingsCommercialEnabled
+                  ? 'Commercial is selected in organisation settings. Activate it to finish opening the Commercial brokerage workspace.'
+                  : 'Commercial is not enabled for this workspace yet. Ask your principal to enable Commercial for the organisation first.'
                 : 'You need Commercial workspace access before opening the Commercial brokerage module.',
           })
         }
@@ -169,9 +177,9 @@ function CommercialLayout() {
 
   if (!accessState.allowed) {
     const platformInstallMissing = accessState.reason === 'platform_install_missing'
-    const organisationModuleDisabled = accessState.reason === 'organisation_module_disabled'
+    const organisationModuleDisabled = ['organisation_module_disabled', 'organisation_module_ready_to_activate'].includes(accessState.reason)
     const canRequestCommercial = !platformInstallMissing && ['organisation_module_disabled', 'access_required'].includes(accessState.reason)
-    const canSelfActivateCommercial = !platformInstallMissing && accessState.reason === 'access_error'
+    const canSelfActivateCommercial = !platformInstallMissing && ['access_error', 'organisation_module_ready_to_activate'].includes(accessState.reason)
     const accessTitle = platformInstallMissing
       ? 'Commercial needs platform setup'
       : organisationModuleDisabled

@@ -70,12 +70,14 @@ const COMMERCIAL_ACCESS_AUDIT_ACTIONS = Object.freeze({
   userRevoked: 'commercial_user_access_revoked',
 })
 const COMMERCIAL_ACCESS_AUDIT_ACTION_LIST = Object.freeze(Object.values(COMMERCIAL_ACCESS_AUDIT_ACTIONS))
-const REQUIRED_COMMERCIAL_PLATFORM_PROBES = [
+const REQUIRED_COMMERCIAL_CORE_PLATFORM_PROBES = [
   { table: 'organisation_modules', fields: 'id, organisation_id, module_key, status, source, metadata', label: 'commercial organisation module entitlement' },
-  { table: 'commercial_access_requests', fields: 'id, organisation_id, requester_user_id, status', label: 'commercial access request workflow' },
   { table: 'organisation_users', fields: 'id, module_context, module_metadata', label: 'organisation commercial activation columns' },
   { table: 'commercial_teams', fields: 'id', label: 'commercial teams' },
   ...Object.values(TABLES).map((table) => ({ table, fields: 'id', label: table })),
+]
+const REQUIRED_COMMERCIAL_ACCESS_WORKFLOW_PROBES = [
+  { table: 'commercial_access_requests', fields: 'id, organisation_id, requester_user_id, status', label: 'commercial access request workflow' },
 ]
 let commercialScopeCache = null
 let commercialScopeInflight = null
@@ -128,6 +130,25 @@ function parseJsonObject(value) {
   } catch {
     return {}
   }
+}
+
+function isCommercialEnabledInOrganisationSettings(settings = {}) {
+  const normalizedSettings = parseJsonObject(settings)
+  const enabledModules = parseJsonObject(normalizedSettings.enabledModules)
+  const commercialWorkspace = parseJsonObject(normalizedSettings.commercialWorkspace)
+  const agencyOnboarding = parseJsonObject(normalizedSettings.agencyOnboarding)
+  const agencyType = normalizeLower(
+    normalizedSettings.agencyType ||
+      agencyOnboarding.agencyInformation?.agencyType ||
+      commercialWorkspace.mode,
+  )
+  const workspaceStatus = normalizeLower(commercialWorkspace.status)
+  const workspaceMode = normalizeLower(commercialWorkspace.mode)
+
+  return enabledModules.commercial === true ||
+    workspaceStatus === 'active' ||
+    ['commercial', 'mixed'].includes(agencyType) ||
+    ['commercial_only', 'mixed_residential_commercial'].includes(workspaceMode)
 }
 
 export function isCommercialMembershipRow(member = {}) {
@@ -273,7 +294,7 @@ export async function getCommercialPlatformInstallStatus({ forceRefresh = false 
 
   commercialPlatformInstallInflight = (async () => {
     const missing = []
-    for (const probe of REQUIRED_COMMERCIAL_PLATFORM_PROBES) {
+    for (const probe of REQUIRED_COMMERCIAL_CORE_PLATFORM_PROBES) {
       const result = await supabase
         .from(probe.table)
         .select(probe.fields)
@@ -306,6 +327,32 @@ async function assertCommercialPlatformInstalled({ forceRefresh = false } = {}) 
   const status = await getCommercialPlatformInstallStatus({ forceRefresh })
   if (!status.installed) throw createCommercialPlatformInstallError(status)
   return status
+}
+
+async function assertCommercialAccessWorkflowInstalled({ forceRefresh = false } = {}) {
+  await assertCommercialPlatformInstalled({ forceRefresh })
+  const missing = []
+  for (const probe of REQUIRED_COMMERCIAL_ACCESS_WORKFLOW_PROBES) {
+    const result = await supabase
+      .from(probe.table)
+      .select(probe.fields)
+      .limit(1)
+
+    if (!result.error) continue
+    if (isMissingCommercialTableError(result.error) || isCommercialSchemaMismatchError(result.error)) {
+      missing.push(probe.label)
+      continue
+    }
+    throw result.error
+  }
+
+  if (missing.length) {
+    throw createCommercialPlatformInstallError({
+      installed: false,
+      reason: 'access_workflow_missing',
+      missing,
+    })
+  }
 }
 
 function createCommercialOrganisationDisabledStatus(organisationId = '', row = null) {
@@ -684,7 +731,7 @@ export async function requestCommercialAccessForCurrentUser({ message = '' } = {
     throw new Error('Commercial setup requires Supabase to be configured.')
   }
 
-  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  await assertCommercialAccessWorkflowInstalled({ forceRefresh: true })
   const context = await resolveCommercialOrganisationContext()
   const userId = context.userId || await getCurrentUserId()
   const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Bridge workspace'
@@ -790,7 +837,7 @@ export async function remindCommercialAccessReviewersForCurrentUser() {
     throw new Error('Commercial setup requires Supabase to be configured.')
   }
 
-  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  await assertCommercialAccessWorkflowInstalled({ forceRefresh: true })
   const context = await resolveCommercialOrganisationContext()
   const userId = context.userId || await getCurrentUserId()
   const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Bridge workspace'
@@ -830,7 +877,7 @@ export async function remindCommercialAccessReviewersForCurrentUser() {
 
 export async function listCommercialAccessRequests({ status = 'pending' } = {}) {
   if (!isSupabaseConfigured || !supabase) return []
-  await assertCommercialPlatformInstalled({ forceRefresh: false })
+  await assertCommercialAccessWorkflowInstalled({ forceRefresh: false })
   const context = await resolveCommercialOrganisationContext()
   if (!context.organisationId) return []
   assertCommercialAccessReviewer(context)
@@ -860,7 +907,7 @@ export async function reviewCommercialAccessRequest(requestId, { decision = 'app
     throw new Error('Commercial setup requires Supabase to be configured.')
   }
 
-  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  await assertCommercialAccessWorkflowInstalled({ forceRefresh: true })
   const context = await resolveCommercialOrganisationContext()
   assertCommercialAccessReviewer(context)
   const userId = context.userId || await getCurrentUserId()
@@ -1209,6 +1256,7 @@ export async function resolveCommercialOrganisationContext() {
   return {
     organisationId,
     organisation: context?.organisation || null,
+    organisationSettings: context?.organisationSettings || {},
     profile: context?.profile || null,
     userId: normalizeText(context?.profile?.id),
     membershipRole: normalizeLower(context?.membershipRole || 'viewer'),
@@ -1262,6 +1310,8 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
     const context = await resolveCommercialOrganisationContext()
     const userId = context.userId || await getCurrentUserId()
     const isPlatformAdmin = normalizeLower(context.profile?.role) === 'platform_admin' || normalizeLower(context.membershipRole) === 'platform_admin'
+    const canReviewCommercialAccess = isPlatformAdmin || COMMERCIAL_ACCESS_REVIEWER_ROLES.has(context.membershipRole)
+    const organisationSettingsCommercialEnabled = isCommercialEnabledInOrganisationSettings(context.organisationSettings)
     const commercialModuleStatus = await getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh })
     const organisationCommercialEnabled = isPlatformAdmin || Boolean(commercialModuleStatus.enabled)
     const membership = organisationCommercialEnabled
@@ -1276,12 +1326,14 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
       membership,
       commercialModuleStatus,
       organisationCommercialEnabled,
+      organisationSettingsCommercialEnabled,
       memberHasCommercialAccess,
       membershipRole: isPlatformAdmin ? 'platform_admin' : role,
       branchId: normalizeText(membership?.primary_branch_id || membership?.branch_id),
       teamId: normalizeText(membership?.team_id),
       scopeLevel: isPlatformAdmin ? 'organisation' : hasCommercialAccess ? resolveScopeLevel(role) : 'none',
       hasCommercialAccess,
+      canReviewCommercialAccess,
       canManageBrokerage: isPlatformAdmin || (hasCommercialAccess && resolveScopeLevel(role) !== 'broker'),
     }
     commercialScopeCache = { value: scope, expiresAt: Date.now() + COMMERCIAL_SCOPE_CACHE_TTL_MS }
@@ -1351,12 +1403,16 @@ export async function activateCommercialWorkspaceForCurrentUser() {
     throw new Error('An active organisation membership is required before Commercial can be activated.')
   }
 
-  const commercialModuleStatus = await getCommercialOrganisationModuleStatus({
+  let commercialModuleStatus = await getCommercialOrganisationModuleStatus({
     organisationId: context.organisationId,
     forceRefresh: true,
   })
   if (!commercialModuleStatus.enabled) {
-    throw new Error('Commercial is not enabled for this workspace. Ask your principal to enable Commercial before activating your Commercial role.')
+    if (COMMERCIAL_ACCESS_REVIEWER_ROLES.has(context.membershipRole) && isCommercialEnabledInOrganisationSettings(context.organisationSettings)) {
+      commercialModuleStatus = await setCommercialOrganisationModuleEnabled(true)
+    } else {
+      throw new Error('Commercial is not enabled for this workspace. Ask your principal to enable Commercial before activating your Commercial role.')
+    }
   }
 
   const existingCommercialMembership = await findCurrentCommercialMembership(context.organisationId, userId).catch(() => null)

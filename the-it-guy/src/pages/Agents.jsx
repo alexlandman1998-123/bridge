@@ -43,7 +43,9 @@ import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import {
   deactivateOrganisationUser,
   fetchOrganisationSettings,
+  assignOrganisationUserCommissionProfile,
   listOrganisationCommissionStructures,
+  listOrganisationUserCommissionProfiles,
   listOrganisationUsers,
   updateOrganisationUserRole,
 } from '../lib/settingsApi'
@@ -581,6 +583,7 @@ function normalizeOrganisationUserAgent(user = {}, context = {}) {
   if (!id && !email) return null
   const role = String(user.role || 'agent').trim().toLowerCase()
   const fullName = String(user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || email || 'Agent').trim()
+  const overrideSplit = Number(user.overrideAgentSplitPercentage)
   return {
     id: id || email,
     organisationUserId: normalizeAgentRecordId(user.id),
@@ -599,6 +602,14 @@ function normalizeOrganisationUserAgent(user = {}, context = {}) {
     invitedAt: user.invitedAt || null,
     activatedAt: user.acceptedAt || null,
     lastActiveAt: user.lastActiveAt || null,
+    commissionStructureId: normalizeAgentRecordId(user.commissionStructureId),
+    appliedCommissionStructureId: normalizeAgentRecordId(user.commissionStructureId),
+    commissionStructureName: user.commissionStructureName || '',
+    commissionEffectiveFrom: user.commissionEffectiveFrom || user.effectiveFrom || null,
+    overrideAgentSplitPercentage: Number.isFinite(overrideSplit) ? overrideSplit : null,
+    baseCommissionRate: user.baseCommissionRate || '',
+    commissionSplit: user.commissionSplit || '',
+    performanceTier: user.performanceTier || '',
     inviteId: '',
     inviteToken: '',
     deals: [],
@@ -608,6 +619,149 @@ function normalizeOrganisationUserAgent(user = {}, context = {}) {
     appointments: [],
     metrics: buildEmptyAgentMetrics(),
     recentDeals: [],
+  }
+}
+
+function createCommissionProfileMap(profiles = []) {
+  const map = new Map()
+  for (const profile of profiles) {
+    const organisationUserId = normalizeAgentRecordId(profile?.organisationUserId)
+    const userId = normalizeAgentRecordId(profile?.userId)
+    const email = normalizeIdentityEmail(profile?.email)
+    if (organisationUserId) map.set(`org-user:${organisationUserId}`, profile)
+    if (userId) map.set(`user:${userId}`, profile)
+    if (email) map.set(`email:${email}`, profile)
+  }
+  return map
+}
+
+function findCommissionProfileForAgent(agent = {}, profileMap = new Map()) {
+  const organisationUserId = normalizeAgentRecordId(agent.organisationUserId)
+  const userId = normalizeAgentRecordId(agent.userId)
+  const email = normalizeIdentityEmail(agent.email)
+  return (
+    (organisationUserId && profileMap.get(`org-user:${organisationUserId}`)) ||
+    (userId && profileMap.get(`user:${userId}`)) ||
+    (email && profileMap.get(`email:${email}`)) ||
+    null
+  )
+}
+
+function formatCommissionSplitLabel(agentSplit, overrideApplied = false) {
+  const numeric = Number(agentSplit)
+  if (!Number.isFinite(numeric)) return ''
+  return `Agent ${formatPercent(numeric)} / Agency ${formatPercent(100 - numeric)}${overrideApplied ? ' override' : ''}`
+}
+
+function getAgentRoleAccessSummary(role = '') {
+  const normalized = String(role || '').trim().toLowerCase()
+  if (['owner', 'super_admin', 'principal'].includes(normalized)) {
+    return {
+      workspaceAccess: 'All workspace',
+      branchAccess: 'All branches',
+      listings: 'All listings',
+      deals: 'All deals',
+      clients: 'All clients',
+      reports: 'Full reporting',
+      agencySettings: 'Manage',
+      commissionVisibility: 'Visible',
+    }
+  }
+  if (['admin', 'branch_admin', 'branch_manager', 'transaction_coordinator', 'listing_coordinator', 'admin_coordinator'].includes(normalized)) {
+    return {
+      workspaceAccess: 'Branch workspace',
+      branchAccess: 'Assigned branch',
+      listings: 'Branch listings',
+      deals: 'Branch deals',
+      clients: 'Branch clients',
+      reports: 'Branch reporting',
+      agencySettings: ['admin', 'branch_admin', 'branch_manager'].includes(normalized) ? 'Limited manage' : 'No access',
+      commissionVisibility: 'Restricted',
+    }
+  }
+  if (['team_lead', 'senior_agent'].includes(normalized)) {
+    return {
+      workspaceAccess: 'Team / assigned',
+      branchAccess: 'Assigned branch',
+      listings: 'Team and assigned',
+      deals: 'Team and assigned',
+      clients: 'Team and assigned',
+      reports: 'Team reporting',
+      agencySettings: 'No access',
+      commissionVisibility: 'Own only',
+    }
+  }
+  if (['assistant'].includes(normalized)) {
+    return {
+      workspaceAccess: 'Assigned support',
+      branchAccess: 'Assigned branch',
+      listings: 'Assigned support',
+      deals: 'Assigned support',
+      clients: 'Assigned support',
+      reports: 'No access',
+      agencySettings: 'No access',
+      commissionVisibility: 'No access',
+    }
+  }
+  if (normalized === 'viewer') {
+    return {
+      workspaceAccess: 'Read-only',
+      branchAccess: 'Assigned only',
+      listings: 'View only',
+      deals: 'View only',
+      clients: 'View only',
+      reports: 'View only',
+      agencySettings: 'No access',
+      commissionVisibility: 'No access',
+    }
+  }
+  return {
+    workspaceAccess: 'Assigned workspace',
+    branchAccess: 'Assigned branch',
+    listings: 'Assigned listings',
+    deals: 'Assigned deals',
+    clients: 'Assigned clients',
+    reports: 'Own reporting',
+    agencySettings: 'No access',
+    commissionVisibility: 'Own only',
+  }
+}
+
+function enrichAgentWithCommissionProfile(agent = {}, profileMap = new Map(), structures = []) {
+  const profile = findCommissionProfileForAgent(agent, profileMap)
+  const structureMap = new Map(structures.map((structure) => [normalizeAgentRecordId(structure?.id), structure]))
+  const explicitStructureId = normalizeAgentRecordId(profile?.commissionStructureId || agent.commissionStructureId)
+  const defaultStructure = structures.find((structure) => structure?.isDefault && structure?.isActive) || null
+  const appliedStructure = explicitStructureId
+    ? structureMap.get(explicitStructureId) || null
+    : defaultStructure
+  const overrideSplit = profile?.overrideAgentSplitPercentage ?? agent.overrideAgentSplitPercentage ?? null
+  const effectiveAgentSplit = Number.isFinite(Number(overrideSplit))
+    ? Number(overrideSplit)
+    : appliedStructure
+      ? Number(appliedStructure.agentSplitPercentage)
+      : NaN
+  const usesDefaultStructure = !explicitStructureId && Boolean(appliedStructure)
+
+  return {
+    ...agent,
+    commissionProfileId: profile?.id || agent.commissionProfileId || '',
+    commissionStructureId: explicitStructureId,
+    appliedCommissionStructureId: normalizeAgentRecordId(appliedStructure?.id || explicitStructureId),
+    commissionStructureName: appliedStructure?.name
+      ? `${appliedStructure.name}${usesDefaultStructure ? ' (Default)' : ''}`
+      : profile?.commissionStructureName || agent.commissionStructureName || '',
+    commissionEffectiveFrom: profile?.effectiveFrom || agent.commissionEffectiveFrom || null,
+    overrideAgentSplitPercentage: Number.isFinite(Number(overrideSplit)) ? Number(overrideSplit) : null,
+    baseCommissionRate: appliedStructure ? `Agency ${formatPercent(appliedStructure.agencySplitPercentage)}` : agent.baseCommissionRate || '',
+    commissionSplit: formatCommissionSplitLabel(effectiveAgentSplit, Number.isFinite(Number(overrideSplit))) || agent.commissionSplit || '',
+    performanceTier: appliedStructure
+      ? appliedStructure.isActive
+        ? appliedStructure.isDefault
+          ? 'Default active structure'
+          : 'Active structure'
+        : 'Inactive structure'
+      : agent.performanceTier || '',
   }
 }
 
@@ -690,6 +844,7 @@ function mergeAgentRows(baseRows = [], overlayRows = []) {
       avatarUrl: getAgentAvatarUrl(overlay) || getAgentAvatarUrl(existing),
       profilePhotoUrl: getAgentAvatarUrl(overlay) || getAgentAvatarUrl(existing),
       office: overlay.office || existing.office,
+      branchId: overlay.branchId || existing.branchId,
       organisationId: overlay.organisationId || existing.organisationId,
       organisationName: overlay.organisationName || existing.organisationName,
       role: overlay.role || existing.role,
@@ -697,6 +852,15 @@ function mergeAgentRows(baseRows = [], overlayRows = []) {
       invitedAt: overlay.invitedAt || existing.invitedAt,
       activatedAt: overlay.activatedAt || existing.activatedAt,
       lastActiveAt: overlay.lastActiveAt || existing.lastActiveAt,
+      commissionProfileId: overlay.commissionProfileId || existing.commissionProfileId,
+      commissionStructureId: overlay.commissionStructureId || existing.commissionStructureId,
+      appliedCommissionStructureId: overlay.appliedCommissionStructureId || existing.appliedCommissionStructureId,
+      commissionStructureName: overlay.commissionStructureName || existing.commissionStructureName,
+      commissionEffectiveFrom: overlay.commissionEffectiveFrom || existing.commissionEffectiveFrom,
+      overrideAgentSplitPercentage: overlay.overrideAgentSplitPercentage ?? existing.overrideAgentSplitPercentage ?? null,
+      baseCommissionRate: overlay.baseCommissionRate || existing.baseCommissionRate,
+      commissionSplit: overlay.commissionSplit || existing.commissionSplit,
+      performanceTier: overlay.performanceTier || existing.performanceTier,
       inviteId: overlay.inviteId || existing.inviteId,
       inviteToken: overlay.inviteToken || existing.inviteToken,
       deals: existing.deals?.length ? existing.deals : overlay.deals || [],
@@ -3216,15 +3380,49 @@ function FinancialPerformanceCard({ rows }) {
   )
 }
 
-function AgentWorkspace({ agent }) {
+function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], onRefresh }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [modalMode, setModalMode] = useState('')
   const [pendingAction, setPendingAction] = useState(null)
   const [actionNotice, setActionNotice] = useState('')
+  const [commissionForm, setCommissionForm] = useState({
+    commissionStructureId: '',
+    overrideAgentSplitPercentage: '',
+    effectiveFrom: '',
+  })
+  const [commissionSaving, setCommissionSaving] = useState(false)
+  const [commissionError, setCommissionError] = useState('')
+  const [permissionsForm, setPermissionsForm] = useState({ role: '' })
+  const [permissionsSaving, setPermissionsSaving] = useState(false)
+  const [permissionsError, setPermissionsError] = useState('')
 
   const effectiveActiveTab = AGENT_WORKSPACE_TABS.some((tab) => tab.key === activeTab) ? activeTab : 'overview'
+  const activeCommissionStructures = commissionStructures.filter((structure) => structure?.isActive)
+  const defaultCommissionStructure = activeCommissionStructures.find((structure) => structure?.isDefault) || null
+  const selectedCommissionStructure =
+    activeCommissionStructures.find((structure) => normalizeAgentRecordId(structure.id) === normalizeAgentRecordId(commissionForm.commissionStructureId)) ||
+    (!commissionForm.commissionStructureId ? defaultCommissionStructure : null)
+
+  useEffect(() => {
+    if (modalMode !== 'commission') return
+    setCommissionError('')
+    setCommissionForm({
+      commissionStructureId: agent.commissionStructureId || '',
+      overrideAgentSplitPercentage:
+        agent.overrideAgentSplitPercentage === null || agent.overrideAgentSplitPercentage === undefined
+          ? ''
+          : String(agent.overrideAgentSplitPercentage),
+      effectiveFrom: agent.commissionEffectiveFrom ? String(agent.commissionEffectiveFrom).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    })
+  }, [agent.commissionEffectiveFrom, agent.commissionStructureId, agent.overrideAgentSplitPercentage, modalMode])
+
+  useEffect(() => {
+    if (modalMode !== 'permissions') return
+    setPermissionsError('')
+    setPermissionsForm({ role: agent.role || 'agent' })
+  }, [agent.role, modalMode])
 
   const developmentListings = agent.developmentListings || []
   const privateListings = agent.privateListings || []
@@ -3331,13 +3529,17 @@ function AgentWorkspace({ agent }) {
     ['Managed agents', getWorkspaceDisplayValue(agent.managedAgentCount)],
   ]
 
+  const roleAccessSummary = getAgentRoleAccessSummary(agent.role)
+  const draftRoleAccessSummary = getAgentRoleAccessSummary(permissionsForm.role || agent.role)
   const permissionRows = [
-    ['Listings', getWorkspaceDisplayValue(agent.permissions?.listings)],
-    ['Deals', getWorkspaceDisplayValue(agent.permissions?.deals || agent.permissions?.transactions)],
-    ['Clients', getWorkspaceDisplayValue(agent.permissions?.clients)],
-    ['Reports', getWorkspaceDisplayValue(agent.permissions?.reports)],
-    ['Agency Settings', getWorkspaceDisplayValue(agent.permissions?.agencySettings)],
-    ['Commission Visibility', getWorkspaceDisplayValue(agent.permissions?.commissionVisibility)],
+    ['Workspace Access', getWorkspaceDisplayValue(agent.permissions?.workspaceAccess || roleAccessSummary.workspaceAccess)],
+    ['Branch Access', getWorkspaceDisplayValue(agent.office || roleAccessSummary.branchAccess)],
+    ['Listings', getWorkspaceDisplayValue(agent.permissions?.listings || roleAccessSummary.listings)],
+    ['Deals', getWorkspaceDisplayValue(agent.permissions?.deals || agent.permissions?.transactions || roleAccessSummary.deals)],
+    ['Clients', getWorkspaceDisplayValue(agent.permissions?.clients || roleAccessSummary.clients)],
+    ['Reports', getWorkspaceDisplayValue(agent.permissions?.reports || roleAccessSummary.reports)],
+    ['Agency Settings', getWorkspaceDisplayValue(agent.permissions?.agencySettings || roleAccessSummary.agencySettings)],
+    ['Commission Visibility', getWorkspaceDisplayValue(agent.permissions?.commissionVisibility || roleAccessSummary.commissionVisibility)],
   ]
 
   const confirmDescriptions = {
@@ -3349,6 +3551,61 @@ function AgentWorkspace({ agent }) {
   function openPlaceholder(mode) {
     setEditMenuOpen(false)
     setModalMode(mode)
+  }
+
+  function updateCommissionForm(key, value) {
+    setCommissionForm((previous) => ({ ...previous, [key]: value }))
+  }
+
+  async function handleSaveCommissionAssignment() {
+    if (!canManageSettings || commissionSaving) return
+    const overrideValue = String(commissionForm.overrideAgentSplitPercentage || '').trim()
+    const parsedOverride = overrideValue === '' ? null : Number(overrideValue)
+    if (parsedOverride !== null && (!Number.isFinite(parsedOverride) || parsedOverride < 0 || parsedOverride > 100)) {
+      setCommissionError('Override split must be between 0 and 100.')
+      return
+    }
+
+    try {
+      setCommissionSaving(true)
+      setCommissionError('')
+      await assignOrganisationUserCommissionProfile({
+        organisationUserId: agent.organisationUserId || '',
+        userId: agent.userId || '',
+        email: agent.email || '',
+        commissionStructureId: commissionForm.commissionStructureId || '',
+        overrideAgentSplitPercentage: parsedOverride,
+        effectiveFrom: commissionForm.effectiveFrom || new Date().toISOString().slice(0, 10),
+      })
+      setActionNotice('Commission assignment updated.')
+      setModalMode('')
+      await onRefresh?.()
+    } catch (saveError) {
+      setCommissionError(saveError?.message || 'Unable to save commission assignment.')
+    } finally {
+      setCommissionSaving(false)
+    }
+  }
+
+  async function handleSavePermissionsAssignment() {
+    if (!canManageSettings || permissionsSaving) return
+    if (!agent.organisationUserId) {
+      setPermissionsError('This agent is not linked to an organisation user row yet, so role changes cannot be saved here.')
+      return
+    }
+
+    try {
+      setPermissionsSaving(true)
+      setPermissionsError('')
+      await updateOrganisationUserRole(agent.organisationUserId, permissionsForm.role || 'agent')
+      setActionNotice('Agent permissions updated.')
+      setModalMode('')
+      await onRefresh?.()
+    } catch (saveError) {
+      setPermissionsError(saveError?.message || 'Unable to save permission changes.')
+    } finally {
+      setPermissionsSaving(false)
+    }
   }
 
   function handleConfirmedAction() {
@@ -3683,23 +3940,249 @@ function AgentWorkspace({ agent }) {
                   ? 'Agent Profile'
                   : 'Agent Action'
         }
-        subtitle="This management surface is ready for the connected workflow."
-        className="max-w-xl"
+        subtitle={
+          modalMode === 'commission'
+            ? 'Assign a commission structure, optional split override and effective date for this agent.'
+            : modalMode === 'permissions'
+              ? 'Update the agent role and review the workspace access it grants.'
+            : 'This management surface is ready for the connected workflow.'
+        }
+        className={modalMode === 'commission' || modalMode === 'permissions' ? 'max-w-2xl' : 'max-w-xl'}
         footer={
-          <div className="flex justify-end">
-            <Button type="button" variant="secondary" onClick={() => setModalMode('')}>Close</Button>
-          </div>
+          modalMode === 'commission' ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setModalMode('')} disabled={commissionSaving}>Cancel</Button>
+              <Button
+                type="button"
+                onClick={handleSaveCommissionAssignment}
+                disabled={!canManageSettings || commissionSaving || !activeCommissionStructures.length}
+              >
+                {commissionSaving ? 'Saving…' : 'Save Commission'}
+              </Button>
+            </div>
+          ) : modalMode === 'permissions' ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setModalMode('')} disabled={permissionsSaving}>Cancel</Button>
+              <Button
+                type="button"
+                onClick={handleSavePermissionsAssignment}
+                disabled={!canManageSettings || permissionsSaving || !agent.organisationUserId}
+              >
+                {permissionsSaving ? 'Saving…' : 'Save Permissions'}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <Button type="button" variant="secondary" onClick={() => setModalMode('')}>Close</Button>
+            </div>
+          )
         }
       >
-        <div className="rounded-2xl border border-[#dfe7f1] bg-[#fbfcfe] p-4 text-sm leading-6 text-[#526981]">
-          {modalMode === 'commission' ? (
-            <p>Commission rules, splits, effective dates, bonus rules and transaction-level commission history will be configurable here once the commission data model is connected.</p>
-          ) : modalMode === 'permissions' ? (
-            <p>Role assignment, branch access, workspace access, report visibility and commission visibility will be managed here without using view-switching controls.</p>
-          ) : (
+        {modalMode === 'commission' ? (
+          <div className="space-y-4">
+            {commissionError ? (
+              <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#b42318]">
+                {commissionError}
+              </div>
+            ) : null}
+
+            {!activeCommissionStructures.length ? (
+              <div className="rounded-2xl border border-[#e3ebf5] bg-[#fbfcfe] p-5">
+                <h3 className="text-base font-semibold text-[#10243a]">No active commission structures</h3>
+                <p className="mt-2 text-sm leading-6 text-[#60758d]">
+                  Create at least one active commission structure before assigning a plan to this agent.
+                </p>
+                <Button type="button" variant="secondary" className="mt-4" onClick={() => navigate('/settings/commission-structures')}>
+                  Open Commission Settings
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="grid gap-1.5 sm:col-span-2">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Commission Structure</span>
+                    <Field
+                      as="select"
+                      value={commissionForm.commissionStructureId}
+                      disabled={!canManageSettings || commissionSaving}
+                      onChange={(event) => updateCommissionForm('commissionStructureId', event.target.value)}
+                    >
+                      <option value="">
+                        {defaultCommissionStructure ? `Use default (${defaultCommissionStructure.name})` : 'Use default / unassigned'}
+                      </option>
+                      {activeCommissionStructures.map((structure) => (
+                        <option key={structure.id} value={structure.id}>
+                          {structure.name} ({formatPercent(structure.agentSplitPercentage)} agent / {formatPercent(structure.agencySplitPercentage)} agency)
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+
+                  <label className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Override Agent Split %</span>
+                    <Field
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={commissionForm.overrideAgentSplitPercentage}
+                      disabled={!canManageSettings || commissionSaving}
+                      onChange={(event) => updateCommissionForm('overrideAgentSplitPercentage', event.target.value)}
+                      placeholder={selectedCommissionStructure ? String(selectedCommissionStructure.agentSplitPercentage) : '70'}
+                    />
+                  </label>
+
+                  <label className="grid gap-1.5">
+                    <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Effective From</span>
+                    <Field
+                      type="date"
+                      value={commissionForm.effectiveFrom}
+                      disabled={!canManageSettings || commissionSaving}
+                      onChange={(event) => updateCommissionForm('effectiveFrom', event.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className="rounded-2xl border border-[#dfe8f2] bg-[#fbfcfe] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#10243a]">
+                        {selectedCommissionStructure?.name || 'Default / unassigned'}
+                      </p>
+                      <p className="mt-1 text-xs font-medium text-[#6f839a]">
+                        {commissionForm.commissionStructureId ? 'Explicit assignment' : selectedCommissionStructure ? 'Using agency default' : 'No structure selected'}
+                      </p>
+                    </div>
+                    {selectedCommissionStructure?.isDefault ? (
+                      <span className="rounded-full border border-[#d7e6f7] bg-[#eef6ff] px-3 py-1 text-xs font-semibold text-[#1769d1]">
+                        Default
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                    <AgentMetricCard
+                      label="Agent Split"
+                      value={selectedCommissionStructure ? formatPercent(commissionForm.overrideAgentSplitPercentage || selectedCommissionStructure.agentSplitPercentage) : '—'}
+                      helper={commissionForm.overrideAgentSplitPercentage ? 'Override' : 'Structure'}
+                    />
+                    <AgentMetricCard
+                      label="Agency Split"
+                      value={
+                        selectedCommissionStructure
+                          ? formatPercent(100 - Number(commissionForm.overrideAgentSplitPercentage || selectedCommissionStructure.agentSplitPercentage))
+                          : '—'
+                      }
+                      helper="Calculated"
+                    />
+                    <AgentMetricCard
+                      label="Assigned Agents"
+                      value={selectedCommissionStructure?.assignedAgentsCount ?? '—'}
+                      helper="Current plan"
+                    />
+                    <AgentMetricCard
+                      label="Status"
+                      value={selectedCommissionStructure ? (selectedCommissionStructure.isActive ? 'Active' : 'Inactive') : '—'}
+                      helper={commissionForm.effectiveFrom ? `From ${formatDate(commissionForm.effectiveFrom)}` : ''}
+                    />
+                  </div>
+                </div>
+
+                {!canManageSettings ? (
+                  <div className="rounded-xl border border-[#f0dfc2] bg-[#fffbf3] px-4 py-3 text-sm font-medium text-[#7a5a16]">
+                    You can view this assignment, but only Principal-level users can change commission profiles.
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        ) : modalMode === 'permissions' ? (
+          <div className="space-y-4">
+            {permissionsError ? (
+              <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#b42318]">
+                {permissionsError}
+              </div>
+            ) : null}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-1.5">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Workspace Role</span>
+                <Field
+                  as="select"
+                  value={permissionsForm.role}
+                  disabled={!canManageSettings || permissionsSaving || !agent.organisationUserId}
+                  onChange={(event) => setPermissionsForm((previous) => ({ ...previous, role: event.target.value }))}
+                >
+                  {ORGANISATION_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Field>
+              </label>
+
+              <div className="rounded-2xl border border-[#dfe8f2] bg-[#fbfcfe] p-4">
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Current Branch</p>
+                <p className="mt-2 truncate text-sm font-semibold text-[#10243a]">{agent.office || '—'}</p>
+                <p className="mt-1 text-xs font-medium text-[#6f839a]">
+                  {agent.branchId ? `Branch ID: ${agent.branchId}` : 'No branch id on this user row'}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[#dfe8f2] bg-[#fbfcfe] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#10243a]">Access Preview</p>
+                  <p className="mt-1 text-xs font-medium text-[#6f839a]">
+                    These permissions are derived from the selected role and current branch allocation.
+                  </p>
+                </div>
+                <span className="rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#405870]">
+                  {formatRoleLabel(permissionsForm.role)}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {[
+                  ['Workspace Access', draftRoleAccessSummary.workspaceAccess],
+                  ['Branch Access', agent.office || draftRoleAccessSummary.branchAccess],
+                  ['Listings', draftRoleAccessSummary.listings],
+                  ['Deals', draftRoleAccessSummary.deals],
+                  ['Clients', draftRoleAccessSummary.clients],
+                  ['Reports', draftRoleAccessSummary.reports],
+                  ['Agency Settings', draftRoleAccessSummary.agencySettings],
+                  ['Commission Visibility', draftRoleAccessSummary.commissionVisibility],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-[#e6edf5] bg-white px-3 py-2.5">
+                    <span className="min-w-0 truncate text-xs font-semibold text-[#6f839a]">{label}</span>
+                    <span className="min-w-0 truncate text-right text-sm font-semibold text-[#20364d]" title={value}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-[#f0dfc2] bg-[#fffbf3] px-4 py-3 text-sm leading-6 text-[#7a5a16]">
+              Branch reassignment and per-user visibility overrides are not connected to an editable agent-workspace API yet. This modal saves the role now and shows the access granted by that role.
+            </div>
+
+            {!canManageSettings ? (
+              <div className="rounded-xl border border-[#f0dfc2] bg-[#fffbf3] px-4 py-3 text-sm font-medium text-[#7a5a16]">
+                You can view this access profile, but only Principal-level users can change roles.
+              </div>
+            ) : null}
+
+            {!agent.organisationUserId ? (
+              <div className="rounded-xl border border-[#f2d7d7] bg-[#fff6f6] px-4 py-3 text-sm font-semibold text-[#b42318]">
+                This agent is not linked to an organisation user row, so role changes cannot be saved here.
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-[#dfe7f1] bg-[#fbfcfe] p-4 text-sm leading-6 text-[#526981]">
             <p>This action is intentionally staged as a safe management placeholder for now. It will connect to the existing workflow once the backing service is ready.</p>
-          )}
-        </div>
+          </div>
+        )}
       </Modal>
 
       <ConfirmDialog
@@ -5340,6 +5823,7 @@ export function AgentWorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [agent, setAgent] = useState(null)
+  const [commissionStructures, setCommissionStructures] = useState([])
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
   const canManageSettings = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
@@ -5372,13 +5856,24 @@ export function AgentWorkspacePage() {
       setLoading(true)
       setError('')
 
-      const [transactions, organisationSettings, organisationUsers] = await Promise.all([
+      const [
+        transactions,
+        organisationSettings,
+        organisationUsers,
+        commissionStructureRows,
+        commissionProfileRows,
+      ] = await Promise.all([
         canManageSettings
           ? fetchTransactionsListSummary({ activeTransactionsOnly: false })
           : fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role }),
         fetchOrganisationSettings().catch(() => null),
         canManageSettings ? listOrganisationUsers().catch(() => []) : Promise.resolve([]),
+        canManageSettings ? listOrganisationCommissionStructures().catch(() => []) : Promise.resolve([]),
+        canManageSettings ? listOrganisationUserCommissionProfiles().catch(() => []) : Promise.resolve([]),
       ])
+      const nextCommissionStructures = Array.isArray(commissionStructureRows) ? commissionStructureRows : []
+      const commissionProfileMap = createCommissionProfileMap(Array.isArray(commissionProfileRows) ? commissionProfileRows : [])
+      setCommissionStructures(nextCommissionStructures)
 
       const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
       const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
@@ -5409,8 +5904,10 @@ export function AgentWorkspacePage() {
           organisationId: organisationSettings?.organisation?.id || agentDirectory?.agency?.id,
           organisationName: organisationSettings?.organisation?.name || agentDirectory?.agency?.name,
         }))
+        .map((row) => enrichAgentWithCommissionProfile(row, commissionProfileMap, nextCommissionStructures))
         .filter(Boolean)
       const mergedAgents = mergeAgentRows(mappedAgents, organisationAgentRows)
+        .map((row) => enrichAgentWithCommissionProfile(row, commissionProfileMap, nextCommissionStructures))
 
       const target = findAgentByRouteId(mergedAgents, agentId)
       if (!target) {
@@ -5422,6 +5919,7 @@ export function AgentWorkspacePage() {
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load agent workspace.')
       setAgent(null)
+      setCommissionStructures([])
     } finally {
       setLoading(false)
     }
@@ -5467,7 +5965,12 @@ export function AgentWorkspacePage() {
           {canManageSettings ? 'Principal Workspace' : 'Agent Workspace'}
         </div>
       </div>
-      <AgentWorkspace agent={agent} canManageSettings={canManageSettings} />
+      <AgentWorkspace
+        agent={agent}
+        canManageSettings={canManageSettings}
+        commissionStructures={commissionStructures}
+        onRefresh={loadWorkspace}
+      />
     </section>
   )
 }

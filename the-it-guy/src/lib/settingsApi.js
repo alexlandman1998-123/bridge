@@ -1521,12 +1521,20 @@ function buildAtomicAgencyOnboardingPayload({ mergedDraft = {}, context = {}, us
   }
 }
 
-function buildCommercialSignupMembershipMetadata({ agencyType = '', intent = null, mergedDraft = {}, userId = '' } = {}) {
+const COMMERCIAL_ORGANISATION_MODULE_SOURCES = new Set(['signup', 'principal_request', 'platform_admin', 'billing', 'settings_backfill', 'manual'])
+const AGENCY_SETTINGS_AGENCY_TYPES = new Set(['residential', 'commercial', 'mixed'])
+
+function normalizeCommercialOrganisationModuleSource(value = '', fallback = 'signup') {
+  const normalized = normalizeText(value)
+  return COMMERCIAL_ORGANISATION_MODULE_SOURCES.has(normalized) ? normalized : fallback
+}
+
+function buildCommercialSignupMembershipMetadata({ agencyType = '', intent = null, mergedDraft = {}, userId = '', source = 'signup' } = {}) {
   const normalizedAgencyType = normalizeAgencyType(agencyType)
   return {
     module: 'commercial',
     module_context: 'commercial',
-    source: 'signup',
+    source: normalizeText(intent?.commercial_activation_source) || source,
     signup_onboarding_path: normalizeText(intent?.onboarding_path),
     agency_type: normalizedAgencyType,
     commercial_mode: normalizedAgencyType === 'commercial' ? 'commercial_only' : 'mixed_residential_commercial',
@@ -1536,17 +1544,56 @@ function buildCommercialSignupMembershipMetadata({ agencyType = '', intent = nul
   }
 }
 
-function buildCommercialOrganisationModuleMetadata({ agencyType = '', intent = null, mergedDraft = {}, userId = '' } = {}) {
+function buildCommercialOrganisationModuleMetadata({ agencyType = '', intent = null, mergedDraft = {}, userId = '', source = 'signup' } = {}) {
   const normalizedAgencyType = normalizeAgencyType(agencyType)
   return {
     module: 'commercial',
-    source: 'signup',
+    source: normalizeText(intent?.commercial_activation_source) || source,
     signup_onboarding_path: normalizeText(intent?.onboarding_path),
     agency_type: normalizedAgencyType,
     commercial_mode: normalizedAgencyType === 'commercial' ? 'commercial_only' : 'mixed_residential_commercial',
     enabled_at: new Date().toISOString(),
     enabled_by: normalizeText(userId),
     business_name: normalizeText(mergedDraft?.agencyInformation?.agencyName),
+  }
+}
+
+function buildAgencyOnboardingSettings({ context = {}, mergedDraft = {} } = {}) {
+  const rawAgencyType = normalizeText(mergedDraft?.agencyInformation?.agencyType).toLowerCase()
+  const existingSettings = safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS)
+
+  if (!AGENCY_SETTINGS_AGENCY_TYPES.has(rawAgencyType)) {
+    return {
+      ...DEFAULT_ORGANISATION_SETTINGS,
+      ...existingSettings,
+      agencyOnboarding: mergedDraft,
+      organisationBranches: mergedDraft.branchStructure?.branches || [],
+      organisationPermissions: mergedDraft.permissions || {},
+    }
+  }
+
+  const agencyType = normalizeAgencyType(rawAgencyType)
+  const hasCommercialModule = isCommercialAgencyType(agencyType)
+
+  return {
+    ...DEFAULT_ORGANISATION_SETTINGS,
+    ...existingSettings,
+    agencyOnboarding: mergedDraft,
+    agencyType,
+    enabledModules: {
+      ...(existingSettings.enabledModules || {}),
+      residential: agencyType !== 'commercial',
+      commercial: hasCommercialModule,
+    },
+    commercialWorkspace: {
+      ...(existingSettings.commercialWorkspace || {}),
+      status: hasCommercialModule ? 'active' : 'disabled',
+      source: hasCommercialModule ? 'settings' : 'not_selected',
+      mode: agencyType === 'commercial' ? 'commercial_only' : agencyType === 'mixed' ? 'mixed_residential_commercial' : 'residential_only',
+      enabledAt: hasCommercialModule ? new Date().toISOString() : existingSettings.commercialWorkspace?.enabledAt || null,
+    },
+    organisationBranches: mergedDraft.branchStructure?.branches || [],
+    organisationPermissions: mergedDraft.permissions || {},
   }
 }
 
@@ -1575,13 +1622,14 @@ async function assertCommercialSignupSchemaInstalled(client) {
   }
 }
 
-async function activateCommercialOrganisationModuleForAgencySignup(client, { workspaceId = '', userId = '', agencyType = '', intent = null, mergedDraft = {} } = {}) {
+async function activateCommercialOrganisationModuleForAgencySignup(client, { workspaceId = '', userId = '', agencyType = '', intent = null, mergedDraft = {}, source = 'signup' } = {}) {
   const normalizedAgencyType = normalizeAgencyType(agencyType)
   if (!isCommercialAgencyType(normalizedAgencyType)) return { activated: false, skipped: 'not_commercial_signup' }
   if (!workspaceId || !userId) return { activated: false, skipped: 'missing_workspace_or_user' }
 
   const nowIso = new Date().toISOString()
-  const metadata = buildCommercialOrganisationModuleMetadata({ agencyType: normalizedAgencyType, intent, mergedDraft, userId })
+  const moduleSource = normalizeCommercialOrganisationModuleSource(source)
+  const metadata = buildCommercialOrganisationModuleMetadata({ agencyType: normalizedAgencyType, intent, mergedDraft, userId, source: moduleSource })
   const upsert = await client
     .from('organisation_modules')
     .upsert(
@@ -1589,7 +1637,7 @@ async function activateCommercialOrganisationModuleForAgencySignup(client, { wor
         organisation_id: workspaceId,
         module_key: 'commercial',
         status: 'active',
-        source: 'signup',
+        source: moduleSource,
         enabled_by: userId,
         enabled_at: nowIso,
         disabled_by: null,
@@ -1615,12 +1663,12 @@ async function activateCommercialOrganisationModuleForAgencySignup(client, { wor
   return { activated: upsert.data?.status === 'active', module: upsert.data || null }
 }
 
-async function activateCommercialMembershipForAgencySignup(client, { workspaceId = '', userId = '', agencyType = '', intent = null, mergedDraft = {} } = {}) {
+async function activateCommercialMembershipForAgencySignup(client, { workspaceId = '', userId = '', agencyType = '', intent = null, mergedDraft = {}, source = 'signup' } = {}) {
   const normalizedAgencyType = normalizeAgencyType(agencyType)
   if (!isCommercialAgencyType(normalizedAgencyType)) return { activated: false, skipped: 'not_commercial_signup' }
   if (!workspaceId || !userId) return { activated: false, skipped: 'missing_workspace_or_user' }
 
-  const metadata = buildCommercialSignupMembershipMetadata({ agencyType: normalizedAgencyType, intent, mergedDraft, userId })
+  const metadata = buildCommercialSignupMembershipMetadata({ agencyType: normalizedAgencyType, intent, mergedDraft, userId, source })
   let update = await client
     .from('organisation_users')
     .update({
@@ -2737,7 +2785,7 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
   }
 }
 
-export async function saveAgencyOnboardingDraft(input = {}) {
+export async function saveAgencyOnboardingDraft(input = {}, options = {}) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
   const mergedDraft = buildAgencyOnboardingStorageRecord({
@@ -2758,13 +2806,7 @@ export async function saveAgencyOnboardingDraft(input = {}) {
     }
   }
 
-  const mergedSettings = {
-    ...DEFAULT_ORGANISATION_SETTINGS,
-    ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
-    agencyOnboarding: mergedDraft,
-    organisationBranches: mergedDraft.branchStructure?.branches || [],
-    organisationPermissions: mergedDraft.permissions || {},
-  }
+  const mergedSettings = buildAgencyOnboardingSettings({ context, mergedDraft })
 
   const { error } = await client
     .from('organisation_settings')
@@ -2778,6 +2820,32 @@ export async function saveAgencyOnboardingDraft(input = {}) {
 
   if (error) {
     throw error
+  }
+
+  const agencyType = normalizeAgencyType(mergedDraft?.agencyInformation?.agencyType)
+  if (options?.syncCommercialAccess && isCommercialAgencyType(agencyType)) {
+    await assertCommercialSignupSchemaInstalled(client)
+    const user = await getAuthenticatedUser()
+    const settingsActivationIntent = {
+      commercial_activation_source: 'settings_update',
+      onboarding_path: 'organisation_settings',
+    }
+    await activateCommercialOrganisationModuleForAgencySignup(client, {
+      workspaceId: context.organisation.id,
+      userId: user.id,
+      agencyType,
+      intent: settingsActivationIntent,
+      mergedDraft,
+      source: 'manual',
+    })
+    await activateCommercialMembershipForAgencySignup(client, {
+      workspaceId: context.organisation.id,
+      userId: user.id,
+      agencyType,
+      intent: settingsActivationIntent,
+      mergedDraft,
+      source: 'manual',
+    })
   }
 
   clearOrganisationRuntimeCache()
@@ -3677,6 +3745,7 @@ export async function assignOrganisationUserCommissionProfile({
   email = '',
   commissionStructureId = '',
   overrideAgentSplitPercentage = null,
+  effectiveFrom = '',
   isActive = true,
 } = {}) {
   if (!isSupabaseConfigured || !supabase) {
@@ -3706,6 +3775,7 @@ export async function assignOrganisationUserCommissionProfile({
       email: normalizedEmail,
       commissionStructureId: structureId,
       overrideAgentSplitPercentage,
+      effectiveFrom,
       isActive,
     },
     context.organisation.id,
@@ -3795,6 +3865,7 @@ export async function assignOrganisationUserCommissionProfile({
     email: normalizedEmail,
     commissionStructureId: structureId,
     overrideAgentSplitPercentage,
+    effectiveFrom,
     isActive,
   })
   const nextProfiles = [
