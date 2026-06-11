@@ -821,7 +821,7 @@ function TransactionFocusPanel({ commandRows = [], alertRows = [] }) {
   }
 
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[260px] flex-col`}>
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div>
         <h2 className="text-[1.08rem] font-semibold text-[#101828]">Operational Focus</h2>
         <p className="mt-1 text-sm text-[#667085]">Work that needs manager attention.</p>
@@ -860,9 +860,9 @@ function TransactionFlowRail({ rows = [] }) {
 
 function TransactionAlertsPanel({ rows = [] }) {
   return (
-    <section className={`${dashboardCardClass} ${dashboardCardPadding} min-h-[320px]`}>
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <h2 className="text-[1.08rem] font-semibold text-[#101828]">Transaction Alerts</h2>
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 grid flex-1 auto-rows-fr gap-3">
         {rows.map((item) => (
           <div key={item.key} className="flex items-center justify-between gap-3 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3">
             <span className="text-sm font-semibold text-[#344054]">{item.label}</span>
@@ -1104,12 +1104,10 @@ function PipelineSalesOverview({ data, overviewMode, onOverviewModeChange }) {
       ) : null}
       {activeTab === 'transactions' ? (
         <>
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <TransactionFlowRail rows={data.transactions.flow || []} />
-            <TransactionFocusPanel commandRows={data.transactions.commandCentre || []} alertRows={data.transactions.alerts || []} />
-          </div>
+          <TransactionFlowRail rows={data.transactions.flow || []} />
           <ActiveTransactionsSlider rows={data.activeTransactions || []} />
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+            <TransactionFocusPanel commandRows={data.transactions.commandCentre || []} alertRows={data.transactions.alerts || []} />
             <TransactionAlertsPanel rows={data.transactions.alerts || []} />
             <RecentActivityFeed rows={data.recentActivity} />
           </div>
