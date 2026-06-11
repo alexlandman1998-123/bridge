@@ -3114,8 +3114,8 @@ function buildWorkspaceListingStatuses(listings) {
 
 function WorkspaceHeroMetric({ label, value, helper = '' }) {
   return (
-    <div className="min-w-0 border-t border-[#e5edf6] pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
-      <p className="truncate text-[1.35rem] font-semibold tracking-[-0.035em] text-[#10243a]" title={String(value ?? '—')}>{value ?? '—'}</p>
+    <div className="min-w-0 border-t border-[#e5edf6] pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0 2xl:pl-5">
+      <p className="truncate text-[1.15rem] font-semibold tracking-[-0.035em] text-[#10243a] 2xl:text-[1.35rem]" title={String(value ?? '—')}>{value ?? '—'}</p>
       <p className="mt-1 truncate text-xs font-medium text-[#647a92]" title={label}>{label}</p>
       {helper ? <p className="mt-1 truncate text-[0.68rem] text-[#8a9aab]">{helper}</p> : null}
     </div>
@@ -3385,15 +3385,15 @@ function AgentWorkspace({ agent }) {
       ) : null}
 
       <section className="min-w-0 rounded-3xl border border-[#dde6f1] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.06)] sm:p-5 lg:p-6">
-        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(300px,0.9fr)_minmax(460px,1.25fr)_auto] xl:items-center">
-          <div className="flex min-w-0 items-center gap-4">
-            <span className="relative inline-flex h-20 w-20 shrink-0 sm:h-24 sm:w-24">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(260px,0.86fr)_minmax(360px,1fr)] xl:items-center 2xl:grid-cols-[minmax(300px,0.9fr)_minmax(460px,1.25fr)_auto]">
+          <div className="flex min-w-0 items-center gap-3 2xl:gap-4">
+            <span className="relative inline-flex h-16 w-16 shrink-0 sm:h-20 sm:w-20 2xl:h-24 2xl:w-24">
               <AgentAvatar agent={agent} className="h-full w-full border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#e7eef7)] text-2xl font-semibold text-[#2f5578]" />
               <span className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-2 border-white bg-[#16a365]" />
             </span>
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h1 className="min-w-0 truncate text-[1.65rem] font-semibold tracking-[-0.045em] text-[#10243a]">{agent.name || 'Agent'}</h1>
+                <h1 className="min-w-0 truncate text-[1.35rem] font-semibold tracking-[-0.045em] text-[#10243a] 2xl:text-[1.65rem]">{agent.name || 'Agent'}</h1>
                 <StatusBadge agent={agent} />
               </div>
               <p className="mt-1 truncate text-sm font-semibold text-[#536b84]">
@@ -3406,29 +3406,29 @@ function AgentWorkspace({ agent }) {
             </div>
           </div>
 
-          <div className="grid min-w-0 grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-4 2xl:gap-4">
             {heroMetrics.map((metric) => (
               <WorkspaceHeroMetric key={metric.label} label={metric.label} value={metric.value} />
             ))}
           </div>
 
-          <div className="flex min-w-0 items-center justify-start gap-2 xl:justify-end">
-            <div className="hidden min-w-0 flex-wrap justify-end gap-2 md:flex">
-              <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc]" onClick={() => openPlaceholder('message')}>
+          <div className="flex min-w-0 items-center justify-start gap-2 xl:col-span-2 xl:justify-end 2xl:col-span-1">
+            <div className="hidden min-w-0 grid-cols-3 gap-2 md:grid xl:w-full xl:max-w-[640px] 2xl:flex 2xl:w-auto 2xl:max-w-none 2xl:flex-wrap 2xl:justify-end">
+              <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4" onClick={() => openPlaceholder('message')}>
                 <MessageCircle size={16} />
                 Message
               </button>
-              <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc]" onClick={() => openPlaceholder('assign-deal')}>
+              <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4" onClick={() => openPlaceholder('assign-deal')}>
                 <BriefcaseBusiness size={16} />
                 Assign Deal
               </button>
-              <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc]" onClick={() => openPlaceholder('assign-listing')}>
+              <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4" onClick={() => openPlaceholder('assign-listing')}>
                 <List size={16} />
                 Assign Listing
               </button>
             </div>
-            <div className="relative">
-              <button type="button" onClick={() => setEditMenuOpen((open) => !open)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0f2742] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.18)] transition hover:bg-[#173a5e]">
+            <div className="relative w-full md:w-auto">
+              <button type="button" onClick={() => setEditMenuOpen((open) => !open)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#0f2742] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.18)] transition hover:bg-[#173a5e] md:w-auto">
                 More
                 <MoreHorizontal size={16} />
               </button>
