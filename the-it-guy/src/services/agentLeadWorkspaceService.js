@@ -2,7 +2,7 @@ import { listAgencyCrmLeadContacts, fetchAgencyCrmLeadWorkspace } from '../lib/a
 import { listAppointmentsAsync } from '../lib/agencyPipelineService'
 import { listCanonicalOffersForLead } from '../lib/buyerLifecycleService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
-import { getLeadSlaStatus, listLeadAssignmentHistory, listLeadAssignmentMetrics } from './leadAssignmentService'
+import { getLeadSlaStatus, listLeadAssignmentHistory } from './leadAssignmentService'
 import { buildCommunicationTimeline, listLeadCommunications } from './leadCommunicationService'
 import {
   buildDefaultLeadCommunicationPreferences,
@@ -17,6 +17,7 @@ import { getSuggestionsForLead } from './leadSuggestionService'
 import { getPrivateListing } from './privateListingService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES = new Set(['owner', 'principal', 'admin', 'admin_staff'])
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -24,6 +25,58 @@ function normalizeText(value) {
 
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeActorRole(actor = {}) {
+  return normalizeLower(actor?.workspaceRole || actor?.organisationRole || actor?.role || actor?.roleKey)
+}
+
+function canViewAllWorkspaceLeads(actor = {}) {
+  return LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES.has(normalizeActorRole(actor))
+}
+
+function getActorIdentitySet(actor = {}) {
+  const identities = new Set()
+  const actorId = normalizeLower(normalizeText(actor?.id || actor?.user_id || actor?.userId))
+  const actorEmail = normalizeLower(normalizeText(actor?.email || actor?.userEmail || actor?.contactEmail))
+  if (actorId) identities.add(actorId)
+  if (actorEmail) identities.add(actorEmail)
+  return identities
+}
+
+function isLeadVisibleToActor(row = {}, actor = {}) {
+  if (canViewAllWorkspaceLeads(actor)) return true
+  const actorIds = getActorIdentitySet(actor)
+  if (!actorIds.size) return true
+  const actorIdsLower = actorIds
+  const assignedAgentId = normalizeLower(readId(row, ['assignedAgentId', 'assigned_agent_id', 'assignedUserId', 'assigned_user_id']))
+  const assignedAgentEmail = normalizeLower(readId(row, ['assignedAgentEmail', 'assigned_agent_email']))
+  const createdBy = normalizeLower(readId(row, ['createdBy', 'created_by']))
+  return actorIdsLower.has(assignedAgentId) || actorIdsLower.has(assignedAgentEmail) || actorIdsLower.has(createdBy)
+}
+
+function buildLeadWorkspaceAssignmentMetrics(rows = []) {
+  const normalizedRows = Array.isArray(rows) ? rows : []
+  const byAgentMap = new Map()
+  for (const lead of normalizedRows) {
+    const assignedAgentId = normalizeLower(readId(lead, ['assignedAgentId', 'assigned_agent_id']))
+    if (assignedAgentId) byAgentMap.set(assignedAgentId, (byAgentMap.get(assignedAgentId) || 0) + 1)
+  }
+  return {
+    unassigned: normalizedRows.filter((lead) => {
+      const assignedAgentId = normalizeLower(readId(lead, ['assignedAgentId', 'assigned_agent_id']))
+      const assignedQueueId = normalizeLower(readId(lead, ['assignedQueueId', 'assigned_queue_id']))
+      return !assignedAgentId && (!assignedQueueId || assignedQueueId === 'unassigned')
+    }).length,
+    assigned: normalizedRows.filter((lead) => {
+      const assignedAgentId = normalizeLower(readId(lead, ['assignedAgentId', 'assigned_agent_id']))
+      const assignedQueueId = normalizeLower(readId(lead, ['assignedQueueId', 'assigned_queue_id']))
+      return assignedAgentId || (assignedQueueId && assignedQueueId !== 'unassigned')
+    }).length,
+    overdue: normalizedRows.filter((lead) => getLeadSlaStatus(lead) === 'overdue').length,
+    escalated: normalizedRows.filter((lead) => normalizeLower(lead?.ownershipStatus || lead?.ownership_status) === 'escalated').length,
+    byAgent: [...byAgentMap.entries()].map(([agentId, count]) => ({ agentId, count })),
+  }
 }
 
 function isUuidLike(value) {
@@ -263,6 +316,8 @@ export function buildAgentLeadRows({
       ...lead,
       id: leadId,
       leadId,
+      assignedUserId: readId(lead, ['assignedUserId', 'assigned_user_id']),
+      createdBy: readId(lead, ['createdBy', 'created_by']),
       contact,
       contactId,
       name: getLeadName(lead, contact),
@@ -520,9 +575,9 @@ async function safeReadAppointments(organisationId = '') {
   }
 }
 
-export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
+export async function listAgentLeadWorkspaceRows({ organisationId = '', actor = null } = {}) {
   const snapshot = await listAgencyCrmLeadContacts(organisationId)
-  const [appointments, offers, transactions, listings, listingInterests, requirements, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, ownershipRows, assignmentMetrics] = await Promise.all([
+  const [appointments, offers, transactions, listings, listingInterests, requirements, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, ownershipRows] = await Promise.all([
     safeReadAppointments(organisationId),
     safeReadAllOffers(organisationId),
     safeReadTransactions(organisationId),
@@ -535,7 +590,6 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
     listCommunicationDeliveries({ organisationId }).catch(() => []),
     safeReadLeadCommunicationPreferences(organisationId),
     safeReadLeadOwnershipRows(organisationId),
-    listLeadAssignmentMetrics({ organisationId }).catch(() => ({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })),
   ])
   const rows = buildAgentLeadRows({
     leads: enrichLeadsWithOwnership(snapshot.leads, ownershipRows),
@@ -554,9 +608,13 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
     communicationDeliveries,
     communicationPreferences,
   })
+  const scopedRows = canViewAllWorkspaceLeads(actor || {})
+    ? rows
+    : rows.filter((row) => isLeadVisibleToActor(row, actor || {}))
+  const assignmentMetrics = buildLeadWorkspaceAssignmentMetrics(scopedRows)
   return {
     ...snapshot,
-    rows,
+    rows: scopedRows,
     appointments,
     offers: offers.map(normalizeOffer),
     transactions: transactions.map(normalizeTransaction),
@@ -572,7 +630,7 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '' } = {}) {
   }
 }
 
-export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = '' } = {}) {
+export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = '', actor = null } = {}) {
   const workspace = await fetchAgencyCrmLeadWorkspace(organisationId, leadId)
   const lead = workspace.leads[0] || null
   if (!lead) {
@@ -650,6 +708,27 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     communicationPreferences,
     assignmentHistory,
   })
+  if (!canViewAllWorkspaceLeads(actor) && !isLeadVisibleToActor(rows[0] || {}, actor || {})) {
+    return {
+      ...workspace,
+      row: null,
+      appointments: [],
+      offers: [],
+      transactions: [],
+      listings: [],
+      listingInterests: [],
+      requirements: [],
+      communications: [],
+      suggestions: [],
+      recommendations: [],
+      savedSearches: [],
+      propertyShares: [],
+      communicationDeliveries: [],
+      communicationPreferences: [],
+      timeline: [],
+      assignmentHistory: [],
+    }
+  }
   return {
     ...workspace,
     row: rows[0] || null,

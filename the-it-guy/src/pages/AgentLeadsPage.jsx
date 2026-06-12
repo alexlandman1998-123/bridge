@@ -4200,7 +4200,7 @@ function AgentLeadList() {
     try {
       setLoading(true)
       setError('')
-      const result = await listAgentLeadWorkspaceRows({ organisationId })
+      const result = await listAgentLeadWorkspaceRows({ organisationId, actor })
       setRows(result.rows)
       setAssignmentMetrics(result.assignmentMetrics || { unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
     } catch (loadError) {
@@ -4210,7 +4210,7 @@ function AgentLeadList() {
     } finally {
       setLoading(false)
     }
-  }, [organisationId])
+  }, [actor, organisationId])
 
   useEffect(() => {
     void loadRows()
@@ -8819,7 +8819,7 @@ function AgentLeadWorkspace() {
     try {
       setLoading(true)
       setError('')
-      const result = await fetchAgentLeadWorkspace({ organisationId, leadId })
+      const result = await fetchAgentLeadWorkspace({ organisationId, leadId, actor })
       setData(result)
     } catch (loadError) {
       setData(null)
@@ -8827,7 +8827,7 @@ function AgentLeadWorkspace() {
     } finally {
       setLoading(false)
     }
-  }, [leadId, organisationId])
+  }, [actor, leadId, organisationId])
 
   useEffect(() => {
     void loadWorkspace()

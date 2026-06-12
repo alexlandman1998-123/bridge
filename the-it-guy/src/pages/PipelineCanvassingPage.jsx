@@ -33,7 +33,7 @@ import {
   updateCanvassingProspect,
 } from '../lib/canvassingRepository'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
-import { getOrganisationPrivateListings } from '../services/privateListingService'
+import { getAgentPrivateListings } from '../services/privateListingService'
 
 const CANVASSING_CONTEXT_TIMEOUT_MS = 20000
 
@@ -197,6 +197,9 @@ function normalizeListingOption(listing = {}) {
   ].filter(Boolean)
   return {
     id,
+    branchId: normalizeText(listing?.branchId || listing?.branch_id),
+    assignedAgentId: normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id || listing?.agentId || listing?.agent_id),
+    assignedAgentEmail: normalizeText(listing?.assignedAgentEmail || listing?.assigned_agent_email).toLowerCase(),
     label: labelParts.join(' - '),
     title: title || labelParts[0] || `Listing ${id.slice(0, 8)}`,
     suburb,
@@ -400,18 +403,38 @@ function PipelineCanvassingPage() {
     notes: '',
   })
   const [activityForm, setActivityForm] = useState({ activityType: 'Call', activityNote: '', outcome: '' })
-  const [convertLeadType, setConvertLeadType] = useState('Buyer')
+  const [convertLeadType, setConvertLeadType] = useState('buyer')
 
   const currentAgent = useMemo(
     () => ({
       id: normalizeText(profile?.id || profile?.email),
-      userId: normalizeText(profile?.id || profile?.email),
+      userId: normalizeText(profile?.id || profile?.userId),
       email: normalizeText(profile?.email).toLowerCase(),
       fullName:
         normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')) || 'Current Agent',
-      branchId: '',
+      branchId: normalizeText(
+        profile?.branchId ||
+          currentMembership?.branchId ||
+          currentMembership?.branch_id ||
+          currentMembership?.assignedBranchId ||
+          currentMembership?.workspaceUnitId ||
+          currentMembership?.workspace_unit_id,
+      ),
     }),
-    [profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName],
+    [
+      currentMembership?.assignedBranchId,
+      currentMembership?.branchId,
+      currentMembership?.branch_id,
+      currentMembership?.workspaceUnitId,
+      currentMembership?.workspace_unit_id,
+      profile?.branchId,
+      profile?.email,
+      profile?.firstName,
+      profile?.fullName,
+      profile?.id,
+      profile?.lastName,
+      profile?.userId,
+    ],
   )
 
   const currentAgentIdentity = useMemo(
@@ -543,11 +566,30 @@ function PipelineCanvassingPage() {
         }
         try {
           const localListings = readAgentPrivateListings()
-          const remoteListings = await getOrganisationPrivateListings(orgId, { includeRequirementsAndDocuments: false }).catch((listingError) => {
+          const branchScopedLocalListings = isPrincipalAgentView
+            ? localListings
+            : localListings.filter((listing) => {
+                const listingAgentId = normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id)
+                const listingAgentEmail = normalizeText(listing?.assignedAgentEmail || listing?.assigned_agent_email).toLowerCase()
+                return (
+                  listingAgentId === currentAgentIdentity || listingAgentId === currentAgent.id ||
+                  (listingAgentEmail && currentAgent.email && listingAgentEmail === currentAgent.email)
+                )
+              })
+          const remoteListings = await getAgentPrivateListings(currentAgent.userId, {
+            organisationId: orgId,
+            assignedAgentEmail: currentAgent.email,
+            includeAllOrganisationListings: isPrincipalAgentView,
+          }).catch((listingError) => {
             console.warn('[CANVASSING] organisation listings load failed.', listingError)
             return []
           })
-          if (active) setListingOptions(dedupeListingOptions([...(Array.isArray(localListings) ? localListings : []), ...(Array.isArray(remoteListings) ? remoteListings : [])]))
+          if (active) {
+            setListingOptions(dedupeListingOptions([
+              ...(Array.isArray(branchScopedLocalListings) ? branchScopedLocalListings : []),
+              ...(Array.isArray(remoteListings) ? remoteListings : []),
+            ]))
+          }
         } catch (listingError) {
           console.warn('[CANVASSING] listing options unavailable.', listingError)
           if (active) setListingOptions([])
@@ -564,7 +606,30 @@ function PipelineCanvassingPage() {
     return () => {
       active = false
     }
-  }, [currentWorkspace?.id, currentWorkspace?.name])
+  }, [
+    currentAgent.email,
+    currentAgent.id,
+    currentAgent.userId,
+    currentWorkspace?.id,
+    currentWorkspace?.name,
+    isPrincipalAgentView,
+  ])
+
+  const selectedAgentForProspect = useMemo(() => resolveAgentById(prospectForm.assignedAgentId || currentAgentIdentity), [currentAgentIdentity, prospectForm.assignedAgentId, resolveAgentById])
+
+  const scopedListingOptions = useMemo(() => {
+    const options = Array.isArray(listingOptions) ? listingOptions : []
+    if (isPrincipalAgentView) {
+      const branchId = normalizeText(selectedAgentForProspect?.branchId)
+      if (!branchId) return options
+      return options.filter((listing) => {
+        const listingBranchId = normalizeText(listing?.branchId)
+        if (!listingBranchId) return true
+        return listingBranchId === branchId
+      })
+    }
+    return options
+  }, [isPrincipalAgentView, listingOptions, selectedAgentForProspect?.branchId])
 
   useEffect(() => {
     setProspectForm((previous) => {
@@ -740,7 +805,7 @@ function PipelineCanvassingPage() {
       return
     }
     const assignedAgent = resolveAgentById(prospectForm.assignedAgentId || currentAgentIdentity)
-    const selectedListing = listingOptions.find((listing) => normalizeText(listing.id) === normalizeText(prospectForm.linkedListingId)) || null
+    const selectedListing = scopedListingOptions.find((listing) => normalizeText(listing.id) === normalizeText(prospectForm.linkedListingId)) || null
 
     const createdPayload = {
       organisationId,
@@ -816,6 +881,9 @@ function PipelineCanvassingPage() {
   }
 
   function handleUpdateSelectedProspect(field, value) {
+    if (field === 'prospectType') {
+      setConvertLeadType(resolveDefaultLeadCategory({ ...selectedProspect, prospectType: value }))
+    }
     setProspects((previous) =>
       previous.map((row) => {
         if (normalizeText(row?.id) !== normalizeText(selectedProspectId)) return row
@@ -1452,14 +1520,14 @@ function PipelineCanvassingPage() {
               {resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'buyer' ? (
                 <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
                   Listing / Property
-                  <Field
-                    as="select"
-                    value={prospectForm.linkedListingId}
-                    onChange={(event) => {
-                      const selectedListing = listingOptions.find((listing) => normalizeText(listing.id) === normalizeText(event.target.value))
-                      setProspectForm((previous) => ({
-                        ...previous,
-                        linkedListingId: event.target.value,
+                    <Field
+                      as="select"
+                      value={prospectForm.linkedListingId}
+                      onChange={(event) => {
+                        const selectedListing = scopedListingOptions.find((listing) => normalizeText(listing.id) === normalizeText(event.target.value))
+                        setProspectForm((previous) => ({
+                          ...previous,
+                          linkedListingId: event.target.value,
                         area: normalizeText(previous.area) || normalizeText(selectedListing?.suburb),
                         propertyType: normalizeText(previous.propertyType) || normalizeText(selectedListing?.propertyType),
                         estimatedValue: normalizeText(previous.estimatedValue) || (selectedListing?.askingPrice ? String(selectedListing.askingPrice) : ''),
@@ -1467,7 +1535,7 @@ function PipelineCanvassingPage() {
                     }}
                   >
                     <option value="">Select listing/property</option>
-                    {listingOptions.map((listing) => (
+                    {scopedListingOptions.map((listing) => (
                       <option key={listing.id} value={listing.id}>
                         {listing.label}
                       </option>
@@ -1884,9 +1952,9 @@ function PipelineCanvassingPage() {
                       </div>
                       <div className="mt-4 grid gap-2">
                         <Field as="select" value={convertLeadType} onChange={(event) => setConvertLeadType(event.target.value)}>
-                          {['Buyer', 'Seller'].map((option) => (
+                          {['buyer', 'seller'].map((option) => (
                             <option key={option} value={option}>
-                              {option} Lead
+                              {leadCategoryLabel(option)} Lead
                             </option>
                           ))}
                         </Field>
