@@ -21,7 +21,7 @@ const LEAD_SELECT_FIELDS =
 const LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL =
   `${LEAD_SELECT_FIELDS}, assigned_agent_email`
 const LEAD_SELECT_FIELDS_EXTENDED =
-  `${LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status`
+  `${LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status, enquired_listing_id, enquired_property_title, enquired_property_address, enquired_property_price, source_reference_id, raw_enquiry_payload`
 const LEAD_ACTIVITY_SELECT_FIELDS =
   'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at'
 const TASK_SELECT_FIELDS =
@@ -141,6 +141,12 @@ function mapSupabaseLead(row = {}) {
     sellerWorkflowLeadId: '',
     mandatePacketId: normalizeText(row?.mandate_packet_id),
     listingId: normalizeText(row?.listing_id),
+    enquiredListingId: normalizeText(row?.enquired_listing_id),
+    enquiredPropertyTitle: normalizeText(row?.enquired_property_title),
+    enquiredPropertyAddress: normalizeText(row?.enquired_property_address),
+    enquiredPropertyPrice: row?.enquired_property_price == null || row?.enquired_property_price === '' ? null : Number(row?.enquired_property_price) || null,
+    sourceReferenceId: normalizeText(row?.source_reference_id),
+    rawEnquiryPayload: row?.raw_enquiry_payload == null ? null : row.raw_enquiry_payload,
     createdAt: row?.created_at || new Date().toISOString(),
     updatedAt: row?.updated_at || new Date().toISOString(),
     convertedDealId: normalizeText(row?.converted_transaction_id) || null,
@@ -231,6 +237,12 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
     sellerPropertyAddress: normalizeText(leadPayload?.sellerPropertyAddress),
     estimatedValue: Number(leadPayload?.estimatedValue || 0) || 0,
     listingId: normalizeText(leadPayload?.listingId || leadPayload?.listing_id),
+    enquiredListingId: normalizeText(leadPayload?.enquiredListingId || leadPayload?.enquired_listing_id),
+    enquiredPropertyTitle: normalizeText(leadPayload?.enquiredPropertyTitle || leadPayload?.enquired_property_title),
+    enquiredPropertyAddress: normalizeText(leadPayload?.enquiredPropertyAddress || leadPayload?.enquired_property_address),
+    enquiredPropertyPrice: leadPayload?.enquiredPropertyPrice == null || leadPayload?.enquiredPropertyPrice === '' ? null : Number(leadPayload.enquiredPropertyPrice),
+    sourceReferenceId: normalizeText(leadPayload?.sourceReferenceId || leadPayload?.source_reference_id),
+    rawEnquiryPayload: leadPayload?.rawEnquiryPayload ?? leadPayload?.raw_enquiry_payload ?? null,
     notes: normalizeText(leadPayload?.notes),
     canvassingProspectId: normalizeText(leadPayload?.canvassingProspectId),
     sellerName: normalizeText(leadPayload?.sellerName || payload?.contact?.firstName),
@@ -392,6 +404,12 @@ function buildRemoteLeadUpdatePayload(patch = {}) {
   if (hasOwn(patch, 'sellerPropertyAddress')) corePayload.seller_property_address = normalizeText(patch.sellerPropertyAddress) || null
   if (hasOwn(patch, 'estimatedValue')) corePayload.estimated_value = Number(patch.estimatedValue || 0) || 0
   if (hasOwn(patch, 'notes')) corePayload.notes = normalizeText(patch.notes) || null
+  if (hasOwn(patch, 'enquiredListingId')) corePayload.enquired_listing_id = normalizeText(patch.enquiredListingId) || null
+  if (hasOwn(patch, 'enquiredPropertyTitle')) corePayload.enquired_property_title = normalizeText(patch.enquiredPropertyTitle) || null
+  if (hasOwn(patch, 'enquiredPropertyAddress')) corePayload.enquired_property_address = normalizeText(patch.enquiredPropertyAddress) || null
+  if (hasOwn(patch, 'enquiredPropertyPrice')) corePayload.enquired_property_price = patch.enquiredPropertyPrice == null || patch.enquiredPropertyPrice === '' ? null : Number(patch.enquiredPropertyPrice) || null
+  if (hasOwn(patch, 'sourceReferenceId')) corePayload.source_reference_id = normalizeText(patch.sourceReferenceId) || null
+  if (hasOwn(patch, 'rawEnquiryPayload')) corePayload.raw_enquiry_payload = patch.rawEnquiryPayload ?? null
 
   if (hasOwn(patch, 'listingId')) bridgePayload.listing_id = normalizeText(patch.listingId) || null
   if (hasOwn(patch, 'mandatePacketId')) {
@@ -446,6 +464,15 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
     seller_property_address: normalizeText(lead.sellerPropertyAddress) || null,
     estimated_value: Number(lead.estimatedValue || 0) || 0,
     listing_id: normalizeText(lead.listingId) || null,
+    enquired_listing_id: hasOwn(lead, 'enquiredListingId') ? normalizeText(lead.enquiredListingId) || null : null,
+    enquired_property_title: hasOwn(lead, 'enquiredPropertyTitle') ? normalizeText(lead.enquiredPropertyTitle) || null : null,
+    enquired_property_address: hasOwn(lead, 'enquiredPropertyAddress') ? normalizeText(lead.enquiredPropertyAddress) || null : null,
+    enquired_property_price:
+      hasOwn(lead, 'enquiredPropertyPrice') && lead.enquiredPropertyPrice !== '' && lead.enquiredPropertyPrice !== undefined && lead.enquiredPropertyPrice !== null
+        ? Number(lead.enquiredPropertyPrice) || null
+        : null,
+    source_reference_id: hasOwn(lead, 'sourceReferenceId') ? normalizeText(lead.sourceReferenceId) || null : null,
+    raw_enquiry_payload: hasOwn(lead, 'rawEnquiryPayload') ? (lead.rawEnquiryPayload ?? null) : null,
     notes: normalizeText(lead.notes) || null,
     updated_at: lead.updatedAt,
   }
@@ -643,7 +670,19 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
     let leadResult = await supabase.from('leads').upsert(leadPayloadForRemote, { onConflict: 'lead_id' })
     if (leadResult.error && isMissingColumnError(leadResult.error)) {
       const fallbackLeadPayload = { ...leadPayloadForRemote }
-      const optionalColumns = ['listing_id', 'branch_id', 'assigned_user_id', 'assigned_agent_email', 'created_by']
+      const optionalColumns = [
+        'listing_id',
+        'branch_id',
+        'assigned_user_id',
+        'assigned_agent_email',
+        'created_by',
+        'enquired_listing_id',
+        'enquired_property_title',
+        'enquired_property_address',
+        'enquired_property_price',
+        'source_reference_id',
+        'raw_enquiry_payload',
+      ]
       let recovered = false
       for (const column of optionalColumns) {
         if (!Object.prototype.hasOwnProperty.call(fallbackLeadPayload, column)) continue
@@ -663,6 +702,12 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
         delete legacyLeadPayload.branch_id
         delete legacyLeadPayload.assigned_user_id
         delete legacyLeadPayload.created_by
+        delete legacyLeadPayload.enquired_listing_id
+        delete legacyLeadPayload.enquired_property_title
+        delete legacyLeadPayload.enquired_property_address
+        delete legacyLeadPayload.enquired_property_price
+        delete legacyLeadPayload.source_reference_id
+        delete legacyLeadPayload.raw_enquiry_payload
         leadResult = await supabase.from('leads').upsert(legacyLeadPayload, { onConflict: 'lead_id' })
       }
     }

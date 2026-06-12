@@ -34,10 +34,10 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
+import SectionHeader from '../components/ui/SectionHeader'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles'
-import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary, saveTransaction } from '../lib/api'
-import { listAppointmentsAsync } from '../lib/agencyPipelineService'
+import { saveTransaction } from '../lib/api'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import {
@@ -46,7 +46,6 @@ import {
   assignOrganisationUserCommissionProfile,
   listOrganisationCommissionStructures,
   listOrganisationUserCommissionProfiles,
-  listOrganisationUsers,
   updateOrganisationUserRole,
 } from '../lib/settingsApi'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
@@ -67,7 +66,7 @@ import {
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import { LEADERBOARD_METRICS } from '../modules/agency/agents/agentPerformanceUtils'
 import { loadAgentPerformanceSources } from '../modules/agency/agents/agentPerformanceDataService'
-import { getPrincipalAgentCommandCentre } from '../modules/agency/agents/principalAgentCommandCentreService'
+import { getPrincipalAgentCommandCentre, getPrincipalAgentDetailCommandCentre } from '../modules/agency/agents/principalAgentCommandCentreService'
 import {
   discoverAgentOffboardingAssets,
   executeAgentAssetReassignment,
@@ -95,8 +94,7 @@ const AGENT_WORKSPACE_TABS = [
   { key: 'listings', label: 'Listings', icon: Building2 },
   { key: 'clients', label: 'Clients', icon: Users },
   { key: 'performance', label: 'Performance', icon: Trophy },
-  { key: 'commission', label: 'Commission', icon: DollarSign },
-  { key: 'permissions', label: 'Permissions', icon: ShieldCheck },
+  { key: 'calendar', label: 'Calendar', icon: CalendarDays },
   { key: 'settings', label: 'Settings', icon: Settings },
 ]
 
@@ -176,6 +174,54 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatTime(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleTimeString('en-ZA', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function getEmailPrefix(value) {
+  const email = String(value || '').trim()
+  if (!email.includes('@')) return email || 'Agent'
+  return email.split('@')[0]
+}
+
+function getAgentPrimaryName(agent = {}) {
+  const profileFullName = String(agent?.profile?.full_name || agent?.profile?.fullName || '').trim()
+  if (profileFullName) return profileFullName
+  const directFullName = String(agent?.fullName || agent?.full_name || '').trim()
+  if (directFullName) return directFullName
+  const firstLastName = [agent?.firstName || agent?.first_name, agent?.lastName || agent?.last_name].filter(Boolean).join(' ').trim()
+  if (firstLastName) return firstLastName
+  const userMetadataFullName = String(agent?.userMetadata?.full_name || agent?.user_metadata?.full_name || '').trim()
+  if (userMetadataFullName) return userMetadataFullName
+  return String(agent?.name || '').trim() || getEmailPrefix(agent?.email)
+}
+
+function getAgentRoleTitle(agent = {}) {
+  const explicitTitle = String(agent?.title || agent?.jobTitle || agent?.position || '').trim()
+  if (explicitTitle) return explicitTitle
+  return formatRoleLabel(agent?.role)
+}
+
+function formatSummaryMetricValue(metric = {}) {
+  if (metric.format === 'currency') return formatCurrency(metric.value)
+  if (metric.format === 'percent') return `${Math.round(Number(metric.value || 0))}%`
+  return metric.value ?? '—'
+}
+
+function getAppointmentStatusClass(status = '') {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized.includes('completed')) return 'border-[#d7e7dd] bg-[#edf9f1] text-[#1d7d45]'
+  if (normalized.includes('confirmed') || normalized.includes('accepted')) return 'border-[#dbe6f4] bg-[#f1f7ff] text-[#1f4f78]'
+  if (normalized.includes('cancel') || normalized.includes('declin') || normalized.includes('no_show')) return 'border-[#f3d8d8] bg-[#fff4f4] text-[#a03c3c]'
+  return 'border-[#ece4c7] bg-[#fff8eb] text-[#8a641d]'
 }
 
 function getAgentInitials(agent) {
@@ -582,13 +628,23 @@ function normalizeOrganisationUserAgent(user = {}, context = {}) {
   const id = normalizeAgentRecordId(user.id || user.userId || email)
   if (!id && !email) return null
   const role = String(user.role || 'agent').trim().toLowerCase()
-  const fullName = String(user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || email || 'Agent').trim()
+  const firstName = String(user.firstName || user.first_name || '').trim()
+  const lastName = String(user.lastName || user.last_name || '').trim()
+  const userMetadata = user.userMetadata || user.user_metadata || {}
+  const fullName = String(user.fullName || user.full_name || user.profile?.full_name || [firstName, lastName].filter(Boolean).join(' ') || userMetadata.full_name || email || 'Agent').trim()
   const overrideSplit = Number(user.overrideAgentSplitPercentage)
   return {
     id: id || email,
     organisationUserId: normalizeAgentRecordId(user.id),
     userId: normalizeAgentRecordId(user.userId),
     name: fullName,
+    fullName,
+    firstName,
+    lastName,
+    title: String(user.title || user.jobTitle || user.position || '').trim(),
+    profile: user.profile || null,
+    userMetadata,
+    createdAt: user.createdAt || user.created_at || null,
     email,
     phone: user.phone || '',
     avatarUrl: getAgentAvatarUrl(user),
@@ -839,6 +895,13 @@ function mergeAgentRows(baseRows = [], overlayRows = []) {
       organisationUserId: overlay.organisationUserId || existing.organisationUserId,
       userId: overlay.userId || existing.userId,
       name: overlay.name || existing.name,
+      fullName: overlay.fullName || existing.fullName,
+      firstName: overlay.firstName || existing.firstName,
+      lastName: overlay.lastName || existing.lastName,
+      title: overlay.title || existing.title,
+      profile: overlay.profile || existing.profile,
+      userMetadata: overlay.userMetadata || existing.userMetadata,
+      createdAt: overlay.createdAt || existing.createdAt,
       email: overlay.email || existing.email,
       phone: overlay.phone || existing.phone,
       avatarUrl: getAgentAvatarUrl(overlay) || getAgentAvatarUrl(existing),
@@ -3276,16 +3339,6 @@ function buildWorkspaceListingStatuses(listings) {
   })
 }
 
-function WorkspaceHeroMetric({ label, value, helper = '' }) {
-  return (
-    <div className="min-w-0 border-t border-[#e5edf6] pt-3 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0 2xl:pl-5">
-      <p className="truncate text-[1.15rem] font-semibold tracking-[-0.035em] text-[#10243a] 2xl:text-[1.35rem]" title={String(value ?? '—')}>{value ?? '—'}</p>
-      <p className="mt-1 truncate text-xs font-medium text-[#647a92]" title={label}>{label}</p>
-      {helper ? <p className="mt-1 truncate text-[0.68rem] text-[#8a9aab]">{helper}</p> : null}
-    </div>
-  )
-}
-
 function MonthSummaryMetric({ label, value }) {
   return (
     <div className="min-w-0 border-t border-[#e8eff7] pt-4 first:border-t-0 first:pt-0 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0 sm:first:border-l-0 sm:first:pl-0">
@@ -3380,7 +3433,7 @@ function FinancialPerformanceCard({ rows }) {
   )
 }
 
-function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], onRefresh }) {
+function AgentWorkspace({ agent, canManageSettings = false, commissionStructures = [], workspaceSnapshot = {}, onRefresh }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
   const [editMenuOpen, setEditMenuOpen] = useState(false)
@@ -3424,6 +3477,18 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     setPermissionsForm({ role: agent.role || 'agent' })
   }, [agent.role, modalMode])
 
+  const {
+    branches = [],
+    leads = [],
+    transactions = [],
+    listings = [],
+    appointments = [],
+    tasks = [],
+    leadActivities = [],
+    canvassingProspects = [],
+    canvassingActivities = [],
+  } = workspaceSnapshot
+
   const developmentListings = agent.developmentListings || []
   const privateListings = agent.privateListings || []
   const allListings = [...developmentListings, ...privateListings.map((listing) => ({
@@ -3443,12 +3508,42 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const activeDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'active')
   const completedDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'completed')
   const cancelledDeals = agent.deals.filter((row) => normalizeDealStatus(row) === 'cancelled')
-  const dealStages = buildWorkspaceDealStages(agent, activeDeals, completedDeals)
-  const listingStatuses = buildWorkspaceListingStatuses(allListings)
-  const lastActivity = getAgentLastActivityDate(agent)
   const activeClientCount = Math.max(agent.pipelineRows?.length || 0, getNumericMetric(agent, 'activeDeals'))
-  const avgDealSize = completedDeals.length ? formatCurrency(getNumericMetric(agent, 'totalSalesValue') / completedDeals.length) : '—'
   const conversionRate = agent.deals.length ? `${Math.round((getNumericMetric(agent, 'registeredDeals') / agent.deals.length) * 100)}%` : '—'
+  const commandCentre = useMemo(
+    () =>
+      getPrincipalAgentDetailCommandCentre({
+        agent,
+        branches,
+        leads,
+        transactions,
+        listings,
+        appointments,
+        tasks,
+        activities: leadActivities,
+        canvassingProspects,
+        canvassingActivities,
+      }),
+    [agent, appointments, branches, canvassingActivities, canvassingProspects, leadActivities, leads, listings, tasks, transactions],
+  )
+  const agentDisplayName = getAgentPrimaryName(agent)
+  const agentRoleTitle = getAgentRoleTitle(agent)
+  const lastActivity = commandCentre?.agentIdentity?.lastActivityAt || getAgentLastActivityDate(agent)
+  const joinedDate = commandCentre?.agentIdentity?.joinedAt || agent.activatedAt || agent.invitedAt || agent.createdAt
+  const branchName = commandCentre?.agentIdentity?.branchName || agent.office || agent.organisationName || '—'
+  const dealStages = commandCentre?.existingCharts?.dealStages || buildWorkspaceDealStages(agent, activeDeals, completedDeals)
+  const listingStatuses = commandCentre?.existingCharts?.listingStatuses || buildWorkspaceListingStatuses(allListings)
+  const financialRows = (commandCentre?.existingCharts?.financialRows || []).map(([label, value]) => [
+    label,
+    typeof value === 'number' && label !== 'Average Response Time' ? formatCurrency(value) : value || '—',
+  ])
+  const monthSummary = commandCentre?.monthlyPerformance?.metrics || []
+  const headerActionPermissions = commandCentre?.headerActionsPermissions || {
+    canMessage: Boolean(agent.email),
+    canViewCalendar: true,
+    canAssignDeal: true,
+    canAssignListing: true,
+  }
 
   const recentActivity = [
     ...agent.recentDeals.map((row) => ({
@@ -3480,34 +3575,13 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime())
     .slice(0, 7)
 
-  const heroMetrics = [
-    { label: 'Pipeline Value', value: formatCurrency(getNumericMetric(agent, 'pipelineValue')) },
-    { label: 'Active Deals', value: getNumericMetric(agent, 'activeDeals') },
-    { label: 'Listings', value: getNumericMetric(agent, 'activeListings') },
-    { label: 'Commission Generated', value: formatCurrency(getNumericMetric(agent, 'commissionEarned')) },
-  ]
-
-  const monthSummary = [
-    { label: 'Deals Registered', value: getNumericMetric(agent, 'registeredDeals') },
-    { label: 'Deals Closed', value: getNumericMetric(agent, 'completedDeals') },
-    { label: 'Sales Value', value: formatCurrency(getNumericMetric(agent, 'totalSalesValue')) },
-    { label: 'Commission Generated', value: formatCurrency(getNumericMetric(agent, 'commissionEarned')) },
-  ]
-
-  const financialRows = [
-    ['Sales Value', formatCurrency(getNumericMetric(agent, 'totalSalesValue'))],
-    ['Commission Earned', formatCurrency(getNumericMetric(agent, 'commissionEarned'))],
-    ['Projected Commission', getNumericMetric(agent, 'activeDealValue') ? formatCurrency(getNumericMetric(agent, 'activeDealValue') * 0.03) : '—'],
-    ['Average Deal Size', avgDealSize],
-  ]
-
   const contactRows = [
     ['Email', getWorkspaceDisplayValue(agent.email)],
     ['Phone', getWorkspaceDisplayValue(agent.phone)],
     ['Mobile', getWorkspaceDisplayValue(agent.mobile || agent.phone)],
-    ['Branch', getWorkspaceDisplayValue(agent.office || agent.organisationName)],
-    ['Joined', getWorkspaceDisplayValue(agent.activatedAt || agent.invitedAt, formatDate)],
-    ['Role', formatRoleLabel(agent.role)],
+    ['Branch', getWorkspaceDisplayValue(branchName)],
+    ['Joined', getWorkspaceDisplayValue(joinedDate, formatDate)],
+    ['Role / Title', getWorkspaceDisplayValue(agentRoleTitle)],
     ['Last Login', getWorkspaceDisplayValue(agent.lastActiveAt, formatDateTime)],
   ]
 
@@ -3617,6 +3691,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
 
   const actionItems = [
     ['message', 'Message', MessageCircle, false],
+    ['calendar', 'View Calendar', CalendarDays, false],
     ['assign-deal', 'Assign Deal', BriefcaseBusiness, false],
     ['assign-listing', 'Assign Listing', Building2, false],
     ['profile', 'Edit Profile', Edit3, false],
@@ -3642,57 +3717,89 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       ) : null}
 
       <section className="min-w-0 rounded-3xl border border-[#dde6f1] bg-white p-4 shadow-[0_16px_36px_rgba(15,23,42,0.06)] sm:p-5 lg:p-6">
-        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(260px,0.86fr)_minmax(360px,1fr)] xl:items-center 2xl:grid-cols-[minmax(300px,0.9fr)_minmax(460px,1.25fr)_auto]">
+        <div className="flex min-w-0 flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex min-w-0 items-center gap-3 2xl:gap-4">
             <span className="relative inline-flex h-16 w-16 shrink-0 sm:h-20 sm:w-20 2xl:h-24 2xl:w-24">
               <AgentAvatar agent={agent} className="h-full w-full border border-[#d7e2ef] bg-[linear-gradient(135deg,#f8fbff,#e7eef7)] text-2xl font-semibold text-[#2f5578]" />
               <span className="absolute bottom-1 right-1 h-4 w-4 rounded-full border-2 border-white bg-[#16a365]" />
             </span>
             <div className="min-w-0">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <h1 className="min-w-0 truncate text-[1.35rem] font-semibold tracking-[-0.045em] text-[#10243a] 2xl:text-[1.65rem]">{agent.name || 'Agent'}</h1>
+              <h1 className="min-w-0 truncate text-[1.35rem] font-semibold tracking-[-0.045em] text-[#10243a] 2xl:text-[1.65rem]">{agentDisplayName}</h1>
+              <p className="mt-1 truncate text-sm font-semibold text-[#536b84]">{agentRoleTitle}</p>
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-[#61778f]">
                 <StatusBadge agent={agent} />
+                <span>·</span>
+                <span className="truncate">{branchName}</span>
+                <span>·</span>
+                <span className="inline-flex items-center gap-1">
+                  <Clock3 size={14} />
+                  Last activity {lastActivity ? formatRelativeActivity(lastActivity) : '—'}
+                </span>
+                {joinedDate ? (
+                  <>
+                    <span>·</span>
+                    <span>Joined {formatDate(joinedDate)}</span>
+                  </>
+                ) : null}
               </div>
-              <p className="mt-1 truncate text-sm font-semibold text-[#536b84]">
-                {formatRoleLabel(agent.role)} <span className="mx-2 text-[#b5c2d0]">•</span> {agent.office || agent.organisationName || '—'}
-              </p>
-              <p className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-[#61778f]">
-                <Clock3 size={15} />
-                Last activity: {lastActivity ? formatRelativeActivity(lastActivity) : '—'}
-              </p>
             </div>
           </div>
 
-          <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-4 2xl:gap-4">
-            {heroMetrics.map((metric) => (
-              <WorkspaceHeroMetric key={metric.label} label={metric.label} value={metric.value} />
-            ))}
-          </div>
-
-          <div className="flex min-w-0 items-center justify-start gap-2 xl:col-span-2 xl:justify-end 2xl:col-span-1">
-            <div className="hidden min-w-0 grid-cols-3 gap-2 md:grid xl:w-full xl:max-w-[640px] 2xl:flex 2xl:w-auto 2xl:max-w-none 2xl:flex-wrap 2xl:justify-end">
-              <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4" onClick={() => openPlaceholder('message')}>
+          <div className="flex min-w-0 flex-wrap items-center gap-2 xl:justify-end">
+            {headerActionPermissions.canMessage ? (
+              <button
+                type="button"
+                className="hidden min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] md:inline-flex 2xl:px-4"
+                onClick={() => openPlaceholder('message')}
+              >
                 <MessageCircle size={16} />
                 Message
               </button>
-              <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4" onClick={() => openPlaceholder('assign-deal')}>
+            ) : null}
+            {headerActionPermissions.canViewCalendar ? (
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4"
+                onClick={() => setActiveTab('calendar')}
+              >
+                <CalendarDays size={16} />
+                View Calendar
+              </button>
+            ) : null}
+            {headerActionPermissions.canAssignDeal ? (
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#0f2742] px-3 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.18)] transition hover:bg-[#173a5e] 2xl:px-4"
+                onClick={() => openPlaceholder('assign-deal')}
+              >
                 <BriefcaseBusiness size={16} />
                 Assign Deal
               </button>
-              <button type="button" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4" onClick={() => openPlaceholder('assign-listing')}>
+            ) : null}
+            {headerActionPermissions.canAssignListing ? (
+              <button
+                type="button"
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#173a5e] px-3 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.14)] transition hover:bg-[#204a74] 2xl:px-4"
+                onClick={() => openPlaceholder('assign-listing')}
+              >
                 <List size={16} />
                 Assign Listing
               </button>
-            </div>
-            <div className="relative w-full md:w-auto">
-              <button type="button" onClick={() => setEditMenuOpen((open) => !open)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#0f2742] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(15,39,66,0.18)] transition hover:bg-[#173a5e] md:w-auto">
+            ) : null}
+            <div className="relative w-full sm:w-auto">
+              <button type="button" onClick={() => setEditMenuOpen((open) => !open)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] sm:w-auto">
                 More
                 <MoreHorizontal size={16} />
               </button>
               {editMenuOpen ? (
                 <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-56 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)]">
                   {actionItems.map(([key, label, icon]) => (
-                    <button key={key} type="button" className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={() => openPlaceholder(key)}>
+                    <button
+                      key={key}
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
+                      onClick={() => (key === 'calendar' ? setActiveTab('calendar') : openPlaceholder(key))}
+                    >
                       {createElement(icon, { size: 15 })}
                       {label}
                     </button>
@@ -3729,13 +3836,105 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
 
       {effectiveActiveTab === 'overview' ? (
         <section className="min-w-0 space-y-4">
-          <WorkspaceCard title="This Month Summary" actionLabel="This Month">
-            <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {monthSummary.map((metric) => (
-                <MonthSummaryMetric key={metric.label} label={metric.label} value={metric.value} />
-              ))}
-            </div>
+          <WorkspaceCard title="Prospecting Activity" actionLabel="This Month">
+            {commandCentre?.prospectingActivity?.hasActivity ? (
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                {commandCentre.prospectingActivity.metrics.map((metric) => (
+                  <AgentMetricCard key={metric.key} label={metric.label} value={metric.value} helper="This month" />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
+                No prospecting activity captured for this agent yet.
+              </div>
+            )}
           </WorkspaceCard>
+
+          <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+            <WorkspaceCard title="Pipeline Health">
+              {commandCentre?.pipelineHealth?.hasPipeline ? (
+                <>
+                  <div className="grid min-w-0 gap-3 sm:grid-cols-3">
+                    <AgentMetricCard label="Pipeline Value" value={formatCurrency(commandCentre.pipelineHealth.pipelineValue)} helper="Open opportunities" />
+                    <AgentMetricCard label="Active Deals" value={commandCentre.pipelineHealth.activeDeals} helper="Live transactions" />
+                    <AgentMetricCard label="At Risk / Overdue" value={commandCentre.pipelineHealth.atRiskDeals} helper="Needs intervention" />
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {commandCentre.pipelineHealth.stages.map((stage) => (
+                      <div key={stage.key} className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{stage.label}</p>
+                        <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{stage.count}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
+                  No pipeline activity is currently assigned to this agent.
+                </div>
+              )}
+            </WorkspaceCard>
+
+            <WorkspaceCard title="Calendar & Appointments">
+              {commandCentre?.calendarSummary?.hasAppointments ? (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Today&apos;s Schedule</p>
+                    <div className="mt-3 space-y-2">
+                      {(commandCentre.calendarSummary.todayItems || []).length ? commandCentre.calendarSummary.todayItems.map((item) => (
+                        <div key={item.id} className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-[#10243a]">{item.title}</p>
+                            <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getAppointmentStatusClass(item.status)}`}>{item.statusLabel}</span>
+                          </div>
+                          <p className="mt-1 text-sm text-[#60758d]">{formatTime(item.dateTime)}{item.relatedLabel ? ` • ${item.relatedLabel}` : ''}</p>
+                        </div>
+                      )) : <p className="rounded-xl bg-[#f8fbff] px-4 py-3 text-sm text-[#61778f]">No appointments scheduled today.</p>}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Next 7 Days</p>
+                    <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {commandCentre.calendarSummary.nextSevenDayCounts.map((item) => (
+                        <AgentMetricCard key={item.key} label={item.label} value={item.count} helper="Scheduled" />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
+                  No appointments scheduled.
+                </div>
+              )}
+            </WorkspaceCard>
+          </div>
+
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
+            <WorkspaceCard title="Follow-Up Compliance">
+              {commandCentre?.followUpCompliance?.hasSignals ? (
+                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                  {commandCentre.followUpCompliance.tasksCompletedPercent !== null ? (
+                    <AgentMetricCard label="Tasks Completed %" value={`${commandCentre.followUpCompliance.tasksCompletedPercent}%`} helper="This month" />
+                  ) : null}
+                  <AgentMetricCard label="Overdue Tasks" value={commandCentre.followUpCompliance.overdueTasks} helper="Needs action" />
+                  <AgentMetricCard label="Average Response Time" value={commandCentre.followUpCompliance.averageResponseTimeLabel} helper="Lead response" />
+                  <AgentMetricCard label="Follow-ups Due Today" value={commandCentre.followUpCompliance.dueToday} helper="Today" />
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
+                  No follow-up pressure is showing for this agent right now.
+                </div>
+              )}
+            </WorkspaceCard>
+
+            <WorkspaceCard title="This Month Summary" actionLabel="This Month">
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {monthSummary.map((metric) => (
+                  <MonthSummaryMetric key={metric.key || metric.label} label={metric.label} value={formatSummaryMetricValue(metric)} />
+                ))}
+              </div>
+            </WorkspaceCard>
+          </div>
 
           <div className="grid min-w-0 gap-4 lg:grid-cols-3 2xl:gap-5">
             <DealsByStageCard stages={dealStages} />
@@ -3743,58 +3942,28 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             <FinancialPerformanceCard rows={financialRows} />
           </div>
 
-          <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <AgentManagementCard title="Contact Details" actionLabel="Edit" onAction={() => openPlaceholder('profile')}>
-              <div className="space-y-1">
-                {contactRows.map(([label, value]) => (
-                  <DetailInfoRow key={label} label={label} value={value} />
+          <WorkspaceCard title="Recent Activity">
+            {recentActivity.length ? (
+              <div className="space-y-2">
+                {recentActivity.map((item) => (
+                  <div key={item.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
+                    <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${item.tone}`}>
+                      {createElement(item.icon, { size: 16 })}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-[#10243a]">{item.label}</p>
+                      <p className="truncate text-xs text-[#60758d]">{item.record}</p>
+                    </div>
+                    <span className="shrink-0 text-xs font-medium text-[#6f839a]">{formatDateTime(item.timestamp)}</span>
+                  </div>
                 ))}
               </div>
-            </AgentManagementCard>
-
-            <AgentManagementCard title="Commission Plan" actionLabel="View Plan" onAction={() => openPlaceholder('commission')}>
-              <div className="space-y-1">
-                {commissionPlanRows.map(([label, value]) => (
-                  <DetailInfoRow key={label} label={label} value={value} />
-                ))}
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
+                No recent activity has been logged for this agent.
               </div>
-            </AgentManagementCard>
-
-            <AgentManagementCard title="Team & Allocation" actionLabel="Manage Team" onAction={() => openPlaceholder('team')}>
-              <div className="space-y-1">
-                {teamAllocationRows.map(([label, value]) => (
-                  <DetailInfoRow key={label} label={label} value={value} />
-                ))}
-              </div>
-            </AgentManagementCard>
-
-            <AgentManagementCard title="Agent Actions">
-              <div className="space-y-1">
-                {[
-                  ['reset-password', 'Reset Password', KeyRound],
-                  ['resend-invite', agent.inviteId ? 'Resend Invite' : 'Send Invite', Send],
-                  ['login-activity', 'View Login Activity', Clock3],
-                ].map(([key, label, icon]) => (
-                  <button key={key} type="button" onClick={() => openPlaceholder(key)} className="flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-2.5 text-left text-sm font-semibold text-[#294159] transition hover:bg-[#f7fafc] hover:text-[#0f2742]">
-                    {createElement(icon, { size: 16, className: 'shrink-0' })}
-                    <span className="truncate">{label}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-3 border-t border-[#f1d1cf] pt-3">
-                {[
-                  ['deactivate', 'Deactivate Agent', XCircle],
-                  ['archive', 'Archive Agent', Archive],
-                  ['remove', 'Remove Agent', Trash2],
-                ].map(([key, label, icon]) => (
-                  <button key={key} type="button" onClick={() => setPendingAction(key)} className="flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-2.5 text-left text-sm font-semibold text-[#b42318] transition hover:bg-[#fff7f6] hover:text-[#8a1c14]">
-                    {createElement(icon, { size: 16, className: 'shrink-0' })}
-                    <span className="truncate">{label}</span>
-                  </button>
-                ))}
-              </div>
-            </AgentManagementCard>
-          </div>
+            )}
+          </WorkspaceCard>
         </section>
       ) : null}
 
@@ -3872,54 +4041,125 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
         </PrincipalAgentTabShell>
       ) : null}
 
-      {effectiveActiveTab === 'commission' ? (
-        <PrincipalAgentTabShell title="Commission" description="Commission plan, split and transaction commission history." actionLabel="Manage Commission" onAction={() => openPlaceholder('commission')}>
+      {effectiveActiveTab === 'calendar' ? (
+        <PrincipalAgentTabShell title="Calendar" description="Upcoming and historical appointments scoped to this agent.">
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <AgentMetricCard label="Upcoming Appointments" value={commandCentre?.calendarSummary?.upcomingItems?.length || 0} helper="Scheduled ahead" />
+            <AgentMetricCard label="Past Appointments" value={commandCentre?.calendarSummary?.pastItems?.length || 0} helper="History" />
+            <AgentMetricCard label="Viewings" value={commandCentre?.calendarSummary?.nextSevenDayCounts?.find((item) => item.key === 'viewings')?.count || 0} helper="Next 7 days" />
+            <AgentMetricCard label="Valuations" value={commandCentre?.calendarSummary?.nextSevenDayCounts?.find((item) => item.key === 'valuations')?.count || 0} helper="Next 7 days" />
+          </div>
+
+          <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-2">
+            <WorkspaceCard title="Upcoming Appointments">
+              {(commandCentre?.calendarSummary?.upcomingItems || []).length ? (
+                <div className="space-y-2">
+                  {commandCentre.calendarSummary.upcomingItems.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-[#10243a]">{item.title}</p>
+                        <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getAppointmentStatusClass(item.status)}`}>{item.statusLabel}</span>
+                      </div>
+                      <p className="mt-1 text-sm text-[#60758d]">{formatDate(item.dateTime)} at {formatTime(item.dateTime)}</p>
+                      <p className="mt-1 text-xs text-[#6f839a]">
+                        {[item.type, item.relatedLabel, item.location || item.meetingUrl].filter(Boolean).join(' • ') || 'Details pending'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
+                  No appointments scheduled.
+                </div>
+              )}
+            </WorkspaceCard>
+
+            <WorkspaceCard title="Past Appointments">
+              {(commandCentre?.calendarSummary?.pastItems || []).length ? (
+                <div className="space-y-2">
+                  {commandCentre.calendarSummary.pastItems.slice(0, 10).map((item) => (
+                    <div key={item.id} className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-[#10243a]">{item.title}</p>
+                        <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getAppointmentStatusClass(item.status)}`}>{item.statusLabel}</span>
+                      </div>
+                      <p className="mt-1 text-sm text-[#60758d]">{formatDate(item.dateTime)} at {formatTime(item.dateTime)}</p>
+                      <p className="mt-1 text-xs text-[#6f839a]">
+                        {[item.type, item.relatedLabel, item.location || item.meetingUrl].filter(Boolean).join(' • ') || 'Details pending'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
+                  No appointment history is available yet.
+                </div>
+              )}
+            </WorkspaceCard>
+          </div>
+        </PrincipalAgentTabShell>
+      ) : null}
+
+      {effectiveActiveTab === 'settings' ? (
+        <PrincipalAgentTabShell title="Settings" description="Profile, permissions, commission structure, notifications and account controls.">
           <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
-            <AgentManagementCard title="Current Plan">
+            <AgentManagementCard title="Profile" actionLabel="Edit" onAction={() => openPlaceholder('profile')}>
+              <div className="space-y-1">
+                {contactRows.map(([label, value]) => (
+                  <DetailInfoRow key={label} label={label} value={value} />
+                ))}
+              </div>
+            </AgentManagementCard>
+
+            <AgentManagementCard title="Permissions" actionLabel="Manage" onAction={() => openPlaceholder('permissions')}>
+              <div className="space-y-1">
+                {permissionRows.map(([label, value]) => (
+                  <DetailInfoRow key={label} label={label} value={value} />
+                ))}
+              </div>
+            </AgentManagementCard>
+
+            <AgentManagementCard title="Commission Structure" actionLabel="Manage" onAction={() => openPlaceholder('commission')}>
               <div className="space-y-1">
                 {commissionPlanRows.map(([label, value]) => (
                   <DetailInfoRow key={label} label={label} value={value} />
                 ))}
               </div>
             </AgentManagementCard>
-            <AgentManagementCard title="Commission Earned">
-              <AgentMetricCard label="Estimated Commission" value={formatCurrency(getNumericMetric(agent, 'commissionEarned'))} helper="Based on completed deals" />
-              <p className="mt-3 text-sm text-[#61778f]">Transaction-level commission breakdowns will appear once commission rules are connected.</p>
+
+            <AgentManagementCard title="Notification Settings">
+              <DetailInfoRow label="Email Alerts" value={agent.email ? 'Enabled via user profile' : 'No email on profile'} />
+              <DetailInfoRow label="Mobile Alerts" value={agent.phone ? 'Enabled via user profile' : 'No mobile number on profile'} />
+              <DetailInfoRow label="Last Login" value={formatDateTime(agent.lastActiveAt)} />
+              <button type="button" className="mt-3 truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('notification-preferences')}>Notification preferences</button>
             </AgentManagementCard>
-          </div>
-        </PrincipalAgentTabShell>
-      ) : null}
 
-      {effectiveActiveTab === 'permissions' ? (
-        <PrincipalAgentTabShell title="Permissions" description="Role, workspace access and module permissions for this agent." actionLabel="Manage Permissions" onAction={() => openPlaceholder('permissions')}>
-          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-3">
-            {permissionRows.map(([label, value]) => (
-              <div key={label} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
-                <span className="min-w-0 truncate font-semibold text-[#20364d]">{label}</span>
-                <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-xs font-semibold text-[#405870]">{value}</span>
-              </div>
-            ))}
-          </div>
-        </PrincipalAgentTabShell>
-      ) : null}
-
-      {effectiveActiveTab === 'settings' ? (
-        <PrincipalAgentTabShell title="Settings" description="Agent account, role, status and administrative controls.">
-          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
-            <AgentManagementCard title="Account State">
+            <AgentManagementCard title="Account Settings">
               <DetailInfoRow label="Status" value={getAgentStatusMeta(agent).label} />
               <DetailInfoRow label="Role" value={formatRoleLabel(agent.role)} />
-              <DetailInfoRow label="Branch" value={agent.office || agent.organisationName || '—'} />
+              <DetailInfoRow label="Branch" value={branchName} />
               <DetailInfoRow label="Invite Sent" value={formatDateTime(agent.invitedAt)} />
               <DetailInfoRow label="Activated" value={formatDateTime(agent.activatedAt)} />
-              <DetailInfoRow label="Last Login" value={formatDateTime(agent.lastActiveAt)} />
-            </AgentManagementCard>
-            <AgentManagementCard title="Administrative Controls">
-              <div className="grid gap-2">
-                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('profile')}>Edit profile and branch</button>
-                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('notification-preferences')}>Notification preferences</button>
+              <div className="mt-4 grid gap-2">
+                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => setActiveTab('calendar')}>Open calendar view</button>
                 <button type="button" className="truncate rounded-xl border border-[#f2c9c5] bg-[#fff8f7] px-4 py-2 text-left text-sm font-semibold text-[#b42318]" onClick={() => setPendingAction('deactivate')}>Deactivate agent</button>
                 <button type="button" className="truncate rounded-xl border border-[#f2c9c5] bg-[#fff8f7] px-4 py-2 text-left text-sm font-semibold text-[#b42318]" onClick={() => setPendingAction('remove')}>Remove agent</button>
+              </div>
+            </AgentManagementCard>
+
+            <AgentManagementCard title="Team & Allocation">
+              <div className="space-y-1">
+                {teamAllocationRows.map(([label, value]) => (
+                  <DetailInfoRow key={label} label={label} value={value} />
+                ))}
+              </div>
+            </AgentManagementCard>
+
+            <AgentManagementCard title="Administrative Controls">
+              <div className="grid gap-2">
+                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('team')}>Manage team allocation</button>
+                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('profile')}>Edit profile and branch</button>
+                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('notification-preferences')}>Notification preferences</button>
               </div>
             </AgentManagementCard>
           </div>
@@ -5824,6 +6064,17 @@ export function AgentWorkspacePage() {
   const [error, setError] = useState('')
   const [agent, setAgent] = useState(null)
   const [commissionStructures, setCommissionStructures] = useState([])
+  const [workspaceSnapshot, setWorkspaceSnapshot] = useState({
+    branches: [],
+    leads: [],
+    transactions: [],
+    listings: [],
+    appointments: [],
+    tasks: [],
+    leadActivities: [],
+    canvassingProspects: [],
+    canvassingActivities: [],
+  })
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
   const canManageSettings = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
@@ -5857,17 +6108,18 @@ export function AgentWorkspacePage() {
       setError('')
 
       const [
-        transactions,
-        organisationSettings,
-        organisationUsers,
+        performanceSources,
         commissionStructureRows,
         commissionProfileRows,
       ] = await Promise.all([
-        canManageSettings
-          ? fetchTransactionsListSummary({ activeTransactionsOnly: false })
-          : fetchTransactionsByParticipantSummary({ userId: profile?.id, roleType: role }),
-        fetchOrganisationSettings().catch(() => null),
-        canManageSettings ? listOrganisationUsers().catch(() => []) : Promise.resolve([]),
+        loadAgentPerformanceSources({
+          canManageDirectory: canManageSettings,
+          profile,
+          role,
+          directory: readAgentDirectory(),
+          localPrivateListings: readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY),
+          localPipelineRows: readLocalRows(PIPELINE_STORAGE_KEY),
+        }),
         canManageSettings ? listOrganisationCommissionStructures().catch(() => []) : Promise.resolve([]),
         canManageSettings ? listOrganisationUserCommissionProfiles().catch(() => []) : Promise.resolve([]),
       ])
@@ -5875,34 +6127,18 @@ export function AgentWorkspacePage() {
       const commissionProfileMap = createCommissionProfileMap(Array.isArray(commissionProfileRows) ? commissionProfileRows : [])
       setCommissionStructures(nextCommissionStructures)
 
-      const privateListings = readLocalRows(PRIVATE_LISTINGS_STORAGE_KEY)
-      const pipelineRows = readLocalRows(PIPELINE_STORAGE_KEY)
       const agentDirectory = readAgentDirectory()
-      let appointments = []
-      try {
-        const context = await fetchOrganisationSettings()
-        const organisationId = String(context?.organisation?.id || '').trim()
-        if (organisationId) {
-          appointments = await listAppointmentsAsync(organisationId, {
-            includeAll: canManageSettings,
-            agentId: canManageSettings ? '' : String(profile?.id || profile?.email || '').trim(),
-            agentEmail: canManageSettings ? '' : String(profile?.email || '').trim(),
-          })
-        }
-      } catch {
-        appointments = []
-      }
       const mappedAgents = computeAgentWorkspaceData({
-        transactions: Array.isArray(transactions) ? transactions : [],
-        privateListings,
-        pipelineRows,
-        appointments,
+        transactions: Array.isArray(performanceSources.transactions) ? performanceSources.transactions : [],
+        privateListings: Array.isArray(performanceSources.listings) ? performanceSources.listings : [],
+        pipelineRows: Array.isArray(performanceSources.leads) ? performanceSources.leads : [],
+        appointments: Array.isArray(performanceSources.appointments) ? performanceSources.appointments : [],
         agentDirectory,
       })
-      const organisationAgentRows = (organisationUsers || [])
+      const organisationAgentRows = (performanceSources.organisationUsers || [])
         .map((user) => normalizeOrganisationUserAgent(user, {
-          organisationId: organisationSettings?.organisation?.id || agentDirectory?.agency?.id,
-          organisationName: organisationSettings?.organisation?.name || agentDirectory?.agency?.name,
+          organisationId: performanceSources.organisationSettings?.organisation?.id || agentDirectory?.agency?.id,
+          organisationName: performanceSources.organisationSettings?.organisation?.name || agentDirectory?.agency?.name,
         }))
         .map((row) => enrichAgentWithCommissionProfile(row, commissionProfileMap, nextCommissionStructures))
         .filter(Boolean)
@@ -5915,15 +6151,37 @@ export function AgentWorkspacePage() {
         setAgent(null)
       } else {
         setAgent(target)
+        setWorkspaceSnapshot({
+          branches: performanceSources.branches || [],
+          leads: performanceSources.leads || [],
+          transactions: performanceSources.transactions || [],
+          listings: performanceSources.listings || [],
+          appointments: performanceSources.appointments || [],
+          tasks: performanceSources.tasks || [],
+          leadActivities: performanceSources.leadActivities || [],
+          canvassingProspects: performanceSources.canvassingProspects || [],
+          canvassingActivities: performanceSources.canvassingActivities || [],
+        })
       }
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load agent workspace.')
       setAgent(null)
       setCommissionStructures([])
+      setWorkspaceSnapshot({
+        branches: [],
+        leads: [],
+        transactions: [],
+        listings: [],
+        appointments: [],
+        tasks: [],
+        leadActivities: [],
+        canvassingProspects: [],
+        canvassingActivities: [],
+      })
     } finally {
       setLoading(false)
     }
-  }, [agentId, canAccess, canManageSettings, profile?.email, profile?.id, role])
+  }, [agentId, canAccess, canManageSettings, profile, role])
 
   useEffect(() => {
     void loadWorkspace()
@@ -5969,6 +6227,7 @@ export function AgentWorkspacePage() {
         agent={agent}
         canManageSettings={canManageSettings}
         commissionStructures={commissionStructures}
+        workspaceSnapshot={workspaceSnapshot}
         onRefresh={loadWorkspace}
       />
     </section>

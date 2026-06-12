@@ -129,7 +129,6 @@ import {
   completeRecommendation,
   convertRecommendationToTask,
   dismissRecommendation as dismissLeadRecommendation,
-  getRecommendationMetrics,
 } from '../services/leadRecommendationService'
 import {
   acceptSuggestion,
@@ -165,12 +164,23 @@ const VIEWING_NEXT_STEP_OPTIONS = [
   'Close out property',
 ]
 const LEAD_CATEGORY_FILTERS = [
-  { key: 'all', label: 'All Leads', helper: 'Unified operating list', icon: Tag },
-  { key: 'buyer', label: 'Buyer Leads', helper: 'Requirements, matches, viewings', icon: UserRound },
-  { key: 'seller', label: 'Seller Leads', helper: 'Property, mandate, listing readiness', icon: Home },
-  { key: 'other', label: 'Other', helper: 'Uncategorised follow-up', icon: FileText },
-  { key: 'archived', label: 'Archived', helper: 'Closed out and hidden from active views', icon: Archive },
+  { key: 'buyer', label: 'Buyer Leads' },
+  { key: 'seller', label: 'Seller Leads' },
+  { key: 'other', label: 'Other' },
+  { key: 'archived', label: 'Archived' },
 ]
+const LEAD_SOURCE_PILL_STYLES = {
+  property24: { tone: 'blue', label: 'Property24' },
+  privateProperty: { tone: 'green', label: 'Private Property' },
+  website: { tone: 'violet', label: 'Website' },
+  whatsapp: { tone: 'emerald', label: 'WhatsApp' },
+  call: { tone: 'red', label: 'Call' },
+  referral: { tone: 'amber', label: 'Referral' },
+  walkIn: { tone: 'slate', label: 'Walk-in' },
+  unknown: { tone: 'slate', label: 'Unknown' },
+}
+const LEAD_SOURCE_PILL_FALLBACK = LEAD_SOURCE_PILL_STYLES.unknown
+const LEAD_SOURCE_PILL_ORDER = ['property24', 'privateProperty', 'whatsapp', 'call', 'website', 'referral', 'walkIn', 'unknown']
 const LEAD_SOURCE_OPTIONS = [
   'Property24',
   'Private Property',
@@ -214,6 +224,21 @@ function splitName(fullName = '') {
 function normalizeLeadSourceOption(value = '') {
   const normalized = normalizeText(value)
   return LEAD_SOURCE_OPTIONS.includes(normalized) ? normalized : LEAD_SOURCE_OPTIONS[LEAD_SOURCE_OPTIONS.length - 1]
+}
+
+function normalizeLeadSourceForPill(value = '') {
+  const source = normalizeText(value).toLowerCase()
+  if (!source) return 'unknown'
+  if (source.includes('property24')) return 'property24'
+  if (source.includes('private') && source.includes('property')) return 'privateProperty'
+  if (source.includes('whatsapp')) return 'whatsapp'
+  if (source === 'call' || source.includes('phone')) return 'call'
+  if (source.includes('website')) return 'website'
+  if (source.includes('referral')) return 'referral'
+  if (source.includes('walk in') || source.includes('walk-in')) return 'walkIn'
+  if (source.includes('other') || source.includes('unknown')) return 'unknown'
+  if (source.includes('manual')) return 'unknown'
+  return 'unknown'
 }
 
 function readDate(value) {
@@ -409,8 +434,8 @@ function getOrganisationId(workspaceContext = {}) {
 
 function getActor(profile = {}) {
   return {
-    id: normalizeText(profile?.id || profile?.user_id || profile?.email),
-    userId: normalizeText(profile?.id || profile?.user_id || profile?.email),
+    id: normalizeText(profile?.id || profile?.user_id || profile?.userId || profile?.email),
+    userId: normalizeText(profile?.userId || profile?.user_id || profile?.id || profile?.email),
     email: normalizeText(profile?.email).toLowerCase(),
     name: normalizeText(profile?.fullName || profile?.full_name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')),
     fullName: normalizeText(profile?.fullName || profile?.full_name || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')),
@@ -419,15 +444,16 @@ function getActor(profile = {}) {
   }
 }
 
-function StatusPill({ children, tone = 'slate' }) {
+function StatusPill({ children, tone = 'slate', className = '' }) {
   const tones = {
     slate: 'bg-slate-100 text-slate-700',
     blue: 'bg-blue-50 text-blue-700',
     green: 'bg-emerald-50 text-emerald-700',
     amber: 'bg-amber-50 text-amber-700',
     red: 'bg-rose-50 text-rose-700',
+    violet: 'bg-violet-50 text-violet-700',
   }
-  return <span className={`inline-flex min-h-7 items-center rounded-full px-2.5 text-xs font-semibold ${tones[tone] || tones.slate}`}>{children}</span>
+  return <span className={`inline-flex min-h-7 items-center rounded-full px-2.5 text-xs font-semibold ${tones[tone] || tones.slate} ${className}`.trim()}>{children}</span>
 }
 
 function getStageTone(stage = '') {
@@ -462,20 +488,6 @@ function normalizeLeadCategory(row = {}) {
 function isArchivedLead(row = {}) {
   const lifecycle = `${row.stage || ''} ${row.status || ''} ${row.lifecycleStatus || row.lifecycle_status || ''}`.toLowerCase()
   return lifecycle.includes('archived')
-}
-
-function getLeadCategoryLabel(row = {}) {
-  const category = normalizeLeadCategory(row)
-  if (category === 'seller') return 'Seller Lead'
-  if (category === 'buyer') return 'Buyer Lead'
-  return 'Other Lead'
-}
-
-function getLeadCategoryTone(row = {}) {
-  const category = normalizeLeadCategory(row)
-  if (category === 'seller') return 'green'
-  if (category === 'buyer') return 'blue'
-  return 'slate'
 }
 
 function isUuidLike(value = '') {
@@ -1155,23 +1167,6 @@ function getLatestActivityTitle(row = {}) {
   return normalizeText(row.latestActivity?.activityType || row.latestActivity?.activity_type) || 'No activity'
 }
 
-function getNextAction(row = {}) {
-  const activeRecommendation = (Array.isArray(row.recommendations) ? row.recommendations : []).find((item) => ['pending', 'accepted'].includes(String(item.status || '').toLowerCase()))
-  if (activeRecommendation?.title) return activeRecommendation.title
-  if (row.nextTask?.title) return row.nextTask.title
-  const category = normalizeLeadCategory(row)
-  const stage = normalizeText(row.stage).toLowerCase()
-  if (category === 'seller') {
-    if (!row.listingCount) return 'Link Property'
-    if (stage.includes('mandate')) return 'Check Mandate Signature'
-    if (stage.includes('listing')) return 'Activate Listing'
-    return 'Contact Seller'
-  }
-  if (row.appointmentCount) return 'Follow Up Viewing'
-  if ((row.suggestions || []).length) return 'Review Matches'
-  return category === 'buyer' ? 'Contact Buyer' : 'Contact Lead'
-}
-
 function EmptyState({ title, copy, actionLabel = '', onAction }) {
   return (
     <div className="empty-state bg-slate-50 px-5 py-10">
@@ -1214,22 +1209,6 @@ function CompactMetric({ label, value, icon }) {
       {icon ? createElement(icon, { size: 15, className: 'shrink-0 text-slate-400' }) : null}
       <strong className="text-lg font-semibold tracking-[-0.03em] text-slate-950">{value}</strong>
       <span className="truncate text-sm font-semibold text-slate-600">{label}</span>
-    </div>
-  )
-}
-
-function RecommendationSummaryCard({ pendingCount = 0, urgentCount = 0, dueTodayCount = 0, overdueCount = 0 }) {
-  return (
-    <div className="flex min-h-14 items-center justify-between gap-3 rounded-xl border border-amber-100 bg-amber-50 px-3">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-slate-950">Recommended Actions</p>
-        <p className="mt-0.5 text-xs font-medium text-amber-800">{pendingCount} actions pending</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-amber-800">
-        <span title="Urgent" className="rounded-full bg-white px-2 py-1">{urgentCount} urgent</span>
-        <span title="Due today" className="hidden rounded-full bg-white px-2 py-1 sm:inline-flex">{dueTodayCount} today</span>
-        <span title="Overdue" className="rounded-full bg-white px-2 py-1">{overdueCount} overdue</span>
-      </div>
     </div>
   )
 }
@@ -2618,22 +2597,76 @@ function BuyerLeadOverview({ row, workspace = {}, sourceInfo, onNavigate }) {
   )
 }
 
-function LeadIdentityBlock({ row, onOpen, activeCategory = 'all' }) {
-  const context = getLeadContextSummary(row)
-  const showCategoryBadge = !['buyer', 'seller', 'other'].includes(activeCategory)
+function LeadIdentityBlock({ row, onOpen }) {
   return (
     <button type="button" onClick={onOpen} className="group min-w-0 text-left">
-      <span className="block truncate text-sm font-semibold text-slate-950 group-hover:text-blue-700">{row.name}</span>
-      <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-slate-500">
-        <span className="truncate">{row.phone || 'No phone'}</span>
-        {row.email ? <span className="max-w-[180px] truncate">{row.email}</span> : null}
+      <span className="flex min-w-0 items-start gap-2">
+        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">
+          {getLeadInitials(row.name)}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-slate-950 group-hover:text-blue-700">{row.name}</span>
+          <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-slate-500">
+            <span className="truncate">{row.phone || 'No phone'}</span>
+            {row.email ? <span className="max-w-[180px] truncate">{row.email}</span> : null}
+          </span>
+        </span>
       </span>
-      <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-        {showCategoryBadge ? <StatusPill tone={getLeadCategoryTone(row)}>{getLeadCategoryLabel(row)}</StatusPill> : null}
-        <span className="max-w-[180px] truncate rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{row.source || 'Unknown'}</span>
-      </span>
-      {context ? <span className="mt-2 block max-w-[260px] truncate text-xs font-semibold text-slate-500">{context}</span> : null}
     </button>
+  )
+}
+
+function getLeadInitials(name = '') {
+  const normalized = normalizeText(name)
+  if (!normalized) return '—'
+  const parts = normalized.split(/\s+/).filter(Boolean)
+  if (!parts.length) return '—'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+}
+
+function LeadSourcePill({ source = '' }) {
+  const sourceKey = normalizeLeadSourceForPill(source)
+  const sourceStyle = LEAD_SOURCE_PILL_STYLES[sourceKey] || LEAD_SOURCE_PILL_FALLBACK
+  return <StatusPill tone={sourceStyle.tone}>{sourceStyle.label}</StatusPill>
+}
+
+function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
+  const counts = rows.reduce((accumulator, row) => {
+    if (isArchivedLead(row)) {
+      accumulator.archived += 1
+    } else {
+      const category = normalizeLeadCategory(row)
+      accumulator[category] = (accumulator[category] || 0) + 1
+      accumulator.active += 1
+    }
+    return accumulator
+  }, { active: 0, buyer: 0, seller: 0, other: 0, archived: 0 })
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="flex min-h-11 items-center gap-2 border-b border-slate-200 pb-2" role="tablist" aria-label="Lead category tabs">
+        {LEAD_CATEGORY_FILTERS.map((option) => {
+          const active = activeCategory === option.key
+          return (
+            <button
+              key={option.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange((previous) => ({ ...previous, category: option.key }))}
+              className={`relative inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-semibold transition ${active ? 'text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+            >
+              {option.label}
+              <span className={`inline-flex min-h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs ${active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                {option.key === 'archived' ? counts.archived : (option.key === 'other' ? counts.other : counts[option.key] || 0)}
+              </span>
+              {active ? <span className="absolute inset-x-2 -bottom-2 h-0.5 rounded-full bg-blue-500" aria-hidden="true" /> : null}
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -2657,91 +2690,70 @@ function RowActionMenu({ row, onOpen }) {
   )
 }
 
-function LeadCategoryFilter({ filters, rows, onChange }) {
-  const counts = rows.reduce((accumulator, row) => {
-    if (isArchivedLead(row)) {
-      accumulator.archived += 1
-      return accumulator
-    }
-    const category = normalizeLeadCategory(row)
-    accumulator.all += 1
-    accumulator[category] = (accumulator[category] || 0) + 1
-    return accumulator
-  }, { all: 0, buyer: 0, seller: 0, other: 0, archived: 0 })
-  return (
-    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5" role="tablist" aria-label="Lead pipeline views">
-      {LEAD_CATEGORY_FILTERS.map((option) => {
-        const active = filters.category === option.key
-        const Icon = option.icon
-        return (
-          <button
-            key={option.key}
-            type="button"
-            onClick={() => onChange((previous) => ({ ...previous, category: option.key }))}
-            role="tab"
-            aria-selected={active}
-            className={`flex min-h-[72px] items-center gap-3 rounded-xl border px-3 text-left transition ${active ? 'border-slate-900 bg-slate-900 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
-          >
-            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>
-              <Icon size={16} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-semibold">{option.label}</span>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${active ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-500'}`}>{counts[option.key] || 0}</span>
-              </span>
-              <span className={`mt-1 block truncate text-xs font-medium ${active ? 'text-slate-200' : 'text-slate-500'}`}>{option.helper}</span>
-            </span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function LeadViewSummary({ category = 'all', visibleCount = 0 }) {
-  const summaries = {
-    all: {
-      title: 'All leads',
-      copy: 'A combined queue for triage. Switch to Buyer Leads or Seller Leads for the cleaner category-specific workflow.',
-    },
-    buyer: {
-      title: 'Buyer leads',
-      copy: 'Buyer context is prioritised: requirements, latest buyer activity, and the next buyer action.',
-    },
-    seller: {
-      title: 'Seller leads',
-      copy: 'Seller context is prioritised: property address, mandate or listing stage, and the next seller action.',
-    },
-    other: {
-      title: 'Other leads',
-      copy: 'Basic follow-up leads that are not yet buyer or seller pipeline work.',
-    },
-    archived: {
-      title: 'Archived leads',
-      copy: 'Closed-out buyer, seller, and other leads. These are hidden from the active operating views.',
-    },
+function getLeadTableColumns(category = 'buyer') {
+  if (category === 'seller') {
+    return [
+      { key: 'lead', label: 'Lead' },
+      { key: 'source', label: 'Source' },
+      { key: 'address', label: 'Address' },
+      { key: 'stage', label: 'Stage' },
+      { key: 'owner', label: 'Owner' },
+      { key: 'activity', label: 'Last Activity' },
+      { key: 'action', label: 'Action' },
+    ]
   }
-  const summary = summaries[category] || summaries.all
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-950">{summary.title}</p>
-          <p className="mt-0.5 text-xs font-medium text-slate-500">{summary.copy}</p>
-        </div>
-        <span className="shrink-0 text-sm font-semibold text-slate-500">{visibleCount} visible</span>
-      </div>
-    </div>
-  )
+  return [
+    { key: 'lead', label: 'Lead' },
+    { key: 'type', label: 'Type' },
+    { key: 'source', label: 'Source' },
+    { key: 'property', label: 'Property Enquired On' },
+    { key: 'stage', label: 'Stage' },
+    { key: 'owner', label: 'Owner' },
+    { key: 'activity', label: 'Last Activity' },
+    { key: 'action', label: 'Action' },
+  ]
 }
 
-function getLeadColumnHeader(category = 'all') {
-  if (category === 'buyer') return 'Buyer / Requirement'
-  if (category === 'seller') return 'Seller / Property'
-  if (category === 'other') return 'Lead / Notes'
-  if (category === 'archived') return 'Archived Lead'
-  return 'Lead Context'
+function getLeadTableTypeLabel(category = 'buyer') {
+  if (category === 'seller') return 'Seller'
+  if (category === 'other') return 'Other'
+  return 'Buyer'
+}
+
+function getBuyerPropertyEnquiry(row = {}) {
+  const title = normalizeText(row.enquiredPropertyTitle)
+  const address = normalizeText(row.enquiredPropertyAddress)
+  const price = row.enquiredPropertyPrice
+  const hasData = title || address || normalizeText(price)
+  if (!hasData) {
+    return { title: 'No property linked', address: '—', price: '—' }
+  }
+  const formattedPrice = price === null || price === undefined || price === '' ? '—' : formatCurrency(price)
+  return {
+    title,
+    address: address || '—',
+    price: formattedPrice,
+  }
+}
+
+function getSellerAddress(row = {}) {
+  const firstLine = normalizeText(
+    row.sellerPropertyAddress ||
+    row.seller_property_address ||
+    row.propertyAddress ||
+    row.address ||
+    row.addressLine1 ||
+    '',
+  )
+  const secondLine = normalizeText(row.areaInterest || row.area_interest || row.suburb || row.city || '')
+  const lines = [firstLine].filter(Boolean)
+  if (secondLine && !firstLine.toLowerCase().includes(secondLine.toLowerCase())) {
+    lines.push(secondLine)
+  }
+  if (!lines.length) {
+    return { first: 'Address Pending', second: '—' }
+  }
+  return { first: lines[0], second: lines[1] || '—' }
 }
 
 function EmptyLeadResults({ onCreate, onImport, onAdjustFilters }) {
@@ -4177,13 +4189,14 @@ function AgentLeadList() {
   const organisationId = getOrganisationId(workspaceContext)
   const actor = useMemo(() => getActor({
     ...(workspaceContext.profile || {}),
+    ...(workspaceContext.currentMembership || {}),
     workspaceRole: workspaceContext.currentMembership?.workspace_role || workspaceContext.currentMembership?.organisation_role || workspaceContext.currentMembership?.role || workspaceContext.profile?.role,
   }), [workspaceContext.currentMembership, workspaceContext.profile])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [rows, setRows] = useState([])
   const [assignmentMetrics, setAssignmentMetrics] = useState({ unassigned: 0, assigned: 0, overdue: 0, escalated: 0, byAgent: [] })
-  const [filters, setFilters] = useState({ search: '', category: 'all', stage: 'all', source: 'all', agent: 'all', createdFrom: '', createdTo: '' })
+  const [filters, setFilters] = useState({ search: '', category: 'buyer', stage: 'all', source: 'all', agent: 'all', dateAdded: '' })
   const [createCategory, setCreateCategory] = useState('')
   const [createForm, setCreateForm] = useState(EMPTY_LEAD_CREATE_FORM)
   const [creatingLead, setCreatingLead] = useState(false)
@@ -4224,14 +4237,7 @@ function AgentLeadList() {
     if (!filters.category || filters.category === 'all') return activeRows
     return activeRows.filter((row) => normalizeLeadCategory(row) === filters.category)
   }, [rows, filters])
-  const recommendationRows = useMemo(() => rows.flatMap((row) => Array.isArray(row.recommendations) ? row.recommendations : []), [rows])
-  const recommendationMetrics = useMemo(() => getRecommendationMetrics(recommendationRows), [recommendationRows])
-  const pendingRecommendations = recommendationMetrics.pending + recommendationMetrics.accepted
-  const leadColumnHeader = getLeadColumnHeader(filters.category)
-  const dueTodayRecommendations = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10)
-    return recommendationRows.filter((item) => ['pending', 'accepted'].includes(String(item.status || '').toLowerCase()) && String(item.dueDate || item.due_date || '').slice(0, 10) === today).length
-  }, [recommendationRows])
+  const leadTableColumns = useMemo(() => getLeadTableColumns(filters.category === 'seller' ? 'seller' : 'buyer'), [filters.category])
 
   function openCreateLead(category = 'buyer') {
     const normalizedCategory = normalizeCanonicalLeadCategory(category, 'other')
@@ -4328,9 +4334,7 @@ function AgentLeadList() {
     <main className={pageShell}>
       <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Agent Workspace</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-slate-950">Leads</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">Buyer and seller lead views share one CRM system, with the table adapting to the active pipeline context.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <CreateLeadDropdown
@@ -4348,35 +4352,25 @@ function AgentLeadList() {
         </div>
       </header>
 
-      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-[repeat(4,minmax(120px,1fr))_minmax(320px,1.4fr)]">
-        <span className="sr-only">Unassigned Leads Assigned Leads Overdue Leads Escalated Leads My Recommendations Recommended Next Actions</span>
+      <section className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
         <CompactMetric label="Unassigned" value={assignmentMetrics.unassigned || 0} icon={UserRound} />
         <CompactMetric label="Assigned" value={assignmentMetrics.assigned || 0} icon={Tag} />
         <CompactMetric label="Overdue" value={assignmentMetrics.overdue || 0} icon={Clock3} />
         <CompactMetric label="Escalated" value={assignmentMetrics.escalated || 0} icon={CheckCircle2} />
-        <div className="sm:col-span-2 lg:col-span-4 2xl:col-span-1">
-          <RecommendationSummaryCard
-            pendingCount={pendingRecommendations}
-            urgentCount={recommendationMetrics.urgent || 0}
-            dueTodayCount={dueTodayRecommendations}
-            overdueCount={recommendationMetrics.overdue || 0}
-          />
-        </div>
       </section>
 
       <section className={`${panelClass} p-4`}>
         <div className="grid gap-3">
-          <LeadCategoryFilter filters={filters} rows={rows} onChange={setFilters} />
-          <LeadViewSummary category={filters.category} visibleCount={visibleRows.length} />
+          <LeadTypeTabs activeCategory={filters.category} rows={rows} onChange={setFilters} />
         </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.2fr)_repeat(4,minmax(130px,1fr))]">
-          <label className="relative block">
+        <div className="mt-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(130px,1fr))]">
+          <label className="relative block md:col-span-2 lg:col-span-1">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               value={filters.search}
               onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
               className="min-h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-medium text-slate-800 outline-none focus:border-blue-300"
-              placeholder="Search name, phone, email"
+              placeholder="Search by name, phone, email..."
             />
           </label>
           <select value={filters.stage} onChange={(event) => setFilters((previous) => ({ ...previous, stage: event.target.value }))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
@@ -4391,57 +4385,67 @@ function AgentLeadList() {
             <option value="all">All agents</option>
             {options.agents.map((option) => <option key={option} value={option}>{option}</option>)}
           </select>
-          <div className="grid grid-cols-2 gap-2">
-            <input type="date" value={filters.createdFrom} onChange={(event) => setFilters((previous) => ({ ...previous, createdFrom: event.target.value }))} className="min-h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700" aria-label="Created from" />
-            <input type="date" value={filters.createdTo} onChange={(event) => setFilters((previous) => ({ ...previous, createdTo: event.target.value }))} className="min-h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700" aria-label="Created to" />
-          </div>
+          <input type="date" value={filters.dateAdded} onChange={(event) => setFilters((previous) => ({ ...previous, dateAdded: event.target.value }))} className="min-h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700" aria-label="Date added" />
         </div>
       </section>
 
       {loading ? <LoadingSkeleton lines={10} className={panelClass} /> : null}
       {error && !loading ? <EmptyState title="Leads could not be loaded" copy={error} /> : null}
       {!loading && !error ? (
-        <section className={`${panelClass} relative`}>
-          <div className="hidden lg:block">
+        <section className={`${panelClass} relative overflow-hidden`}>
+          <div className="hidden lg:block overflow-x-auto">
             <table className="w-full table-fixed text-left text-sm">
-              <colgroup>
-                <col className="w-[36%]" />
-                <col className="w-[13%]" />
-                <col className="w-[16%]" />
-                <col className="w-[21%]" />
-                <col className="w-[10%]" />
-              </colgroup>
               <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-400">
                 <tr>
-                  <th className="px-3 py-2.5 font-semibold">{leadColumnHeader}</th>
-                  <th className="px-3 py-2.5 font-semibold">Stage</th>
-                  <th className="px-3 py-2.5 font-semibold">Owner</th>
-                  <th className="px-3 py-2.5 font-semibold">Latest Activity</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Action</th>
+                  {leadTableColumns.map((column) => (
+                    <th key={column.key} className="px-4 py-2.5 font-semibold">{column.label}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visibleRows.map((row) => {
+                  const activeCategory = filters.category === 'seller' ? 'seller' : 'buyer'
                   const latestDate = getLatestActivityDate(row.latestActivity)
                   const openRow = () => navigate(`/pipeline/leads/${row.leadId}`)
+                  const buyerProperty = getBuyerPropertyEnquiry(row)
+                  const sellerAddress = getSellerAddress(row)
                   return (
                     <tr key={row.leadId} className="align-middle hover:bg-slate-50/80">
-                      <td className="px-3 py-3">
-                        <LeadIdentityBlock row={row} onOpen={openRow} activeCategory={filters.category} />
+                      <td className="px-4 py-3">
+                        <LeadIdentityBlock row={row} onOpen={openRow} />
                       </td>
-                      <td className="px-3 py-3">
+                      {activeCategory === 'seller' ? null : (
+                        <>
+                          <td className="px-4 py-3"><StatusPill tone="blue" className="h-6">{getLeadTableTypeLabel(filters.category)}</StatusPill></td>
+                          <td className="px-4 py-3"><LeadSourcePill source={row.source} /></td>
+                        </>
+                      )}
+                      {activeCategory === 'seller' ? (
+                        <>
+                          <td className="px-4 py-3"><LeadSourcePill source={row.source} /></td>
+                          <td className="px-4 py-3">
+                            <p className="truncate text-sm font-semibold text-slate-900">{sellerAddress.first}</p>
+                            <p className="mt-1 text-xs text-slate-500">{sellerAddress.second}</p>
+                          </td>
+                        </>
+                      ) : (
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-semibold text-slate-900">{buyerProperty.title}</p>
+                          <p className="mt-1 text-xs text-slate-500">{buyerProperty.address}</p>
+                          <p className="mt-1 text-xs text-slate-500">{buyerProperty.price !== '—' ? buyerProperty.price : null}</p>
+                        </td>
+                      )}
+                      <td className="px-4 py-3">
                         <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
                       </td>
-                      <td className="px-3 py-3">
-                        <span className="block truncate font-semibold text-slate-800">{getOwnerName(row)}</span>
-                        <span className="mt-1 block truncate text-xs text-slate-500">{row.assignedQueue && row.assignedQueue !== '—' ? row.assignedQueue.replace(/_/g, ' ') : 'No queue'}</span>
-                        <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${getSlaTone(row.slaStatus) === 'red' ? 'bg-rose-50 text-rose-700' : getSlaTone(row.slaStatus) === 'amber' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>{formatSlaStatus(row.slaStatus)}</span>
+                      <td className="px-4 py-3">
+                        <span className="block truncate text-sm font-semibold text-slate-900">{getOwnerName(row)}</span>
                       </td>
-                      <td className="px-3 py-3">
-                        <span className="block truncate font-medium text-slate-800">{getLatestActivityTitle(row)}</span>
+                      <td className="px-4 py-3">
+                        <span className="block truncate text-sm font-semibold text-slate-800">{getLatestActivityTitle(row)}</span>
                         <span className="mt-1 block truncate text-xs text-slate-500">{formatRelativeTime(latestDate, 'No activity yet')}</span>
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-4 py-3">
                         <RowActionMenu row={row} onOpen={openRow} />
                       </td>
                     </tr>
@@ -4452,30 +4456,53 @@ function AgentLeadList() {
           </div>
           <div className="grid gap-3 p-3 lg:hidden">
             {visibleRows.map((row) => {
+              const activeCategory = filters.category === 'seller' ? 'seller' : 'buyer'
               const latestDate = getLatestActivityDate(row.latestActivity)
-              const nextDate = row.nextTask?.dueDate || row.nextTask?.due_date
+              const sellerAddress = getSellerAddress(row)
+              const buyerProperty = getBuyerPropertyEnquiry(row)
               const openRow = () => navigate(`/pipeline/leads/${row.leadId}`)
               return (
                 <article key={`card-${row.leadId}`} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
-                    <LeadIdentityBlock row={row} onOpen={openRow} activeCategory={filters.category} />
+                    <LeadIdentityBlock row={row} onOpen={openRow} />
                     <StatusPill tone={getStageTone(row.stage)}>{row.stage}</StatusPill>
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-slate-100 p-2.5">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Type</p>
+                      <p className="mt-1">
+                        {activeCategory === 'seller' ? 'Seller' : getLeadTableTypeLabel(filters.category)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Source</p>
+                      <p className="mt-1">
+                        <LeadSourcePill source={row.source} />
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Address</p>
+                      {activeCategory === 'seller' ? (
+                        <>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{sellerAddress.first}</p>
+                          <p className="text-xs text-slate-500">{sellerAddress.second}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{buyerProperty.title}</p>
+                          <p className="text-xs text-slate-500">{buyerProperty.address}</p>
+                          <p className="text-xs text-slate-500">{buyerProperty.price !== '—' ? buyerProperty.price : null}</p>
+                        </>
+                      )}
+                    </div>
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Owner</p>
                       <p className="mt-1 truncate text-sm font-semibold text-slate-800">{getOwnerName(row)}</p>
-                      <p className="mt-1 text-xs text-slate-500">{formatSlaStatus(row.slaStatus)}</p>
                     </div>
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Latest Activity</p>
                       <p className="mt-1 truncate text-sm font-semibold text-slate-800">{getLatestActivityTitle(row)}</p>
                       <p className="mt-1 text-xs text-slate-500">{formatRelativeTime(latestDate, 'No activity yet')}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Next Action</p>
-                      <p className="mt-1 truncate text-sm font-semibold text-slate-800">{getNextAction(row)}</p>
-                      <p className="mt-1 text-xs text-slate-500">{nextDate ? formatDate(nextDate) : 'Recommended next step'}</p>
                     </div>
                   </div>
                   <div className="mt-3 flex justify-end">
@@ -4487,13 +4514,13 @@ function AgentLeadList() {
           </div>
           {!visibleRows.length ? (
             <div className="p-5">
-              <EmptyLeadResults
-                onCreate={openCreateLead}
-                onImport={() => navigate('/pipeline/enquiries')}
-                onAdjustFilters={() => setFilters({ search: '', category: 'all', stage: 'all', source: 'all', agent: 'all', createdFrom: '', createdTo: '' })}
-              />
-            </div>
-          ) : null}
+                <EmptyLeadResults
+                  onCreate={openCreateLead}
+                  onImport={() => navigate('/pipeline/enquiries')}
+                  onAdjustFilters={() => setFilters({ search: '', category: filters.category || 'buyer', stage: 'all', source: 'all', agent: 'all', dateAdded: '' })}
+                />
+              </div>
+            ) : null}
         </section>
       ) : null}
       <LeadCreateModal

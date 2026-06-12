@@ -485,6 +485,12 @@ alter table if exists leads add column if not exists listing_id text;
 alter table if exists leads add column if not exists mandate_packet_id uuid references document_packets(id) on delete set null;
 alter table if exists leads add column if not exists seller_onboarding_token text;
 alter table if exists leads add column if not exists seller_onboarding_status text not null default 'not_started';
+alter table if exists leads add column if not exists enquired_listing_id text;
+alter table if exists leads add column if not exists enquired_property_title text;
+alter table if exists leads add column if not exists enquired_property_address text;
+alter table if exists leads add column if not exists enquired_property_price numeric(14, 2);
+alter table if exists leads add column if not exists source_reference_id text;
+alter table if exists leads add column if not exists raw_enquiry_payload jsonb;
 alter table if exists leads add column if not exists notes text;
 alter table if exists leads add column if not exists created_at timestamptz not null default now();
 alter table if exists leads add column if not exists updated_at timestamptz not null default now();
@@ -509,6 +515,7 @@ create index if not exists leads_org_agent_idx on leads (organisation_id, assign
 create index if not exists leads_org_stage_idx on leads (organisation_id, stage);
 create index if not exists leads_org_source_idx on leads (organisation_id, lead_source);
 create index if not exists leads_org_listing_idx on leads (organisation_id, listing_id);
+create index if not exists leads_org_enquired_listing_id_idx on leads (organisation_id, enquired_listing_id);
 create index if not exists leads_org_seller_onboarding_token_idx on leads (organisation_id, seller_onboarding_token);
 
 create table if not exists lead_activities (

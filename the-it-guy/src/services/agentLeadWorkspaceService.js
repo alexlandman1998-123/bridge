@@ -19,6 +19,20 @@ import { getPrivateListing } from './privateListingService'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES = new Set(['owner', 'principal', 'admin', 'admin_staff'])
 
+function normalizeRoleText(value = '') {
+  return normalizeLower(value).replace(/[\s_-]+/g, ' ')
+}
+
+function isPrincipalOrOwnerRole(roleText = '') {
+  const normalized = normalizeRoleText(roleText)
+  return normalized.includes('principal') || normalized.includes('owner')
+}
+
+function isAdminRole(roleText = '') {
+  const normalized = normalizeRoleText(roleText)
+  return normalized.includes('admin') || normalized === 'principal / owner' || normalized === 'agency owner' || normalized === 'firm admin'
+}
+
 function normalizeText(value) {
   return String(value ?? '').trim()
 }
@@ -28,11 +42,15 @@ function normalizeLower(value) {
 }
 
 function normalizeActorRole(actor = {}) {
-  return normalizeLower(actor?.workspaceRole || actor?.organisationRole || actor?.role || actor?.roleKey)
+  return normalizeRoleText(actor?.workspaceRole || actor?.organisationRole || actor?.role || actor?.roleKey || actor?.workspace_role || actor?.organisation_role)
 }
 
 function canViewAllWorkspaceLeads(actor = {}) {
-  return LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES.has(normalizeActorRole(actor))
+  const normalizedRole = normalizeActorRole(actor)
+  if (LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES.has(normalizedRole)) return true
+  if (isPrincipalOrOwnerRole(normalizedRole) || isAdminRole(normalizedRole)) return true
+  const fallbackRole = normalizeRoleText(actor?.role || actor?.workspaceRole || actor?.organisationRole || actor?.roleKey)
+  return LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES.has(fallbackRole) || isPrincipalOrOwnerRole(fallbackRole) || isAdminRole(fallbackRole)
 }
 
 function getActorIdentitySet(actor = {}) {
@@ -47,12 +65,20 @@ function getActorIdentitySet(actor = {}) {
 function isLeadVisibleToActor(row = {}, actor = {}) {
   if (canViewAllWorkspaceLeads(actor)) return true
   const actorIds = getActorIdentitySet(actor)
-  if (!actorIds.size) return true
+  if (!actorIds.size) return false
   const actorIdsLower = actorIds
   const assignedAgentId = normalizeLower(readId(row, ['assignedAgentId', 'assigned_agent_id', 'assignedUserId', 'assigned_user_id']))
   const assignedAgentEmail = normalizeLower(readId(row, ['assignedAgentEmail', 'assigned_agent_email']))
   const createdBy = normalizeLower(readId(row, ['createdBy', 'created_by']))
-  return actorIdsLower.has(assignedAgentId) || actorIdsLower.has(assignedAgentEmail) || actorIdsLower.has(createdBy)
+  const ownerUserId = normalizeLower(readId(row, ['ownerUserId', 'owner_user_id']))
+  const ownerEmail = normalizeLower(readId(row, ['ownerAgentEmail', 'owner_agent_email']))
+  return (
+    actorIdsLower.has(assignedAgentId) ||
+    actorIdsLower.has(assignedAgentEmail) ||
+    actorIdsLower.has(ownerUserId) ||
+    actorIdsLower.has(ownerEmail) ||
+    actorIdsLower.has(createdBy)
+  )
 }
 
 function buildLeadWorkspaceAssignmentMetrics(rows = []) {
@@ -192,6 +218,7 @@ function normalizeTransaction(row = {}) {
 
 function normalizeListing(row = {}) {
   const listingId = getListingId(row) || readId(row, ['id'])
+  const propertyAddress = normalizeText(row?.title || row?.property_address || row?.propertyAddress || row?.address || row?.addressLine1)
   return {
     ...row,
     id: listingId,
@@ -200,7 +227,10 @@ function normalizeListing(row = {}) {
     assignedAgentId: readId(row, ['assignedAgentId', 'assigned_agent_id']),
     assignedAgentEmail: normalizeText(row?.assignedAgentEmail || row?.assigned_agent_email).toLowerCase(),
     status: normalizeText(row?.listingStatus || row?.listing_status),
-    title: normalizeText(row?.title || row?.property_address || row?.propertyAddress || row?.suburb),
+    title: propertyAddress || normalizeText(row?.suburb),
+    propertyAddress,
+    suburb: normalizeText(row?.suburb || row?.area),
+    askingPrice: row?.asking_price ?? row?.askingPrice ?? row?.price ?? null,
   }
 }
 
@@ -311,6 +341,14 @@ export function buildAgentLeadRows({
     const responseTimeHours = assignedAt && firstContactedAt
       ? Math.max(0, Math.round((new Date(firstContactedAt).getTime() - new Date(assignedAt).getTime()) / 360_000) / 10)
       : null
+    const enquiryListingId = readId(lead, ['enquiredListingId', 'enquired_listing_id'])
+    const enquiryListing = enquiryListingId ? relatedListings.find((listing) => getListingId(listing) === enquiryListingId) || null : null
+    const sellerListing = relatedListings[0] || null
+    const sellerAddressParts = [
+      normalizeText(lead?.sellerPropertyAddress || lead?.seller_property_address || sellerListing?.propertyAddress),
+      normalizeText(lead?.sellerPropertyAddress || sellerListing?.suburb || sellerListing?.suburb || lead?.areaInterest || lead?.area_interest),
+      normalizeText(sellerListing?.city),
+    ].filter(Boolean)
 
     return {
       ...lead,
@@ -334,6 +372,19 @@ export function buildAgentLeadRows({
       assignedAt,
       firstContactedAt,
       slaDueAt: lead?.slaDueAt || lead?.sla_due_at || null,
+      enquiredListingId: enquiryListingId,
+      enquiredPropertyTitle: normalizeText(
+        lead?.enquiredPropertyTitle || lead?.enquired_property_title || enquiryListing?.title,
+      ),
+      enquiredPropertyAddress: normalizeText(
+        lead?.enquiredPropertyAddress || lead?.enquired_property_address ||
+        `${normalizeText(enquiryListing?.propertyAddress)} ${normalizeText(enquiryListing?.suburb)}`.trim(),
+      ),
+      enquiredPropertyPrice: (() => {
+        const rawPrice = enquiryListing?.askingPrice ?? lead?.enquiredPropertyPrice ?? lead?.enquired_property_price
+        return rawPrice === undefined || rawPrice === null || rawPrice === '' ? null : Number(rawPrice) || null
+      })(),
+      sellerPropertyAddress: normalizeText(lead?.sellerPropertyAddress || lead?.seller_property_address) || sellerAddressParts.join(', '),
       ownershipStatus: normalizeText(lead?.ownershipStatus || lead?.ownership_status) || 'awaiting_assignment',
       slaStatus: getLeadSlaStatus(lead),
       responseTimeHours,
@@ -384,8 +435,9 @@ export function filterAgentLeadRows(rows = [], filters = {}) {
   const stage = normalizeLower(filters.stage)
   const source = normalizeLower(filters.source)
   const agent = normalizeLower(filters.agent)
-  const createdFrom = filters.createdFrom ? new Date(filters.createdFrom).getTime() : null
-  const createdTo = filters.createdTo ? new Date(`${filters.createdTo}T23:59:59`).getTime() : null
+  const dateAdded = filters.dateAdded ? normalizeText(filters.dateAdded) : ''
+  const dateFrom = dateAdded ? new Date(`${dateAdded}T00:00:00`).getTime() : null
+  const dateTo = dateAdded ? new Date(`${dateAdded}T23:59:59.999`).getTime() : null
 
   return rows.filter((row) => {
     if (search) {
@@ -396,8 +448,7 @@ export function filterAgentLeadRows(rows = [], filters = {}) {
     if (source && source !== 'all' && normalizeLower(row.source) !== source) return false
     if (agent && agent !== 'all' && normalizeLower(row.assignedAgent) !== agent) return false
     const createdMs = row.createdAt ? new Date(row.createdAt).getTime() : null
-    if (createdFrom && (!createdMs || createdMs < createdFrom)) return false
-    if (createdTo && (!createdMs || createdMs > createdTo)) return false
+    if (dateFrom && dateTo && (!createdMs || createdMs < dateFrom || createdMs > dateTo)) return false
     return true
   })
 }

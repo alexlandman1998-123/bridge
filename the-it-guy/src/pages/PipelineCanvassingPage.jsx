@@ -107,6 +107,39 @@ const PROSPECT_LOST_REASONS = [
 
 const ACTIVITY_TYPES = ['Call', 'WhatsApp', 'Email', 'Door Knock', 'Note', 'Follow-Up']
 
+const CANVASSING_SOURCE_PILL_STYLES = {
+  property24: { tone: 'blue', label: 'Property24' },
+  privateProperty: { tone: 'green', label: 'Private Property' },
+  website: { tone: 'violet', label: 'Website' },
+  whatsapp: { tone: 'emerald', label: 'WhatsApp' },
+  call: { tone: 'red', label: 'Call' },
+  referral: { tone: 'amber', label: 'Referral' },
+  walkIn: { tone: 'slate', label: 'Walk-in' },
+  unknown: { tone: 'slate', label: 'Unknown' },
+}
+
+const CANVASSING_SOURCE_PILL_FALLBACK = CANVASSING_SOURCE_PILL_STYLES.unknown
+const CANVASSING_SOURCE_PILL_ORDER = ['property24', 'privateProperty', 'whatsapp', 'call', 'website', 'referral', 'walkIn', 'unknown']
+
+const CANVASSING_SOURCE_TONE_STYLES = {
+  slate: 'border-slate-200 bg-slate-50 text-slate-600',
+  blue: 'border-sky-200 bg-sky-50 text-sky-700',
+  green: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  violet: 'border-violet-200 bg-violet-50 text-violet-700',
+  emerald: 'border-emerald-300 bg-emerald-100 text-emerald-800',
+  red: 'border-rose-200 bg-rose-50 text-rose-700',
+  amber: 'border-amber-200 bg-amber-50 text-amber-700',
+}
+
+function StatusTonePill({ children, tone = 'slate', className = '' }) {
+  const style = CANVASSING_SOURCE_TONE_STYLES[tone] || CANVASSING_SOURCE_TONE_STYLES.slate
+  return (
+    <span className={`inline-flex min-h-6 items-center rounded-full border px-2.5 text-xs font-semibold ${style} ${className}`.trim()}>
+      {children}
+    </span>
+  )
+}
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -118,6 +151,118 @@ function normalizeKey(value) {
 function isAuthSessionMissingError(error) {
   const message = normalizeText(error?.message || error).toLowerCase()
   return message.includes('auth session missing') || message.includes('missing auth session')
+}
+
+function resolveCanvassingSourceText(value = '') {
+  const fallback = 'Unknown'
+  const raw = normalizeText(value)
+  if (!raw) return fallback
+  const normalized = raw.toLowerCase()
+  if (normalized.includes('property24')) return 'Property24'
+  if (normalized.includes('private') && normalized.includes('property')) return 'Private Property'
+  if (normalized.includes('whatsapp')) return 'WhatsApp'
+  if (normalized.includes('email') || normalized.includes('website')) return normalized.includes('website') ? 'Website' : 'Email'
+  if (normalized.includes('call') || normalized.includes('phone') || normalized.includes('cold call')) return 'Call'
+  if (normalized.includes('referral')) return 'Referral'
+  if (normalized.includes('walk in') || normalized.includes('walk-in')) return 'Walk-in'
+  if (normalized.includes('facebook') || normalized.includes('google') || normalized.includes('signboard')) return 'Referral'
+  return fallback
+}
+
+function normalizeCanvassingSourceKey(value = '') {
+  const source = resolveCanvassingSourceText(value).toLowerCase()
+  if (source.includes('property24')) return 'property24'
+  if (source.includes('private property')) return 'privateProperty'
+  if (source.includes('whatsapp')) return 'whatsapp'
+  if (source.includes('call')) return 'call'
+  if (source.includes('website')) return 'website'
+  if (source.includes('referral')) return 'referral'
+  if (source.includes('walk-in')) return 'walkIn'
+  if (source.includes('email')) return 'unknown'
+  return 'unknown'
+}
+
+function CanvassingSourcePill({ source = '' }) {
+  const key = normalizeCanvassingSourceKey(source)
+  const style = CANVASSING_SOURCE_PILL_STYLES[key] || CANVASSING_SOURCE_PILL_FALLBACK
+  const label = style?.label || resolveCanvassingSourceText(source)
+  return <StatusTonePill tone={style?.tone || 'slate'}>{label}</StatusTonePill>
+}
+
+function getAgentAvatarUrl(agent = {}) {
+  return String(
+    agent?.avatarUrl ||
+      agent?.avatar_url ||
+      agent?.profilePhotoUrl ||
+      agent?.profile_photo_url ||
+      agent?.photoUrl ||
+      agent?.photo_url ||
+      '',
+  ).trim()
+}
+
+function getAgentInitials(agent = {}) {
+  const source = String(agent?.name || agent?.fullName || agent?.firstName || agent?.lastName || agent?.email || 'User')
+    .trim()
+  const parts = source.includes('@') ? source.split('@')[0].split(/[._\s-]+/) : source.split(/\s+/)
+  return parts
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'U'
+}
+
+function getAssignedAgentProfile(prospect = {}, agents = []) {
+  const assignedAgentId = normalizeKey(prospect?.assignedAgentId || prospect?.assignedUserId)
+  const assignedUserId = normalizeKey(prospect?.assignedUserId)
+  const assignedEmail = normalizeKey(prospect?.assignedAgentEmail)
+
+  const assigned = agents.find((agent) => {
+    const agentId = normalizeKey(agent?.id || agent?.userId)
+    const email = normalizeKey(agent?.email)
+    return (
+      Boolean(agentId) && (agentId === assignedAgentId || (agentId && (agentId === assignedUserId || assignedUserId === normalizeKey(agent?.userId)))) ||
+      Boolean(email) && email === assignedEmail
+    )
+  })
+
+  if (assigned) {
+    const resolvedName = normalizeText(prospect?.assignedAgentName) || normalizeText(assigned?.name) || normalizeText(assigned?.fullName)
+    return {
+      id: assigned.id || assigned.userId || assignedAgentId || assignedUserId,
+      name: resolvedName || normalizeText(assignedEmail || prospect?.assignedAgentEmail) || 'Unassigned',
+      email: normalizeText(assigned.email),
+      avatarUrl: getAgentAvatarUrl(assigned),
+      initials: getAgentInitials(assigned),
+      isUnassigned: false,
+    }
+  }
+
+  const fallbackName = normalizeText(prospect?.assignedAgentName || prospect?.assignedAgentEmail)
+  const isUnassigned = !assignedAgentId && !assignedUserId && !assignedEmail
+  return {
+    id: assignedAgentId || assignedUserId || '',
+    name: isUnassigned ? 'Unassigned' : fallbackName || 'Unassigned',
+    email: normalizeText(prospect?.assignedAgentEmail),
+    avatarUrl: '',
+    initials: getAgentInitials({ name: fallbackName }),
+    isUnassigned,
+  }
+}
+
+function ProspectOwnerCell({ agent }) {
+  const resolved = agent || { name: 'Unassigned', avatarUrl: '', initials: 'U' }
+  const avatarUrl = getAgentAvatarUrl(resolved)
+  const initials = resolved.initials || getAgentInitials(resolved)
+
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#2b4f71]">
+        {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full rounded-full object-cover" /> : initials}
+      </span>
+      <span className="truncate text-sm font-semibold text-[#142132]">{resolved.name || 'Unassigned'}</span>
+    </span>
+  )
 }
 
 function getProspectPropertyTypeOptions(value = '') {
@@ -172,6 +317,12 @@ function formatCurrency(value) {
     currency: 'ZAR',
     maximumFractionDigits: 0,
   }).format(amount)
+}
+
+function formatOptionalCurrency(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return '—'
+  return formatCurrency(amount)
 }
 
 function normalizeListingOption(listing = {}) {
@@ -321,7 +472,7 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'buyer', cur
       contactType: normalizedCategory,
     },
     assignedAgent: {
-      id: prospect.assignedAgentId || currentAgent.id,
+      id: prospect.assignedAgentId || currentAgent.userId || currentAgent.id,
       userId: prospect.assignedUserId || prospect.assignedAgentId || currentAgent.userId || currentAgent.id,
       branchId: prospect.branchId || currentAgent.branchId || '',
       fullName: prospect.assignedAgentName || currentAgent.fullName,
@@ -371,7 +522,13 @@ function PipelineCanvassingPage() {
   const [selectedProspectId, setSelectedProspectId] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
   const [prospectView, setProspectView] = useState('seller')
-  const [filters, setFilters] = useState({ search: '', method: 'all', status: 'all', sort: 'newest' })
+  const [filters, setFilters] = useState({
+    search: '',
+    method: 'all',
+    status: 'all',
+    assigned: 'all',
+    sort: 'newest',
+  })
   const [openActionMenuId, setOpenActionMenuId] = useState('')
   const [archiveModal, setArchiveModal] = useState({
     open: false,
@@ -407,8 +564,16 @@ function PipelineCanvassingPage() {
 
   const currentAgent = useMemo(
     () => ({
-      id: normalizeText(profile?.id || profile?.email),
-      userId: normalizeText(profile?.id || profile?.userId),
+      id: normalizeText(profile?.id || profile?.userId || profile?.user_id || profile?.email),
+      userId: normalizeText(
+        profile?.userId ||
+          profile?.user_id ||
+          currentMembership?.userId ||
+          currentMembership?.user_id ||
+          currentMembership?.assignedUserId ||
+          currentMembership?.assigned_user_id ||
+          profile?.id,
+      ),
       email: normalizeText(profile?.email).toLowerCase(),
       fullName:
         normalizeText(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ')) || 'Current Agent',
@@ -423,8 +588,12 @@ function PipelineCanvassingPage() {
     }),
     [
       currentMembership?.assignedBranchId,
+      currentMembership?.assignedUserId,
+      currentMembership?.assigned_user_id,
       currentMembership?.branchId,
       currentMembership?.branch_id,
+      currentMembership?.userId,
+      currentMembership?.user_id,
       currentMembership?.workspaceUnitId,
       currentMembership?.workspace_unit_id,
       profile?.branchId,
@@ -434,12 +603,30 @@ function PipelineCanvassingPage() {
       profile?.id,
       profile?.lastName,
       profile?.userId,
+      profile?.user_id,
     ],
   )
 
   const currentAgentIdentity = useMemo(
-    () => normalizeText(currentAgent.id || currentAgent.email),
-    [currentAgent.email, currentAgent.id],
+    () => normalizeText(currentAgent.userId || currentAgent.id || currentAgent.email),
+    [currentAgent.email, currentAgent.id, currentAgent.userId],
+  )
+
+  const currentAgentIdentitySet = useMemo(() => {
+    const values = [
+      currentAgent.userId,
+      currentAgent.id,
+      currentAgent.email,
+    ]
+    return new Set(values.map((value) => normalizeKey(value)).filter(Boolean))
+  }, [currentAgent.email, currentAgent.id, currentAgent.userId])
+
+  const currentAgentForWrites = useMemo(
+    () => ({
+      id: currentAgent.userId || currentAgent.id || null,
+      label: currentAgent.userId || currentAgent.id || currentAgent.email || null,
+    }),
+    [currentAgent.email, currentAgent.id, currentAgent.userId],
   )
 
   const currentMembershipRole = useMemo(
@@ -475,6 +662,7 @@ function PipelineCanvassingPage() {
             'Agent',
           email,
           branchId: normalizeText(row?.branchId),
+          avatarUrl: normalizeText(row?.avatarUrl),
         }
       })
       .filter((row) => row.id || row.email)
@@ -489,6 +677,7 @@ function PipelineCanvassingPage() {
         name: currentAgent.fullName,
         email: currentAgent.email,
         branchId: currentAgent.branchId,
+        avatarUrl: '',
       })
     }
 
@@ -572,11 +761,11 @@ function PipelineCanvassingPage() {
                 const listingAgentId = normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id)
                 const listingAgentEmail = normalizeText(listing?.assignedAgentEmail || listing?.assigned_agent_email).toLowerCase()
                 return (
-                  listingAgentId === currentAgentIdentity || listingAgentId === currentAgent.id ||
-                  (listingAgentEmail && currentAgent.email && listingAgentEmail === currentAgent.email)
+                  currentAgentIdentitySet.has(normalizeKey(listingAgentId)) ||
+                  (listingAgentEmail && currentAgentIdentitySet.has(normalizeKey(listingAgentEmail)))
                 )
               })
-          const remoteListings = await getAgentPrivateListings(currentAgent.userId, {
+          const remoteListings = await getAgentPrivateListings(currentAgentForWrites.id, {
             organisationId: orgId,
             assignedAgentEmail: currentAgent.email,
             includeAllOrganisationListings: isPrincipalAgentView,
@@ -610,6 +799,8 @@ function PipelineCanvassingPage() {
     currentAgent.email,
     currentAgent.id,
     currentAgent.userId,
+    currentAgentForWrites.id,
+    currentAgentIdentitySet,
     currentWorkspace?.id,
     currentWorkspace?.name,
     isPrincipalAgentView,
@@ -652,13 +843,19 @@ function PipelineCanvassingPage() {
 
   const scopedProspects = useMemo(() => {
     if (isPrincipalAgentView) return Array.isArray(prospects) ? prospects : []
-    const agentKey = normalizeKey(currentAgentIdentity)
     return prospects.filter((prospect) => {
-      const assignedId = normalizeKey(prospect?.assignedAgentId)
-      const assignedEmail = normalizeKey(prospect?.assignedAgentEmail)
-      return assignedId === agentKey || assignedEmail === agentKey
+      const assignedAgentId = normalizeKey(prospect?.assignedAgentId)
+      const assignedUserId = normalizeKey(prospect?.assignedUserId)
+      const assignedAgentEmail = normalizeKey(prospect?.assignedAgentEmail)
+      const createdBy = normalizeKey(prospect?.createdBy)
+      return (
+        currentAgentIdentitySet.has(assignedAgentId) ||
+        currentAgentIdentitySet.has(assignedUserId) ||
+        currentAgentIdentitySet.has(assignedAgentEmail) ||
+        currentAgentIdentitySet.has(createdBy)
+      )
     })
-  }, [currentAgentIdentity, isPrincipalAgentView, prospects])
+  }, [currentAgentIdentitySet, isPrincipalAgentView, prospects])
 
   const scopedActivities = useMemo(() => {
     const scopedIds = new Set(scopedProspects.map((prospect) => normalizeText(prospect?.id)))
@@ -678,8 +875,33 @@ function PipelineCanvassingPage() {
     return map
   }, [scopedActivities])
 
+  const prospectRows = useMemo(() => scopedProspects.map((prospect) => {
+    const assignedProfile = getAssignedAgentProfile(prospect, agentOptions)
+    const source = resolveCanvassingSourceText(prospect?.source || prospect?.canvassingMethod || prospect?.leadSource)
+    const sourceKey = normalizeCanvassingSourceKey(source)
+    const propertyInterest = normalizeText(prospect?.propertyInterest || prospect?.property_interest || prospect?.propertyType || prospect?.listingType)
+    const propertyAddress = normalizeText(
+      prospect?.propertyAddress || prospect?.sellerPropertyAddress || prospect?.area || prospect?.address || '',
+    )
+    const nextStep = normalizeText(prospect?.followUpNote || prospect?.nextStep || prospect?.next_step)
+    const nextStepDueDate = normalizeText(prospect?.nextFollowUpDate || prospect?.next_step_due_date)
+
+    return {
+      ...prospect,
+      assignedProfile,
+      resolvedSource: source,
+      resolvedSourceKey: sourceKey,
+      resolvedPropertyInterest: propertyInterest,
+      resolvedPropertyAddress: propertyAddress,
+      resolvedEstimatedValue: Number(prospect?.estimatedValue || prospect?.estimated_value || 0) || 0,
+      resolvedNextStep: nextStep || 'Follow up with prospect',
+      resolvedNextStepDueDate: nextStepDueDate,
+      assignedLabel: assignedProfile?.name || 'Unassigned',
+    }
+  }), [agentOptions, scopedProspects])
+
   const filteredProspects = useMemo(() => {
-    const rows = scopedProspects.filter((prospect) => {
+    const rows = prospectRows.filter((prospect) => {
       const audienceMatch = resolveProspectAudience(prospect) === prospectView
       const searchMatch = filters.search
         ? [
@@ -688,21 +910,30 @@ function PipelineCanvassingPage() {
             prospect?.phone,
             prospect?.email,
             prospect?.area,
-            prospect?.propertyType,
-            prospect?.canvassingMethod,
+            prospect?.resolvedPropertyInterest,
+            prospect?.resolvedPropertyAddress,
+            prospect?.resolvedSource,
             prospect?.status,
           ]
             .join(' ')
             .toLowerCase()
             .includes(filters.search.toLowerCase())
         : true
-      const methodMatch = filters.method === 'all' ? true : normalizeText(prospect?.canvassingMethod) === filters.method
+      const methodMatch = filters.method === 'all'
+        ? true
+        : normalizeCanvassingSourceKey(prospect?.resolvedSource) === filters.method
       const prospectStatus = normalizeText(prospect?.status)
       const convertedWithoutLead = prospectStatus === 'Converted to Lead' && !normalizeText(prospect?.convertedLeadId)
       const statusMatch = filters.status === 'all'
         ? (!['Converted to Lead', 'Archived'].includes(prospectStatus) || convertedWithoutLead)
         : prospectStatus === filters.status
-      return audienceMatch && searchMatch && methodMatch && statusMatch
+      const assignedMatch = filters.assigned === 'all'
+        ? true
+        : filters.assigned === 'unassigned'
+          ? prospect.assignedProfile?.isUnassigned
+          : normalizeText(prospect.assignedProfile?.id) === filters.assigned ||
+            normalizeText(prospect.assignedProfile?.email) === filters.assigned
+      return audienceMatch && searchMatch && methodMatch && statusMatch && assignedMatch
     })
 
     return rows.sort((left, right) => {
@@ -718,7 +949,33 @@ function PipelineCanvassingPage() {
       const rightTime = new Date(right?.createdAt || 0).getTime()
       return rightTime - leftTime
     })
-  }, [filters.method, filters.search, filters.sort, filters.status, prospectView, scopedProspects])
+    }, [filters.assigned, filters.method, filters.search, filters.sort, filters.status, prospectView, prospectRows])
+
+  const availableSourceOptions = useMemo(() => {
+    const list = Array.from(new Set(prospectRows.map((prospect) => prospect?.resolvedSourceKey || 'unknown')))
+    const ordered = CANVASSING_SOURCE_PILL_ORDER.filter((key) => list.includes(key))
+    const extras = list.filter((key) => !ordered.includes(key))
+    const orderedKeys = [...ordered, ...extras]
+    return orderedKeys.map((key) => ({ key, label: CANVASSING_SOURCE_PILL_STYLES[key]?.label || resolveCanvassingSourceText(key) }))
+  }, [prospectRows])
+
+  const assignedOptions = useMemo(() => {
+    const byKey = new Map()
+    for (const prospect of prospectRows) {
+      if (prospect.assignedProfile?.isUnassigned) continue
+      const id = normalizeKey(prospect.assignedProfile?.id)
+      const email = normalizeKey(prospect.assignedProfile?.email)
+      const label = normalizeText(prospect.assignedProfile?.name) || 'Agent'
+      if (id && !byKey.has(id)) {
+        byKey.set(id, { id, email, label })
+      }
+      if (!id && email && ![...byKey.values()].some((row) => row.email === email)) {
+        byKey.set(`email-${email}`, { id: '', email, label })
+      }
+    }
+    const ordered = [...byKey.values()].sort((left, right) => normalizeText(left.label).localeCompare(normalizeText(right.label)))
+    return ordered
+  }, [prospectRows])
 
   const prospectById = useMemo(() => {
     const map = new Map()
@@ -761,10 +1018,6 @@ function PipelineCanvassingPage() {
       convertedToLeads,
     }
   }, [scopedActivities, scopedProspects])
-
-  const availableMethods = useMemo(() => {
-    return Array.from(new Set(scopedProspects.map((prospect) => normalizeText(prospect?.canvassingMethod)).filter(Boolean)))
-  }, [scopedProspects])
 
   function resetProspectForm() {
     setProspectForm({
@@ -831,7 +1084,7 @@ function PipelineCanvassingPage() {
       listingId: normalizeText(selectedListing?.id),
       listingLabel: normalizeText(selectedListing?.label),
       convertedLeadId: null,
-      createdBy: currentAgent.id || currentAgent.email,
+      createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
@@ -906,14 +1159,14 @@ function PipelineCanvassingPage() {
     const nextActivityPayload = {
       organisationId,
       prospectId: selectedProspect.id,
-      agentId: currentAgent.id || null,
+      agentId: currentAgentForWrites.id || null,
       agentName: currentAgent.fullName || null,
       activityType: normalizeText(activityForm.activityType) || 'Note',
       activityNote: normalizeText(activityForm.activityNote),
       outcome: normalizeText(activityForm.outcome),
       activityDate: new Date().toISOString(),
       createdAt: new Date().toISOString(),
-      createdBy: currentAgent.id || currentAgent.email,
+      createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
     }
 
     try {
@@ -932,14 +1185,14 @@ function PipelineCanvassingPage() {
     const nextActivityPayload = {
       organisationId,
       prospectId: prospect.id,
-      agentId: currentAgent.id || null,
+      agentId: currentAgentForWrites.id || null,
       agentName: currentAgent.fullName || null,
       activityType: type,
       activityNote: `${type} action logged`,
       outcome: '',
       activityDate: new Date().toISOString(),
       createdAt: new Date().toISOString(),
-      createdBy: currentAgent.id || currentAgent.email,
+      createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
     }
 
     try {
@@ -987,14 +1240,14 @@ function PipelineCanvassingPage() {
     const archiveActivity = {
         organisationId,
         prospectId,
-        agentId: currentAgent.id || null,
+        agentId: currentAgentForWrites.id || null,
         agentName: currentAgent.fullName || null,
         activityType: 'Follow-Up',
         activityNote: `prospect_archived:${reason}`,
         outcome: notes || reason,
         activityDate: new Date().toISOString(),
         createdAt: new Date().toISOString(),
-        createdBy: currentAgent.id || currentAgent.email,
+        createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
       }
     try {
       const saved = await updateCanvassingProspect(organisationId, prospectId, updatedProspect)
@@ -1061,7 +1314,7 @@ function PipelineCanvassingPage() {
         buildLeadPayloadFromProspect(targetProspect, leadCategory, currentAgent, existingConvertedLeadId),
         {
           actor: {
-            id: currentAgent.id,
+            id: currentAgentForWrites.id,
             name: currentAgent.fullName,
             email: currentAgent.email,
           },
@@ -1072,12 +1325,12 @@ function PipelineCanvassingPage() {
         throw new Error('The lead could not be created. The prospect has not been moved.')
       }
       await createAgencyCrmLeadActivity(organisationId, targetLeadId, {
-          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          agent: { id: currentAgentForWrites.id || currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Lead Created',
           activityNote: existingConvertedLeadId ? 'canvassing_lead_relinked' : 'canvassing_prospect_converted',
           outcome: existingConvertedLeadId ? 'Converted prospect lead repaired' : 'Converted from canvassing prospect',
           activityDate: new Date().toISOString(),
-      }, { actor: currentAgent })
+      }, { actor: { id: currentAgentForWrites.id, name: currentAgent.fullName, email: currentAgent.email } })
 
       const convertedProspect = {
         ...targetProspect,
@@ -1089,7 +1342,7 @@ function PipelineCanvassingPage() {
       const conversionActivity = await createCanvassingActivity(organisationId, {
         organisationId,
         prospectId: targetProspectId,
-        agentId: currentAgent.id || null,
+        agentId: currentAgentForWrites.id || null,
         agentName: currentAgent.fullName || null,
         activityType: 'Note',
         activityNote: existingConvertedLeadId
@@ -1098,7 +1351,7 @@ function PipelineCanvassingPage() {
         outcome: targetLeadId,
         activityDate: new Date().toISOString(),
         createdAt: new Date().toISOString(),
-        createdBy: currentAgent.id || currentAgent.email,
+        createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
       })
       setProspects((previous) => previous.map((row) => normalizeText(row?.id) === targetProspectId ? (savedProspect || convertedProspect) : row))
       setActivities((previous) => [conversionActivity, ...previous])
@@ -1121,22 +1374,22 @@ function PipelineCanvassingPage() {
 
   return (
     <section className="space-y-5">
-      <header className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_24px_rgba(15,23,42,0.05)]">
+      <header className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-[0.72rem] uppercase tracking-[0.11em] text-[#6f8299]">{organisationName}</p>
-            <h2 className="mt-1 text-[1.35rem] font-semibold tracking-[-0.02em] text-[#162233]">Canvassing</h2>
-            <p className="mt-1 text-sm text-[#5d728a]">
-              Track prospecting activity and convert interested prospects into leads.
-            </p>
+            <p className="text-[0.72rem] uppercase tracking-[0.11em] text-slate-500">{organisationName}</p>
+            <h2 className="mt-1 text-[1.35rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h2>
+            <p className="mt-1 text-sm text-slate-600">Track prospecting activity and convert interested prospects into leads.</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="inline-flex items-center rounded-full border border-[#dbe4ee] bg-[#f6f9fc] p-1">
+            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
               <button
                 type="button"
                 onClick={() => setProspectView('buyer')}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  prospectView === 'buyer' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                  prospectView === 'buyer'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-white hover:text-blue-700'
                 }`}
               >
                 Buyer Prospects
@@ -1145,7 +1398,9 @@ function PipelineCanvassingPage() {
                 type="button"
                 onClick={() => setProspectView('seller')}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  prospectView === 'seller' ? 'bg-[#1f4f78] text-white' : 'text-[#51667f] hover:text-[#1f4f78]'
+                  prospectView === 'seller'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-white hover:text-blue-700'
                 }`}
               >
                 Seller Prospects
@@ -1158,140 +1413,180 @@ function PipelineCanvassingPage() {
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
         {[
           { label: 'Prospects', value: metrics.prospectsAdded },
           { label: 'Activities', value: metrics.activities },
           { label: 'Follow Ups', value: metrics.followUpsDue },
           { label: 'Converted', value: metrics.convertedToLeads },
         ].map((metric) => (
-          <article key={metric.label} className="rounded-[12px] border border-[#dce6f1] bg-white px-4 py-3 shadow-[0_8px_16px_rgba(15,23,42,0.03)]">
-            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-[#768aa1]">{metric.label}</span>
-            <strong className="mt-1 block text-[1.35rem] font-semibold tracking-[-0.03em] text-[#132437]">{metric.value}</strong>
+          <article key={metric.label} className="rounded-2xl border border-slate-200 bg-white px-5 py-4">
+            <span className="text-xs font-semibold uppercase tracking-[0.09em] text-slate-500">{metric.label}</span>
+            <strong className="mt-1 block text-3xl font-semibold text-slate-900">{metric.value}</strong>
           </article>
         ))}
       </section>
 
-      <section className="rounded-[18px] border border-[#dde4ee] bg-white shadow-[0_12px_24px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-col gap-2 border-b border-[#e5edf5] p-3 lg:flex-row lg:items-center">
-          <Field
-            className="min-h-10 flex-1"
-            placeholder="Search Prospects..."
-            value={filters.search}
-            onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
-          />
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:flex lg:shrink-0">
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-2">
             <Field
-              as="select"
-              className="min-h-10 lg:w-36"
-              value={filters.method}
-              onChange={(event) => setFilters((previous) => ({ ...previous, method: event.target.value }))}
-            >
-              <option value="all">Method</option>
-              {availableMethods.map((method) => (
-                <option key={method} value={method}>
-                  {method}
-                </option>
-              ))}
-            </Field>
-            <Field
-              as="select"
-              className="min-h-10 lg:w-36"
-              value={filters.status}
-              onChange={(event) => setFilters((previous) => ({ ...previous, status: event.target.value }))}
-            >
-              <option value="all">Status</option>
-              {PROSPECT_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </Field>
-            <Field
-              as="select"
-              className="min-h-10 lg:w-40"
-              value={filters.sort}
-              onChange={(event) => setFilters((previous) => ({ ...previous, sort: event.target.value }))}
-            >
-              <option value="newest">Sort: Newest</option>
-              <option value="next_follow_up">Sort: Follow Up</option>
-              <option value="status">Sort: Status</option>
-            </Field>
-            <Button type="button" className="min-h-10 justify-center whitespace-nowrap" onClick={() => setShowCreateModal(true)}>
-              <Plus size={14} />
-              Prospect
-            </Button>
+              className="h-11 flex-1"
+              placeholder="Search prospects..."
+              value={filters.search}
+              onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
+            />
+            <div className="grid min-h-11 w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1 lg:flex lg:items-end lg:justify-end lg:gap-2">
+              <Field
+                as="select"
+                className="h-11 lg:w-44"
+                value={filters.method}
+                onChange={(event) => setFilters((previous) => ({ ...previous, method: event.target.value }))}
+              >
+                <option value="all">Method / Source</option>
+                {availableSourceOptions.map((method) => (
+                  <option key={method.key} value={method.key}>
+                    {method.label}
+                  </option>
+                ))}
+              </Field>
+              <Field
+                as="select"
+                className="h-11 lg:w-44"
+                value={filters.status}
+                onChange={(event) => setFilters((previous) => ({ ...previous, status: event.target.value }))}
+              >
+                <option value="all">Status / Stage</option>
+                {PROSPECT_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </Field>
+              <Field
+                as="select"
+                className="h-11 lg:w-44"
+                value={filters.assigned}
+                onChange={(event) => setFilters((previous) => ({ ...previous, assigned: event.target.value }))}
+              >
+                <option value="all">Assigned</option>
+                <option value="unassigned">Unassigned</option>
+                {assignedOptions.map((agent) => (
+                  <option key={`${agent.id || agent.email}`} value={agent.id || agent.email}>
+                    {agent.label}
+                  </option>
+                ))}
+              </Field>
+              <Field
+                as="select"
+                className="h-11 lg:w-44"
+                value={filters.sort}
+                onChange={(event) => setFilters((previous) => ({ ...previous, sort: event.target.value }))}
+              >
+                <option value="newest">Sort: Newest</option>
+                <option value="next_follow_up">Sort: Follow Up</option>
+                <option value="status">Sort: Status</option>
+              </Field>
+              <div className="lg:ml-auto">
+                <Button
+                  type="button"
+                  className="h-11 min-h-11 w-full justify-center whitespace-nowrap rounded-xl lg:w-auto"
+                  onClick={() => setShowCreateModal(true)}
+                >
+                  <Plus size={14} />
+                  + Prospect
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
-
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1080px] border-collapse text-sm">
-            <thead className="bg-[#f8fbff] text-left text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#71839a]">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1180px] border-collapse text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
               <tr>
-                <th className="w-[26%] px-4 py-3">Prospect</th>
-                <th className="w-[18%] px-4 py-3">Property</th>
-                <th className="w-[24%] px-4 py-3">Stage / Next Step</th>
-                <th className="w-[14%] px-4 py-3">Assigned</th>
+                <th className="w-[22%] px-4 py-3">Prospect</th>
+                <th className="w-[14%] px-4 py-3">Source</th>
+                <th className="w-[22%] px-4 py-3">{prospectView === 'seller' ? 'Property Address' : 'Property Interest'}</th>
+                <th className="w-[22%] px-4 py-3">Stage / Next Step</th>
+                <th className="w-[16%] px-4 py-3">Assigned</th>
                 <th className="w-[12%] px-4 py-3">Last Activity</th>
-                <th className="w-[6%] px-4 py-3 text-right">Action</th>
+                <th className="w-[7%] px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#e8eef5] bg-white">
+            <tbody className="divide-y divide-slate-100 bg-white">
               {filteredProspects.length ? (
                 filteredProspects.map((prospect) => {
                   const lastActivity = latestActivityByProspectId.get(normalizeText(prospect?.id))
                   const displayName = getProspectDisplayName(prospect)
-                  const propertyType = prospect.propertyType || 'Property type pending'
-                  const area = prospect.area || 'Area not set'
-                  const valueLabel = formatCurrency(prospect.estimatedValue)
-                  const stage = prospect.status || 'New'
-                  const followUpLabel = prospect.followUpNote || 'Follow up with prospect'
-                  const followUpDateLabel = prospect.nextFollowUpDate ? `Due: ${formatShortDate(prospect.nextFollowUpDate)}` : 'Due date not set'
-                  const assignedAgentLabel = prospect.assignedAgentName || prospect.assignedAgentEmail || 'Unassigned'
+                  const prospectTypeLabel =
+                    resolveProspectAudience(prospect) === 'seller' ? 'Seller Prospect' : 'Buyer Prospect'
+                  const addressLine = prospect?.resolvedPropertyAddress || '—'
+                  const addressLine2 = normalizeText(prospect.area) && normalizeText(prospect.area) !== normalizeText(addressLine)
+                    ? normalizeText(prospect.area)
+                    : ''
+                  const interestLine = normalizeText(prospect?.resolvedPropertyInterest) || 'No property interest'
+                  const stage = normalizeText(prospect?.status) || 'New'
+                  const nextStepLabel = prospect?.resolvedNextStep || 'Follow up with prospect'
+                  const nextStepDueLabel = prospect?.resolvedNextStepDueDate
+                    ? `Due: ${formatShortDate(prospect.resolvedNextStepDueDate)}`
+                    : 'Due date not set'
+                  const estimatedValueLabel = formatOptionalCurrency(
+                    prospect.resolvedEstimatedValue,
+                  )
                   const actionMenuOpen = openActionMenuId === normalizeText(prospect.id)
 
                   return (
                     <tr
                       key={prospect.id}
-                      className="h-[88px] cursor-pointer text-[#253b52] transition hover:bg-[#f7fbff]"
+                      className="h-[104px] cursor-pointer text-slate-700 transition hover:bg-slate-50"
                       onClick={() => handleOpenProspectDetail(prospect)}
                     >
-                      <td className="px-4 py-3 align-middle">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#eaf2fb] text-sm font-semibold text-[#1f4f78]">
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
                             {getProspectInitials(prospect)}
                           </div>
                           <div className="min-w-0">
-                            <p className="truncate text-[0.95rem] font-semibold text-[#142132]">{displayName}</p>
-                            <p className="mt-0.5 truncate text-xs text-[#6f839c]">{prospect.prospectType || 'Prospect'}</p>
-                            <p className="mt-0.5 truncate text-xs text-[#8a9ab0]">{area}</p>
+                            <p className="truncate text-[0.95rem] font-semibold text-slate-900">{displayName}</p>
+                            <p className="mt-0.5 truncate text-xs text-slate-500">{prospectTypeLabel}</p>
+                            <p className="mt-0.5 truncate text-xs text-slate-500">{addressLine}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 align-middle">
-                        <p className="truncate font-medium text-[#253b52]">{propertyType}</p>
-                        <p className="mt-0.5 truncate text-xs text-[#60758b]">{area}</p>
-                        <p className="mt-1 truncate text-sm font-semibold text-[#142132]">{valueLabel}</p>
+                      <td className="px-4 py-3 align-top">
+                        <CanvassingSourcePill source={prospect?.resolvedSource || prospect?.source || prospect?.canvassingMethod} />
                       </td>
-                      <td className="px-4 py-3 align-middle">
+                      <td className="px-4 py-3 align-top">
+                        <p className="truncate font-medium text-slate-700">
+                          {prospectView === 'seller'
+                            ? (addressLine || 'Address Pending')
+                            : interestLine}
+                        </p>
+                        {prospectView === 'seller' ? null : <p className="mt-0.5 text-xs text-slate-500">{addressLine}</p>}
+                        {addressLine2 ? <p className="mt-0.5 text-xs text-slate-500">{addressLine2}</p> : null}
+                        <p className="mt-1 text-sm font-semibold text-slate-900">{estimatedValueLabel}</p>
+                      </td>
+                      <td className="px-4 py-3 align-top">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusPillClass(stage)}`}>
                           {stage}
                         </span>
-                        <p className="mt-2 line-clamp-1 font-medium text-[#253b52]">{followUpLabel}</p>
-                        <p className="mt-0.5 text-xs text-[#71839a]">{followUpDateLabel}</p>
+                        <p className="mt-2 line-clamp-1 font-medium text-slate-700">{nextStepLabel}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{nextStepDueLabel}</p>
                       </td>
-                      <td className="px-4 py-3 align-middle">
-                        <p className="truncate font-medium text-[#253b52]">{assignedAgentLabel}</p>
+                      <td className="px-4 py-3 align-top">
+                        <ProspectOwnerCell agent={prospect.assignedProfile} />
                       </td>
-                      <td className="px-4 py-3 align-middle">
-                        <p className="truncate font-medium text-[#253b52]">{formatRelativeActivityTime(lastActivity?.activityDate || lastActivity?.createdAt)}</p>
-                        <p className="mt-0.5 truncate text-xs text-[#71839a]">{lastActivity?.activityType || ''}</p>
+                      <td className="px-4 py-3 align-top">
+                        <p className="truncate font-medium text-slate-700">
+                          {formatRelativeActivityTime(lastActivity?.activityDate || lastActivity?.createdAt)}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">{lastActivity?.activityType || '—'}</p>
                       </td>
-                      <td className="px-4 py-3 text-right align-middle">
+                      <td className="px-4 py-3 text-right align-top">
                         <div className="relative inline-flex" onClick={(event) => event.stopPropagation()}>
                           <button
                             type="button"
-                            className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-xs font-semibold text-[#24445f] shadow-[0_4px_10px_rgba(15,23,42,0.04)] transition hover:border-[#b8cce0] hover:bg-[#f8fbff]"
+                            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
                             onClick={(event) => {
                               event.stopPropagation()
                               setOpenActionMenuId((previous) => (previous === normalizeText(prospect.id) ? '' : normalizeText(prospect.id)))
@@ -1301,7 +1596,7 @@ function PipelineCanvassingPage() {
                             <ChevronDown size={13} />
                           </button>
                           {actionMenuOpen ? (
-                            <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-[10px] border border-[#dce6f2] bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
+                            <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
                               {[
                                 ['Open Prospect', () => handleOpenProspectDetail(prospect)],
                                 ['Call Prospect', () => handleQuickLogActivity(prospect, 'Call')],
@@ -1314,8 +1609,8 @@ function PipelineCanvassingPage() {
                                 <button
                                   key={label}
                                   type="button"
-                                  className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-[#f5f8fc] ${
-                                    label === 'Delete' ? 'text-[#a13225]' : 'text-[#2d4560]'
+                                  className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-slate-50 ${
+                                    label === 'Delete' ? 'text-rose-700' : 'text-slate-700'
                                   }`}
                                   onClick={(event) => {
                                     event.stopPropagation()
@@ -1335,7 +1630,7 @@ function PipelineCanvassingPage() {
                 })
               ) : (
                 <tr>
-                  <td className="px-4 py-8 text-sm text-[#6f839c]" colSpan={6}>
+                  <td className="px-4 py-8 text-sm text-slate-500" colSpan={7}>
                     {prospectView === 'seller'
                       ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
                       : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
@@ -1346,34 +1641,45 @@ function PipelineCanvassingPage() {
           </table>
         </div>
 
-        <div className="divide-y divide-[#e8eef5] md:hidden">
+        <div className="divide-y divide-slate-100 p-3 md:hidden">
           {filteredProspects.length ? (
             filteredProspects.map((prospect) => {
               const lastActivity = latestActivityByProspectId.get(normalizeText(prospect?.id))
               const displayName = getProspectDisplayName(prospect)
-              const propertyType = prospect.propertyType || 'Property type pending'
-              const area = prospect.area || 'Area not set'
-              const stage = prospect.status || 'New'
+              const prospectTypeLabel =
+                resolveProspectAudience(prospect) === 'seller' ? 'Seller Prospect' : 'Buyer Prospect'
+              const addressLine = prospect?.resolvedPropertyAddress || 'Address Pending'
+              const addressLine2 = normalizeText(prospect.area) && normalizeText(prospect.area) !== normalizeText(addressLine)
+                ? normalizeText(prospect.area)
+                : ''
+              const interestLine = normalizeText(prospect?.resolvedPropertyInterest) || 'No property interest'
+              const stage = normalizeText(prospect?.status) || 'New'
+              const nextStepLabel = prospect?.resolvedNextStep || 'Follow up with prospect'
+              const nextStepDueLabel = prospect?.resolvedNextStepDueDate
+                ? `Due: ${formatShortDate(prospect.resolvedNextStepDueDate)}`
+                : 'Due date not set'
+              const estimatedValueLabel = formatOptionalCurrency(prospect.resolvedEstimatedValue)
               const actionMenuOpen = openActionMenuId === normalizeText(prospect.id)
 
               return (
                 <div
                   key={prospect.id}
-                  className="cursor-pointer px-4 py-3 transition hover:bg-[#f7fbff]"
+                  className="cursor-pointer px-4 py-3 transition hover:bg-slate-50"
                   onClick={() => handleOpenProspectDetail(prospect)}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[#142132]">{displayName}</p>
-                      <p className="mt-1 text-xs text-[#60758b]">
-                        {propertyType} • {area}
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-[#142132]">{formatCurrency(prospect.estimatedValue)}</p>
+                      <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
+                      <p className="mt-1 text-xs text-slate-500">{prospectTypeLabel}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{addressLine}</p>
+                      {addressLine2 ? <p className="text-xs text-slate-500">{addressLine2}</p> : null}
+                      {prospectView === 'buyer' ? <p className="text-xs text-slate-500">{interestLine}</p> : null}
+                      <p className="mt-1 text-sm font-semibold text-slate-900">{estimatedValueLabel}</p>
                     </div>
                     <div className="relative shrink-0" onClick={(event) => event.stopPropagation()}>
                       <button
                         type="button"
-                        className="inline-flex h-9 items-center gap-1.5 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-xs font-semibold text-[#24445f]"
+                        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600"
                         onClick={(event) => {
                           event.stopPropagation()
                           setOpenActionMenuId((previous) => (previous === normalizeText(prospect.id) ? '' : normalizeText(prospect.id)))
@@ -1383,7 +1689,7 @@ function PipelineCanvassingPage() {
                         <ChevronDown size={13} />
                       </button>
                       {actionMenuOpen ? (
-                        <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-[10px] border border-[#dce6f2] bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
+                        <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
                           {[
                             ['Open Prospect', () => handleOpenProspectDetail(prospect)],
                             ['Call Prospect', () => handleQuickLogActivity(prospect, 'Call')],
@@ -1396,8 +1702,8 @@ function PipelineCanvassingPage() {
                             <button
                               key={label}
                               type="button"
-                              className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-[#f5f8fc] ${
-                                label === 'Delete' ? 'text-[#a13225]' : 'text-[#2d4560]'
+                              className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-slate-50 ${
+                                label === 'Delete' ? 'text-rose-700' : 'text-slate-700'
                               }`}
                               onClick={(event) => {
                                 event.stopPropagation()
@@ -1412,21 +1718,25 @@ function PipelineCanvassingPage() {
                       ) : null}
                     </div>
                   </div>
-                  <div className="mt-3 grid gap-2 text-xs text-[#60758b]">
-                    <span className={`w-fit rounded-full border px-2.5 py-1 font-semibold ${getStatusPillClass(stage)}`}>{stage}</span>
-                    <p>{prospect.followUpNote || 'Follow up with prospect'}</p>
-                    <p>Due {prospect.nextFollowUpDate ? formatShortDate(prospect.nextFollowUpDate) : 'date not set'}</p>
-                    <p>{prospect.assignedAgentName || prospect.assignedAgentEmail || 'Unassigned'}</p>
+                  <div className="mt-3 grid gap-2 text-xs text-slate-500">
+                    <CanvassingSourcePill source={prospect?.resolvedSource || prospect?.source || prospect?.canvassingMethod} />
+                    <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusPillClass(stage)}`}>{stage}</span>
+                    <p>{nextStepLabel}</p>
+                    <p>{nextStepDueLabel}</p>
+                    <p>
+                      <span className="font-semibold text-slate-700">Assigned: </span>
+                      <ProspectOwnerCell agent={prospect.assignedProfile} />
+                    </p>
                     <p>
                       {formatRelativeActivityTime(lastActivity?.activityDate || lastActivity?.createdAt)}
-                      {lastActivity?.activityType ? ` • ${lastActivity.activityType}` : ''}
+                      <span className="text-slate-500">{lastActivity?.activityType ? ` • ${lastActivity.activityType}` : ' • —'}</span>
                     </p>
                   </div>
                 </div>
               )
             })
           ) : (
-            <p className="px-4 py-8 text-sm text-[#6f839c]">
+            <p className="px-4 py-8 text-sm text-slate-500">
               {prospectView === 'seller'
                 ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
                 : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}

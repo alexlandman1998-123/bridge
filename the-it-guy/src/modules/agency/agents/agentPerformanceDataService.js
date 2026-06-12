@@ -1,6 +1,7 @@
 import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../../../lib/api'
 import { listAgencyCrmLeadContacts } from '../../../lib/agencyCrmRepository'
 import { listAppointmentsAsync } from '../../../lib/agencyPipelineService'
+import { listCanvassingWorkspace } from '../../../lib/canvassingRepository'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../../lib/settingsApi'
 import { getBranches } from '../../../services/agencyBranchService'
 import { getOrganisationPrivateListings } from '../../../services/privateListingService'
@@ -34,13 +35,14 @@ export async function loadAgentPerformanceSources({
   ])
 
   const organisationId = normalizeOrganisationId({ organisationSettings, directory, profile })
-  const [branches, crmRows, remotePrivateListings, appointments] = await Promise.all([
+  const [branches, crmRows, remotePrivateListings, appointments, canvassingRows] = await Promise.all([
     canManageDirectory ? getBranches().catch(() => []) : Promise.resolve([]),
     organisationId ? listAgencyCrmLeadContacts(organisationId).catch(() => EMPTY_CRM_SOURCE) : Promise.resolve(EMPTY_CRM_SOURCE),
     organisationId
       ? getOrganisationPrivateListings(organisationId, { includeRequirementsAndDocuments: false }).catch(() => localPrivateListings)
       : Promise.resolve(localPrivateListings),
     organisationId ? listAppointmentsAsync(organisationId, { includeAll: true }).catch(() => []) : Promise.resolve([]),
+    organisationId ? listCanvassingWorkspace(organisationId).catch(() => ({ prospects: [], activities: [] })) : Promise.resolve({ prospects: [], activities: [] }),
   ])
 
   const privateListings = Array.isArray(remotePrivateListings) && remotePrivateListings.length ? remotePrivateListings : localPrivateListings
@@ -56,6 +58,8 @@ export async function loadAgentPerformanceSources({
     leadActivities: Array.isArray(crmRows?.leadActivities) ? crmRows.leadActivities : [],
     tasks: Array.isArray(crmRows?.tasks) ? crmRows.tasks : [],
     appointments: Array.isArray(appointments) ? appointments : [],
+    canvassingProspects: Array.isArray(canvassingRows?.prospects) ? canvassingRows.prospects : [],
+    canvassingActivities: Array.isArray(canvassingRows?.activities) ? canvassingRows.activities : [],
     listings: privateListings,
   }
 }
