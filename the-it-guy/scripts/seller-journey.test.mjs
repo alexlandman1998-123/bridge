@@ -30,6 +30,15 @@ const baseLead = {
 }
 
 {
+  const stage = getSellerJourneyStage({
+    lead: baseLead,
+    appointments: [{ appointmentType: 'other', customTypeLabel: 'Seller Appointment', status: 'confirmed', dateTime: '2026-06-03T10:00:00Z' }],
+  })
+  assert.equal(stage.key, 'appointment_valuation')
+  assert.equal(stage.status, 'Scheduled')
+}
+
+{
   const journey = buildSellerJourney({
     lead: baseLead,
     appointments: [{ appointmentType: 'seller_consultation', status: 'completed', completedAt: '2026-06-03T12:00:00Z' }],

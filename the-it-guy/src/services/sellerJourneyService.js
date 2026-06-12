@@ -216,6 +216,8 @@ export function isSellerValuationAppointment(appointment = {}) {
   return (
     signal.includes('seller_consultation') ||
     signal.includes('seller_valuation') ||
+    signal.includes('seller_appointment') ||
+    signal.includes('appointment_valuation') ||
     signal.includes('valuation') ||
     signal.includes('appraisal') ||
     signal.includes('mandate_consultation')

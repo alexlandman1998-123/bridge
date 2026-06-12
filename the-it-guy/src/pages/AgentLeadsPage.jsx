@@ -147,7 +147,8 @@ const LEAD_APPOINTMENT_TYPES = [
   { value: 'otp_signing', label: 'OTP Signing' },
   { value: 'other', label: 'Other Appointment' },
 ]
-const SELLER_ADD_ON_APPOINTMENT_TYPES = [
+const SELLER_APPOINTMENT_TYPES = [
+  { value: 'seller_consultation', label: 'Appointment / Valuation' },
   { value: 'other', label: 'Seller Appointment' },
   { value: 'mandate_signing', label: 'Mandate Signing' },
   { value: 'client_meeting', label: 'Client Meeting' },
@@ -541,6 +542,14 @@ function formatCleanValue(value, fallback = '—') {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   if (Array.isArray(value)) return value.length ? value.map(titleCaseLabel).join(', ') : fallback
   return titleCaseLabel(value)
+}
+
+function getSellerAppointmentDefaultTitle(appointmentType = 'seller_consultation', contactName = '', leadName = '') {
+  const personName = contactName || leadName || 'Seller'
+  if (appointmentType === 'seller_consultation') return `Appointment / Valuation - ${personName}`
+  if (appointmentType === 'mandate_signing') return `Mandate Signing - ${personName}`
+  if (appointmentType === 'client_meeting') return `Client Meeting - ${personName}`
+  return `Seller appointment - ${personName}`
 }
 
 function readFirstValue(row = {}, keys = []) {
@@ -5545,9 +5554,10 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
   const contact = getLeadContactSnapshot(lead)
   const listingId = getSellerListingId(lead, listing)
   const property = getSellerPropertySummary(lead, listing)
+  const defaultJourneyAppointmentTitle = getSellerAppointmentDefaultTitle('seller_consultation', contact.name, lead?.name)
   const [draft, setDraft] = useState({
-    appointmentType: 'other',
-    title: `Seller appointment - ${contact.name || lead?.name || 'Seller'}`,
+    appointmentType: 'seller_consultation',
+    title: defaultJourneyAppointmentTitle,
     appointmentStatus: 'confirmed',
     sendInviteEmails: false,
     date: getTodayInputValue(),
@@ -5562,7 +5572,7 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
   useEffect(() => {
     setDraft((previous) => ({
       ...previous,
-      title: previous.title || `Seller appointment - ${contact.name || lead?.name || 'Seller'}`,
+      title: previous.title || getSellerAppointmentDefaultTitle(previous.appointmentType, contact.name, lead?.name),
     }))
   }, [contact.name, lead?.name])
 
@@ -5581,6 +5591,12 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
       setSaving(true)
       setError('')
       setMessage('')
+      const journeyAppointment = draft.appointmentType === 'seller_consultation'
+      const linkedWorkflow = journeyAppointment ? 'seller_listing' : 'seller_lead_add_on'
+      const linkedWorkflowStage = journeyAppointment ? 'seller_consultation' : 'optional_appointment'
+      const appointmentInstructions = journeyAppointment
+        ? 'Seller consultation / valuation appointment. This should advance the seller journey once scheduled.'
+        : 'Supplemental seller appointment. This does not change the seller journey milestones.'
       const sellerParticipant = {
         name: contact.name || lead.name || 'Seller',
         email: contact.email,
@@ -5591,7 +5607,7 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
       }
       const result = await createAppointmentAsync(organisationId, {
         appointmentType: draft.appointmentType,
-        title: normalizeText(draft.title) || `Seller appointment - ${contact.name || lead.name || 'Seller'}`,
+        title: normalizeText(draft.title) || getSellerAppointmentDefaultTitle(draft.appointmentType, contact.name, lead.name),
         customTypeLabel: draft.appointmentType === 'other' ? 'Seller Appointment' : '',
         date: draft.date,
         startTime: draft.startTime,
@@ -5605,12 +5621,12 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
         listingLabel: property.address,
         relatedEntityType: 'lead',
         relatedEntityId: lead.leadId,
-        linkedWorkflow: 'seller_lead_add_on',
-        linkedWorkflowStage: 'optional_appointment',
+        linkedWorkflow,
+        linkedWorkflowStage,
         visibility: draft.sendInviteEmails ? 'client_visible' : 'shared_role_players',
         assignedAgent: actor,
         participants: [sellerParticipant].filter((participant) => participant.email || participant.phone || participant.name),
-        instructions: 'Optional seller lead appointment. This does not gate onboarding, mandate generation, or listing creation.',
+        instructions: appointmentInstructions,
         sendInviteEmails: draft.sendInviteEmails,
         attachCalendarInvite: draft.sendInviteEmails,
       }, { actor })
@@ -5619,8 +5635,8 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
         appointmentStatus: draft.appointmentStatus,
       }, false))
       setDraft({
-        appointmentType: 'other',
-        title: `Seller appointment - ${contact.name || lead.name || 'Seller'}`,
+        appointmentType: 'seller_consultation',
+        title: getSellerAppointmentDefaultTitle('seller_consultation', contact.name, lead.name),
         appointmentStatus: 'confirmed',
         sendInviteEmails: false,
         date: getTodayInputValue(),
@@ -5640,16 +5656,37 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
     <form onSubmit={submit} className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm font-semibold text-slate-950">Optional seller appointment</p>
-          <p className="mt-1 text-sm text-slate-500">Linked to this seller lead{listingId ? ' and listing' : ''}; it does not update journey progress or mandate eligibility.</p>
+          <p className="text-sm font-semibold text-slate-950">Seller appointment</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {draft.appointmentType === 'seller_consultation'
+              ? `Linked to this seller lead${listingId ? ' and listing' : ''}; a scheduled appointment / valuation updates the seller journey automatically.`
+              : `Linked to this seller lead${listingId ? ' and listing' : ''}; supplemental appointment types stay outside the main seller journey.`}
+          </p>
         </div>
-        <StatusPill tone="blue">Add-on</StatusPill>
+        <StatusPill tone={draft.appointmentType === 'seller_consultation' ? 'green' : 'blue'}>
+          {draft.appointmentType === 'seller_consultation' ? 'Journey milestone' : 'Add-on'}
+        </StatusPill>
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <label className="grid gap-1 text-sm font-semibold text-slate-700">
           Type
-          <select value={draft.appointmentType} onChange={(event) => setDraft((previous) => ({ ...previous, appointmentType: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
-            {SELLER_ADD_ON_APPOINTMENT_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          <select
+            value={draft.appointmentType}
+            onChange={(event) => setDraft((previous) => {
+              const nextType = event.target.value
+              const defaultTitle = getSellerAppointmentDefaultTitle(nextType, contact.name, lead?.name)
+              const currentDefault = getSellerAppointmentDefaultTitle(previous.appointmentType, contact.name, lead?.name)
+              return {
+                ...previous,
+                appointmentType: nextType,
+                title: !normalizeText(previous.title) || normalizeText(previous.title) === normalizeText(currentDefault)
+                  ? defaultTitle
+                  : previous.title,
+              }
+            })}
+            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300"
+          >
+            {SELLER_APPOINTMENT_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
         <label className="grid gap-1 text-sm font-semibold text-slate-700">
@@ -7697,20 +7734,20 @@ function SellerJourneyRail({ journey = null, row = {}, listing = null }) {
         </div>
         <StatusPill tone={journey.listingLive ? 'green' : journey.listingCreated ? 'amber' : 'blue'}>{journey.stage?.status || journey.status?.status || 'Active'}</StatusPill>
       </div>
-      <ol className="mt-7 grid min-w-0 grid-cols-2 gap-x-3 gap-y-5 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-6 lg:px-3">
+      <ol className="mt-7 grid min-w-0 grid-cols-2 gap-x-4 gap-y-6 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-4 lg:px-3 xl:grid-cols-9">
         {(journey.steps || []).map((step, index, steps) => {
           const date = getSellerJourneyStepDate(row, listing, journey, step)
           const isLast = index === steps.length - 1
           return (
             <li key={step.key} className="relative min-w-0">
-              {!isLast ? <span className={`absolute left-10 top-5 hidden h-px w-[calc(100%-0.25rem)] lg:block ${step.completed ? 'bg-emerald-300' : 'bg-slate-200'}`} /> : null}
-              <div className="relative flex min-h-[104px] min-w-0 flex-col items-start gap-3">
+              {!isLast ? <span className={`absolute left-[calc(50%+1.5rem)] top-5 hidden h-px w-[calc(100%-3rem)] xl:block ${step.completed ? 'bg-emerald-300' : 'bg-slate-200'}`} /> : null}
+              <div className="relative flex min-h-[124px] min-w-0 flex-col items-center gap-3 text-center">
                 <span className={`z-10 flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold shadow-sm ${step.current ? 'border-blue-600 bg-blue-600 text-white ring-4 ring-blue-100' : step.completed ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-200 bg-white text-slate-300'}`}>
                   {step.completed || step.current ? <CheckCircle2 size={16} /> : <FileText size={14} />}
                 </span>
-                <div className="min-w-0 max-w-full pr-2">
-                  <p className={`max-w-full break-words text-sm font-semibold leading-5 ${step.current ? 'text-blue-700' : step.completed ? 'text-slate-950' : 'text-slate-500'}`}>{step.label}</p>
-                  <p className="mt-1 max-w-full break-words text-xs font-semibold leading-4 text-slate-500">{date ? formatDate(date) : step.upcoming ? 'Upcoming' : step.status || step.state}</p>
+                <div className="min-w-0 max-w-full">
+                  <p className={`mx-auto min-h-[2.5rem] max-w-[11rem] break-words text-sm font-semibold leading-5 xl:max-w-[8.5rem] ${step.current ? 'text-blue-700' : step.completed ? 'text-slate-950' : 'text-slate-500'}`}>{step.label}</p>
+                  <p className="mt-1 mx-auto min-h-[2rem] max-w-[11rem] break-words text-xs font-semibold leading-4 text-slate-500 xl:max-w-[8.5rem]">{date ? formatDate(date) : step.upcoming ? 'Upcoming' : step.status || step.state}</p>
                 </div>
               </div>
             </li>
