@@ -1021,6 +1021,19 @@ function formatDate(value) {
   return date.toLocaleString('en-ZA')
 }
 
+function formatDateTime(value, fallback = '—') {
+  if (!value) return fallback
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return fallback
+  return date.toLocaleString('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function formatDateShort(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -4845,7 +4858,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const leadViewingCompletionBlockers = useMemo(
     () => (leadCompletionAppointmentId ? getLeadViewingCompletionBlockers(leadViewingCompletionForm) : []),
-    [leadCompletionAppointmentId, leadViewingCompletionForm, offerLinkForm, selectedLead, selectedLeadContact],
+    [getLeadViewingCompletionBlockers, leadCompletionAppointmentId, leadViewingCompletionForm],
   )
 
   const selectedLeadBuyerJourneyStages = useMemo(() => {
@@ -7855,7 +7868,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  function getLeadViewingCompletionBlockers(form = {}) {
+  const getLeadViewingCompletionBlockers = useCallback((form = {}) => {
     const blockers = []
     const nextStep = normalizeText(form?.nextStep)
     const intakePreference = normalizeClientIntakePreference(form?.clientIntakePreference)
@@ -7901,7 +7914,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
 
     return blockers
-  }
+  }, [
+    offerLinkForm.buyerEmail,
+    offerLinkForm.buyerPhone,
+    selectedLead?.email,
+    selectedLead?.phone,
+    selectedLeadContact?.email,
+    selectedLeadContact?.phone,
+  ])
 
   function getLeadViewingOfferReadyListing(form = {}) {
     const viewedListings = Array.isArray(form?.viewedListings) ? form.viewedListings : []

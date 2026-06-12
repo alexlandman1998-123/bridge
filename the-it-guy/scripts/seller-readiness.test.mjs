@@ -40,7 +40,8 @@ const baseLead = {
     appointments: [{ appointmentType: 'seller_valuation', status: 'requested', dateTime: '2026-06-03T10:00:00Z' }],
   })
   const readiness = getSellerReadiness({ lead: baseLead, journey })
-  assert.equal(readiness.nextAction.id, 'mark_valuation_complete')
+  assert.equal(readiness.nextAction.id, 'open_seller_portal')
+  assert.equal(readiness.nextAction.label, 'Send Seller Onboarding')
   assert.equal(readiness.actions.some((item) => item.id === 'mark_valuation_complete'), true)
 }
 
@@ -49,7 +50,7 @@ const baseLead = {
     lead: { ...baseLead, mandatePacketId: 'packet-1' },
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
   }
-  assert.equal(getNextSellerAction(args).id, 'mark_valuation_complete')
+  assert.equal(getNextSellerAction(args).id, 'schedule_valuation')
 }
 
 {

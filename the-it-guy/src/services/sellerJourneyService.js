@@ -856,12 +856,10 @@ export function buildSellerJourney({ lead = {}, contact = {}, appointments = [],
   const sellerDocuments = buildSellerDocuments({ listing, documents })
   const documentsOutstanding = sellerDocuments.filter(isDocumentOutstanding).length
   const documentsSubmitted = sellerDocuments.length > 0 && documentsOutstanding === 0
-  const appointmentSatisfied = Boolean(valuationAppointment) || onboardingSignals.sent
+  const appointmentSatisfied = Boolean(valuationAppointment)
   const valuationStatus = valuationAppointment
     ? appointmentStatus(valuationAppointment)
-    : onboardingSignals.sent
-      ? 'Completed'
-      : 'Not scheduled'
+    : 'Not scheduled'
   const evidence = {
     contacted: isSellerLead(lead),
     contactedStatus: 'Active',
