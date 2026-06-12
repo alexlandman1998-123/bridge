@@ -83,16 +83,18 @@ const baseLead = {
       sellerOnboarding: { token: 'seller-token-1', status: 'sent' },
     },
   })
-  assert.equal(journey.stage.key, 'contacted')
+  assert.equal(journey.stage.key, 'seller_onboarding_sent')
   assert.equal(journey.listingCreated, false)
   assert.equal(journey.mandateStatus, 'not_started')
   assert.equal(journey.kpis.find((item) => item.key === 'mandate').value, 'Not started')
   assert.equal(journey.kpis.find((item) => item.key === 'listing').value, 'Not created')
   assert.equal(journey.sellerPortalStatus, 'Sent')
+  assert.equal(journey.steps.find((step) => step.key === 'appointment_valuation').state, 'completed')
+  assert.equal(journey.steps.find((step) => step.key === 'seller_onboarding_sent').state, 'current')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_sent').state, 'upcoming')
   assert.equal(journey.steps.find((step) => step.key === 'mandate_signed').state, 'upcoming')
   assert.equal(journey.steps.find((step) => step.key === 'listing_created').state, 'upcoming')
-  assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, true)
+  assert.equal(journey.actions.find((item) => item.id === 'generate_mandate').enabled, false)
 }
 
 {
@@ -113,7 +115,7 @@ const baseLead = {
       sellerOnboarding: { token: 'seller-token-2', status: 'sent' },
     },
   })
-  assert.equal(journey.stage.key, 'contacted')
+  assert.equal(journey.stage.key, 'seller_onboarding_sent')
   assert.equal(journey.listingCreated, false)
   assert.equal(journey.mandateStatus, 'not_started')
   assert.equal(journey.kpis.find((item) => item.key === 'mandate').value, 'Not started')
@@ -170,6 +172,35 @@ const baseLead = {
   assert.equal(journey.documentsOutstanding, 0)
   assert.equal(journey.documents.find((item) => item.label === 'Seller ID Document').status, 'Uploaded')
   assert.equal(journey.documents.find((item) => item.label === 'Rates Account').status, 'Approved')
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      listingId: 'listing-docs-live',
+      sellerOnboardingToken: 'seller-token-3',
+      sellerOnboardingStatus: 'completed',
+    },
+    listing: {
+      id: 'listing-docs-live',
+      originatingCrmLeadId: 'lead-1',
+      listingStatus: 'active',
+      listingVisibility: 'active_market',
+      mandateStatus: 'signed',
+      documentRequirements: [
+        { id: 'req-id', requirement_key: 'seller_id_document', requirement_name: 'Seller ID Document', status: 'required', is_required: true },
+        { id: 'req-rates', requirement_key: 'rates_account', requirement_name: 'Rates Account', status: 'required', is_required: true },
+      ],
+      documents: [
+        { id: 'doc-id', requirement_id: 'req-id', document_type: 'seller_id_document', status: 'uploaded', storage_path: 'private-listings/listing-docs-live/id.pdf' },
+        { id: 'doc-rates', requirement_id: 'req-rates', document_type: 'rates_account', status: 'approved', file_url: '/rates.pdf' },
+      ],
+    },
+  })
+  assert.equal(journey.stage.key, 'documents_submitted')
+  assert.equal(journey.documentsSubmitted, true)
+  assert.equal(journey.steps.find((step) => step.key === 'documents_submitted').state, 'current')
 }
 
 {

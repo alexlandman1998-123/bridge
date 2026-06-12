@@ -23,7 +23,7 @@ import {
   Trash2,
   UserRound,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Modal from '../components/ui/Modal'
@@ -7215,6 +7215,22 @@ function getSellerJourneyStepDate(row = {}, listing = null, journey = null, step
       journey?.valuationAppointment?.startTime ||
       journey?.valuationAppointment?.start_time
   }
+  if (step.key === 'seller_onboarding_sent') {
+    return listing?.sellerOnboarding?.sentAt ||
+      listing?.sellerOnboarding?.sent_at ||
+      listing?.sellerOnboarding?.createdAt ||
+      listing?.sellerOnboarding?.created_at ||
+      row?.updatedAt ||
+      row?.updated_at
+  }
+  if (step.key === 'seller_onboarding_submitted') {
+    return listing?.sellerOnboarding?.submittedAt ||
+      listing?.sellerOnboarding?.submitted_at ||
+      listing?.sellerOnboarding?.completedAt ||
+      listing?.sellerOnboarding?.completed_at ||
+      row?.updatedAt ||
+      row?.updated_at
+  }
   if (step.key === 'mandate_sent') {
     return journey?.mandatePacketStatus?.sentAt ||
       journey?.mandatePacketStatus?.sent_at ||
@@ -7233,6 +7249,14 @@ function getSellerJourneyStepDate(row = {}, listing = null, journey = null, step
   }
   if (step.key === 'listing_created') return listing?.createdAt || listing?.created_at || row?.listingCreatedAt || row?.listing_created_at || listing?.updatedAt || listing?.updated_at
   if (step.key === 'listing_live') return listing?.publishedAt || listing?.published_at || listing?.activatedAt || listing?.activated_at || listing?.updatedAt || listing?.updated_at
+  if (step.key === 'documents_submitted') {
+    const documents = Array.isArray(journey?.documents) ? journey.documents : []
+    const timestamps = documents
+      .map((document) => document?.original?.document?.uploaded_at || document?.original?.document?.uploadedAt || document?.original?.uploaded_at || document?.original?.uploadedAt)
+      .filter(Boolean)
+      .sort()
+    return timestamps[timestamps.length - 1] || listing?.updatedAt || listing?.updated_at
+  }
   return journey?.currentStageStartedAt || row?.updatedAt || row?.updated_at
 }
 
@@ -7452,64 +7476,109 @@ function SellerLeadActions({
   const onboardingMeta = getSellerOnboardingActionMeta(onboardingStatus, row, listing)
   const OnboardingIcon = onboardingMeta.icon || Mail
   const mandateRequiresOnboarding = !mandateMeta.hasRecord && !sellerOnboardingIsSubmitted(onboardingStatus)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
 
   const menuButtonClass = 'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50'
 
+  useEffect(() => {
+    if (!menuOpen) return undefined
+
+    function handlePointerDown(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuOpen(false)
+      }
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') {
+        setMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [menuOpen])
+
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false)
+  }, [])
+
+  const closeMenuAndRun = useCallback((callback) => {
+    closeMenu()
+    callback?.()
+  }, [closeMenu])
+
   return (
     <div className="flex items-center justify-start lg:justify-end">
-      <details className="relative">
-        <summary className="inline-flex min-h-11 cursor-pointer list-none items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-slate-800" aria-label="Seller actions">
+      <div className="relative" ref={menuRef}>
+        <button
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-slate-800"
+          aria-label="Seller actions"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+        >
           Actions
-          <ChevronDown size={16} />
-        </summary>
-        <div className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-xl">
-          <button type="button" onClick={onOpenListing} className={menuButtonClass}>
+          <ChevronDown size={16} className={menuOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+        </button>
+        {menuOpen ? (
+        <div className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 text-sm font-semibold text-slate-700 shadow-xl" role="menu">
+          <button type="button" onClick={() => closeMenuAndRun(onOpenListing)} className={menuButtonClass} role="menuitem">
             <Home size={15} />
             {listingMeta.actionLabel}
           </button>
           <button
             type="button"
-            onClick={() => onSendSellerOnboarding?.()}
+            onClick={() => closeMenuAndRun(onSendSellerOnboarding)}
             disabled={sendingOnboarding || onboardingMeta.disabled}
             title={onboardingMeta.help}
             className={menuButtonClass}
+            role="menuitem"
           >
             <OnboardingIcon size={15} />
             {sendingOnboarding ? 'Sending...' : onboardingMeta.label}
           </button>
-          <button type="button" onClick={() => onResendSellerPortalLink?.()} disabled={sendingPortalLink} className={menuButtonClass}>
+          <button type="button" onClick={() => closeMenuAndRun(onResendSellerPortalLink)} disabled={sendingPortalLink} className={menuButtonClass} role="menuitem">
             <RefreshCw size={15} />
             {sendingPortalLink ? 'Resending...' : 'Resend Seller Portal Link'}
           </button>
           <button
             type="button"
-            onClick={onGenerateMandate}
+            onClick={() => closeMenuAndRun(onGenerateMandate)}
             disabled={mandateRequiresOnboarding}
             title={mandateRequiresOnboarding ? 'Seller onboarding must be submitted before generating a mandate.' : mandateMeta.actionLabel}
             className={menuButtonClass}
+            role="menuitem"
           >
             <FileText size={15} />
             {mandateMeta.actionLabel}
           </button>
-          <button type="button" onClick={onOpenAppointments} className={menuButtonClass}>
+          <button type="button" onClick={() => closeMenuAndRun(onOpenAppointments)} className={menuButtonClass} role="menuitem">
             <CalendarDays size={15} />
             Schedule Appointment
           </button>
           <div className="my-1 h-px bg-slate-100" />
-          <button type="button" onClick={() => onStatusAction?.('edit_seller')} className={menuButtonClass}>Edit seller details</button>
-          <button type="button" onClick={() => onStatusAction?.('assign_agent')} className={menuButtonClass}>Assign agent</button>
+          <button type="button" onClick={() => closeMenuAndRun(() => onStatusAction?.('edit_seller'))} className={menuButtonClass} role="menuitem">Edit seller details</button>
+          <button type="button" onClick={() => closeMenuAndRun(() => onStatusAction?.('assign_agent'))} className={menuButtonClass} role="menuitem">Assign agent</button>
           {onboardingMeta.disabled ? (
-            <button type="button" onClick={() => onSendSellerOnboarding?.()} disabled={sendingOnboarding} className={menuButtonClass}>
+            <button type="button" onClick={() => closeMenuAndRun(onSendSellerOnboarding)} disabled={sendingOnboarding} className={menuButtonClass} role="menuitem">
               Resend Onboarding Link
             </button>
           ) : null}
-          <button type="button" onClick={onCopySellerPortalLink} className={menuButtonClass}>Copy seller portal link</button>
-          <button type="button" onClick={onCopyListingLink} className={menuButtonClass}>Copy listing link</button>
+          <button type="button" onClick={() => closeMenuAndRun(onCopySellerPortalLink)} className={menuButtonClass} role="menuitem">Copy seller portal link</button>
+          <button type="button" onClick={() => closeMenuAndRun(onCopyListingLink)} className={menuButtonClass} role="menuitem">Copy listing link</button>
           <div className="my-1 h-px bg-slate-100" />
-          <button type="button" onClick={onMarkAsLost} className={`${menuButtonClass} text-rose-600 hover:bg-rose-50`}>Mark as lost</button>
-          <button type="button" onClick={onArchiveLead} className={`${menuButtonClass} text-rose-600 hover:bg-rose-50`}>Archive lead</button>
+          <button type="button" onClick={() => closeMenuAndRun(onMarkAsLost)} className={`${menuButtonClass} text-rose-600 hover:bg-rose-50`} role="menuitem">Mark as lost</button>
+          <button type="button" onClick={() => closeMenuAndRun(onArchiveLead)} className={`${menuButtonClass} text-rose-600 hover:bg-rose-50`} role="menuitem">Archive lead</button>
         </div>
-      </details>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -7559,6 +7628,7 @@ function SellerLeadHeader({
         <div className="flex min-w-0 flex-col gap-4">
           <SellerLeadStatusChips row={row} journey={journey} readiness={readiness} listing={listing} onAction={onStatusAction} />
           <SellerLeadActions
+            key={row?.leadId || 'seller-lead-actions'}
             row={row}
             journey={journey}
             listing={listing}
@@ -8987,8 +9057,8 @@ function AgentLeadWorkspace() {
         )
       }
       await updateAgencyCrmLeadRecord(organisationId, row.leadId, {
-        stage: 'Onboarding Sent',
-        status: 'Onboarding Sent',
+        stage: 'Seller Onboarding Sent',
+        status: 'Sent',
         sellerOnboardingToken: onboarding?.token,
         sellerOnboardingLink: onboarding?.link,
         sellerOnboardingStatus: 'sent',

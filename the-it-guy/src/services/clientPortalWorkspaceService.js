@@ -235,10 +235,13 @@ function sellerPortalStageMessage(journey = {}) {
   const messages = {
     contacted: 'Your agent has your seller details and will coordinate the next step with you.',
     appointment_valuation: 'Your valuation appointment is the next milestone for preparing your sale.',
+    seller_onboarding_sent: 'Your seller onboarding link has been sent and is ready for you to complete.',
+    seller_onboarding_submitted: 'Your seller onboarding has been submitted and is under review by your agent.',
     mandate_sent: 'Your mandate has been prepared and is ready for review or signing.',
     mandate_signed: 'Your signed mandate is on file and your listing can move forward.',
     listing_created: 'Your listing has been created and is being prepared for the market.',
     listing_live: 'Your listing is live and your agent can share buyer interest and offers here.',
+    documents_submitted: 'Your key seller documents are on file and your active listing is fully documented.',
   }
   return messages[key] || 'Your agent is coordinating the next seller milestone.'
 }

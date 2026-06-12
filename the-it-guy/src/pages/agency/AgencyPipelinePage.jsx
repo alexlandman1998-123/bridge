@@ -1507,8 +1507,8 @@ function mapPrivateListingToLeadFallback(listing = {}) {
     leadCategory: 'seller',
     leadDirection: 'Inbound',
     leadSource: 'Seller Onboarding',
-    stage: isCompleted ? 'Onboarding Completed' : onboardingStatus ? 'Onboarding Sent' : 'Lead',
-    status: isCompleted ? 'Onboarding Completed' : onboardingStatus ? 'Onboarding Sent' : 'Lead',
+    stage: isCompleted ? 'Seller Onboarding Submitted' : onboardingStatus ? 'Seller Onboarding Sent' : 'Lead',
+    status: isCompleted ? 'Submitted' : onboardingStatus ? 'Sent' : 'Lead',
     priority: 'Medium',
     budget: Number(formData.askingPrice || listing?.askingPrice || listing?.estimatedValue || 0) || 0,
     areaInterest: normalizeText(formData.suburb || listing?.suburb),
@@ -2709,8 +2709,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const resolvedOnboardingStatus = onboardingStatus ? onboardingStatus.toLowerCase() : 'completed'
 
       void updateAgencyCrmLeadRecord(organisationId, lead.leadId, {
-        stage: 'Onboarding Completed',
-        status: 'Onboarding Completed',
+        stage: 'Seller Onboarding Submitted',
+        status: 'Submitted',
         sellerOnboardingStatus: resolvedOnboardingStatus.includes('complete') ? 'completed' : resolvedOnboardingStatus || 'completed',
         sellerOnboardingToken: submittedToken,
         listingId: normalizeText(eventDetail?.listingId || eventDetail?.privateListingId || lead.listingId),
@@ -2728,11 +2728,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
         activityType: 'Seller Onboarding Submitted',
         activityNote: 'Seller onboarding was completed.',
-        outcome: 'Onboarding completed',
+        outcome: 'Seller onboarding submitted',
       }, { actor: currentAgent }).catch((syncError) => {
         console.warn('[PIPELINE] non-blocking seller onboarding activity sync failed', syncError)
       })
-      setMessage('Seller onboarding submitted. Lead moved to onboarding completed.')
+      setMessage('Seller onboarding submitted. Seller journey updated.')
       scheduleRecordsReload(organisationId)
     }
 
@@ -3629,8 +3629,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           new Date().toISOString()
         const listingId = normalizeText(onboardingContext?.listing?.id || linkedListingId)
         const patch = {
-          stage: 'Onboarding Completed',
-          status: 'Onboarding Completed',
+          stage: 'Seller Onboarding Submitted',
+          status: 'Submitted',
           sellerOnboardingStatus: 'completed',
           listingId: listingId || normalizeText(selectedLead?.listingId),
           sellerOnboarding: {
@@ -3657,7 +3657,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
           activityType: 'Seller Onboarding Submitted',
           activityNote: 'Seller onboarding was completed.',
-          outcome: 'Onboarding completed',
+          outcome: 'Seller onboarding submitted',
         }, { actor: currentAgent })
 
         if (listingId) {
@@ -6537,8 +6537,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-        stage: 'Onboarding Sent',
-        status: 'Onboarding Sent',
+        stage: 'Seller Onboarding Sent',
+        status: 'Sent',
         sellerOnboardingToken: token,
         sellerOnboardingLink: onboardingLink,
         sellerOnboardingStatus: 'sent',
@@ -6566,8 +6566,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           normalizeLeadIdentityKey(lead?.leadId) === normalizeLeadIdentityKey(selectedLead.leadId)
             ? {
                 ...lead,
-                stage: 'Onboarding Sent',
-                status: 'Onboarding Sent',
+                stage: 'Seller Onboarding Sent',
+                status: 'Sent',
                 sellerOnboardingToken: token,
                 sellerOnboardingLink: onboardingLink,
                 sellerOnboardingStatus: 'sent',

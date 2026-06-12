@@ -35,6 +35,7 @@ import { resolveRequirements } from './documents/canonicalDocumentResolverServic
 import { canAdvanceWorkflowStage } from './documents/canonicalWorkflowGateService'
 import { buildSellerResolverInputFromFacts } from './documents/sellerOnboardingFactTransformer'
 import { buildSellerOnboardingPublicationDraft, mergePublicationDraft } from './sellerListingPublicationMapper'
+import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -2336,58 +2337,200 @@ async function updateLeadRowsWithFallback(client, buildScopedQuery, payload = {}
   }
 }
 
-async function syncLeadWorkflowState(
+async function listSellerJourneyLeadCandidates(
   client,
   {
     organisationId = '',
     leadIds = [],
     onboardingToken = '',
     listingId = '',
-    payload = {},
   } = {},
 ) {
   const normalizedOrganisationId = normalizeText(organisationId)
-  if (!isUuidLike(normalizedOrganisationId)) return false
+  if (!isUuidLike(normalizedOrganisationId)) return []
+
+  const rows = []
+  const seen = new Set()
+  const addRows = (items = []) => {
+    for (const row of Array.isArray(items) ? items : []) {
+      const key = normalizeText(row?.lead_id)
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      rows.push(row)
+    }
+  }
 
   const normalizedLeadIds = Array.from(new Set(
     (Array.isArray(leadIds) ? leadIds : [])
       .map((value) => normalizeUuid(normalizeText(value).replace(/^lead_/i, '')))
       .filter(Boolean),
   ))
-  const normalizedToken = normalizeText(onboardingToken)
-  const normalizedListingId = normalizeText(listingId)
 
   for (const leadId of normalizedLeadIds) {
-    const result = await updateLeadRowsWithFallback(
-      client,
-      (query) => query.eq('organisation_id', normalizedOrganisationId).eq('lead_id', leadId),
-      payload,
-      { label: `lead_id:${leadId}` },
-    )
-    if (result.matched) return true
+    const result = await client
+      .from('leads')
+      .select('lead_id, organisation_id, lead_category, stage, status')
+      .eq('organisation_id', normalizedOrganisationId)
+      .eq('lead_id', leadId)
+      .maybeSingle()
+    if (!result.error && result.data) addRows([result.data])
   }
 
+  const normalizedToken = normalizeText(onboardingToken)
   if (normalizedToken) {
-    const result = await updateLeadRowsWithFallback(
-      client,
-      (query) => query.eq('organisation_id', normalizedOrganisationId).eq('seller_onboarding_token', normalizedToken),
-      payload,
-      { label: `seller_onboarding_token:${normalizedToken}` },
-    )
-    if (result.matched) return true
+    const tokenResult = await client
+      .from('leads')
+      .select('lead_id, organisation_id, lead_category, stage, status')
+      .eq('organisation_id', normalizedOrganisationId)
+      .eq('seller_onboarding_token', normalizedToken)
+    if (!tokenResult.error) addRows(tokenResult.data)
   }
 
+  const normalizedListingId = normalizeText(listingId)
   if (normalizedListingId) {
-    const result = await updateLeadRowsWithFallback(
-      client,
-      (query) => query.eq('organisation_id', normalizedOrganisationId).eq('listing_id', normalizedListingId),
-      payload,
-      { label: `listing_id:${normalizedListingId}` },
-    )
-    if (result.matched) return true
+    const listingResult = await client
+      .from('leads')
+      .select('lead_id, organisation_id, lead_category, stage, status')
+      .eq('organisation_id', normalizedOrganisationId)
+      .eq('listing_id', normalizedListingId)
+    if (!listingResult.error) addRows(listingResult.data)
   }
 
-  return false
+  return rows
+}
+
+async function syncSellerJourneyLeadStage(
+  client,
+  {
+    organisationId = '',
+    leadIds = [],
+    onboardingToken = '',
+    listingId = '',
+    targetStage = '',
+    targetStatus = '',
+    extraPayload = {},
+  } = {},
+) {
+  const candidates = await listSellerJourneyLeadCandidates(client, {
+    organisationId,
+    leadIds,
+    onboardingToken,
+    listingId,
+  })
+  if (!candidates.length) return false
+
+  let synced = false
+  for (const lead of candidates) {
+    const patch = buildSellerJourneyProgressPatch({
+      lead,
+      targetStage,
+      targetStatus,
+    })
+    if (!patch) continue
+    const result = await updateLeadRowsWithFallback(
+      client,
+      (query) => query.eq('organisation_id', normalizeText(organisationId)).eq('lead_id', normalizeText(lead?.lead_id)),
+      {
+        stage: patch.stage,
+        status: patch.status,
+        updated_at: new Date().toISOString(),
+        ...(extraPayload && typeof extraPayload === 'object' ? extraPayload : {}),
+      },
+      { label: `seller_journey:${normalizeText(lead?.lead_id)}` },
+    )
+    if (result.matched) synced = true
+  }
+  return synced
+}
+
+async function syncSellerJourneyLeadStageFromListing(
+  client,
+  {
+    organisationId = '',
+    leadIds = [],
+    onboardingToken = '',
+    listingId = '',
+    listing = null,
+  } = {},
+) {
+  const lifecycle = mapLegacyListingStatusToCanonicalStatus(
+    listing?.listingStatus || listing?.listing_status || listing?.status || listing?.lifecycleStatus || listing?.lifecycle_status,
+  )
+  const documentsSubmitted = areSellerJourneyDocumentsSubmitted({
+    listing: listing || {},
+    documents: Array.isArray(listing?.documents) ? listing.documents : [],
+  })
+
+  let targetStage = ''
+  let targetStatus = ''
+  if (lifecycle === 'onboarding_sent') {
+    targetStage = 'Seller Onboarding Sent'
+    targetStatus = 'Sent'
+  } else if (['onboarding_completed', 'listing_review', 'mandate_ready'].includes(lifecycle)) {
+    targetStage = 'Seller Onboarding Submitted'
+    targetStatus = 'Submitted'
+  } else if (lifecycle === 'mandate_sent') {
+    targetStage = 'Mandate Sent'
+    targetStatus = 'Sent'
+  } else if (lifecycle === 'mandate_signed') {
+    targetStage = 'Mandate Signed'
+    targetStatus = 'Signed'
+  } else if (['active', 'under_offer', 'transaction_created', 'sold'].includes(lifecycle)) {
+    targetStage = documentsSubmitted ? 'All Documents Submitted' : 'Listing Live'
+    targetStatus = documentsSubmitted ? 'Submitted' : 'Live'
+  }
+
+  if (!targetStage) return false
+
+  return syncSellerJourneyLeadStage(client, {
+    organisationId,
+    leadIds,
+    onboardingToken,
+    listingId,
+    targetStage,
+    targetStatus,
+    extraPayload: {
+      listing_id: normalizeText(listing?.id || listingId) || null,
+    },
+  })
+}
+
+async function syncSellerJourneyLeadStageForListingId(
+  client,
+  {
+    listingId = '',
+    organisationId = '',
+    leadIds = [],
+    onboardingToken = '',
+  } = {},
+) {
+  const normalizedListingId = normalizeUuid(listingId)
+  if (!normalizedListingId) return false
+
+  const listing = await getPrivateListing(normalizedListingId, { includeRequirementsAndDocuments: true }).catch(() => null)
+  if (!listing) return false
+
+  const linkedLeadIds = [
+    listing?.sellerLeadId,
+    listing?.seller_lead_id,
+    listing?.originatingCrmLeadId,
+    listing?.originating_crm_lead_id,
+    listing?.leadId,
+    listing?.lead_id,
+  ].map(normalizeText).filter(Boolean)
+
+  const sellerJourneyLeadIds = Array.from(new Set([
+    ...linkedLeadIds,
+    ...(Array.isArray(leadIds) ? leadIds.map(normalizeText).filter(Boolean) : []),
+  ]))
+
+  return syncSellerJourneyLeadStageFromListing(client, {
+    organisationId: normalizeText(organisationId || listing?.organisationId),
+    leadIds: sellerJourneyLeadIds,
+    onboardingToken: normalizeText(onboardingToken || listing?.sellerOnboarding?.token || listing?.seller_onboarding_token),
+    listingId: normalizedListingId,
+    listing,
+  })
 }
 
 export async function syncPrivateListingRequirements(listingOrId, { emitActivity = true, reason = 'system' } = {}) {
@@ -2582,14 +2725,14 @@ export async function sendSellerOnboarding(
     normalizeText(listing?.originatingCrmLeadId),
   ].filter(Boolean)))
   const sentAtIso = new Date().toISOString()
-  await syncLeadWorkflowState(client, {
+  await syncSellerJourneyLeadStage(client, {
     organisationId: leadOrganisationId,
     leadIds: leadIdsToSync,
     onboardingToken: token,
     listingId: listing.id,
-    payload: {
-      stage: 'Onboarding Sent',
-      status: 'Onboarding Sent',
+    targetStage: 'Seller Onboarding Sent',
+    targetStatus: 'Sent',
+    extraPayload: {
       seller_onboarding_status: 'sent',
       seller_onboarding_token: normalizeNullableText(token),
       listing_id: listing.id,
@@ -2839,20 +2982,19 @@ export async function submitSellerOnboarding(token, payload = {}) {
     if (normalizedLeadId) leadIdsToSync.add(normalizedLeadId)
   }
 
-  const buildLeadSyncPayload = () => ({
-    stage: 'Onboarding Completed',
-    status: 'Onboarding Completed',
-    seller_onboarding_status: 'completed',
-    seller_onboarding_token: normalizeNullableText(context.onboarding?.token || context.listing?.sellerOnboarding?.token || ''),
-    listing_id: listingIdForLeadSync || null,
-    updated_at: nowIso,
-  })
-  await syncLeadWorkflowState(client, {
+  await syncSellerJourneyLeadStage(client, {
     organisationId: leadOrganisationId,
     leadIds: Array.from(leadIdsToSync),
     onboardingToken: leadTokenForLeadSync,
     listingId: listingIdForLeadSync,
-    payload: buildLeadSyncPayload(),
+    targetStage: 'Seller Onboarding Submitted',
+    targetStatus: 'Submitted',
+    extraPayload: {
+      seller_onboarding_status: 'completed',
+      seller_onboarding_token: normalizeNullableText(context.onboarding?.token || context.listing?.sellerOnboarding?.token || ''),
+      listing_id: listingIdForLeadSync || null,
+      updated_at: nowIso,
+    },
   }).catch(() => false)
 
   const listingForContext = transitionResult?.listing || fallbackListing
@@ -3141,7 +3283,18 @@ export async function updatePrivateListingRequirementStatus(requirementId, statu
     throw query.error
   }
   const rows = normalizeRequirementRows(Array.isArray(query.data) ? query.data : query.data ? [query.data] : [])
-  return rows[0] || null
+  const requirement = rows[0] || null
+
+  if (requirement?.private_listing_id) {
+    await syncSellerJourneyLeadStageForListingId(client, {
+      listingId: requirement.private_listing_id,
+    }).catch((error) => {
+      console.warn('[Private Listings] non-blocking seller journey lead sync skipped after requirement update', error)
+      return false
+    })
+  }
+
+  return requirement
 }
 
 export async function uploadSellerClientPortalDocument({
@@ -3260,6 +3413,15 @@ export async function uploadSellerClientPortalDocument({
     })
   }
 
+  await syncSellerJourneyLeadStageForListingId(client, {
+    listingId: listing.id,
+    organisationId: normalizeText(listing?.organisationId),
+    onboardingToken: normalizedToken,
+  }).catch((error) => {
+    console.warn('[Private Listings] non-blocking seller journey lead sync skipped after seller portal upload', error)
+    return false
+  })
+
   return {
     id: documentRow?.id || filePath,
     name: documentRow?.document_name || file.name || safeOriginalName,
@@ -3344,6 +3506,13 @@ export async function uploadPrivateListingDocument(listingId, file, {
       source: 'quick_add',
     },
   }).catch(() => null)
+
+  await syncSellerJourneyLeadStageForListingId(client, {
+    listingId: normalizedListingId,
+  }).catch((error) => {
+    console.warn('[Private Listings] non-blocking seller journey lead sync skipped after listing document upload', error)
+    return false
+  })
 
   return {
     id: documentRow?.id || filePath,
@@ -3445,6 +3614,23 @@ export async function transitionPrivateListingStatus(listingId, targetStatus, op
       ...metadata,
     },
   }).catch(() => {})
+
+  const sellerJourneyLeadIds = Array.from(new Set([
+    normalizeText(updatedListing?.sellerLeadId),
+    normalizeText(updatedListing?.originatingCrmLeadId),
+    normalizeText(validation.listing?.sellerLeadId),
+    normalizeText(validation.listing?.originatingCrmLeadId),
+  ].filter(Boolean)))
+  await syncSellerJourneyLeadStageFromListing(client, {
+    organisationId: normalizeText(updatedListing?.organisationId || validation.listing?.organisationId),
+    leadIds: sellerJourneyLeadIds,
+    onboardingToken: normalizeText(updatedListing?.sellerOnboarding?.token || updatedListing?.seller_onboarding_token),
+    listingId: normalizeText(updatedListing?.id || validation.listing?.id),
+    listing: updatedListing,
+  }).catch((error) => {
+    console.warn('[Private Listings] non-blocking seller journey lead sync skipped after listing transition', error)
+    return false
+  })
 
   return {
     listing: updatedListing,

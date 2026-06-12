@@ -77,7 +77,7 @@ try {
   assert.equal(portalView.currentStage.key, 'listing_live')
   assert.equal(portalView.stageMeta.currentStage.key, 'listing_live')
   assert.equal(portalView.stageMeta.currentStage.message.includes('listing is live'), true)
-  assert.equal(portalView.progressPercent, 100)
+  assert.equal(portalView.progressPercent, 89)
   assert.equal(portalView.stages.find((step) => step.key === 'mandate_signed').state, 'completed')
   assert.equal(portalView.statusCards.find((card) => card.key === 'appointment').value, 'Completed')
   assert.equal(portalView.statusCards.find((card) => card.key === 'mandate').value, 'Signed')

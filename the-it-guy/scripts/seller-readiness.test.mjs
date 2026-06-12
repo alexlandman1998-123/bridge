@@ -58,6 +58,22 @@ const baseLead = {
     appointments: [{ appointmentType: 'seller_valuation', status: 'completed', completedAt: '2026-06-03T10:00:00Z' }],
     mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
   }
+  assert.equal(canSendMandate(args), false)
+  assert.equal(getNextSellerAction(args).id, 'open_seller_portal')
+  assert.equal(getNextSellerAction(args).label, 'Send Seller Onboarding')
+}
+
+{
+  const args = {
+    lead: {
+      ...baseLead,
+      mandatePacketId: 'packet-1',
+      sellerOnboardingToken: 'seller-token-1',
+      sellerOnboardingStatus: 'completed',
+    },
+    appointments: [{ appointmentType: 'seller_valuation', status: 'completed', completedAt: '2026-06-03T10:00:00Z' }],
+    mandatePacketStatus: { packet: { id: 'packet-1', status: 'generated' } },
+  }
   assert.equal(canSendMandate(args), true)
   assert.equal(getNextSellerAction(args).id, 'send_mandate')
 }
