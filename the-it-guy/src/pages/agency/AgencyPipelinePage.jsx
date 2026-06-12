@@ -1931,6 +1931,61 @@ const CLIENT_INTAKE_PREFERENCE_OPTIONS = [
   { value: CLIENT_INTAKE_PREFERENCE.HARD_COPY, label: 'Hard copy' },
 ]
 
+function getLeadViewingCompletionBlockers(form = {}, {
+  buyerEmail = '',
+  buyerPhone = '',
+  leadEmail = '',
+  leadPhone = '',
+  contactEmail = '',
+  contactPhone = '',
+} = {}) {
+  const blockers = []
+  const nextStep = normalizeText(form?.nextStep)
+  const intakePreference = normalizeClientIntakePreference(form?.clientIntakePreference)
+  const viewedListings = (Array.isArray(form?.viewedListings) ? form.viewedListings : [])
+    .map((row) => ({
+      listingId: normalizeText(row?.listingId),
+      outcome: normalizeText(row?.outcome),
+    }))
+    .filter((row) => row.listingId)
+
+  if (!viewedListings.length) {
+    blockers.push('Select at least one viewed property.')
+  }
+
+  if (!normalizeText(form?.outcome)) {
+    blockers.push('Choose the buyer outcome.')
+  }
+
+  if (!nextStep) {
+    blockers.push('Choose the next action for this buyer.')
+  }
+
+  if (['schedule_another_viewing', 'move_to_nurture'].includes(nextStep) && !normalizeText(form?.followUpDate)) {
+    blockers.push('Add a follow-up date for the next action.')
+  }
+
+  if (nextStep === 'mark_lost' && !normalizeText(form?.agentNotes || form?.buyerFeedback)) {
+    blockers.push('Capture why this lead is being marked lost.')
+  }
+
+  if (nextStep === 'send_offer_link') {
+    const hasOfferReadyProperty = viewedListings.some((row) => VIEWING_POSITIVE_OUTCOMES.includes(row.outcome))
+    if (!hasOfferReadyProperty) {
+      blockers.push('Mark at least one viewed property as interested, wants to offer, or needs follow-up before sending the offer link.')
+    }
+    if (
+      intakePreference === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL &&
+      !normalizeText(buyerEmail || contactEmail || leadEmail) &&
+      !normalizeText(buyerPhone || contactPhone || leadPhone)
+    ) {
+      blockers.push('Add buyer email or phone for a digital offer link, or switch to agent-assisted / hard copy.')
+    }
+  }
+
+  return blockers
+}
+
 const SELLER_REVIEW_DELIVERY_OPTIONS = [
   { value: SELLER_REVIEW_DELIVERY_MODE.EMAIL, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.EMAIL) },
   { value: SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED) },
@@ -4858,8 +4913,26 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ])
 
   const leadViewingCompletionBlockers = useMemo(
-    () => (leadCompletionAppointmentId ? getLeadViewingCompletionBlockers(leadViewingCompletionForm) : []),
-    [getLeadViewingCompletionBlockers, leadCompletionAppointmentId, leadViewingCompletionForm],
+    () => (leadCompletionAppointmentId
+      ? getLeadViewingCompletionBlockers(leadViewingCompletionForm, {
+          buyerEmail: offerLinkForm.buyerEmail,
+          buyerPhone: offerLinkForm.buyerPhone,
+          leadEmail: selectedLead?.email,
+          leadPhone: selectedLead?.phone,
+          contactEmail: selectedLeadContact?.email,
+          contactPhone: selectedLeadContact?.phone,
+        })
+      : []),
+    [
+      leadCompletionAppointmentId,
+      leadViewingCompletionForm,
+      offerLinkForm.buyerEmail,
+      offerLinkForm.buyerPhone,
+      selectedLead?.email,
+      selectedLead?.phone,
+      selectedLeadContact?.email,
+      selectedLeadContact?.phone,
+    ],
   )
 
   const selectedLeadBuyerJourneyStages = useMemo(() => {
@@ -7869,61 +7942,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  const getLeadViewingCompletionBlockers = useCallback((form = {}) => {
-    const blockers = []
-    const nextStep = normalizeText(form?.nextStep)
-    const intakePreference = normalizeClientIntakePreference(form?.clientIntakePreference)
-    const viewedListings = (Array.isArray(form?.viewedListings) ? form.viewedListings : [])
-      .map((row) => ({
-        listingId: normalizeText(row?.listingId),
-        outcome: normalizeText(row?.outcome),
-      }))
-      .filter((row) => row.listingId)
-
-    if (!viewedListings.length) {
-      blockers.push('Select at least one viewed property.')
-    }
-
-    if (!normalizeText(form?.outcome)) {
-      blockers.push('Choose the buyer outcome.')
-    }
-
-    if (!nextStep) {
-      blockers.push('Choose the next action for this buyer.')
-    }
-
-    if (['schedule_another_viewing', 'move_to_nurture'].includes(nextStep) && !normalizeText(form?.followUpDate)) {
-      blockers.push('Add a follow-up date for the next action.')
-    }
-
-    if (nextStep === 'mark_lost' && !normalizeText(form?.agentNotes || form?.buyerFeedback)) {
-      blockers.push('Capture why this lead is being marked lost.')
-    }
-
-    if (nextStep === 'send_offer_link') {
-      const hasOfferReadyProperty = viewedListings.some((row) => VIEWING_POSITIVE_OUTCOMES.includes(row.outcome))
-      if (!hasOfferReadyProperty) {
-        blockers.push('Mark at least one viewed property as interested, wants to offer, or needs follow-up before sending the offer link.')
-      }
-      if (
-        intakePreference === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL &&
-        !normalizeText(offerLinkForm.buyerEmail || selectedLeadContact?.email || selectedLead?.email) &&
-        !normalizeText(offerLinkForm.buyerPhone || selectedLeadContact?.phone || selectedLead?.phone)
-      ) {
-        blockers.push('Add buyer email or phone for a digital offer link, or switch to agent-assisted / hard copy.')
-      }
-    }
-
-    return blockers
-  }, [
-    offerLinkForm.buyerEmail,
-    offerLinkForm.buyerPhone,
-    selectedLead?.email,
-    selectedLead?.phone,
-    selectedLeadContact?.email,
-    selectedLeadContact?.phone,
-  ])
-
   function getLeadViewingOfferReadyListing(form = {}) {
     const viewedListings = Array.isArray(form?.viewedListings) ? form.viewedListings : []
     return viewedListings.find((row) => VIEWING_POSITIVE_OUTCOMES.includes(normalizeText(row?.outcome))) || viewedListings[0] || null
@@ -7936,7 +7954,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('Select a viewing before saving the outcome.')
       return
     }
-    const blockers = getLeadViewingCompletionBlockers(leadViewingCompletionForm)
+    const blockers = getLeadViewingCompletionBlockers(leadViewingCompletionForm, {
+      buyerEmail: offerLinkForm.buyerEmail,
+      buyerPhone: offerLinkForm.buyerPhone,
+      leadEmail: selectedLead?.email,
+      leadPhone: selectedLead?.phone,
+      contactEmail: selectedLeadContact?.email,
+      contactPhone: selectedLeadContact?.phone,
+    })
     if (blockers.length) {
       setError(blockers[0])
       return
