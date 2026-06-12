@@ -2,6 +2,9 @@ import {
   getCommercialAllDocumentRequests,
   getCommercialAllDocuments,
   getCommercialAllHeadsOfTerms,
+  getCommercialCommissions,
+  getCommercialCompanies,
+  getCommercialContacts,
   getCommercialDeals,
   getCommercialLandlords,
   getCommercialLeases,
@@ -10,7 +13,9 @@ import {
   getCommercialRecentActivity,
   getCommercialRequirements,
   getCommercialTenants,
+  getCommercialTransactions,
   getCommercialVacancies,
+  getCommercialViewings,
   resolveCommercialOrganisationContext,
 } from './commercialApi'
 import { buildCommercialIntelligence } from './commercialIntelligenceApi'
@@ -23,13 +28,18 @@ import {
   buildCommercialSearchIndex,
   buildCommercialTransactions,
 } from './commercialPlatformApi'
+import {
+  buildCommercialPortalAdoption,
+  listCommercialPortalAccessForOrganisation,
+  listCommercialPortalAuditEvents,
+} from './commercialPortalApi'
 
 const NEGOTIATION_DEAL_STAGES = ['negotiation', 'hot_draft', 'hot_sent', 'hot_accepted', 'lease_pending', 'proposal', 'heads_of_terms', 'lease_draft']
-const REQUIREMENT_PIPELINE_STAGES = ['new', 'qualified', 'matching', 'viewing', 'negotiating', 'converted', 'lost']
+const REQUIREMENT_PIPELINE_STAGES = ['new', 'qualified', 'matching', 'viewing_scheduled', 'negotiating', 'hot', 'won', 'lost']
 const DEAL_PIPELINE_STAGES = ['new', 'qualified', 'negotiation', 'hot_draft', 'hot_sent', 'hot_accepted', 'lease_pending', 'converted', 'lost']
-const OPEN_VACANCY_STATUSES = ['available', 'marketing', 'under_offer', 'hot_in_progress', 'lease_pending', 'reserved', 'under_negotiation', 'upcoming']
-const ACTIVE_LISTING_STATUSES = ['coming_soon', 'active', 'under_offer']
-const LISTING_PIPELINE_STATUSES = ['draft', 'coming_soon', 'active', 'under_offer', 'leased', 'sold', 'expired']
+const OPEN_VACANCY_STATUSES = ['draft', 'available', 'marketing', 'under_negotiation', 'under_offer', 'hot_in_progress', 'reserved', 'upcoming']
+const ACTIVE_LISTING_STATUSES = ['internal_review', 'approved', 'published', 'under_offer']
+const LISTING_PIPELINE_STATUSES = ['draft', 'internal_review', 'approved', 'published', 'under_offer', 'closed', 'withdrawn', 'expired', 'archived']
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -69,21 +79,28 @@ function addMonths(date, months) {
   return next
 }
 
+function daysBetween(left, right) {
+  const start = asDate(left)
+  const end = asDate(right)
+  if (!start || !end) return null
+  return Math.ceil((end.getTime() - start.getTime()) / 86400000)
+}
+
 function isActiveStatus(row) {
   const status = normalizeLower(row?.status || 'active')
   return !['archived', 'inactive', 'closed_lost', 'expired', 'terminated', 'cancelled'].includes(status)
 }
 
 function isActiveRequirement(row) {
-  return isActiveStatus(row) && !['converted', 'lost', 'closed_won', 'closed_lost'].includes(normalizeCommercialLifecycleStage('requirements', row.stage, 'new'))
+  return isActiveStatus(row) && !['won', 'lost'].includes(normalizeCommercialLifecycleStage('requirements', row.stage, 'new'))
 }
 
 function isOpenVacancy(row) {
-  return OPEN_VACANCY_STATUSES.includes(normalizeLower(row?.status || 'available'))
+  return OPEN_VACANCY_STATUSES.includes(normalizeCommercialLifecycleStage('vacancies', row?.status, 'draft'))
 }
 
 function isActiveListing(row) {
-  return ACTIVE_LISTING_STATUSES.includes(normalizeLower(row?.listing_status || row?.status || 'active'))
+  return ACTIVE_LISTING_STATUSES.includes(normalizeCommercialLifecycleStage('listings', row?.listing_status || row?.status, 'draft'))
 }
 
 function sumRows(rows, key) {
@@ -93,15 +110,6 @@ function sumRows(rows, key) {
 function percent(numerator, denominator) {
   if (!denominator) return 0
   return Math.round((numerator / denominator) * 1000) / 10
-}
-
-function countBy(rows, key, allowed = []) {
-  return rows.reduce((counts, row) => {
-    const value = normalizeLower(row?.[key]) || allowed[0] || 'unclassified'
-    if (allowed.length && !allowed.includes(value)) return counts
-    counts[value] = (counts[value] || 0) + 1
-    return counts
-  }, {})
 }
 
 function countByLifecycle(rows, key, allowed = [], kind = '') {
@@ -238,6 +246,78 @@ function buildLandlordLeaderboard({ landlords, properties, vacancies }) {
     .slice(0, 6)
 }
 
+function buildInventorySummary({ properties = [], vacancies = [], listings = [], totalGla = 0, availableSpace = 0 } = {}) {
+  const occupiedSpace = Math.max(0, totalGla - availableSpace)
+  return {
+    properties: properties.length,
+    vacancies: vacancies.length,
+    listings: listings.length,
+    availableSpace,
+    occupiedSpace,
+    occupancyRate: percent(occupiedSpace, totalGla),
+  }
+}
+
+function buildTopPerformingAssets({ properties = [], vacancies = [], viewings = [], deals = [], transactions = [], requirementMatches = [] } = {}) {
+  const propertiesById = new Map(properties.map((property) => [property.id, property]))
+  const vacancyById = new Map(vacancies.map((vacancy) => [vacancy.id, vacancy]))
+  const scoreMap = new Map()
+
+  function ensure(propertyId) {
+    if (!propertyId) return null
+    if (!scoreMap.has(propertyId)) {
+      const property = propertiesById.get(propertyId)
+      scoreMap.set(propertyId, {
+        id: propertyId,
+        propertyId,
+        title: property?.property_name || 'Commercial asset',
+        location: [property?.suburb, property?.city].filter(Boolean).join(', ') || property?.address || '-',
+        viewed: 0,
+        active: 0,
+        leased: 0,
+        demand: 0,
+      })
+    }
+    return scoreMap.get(propertyId)
+  }
+
+  viewings.forEach((viewing) => {
+    const propertyId = viewing.property_id || vacancyById.get(viewing.vacancy_id)?.property_id
+    const bucket = ensure(propertyId)
+    if (!bucket) return
+    bucket.viewed += 1
+    bucket.active += 1
+  })
+
+  deals.forEach((deal) => {
+    const bucket = ensure(deal.property_id || vacancyById.get(deal.vacancy_id)?.property_id)
+    if (!bucket) return
+    bucket.active += 1
+  })
+
+  transactions.forEach((transaction) => {
+    const bucket = ensure(transaction.property_id || vacancyById.get(transaction.vacancy_id)?.property_id)
+    if (!bucket) return
+    bucket.active += ['completed', 'lost', 'cancelled'].includes(normalizeLower(transaction.status)) ? 0 : 1
+    bucket.leased += normalizeLower(transaction.status) === 'completed' ? 1 : 0
+  })
+
+  requirementMatches.forEach((match) => {
+    const propertyId = vacancyById.get(match.vacancyId)?.property_id
+    const bucket = ensure(propertyId)
+    if (!bucket) return
+    bucket.demand += 1
+  })
+
+  const rows = Array.from(scoreMap.values())
+  return {
+    mostViewed: rows.slice().sort((left, right) => right.viewed - left.viewed).slice(0, 5),
+    mostActive: rows.slice().sort((left, right) => right.active - left.active).slice(0, 5),
+    mostLeased: rows.slice().sort((left, right) => right.leased - left.leased).slice(0, 5),
+    mostInDemand: rows.slice().sort((left, right) => right.demand - left.demand).slice(0, 5),
+  }
+}
+
 function buildPipeline(stages, counts, valueByStage = {}) {
   return stages.map((stage) => ({
     key: stage,
@@ -259,7 +339,7 @@ function buildActivitySnapshot({ requirements, deals, leases, vacancies, listing
   return [
     {
       label: 'Viewings this week',
-      value: requirements.filter((row) => normalizeCommercialLifecycleStage('requirements', row.stage, 'new') === 'viewing').length,
+      value: requirements.filter((row) => normalizeCommercialLifecycleStage('requirements', row.stage, 'new') === 'viewing_scheduled').length,
       detail: 'Active requirement viewings',
     },
     {
@@ -296,6 +376,32 @@ function buildActivitySnapshot({ requirements, deals, leases, vacancies, listing
   ]
 }
 
+function viewingDateTime(row = {}) {
+  const date = row.viewing_date ? new Date(`${row.viewing_date}T${String(row.viewing_time || '00:00').slice(0, 8)}`) : null
+  return date && !Number.isNaN(date.getTime()) ? date : null
+}
+
+function buildUpcomingViewings({ viewings = [], companiesById = new Map(), tenantsById = new Map(), propertiesById = new Map(), brokers = [] } = {}) {
+  const today = startOfToday()
+  const brokerMap = new Map(brokers.map((broker) => [normalizeText(broker.userId || broker.user_id || broker.id), brokerDisplayName(broker)]))
+  return viewings
+    .filter((row) => !['completed', 'cancelled', 'no_show'].includes(normalizeLower(row.status)))
+    .map((row) => ({ ...row, scheduledAt: viewingDateTime(row) }))
+    .filter((row) => row.scheduledAt && row.scheduledAt >= today)
+    .sort((left, right) => left.scheduledAt - right.scheduledAt)
+    .slice(0, 5)
+    .map((row) => ({
+      id: row.id,
+      date: row.viewing_date,
+      time: String(row.viewing_time || '').slice(0, 5),
+      company: companiesById.get(row.company_id)?.company_name || companiesById.get(row.company_id)?.name || tenantsById.get(row.company_id)?.name || 'Company pending',
+      property: propertiesById.get(row.property_id)?.property_name || 'Property pending',
+      broker: brokerMap.get(normalizeText(row.broker_id)) || 'Broker pending',
+      status: normalizeLower(row.status || 'scheduled'),
+      to: '/commercial/viewings',
+    }))
+}
+
 function buildExpiryWatchlist({ leases, tenantsById, propertiesById, landlordsById, dealsById }) {
   const today = startOfToday()
   const horizon = addMonths(today, 24)
@@ -305,11 +411,12 @@ function buildExpiryWatchlist({ leases, tenantsById, propertiesById, landlordsBy
       const end = asDate(lease.lease_end_date)
       if (!end || end < today || end > horizon) return null
       const monthsRemaining = Math.max(0, ((end.getFullYear() - today.getFullYear()) * 12) + (end.getMonth() - today.getMonth()))
+      const daysToExpiry = daysBetween(today, end)
       const property = propertiesById.get(lease.property_id)
       const tenant = tenantsById.get(lease.tenant_id)
       const landlord = landlordsById.get(lease.landlord_id || property?.landlord_id)
       const linkedDeal = dealsById.get(lease.deal_id)
-      const risk = monthsRemaining <= 3 ? 'High' : monthsRemaining <= 6 ? 'Medium' : 'Low'
+      const risk = daysToExpiry <= 30 ? 'High' : daysToExpiry <= 90 ? 'Medium' : 'Low'
       return {
         id: lease.id,
         tenant: tenant?.name || 'Unassigned tenant',
@@ -318,6 +425,7 @@ function buildExpiryWatchlist({ leases, tenantsById, propertiesById, landlordsBy
         gla: toNumber(property?.gla_m2),
         leaseExpiry: lease.lease_end_date,
         monthsRemaining,
+        daysToExpiry,
         risk,
         assignedBroker: linkedDeal?.assigned_broker ? 'Assigned broker' : 'Unassigned',
       }
@@ -325,6 +433,270 @@ function buildExpiryWatchlist({ leases, tenantsById, propertiesById, landlordsBy
     .filter(Boolean)
     .sort((a, b) => asDate(a.leaseExpiry) - asDate(b.leaseExpiry))
     .slice(0, 8)
+}
+
+function withinCurrentMonth(date) {
+  const value = asDate(date)
+  if (!value) return false
+  const today = startOfToday()
+  const start = new Date(today.getFullYear(), today.getMonth(), 1)
+  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+  end.setHours(23, 59, 59, 999)
+  return value >= start && value <= end
+}
+
+function averageDealCycleDays(transactions = []) {
+  const values = transactions
+    .filter((transaction) => normalizeLower(transaction.status) === 'completed')
+    .map((transaction) => daysBetween(transaction.createdAt, transaction.actualCloseDate || transaction.updatedAt))
+    .filter((value) => Number.isFinite(value) && value >= 0)
+  if (!values.length) return 0
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+}
+
+function buildExecutivePipelineView({ requirements = [], viewings = [], deals = [], transactions = [] } = {}) {
+  const activeRequirements = requirements.filter(isActiveRequirement)
+  const activeViewings = viewings.filter((viewing) => !['cancelled', 'no_show'].includes(normalizeLower(viewing.status)))
+  const activeDeals = deals.filter(isActiveStatus)
+  const activeTransactions = transactions.filter((transaction) => !['completed', 'lost', 'cancelled'].includes(normalizeLower(transaction.status)))
+  const completedTransactions = transactions.filter((transaction) => normalizeLower(transaction.status) === 'completed')
+  const requirementValue = activeRequirements.reduce((sum, requirement) => sum + Math.max(toNumber(requirement.budget_max), toNumber(requirement.budget_min)), 0)
+  const viewingValue = activeViewings.reduce((sum, viewing) => sum + Math.max(toNumber(viewing.asking_rental), 0), 0)
+  const dealValue = activeDeals.reduce((sum, deal) => sum + toNumber(deal.deal_value), 0)
+  const transactionValue = activeTransactions.reduce((sum, transaction) => sum + toNumber(transaction.value || transaction.targetValue), 0)
+  const completedValue = completedTransactions.reduce((sum, transaction) => sum + toNumber(transaction.value || transaction.targetValue), 0)
+  const stages = [
+    { key: 'requirements', label: 'Requirements', count: activeRequirements.length, value: requirementValue },
+    { key: 'viewings', label: 'Viewings', count: activeViewings.length, value: viewingValue },
+    { key: 'deals', label: 'Deals', count: activeDeals.length, value: dealValue },
+    { key: 'transactions', label: 'Transactions', count: activeTransactions.length, value: transactionValue },
+    { key: 'completed', label: 'Completed', count: completedTransactions.length, value: completedValue },
+  ]
+
+  return stages.map((stage, index) => {
+    const previous = stages[index - 1]
+    return {
+      ...stage,
+      conversion: !previous?.count ? 100 : percent(stage.count, previous.count),
+    }
+  })
+}
+
+function buildRenewalPipeline({ renewalRisk = [], commercialTransactions = [] } = {}) {
+  const renewalTransactionIds = new Set(
+    commercialTransactions
+      .filter((transaction) => transaction.lease?.lease_end_date && transaction.lease?.id)
+      .map((transaction) => transaction.id),
+  )
+  const renewalRequired = renewalRisk.filter((row) => row.daysToExpiry <= 180).length
+  const negotiating = commercialTransactions.filter((transaction) => renewalTransactionIds.has(transaction.id) && normalizeLower(transaction.status) === 'negotiating').length
+  const hot = commercialTransactions.filter((transaction) => renewalTransactionIds.has(transaction.id) && ['hot_in_progress', 'hot_signed'].includes(normalizeLower(transaction.status))).length
+  const renewed = commercialTransactions.filter((transaction) => renewalTransactionIds.has(transaction.id) && normalizeLower(transaction.status) === 'completed').length
+  const vacated = renewalRisk.filter((row) => row.daysToExpiry <= 0).length
+  return [
+    { key: 'renewal_required', label: 'Renewal Required', count: renewalRequired },
+    { key: 'negotiating', label: 'Negotiating', count: negotiating },
+    { key: 'hot', label: 'HOT', count: hot },
+    { key: 'renewed', label: 'Renewed', count: renewed },
+    { key: 'vacated', label: 'Vacated', count: vacated },
+  ]
+}
+
+function buildManagementAlerts({ vacancies = [], requirements = [], commercialTransactions = [], leases = [], brokerRows = [] } = {}) {
+  const today = startOfToday()
+  const alerts = []
+
+  vacancies.forEach((vacancy) => {
+    if (!isOpenVacancy(vacancy)) return
+    const startedAt = asDate(vacancy.marketed_at || vacancy.created_at)
+    const age = startedAt ? daysBetween(startedAt, today) : null
+    if (Number.isFinite(age) && age > 90) {
+      alerts.push({
+        id: `vacancy-${vacancy.id}`,
+        type: 'Stale Vacancy',
+        priority: age > 120 ? 'High' : 'Medium',
+        title: vacancy.vacancy_name || 'Commercial vacancy',
+        detail: `${age} days on market`,
+        to: `/commercial/vacancies/${vacancy.id}`,
+      })
+    }
+  })
+
+  requirements.forEach((requirement) => {
+    if (!isActiveRequirement(requirement)) return
+    const updatedAt = asDate(requirement.updated_at || requirement.created_at)
+    const age = updatedAt ? daysBetween(updatedAt, today) : null
+    if (Number.isFinite(age) && age > 60) {
+      alerts.push({
+        id: `requirement-${requirement.id}`,
+        type: 'Aging Requirement',
+        priority: age > 90 ? 'High' : 'Medium',
+        title: requirement.requirement_name || 'Requirement',
+        detail: `${age} days without resolution`,
+        to: '/commercial/requirements',
+      })
+    }
+  })
+
+  commercialTransactions.forEach((transaction) => {
+    if (['completed', 'lost', 'cancelled'].includes(normalizeLower(transaction.status))) return
+    const updatedAt = asDate(transaction.updatedAt || transaction.createdAt)
+    const age = updatedAt ? daysBetween(updatedAt, today) : null
+    if (Number.isFinite(age) && age > 21) {
+      alerts.push({
+        id: `transaction-${transaction.id}`,
+        type: 'Stalled Transaction',
+        priority: age > 35 ? 'High' : 'Medium',
+        title: transaction.title || 'Commercial transaction',
+        detail: `${age} days since last meaningful update`,
+        to: `/commercial/transactions/${transaction.id}`,
+      })
+    }
+  })
+
+  leases.forEach((lease) => {
+    if (!isActiveStatus(lease)) return
+    const days = daysBetween(today, lease.lease_end_date)
+    if (days !== null && days >= 0 && days <= 180) {
+      alerts.push({
+        id: `lease-${lease.id}`,
+        type: 'Lease Expiring',
+        priority: days <= 30 ? 'High' : days <= 90 ? 'Medium' : 'Low',
+        title: lease.id ? `Lease ${String(lease.id).slice(0, 8)}` : 'Commercial lease',
+        detail: `${days} days to expiry`,
+        to: '/commercial/lease-expiry-watch',
+      })
+    }
+  })
+
+  brokerRows.forEach((broker) => {
+    if (broker.capacityLabel !== 'Overloaded') return
+    alerts.push({
+      id: `broker-${broker.id}`,
+      type: 'Broker Over Capacity',
+      priority: 'High',
+      title: broker.name || 'Commercial broker',
+      detail: `${broker.capacityScore} workload score`,
+      to: `/commercial/brokers/${broker.id}`,
+    })
+  })
+
+  const order = { High: 3, Medium: 2, Low: 1 }
+  return alerts
+    .sort((left, right) => (order[right.priority] || 0) - (order[left.priority] || 0) || String(left.title).localeCompare(String(right.title)))
+    .slice(0, 12)
+}
+
+function brokerKey(row = {}) {
+  return normalizeText(row.userId || row.user_id || row.id)
+}
+
+function buildBrokerScorecards({ brokers = [], requirements = [], viewings = [], deals = [], vacancies = [], listings = [], commercialTransactions = [], commissions = [], properties = [] } = {}) {
+  const brokerMap = new Map()
+  brokers.forEach((broker) => {
+    const id = brokerKey(broker)
+    if (!id) return
+    brokerMap.set(id, {
+      id,
+      name: brokerDisplayName(broker),
+      email: normalizeText(broker.email),
+      role: normalizeText(broker.role),
+      branchId: normalizeText(broker.branchId || broker.branch_id || broker.primary_branch_id),
+      teamId: normalizeText(broker.teamId || broker.team_id),
+      branchName: normalizeText(broker.branchName) || 'Assigned branch',
+    })
+  })
+
+  const allBrokerIds = new Set([
+    ...Array.from(brokerMap.keys()),
+    ...requirements.map((row) => normalizeText(row.assigned_broker || row.broker_id)),
+    ...viewings.map((row) => normalizeText(row.broker_id)),
+    ...deals.map((row) => normalizeText(row.assigned_broker || row.broker_id)),
+    ...vacancies.map((row) => normalizeText(row.broker_assignment || row.broker_id)),
+    ...listings.map((row) => normalizeText(row.broker_id)),
+    ...commercialTransactions.map((row) => normalizeText(row.brokerId || row.broker_id)),
+  ].filter(Boolean))
+
+  return Array.from(allBrokerIds).map((id) => {
+    const broker = brokerMap.get(id) || { id, name: 'Assigned broker', email: '', role: 'broker', branchId: '', teamId: '', branchName: 'Assigned branch' }
+    const brokerRequirements = requirements.filter((row) => normalizeText(row.assigned_broker || row.broker_id) === id)
+    const brokerViewings = viewings.filter((row) => normalizeText(row.broker_id) === id)
+    const brokerDeals = deals.filter((row) => normalizeText(row.assigned_broker || row.broker_id) === id)
+    const brokerVacancies = vacancies.filter((row) => normalizeText(row.broker_assignment || row.broker_id) === id)
+    const brokerListings = listings.filter((row) => normalizeText(row.broker_id) === id)
+    const brokerProperties = properties.filter((row) => normalizeText(row.broker_id) === id)
+    const brokerTransactions = commercialTransactions.filter((row) => normalizeText(row.brokerId || row.broker_id) === id)
+    const brokerCommissions = commissions.filter((row) => normalizeText(row.broker_id) === id)
+    const activeRequirements = brokerRequirements.filter(isActiveRequirement)
+    const activeDeals = brokerDeals.filter(isActiveStatus)
+    const activeTransactions = brokerTransactions.filter((row) => !['completed', 'lost', 'cancelled'].includes(normalizeLower(row.status)))
+    const upcomingViewings = brokerViewings.filter((row) => {
+      const scheduledAt = viewingDateTime(row)
+      return scheduledAt && scheduledAt >= startOfToday() && !['completed', 'cancelled', 'no_show'].includes(normalizeLower(row.status))
+    })
+    const completedViewings = brokerViewings.filter((row) => normalizeLower(row.status) === 'completed')
+    const closedTransactions = brokerTransactions.filter((row) => normalizeLower(row.status) === 'completed')
+    const pipelineValue = activeTransactions.reduce((sum, row) => sum + toNumber(row.value || row.targetValue), 0) || activeDeals.reduce((sum, row) => sum + toNumber(row.deal_value), 0)
+    const expectedCommission = brokerCommissions.filter((row) => normalizeLower(row.status) === 'projected').reduce((sum, row) => sum + toNumber(row.commission_amount), 0)
+    const approvedRevenue = brokerCommissions.filter((row) => normalizeLower(row.status) === 'approved').reduce((sum, row) => sum + toNumber(row.commission_amount), 0)
+    const paidRevenue = brokerCommissions.filter((row) => normalizeLower(row.status) === 'paid').reduce((sum, row) => sum + toNumber(row.commission_amount), 0)
+    const leasedSpace = closedTransactions.reduce((sum, row) => sum + (normalizeLower(row.transactionType) === 'lease' ? toNumber(row.vacancy?.available_area_m2 || row.property?.gla_m2) : 0), 0)
+    const soldSpace = closedTransactions.reduce((sum, row) => sum + (normalizeLower(row.transactionType) === 'sale' ? toNumber(row.property?.gla_m2 || row.vacancy?.available_area_m2) : 0), 0)
+    const workload = activeRequirements.length + activeDeals.length * 2 + activeTransactions.length * 2 + brokerListings.filter(isActiveListing).length + brokerVacancies.filter(isOpenVacancy).length + upcomingViewings.length
+    const capacityLabel = workload >= 18 ? 'Overloaded' : workload >= 12 ? 'High' : workload >= 6 ? 'Medium' : 'Low'
+
+    return {
+      ...broker,
+      activeRequirements: activeRequirements.length,
+      requirementsCreated: brokerRequirements.length,
+      viewingsCompleted: completedViewings.length,
+      activeViewings: upcomingViewings.length,
+      dealsCreated: brokerDeals.length,
+      activeDeals: activeDeals.length,
+      transactionsCreated: brokerTransactions.length,
+      activeTransactions: activeTransactions.length,
+      closedTransactions: closedTransactions.length,
+      valueClosed: closedTransactions.reduce((sum, row) => sum + toNumber(row.value || row.targetValue), 0),
+      pipelineValue,
+      expectedCommission,
+      approvedRevenue,
+      paidRevenue,
+      activeListings: brokerListings.filter(isActiveListing).length,
+      activeVacancies: brokerVacancies.filter(isOpenVacancy).length,
+      activeProperties: brokerProperties.filter(isActiveStatus).length,
+      leasedSpace,
+      soldSpace,
+      occupancyGenerated: leasedSpace + soldSpace,
+      upcomingViewings: upcomingViewings.length,
+      capacityScore: workload,
+      capacityLabel,
+      requirements: brokerRequirements,
+      viewings: brokerViewings,
+      deals: brokerDeals,
+      vacancies: brokerVacancies,
+      listings: brokerListings,
+      properties: brokerProperties,
+      transactions: brokerTransactions,
+      commissions: brokerCommissions,
+    }
+  }).sort((left, right) => right.pipelineValue - left.pipelineValue || right.valueClosed - left.valueClosed || left.name.localeCompare(right.name))
+}
+
+function buildStockLeaderboard({ properties = [], vacancies = [], deals = [], commercialTransactions = [], viewings = [] } = {}) {
+  return properties.map((property) => {
+    const propertyVacancies = vacancies.filter((vacancy) => vacancy.property_id === property.id)
+    const available = propertyVacancies.filter(isOpenVacancy).reduce((sum, vacancy) => sum + toNumber(vacancy.available_area_m2), 0)
+    const totalGla = toNumber(property.gla_m2)
+    return {
+      id: property.id,
+      propertyName: property.property_name || 'Commercial asset',
+      occupancyRate: Math.max(0, 100 - percent(available, totalGla)),
+      vacancyRate: percent(available, totalGla),
+      activeDeals: deals.filter((deal) => deal.property_id === property.id && isActiveStatus(deal)).length,
+      transactions: commercialTransactions.filter((transaction) => transaction.property?.id === property.id || transaction.property_id === property.id).length,
+      leasingVelocity: viewings.filter((viewing) => viewing.property_id === property.id && normalizeLower(viewing.status) === 'completed').length,
+    }
+  }).sort((left, right) => right.occupancyRate - left.occupancyRate || right.transactions - left.transactions).slice(0, 10)
 }
 
 function buildLatestActivity({ activity, requirements, deals, vacancies, listings, headsOfTerms }) {
@@ -459,6 +831,8 @@ export async function getCommercialPrincipalDashboardData(organisationId) {
   }
 
   const [
+    companies,
+    contacts,
     landlords,
     tenants,
     properties,
@@ -467,12 +841,19 @@ export async function getCommercialPrincipalDashboardData(organisationId) {
     leases,
     vacancies,
     listings,
+    viewings,
+    transactions,
+    commissions,
     activity,
     documents,
     documentRequests,
     headsOfTerms,
+    portalAccess,
+    portalAudit,
     brokers,
   ] = await Promise.all([
+    getCommercialCompanies(resolvedOrganisationId),
+    getCommercialContacts(resolvedOrganisationId),
     getCommercialLandlords(resolvedOrganisationId),
     getCommercialTenants(resolvedOrganisationId),
     getCommercialProperties(resolvedOrganisationId),
@@ -481,16 +862,23 @@ export async function getCommercialPrincipalDashboardData(organisationId) {
     getCommercialLeases(resolvedOrganisationId),
     getCommercialVacancies(resolvedOrganisationId),
     getCommercialListings(resolvedOrganisationId),
+    getCommercialViewings(resolvedOrganisationId),
+    getCommercialTransactions(resolvedOrganisationId),
+    getCommercialCommissions(resolvedOrganisationId),
     getCommercialRecentActivity(resolvedOrganisationId, 24),
     getCommercialAllDocuments(resolvedOrganisationId),
     getCommercialAllDocumentRequests(resolvedOrganisationId),
     getCommercialAllHeadsOfTerms(resolvedOrganisationId),
+    listCommercialPortalAccessForOrganisation(resolvedOrganisationId).catch(() => []),
+    listCommercialPortalAuditEvents(resolvedOrganisationId, 40).catch(() => []),
     listOrganisationUsers().catch(() => []),
   ])
 
   return buildCommercialPrincipalDashboardData({
     organisationId: resolvedOrganisationId,
     organisation: context.organisation,
+    companies,
+    contacts,
     landlords,
     tenants,
     properties,
@@ -499,10 +887,15 @@ export async function getCommercialPrincipalDashboardData(organisationId) {
     leases,
     vacancies,
     listings,
+    viewings,
+    transactions,
+    commissions,
     activity,
     documents,
     documentRequests,
     headsOfTerms,
+    portalAccess,
+    portalAudit,
     brokers,
   })
 }
@@ -510,6 +903,10 @@ export async function getCommercialPrincipalDashboardData(organisationId) {
 export function buildCommercialPrincipalDashboardData({
   organisationId = '',
   organisation = null,
+  transactions = [],
+  commissions = [],
+  companies = [],
+  contacts = [],
   landlords = [],
   tenants = [],
   properties = [],
@@ -518,13 +915,18 @@ export function buildCommercialPrincipalDashboardData({
   leases = [],
   vacancies = [],
   listings = [],
+  viewings = [],
   activity = [],
   documents = [],
   documentRequests = [],
   headsOfTerms = [],
+  portalAccess = [],
+  portalAudit = [],
   brokers = [],
 } = {}) {
   const activeProperties = properties.filter(isActiveStatus)
+  const activeCompanies = companies.filter((row) => !['archived', 'inactive'].includes(normalizeLower(row.status)))
+  const activeContacts = contacts.filter((row) => normalizeLower(row.status) === 'active')
   const activeRequirements = requirements.filter(isActiveRequirement)
   const activeDeals = deals.filter(isActiveStatus)
   const activeLeases = leases.filter((row) => !['archived', 'terminated'].includes(normalizeLower(row.status)))
@@ -533,6 +935,7 @@ export function buildCommercialPrincipalDashboardData({
   const usesVacancyData = openVacancies.length > 0
 
   const propertiesById = new Map(properties.map((property) => [property.id, property]))
+  const companiesById = new Map(companies.map((company) => [company.id, company]))
   const tenantsById = new Map(tenants.map((tenant) => [tenant.id, tenant]))
   const landlordsById = new Map(landlords.map((landlord) => [landlord.id, landlord]))
   const dealsById = new Map(deals.map((deal) => [deal.id, deal]))
@@ -544,6 +947,9 @@ export function buildCommercialPrincipalDashboardData({
   const hotCount = headsOfTerms.filter((row) => !['converted', 'superseded', 'archived'].includes(normalizeLower(row.status))).length
   const dealsInNegotiation = activeDeals.filter((row) => NEGOTIATION_DEAL_STAGES.includes(normalizeCommercialLifecycleStage('deals', row.stage, 'new')))
   const today = startOfToday()
+  const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+  const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+  endOfMonth.setHours(23, 59, 59, 999)
   const next12Months = addMonths(today, 12)
   const leaseExpiryExposure = activeLeases.filter((lease) => {
     const end = asDate(lease.lease_end_date)
@@ -553,7 +959,7 @@ export function buildCommercialPrincipalDashboardData({
 
   const requirementStageCounts = countByLifecycle(activeRequirements, 'stage', REQUIREMENT_PIPELINE_STAGES, 'requirements')
   const dealStageCounts = countByLifecycle(activeDeals, 'stage', DEAL_PIPELINE_STAGES, 'deals')
-  const listingStatusCounts = countBy(listings, 'listing_status', LISTING_PIPELINE_STATUSES)
+  const listingStatusCounts = countByLifecycle(listings, 'listing_status', LISTING_PIPELINE_STATUSES, 'listings')
   const dealValueByStage = activeDeals.reduce((groups, deal) => {
     const stage = normalizeCommercialLifecycleStage('deals', deal.stage, 'new')
     groups[stage] = (groups[stage] || 0) + toNumber(deal.deal_value)
@@ -571,6 +977,8 @@ export function buildCommercialPrincipalDashboardData({
   const commercialIntelligence = buildCommercialIntelligence({
     landlords,
     tenants,
+    companies,
+    contacts,
     properties,
     requirements,
     deals,
@@ -588,11 +996,14 @@ export function buildCommercialPrincipalDashboardData({
   const commercialTransactions = buildCommercialTransactions({
     organisationId,
     organisationName: organisation?.name || '',
+    transactions,
+    commissions,
     landlords,
     tenants,
     properties,
     requirements,
     deals,
+    listings,
     leases,
     vacancies,
     headsOfTerms,
@@ -603,6 +1014,38 @@ export function buildCommercialPrincipalDashboardData({
   })
   const financialSummary = buildCommercialFinancialSummary(commercialTransactions)
   const renewalRisk = buildCommercialRenewalRisk(commercialTransactions)
+  const brokerScorecards = buildBrokerScorecards({
+    brokers,
+    requirements,
+    viewings,
+    deals,
+    vacancies,
+    listings,
+    commercialTransactions,
+    commissions,
+    properties,
+  })
+  const executivePipeline = buildExecutivePipelineView({
+    requirements,
+    viewings,
+    deals,
+    transactions: commercialTransactions,
+  })
+  const managementAlerts = buildManagementAlerts({
+    vacancies: openVacancies,
+    requirements: activeRequirements,
+    commercialTransactions,
+    leases: activeLeases,
+    brokerRows: brokerScorecards,
+  })
+  const renewalPipeline = buildRenewalPipeline({ renewalRisk, commercialTransactions })
+  const stockLeaderboard = buildStockLeaderboard({
+    properties: activeProperties,
+    vacancies: openVacancies,
+    deals: activeDeals,
+    commercialTransactions,
+    viewings,
+  })
   const platformTasks = commercialTransactions.flatMap((transaction) =>
     (transaction.tasks || []).map((task) => ({
       ...task,
@@ -619,19 +1062,69 @@ export function buildCommercialPrincipalDashboardData({
       to: `/commercial/transactions/${transaction.id}`,
     })),
   ).slice(0, 12)
-  const commercialSearchIndex = buildCommercialSearchIndex({ transactions: commercialTransactions, landlords, tenants, properties, deals, headsOfTerms, leases })
+  const commercialSearchIndex = buildCommercialSearchIndex({ transactions: commercialTransactions, companies, contacts, landlords, tenants, properties, deals, headsOfTerms, leases })
+  const activeViewings = viewings.filter((row) => !['cancelled'].includes(normalizeLower(row.status)))
+  const viewingsThisMonth = activeViewings.filter((row) => {
+    const date = viewingDateTime(row)
+    return date && date >= startOfMonth && date <= endOfMonth
+  }).length
+  const viewingsCompleted = viewings.filter((row) => normalizeLower(row.status) === 'completed').length
+  const upcomingViewings = buildUpcomingViewings({ viewings, companiesById, tenantsById, propertiesById, brokers })
+  const activeTransactions = commercialTransactions.filter((row) => !['completed', 'lost', 'cancelled'].includes(normalizeLower(row.status)))
+  const transactionsClosedThisMonth = commercialTransactions.filter((row) => {
+    if (normalizeLower(row.status) !== 'completed') return false
+    const closedAt = asDate(row.actualCloseDate || row.updatedAt)
+    return closedAt && closedAt >= startOfMonth && closedAt <= endOfMonth
+  }).length
+  const dealsCreatedThisMonth = deals.filter((row) => withinCurrentMonth(row.created_at)).length
+  const transactionValue = activeTransactions.reduce((total, row) => total + toNumber(row.value), 0)
+  const averageDealCycle = averageDealCycleDays(commercialTransactions)
+  const recentCompanies = activeCompanies
+    .slice()
+    .sort((left, right) => asDate(right.updated_at || right.created_at || 0) - asDate(left.updated_at || left.created_at || 0))
+    .slice(0, 5)
+  const topClients = activeCompanies
+    .map((company) => ({
+      ...company,
+      requirements: activeRequirements.filter((row) => row.company_id === company.id).length,
+      deals: activeDeals.filter((row) => row.company_id === company.id).length,
+      transactions: activeTransactions.filter((row) => row.company?.id === company.id || row.company_id === company.id).length,
+    }))
+    .filter((row) => row.requirements || row.deals || row.transactions)
+    .sort((left, right) => (right.requirements + right.deals + right.transactions) - (left.requirements + left.deals + left.transactions))
+    .slice(0, 5)
+  const inventorySummary = buildInventorySummary({
+    properties: activeProperties,
+    vacancies: openVacancies,
+    listings: activeListings,
+    totalGla,
+    availableSpace,
+  })
+  const topPerformingAssets = buildTopPerformingAssets({
+    properties: activeProperties,
+    vacancies: openVacancies,
+    viewings,
+    deals: activeDeals,
+    transactions: commercialTransactions,
+    requirementMatches: commercialIntelligence.matches || [],
+  })
+  const portalAdoption = buildCommercialPortalAdoption(portalAccess, portalAudit)
 
   return {
     organisationId,
     organisation,
     landlords,
     tenants,
+    companies,
+    contacts,
     properties,
     requirements,
     deals,
     leases,
     vacancies,
     listings,
+    viewings,
+    commissions,
     activity,
     brokers: brokers.map((broker) => ({
       id: normalizeText(broker.userId || broker.id),
@@ -650,6 +1143,8 @@ export function buildCommercialPrincipalDashboardData({
       vacancyRate,
       activeDeals: activeDeals.length,
       activeListings: activeListings.length,
+      activeCompanies: activeCompanies.length,
+      activeContacts: activeContacts.length,
       dealsInNegotiation: dealsInNegotiation.length,
       activeRequirements: activeRequirements.length,
       unassignedRequirements: activeRequirements.filter((row) => !normalizeText(row.assigned_broker || row.broker_id)).length,
@@ -671,10 +1166,31 @@ export function buildCommercialPrincipalDashboardData({
       platformTasks: platformTasks.length,
       platformNotifications: platformNotifications.length,
       financialSummary,
+      activeTransactions: activeTransactions.length,
+      transactionsClosedThisMonth,
+      transactionValue,
+      activeVacancies: openVacancies.length,
+      pipelineValue: financialSummary.pipelineValue,
+      expectedRevenue: financialSummary.projectedRevenue,
+      approvedRevenue: financialSummary.approvedRevenue,
+      paidRevenue: financialSummary.paidRevenue,
+      dealsCreatedThisMonth,
+      averageDealCycle,
       headsOfTerms: {
         total: hotCount,
         drafts: hotDrafts,
         readyForLease: hotReadyForLease,
+      },
+      viewings: {
+        upcoming: upcomingViewings.length,
+        thisMonth: viewingsThisMonth,
+        completed: viewingsCompleted,
+      },
+      portal: {
+        activeAccess: portalAdoption.activeAccess,
+        activeUsers: portalAdoption.activeUsers,
+        pendingInvitations: portalAdoption.pendingInvitations,
+        recentUploads: portalAdoption.recentUploads?.length || 0,
       },
     },
     charts: {
@@ -693,10 +1209,22 @@ export function buildCommercialPrincipalDashboardData({
       listingQualityScores: commercialIntelligence.listingQualityScores,
       listingsNeedingAttention: commercialIntelligence.listingsNeedingAttention,
       nextBestActions: commercialIntelligence.nextBestActions,
+      managementAlerts,
+      executivePipeline,
+      renewalPipeline,
+      stockLeaderboard,
+      upcomingViewings,
+      recentCompanies,
+      topClients,
+      inventorySummary,
+      topPerformingAssets,
+      portalAdoption,
       brokerLeaderboard: commercialIntelligence.brokerLeaderboard,
       platformTasks,
       platformNotifications,
+      recentTransactions: commercialTransactions.slice(0, 5),
       renewalRisk,
+      brokerScorecards,
     },
     watchlists: {
       leaseExpiries: buildExpiryWatchlist({ leases: activeLeases, tenantsById, propertiesById, landlordsById, dealsById }),
@@ -709,5 +1237,8 @@ export function buildCommercialPrincipalDashboardData({
     documents,
     documentRequests,
     headsOfTerms,
+    portalAccess,
+    portalAudit,
+    portalAdoption,
   }
 }

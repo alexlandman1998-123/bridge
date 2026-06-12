@@ -1,8 +1,9 @@
-import { ArrowRight, CalendarClock, UserRound, X } from 'lucide-react'
+import { ArrowRight, BriefcaseBusiness, CalendarClock, UserRound, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import CommercialDocumentLibrary from './CommercialDocumentLibrary'
 import CommercialHeadsOfTermsPanel from './CommercialHeadsOfTermsPanel'
 import CommercialStatusPill from './CommercialStatusPill'
+import { formatDate } from '../commercialFormatters'
 import {
   buildCommercialSummaryCards,
   getCommercialBroker,
@@ -103,7 +104,139 @@ function RiskPanel({ kind, record, rawLookups = {} }) {
   )
 }
 
-function CommercialRecordDrawer({ open, record, kind = '', title, fields = [], lookups = {}, rawLookups = {}, documentsEntityType = '', showHeadsOfTerms = false, organisationId = '', onClose, onEdit, onArchive }) {
+function ViewingsPanel({ kind, record, rawLookups = {} }) {
+  if (!['vacancies', 'properties'].includes(kind)) return null
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const companiesById = new Map((rawLookups.companies || []).map((company) => [company.id, company]))
+  const tenantsById = new Map((rawLookups.tenants || []).map((tenant) => [tenant.id, tenant]))
+  const propertiesById = new Map((rawLookups.properties || []).map((property) => [property.id, property]))
+  const rows = (rawLookups.viewings || []).filter((viewing) => {
+    if (kind === 'vacancies') return viewing.vacancy_id === record.id
+    return viewing.property_id === record.id
+  }).sort((left, right) => {
+    const leftDate = left.viewing_date ? new Date(`${left.viewing_date}T${String(left.viewing_time || '00:00').slice(0, 8)}`) : null
+    const rightDate = right.viewing_date ? new Date(`${right.viewing_date}T${String(right.viewing_time || '00:00').slice(0, 8)}`) : null
+    return (leftDate?.getTime() || 0) - (rightDate?.getTime() || 0)
+  })
+  const upcoming = rows.filter((row) => {
+    const date = row.viewing_date ? new Date(`${row.viewing_date}T${String(row.viewing_time || '00:00').slice(0, 8)}`) : null
+    return !['completed', 'cancelled', 'no_show'].includes(String(row.status || '').toLowerCase()) && (!date || date >= now)
+  })
+  const past = rows.filter((row) => !upcoming.some((item) => item.id === row.id))
+
+  return (
+    <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold tracking-[-0.02em] text-[#102236]">Viewing Activity</h3>
+          <p className="mt-1 text-sm text-slate-500">Upcoming and historic inspections linked to this {kind === 'vacancies' ? 'vacancy' : 'property'}.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/commercial/viewings"
+            state={{
+              openCommercialViewing: true,
+              viewingDraft: {
+                property_id: kind === 'properties' ? record.id : record.property_id || '',
+                vacancy_id: kind === 'vacancies' ? record.id : '',
+                broker_id: record.broker_id || record.broker_assignment || '',
+              },
+            }}
+            className="inline-flex min-h-9 items-center justify-center rounded-xl bg-[#102b46] px-3 text-xs font-semibold text-white transition hover:bg-[#163a5b]"
+          >
+            Schedule Viewing
+          </Link>
+          <Link to="/commercial/viewings" className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200 px-3 text-xs font-semibold text-[#102236] transition hover:bg-slate-50">Viewings</Link>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {[
+          ['Upcoming', upcoming.length],
+          ['Past', past.length],
+          ['Total', rows.length],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
+            <strong className="block text-base text-[#102236]">{value}</strong>
+            <span className="text-xs font-semibold text-slate-500">{label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 grid gap-2">
+        {upcoming.slice(0, 3).map((viewing) => (
+          <article key={viewing.id} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-3">
+            <p className="text-sm font-semibold text-[#102236]">{formatDate(viewing.viewing_date)} · {String(viewing.viewing_time || '').slice(0, 5) || '-'}</p>
+            <p className="mt-1 text-xs text-slate-500">{companiesById.get(viewing.company_id)?.company_name || companiesById.get(viewing.company_id)?.name || tenantsById.get(viewing.company_id)?.name || 'Company pending'} · {propertiesById.get(viewing.property_id)?.property_name || 'Property pending'}</p>
+          </article>
+        ))}
+        {!upcoming.length ? <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No upcoming viewings linked yet.</p> : null}
+      </div>
+    </section>
+  )
+}
+
+function TransactionsPanel({ kind, record, rawLookups = {}, onCreateTransaction }) {
+  if (!['deals', 'vacancies', 'properties'].includes(kind)) return null
+  const entityLabel = kind === 'properties' ? 'property' : kind === 'vacancies' ? 'vacancy' : 'deal'
+  const rows = (rawLookups.transactions || []).filter((transaction) => {
+    if (kind === 'deals') return transaction.deal_id === record.id
+    if (kind === 'vacancies') return transaction.vacancy_id === record.id
+    return transaction.property_id === record.id
+  })
+  const active = rows.filter((row) => !['completed', 'lost', 'cancelled'].includes(String(row.status || '').toLowerCase()))
+  const completed = rows.filter((row) => String(row.status || '').toLowerCase() === 'completed')
+
+  return (
+    <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold tracking-[-0.02em] text-[#102236]">Transactions</h3>
+          <p className="mt-1 text-sm text-slate-500">Persisted commercial transactions linked to this {entityLabel} record.</p>
+        </div>
+        {['deals', 'vacancies'].includes(kind) ? (
+          <button
+            type="button"
+            onClick={() => onCreateTransaction?.(record)}
+            className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-[#102b46] px-3 text-xs font-semibold text-white transition hover:bg-[#163a5b]"
+          >
+            <BriefcaseBusiness size={14} />
+            Create Transaction
+          </button>
+        ) : null}
+      </div>
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Current</p>
+          <div className="mt-2 grid gap-2">
+            {active.length ? active.map((transaction) => (
+              <Link key={transaction.id} to={`/commercial/transactions/${transaction.id}`} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-3 transition hover:border-blue-200 hover:bg-white">
+                <p className="text-sm font-semibold text-[#102236]">{transaction.transaction_name || transaction.transactionName || 'Commercial transaction'}</p>
+                <p className="mt-1 text-xs text-slate-500">{transaction.status} · {transaction.transaction_type || '-'}</p>
+              </Link>
+            )) : (
+              <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No active transactions linked yet.</p>
+            )}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Historical</p>
+          <div className="mt-2 grid gap-2">
+            {completed.length ? completed.map((transaction) => (
+              <Link key={transaction.id} to={`/commercial/transactions/${transaction.id}`} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-3 transition hover:border-blue-200 hover:bg-white">
+                <p className="text-sm font-semibold text-[#102236]">{transaction.transaction_name || transaction.transactionName || 'Commercial transaction'}</p>
+                <p className="mt-1 text-xs text-slate-500">Completed {formatDate(transaction.actual_close_date || transaction.actualCloseDate)}</p>
+              </Link>
+            )) : (
+              <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No historical transactions yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function CommercialRecordDrawer({ open, record, kind = '', title, fields = [], lookups = {}, rawLookups = {}, documentsEntityType = '', showHeadsOfTerms = false, organisationId = '', onClose, onEdit, onArchive, onCreateTransaction }) {
   if (!open || !record) return null
 
   const recordTitle = getCommercialRecordTitle(kind, record)
@@ -176,6 +309,8 @@ function CommercialRecordDrawer({ open, record, kind = '', title, fields = [], l
 
           <MatchingPanel kind={kind} record={record} rawLookups={rawLookups} />
           <RiskPanel kind={kind} record={record} rawLookups={rawLookups} />
+          <ViewingsPanel kind={kind} record={record} rawLookups={rawLookups} />
+          <TransactionsPanel kind={kind} record={record} rawLookups={rawLookups} onCreateTransaction={onCreateTransaction} />
 
           {showHeadsOfTerms ? (
             <div className="mt-4">

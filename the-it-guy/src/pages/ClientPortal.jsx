@@ -1926,6 +1926,8 @@ const CLIENT_ONBOARDING_COMPLETED_STATUSES = new Set([
   'complete',
   'completed',
   'client_onboarding_complete',
+  'awaiting_signed_otp',
+  'signed_otp_received',
 ])
 
 function isClientOnboardingComplete(status) {

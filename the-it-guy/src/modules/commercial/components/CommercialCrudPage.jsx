@@ -6,6 +6,7 @@ import CommercialFormModal from './CommercialFormModal'
 import CommercialRecordDrawer from './CommercialRecordDrawer'
 import CommercialTable from './CommercialTable'
 import {
+  createCommercialTransaction,
   getCommercialLookupData,
   resolveCommercialOrganisationContext,
 } from '../services/commercialApi'
@@ -22,6 +23,8 @@ function friendlyError(error, fallback = 'Something went wrong. Please try again
 
 function toLookupOptions(lookups = {}) {
   return {
+    companies: (lookups.companies || []).map((row) => ({ value: row.id, label: row.company_name || row.name || 'Unnamed company' })),
+    contacts: (lookups.contacts || []).map((row) => ({ value: row.id, label: row.name || [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Unnamed contact' })),
     landlords: (lookups.landlords || []).map((row) => ({ value: row.id, label: row.name || 'Unnamed landlord' })),
     tenants: (lookups.tenants || []).map((row) => ({ value: row.id, label: row.name || 'Unnamed tenant' })),
     properties: (lookups.properties || []).map((row) => ({
@@ -233,6 +236,38 @@ function CommercialCrudPage({ config }) {
     }
   }
 
+  async function handleCreateTransaction(record) {
+    if (!record?.id || !organisationId) return
+    const payload = config.kind === 'deals'
+      ? {
+          organisation_id: organisationId,
+          deal_id: record.id,
+          transaction_type: record.deal_type === 'sale' ? 'sale' : 'lease',
+          status: 'negotiating',
+        }
+      : config.kind === 'vacancies'
+        ? {
+            organisation_id: organisationId,
+            vacancy_id: record.id,
+            property_id: record.property_id || '',
+            broker_id: record.broker_assignment || record.broker_id || '',
+            branch_id: record.branch_id,
+            team_id: record.team_id,
+            transaction_type: Number(record.asking_rental) > 0 ? 'lease' : 'sale',
+            status: 'draft',
+            transaction_name: `${record.vacancy_name || 'Vacancy'} Transaction`,
+          }
+        : null
+    if (!payload) return
+    setActionError('')
+    try {
+      const transaction = await createCommercialTransaction(payload)
+      navigate(`/commercial/transactions/${transaction.id}`)
+    } catch (createError) {
+      setActionError(friendlyError(createError, 'The commercial transaction could not be created.'))
+    }
+  }
+
   return (
     <div className="grid gap-5">
       <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)] sm:flex-row sm:items-center sm:justify-between">
@@ -250,13 +285,24 @@ function CommercialCrudPage({ config }) {
             {config.createLabel || 'New record'}
           </button>
           {(config.secondaryActions || []).map((action) => (
-            <Link
-              key={action.to}
-              to={action.to}
-              className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
-            >
-              {action.label}
-            </Link>
+            action.to ? (
+              <Link
+                key={action.to}
+                to={action.to}
+                className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
+              >
+                {action.label}
+              </Link>
+            ) : (
+              <button
+                key={action.label}
+                type="button"
+                onClick={() => action.onClick?.({ records, organisationId, lookups, reload: loadData, openCreate: () => setModalState({ open: true, mode: 'create', record: null }) })}
+                className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
+              >
+                {action.label}
+              </button>
+            )
           ))}
         </div>
       </section>
@@ -368,6 +414,7 @@ function CommercialCrudPage({ config }) {
           setDrawerRecord(null)
         }}
         onArchive={() => handleArchive(drawerRecord)}
+        onCreateTransaction={(record) => void handleCreateTransaction(record)}
       />
     </div>
   )

@@ -1,6 +1,6 @@
 import { ArrowLeft, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ACTIVE_STATUSES, commercialCrudConfigs, PROPERTY_TYPES, REQUIREMENT_STAGES } from '../commercialCrudConfig'
 import { formatBudgetRange, formatCommercialList, formatSizeRange, labelFromValue, lookupLabel, toLookupOptions } from '../commercialPipelineHelpers'
 import { formatNumber } from '../commercialFormatters'
@@ -14,13 +14,40 @@ import CommercialRequirementDetailDrawer from '../components/CommercialRequireme
 import {
   addCommercialNote,
   createDealFromRequirement,
+  createCommercialTransaction,
+  createCommercialViewing,
   getCommercialActivity,
   getCommercialDeals,
   getCommercialLookupData,
   getCommercialRequirements,
+  getCommercialViewings,
   resolveCommercialOrganisationContext,
   updateCommercialRequirementStage,
+  updateCommercialViewing,
 } from '../services/commercialApi'
+
+const VIEWING_STATUSES = [
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'confirmed', label: 'Confirmed' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'no_show', label: 'No Show' },
+]
+
+const VIEWING_FIELDS = [
+  { name: 'requirement_id', label: 'Requirement', type: 'select', optionsFrom: 'requirements', required: true },
+  { name: 'company_id', label: 'Company', type: 'select', optionsFrom: 'companies' },
+  { name: 'contact_id', label: 'Contact', type: 'select', optionsFrom: 'contacts' },
+  { name: 'property_id', label: 'Property', type: 'select', optionsFrom: 'properties' },
+  { name: 'vacancy_id', label: 'Vacancy', type: 'select', optionsFrom: 'vacancies' },
+  { name: 'listing_id', label: 'Listing', type: 'select', optionsFrom: 'listings' },
+  { name: 'broker_id', label: 'Broker', type: 'select', optionsFrom: 'brokers', required: true },
+  { name: 'viewing_date', label: 'Date', type: 'date', required: true },
+  { name: 'viewing_time', label: 'Time', type: 'time', required: true },
+  { name: 'status', label: 'Status', type: 'select', options: VIEWING_STATUSES, defaultValue: 'scheduled' },
+  { name: 'notes', label: 'Notes', type: 'textarea', span: 'full' },
+  { name: 'feedback', label: 'Feedback', type: 'textarea', span: 'full' },
+]
 
 function uniqueOptions(rows, key) {
   return Array.from(new Set(rows.map((row) => String(row?.[key] || '').trim()).filter(Boolean))).map((value) => ({
@@ -38,8 +65,10 @@ function recordMatchesFilters(record, filters) {
 }
 
 function CommercialRequirementsPipelinePage() {
+  const navigate = useNavigate()
   const [requirements, setRequirements] = useState([])
   const [deals, setDeals] = useState([])
+  const [viewings, setViewings] = useState([])
   const [lookups, setLookups] = useState({})
   const [organisationId, setOrganisationId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -51,6 +80,7 @@ function CommercialRequirementsPipelinePage() {
   const [noteError, setNoteError] = useState('')
   const [movingId, setMovingId] = useState('')
   const [dealModalOpen, setDealModalOpen] = useState(false)
+  const [viewingModal, setViewingModal] = useState({ open: false, record: null })
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -58,19 +88,22 @@ function CommercialRequirementsPipelinePage() {
     try {
       const context = await resolveCommercialOrganisationContext()
       const nextOrganisationId = context.organisationId || ''
-      const [nextRequirements, nextDeals, nextLookups] = await Promise.all([
+      const [nextRequirements, nextDeals, nextViewings, nextLookups] = await Promise.all([
         nextOrganisationId ? getCommercialRequirements(nextOrganisationId) : [],
         nextOrganisationId ? getCommercialDeals(nextOrganisationId) : [],
+        nextOrganisationId ? getCommercialViewings(nextOrganisationId) : [],
         nextOrganisationId ? getCommercialLookupData(nextOrganisationId) : {},
       ])
       setOrganisationId(nextOrganisationId)
       setRequirements(nextRequirements || [])
       setDeals(nextDeals || [])
+      setViewings(nextViewings || [])
       setLookups(nextLookups || {})
     } catch (loadError) {
       setError(loadError?.message || 'Commercial requirements pipeline could not be loaded.')
       setRequirements([])
       setDeals([])
+      setViewings([])
     } finally {
       setLoading(false)
     }
@@ -105,6 +138,14 @@ function CommercialRequirementsPipelinePage() {
   const relatedDeals = useMemo(
     () => deals.filter((deal) => selectedRequirement?.id && deal.requirement_id === selectedRequirement.id),
     [deals, selectedRequirement],
+  )
+  const relatedViewings = useMemo(
+    () => viewings.filter((viewing) => selectedRequirement?.id && viewing.requirement_id === selectedRequirement.id),
+    [selectedRequirement, viewings],
+  )
+  const relatedTransactions = useMemo(
+    () => (lookups.transactions || []).filter((transaction) => selectedRequirement?.id && transaction.requirement_id === selectedRequirement.id),
+    [lookups.transactions, selectedRequirement],
   )
   const visibleRequirements = useMemo(
     () => requirements.filter((record) => recordMatchesFilters(record, filters)),
@@ -157,10 +198,83 @@ function CommercialRequirementsPipelinePage() {
     await loadActivity(selectedRequirement)
   }
 
+  async function handleScheduleViewing(payload) {
+    if (!selectedRequirement) return
+    const created = await createCommercialViewing({
+      ...payload,
+      organisation_id: organisationId,
+      requirement_id: selectedRequirement.id,
+      company_id: payload.company_id || selectedRequirement.company_id || selectedRequirement.tenant_id,
+      contact_id: payload.contact_id || selectedRequirement.contact_id || '',
+      broker_id: payload.broker_id || selectedRequirement.assigned_broker || selectedRequirement.broker_id,
+      branch_id: payload.branch_id || selectedRequirement.branch_id,
+      team_id: payload.team_id || selectedRequirement.team_id,
+    })
+    setViewingModal({ open: false, record: null })
+    setViewings((current) => [...current, created])
+    await loadData()
+    await loadActivity(selectedRequirement)
+  }
+
+  async function handleViewingStatus(viewing, status) {
+    if (!viewing?.id) return
+    const updated = await updateCommercialViewing(viewing.id, { status, previousRecord: viewing })
+    setViewings((current) => current.map((row) => row.id === viewing.id ? updated : row))
+    await loadActivity(selectedRequirement)
+  }
+
+  async function handleCreateTransaction() {
+    if (!selectedRequirement) return
+    setError('')
+    try {
+      const created = await createCommercialTransaction({
+        organisation_id: organisationId,
+        requirement_id: selectedRequirement.id,
+        company_id: selectedRequirement.company_id || selectedRequirement.tenant_id || '',
+        contact_id: selectedRequirement.contact_id || '',
+        property_id: '',
+        vacancy_id: '',
+        listing_id: '',
+        broker_id: selectedRequirement.assigned_broker || selectedRequirement.broker_id || '',
+        branch_id: selectedRequirement.branch_id,
+        team_id: selectedRequirement.team_id,
+        transaction_type: selectedRequirement.requirement_type === 'purchase' || selectedRequirement.requirement_type === 'investment' ? 'sale' : 'lease',
+        status: 'draft',
+        transaction_name: `${selectedRequirement.requirement_name || 'Requirement'} Transaction`,
+        notes: selectedRequirement.notes || '',
+      })
+      await loadData()
+      navigate(`/commercial/transactions/${created.id}`)
+    } catch (transactionError) {
+      setError(transactionError?.message || 'Transaction could not be created from this requirement.')
+    }
+  }
+
+  function openViewingModal(seed = {}) {
+    if (!selectedRequirement) return
+    const vacancy = (lookups.vacancies || []).find((row) => row.id === seed.vacancy_id) || {}
+    const listing = (lookups.listings || []).find((row) => row.vacancy_id === seed.vacancy_id || row.id === seed.listing_id) || {}
+    setViewingModal({
+      open: true,
+      record: {
+        requirement_id: selectedRequirement.id,
+        company_id: selectedRequirement.company_id || selectedRequirement.tenant_id || '',
+        contact_id: selectedRequirement.contact_id || '',
+        property_id: seed.property_id || vacancy.property_id || listing.property_id || '',
+        vacancy_id: seed.vacancy_id || listing.vacancy_id || '',
+        listing_id: seed.listing_id || listing.id || '',
+        broker_id: selectedRequirement.assigned_broker || selectedRequirement.broker_id || vacancy.broker_assignment || vacancy.broker_id || listing.broker_id || '',
+        status: 'scheduled',
+      },
+    })
+  }
+
   const dealDraft = selectedRequirement ? {
     deal_name: `${selectedRequirement.requirement_name || 'Requirement'} Deal`,
     deal_type: selectedRequirement.requirement_type === 'purchase' || selectedRequirement.requirement_type === 'investment' ? 'sale' : 'lease',
     requirement_id: selectedRequirement.id,
+    company_id: selectedRequirement.company_id,
+    contact_id: selectedRequirement.contact_id,
     tenant_id: selectedRequirement.tenant_id,
     assigned_broker: selectedRequirement.assigned_broker,
     stage: 'new',
@@ -213,7 +327,8 @@ function CommercialRequirementsPipelinePage() {
             onOpen={() => setSelectedRequirement(record)}
             onStageChange={(nextStage) => handleStageChange(record, nextStage)}
             details={[
-              { label: 'Client', value: lookupLabel(lookups, 'tenants', record.tenant_id, labelFromValue(record.client_type)) },
+              { label: 'Company', value: lookupLabel(lookups, 'companies', record.company_id, lookupLabel(lookups, 'tenants', record.tenant_id, labelFromValue(record.client_type))) },
+              { label: 'Contact', value: lookupLabel(lookups, 'contacts', record.contact_id, '-') },
               { label: 'Type', value: labelFromValue(record.property_type) },
               { label: 'Size', value: formatSizeRange(record) },
               { label: 'Location', value: formatCommercialList(record.preferred_locations) },
@@ -231,11 +346,16 @@ function CommercialRequirementsPipelinePage() {
         organisationId={organisationId}
         lookups={lookups}
         relatedDeals={relatedDeals}
+        relatedViewings={relatedViewings}
+        relatedTransactions={relatedTransactions}
         activity={activity}
         activityLoading={activityLoading}
         noteError={noteError}
         onClose={() => setSelectedRequirement(null)}
         onCreateDeal={() => setDealModalOpen(true)}
+        onCreateTransaction={() => void handleCreateTransaction()}
+        onScheduleViewing={openViewingModal}
+        onViewingStatusChange={handleViewingStatus}
         onAddNote={handleAddNote}
         onActivityChange={() => loadActivity(selectedRequirement)}
       />
@@ -249,6 +369,17 @@ function CommercialRequirementsPipelinePage() {
         lookups={lookupOptions}
         onClose={() => setDealModalOpen(false)}
         onSubmit={handleCreateDeal}
+      />
+
+      <CommercialFormModal
+        open={viewingModal.open}
+        mode="create"
+        title="Schedule Viewing"
+        fields={VIEWING_FIELDS}
+        record={viewingModal.record}
+        lookups={lookupOptions}
+        onClose={() => setViewingModal({ open: false, record: null })}
+        onSubmit={handleScheduleViewing}
       />
     </div>
   )

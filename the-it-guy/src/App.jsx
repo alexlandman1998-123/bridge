@@ -121,7 +121,12 @@ const CommercialBrokerBranchesPage = lazy(() => import('./modules/commercial/pag
 const CommercialBrokerOverviewPage = lazy(() => import('./modules/commercial/pages/CommercialBrokerOverviewPage'))
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
 const CommercialBrokersPage = lazy(() => import('./modules/commercial/pages/CommercialBrokersPage'))
+const CommercialPrincipalWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialPrincipalWorkspacePage'))
 const CommercialBrokerTeamsPage = lazy(() => import('./modules/commercial/pages/CommercialBrokerTeamsPage'))
+const CommercialCompaniesPage = lazy(() => import('./modules/commercial/pages/CommercialCompaniesPage'))
+const CommercialCompanyWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialCompanyWorkspacePage'))
+const CommercialContactWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialContactWorkspacePage'))
+const CommercialContactsPage = lazy(() => import('./modules/commercial/pages/CommercialContactsPage'))
 const CommercialClientsPage = lazy(() => import('./modules/commercial/pages/CommercialClientsPage'))
 const CommercialDashboard = lazy(() => import('./modules/commercial/pages/CommercialDashboard'))
 const CommercialDealsPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialDealsPipelinePage'))
@@ -137,6 +142,7 @@ const CommercialLeaseExpiryWatchPage = lazy(() => import('./modules/commercial/p
 const CommercialListingWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialListingWorkspacePage'))
 const CommercialListingsPage = lazy(() => import('./modules/commercial/pages/CommercialListingsPage'))
 const CommercialMarketIntelligencePage = lazy(() => import('./modules/commercial/pages/CommercialMarketIntelligencePage'))
+const CommercialPropertyWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialPropertyWorkspacePage'))
 const CommercialPropertiesPage = lazy(() => import('./modules/commercial/pages/CommercialPropertiesPage'))
 const CommercialReportsPage = lazy(() => import('./modules/commercial/pages/CommercialReportsPage'))
 const CommercialRequirementsPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialRequirementsPipelinePage'))
@@ -144,6 +150,7 @@ const CommercialRequirementsPage = lazy(() => import('./modules/commercial/pages
 const CommercialSalesDealsPage = lazy(() => import('./modules/commercial/pages/CommercialSalesDealsPage'))
 const CommercialSettingsPage = lazy(() => import('./modules/commercial/pages/CommercialSettingsPage'))
 const CommercialTransactionWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialTransactionWorkspacePage'))
+const CommercialVacancyWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialVacancyWorkspacePage'))
 const CommercialVacanciesPage = lazy(() => import('./modules/commercial/pages/CommercialVacanciesPage'))
 const CommercialViewingsPage = lazy(() => import('./modules/commercial/pages/CommercialViewingsPage'))
 const DeveloperIntelligenceDashboardPage = lazy(() => import('./pages/developer-intelligence/DashboardPage'))
@@ -1204,14 +1211,21 @@ function AppRoutes() {
               <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout /></AppErrorBoundary></RoleRoute>}>
                 <Route index element={<Navigate to="/commercial/dashboard" replace />} />
                 <Route path="dashboard" element={<CommercialDashboard />} />
+                <Route path="principal" element={<CommercialPrincipalWorkspacePage />} />
+                <Route path="companies" element={<CommercialCompaniesPage />} />
+                <Route path="companies/:companyId" element={<CommercialCompanyWorkspacePage />} />
+                <Route path="contacts" element={<CommercialContactsPage />} />
+                <Route path="contacts/:contactId" element={<CommercialContactWorkspacePage />} />
                 <Route path="tenants" element={<CommercialClientsPage />} />
                 <Route path="clients" element={<CommercialClientsPage />} />
                 <Route path="expiring-occupiers" element={<CommercialExpiringOccupiersPage />} />
                 <Route path="vacancies" element={<CommercialVacanciesPage />} />
+                <Route path="vacancies/:vacancyId" element={<CommercialVacancyWorkspacePage />} />
                 <Route path="listings" element={<CommercialListingsPage />} />
                 <Route path="listings/:listingId" element={<CommercialListingWorkspacePage />} />
                 <Route path="landlords" element={<CommercialLandlordsPage />} />
                 <Route path="properties" element={<CommercialPropertiesPage />} />
+                <Route path="properties/:propertyId" element={<CommercialPropertyWorkspacePage />} />
                 <Route path="requirements" element={<CommercialRequirementsPage />} />
                 <Route path="pipeline" element={<CommercialRequirementsPipelinePage />} />
                 <Route path="requirements/pipeline" element={<CommercialRequirementsPipelinePage />} />

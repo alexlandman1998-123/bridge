@@ -4,8 +4,8 @@ import { createSystemEvent } from './leadCommunicationService'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export const COMMUNICATION_DELIVERY_STATUSES = ['prepared', 'queued', 'sent', 'delivered', 'failed']
-export const COMMUNICATION_DELIVERY_CHANNELS = ['email', 'whatsapp']
-export const COMMUNICATION_DELIVERY_PROVIDERS = ['sendgrid', 'mailgun', 'twilio', 'meta', 'internal']
+export const COMMUNICATION_DELIVERY_CHANNELS = ['email', 'whatsapp', 'sms']
+export const COMMUNICATION_DELIVERY_PROVIDERS = ['sendgrid', 'mailgun', 'twilio', 'meta', 'internal', 'resend']
 export const COMMUNICATION_FREQUENCIES = ['immediate', 'daily', 'weekly', 'monthly']
 export const COMMUNICATION_OPT_OUT_MESSAGE = 'Buyer has opted out of this communication channel.'
 
@@ -249,9 +249,16 @@ export function normalizeCommunicationDelivery(row = {}) {
     branchId: readId(row, ['branch_id', 'branchId']),
     leadId: readId(row, ['lead_id', 'leadId']),
     listingId: readId(row, ['listing_id', 'listingId']),
+    transactionId: readId(row, ['transaction_id', 'transactionId']),
+    offerId: readId(row, ['offer_id', 'offerId']),
+    appointmentId: readId(row, ['appointment_id', 'appointmentId']),
+    portalSessionId: readId(row, ['portal_session_id', 'portalSessionId']),
+    sellerReviewSessionId: readId(row, ['seller_review_session_id', 'sellerReviewSessionId']),
+    retryOfId: readId(row, ['retry_of_id', 'retryOfId']),
     communicationType: normalizeText(row.communicationType || row.communication_type) || 'manual',
     channel: normalizeChannel(row.channel),
     recipient: normalizeText(row.recipient),
+    recipientRole: normalizeText(row.recipientRole || row.recipient_role),
     subject: normalizeText(row.subject),
     messagePreview: normalizeText(row.messagePreview || row.message_preview),
     status: normalizeStatus(row.status),
@@ -263,10 +270,14 @@ export function normalizeCommunicationDelivery(row = {}) {
     preparedAt: readDate(row, ['preparedAt', 'prepared_at']),
     sentAt: readDate(row, ['sentAt', 'sent_at']),
     deliveredAt: readDate(row, ['deliveredAt', 'delivered_at']),
+    openedAt: readDate(row, ['openedAt', 'opened_at']),
     failedAt: readDate(row, ['failedAt', 'failed_at']),
     createdAt: readDate(row, ['createdAt', 'created_at']) || readDate(row, ['preparedAt', 'prepared_at']),
     updatedAt: readDate(row, ['updatedAt', 'updated_at']),
     agentId: readId(row, ['agentId', 'agent_id', 'sentBy', 'sent_by', 'preparedBy', 'prepared_by']),
+    metadata: typeof (row.metadata || row.metadata_json) === 'object' && !Array.isArray(row.metadata || row.metadata_json)
+      ? (row.metadata || row.metadata_json)
+      : {},
     raw: row,
   }
 }
@@ -274,7 +285,15 @@ export function normalizeCommunicationDelivery(row = {}) {
 export function buildCommunicationDeliveryPayload(payload = {}, { actor = null } = {}) {
   const organisationId = nullableUuid(payload.organisationId || payload.organisation_id)
   const leadId = nullableUuid(payload.leadId || payload.lead_id)
-  if (!organisationId || !leadId) throw new Error('Valid organisation and lead ids are required for communication deliveries.')
+  const listingId = nullableUuid(payload.listingId || payload.listing_id)
+  const transactionId = nullableUuid(payload.transactionId || payload.transaction_id)
+  const offerId = nullableUuid(payload.offerId || payload.offer_id)
+  const appointmentId = nullableUuid(payload.appointmentId || payload.appointment_id)
+  const portalSessionId = nullableUuid(payload.portalSessionId || payload.portal_session_id)
+  const sellerReviewSessionId = nullableUuid(payload.sellerReviewSessionId || payload.seller_review_session_id)
+  if (!organisationId || (!leadId && !listingId && !transactionId && !offerId && !appointmentId && !portalSessionId && !sellerReviewSessionId)) {
+    throw new Error('Communication deliveries require an organisation id and a related lead, listing, offer, appointment, or transaction.')
+  }
   const channel = normalizeChannel(payload.channel)
   const recipient = normalizeText(payload.recipient)
   if (!recipient) throw new Error('A recipient is required before preparing a communication delivery.')
@@ -284,10 +303,17 @@ export function buildCommunicationDeliveryPayload(payload = {}, { actor = null }
     organisation_id: organisationId,
     branch_id: nullableUuid(payload.branchId || payload.branch_id),
     lead_id: leadId,
-    listing_id: nullableUuid(payload.listingId || payload.listing_id),
+    listing_id: listingId,
+    transaction_id: transactionId,
+    offer_id: offerId,
+    appointment_id: appointmentId,
+    portal_session_id: portalSessionId,
+    seller_review_session_id: sellerReviewSessionId,
+    retry_of_id: nullableUuid(payload.retryOfId || payload.retry_of_id),
     communication_type: normalizeText(payload.communicationType || payload.communication_type || payload.type) || 'manual',
     channel,
     recipient,
+    recipient_role: normalizeText(payload.recipientRole || payload.recipient_role) || null,
     subject: normalizeText(payload.subject) || null,
     message_preview: clipPreview(payload.messagePreview || payload.message_preview || payload.message || payload.preview?.message) || null,
     status,
@@ -299,13 +325,15 @@ export function buildCommunicationDeliveryPayload(payload = {}, { actor = null }
     prepared_at: new Date(timestamp).toISOString(),
     sent_at: payload.sentAt || payload.sent_at || (['sent', 'delivered'].includes(status) ? nowIso() : null),
     delivered_at: payload.deliveredAt || payload.delivered_at || (status === 'delivered' ? nowIso() : null),
+    opened_at: payload.openedAt || payload.opened_at || null,
     failed_at: payload.failedAt || payload.failed_at || (status === 'failed' ? nowIso() : null),
+    metadata_json: payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata) ? payload.metadata : {},
   }
 }
 
 export async function createCommunicationDelivery(payload = {}, { actor = null, validateConsent = true } = {}) {
   const dbPayload = buildCommunicationDeliveryPayload(payload, { actor })
-  if (validateConsent) {
+  if (validateConsent && dbPayload.lead_id) {
     const consent = await validateCommunicationSend({
       organisationId: dbPayload.organisation_id,
       leadId: dbPayload.lead_id,
@@ -354,6 +382,9 @@ async function updateCommunicationDeliveryStatus(deliveryId = '', updates = {}) 
     error_message: updates.errorMessage !== undefined || updates.error_message !== undefined
       ? normalizeText(updates.errorMessage || updates.error_message) || null
       : undefined,
+    opened_at: updates.openedAt !== undefined || updates.opened_at !== undefined
+      ? updates.openedAt || updates.opened_at || null
+      : undefined,
     sent_by: nullableUuid(updates.sentBy || updates.sent_by),
     sent_at: updates.sentAt || updates.sent_at || (status === 'sent' ? nowIso() : undefined),
     delivered_at: updates.deliveredAt || updates.delivered_at || (status === 'delivered' ? nowIso() : undefined),
@@ -389,7 +420,7 @@ export function markCommunicationDeliveryFailed(deliveryId = '', updates = {}) {
   return updateCommunicationDeliveryStatus(deliveryId, { ...updates, status: 'failed' })
 }
 
-export async function listCommunicationDeliveries({ organisationId = '', leadId = '', listingId = '', status = '', channel = '', limit = 1000 } = {}) {
+export async function listCommunicationDeliveries({ organisationId = '', leadId = '', listingId = '', transactionId = '', offerId = '', appointmentId = '', status = '', channel = '', limit = 1000 } = {}) {
   const organisationUuid = nullableUuid(organisationId)
   if (!organisationUuid) return []
   const client = requireClient()
@@ -401,6 +432,9 @@ export async function listCommunicationDeliveries({ organisationId = '', leadId 
     .limit(Math.max(1, Math.min(Number(limit) || 1000, 3000)))
   if (nullableUuid(leadId)) query = query.eq('lead_id', nullableUuid(leadId))
   if (nullableUuid(listingId)) query = query.eq('listing_id', nullableUuid(listingId))
+  if (nullableUuid(transactionId)) query = query.eq('transaction_id', nullableUuid(transactionId))
+  if (nullableUuid(offerId)) query = query.eq('offer_id', nullableUuid(offerId))
+  if (nullableUuid(appointmentId)) query = query.eq('appointment_id', nullableUuid(appointmentId))
   if (status && status !== 'all') query = query.eq('status', normalizeStatus(status))
   if (channel && channel !== 'all') query = query.eq('channel', normalizeChannel(channel))
   const { data, error } = await query
@@ -422,14 +456,22 @@ export async function retryCommunicationDelivery({ deliveryId = '' } = {}, { act
     organisationId: original.organisationId,
     leadId: original.leadId,
     listingId: original.listingId,
+    transactionId: original.transactionId,
+    offerId: original.offerId,
+    appointmentId: original.appointmentId,
+    portalSessionId: original.portalSessionId,
+    sellerReviewSessionId: original.sellerReviewSessionId,
     branchId: original.branchId,
     communicationType: original.communicationType,
     channel: original.channel,
     recipient: original.recipient,
+    recipientRole: original.recipientRole,
     subject: original.subject,
     messagePreview: original.messagePreview,
     provider: original.provider || 'internal',
     status: 'prepared',
+    retryOfId: original.id,
+    metadata: original.metadata,
     preparedBy: actorId(actor) || original.preparedBy,
   }, { actor, validateConsent: false })
 }

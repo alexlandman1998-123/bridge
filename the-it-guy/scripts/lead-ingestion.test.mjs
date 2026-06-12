@@ -127,6 +127,10 @@ assert.match(canvassingPageSource, /leadCategory: normalizedCategory/)
 assert.match(canvassingPageSource, /leadSource: 'Canvassing'/)
 assert.match(canvassingPageSource, /sellerPropertyAddress: normalizedCategory === 'seller'/)
 assert.match(canvassingPageSource, /navigate\(`\/pipeline\/leads\/\$\{targetLeadId\}`\)/)
+assert.match(canvassingPageSource, /canAccessPrincipalExperience/, 'canvassing workspace should allow principal users to see workspace-wide prospects')
+assert.match(canvassingPageSource, /if \(isPrincipalAgentView\) return Array\.isArray\(prospects\) \? prospects : \[\]/, 'principal canvassing view should not hide prospects behind agent-only scoping')
+assert.match(canvassingPageSource, /assignedAgentId: currentAgentIdentity/, 'new canvassing prospects should default to the current agent assignment')
+assert.doesNotMatch(canvassingPageSource, /BRIDGE9_PRINCIPAL_DEMO_AGENT_EMAIL/, 'canvassing should not silently default prospect assignment to the demo principal agent')
 
 const server = await createServer({
   root: process.cwd(),

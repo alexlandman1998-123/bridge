@@ -218,6 +218,33 @@ export const HANDOVER_STATUSES = ['not_started', 'in_progress', 'completed']
 export const OCCUPATIONAL_RENT_STATUSES = ['not_applicable', 'pending_setup', 'active', 'overdue', 'settled', 'closed']
 export const PROFILE_ROLE_VALUES = ['viewer', 'agent', 'developer', 'attorney', 'bond_originator', 'client']
 export const FIRM_TYPE_VALUES = ['attorney', 'developer', 'agency']
+
+const OTP_SIGNING_READY_ONBOARDING_STATUSES = new Set([
+  'submitted',
+  'reviewed',
+  'approved',
+  'complete',
+  'completed',
+  'client_onboarding_complete',
+  'awaiting_signed_otp',
+  'signed_otp_received',
+])
+
+const CLIENT_INTAKE_PREFERENCE_ALIASES = {
+  digital: 'digital_portal',
+  portal: 'digital_portal',
+  digital_portal: 'digital_portal',
+  email: 'digital_portal',
+  agent: 'agent_assisted',
+  assisted: 'agent_assisted',
+  agent_assisted: 'agent_assisted',
+  assisted_capture: 'agent_assisted',
+  manual: 'agent_assisted',
+  hard_copy: 'hard_copy',
+  hardcopy: 'hard_copy',
+  printed: 'hard_copy',
+  paper: 'hard_copy',
+}
 export const FIRM_ROLE_VALUES = ['firm_admin', 'lead_attorney', 'attorney', 'paralegal', 'admin_staff', 'developer', 'agent', 'viewer', 'buyer', 'seller']
 export const ATTORNEY_FIRM_ROLE_VALUES = [
   'firm_admin',
@@ -1033,6 +1060,34 @@ function normalizeEmailAddress(value) {
 
 function normalizePhoneValue(value) {
   return String(value || '').trim()
+}
+
+function normalizeClientIntakePreference(value = '') {
+  return CLIENT_INTAKE_PREFERENCE_ALIASES[normalizeTextValue(value).toLowerCase()] || 'digital_portal'
+}
+
+function resolveClientIntakePreferenceFromFormData(formData = {}) {
+  const normalized = normalizeClientIntakePreference(
+    formData?.bridge_client_intake_preference ||
+      formData?.client_intake_preference ||
+      formData?.delivery_mode ||
+      formData?.deliveryMode ||
+      formData?.__bridge_onboarding_mode,
+  )
+  if (normalized === 'digital_portal' && formData?.bridge_hard_copy_preferred === 'yes') return 'hard_copy'
+  if (normalized === 'digital_portal' && formData?.bridge_agent_assisted_onboarding === 'yes') return 'agent_assisted'
+  return normalized
+}
+
+function resolveAwaitingSignedOtpNextAction(formData = {}) {
+  const preference = resolveClientIntakePreferenceFromFormData(formData)
+  if (preference === 'hard_copy') {
+    return 'Prepare hard-copy OTP pack, obtain signatures, and upload the signed OTP before finance or attorney handoff.'
+  }
+  if (preference === 'agent_assisted') {
+    return 'Prepare the OTP for assisted signing, obtain signatures, and upload the signed OTP before finance or attorney handoff.'
+  }
+  return 'Generate or release the OTP for signature, then upload the signed OTP before finance or attorney handoff.'
 }
 
 function resolvePhoneFromRecord(record, keys = []) {
@@ -11229,6 +11284,7 @@ async function computeTransactionReadinessSnapshot(client, transactionId) {
   }
 
   const purchaserType = normalizePurchaserType(transaction.purchaser_type)
+  const onboardingFormData = await fetchOnboardingFormDataForTransaction(client, transactionId, purchaserType)
   const requiredDocuments = await ensureTransactionRequiredDocuments(client, {
     transactionId,
     purchaserType,
@@ -11253,16 +11309,27 @@ async function computeTransactionReadinessSnapshot(client, transactionId) {
     purchaserType,
   })
   const onboardingStatus = onboarding?.status || 'Not Started'
-  const onboardingComplete = ['Submitted', 'Reviewed', 'Approved'].includes(onboardingStatus)
+  const salesSnapshot = resolveSalesWorkflowSnapshot({
+    onboardingStatus: transaction.onboarding_status || onboardingStatus,
+    onboardingCompletedAt: transaction.onboarding_completed_at || null,
+    externalOnboardingSubmittedAt: transaction.external_onboarding_submitted_at || null,
+    onboardingFormData: onboardingFormData?.formData || {},
+    documents: uploadedDocuments,
+    requiredDocuments,
+    permissions: null,
+  })
+  const onboardingComplete = Boolean(salesSnapshot.onboardingComplete)
+  const signedOtpReceived = Boolean(salesSnapshot.signedOtpReceived)
 
   const financeType = normalizeFinanceType(transaction.finance_type, { allowUnknown: true })
   const stage = normalizeStage(transaction.stage, 'Available')
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
-  const financeLaneReady = isBondFinanceType(financeType) ? docsComplete && onboardingComplete : docsComplete
+  const financeLaneReady = isBondFinanceType(financeType) ? Boolean(salesSnapshot.readyForFinance) : Boolean(salesSnapshot.readyForFinance)
   const attorneyLaneReady =
+    signedOtpReceived &&
     docsComplete &&
     (financeType === 'cash' || ['ATTY', 'XFER', 'REG'].includes(mainStage) || stage === 'Bond Approved / Proof of Funds')
-  const stageReady = docsComplete && onboardingComplete
+  const stageReady = Boolean(salesSnapshot.readyForFinance)
 
   return {
     transactionId,
@@ -11271,6 +11338,7 @@ async function computeTransactionReadinessSnapshot(client, transactionId) {
     mainStage,
     onboardingStatus,
     onboardingComplete,
+    signedOtpReceived,
     docsComplete,
     uploadedRequiredDocs,
     totalRequiredDocs,
@@ -20567,7 +20635,7 @@ function isTransactionOnboardingCompleteForRoleplayerReplay(transaction = {}, on
   const transactionStatus = normalizeTextValue(transaction?.onboarding_status || transaction?.onboardingStatus).toLowerCase()
   const onboardingStatus = normalizeTextValue(onboarding?.status).toLowerCase()
   return (
-    ['client_onboarding_complete', 'submitted', 'complete', 'completed'].includes(transactionStatus) ||
+    OTP_SIGNING_READY_ONBOARDING_STATUSES.has(transactionStatus) ||
     ['submitted', 'reviewed', 'approved', 'complete', 'completed'].includes(onboardingStatus) ||
     Boolean(transaction?.onboarding_completed_at || transaction?.onboardingCompletedAt) ||
     Boolean(transaction?.external_onboarding_submitted_at || transaction?.externalOnboardingSubmittedAt) ||
@@ -20575,29 +20643,9 @@ function isTransactionOnboardingCompleteForRoleplayerReplay(transaction = {}, on
   )
 }
 
-async function fetchClientPortalPathForTransactionIfPossible(client, transactionId) {
-  const normalizedTransactionId = normalizeNullableUuid(transactionId)
-  if (!normalizedTransactionId) return ''
-  const query = await client
-    .from('client_portal_links')
-    .select('token')
-    .eq('transaction_id', normalizedTransactionId)
-    .eq('is_active', true)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (query.error) {
-    if (
-      isMissingTableError(query.error, 'client_portal_links') ||
-      isMissingSchemaError(query.error) ||
-      isPermissionDeniedError(query.error) ||
-      isMissingColumnError(query.error, 'is_active')
-    ) {
-      return ''
-    }
-    throw query.error
-  }
-  return query.data?.token ? `/client/${query.data.token}` : ''
+function isTransactionSignedOtpReadyForRoleplayerReplay(transaction = {}) {
+  const transactionStatus = normalizeTextValue(transaction?.onboarding_status || transaction?.onboardingStatus).toLowerCase()
+  return transactionStatus === 'signed_otp_received'
 }
 
 async function replayRoleplayerAllocationForCompletedOnboarding(
@@ -20626,10 +20674,9 @@ async function replayRoleplayerAllocationForCompletedOnboarding(
     return { skipped: true, reason: 'onboarding_not_complete' }
   }
 
-  const [context, formDataRow, clientPortalPath] = await Promise.all([
+  const [context, formDataRow] = await Promise.all([
     resolveTransactionAndContext(client, normalizedTransactionId),
     fetchOnboardingFormDataForTransaction(client, normalizedTransactionId, transaction.purchaser_type || 'individual'),
-    fetchClientPortalPathForTransactionIfPossible(client, normalizedTransactionId),
   ])
   const resolvedTransaction = {
     ...context.transaction,
@@ -20637,74 +20684,34 @@ async function replayRoleplayerAllocationForCompletedOnboarding(
   }
   const formData = formDataRow?.formData || {}
   const financeSnapshot = getOnboardingFinanceSnapshot({ formData, transaction: resolvedTransaction })
+  const signedOtpReceived = isTransactionSignedOtpReadyForRoleplayerReplay(resolvedTransaction)
 
-  await activateSelectedAttorneyRoleplayersForOnboarding(client, {
-    transaction: resolvedTransaction,
-    financeType: financeSnapshot.financeType || resolvedTransaction.finance_type,
-    buyer: context.buyer,
-    formData,
-  })
-
-  const activation = await activateSelectedBondOriginatorForOnboarding(client, {
-    transaction: resolvedTransaction,
-    financeType: financeSnapshot.financeType || resolvedTransaction.finance_type,
-    buyer: context.buyer,
-    formData,
-  })
-
-  if (activation?.activated) {
-    await notifyBondIntakeStartedForOnboarding({
-      transaction: {
-        ...resolvedTransaction,
-        finance_type: financeSnapshot.financeType || resolvedTransaction.finance_type,
-        buyer_name: context.buyer?.name || null,
-        buyer_email: context.buyer?.email || null,
-        bond_workspace_id: activation.scope?.bondWorkspaceId || resolvedTransaction.bond_workspace_id || null,
-        bond_region_id: activation.scope?.bondRegionId || resolvedTransaction.bond_region_id || null,
-        bond_workspace_unit_id: activation.scope?.bondWorkspaceUnitId || resolvedTransaction.bond_workspace_unit_id || null,
-        transaction_role_players: [{ ...activation.roleplayer, status: 'active', assignment_status: 'active' }],
-        buyerPortalPath: clientPortalPath,
-        unit_number: context.unit?.unit_number || null,
-        development_name:
-          context.unit?.development && Array.isArray(context.unit.development)
-            ? context.unit.development[0]?.name || null
-            : context.unit?.development?.name || null,
-      },
-      formData,
-      actor: { roleType: normalizeRoleType(actorRole || actorProfile?.role || 'agent') },
-      client,
-      emailEnabled: true,
-      metadata: {
+  if (!signedOtpReceived) {
+    await logTransactionEventIfPossible(client, {
+      transactionId: normalizedTransactionId,
+      eventType: 'roleplayer_handoff_pending_signed_otp',
+      createdBy: actorProfile?.userId || null,
+      createdByRole: normalizeRoleType(actorRole || actorProfile?.role || 'agent'),
+      eventData: {
         source: 'roleplayers_saved_after_onboarding_complete',
-        portalPath: clientPortalPath,
-        applicationPath: clientPortalPath,
+        onboardingStatus: normalizeTextValue(resolvedTransaction.onboarding_status || ''),
+        financeType: financeSnapshot.financeType || resolvedTransaction.finance_type || null,
       },
     })
 
-    const notifiedAt = new Date().toISOString()
-    await updateRecordByIdWithMissingColumnFallback(
-      client,
-      'transaction_role_players',
-      activation.roleplayer.id,
-      {
-        status: 'active',
-        assignment_status: 'active',
-        notified_at: notifiedAt,
-        updated_at: notifiedAt,
-      },
-      'id, status, assignment_status, notified_at, updated_at',
-    )
+    return {
+      skipped: false,
+      pendingSignedOtp: true,
+      reason: 'awaiting_signed_otp',
+    }
   }
 
-  await notifyAttorneysForBuyerOnboardingSubmitted(client, {
+  const workflowResult = await triggerPostSigningWorkflowIfNeeded(client, {
     transactionId: normalizedTransactionId,
     financeType: financeSnapshot.financeType || resolvedTransaction.finance_type,
-    buyer: context.buyer,
-    formData,
-  })
-
-  const handoff = await sendRoleplayerHandoffEmailForOnboarding(client, {
-    transactionId: normalizedTransactionId,
+    actorUserId: actorProfile?.userId || null,
+    actorRole: normalizeRoleType(actorRole || actorProfile?.role || 'agent'),
+    source: 'roleplayers_saved_after_signed_otp',
   })
 
   await logTransactionEventIfPossible(client, {
@@ -20713,17 +20720,20 @@ async function replayRoleplayerAllocationForCompletedOnboarding(
     createdBy: actorProfile?.userId || null,
     createdByRole: normalizeRoleType(actorRole || actorProfile?.role || 'agent'),
     eventData: {
-      source: 'roleplayers_saved_after_onboarding_complete',
-      bondOriginatorActivated: Boolean(activation?.activated),
-      bondOriginatorActivationReason: activation?.reason || null,
-      handoff,
+      source: 'roleplayers_saved_after_signed_otp',
+      workflowTriggered: Boolean(workflowResult?.triggered),
+      workflowType: workflowResult?.workflow || null,
+      stageAdvanced: Boolean(workflowResult?.stageResult?.advanced),
+      bondOriginatorActivated: Boolean(workflowResult?.activation?.activated),
+      bondOriginatorActivationReason: workflowResult?.activation?.reason || null,
     },
   })
 
   return {
     skipped: false,
-    bondOriginatorActivated: Boolean(activation?.activated),
-    handoff,
+    pendingSignedOtp: false,
+    workflowTriggered: Boolean(workflowResult?.triggered),
+    workflowResult,
   }
 }
 
@@ -21325,7 +21335,7 @@ function resolveBondActivationScope({ transaction = {}, roleplayer = {}, relatio
   }
 }
 
-async function createAgentBondOriginatorMissingNotification(client, { transaction, financeType, buyer = null, formData = {} } = {}) {
+async function createAgentBondOriginatorMissingNotification(client, { transaction, financeType, buyer = null, formData = {}, source = 'buyer_onboarding_completed' } = {}) {
   const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
   if (!transactionId) return null
   await logTransactionEventIfPossible(client, {
@@ -21333,7 +21343,7 @@ async function createAgentBondOriginatorMissingNotification(client, { transactio
     eventType: 'buyer_selected_bond_finance',
     createdByRole: 'client',
     eventData: {
-      source: 'buyer_onboarding_completed',
+      source,
       financeType,
       buyerName: buyer?.name || formData.full_name || null,
     },
@@ -21343,7 +21353,7 @@ async function createAgentBondOriginatorMissingNotification(client, { transactio
     eventType: 'bond_originator_missing',
     createdByRole: 'client',
     eventData: {
-      source: 'buyer_onboarding_completed',
+      source,
       financeType,
       message: 'No bond originator selected for this transaction. Please assign one to continue.',
     },
@@ -21384,7 +21394,7 @@ async function createAgentBondOriginatorMissingNotification(client, { transactio
     dedupe_key: dedupeKey,
     event_type: 'bond_originator_missing',
     event_data: {
-      source: 'buyer_onboarding_completed',
+      source,
       financeType,
     },
   }
@@ -21407,7 +21417,7 @@ async function createAgentBondOriginatorMissingNotification(client, { transactio
   return insertResult.data || null
 }
 
-async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transaction, financeType, buyer = null, formData = {} } = {}) {
+async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transaction, financeType, buyer = null, formData = {}, source = 'buyer_onboarding_completed', createdByRole = 'client' } = {}) {
   const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
   if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData })) {
     return []
@@ -21460,9 +21470,9 @@ async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transa
     await logTransactionEventIfPossible(client, {
       transactionId,
       eventType: isBondAttorney ? 'bond_attorney_activated' : 'transfer_attorney_activated',
-      createdByRole: 'client',
+      createdByRole,
       eventData: {
-        source: 'buyer_onboarding_completed',
+        source,
         financeType,
         buyerName: buyer?.name || formData.full_name || null,
         attorneyName: roleplayer.partnerName || roleplayer.contactPerson || null,
@@ -21474,27 +21484,6 @@ async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transa
   }
 
   return activated
-}
-
-async function notifyAttorneysForBuyerOnboardingSubmitted(client, { transactionId, financeType, buyer = null, formData = {} } = {}) {
-  if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData })) {
-    return []
-  }
-  return notifyRolesForTransaction(client, {
-    transactionId,
-    roleTypes: ['attorney'],
-    title: 'Buyer onboarding submitted',
-    message: 'Buyer onboarding has been submitted. The matter is now available, but signed OTP and supporting documents may still be outstanding.',
-    notificationType: 'lane_handoff',
-    eventType: 'TransactionUpdated',
-    eventData: {
-      source: 'buyer_onboarding_completed',
-      financeType,
-      buyerName: buyer?.name || formData.full_name || null,
-      readiness: 'onboarding_submitted_pre_otp',
-    },
-    dedupePrefix: 'buyer-onboarding-submitted-attorney',
-  })
 }
 
 async function sendBuyerRoleplayerIntroEmailForOnboarding(client, { transaction, buyer = null } = {}) {
@@ -21566,7 +21555,7 @@ async function notifyAttorneysForBondDocumentsComplete(client, { transactionId, 
   })
 }
 
-async function activateSelectedBondOriginatorForOnboarding(client, { transaction, financeType, buyer = null, formData = {} } = {}) {
+async function activateSelectedBondOriginatorForOnboarding(client, { transaction, financeType, buyer = null, formData = {}, source = 'buyer_onboarding_completed', createdByRole = 'client' } = {}) {
   const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
   if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData })) return { activated: false, reason: 'not_bond_finance' }
 
@@ -21577,7 +21566,7 @@ async function activateSelectedBondOriginatorForOnboarding(client, { transaction
       !['removed', 'declined'].includes(normalizeTextValue(item.assignmentStatus || item.status).toLowerCase()),
   )
   if (!selectedBondOriginator?.id) {
-    await createAgentBondOriginatorMissingNotification(client, { transaction, financeType, buyer, formData })
+    await createAgentBondOriginatorMissingNotification(client, { transaction, financeType, buyer, formData, source })
     return { activated: false, reason: 'no_selected_bond_originator' }
   }
 
@@ -21629,9 +21618,9 @@ async function activateSelectedBondOriginatorForOnboarding(client, { transaction
   await logTransactionEventIfPossible(client, {
     transactionId,
     eventType: 'buyer_selected_bond_finance',
-    createdByRole: 'client',
+    createdByRole,
     eventData: {
-      source: 'buyer_onboarding_completed',
+      source,
       financeType,
       buyerName: buyer?.name || formData.full_name || null,
     },
@@ -21640,9 +21629,9 @@ async function activateSelectedBondOriginatorForOnboarding(client, { transaction
   await logTransactionEventIfPossible(client, {
     transactionId,
     eventType: 'bond_originator_activated',
-    createdByRole: 'client',
+    createdByRole,
     eventData: {
-      source: 'buyer_onboarding_completed',
+      source,
       financeType,
       buyerName: buyer?.name || formData.full_name || null,
       bondOriginatorName: selectedBondOriginator.partnerName || selectedBondOriginator.contactPerson || null,
@@ -27961,7 +27950,7 @@ export async function applyWorkflowOverride({
 
 function getManualOnboardingLifecycleStatus(status) {
   return ['Submitted', 'Reviewed', 'Approved'].includes(status)
-    ? 'client_onboarding_complete'
+    ? 'awaiting_signed_otp'
     : 'awaiting_client_onboarding'
 }
 
@@ -28164,9 +28153,9 @@ export async function saveTransactionClientInformation({
     is_active: true,
     onboarding_status: lifecycleStatus,
     onboarding_completed_at:
-      lifecycleStatus === 'client_onboarding_complete' ? transaction.onboarding_completed_at || now : null,
+      lifecycleStatus === 'awaiting_signed_otp' ? transaction.onboarding_completed_at || now : null,
     external_onboarding_submitted_at:
-      lifecycleStatus === 'client_onboarding_complete' ? transaction.external_onboarding_submitted_at || now : null,
+      lifecycleStatus === 'awaiting_signed_otp' ? transaction.external_onboarding_submitted_at || now : null,
     updated_at: now,
   }
 
@@ -28384,7 +28373,7 @@ export async function saveTransactionClientInformation({
     },
   })
 
-  if (lifecycleStatus === 'client_onboarding_complete') {
+  if (lifecycleStatus === 'awaiting_signed_otp') {
     await processWorkflowEvidenceIfPossible(client, {
       transactionId,
       evidenceType: 'onboarding',
@@ -30849,7 +30838,7 @@ export async function getOrCreateTransactionOnboarding({ transactionId, purchase
       'transactions',
       normalizedTransactionId,
       {
-        onboarding_status: 'client_onboarding_complete',
+        onboarding_status: 'awaiting_signed_otp',
         onboarding_completed_at: completedAt,
         external_onboarding_submitted_at: completedAt,
         updated_at: new Date().toISOString(),
@@ -31348,6 +31337,78 @@ async function syncOnboardingTransactionFinanceSnapshot(
 
   if (result.error) {
     throw result.error
+  }
+}
+
+async function markTransactionAwaitingSignedOtp(
+  client,
+  {
+    transactionId,
+    formData = {},
+    completedAt = null,
+  } = {},
+) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) return null
+
+  const nowIso = new Date().toISOString()
+  const resolvedCompletedAt = completedAt || nowIso
+  const nextAction = resolveAwaitingSignedOtpNextAction(formData)
+
+  await updateRecordByIdWithMissingColumnFallback(
+    client,
+    'transactions',
+    normalizedTransactionId,
+    {
+      onboarding_status: 'awaiting_signed_otp',
+      onboarding_completed_at: resolvedCompletedAt,
+      external_onboarding_submitted_at: resolvedCompletedAt,
+      current_main_stage: 'OTP',
+      next_action: nextAction,
+      comment: nextAction,
+      last_meaningful_activity_at: nowIso,
+      updated_at: nowIso,
+    },
+    'id, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, current_main_stage, next_action, comment, last_meaningful_activity_at, updated_at',
+  )
+
+  return {
+    onboardingStatus: 'awaiting_signed_otp',
+    nextAction,
+    completedAt: resolvedCompletedAt,
+  }
+}
+
+async function markTransactionSignedOtpReceived(
+  client,
+  {
+    transactionId,
+    nextAction = '',
+  } = {},
+) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) return null
+
+  const nowIso = new Date().toISOString()
+  const resolvedNextAction = normalizeNullableText(nextAction)
+
+  await updateRecordByIdWithMissingColumnFallback(
+    client,
+    'transactions',
+    normalizedTransactionId,
+    {
+      onboarding_status: 'signed_otp_received',
+      next_action: resolvedNextAction,
+      comment: resolvedNextAction,
+      last_meaningful_activity_at: nowIso,
+      updated_at: nowIso,
+    },
+    'id, onboarding_status, next_action, comment, last_meaningful_activity_at, updated_at',
+  )
+
+  return {
+    onboardingStatus: 'signed_otp_received',
+    nextAction: resolvedNextAction,
   }
 }
 
@@ -31914,7 +31975,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
 
   const now = new Date().toISOString()
   const nextStatus = submit ? 'Submitted' : onboarding.status === 'Not Started' ? 'In Progress' : onboarding.status
-  const lifecycleStatus = submit ? 'client_onboarding_complete' : 'awaiting_client_onboarding'
+  const lifecycleStatus = submit ? 'awaiting_signed_otp' : 'awaiting_client_onboarding'
 
   const { error: formDataError } = await client.from('onboarding_form_data').upsert(
     {
@@ -32022,7 +32083,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       eventType: 'buyer_onboarding_completed',
       createdByRole: 'client',
       eventData: {
-        onboardingStatus: 'client_onboarding_complete',
+        onboardingStatus: 'awaiting_signed_otp',
         purchaserType,
         financeType: financeSnapshot.financeType,
         reservationRequired: financeSnapshot.reservationRequired,
@@ -32043,6 +32104,12 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       },
     })
 
+    const otpPendingState = await markTransactionAwaitingSignedOtp(client, {
+      transactionId: transaction.id,
+      formData: formDataForPersistence,
+      completedAt: now,
+    })
+
     await logTransactionEventIfPossible(client, {
       transactionId: transaction.id,
       eventType: 'finance_type_selected',
@@ -32053,31 +32120,16 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       },
     })
 
-    const onboardingDepositUpdateMessage =
-      'Client proceeding with transaction. Awaiting proof of payment for reservation deposit.'
-
-    try {
-      await advanceTransactionMainStageIfNeeded(client, {
-        transactionId: transaction.id,
-        targetMainStage: 'DEP',
-        allowedCurrentMainStages: ['AVAIL', 'FICA', 'DEP'],
-        nextAction: onboardingDepositUpdateMessage,
-        comment: onboardingDepositUpdateMessage,
-        source: 'client_onboarding_submitted',
-        actorRole: 'client',
-      })
-
-      await addTransactionDiscussionComment({
-        transactionId: transaction.id,
-        authorName: 'Bridge System',
-        authorRole: 'internal_admin',
-        commentText: onboardingDepositUpdateMessage,
-        unitId: transaction.unit_id || null,
-        client,
-      })
-    } catch (stageAutomationError) {
-      console.warn('Onboarding submitted stage automation failed', stageAutomationError)
-    }
+    await addTransactionDiscussionComment({
+      transactionId: transaction.id,
+      authorName: 'Bridge System',
+      authorRole: 'internal_admin',
+      commentText: `[system] Buyer onboarding completed. ${otpPendingState?.nextAction || 'Signed OTP is required before finance or attorney handoff.'}`,
+      unitId: transaction.unit_id || null,
+      client,
+    }).catch((discussionError) => {
+      console.warn('Onboarding submitted discussion update failed', discussionError)
+    })
 
     try {
       const developmentRecord =
@@ -32100,77 +32152,23 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
     }
 
     try {
-      await activateSelectedAttorneyRoleplayersForOnboarding(client, {
-        transaction,
-        financeType: financeSnapshot.financeType || transaction.finance_type,
-        buyer,
-        formData: formDataForPersistence,
-      })
-      const activation = await activateSelectedBondOriginatorForOnboarding(client, {
-        transaction,
-        financeType: financeSnapshot.financeType || transaction.finance_type,
-        buyer,
-        formData: formDataForPersistence,
-      })
-      if (activation?.reason === 'no_selected_bond_originator') {
-        console.warn('Bond finance selected during onboarding but no bond originator was selected for the transaction.')
-      }
-      if (activation?.activated) {
-        await notifyBondIntakeStartedForOnboarding({
-          transaction: {
-            ...transaction,
-            finance_type: financeSnapshot.financeType || transaction.finance_type,
-            onboarding_completed_at: now,
-            external_onboarding_submitted_at: now,
-            buyer_name: buyer?.name || null,
-            buyer_email: buyer?.email || null,
-            bond_workspace_id: activation.scope?.bondWorkspaceId || transaction.bond_workspace_id || null,
-            bond_region_id: activation.scope?.bondRegionId || transaction.bond_region_id || null,
-            bond_workspace_unit_id: activation.scope?.bondWorkspaceUnitId || transaction.bond_workspace_unit_id || null,
-            transaction_role_players: [{ ...activation.roleplayer, status: 'active', assignment_status: 'active' }],
-            buyerPortalPath: clientPortalPath,
-            unit_number: unit?.unit_number || null,
-            development_name:
-              unit?.development && Array.isArray(unit.development)
-                ? unit.development[0]?.name || null
-                : unit?.development?.name || null,
-          },
-          formData: formDataForPersistence,
-          actor: { roleType: 'client' },
-          client,
-          emailEnabled: true,
-          metadata: {
-            portalPath: clientPortalPath,
-            applicationPath: clientPortalPath,
-          },
-        })
-        const notifiedAt = new Date().toISOString()
-        await updateRecordByIdWithMissingColumnFallback(
-          client,
-          'transaction_role_players',
-          activation.roleplayer.id,
-          {
-            status: 'active',
-            assignment_status: 'active',
-            notified_at: notifiedAt,
-            updated_at: notifiedAt,
-          },
-          'id, status, assignment_status, notified_at, updated_at',
-        )
-      }
-
-      await notifyAttorneysForBuyerOnboardingSubmitted(client, {
+      await notifyRolesForTransaction(client, {
         transactionId: transaction.id,
-        financeType: financeSnapshot.financeType || transaction.finance_type,
-        buyer,
-        formData: formDataForPersistence,
+        roleTypes: ['agent', 'developer'],
+        title: 'Signed OTP required',
+        message: otpPendingState?.nextAction || 'Signed OTP is required before finance or attorney handoff.',
+        notificationType: 'readiness_updated',
+        eventType: 'TransactionUpdated',
+        eventData: {
+          source: 'buyer_onboarding_completed',
+          readiness: 'awaiting_signed_otp',
+          financeType: financeSnapshot.financeType || transaction.finance_type,
+          intakePreference: resolveClientIntakePreferenceFromFormData(formDataForPersistence),
+        },
+        dedupePrefix: 'awaiting-signed-otp',
       })
-
-      await sendRoleplayerHandoffEmailForOnboarding(client, {
-        transactionId: transaction.id,
-      })
-    } catch (bondNotificationError) {
-      console.warn('Bond intake started notification failed', bondNotificationError)
+    } catch (otpNotificationError) {
+      console.warn('OTP pending notification failed', otpNotificationError)
     }
 
     try {
@@ -32265,7 +32263,7 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
   const existingOnboardingStatus = normalizeTextValue(transaction?.onboarding_status).toLowerCase()
   const existingOnboardingRecordStatus = normalizeTextValue(onboardingRecord?.status).toLowerCase()
   const onboardingAlreadyCompleted =
-    existingOnboardingStatus === 'client_onboarding_complete' ||
+    ['client_onboarding_complete', 'awaiting_signed_otp', 'signed_otp_received'].includes(existingOnboardingStatus) ||
     Boolean(transaction?.onboarding_completed_at || transaction?.external_onboarding_submitted_at) ||
     ['submitted', 'reviewed', 'approved'].includes(existingOnboardingRecordStatus)
   const preservedCompletedAt =
@@ -32279,7 +32277,7 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
     transaction,
     formData: normalizedFormData,
     purchaserType,
-    onboardingStatus: onboardingAlreadyCompleted ? 'client_onboarding_complete' : 'awaiting_client_onboarding',
+    onboardingStatus: onboardingAlreadyCompleted ? 'awaiting_signed_otp' : 'awaiting_client_onboarding',
     onboardingCompletedAt: onboardingAlreadyCompleted ? preservedCompletedAt : null,
     externalOnboardingSubmittedAt: onboardingAlreadyCompleted ? preservedCompletedAt : null,
   })
@@ -36491,6 +36489,8 @@ async function triggerPostSigningWorkflowIfNeeded(
     transactionId,
     financeType = '',
     actorUserId = null,
+    actorRole = 'client',
+    source = 'client_otp_signed_final',
   } = {},
 ) {
   const normalizedTransactionId = normalizeNullableText(transactionId)
@@ -36498,7 +36498,10 @@ async function triggerPostSigningWorkflowIfNeeded(
     return { triggered: false, reason: 'missing_transaction' }
   }
 
-  const normalizedFinanceType = normalizeFinanceType(financeType || 'cash', { allowUnknown: true })
+  const { transaction, buyer, unit } = await resolveTransactionAndContext(client, normalizedTransactionId)
+  const formDataRow = await fetchOnboardingFormDataForTransaction(client, normalizedTransactionId, transaction?.purchaser_type || 'individual')
+  const onboardingFormData = formDataRow?.formData || {}
+  const normalizedFinanceType = normalizeFinanceType(financeType || transaction?.finance_type || 'cash', { allowUnknown: true })
   const bondFinance = isBondFinanceType(normalizedFinanceType)
   const targetMainStage = bondFinance ? 'FIN' : 'ATT'
   const nextAction = bondFinance
@@ -36508,31 +36511,103 @@ async function triggerPostSigningWorkflowIfNeeded(
     ? 'Signed OTP finalised. Finance workflow has been triggered.'
     : 'Signed OTP finalised. Transfer workflow can proceed.'
 
+  await markTransactionSignedOtpReceived(client, {
+    transactionId: normalizedTransactionId,
+    nextAction,
+  })
+
+  let activation = null
+  try {
+    await activateSelectedAttorneyRoleplayersForOnboarding(client, {
+      transaction,
+      financeType: normalizedFinanceType,
+      buyer,
+      formData: onboardingFormData,
+      source: 'signed_otp_received',
+      createdByRole: actorRole,
+    })
+    activation = await activateSelectedBondOriginatorForOnboarding(client, {
+      transaction,
+      financeType: normalizedFinanceType,
+      buyer,
+      formData: onboardingFormData,
+      source: 'signed_otp_received',
+      createdByRole: actorRole,
+    })
+    if (activation?.activated) {
+      await notifyBondIntakeStartedForOnboarding({
+        transaction: {
+          ...transaction,
+          finance_type: normalizedFinanceType,
+          buyer_name: buyer?.name || null,
+          buyer_email: buyer?.email || null,
+          bond_workspace_id: activation.scope?.bondWorkspaceId || transaction?.bond_workspace_id || null,
+          bond_region_id: activation.scope?.bondRegionId || transaction?.bond_region_id || null,
+          bond_workspace_unit_id: activation.scope?.bondWorkspaceUnitId || transaction?.bond_workspace_unit_id || null,
+          transaction_role_players: [{ ...activation.roleplayer, status: 'active', assignment_status: 'active' }],
+          unit_number: unit?.unit_number || null,
+          development_name:
+            unit?.development && Array.isArray(unit.development)
+              ? unit.development[0]?.name || null
+              : unit?.development?.name || null,
+        },
+        formData: onboardingFormData,
+        actor: { id: actorUserId || null, roleType: actorRole },
+        client,
+        emailEnabled: true,
+        metadata: {
+          source: 'signed_otp_received',
+        },
+      })
+      const notifiedAt = new Date().toISOString()
+      await updateRecordByIdWithMissingColumnFallback(
+        client,
+        'transaction_role_players',
+        activation.roleplayer.id,
+        {
+          status: 'active',
+          assignment_status: 'active',
+          notified_at: notifiedAt,
+          updated_at: notifiedAt,
+        },
+        'id, status, assignment_status, notified_at, updated_at',
+      )
+    }
+
+    await notifyRolesForTransaction(client, {
+      transactionId: normalizedTransactionId,
+      roleTypes: bondFinance ? ['bond_originator', 'developer', 'agent', 'attorney'] : ['attorney', 'developer', 'agent'],
+      title: bondFinance ? 'Finance handoff ready' : 'Transfer handoff ready',
+      message: workflowMessage,
+      notificationType: 'lane_handoff',
+      eventType: 'TransactionUpdated',
+      eventData: {
+        source: 'signed_otp_received',
+        workflow: bondFinance ? 'finance' : 'attorney',
+        nextAction,
+      },
+      dedupePrefix: `signed-otp-handoff:${bondFinance ? 'finance' : 'attorney'}`,
+      excludeUserId: actorUserId || null,
+    })
+
+    await sendRoleplayerHandoffEmailForOnboarding(client, {
+      transactionId: normalizedTransactionId,
+    })
+  } catch (handoffSetupError) {
+    console.warn('Signed OTP handoff activation failed', {
+      transactionId: normalizedTransactionId,
+      error: handoffSetupError,
+    })
+  }
+
   const stageResult = await advanceTransactionMainStageIfNeeded(client, {
     transactionId: normalizedTransactionId,
     targetMainStage,
     allowedCurrentMainStages: bondFinance ? ['OTP', 'DEP', 'FIN'] : ['OTP', 'DEP', 'ATT'],
     nextAction,
     comment: workflowMessage,
-    source: 'client_otp_signed_final',
-    actorRole: 'client',
-  })
-
-  await notifyRolesForTransaction(client, {
-    transactionId: normalizedTransactionId,
-    roleTypes: bondFinance ? ['bond_originator', 'developer', 'agent', 'attorney'] : ['attorney', 'developer', 'agent'],
-    title: bondFinance ? 'Finance workflow triggered' : 'Transfer workflow ready',
-    message: workflowMessage,
-    notificationType: 'lane_handoff',
-    eventType: 'TransactionUpdated',
-    eventData: {
-      source: 'client_otp_signed_final',
-      workflow: bondFinance ? 'finance' : 'attorney',
-      nextAction,
-      stageAdvanced: Boolean(stageResult?.advanced),
-    },
-    dedupePrefix: `otp-signed-workflow:${bondFinance ? 'finance' : 'attorney'}`,
-    excludeUserId: actorUserId || null,
+    source,
+    actorRole,
   })
 
   if (bondFinance) {
@@ -36543,9 +36618,9 @@ async function triggerPostSigningWorkflowIfNeeded(
       },
       previousOtpReady: false,
       currentOtpReady: true,
-      actor: { id: actorUserId || null, roleType: 'client' },
+      actor: { id: actorUserId || null, roleType: actorRole },
       metadata: {
-        source: 'client_otp_signed_final',
+        source: 'signed_otp_received',
         workflow: 'finance',
       },
       client,
@@ -36565,8 +36640,25 @@ async function triggerPostSigningWorkflowIfNeeded(
   return {
     triggered: true,
     workflow: bondFinance ? 'finance' : 'attorney',
+    activation,
     stageResult,
   }
+}
+
+export async function finalizeSignedOtpWorkflow({
+  transactionId,
+  financeType = '',
+  actorRole = null,
+} = {}) {
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  return triggerPostSigningWorkflowIfNeeded(client, {
+    transactionId,
+    financeType,
+    actorUserId: actorProfile.userId || null,
+    actorRole: normalizeRoleType(actorRole || actorProfile.role || 'agent'),
+    source: 'manual_signed_otp_upload',
+  })
 }
 
 export async function fetchClientOtpSigningByToken(token) {

@@ -1,4 +1,4 @@
-import { ArrowRight, FileText, Plus, X } from 'lucide-react'
+import { ArrowRight, BriefcaseBusiness, CheckCircle2, FileText, Plus, X, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatBudgetRange, formatCommercialDate, formatCommercialList, formatSizeRange, labelFromValue, lookupLabel } from '../commercialPipelineHelpers'
@@ -42,17 +42,120 @@ function ActivityFeed({ activity = [], loading = false }) {
   )
 }
 
+function viewingDateValue(row = {}) {
+  const date = row.viewing_date ? new Date(`${row.viewing_date}T${String(row.viewing_time || '00:00').slice(0, 8)}`) : null
+  return date && !Number.isNaN(date.getTime()) ? date : null
+}
+
+function RequirementViewingsPanel({ viewings = [], lookups = {}, onScheduleViewing, onViewingStatusChange }) {
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const sorted = viewings.slice().sort((left, right) => (viewingDateValue(left)?.getTime() || 0) - (viewingDateValue(right)?.getTime() || 0))
+  const upcoming = sorted.filter((row) => !['completed', 'cancelled', 'no_show'].includes(String(row.status || '').toLowerCase()) && (!viewingDateValue(row) || viewingDateValue(row) >= now))
+
+  return (
+    <DetailBlock title="Upcoming Viewings">
+      <div className="flex justify-end">
+        <button type="button" onClick={() => onScheduleViewing?.()} className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-[#102b46] px-3 text-xs font-semibold text-white transition hover:bg-[#163a5b]">
+          <Plus size={14} />
+          Schedule Viewing
+        </button>
+      </div>
+      {upcoming.length ? upcoming.map((viewing) => (
+        <div key={viewing.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#102236]">{formatCommercialDate(viewing.viewing_date)} · {String(viewing.viewing_time || '').slice(0, 5) || '-'}</p>
+              <p className="mt-1 truncate text-xs text-slate-500">
+                {lookupLabel(lookups, 'properties', viewing.property_id, 'Property pending')} · {lookupLabel(lookups, 'vacancies', viewing.vacancy_id, 'Vacancy pending')}
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">{labelFromValue(viewing.status)}</span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => onViewingStatusChange?.(viewing, 'completed')} className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100">
+              <CheckCircle2 size={13} />
+              Mark Complete
+            </button>
+            <button type="button" onClick={() => onViewingStatusChange?.(viewing, 'cancelled')} className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-2.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">
+              <XCircle size={13} />
+              Cancel
+            </button>
+          </div>
+        </div>
+      )) : (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
+          No upcoming viewings scheduled for this requirement.
+        </div>
+      )}
+    </DetailBlock>
+  )
+}
+
+function RequirementTransactionsPanel({ transactions = [], onCreateTransaction }) {
+  const activeTransactions = transactions.filter((row) => !['completed', 'lost', 'cancelled'].includes(String(row.status || '').toLowerCase()))
+  const completedTransactions = transactions.filter((row) => String(row.status || '').toLowerCase() === 'completed')
+
+  return (
+    <DetailBlock title="Transactions">
+      <div className="flex justify-end">
+        <button type="button" onClick={() => onCreateTransaction?.()} className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-[#102b46] px-3 text-xs font-semibold text-white transition hover:bg-[#163a5b]">
+          <BriefcaseBusiness size={14} />
+          Create Transaction
+        </button>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Active Transactions</p>
+          <div className="mt-2 grid gap-2">
+            {activeTransactions.length ? activeTransactions.map((transaction) => (
+              <Link key={transaction.id} to={`/commercial/transactions/${transaction.id}`} className="rounded-2xl border border-slate-200 bg-white p-3 transition hover:border-blue-200 hover:bg-slate-50">
+                <p className="text-sm font-semibold text-[#102236]">{transaction.transaction_name || transaction.transactionName || transaction.title || 'Commercial transaction'}</p>
+                <p className="mt-1 text-xs text-slate-500">{labelFromValue(transaction.status)} · {labelFromValue(transaction.transaction_type || transaction.transactionType)}</p>
+              </Link>
+            )) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
+                No active transactions linked yet.
+              </div>
+            )}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Completed Transactions</p>
+          <div className="mt-2 grid gap-2">
+            {completedTransactions.length ? completedTransactions.map((transaction) => (
+              <Link key={transaction.id} to={`/commercial/transactions/${transaction.id}`} className="rounded-2xl border border-slate-200 bg-white p-3 transition hover:border-blue-200 hover:bg-slate-50">
+                <p className="text-sm font-semibold text-[#102236]">{transaction.transaction_name || transaction.transactionName || transaction.title || 'Commercial transaction'}</p>
+                <p className="mt-1 text-xs text-slate-500">{labelFromValue(transaction.status)} · Closed {formatCommercialDate(transaction.actual_close_date || transaction.actualCloseDate)}</p>
+              </Link>
+            )) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-500">
+                No completed transactions yet.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </DetailBlock>
+  )
+}
+
 function CommercialRequirementDetailDrawer({
   open,
   record,
   organisationId = '',
   lookups = {},
   relatedDeals = [],
+  relatedViewings = [],
+  relatedTransactions = [],
   activity = [],
   activityLoading = false,
   noteError = '',
   onClose,
   onCreateDeal,
+  onCreateTransaction,
+  onScheduleViewing,
+  onViewingStatusChange,
   onAddNote,
   onActivityChange,
 }) {
@@ -104,8 +207,9 @@ function CommercialRequirementDetailDrawer({
               <DetailRow label="Last updated" value={formatCommercialDate(record.updated_at)} />
             </DetailBlock>
 
-            <DetailBlock title="Client / Tenant Details">
-              <DetailRow label="Tenant/client" value={lookupLabel(lookups, 'tenants', record.tenant_id, labelFromValue(record.client_type))} />
+            <DetailBlock title="Company / Contact">
+              <DetailRow label="Company" value={lookupLabel(lookups, 'companies', record.company_id, lookupLabel(lookups, 'tenants', record.tenant_id, labelFromValue(record.client_type)))} />
+              <DetailRow label="Contact" value={lookupLabel(lookups, 'contacts', record.contact_id, '-')} />
               <DetailRow label="Current stage" value={labelFromValue(record.stage)} />
               <DetailRow label="Status" value={labelFromValue(record.status)} />
             </DetailBlock>
@@ -123,7 +227,7 @@ function CommercialRequirementDetailDrawer({
               <DetailRow label="Lease term" value={record.lease_term_months ? `${record.lease_term_months} months` : '-'} />
             </DetailBlock>
 
-            <DetailBlock title="Shortlisted Properties">
+            <DetailBlock title="Potential Matches">
               {suggestedVacancies.length ? suggestedVacancies.map((match) => (
                 <div key={match.id} className="rounded-2xl border border-slate-200 bg-white p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -137,7 +241,7 @@ function CommercialRequirementDetailDrawer({
                     <span>{match.availableGla ? `${new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(match.availableGla)} m²` : '-'}</span>
                     <span>{match.rental ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(match.rental) : '-'}</span>
                     <span>{match.brokerName}</span>
-                    <Link to="/commercial/deals/leasing" className="font-semibold text-blue-600">Create Deal</Link>
+                    <button type="button" onClick={() => onScheduleViewing?.({ vacancy_id: match.vacancyId })} className="font-semibold text-blue-600">Schedule Viewing</button>
                   </div>
                 </div>
               )) : (
@@ -146,6 +250,18 @@ function CommercialRequirementDetailDrawer({
                 </div>
               )}
             </DetailBlock>
+
+            <RequirementViewingsPanel
+              viewings={relatedViewings}
+              lookups={lookups}
+              onScheduleViewing={onScheduleViewing}
+              onViewingStatusChange={onViewingStatusChange}
+            />
+
+            <RequirementTransactionsPanel
+              transactions={relatedTransactions}
+              onCreateTransaction={onCreateTransaction}
+            />
 
             <DetailBlock title="Related Deals">
               {relatedDeals.length ? relatedDeals.map((deal) => (

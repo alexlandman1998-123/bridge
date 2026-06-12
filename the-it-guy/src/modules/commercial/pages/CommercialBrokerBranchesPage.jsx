@@ -8,19 +8,7 @@ const CARD_CLASS = 'rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_1
 
 function CommercialBrokerBranchesPage() {
   const { data, loading, error } = useCommercialData(getCommercialBrokerageData, [])
-  const branches = data?.branches || []
-  const brokers = data?.brokers || []
-
-  const rows = branches.map((branch) => {
-    const branchBrokers = brokers.filter((broker) => broker.branchId === branch.id)
-    return {
-      ...branch,
-      brokers: branchBrokers.length,
-      activeDeals: branchBrokers.reduce((sum, broker) => sum + broker.activeDeals, 0),
-      activeRequirements: branchBrokers.reduce((sum, broker) => sum + broker.activeRequirements, 0),
-      pipelineValue: branchBrokers.reduce((sum, broker) => sum + broker.pipelineValue, 0),
-    }
-  })
+  const rows = data?.branchRows || []
 
   return (
     <div className="grid gap-5">
@@ -48,9 +36,12 @@ function CommercialBrokerBranchesPage() {
             </div>
             <div className="mt-5 grid grid-cols-2 gap-3">
               <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Brokers</p><p className="mt-1 font-semibold text-[#102236]">{branch.brokers}</p></div>
-              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Deals</p><p className="mt-1 font-semibold text-[#102236]">{branch.activeDeals}</p></div>
-              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Requirements</p><p className="mt-1 font-semibold text-[#102236]">{branch.activeRequirements}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Transactions</p><p className="mt-1 font-semibold text-[#102236]">{branch.activeTransactions || 0}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Listings</p><p className="mt-1 font-semibold text-[#102236]">{branch.activeListings || 0}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Vacancies</p><p className="mt-1 font-semibold text-[#102236]">{branch.activeVacancies || 0}</p></div>
               <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Pipeline</p><p className="mt-1 font-semibold text-[#102236]">{formatCurrency(branch.pipelineValue)}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Revenue</p><p className="mt-1 font-semibold text-[#102236]">{formatCurrency(branch.expectedRevenue || 0)}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Occupancy</p><p className="mt-1 font-semibold text-[#102236]">{Math.round(branch.occupancy || 0)}%</p></div>
             </div>
           </article>
         ))}

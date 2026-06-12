@@ -1,17 +1,42 @@
 export type JsonRecord = Record<string, unknown>;
 
+export type DeliveryContextPayload = {
+  organisationId?: string;
+  organisation_id?: string;
+  leadId?: string;
+  lead_id?: string;
+  listingId?: string;
+  listing_id?: string;
+  transactionId?: string;
+  transaction_id?: string;
+  offerId?: string;
+  offer_id?: string;
+  appointmentId?: string;
+  appointment_id?: string;
+  portalSessionId?: string;
+  portal_session_id?: string;
+  sellerReviewSessionId?: string;
+  seller_review_session_id?: string;
+  recipientRole?: string;
+  recipient_role?: string;
+  deliveryMetadata?: JsonRecord;
+  delivery_metadata?: JsonRecord;
+};
+
 export type SendClientOnboardingPayload = {
   type: "client_onboarding";
   transactionId: string;
   resend?: boolean;
   source?: string;
-};
+  deliveryMode?: "digital_portal" | "agent_assisted" | "hard_copy" | string;
+  skipEmail?: boolean;
+} & DeliveryContextPayload;
 
 export type SendOnboardingSubmittedPayload = {
   type: "onboarding_submitted" | "client_portal_link";
   transactionId: string;
   resend?: boolean;
-};
+} & DeliveryContextPayload;
 
 export type SendBondIntakeNotificationPayload = {
   type: "bond_intake_notification" | "bond_originator_intake";
@@ -199,7 +224,7 @@ export type SendBuyerOfferLinkPayload = {
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
-};
+} & DeliveryContextPayload;
 
 export type SendBuyerOfferSubmittedAgentPayload = {
   type:
@@ -218,7 +243,7 @@ export type SendBuyerOfferSubmittedAgentPayload = {
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
-};
+} & DeliveryContextPayload;
 
 export type SendSellerOfferReviewPayload = {
   type: "seller_offer_review" | "offer_seller_review";
@@ -234,7 +259,7 @@ export type SendSellerOfferReviewPayload = {
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
-};
+} & DeliveryContextPayload;
 
 export type SendOfferDecisionNotificationPayload = {
   type:
@@ -255,7 +280,7 @@ export type SendOfferDecisionNotificationPayload = {
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
-};
+} & DeliveryContextPayload;
 
 export type SendTransactionRoleplayerIntroPayload = {
   type:

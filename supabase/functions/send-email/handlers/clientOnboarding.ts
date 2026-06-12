@@ -4,6 +4,11 @@ import {
   buildOnboardingEmailText,
   buildOnboardingSubject,
 } from "../content/onboarding.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplateSettings.ts";
 import { logOnboardingEmailSideEffects } from "../services/onboardingLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
@@ -69,7 +74,7 @@ export async function handleClientOnboardingEmail(
   let transactionQuery = await supabase
     .from("transactions")
     .select(
-      "id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type, organisation_id, assigned_agent, assigned_agent_email",
+      "id, buyer_id, development_id, unit_id, listing_id, transaction_reference, purchase_price, sales_price, purchaser_type, organisation_id, assigned_agent, assigned_agent_email, accepted_offer_id, originating_buyer_lead_id",
     )
     .eq("id", transactionId)
     .maybeSingle();
@@ -77,7 +82,10 @@ export async function handleClientOnboardingEmail(
   if (
     transactionQuery.error &&
     (
+      isMissingColumnError(transactionQuery.error, "listing_id") ||
       isMissingColumnError(transactionQuery.error, "organisation_id") ||
+      isMissingColumnError(transactionQuery.error, "accepted_offer_id") ||
+      isMissingColumnError(transactionQuery.error, "originating_buyer_lead_id") ||
       isMissingColumnError(transactionQuery.error, "assigned_agent") ||
       isMissingColumnError(transactionQuery.error, "assigned_agent_email")
     )
@@ -85,7 +93,7 @@ export async function handleClientOnboardingEmail(
     transactionQuery = await supabase
       .from("transactions")
       .select(
-        "id, buyer_id, development_id, unit_id, transaction_reference, purchase_price, sales_price, purchaser_type",
+        "id, buyer_id, development_id, unit_id, listing_id, transaction_reference, purchase_price, sales_price, purchaser_type, accepted_offer_id, originating_buyer_lead_id",
       )
       .eq("id", transactionId)
       .maybeSingle();
@@ -241,6 +249,66 @@ export async function handleClientOnboardingEmail(
     buyerEmail = normalizeText(buyerQuery.data?.email).toLowerCase();
   }
 
+  let persistedDeliveryMode = "";
+  const onboardingFormDataQuery = await supabase
+    .from("onboarding_form_data")
+    .select("form_data")
+    .eq("transaction_id", transaction.id)
+    .maybeSingle();
+
+  if (
+    !onboardingFormDataQuery.error ||
+    isMissingTableError(onboardingFormDataQuery.error, "onboarding_form_data")
+  ) {
+    const formData = onboardingFormDataQuery.data?.form_data;
+    if (formData && typeof formData === "object" && !Array.isArray(formData)) {
+      persistedDeliveryMode = normalizeText(
+        formData.bridge_client_intake_preference || formData.deliveryMode,
+      ).toLowerCase();
+    }
+  }
+
+  const requestedDeliveryMode = normalizeText(payload.deliveryMode).toLowerCase();
+  const deliveryMode = requestedDeliveryMode || persistedDeliveryMode || "digital_portal";
+  const manualHandoff =
+    payload.skipEmail === true ||
+    ["agent_assisted", "hard_copy"].includes(deliveryMode);
+
+  const nextOnboardingStatus = resolvedOnboarding.status === "Not Started"
+    ? "In Progress"
+    : resolvedOnboarding.status;
+
+  if (manualHandoff) {
+    const onboardingUpdate = await supabase
+      .from("transaction_onboarding")
+      .update({
+        status: nextOnboardingStatus,
+        updated_at: nowIso,
+      })
+      .eq("id", resolvedOnboarding.id);
+
+    if (onboardingUpdate.error) {
+      console.error("Onboarding update failed", onboardingUpdate.error);
+      return jsonResponse(500, {
+        error: onboardingUpdate.error.message ||
+          "Failed to update onboarding status after manual handoff.",
+        code: onboardingUpdate.error.code || null,
+      });
+    }
+
+    return jsonResponse(200, {
+      ok: true,
+      type: "client_onboarding",
+      transactionId: transaction.id,
+      recipientEmail: buyerEmail,
+      onboardingUrl: `${appBaseUrl}/client/onboarding/${resolvedOnboarding.token}`,
+      onboardingStatus: nextOnboardingStatus,
+      deliveryMode,
+      manualHandoff: true,
+      emailSkipped: true,
+    });
+  }
+
   if (!buyerEmail) {
     return jsonResponse(400, {
       error:
@@ -291,62 +359,87 @@ export async function handleClientOnboardingEmail(
         maximumFractionDigits: 0,
       }).format(purchasePriceRaw)
       : "";
+  const subject = normalizeText(templateOverrides?.subject) ||
+    buildOnboardingSubject(transactionReference, acceptedOfferOnboarding);
+  const html = buildOnboardingEmailHtml({
+    buyerName,
+    clientName: buyerName,
+    developmentName,
+    propertyName: [developmentName, unitLabel].filter(Boolean).join(" • "),
+    unitLabel,
+    unitNumber: normalizeText(unitLabel.replace(/^Unit\s+/i, "")),
+    purchasePrice,
+    transactionReference,
+    onboardingUrl,
+    agentName,
+    organisationName,
+    supportEmail,
+    supportPhone,
+    acceptedOffer: acceptedOfferOnboarding,
+    templateOverrides: templateOverrides || undefined,
+  });
+  const text = buildOnboardingEmailText({
+    buyerName,
+    clientName: buyerName,
+    onboardingUrl,
+    developmentName,
+    propertyName: [developmentName, unitLabel].filter(Boolean).join(" • "),
+    unitLabel,
+    unitNumber: normalizeText(unitLabel.replace(/^Unit\s+/i, "")),
+    purchasePrice,
+    transactionReference,
+    agentName,
+    organisationName,
+    supportEmail,
+    supportPhone,
+    acceptedOffer: acceptedOfferOnboarding,
+    templateOverrides: templateOverrides || undefined,
+  });
 
   console.log("Sending onboarding email", buyerEmail);
+
+  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
+    communicationType: "client_onboarding",
+    recipient: buyerEmail,
+    recipientRole: "buyer",
+    subject,
+    messagePreview: text,
+    context: {
+      organisationId,
+      leadId: normalizeText(transactionData?.originating_buyer_lead_id),
+      listingId: normalizeText(transactionData?.listing_id),
+      transactionId: transaction.id,
+      offerId: normalizeText(transactionData?.accepted_offer_id),
+      metadata: {
+        onboardingToken: resolvedOnboarding.token,
+        deliveryMode,
+      },
+    },
+  });
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
     to: buyerEmail,
-    subject: normalizeText(templateOverrides?.subject) ||
-      buildOnboardingSubject(transactionReference, acceptedOfferOnboarding),
-    html: buildOnboardingEmailHtml({
-      buyerName,
-      clientName: buyerName,
-      developmentName,
-      propertyName: [developmentName, unitLabel].filter(Boolean).join(" • "),
-      unitLabel,
-      unitNumber: normalizeText(unitLabel.replace(/^Unit\s+/i, "")),
-      purchasePrice,
-      transactionReference,
-      onboardingUrl,
-      agentName,
-      organisationName,
-      supportEmail,
-      supportPhone,
-      acceptedOffer: acceptedOfferOnboarding,
-      templateOverrides: templateOverrides || undefined,
-    }),
-    text: buildOnboardingEmailText({
-      buyerName,
-      clientName: buyerName,
-      onboardingUrl,
-      developmentName,
-      propertyName: [developmentName, unitLabel].filter(Boolean).join(" • "),
-      unitLabel,
-      unitNumber: normalizeText(unitLabel.replace(/^Unit\s+/i, "")),
-      purchasePrice,
-      transactionReference,
-      agentName,
-      organisationName,
-      supportEmail,
-      supportPhone,
-      acceptedOffer: acceptedOfferOnboarding,
-      templateOverrides: templateOverrides || undefined,
-    }),
+    subject,
+    html,
+    text,
   });
 
   if (!emailResult.ok) {
     console.error("Resend failed", emailResult.error);
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage: emailResult.error?.message || "Failed to send onboarding email.",
+    });
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send onboarding email.",
       details: emailResult.error,
     });
   }
 
-  const nextOnboardingStatus = resolvedOnboarding.status === "Not Started"
-    ? "In Progress"
-    : resolvedOnboarding.status;
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: emailResult.data?.id || null,
+  });
 
   const onboardingUpdate = await supabase
     .from("transaction_onboarding")
@@ -382,6 +475,8 @@ export async function handleClientOnboardingEmail(
     recipientEmail: buyerEmail,
     onboardingUrl,
     onboardingStatus: nextOnboardingStatus,
+    deliveryMode,
     emailId: emailResult.data?.id || null,
+    deliveryId: delivery?.id || null,
   });
 }

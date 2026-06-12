@@ -4,6 +4,8 @@ import { recordSecurityAuditEvent } from '../../../services/auditLogService'
 import { normalizeCommercialLifecycleStage } from '../commercialWorkflow'
 
 const TABLES = {
+  companies: 'commercial_companies',
+  contacts: 'commercial_contacts',
   landlords: 'commercial_landlords',
   tenants: 'commercial_tenants',
   properties: 'commercial_properties',
@@ -12,6 +14,9 @@ const TABLES = {
   leases: 'commercial_leases',
   vacancies: 'commercial_vacancies',
   listings: 'commercial_listings',
+  viewings: 'commercial_viewings',
+  transactions: 'commercial_transactions',
+  commissions: 'commercial_commissions',
   activity: 'commercial_activity',
   documents: 'commercial_documents',
   documentRequests: 'commercial_document_requests',
@@ -19,22 +24,32 @@ const TABLES = {
 }
 
 const SELECTS = {
+  companies:
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, company_name, company_type, industry, website, registration_number, vat_number, phone, email, address, city, province, country, primary_contact_id, legacy_source_type, legacy_source_id',
+  contacts:
+    'id, organisation_id, branch_id, team_id, broker_id, company_id, first_name, last_name, job_title, email, phone, mobile, preferred_contact_method, decision_maker, is_primary, notes, status, legacy_source_type, legacy_source_id, created_at, updated_at, created_by, updated_by',
   landlords:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, email, phone, website, landlord_type, portfolio_notes, preferred_contact_method',
   tenants:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, email, phone, industry, company_size, current_location, current_lease_expiry, preferred_contact_method',
   properties:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_name, property_type, address, suburb, city, province, country, gla_m2, available_space_m2, vacancy_percentage, zoning, parking_ratio, loading_bays, power_supply, height_m, asking_rental_per_m2, asking_sale_price',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_name, property_type, address, suburb, city, province, country, gla_m2, available_space_m2, vacancy_percentage, zoning, parking_ratio, loading_bays, power_supply, height_m, asking_rental_per_m2, asking_sale_price, number_of_units, building_grade, backup_power, generator, solar, fibre, number_of_lifts, amenities, yard_size_m2, eaves_height_m, roller_doors, truck_access, sprinklers, warehouse_area_m2, office_area_m2, frontage_m, anchor_tenants, foot_traffic, trading_hours, mall_type, visibility_rating, noi, cap_rate, wale_months, gross_yield, net_yield, annual_income, land_size_m2, bulk, coverage, services_available, environmental_status, farm_size_ha, water_rights, irrigation, crop_type, livestock_capacity',
   requirements:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, requirement_type, client_type, tenant_id, requirement_name, property_type, preferred_locations, min_size_m2, max_size_m2, budget_min, budget_max, target_occupation_date, lease_term_months, special_requirements, assigned_broker, stage',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, requirement_type, client_type, tenant_id, company_id, contact_id, requirement_name, property_type, preferred_locations, min_size_m2, max_size_m2, budget_min, budget_max, target_occupation_date, lease_term_months, special_requirements, assigned_broker, stage',
   deals:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, deal_name, deal_type, requirement_id, tenant_id, landlord_id, property_id, vacancy_id, listing_id, assigned_broker, stage, deal_value, estimated_commission, expected_close_date, probability_percentage',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, deal_name, deal_type, requirement_id, tenant_id, landlord_id, company_id, contact_id, property_id, vacancy_id, listing_id, assigned_broker, stage, deal_value, estimated_commission, expected_close_date, probability_percentage',
   leases:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, deal_id, heads_of_terms_id, tenant_id, landlord_id, property_id, vacancy_id, lease_start_date, lease_end_date, occupation_date, lease_term_months, monthly_rental, rental_per_m2, escalation_percentage, deposit_amount, tenant_installation_allowance, rent_free_period_months, renewal_option, renewal_notice_date',
   vacancies:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, property_id, landlord_id, vacancy_name, unit_or_floor, available_area_m2, asking_rental, availability_date, broker_assignment, incentives, fit_out_allowance',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, property_id, landlord_id, vacancy_name, unit_or_floor, available_area_m2, asking_rental, availability_date, broker_assignment, incentives, fit_out_allowance, marketed_at, occupied_at, withdrawn_at, suspended_at, archived_at',
   listings:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_id, vacancy_id, listing_type, listing_category, listing_status, title, description, pricing, pricing_notes, featured, available_from, metadata_json, marketing_json, media_json, performance_json',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_id, vacancy_id, listing_type, listing_category, listing_status, title, description, pricing, pricing_notes, featured, available_from, metadata_json, marketing_json, media_json, performance_json, internal_reviewed_at, approved_at, published_at, closed_at, expired_at, withdrawn_at',
+  viewings:
+    'id, organisation_id, branch_id, team_id, broker_id, requirement_id, property_id, vacancy_id, listing_id, company_id, contact_id, viewing_date, viewing_time, status, notes, feedback, created_at, updated_at, created_by, updated_by',
+  transactions:
+    'id, organisation_id, branch_id, team_id, broker_id, deal_id, requirement_id, property_id, vacancy_id, listing_id, company_id, contact_id, transaction_type, status, transaction_name, target_value, expected_close_date, actual_close_date, notes, created_at, updated_at, created_by, updated_by',
+  commissions:
+    'id, organisation_id, branch_id, team_id, broker_id, transaction_id, commission_percent, commission_amount, status, manual_override, created_at, updated_at, created_by, updated_by',
   activity:
     'id, organisation_id, branch_id, team_id, broker_id, entity_type, entity_id, activity_type, title, body, metadata, created_at, created_by',
   documents:
@@ -46,6 +61,9 @@ const SELECTS = {
 }
 
 const COMMERCIAL_DOCUMENT_BUCKET_CANDIDATES = ['documents', 'transaction-documents', 'private-listing-documents']
+const COMMERCIAL_PORTAL_ACCESS_TABLE = 'commercial_portal_access'
+const COMMERCIAL_PORTAL_CONTACTS_TABLE = 'commercial_portal_contacts'
+const COMMERCIAL_PORTAL_NOTIFICATIONS_TABLE = 'commercial_portal_notifications'
 const COMMERCIAL_HIERARCHY_COLUMNS = ['branch_id', 'team_id', 'broker_id']
 const COMMERCIAL_DOCUMENT_WORKFLOW_COLUMNS = ['version_number', 'supersedes_document_id', 'expires_at', 'reviewed_by', 'reviewed_at', 'priority', 'requested_by', 'completed_document_id']
 const COMMERCIAL_LEASING_WORKFLOW_COLUMNS = ['vacancy_id', 'heads_of_terms_id', 'sent_at', 'accepted_at', 'rejected_at', 'signed_at', 'converted_at']
@@ -87,6 +105,8 @@ let commercialPlatformInstallInflight = null
 export const COMMERCIAL_TABLES = TABLES
 
 const ENTITY_TYPES = {
+  companies: 'commercial_company',
+  contacts: 'commercial_contact',
   landlords: 'commercial_landlord',
   tenants: 'commercial_tenant',
   properties: 'commercial_property',
@@ -95,11 +115,16 @@ const ENTITY_TYPES = {
   leases: 'commercial_lease',
   vacancies: 'commercial_vacancy',
   listings: 'commercial_listing',
+  viewings: 'commercial_viewing',
+  transactions: 'commercial_transaction',
+  commissions: 'commercial_commission',
   documents: 'commercial_document',
   documentRequests: 'commercial_document_request',
 }
 
 const NAME_FIELDS = {
+  companies: 'company_name',
+  contacts: 'name',
   landlords: 'name',
   tenants: 'name',
   properties: 'property_name',
@@ -108,6 +133,9 @@ const NAME_FIELDS = {
   leases: 'id',
   vacancies: 'vacancy_name',
   listings: 'title',
+  viewings: 'viewing_date',
+  transactions: 'transaction_name',
+  commissions: 'id',
   documents: 'document_name',
   documentRequests: 'document_name',
 }
@@ -184,11 +212,115 @@ function addMonthsToDate(value, months) {
   return next.toISOString().slice(0, 10)
 }
 
+function transactionTypeFromRecord(...records) {
+  for (const record of records) {
+    const dealType = normalizeLower(record?.transaction_type || record?.deal_type || record?.listing_type || record?.requirement_type)
+    if (['sale', 'purchase', 'investment', 'development'].includes(dealType)) return 'sale'
+    if (['lease', 'rental'].includes(dealType)) return 'lease'
+  }
+  return 'lease'
+}
+
+function normalizeCommercialTransactionStatus(value, fallback = 'draft') {
+  const normalized = normalizeCommercialLifecycleStage('transactions', value, fallback)
+  return ['draft', 'negotiating', 'hot_in_progress', 'hot_signed', 'lease_pending', 'sale_pending', 'completed', 'lost', 'cancelled'].includes(normalized)
+    ? normalized
+    : fallback
+}
+
+function normalizeCommercialVacancyStatus(value, fallback = 'draft') {
+  const normalized = normalizeCommercialLifecycleStage('vacancies', value, fallback)
+  return ['draft', 'available', 'marketing', 'under_negotiation', 'hot_in_progress', 'occupied', 'withdrawn', 'suspended', 'archived'].includes(normalized)
+    ? normalized
+    : fallback
+}
+
+function normalizeCommercialListingStatus(value, fallback = 'draft') {
+  const normalized = normalizeCommercialLifecycleStage('listings', value, fallback)
+  return ['draft', 'internal_review', 'approved', 'published', 'under_offer', 'closed', 'withdrawn', 'expired', 'archived'].includes(normalized)
+    ? normalized
+    : fallback
+}
+
+function vacancyBlocksNewMarketing(status = '') {
+  return ['occupied', 'archived', 'withdrawn', 'suspended'].includes(normalizeCommercialVacancyStatus(status, 'draft'))
+}
+
+function transactionNameFromLinks({
+  payload = {},
+  deal = null,
+  requirement = null,
+  listing = null,
+  vacancy = null,
+  property = null,
+  company = null,
+} = {}) {
+  return normalizeText(
+    payload.transaction_name ||
+      payload.transactionName ||
+      deal?.deal_name ||
+      listing?.title ||
+      requirement?.requirement_name ||
+      [company?.name, vacancy?.vacancy_name || property?.property_name].filter(Boolean).join(' · ') ||
+      vacancy?.vacancy_name ||
+      property?.property_name,
+  ) || 'Commercial transaction'
+}
+
+function buildCommercialContactName(row = {}) {
+  return normalizeText(
+    [row.first_name, row.last_name].map(normalizeText).filter(Boolean).join(' ') ||
+    row.name ||
+    row.email ||
+    row.mobile ||
+    row.phone,
+  ) || 'Commercial contact'
+}
+
+function normalizeCommercialCompanyRow(row = {}) {
+  if (!row?.id) return row
+  const name = normalizeText(row.company_name || row.name)
+  return {
+    ...row,
+    name,
+    company_name: name,
+    display_name: name,
+  }
+}
+
+function normalizeCommercialContactRow(row = {}) {
+  if (!row?.id) return row
+  const name = buildCommercialContactName(row)
+  return {
+    ...row,
+    name,
+    contact_name: name,
+    display_name: name,
+    contact_person: name,
+  }
+}
+
+function companyLegacyId(company = {}, sourceType = '') {
+  return normalizeLower(company?.legacy_source_type) === normalizeLower(sourceType) ? normalizeText(company?.legacy_source_id) : ''
+}
+
+async function findCommercialRecordById(kind, id, organisationId = '') {
+  const recordId = normalizeText(id)
+  if (!recordId) return null
+  const rows = await listCommercialRecords(kind, organisationId)
+  return rows.find((row) => row.id === recordId) || null
+}
+
 function entityTypeForKind(kind) {
   return ENTITY_TYPES[kind] || `commercial_${kind || 'record'}`
 }
 
 function displayNameForRecord(kind, record = {}) {
+  if (kind === 'viewings') {
+    const datePart = normalizeText(record?.viewing_date)
+    const timePart = normalizeText(record?.viewing_time).slice(0, 5)
+    return [datePart, timePart].filter(Boolean).join(' ') || normalizeText(record?.id) || 'Commercial viewing'
+  }
   const field = NAME_FIELDS[kind]
   return normalizeText(record?.[field]) || normalizeText(record?.display_name) || normalizeText(record?.id) || 'Commercial record'
 }
@@ -258,6 +390,8 @@ function isMissingCommercialNotificationError(error) {
     code === 'PGRST205' ||
     message.includes('bridge_notify_commercial_access_request') ||
     message.includes('bridge_notify_commercial_access_decision') ||
+    message.includes('bridge_notify_commercial_viewing') ||
+    message.includes('bridge_notify_commercial_transaction') ||
     message.includes('bridge_nudge_commercial_access_request') ||
     message.includes('transaction_notifications')
   )
@@ -1718,6 +1852,7 @@ export async function createCommercialListing(payload = {}) {
   let landlordId = normalizeText(payload.landlord_id)
   let propertyId = normalizeText(payload.property_id)
   let vacancyId = normalizeText(payload.vacancy_id)
+  const requestedListingStatus = normalizeCommercialListingStatus(payload.listing_status, 'draft')
   const hierarchyPayload = {
     organisation_id: organisationId,
     branch_id: payload.branch_id || null,
@@ -1743,6 +1878,7 @@ export async function createCommercialListing(payload = {}) {
       property_type: categoryToPropertyType(payload.listing_category),
       suburb: normalizeText(payload.new_property_area) || null,
       available_space_m2: getListingArea(payload) || null,
+      broker_id: hierarchyPayload.broker_id || null,
       status: 'active',
     }, { logActivity: false })
     propertyId = property?.id || ''
@@ -1759,20 +1895,57 @@ export async function createCommercialListing(payload = {}) {
       asking_rental: Number.isFinite(Number(payload.pricing)) ? Number(payload.pricing) : null,
       availability_date: normalizeText(payload.available_from) || null,
       broker_assignment: payload.broker_id || null,
-      status: 'available',
+      broker_id: payload.broker_id || null,
+      status: requestedListingStatus === 'published' ? 'marketing' : 'draft',
     }, { logActivity: false })
     vacancyId = vacancy?.id || ''
   }
 
-  return createCommercialRecord('listings', {
+  const vacancy = vacancyId ? await findCommercialRecordById('vacancies', vacancyId, organisationId) : null
+  const property = propertyId ? await findCommercialRecordById('properties', propertyId, organisationId) : null
+  const resolvedBrokerId = normalizeText(payload.broker_id || vacancy?.broker_id || vacancy?.broker_assignment || property?.broker_id)
+  if (!resolvedBrokerId) throw new Error('A broker owner is required before a listing can be created.')
+  if (vacancy?.id && vacancyBlocksNewMarketing(vacancy.status) && !['closed', 'withdrawn', 'expired', 'archived'].includes(requestedListingStatus)) {
+    throw new Error('Occupied, withdrawn, suspended, or archived vacancies cannot be linked to a new active listing.')
+  }
+
+  const listing = await createCommercialRecord('listings', {
     ...stripListingCreationOnlyFields(payload),
     organisation_id: organisationId,
     landlord_id: landlordId || null,
-    property_id: propertyId || null,
+    property_id: propertyId || vacancy?.property_id || null,
     vacancy_id: vacancyId || null,
-    status: payload.status || (normalizeLower(payload.listing_status) === 'archived' ? 'archived' : 'active'),
-    listing_status: payload.listing_status || 'draft',
+    branch_id: payload.branch_id || vacancy?.branch_id || property?.branch_id || null,
+    team_id: payload.team_id || vacancy?.team_id || property?.team_id || null,
+    broker_id: resolvedBrokerId,
+    status: payload.status || (requestedListingStatus === 'archived' ? 'archived' : ['closed', 'withdrawn', 'expired'].includes(requestedListingStatus) ? 'inactive' : 'active'),
+    listing_status: requestedListingStatus,
+    internal_reviewed_at: requestedListingStatus === 'internal_review' ? new Date().toISOString() : null,
+    approved_at: requestedListingStatus === 'approved' ? new Date().toISOString() : null,
+    published_at: requestedListingStatus === 'published' ? new Date().toISOString() : null,
+  }, { logActivity: false })
+
+  await logCommercialActivity({
+    organisation_id: listing?.organisation_id,
+    branch_id: listing?.branch_id,
+    team_id: listing?.team_id,
+    broker_id: listing?.broker_id,
+    entityType: 'commercial_listing',
+    entityId: listing?.id,
+    activityType: requestedListingStatus === 'published' ? 'listing_published' : 'listing_created',
+    title: requestedListingStatus === 'published' ? 'Listing Published' : 'Listing Created',
+    body: `${listing?.title || 'Commercial listing'} was ${requestedListingStatus === 'published' ? 'published' : 'created'}.`,
+    metadata: { listingStatus: requestedListingStatus, propertyId: listing?.property_id || null, vacancyId: listing?.vacancy_id || null },
   })
+
+  if (vacancy?.id && requestedListingStatus === 'published') {
+    await updateCommercialRecord('vacancies', vacancy.id, {
+      status: ['occupied', 'archived', 'withdrawn', 'suspended'].includes(normalizeCommercialVacancyStatus(vacancy.status, 'draft')) ? vacancy.status : 'marketing',
+      marketed_at: vacancy.marketed_at || new Date().toISOString(),
+    }, { logActivity: false }).catch(() => null)
+  }
+
+  return listing
 }
 
 export async function archiveCommercialListing(id) {
@@ -1898,42 +2071,401 @@ async function logCommercialRecordActivity(kind, record, { activityType, title, 
   })
 }
 
+async function resolveCommercialRelationshipContext(payload = {}, organisationId = '') {
+  const resolvedOrganisationId = await resolveOrganisationId(organisationId || payload.organisation_id || payload.organisationId)
+  const [companies, contacts, tenants, landlords] = await Promise.all([
+    getCommercialCompanies(resolvedOrganisationId),
+    getCommercialContacts(resolvedOrganisationId),
+    getCommercialTenants(resolvedOrganisationId),
+    getCommercialLandlords(resolvedOrganisationId),
+  ])
+
+  const companyId = normalizeText(payload.company_id || payload.companyId)
+  const contactId = normalizeText(payload.contact_id || payload.contactId)
+  const tenantId = normalizeText(payload.tenant_id || payload.tenantId)
+  const landlordId = normalizeText(payload.landlord_id || payload.landlordId)
+  const explicitContact = contacts.find((row) => row.id === contactId) || null
+  const company = companies.find((row) => row.id === companyId)
+    || (explicitContact?.company_id ? companies.find((row) => row.id === explicitContact.company_id) : null)
+    || (tenantId ? companies.find((row) => companyLegacyId(row, 'tenant') === tenantId) : null)
+    || (landlordId ? companies.find((row) => companyLegacyId(row, 'landlord') === landlordId) : null)
+    || null
+  const contact = explicitContact
+    || (company?.primary_contact_id ? contacts.find((row) => row.id === company.primary_contact_id) : null)
+    || null
+  const nextTenantId = tenantId || companyLegacyId(company, 'tenant')
+  const nextLandlordId = landlordId || companyLegacyId(company, 'landlord')
+  const tenant = tenants.find((row) => row.id === nextTenantId) || null
+  const landlord = landlords.find((row) => row.id === nextLandlordId) || null
+
+  return {
+    organisationId: resolvedOrganisationId,
+    company,
+    contact,
+    tenant,
+    landlord,
+  }
+}
+
+function withCommercialRelationshipPayload(payload = {}, context = {}, fallback = {}) {
+  const companyId = normalizeText(payload.company_id || payload.companyId || context.company?.id || context.contact?.company_id || fallback.company_id)
+  const contactId = normalizeText(payload.contact_id || payload.contactId || context.contact?.id || fallback.contact_id)
+  const tenantId = normalizeText(payload.tenant_id || payload.tenantId || context.tenant?.id || fallback.tenant_id)
+  const landlordId = normalizeText(payload.landlord_id || payload.landlordId || context.landlord?.id || fallback.landlord_id)
+  return {
+    ...payload,
+    company_id: companyId || null,
+    contact_id: contactId || null,
+    tenant_id: tenantId || null,
+    landlord_id: landlordId || null,
+  }
+}
+
 export const getCommercialLandlords = (organisationId) => listCommercialRecords('landlords', organisationId, { order: 'name', ascending: true })
 export const getCommercialTenants = (organisationId) => listCommercialRecords('tenants', organisationId, { order: 'name', ascending: true })
+export const getCommercialCompanies = async (organisationId) => {
+  const rows = await listCommercialRecords('companies', organisationId, { order: 'company_name', ascending: true })
+  return rows.map(normalizeCommercialCompanyRow)
+}
+export const getCommercialContacts = async (organisationId) => {
+  const rows = await listCommercialRecords('contacts', organisationId, { order: 'last_name', ascending: true })
+  return rows.map(normalizeCommercialContactRow)
+}
 export const getCommercialProperties = (organisationId) => listCommercialRecords('properties', organisationId, { order: 'property_name', ascending: true })
 export const getCommercialRequirements = (organisationId) => listCommercialRecords('requirements', organisationId)
 export const getCommercialDeals = (organisationId) => listCommercialRecords('deals', organisationId)
 export const getCommercialLeases = (organisationId) => listCommercialRecords('leases', organisationId)
 export const getCommercialVacancies = (organisationId) => listCommercialRecords('vacancies', organisationId, { order: 'availability_date', ascending: true })
 export const getCommercialListings = (organisationId) => listCommercialRecords('listings', organisationId, { order: 'updated_at', ascending: false })
+export const getCommercialViewings = (organisationId) => listCommercialRecords('viewings', organisationId, { order: 'viewing_date', ascending: true })
+export const getCommercialTransactions = (organisationId) => listCommercialRecords('transactions', organisationId)
+export const getCommercialCommissions = (organisationId) => listCommercialRecords('commissions', organisationId)
 export const getCommercialAllDocuments = (organisationId) => listCommercialRecords('documents', organisationId)
 export const getCommercialAllDocumentRequests = (organisationId) => listCommercialRecords('documentRequests', organisationId)
 export const getCommercialAllHeadsOfTerms = (organisationId) => listCommercialRecords('headsOfTerms', organisationId)
 
+export async function createCommercialCompany(payload = {}) {
+  const brokerId = normalizeText(payload.broker_id || payload.brokerId)
+  if (!brokerId) throw new Error('An assigned broker is required before a company can be created.')
+  const company = await createCommercialRecord('companies', {
+    ...payload,
+    broker_id: brokerId,
+    company_name: normalizeText(payload.company_name || payload.name),
+    status: payload.status || 'active',
+  })
+  await logCommercialActivity({
+    organisation_id: company?.organisation_id,
+    branch_id: company?.branch_id,
+    team_id: company?.team_id,
+    broker_id: company?.broker_id,
+    entityType: 'commercial_company',
+    entityId: company?.id,
+    activityType: 'company_created',
+    title: 'Company created',
+    body: `${company?.company_name || 'Commercial company'} was created.`,
+    metadata: { source: 'commercial_crm' },
+  })
+  return normalizeCommercialCompanyRow(company)
+}
+
+export async function createCommercialContact(payload = {}) {
+  const companyId = normalizeText(payload.company_id || payload.companyId)
+  if (!companyId) throw new Error('A linked company is required before a contact can be created.')
+  const relationshipContext = await resolveCommercialRelationshipContext(payload)
+  const company = relationshipContext.company
+  const brokerId = normalizeText(payload.broker_id || payload.brokerId || company?.broker_id)
+  if (!brokerId) throw new Error('An assigned broker is required before a contact can be created.')
+
+  const contact = await createCommercialRecord('contacts', {
+    ...payload,
+    company_id: companyId,
+    organisation_id: payload.organisation_id || company?.organisation_id,
+    branch_id: payload.branch_id || company?.branch_id,
+    team_id: payload.team_id || company?.team_id,
+    broker_id: brokerId,
+    status: payload.status || 'active',
+  })
+
+  if (payload.is_primary || !company?.primary_contact_id) {
+    await setCommercialPrimaryContact(companyId, contact?.id).catch(() => null)
+  }
+
+  await Promise.all([
+    logCommercialActivity({
+      organisation_id: contact?.organisation_id,
+      branch_id: contact?.branch_id,
+      team_id: contact?.team_id,
+      broker_id: contact?.broker_id,
+      entityType: 'commercial_company',
+      entityId: companyId,
+      activityType: 'contact_added',
+      title: 'Contact added',
+      body: `${buildCommercialContactName(contact)} was added to ${company?.company_name || 'this company'}.`,
+      metadata: { contactId: contact?.id },
+    }),
+    logCommercialActivity({
+      organisation_id: contact?.organisation_id,
+      branch_id: contact?.branch_id,
+      team_id: contact?.team_id,
+      broker_id: contact?.broker_id,
+      entityType: 'commercial_contact',
+      entityId: contact?.id,
+      activityType: 'contact_created',
+      title: 'Contact created',
+      body: `${buildCommercialContactName(contact)} was created.`,
+      metadata: { companyId },
+    }),
+  ])
+
+  return normalizeCommercialContactRow(contact)
+}
+
 export const createCommercialLandlord = (payload) => createCommercialRecord('landlords', payload)
 export const createCommercialTenant = (payload) => createCommercialRecord('tenants', payload)
-export const createCommercialProperty = (payload) => createCommercialRecord('properties', payload)
-export const createCommercialRequirement = (payload) => createCommercialRecord('requirements', payload)
-export const createCommercialDeal = (payload) => createCommercialRecord('deals', payload)
-export const createCommercialLease = (payload) => createCommercialRecord('leases', payload)
-export const createCommercialVacancy = (payload) => createCommercialRecord('vacancies', payload)
+export async function createCommercialProperty(payload = {}) {
+  const brokerId = normalizeText(payload.broker_id || payload.brokerId)
+  if (!brokerId) throw new Error('A broker owner is required before a property can be created.')
+  const property = await createCommercialRecord('properties', {
+    ...payload,
+    broker_id: brokerId,
+    number_of_units: payload.number_of_units ?? null,
+    status: payload.status || 'active',
+  }, { logActivity: false })
+
+  await logCommercialActivity({
+    organisation_id: property?.organisation_id,
+    branch_id: property?.branch_id,
+    team_id: property?.team_id,
+    broker_id: property?.broker_id,
+    entityType: 'commercial_property',
+    entityId: property?.id,
+    activityType: 'property_created',
+    title: 'Property Created',
+    body: `${property?.property_name || 'Commercial property'} was created.`,
+    metadata: { propertyType: property?.property_type || null },
+  })
+
+  return property
+}
+export async function createCommercialRequirement(payload = {}) {
+  const relationshipContext = await resolveCommercialRelationshipContext(payload)
+  const brokerId = normalizeText(payload.broker_id || payload.assigned_broker || payload.brokerId || relationshipContext.company?.broker_id)
+  if (!brokerId) throw new Error('An assigned broker is required before a requirement can be created.')
+  return createCommercialRecord('requirements', withCommercialRelationshipPayload({
+    ...payload,
+    broker_id: brokerId,
+    assigned_broker: payload.assigned_broker || brokerId,
+  }, relationshipContext))
+}
+export async function createCommercialDeal(payload = {}) {
+  const relationshipContext = await resolveCommercialRelationshipContext(payload)
+  const brokerId = normalizeText(payload.broker_id || payload.assigned_broker || payload.brokerId || relationshipContext.company?.broker_id)
+  return createCommercialRecord('deals', withCommercialRelationshipPayload({
+    ...payload,
+    broker_id: brokerId || null,
+    assigned_broker: payload.assigned_broker || brokerId || null,
+  }, relationshipContext))
+}
+export async function createCommercialVacancy(payload = {}) {
+  const property = await findCommercialRecordById('properties', payload.property_id, payload.organisation_id || payload.organisationId)
+  const brokerId = normalizeText(payload.broker_id || payload.broker_assignment || payload.brokerId || property?.broker_id)
+  if (!normalizeText(payload.property_id)) throw new Error('A property is required before a vacancy can be created.')
+  if (!brokerId) throw new Error('An assigned broker is required before a vacancy can be created.')
+  const vacancy = await createCommercialRecord('vacancies', {
+    ...payload,
+    landlord_id: payload.landlord_id || property?.landlord_id || null,
+    branch_id: payload.branch_id || property?.branch_id || null,
+    team_id: payload.team_id || property?.team_id || null,
+    broker_id: brokerId,
+    broker_assignment: payload.broker_assignment || brokerId,
+    status: normalizeCommercialVacancyStatus(payload.status, 'draft'),
+  }, { logActivity: false })
+
+  await logCommercialActivity({
+    organisation_id: vacancy?.organisation_id,
+    branch_id: vacancy?.branch_id,
+    team_id: vacancy?.team_id,
+    broker_id: vacancy?.broker_id,
+    entityType: 'commercial_vacancy',
+    entityId: vacancy?.id,
+    activityType: 'vacancy_added',
+    title: 'Vacancy Added',
+    body: `${vacancy?.vacancy_name || 'Commercial vacancy'} was added.`,
+    metadata: { propertyId: vacancy?.property_id || null },
+  })
+
+  return vacancy
+}
 
 export const updateCommercialLandlord = (id, payload, options) => updateCommercialRecord('landlords', id, payload, options)
 export const updateCommercialTenant = (id, payload, options) => updateCommercialRecord('tenants', id, payload, options)
-export const updateCommercialProperty = (id, payload, options) => updateCommercialRecord('properties', id, payload, options)
-export const updateCommercialRequirement = (id, payload, options) => updateCommercialRecord('requirements', id, payload, options)
-export const updateCommercialDeal = (id, payload, options) => updateCommercialRecord('deals', id, payload, options)
-export const updateCommercialLease = (id, payload, options) => updateCommercialRecord('leases', id, payload, options)
-export const updateCommercialVacancy = (id, payload, options) => updateCommercialRecord('vacancies', id, payload, options)
-export const updateCommercialListing = (id, payload, options) => updateCommercialRecord('listings', id, payload, options)
+export async function updateCommercialProperty(id, payload = {}, options = {}) {
+  const existing = await findCommercialRecordById('properties', id, payload.organisation_id || payload.organisationId)
+  const brokerId = normalizeText(payload.broker_id || existing?.broker_id)
+  if (!brokerId) throw new Error('A broker owner is required before a property can be saved.')
+  const updated = await updateCommercialRecord('properties', id, { ...payload, broker_id: brokerId }, { ...options, logActivity: false })
+  await logCommercialActivity({
+    organisation_id: updated?.organisation_id,
+    branch_id: updated?.branch_id,
+    team_id: updated?.team_id,
+    broker_id: updated?.broker_id,
+    entityType: 'commercial_property',
+    entityId: updated?.id,
+    activityType: 'property_updated',
+    title: 'Property Updated',
+    body: `${updated?.property_name || 'Commercial property'} was updated.`,
+    metadata: { changedFields: changedPayloadKeys(payload) },
+  })
+  return updated
+}
+export async function updateCommercialCompany(id, payload = {}, options = {}) {
+  return normalizeCommercialCompanyRow(await updateCommercialRecord('companies', id, payload, options))
+}
+export async function updateCommercialContact(id, payload = {}, options = {}) {
+  const existing = await findCommercialRecordById('contacts', id, payload.organisation_id || payload.organisationId)
+  const companyId = normalizeText(payload.company_id || payload.companyId || existing?.company_id)
+  const relationshipContext = await resolveCommercialRelationshipContext({ ...existing, ...payload, company_id: companyId }, existing?.organisation_id || payload.organisation_id)
+  const updated = await updateCommercialRecord('contacts', id, {
+    ...payload,
+    company_id: companyId || existing?.company_id || null,
+    branch_id: payload.branch_id || relationshipContext.company?.branch_id || existing?.branch_id || null,
+    team_id: payload.team_id || relationshipContext.company?.team_id || existing?.team_id || null,
+    broker_id: payload.broker_id || relationshipContext.company?.broker_id || existing?.broker_id || null,
+  }, options)
+  if (payload.is_primary) {
+    await setCommercialPrimaryContact(updated?.company_id, updated?.id).catch(() => null)
+  }
+  return normalizeCommercialContactRow(updated)
+}
+export async function updateCommercialRequirement(id, payload = {}, options = {}) {
+  const existing = await findCommercialRecordById('requirements', id, payload.organisation_id || payload.organisationId)
+  const relationshipContext = await resolveCommercialRelationshipContext({ ...existing, ...payload }, existing?.organisation_id || payload.organisation_id)
+  const brokerId = normalizeText(payload.broker_id || payload.assigned_broker || existing?.broker_id || existing?.assigned_broker || relationshipContext.company?.broker_id)
+  return updateCommercialRecord('requirements', id, withCommercialRelationshipPayload({
+    ...payload,
+    broker_id: brokerId || null,
+    assigned_broker: payload.assigned_broker || existing?.assigned_broker || brokerId || null,
+  }, relationshipContext, existing), options)
+}
+export async function updateCommercialVacancy(id, payload = {}, options = {}) {
+  const existing = await findCommercialRecordById('vacancies', id, payload.organisation_id || payload.organisationId)
+  const property = await findCommercialRecordById('properties', payload.property_id || existing?.property_id, existing?.organisation_id || payload.organisation_id)
+  const nextStatus = normalizeCommercialVacancyStatus(payload.status || existing?.status, 'draft')
+  const updated = await updateCommercialRecord('vacancies', id, {
+    ...payload,
+    landlord_id: payload.landlord_id || existing?.landlord_id || property?.landlord_id || null,
+    branch_id: payload.branch_id || existing?.branch_id || property?.branch_id || null,
+    team_id: payload.team_id || existing?.team_id || property?.team_id || null,
+    broker_id: payload.broker_id || payload.broker_assignment || existing?.broker_id || existing?.broker_assignment || property?.broker_id || null,
+    broker_assignment: payload.broker_assignment || existing?.broker_assignment || existing?.broker_id || property?.broker_id || null,
+    status: nextStatus,
+    marketed_at: nextStatus === 'marketing' ? (payload.marketed_at || existing?.marketed_at || new Date().toISOString()) : payload.marketed_at,
+    occupied_at: nextStatus === 'occupied' ? (payload.occupied_at || existing?.occupied_at || new Date().toISOString()) : payload.occupied_at,
+    withdrawn_at: nextStatus === 'withdrawn' ? (payload.withdrawn_at || existing?.withdrawn_at || new Date().toISOString()) : payload.withdrawn_at,
+    suspended_at: nextStatus === 'suspended' ? (payload.suspended_at || existing?.suspended_at || new Date().toISOString()) : payload.suspended_at,
+    archived_at: nextStatus === 'archived' ? (payload.archived_at || existing?.archived_at || new Date().toISOString()) : payload.archived_at,
+  }, { ...options, logActivity: false })
+
+  if (nextStatus === 'occupied') {
+    const listings = (await getCommercialListings(updated?.organisation_id)).filter((row) => row.vacancy_id === updated?.id && !['closed', 'archived'].includes(normalizeCommercialListingStatus(row.listing_status, 'draft')))
+    await Promise.all(listings.map((listing) => updateCommercialRecord('listings', listing.id, {
+      listing_status: 'closed',
+      status: 'inactive',
+      closed_at: listing.closed_at || new Date().toISOString(),
+    }, { logActivity: false }).catch(() => null)))
+  }
+
+  const previousStatus = normalizeCommercialVacancyStatus(existing?.status, 'draft')
+  const activityMeta = { propertyId: updated?.property_id || null, previousStatus, nextStatus }
+  const activityType = nextStatus === 'occupied'
+    ? ['vacancy_occupied', 'Vacancy Occupied', `${updated?.vacancy_name || 'Commercial vacancy'} was marked occupied.`]
+    : ['vacancy_updated', 'Vacancy Updated', `${updated?.vacancy_name || 'Commercial vacancy'} was updated.`]
+  await logCommercialActivity({
+    organisation_id: updated?.organisation_id,
+    branch_id: updated?.branch_id,
+    team_id: updated?.team_id,
+    broker_id: updated?.broker_id,
+    entityType: 'commercial_vacancy',
+    entityId: updated?.id,
+    activityType: activityType[0],
+    title: activityType[1],
+    body: activityType[2],
+    metadata: activityMeta,
+  })
+  return updated
+}
+
+export async function updateCommercialListing(id, payload = {}, options = {}) {
+  const existing = await findCommercialRecordById('listings', id, payload.organisation_id || payload.organisationId)
+  const vacancy = await findCommercialRecordById('vacancies', payload.vacancy_id || existing?.vacancy_id, existing?.organisation_id || payload.organisation_id)
+  const property = await findCommercialRecordById('properties', payload.property_id || existing?.property_id || vacancy?.property_id, existing?.organisation_id || payload.organisation_id)
+  const nextStatus = normalizeCommercialListingStatus(payload.listing_status || existing?.listing_status || payload.status, 'draft')
+  if (vacancy?.id && vacancyBlocksNewMarketing(vacancy.status) && !['closed', 'withdrawn', 'expired', 'archived'].includes(nextStatus)) {
+    throw new Error('Occupied, withdrawn, suspended, or archived vacancies cannot be marketed or linked to new active listings.')
+  }
+
+  const timestamp = new Date().toISOString()
+  const updated = await updateCommercialRecord('listings', id, {
+    ...payload,
+    landlord_id: payload.landlord_id || existing?.landlord_id || vacancy?.landlord_id || property?.landlord_id || null,
+    property_id: payload.property_id || existing?.property_id || vacancy?.property_id || null,
+    branch_id: payload.branch_id || existing?.branch_id || vacancy?.branch_id || property?.branch_id || null,
+    team_id: payload.team_id || existing?.team_id || vacancy?.team_id || property?.team_id || null,
+    broker_id: payload.broker_id || existing?.broker_id || vacancy?.broker_id || vacancy?.broker_assignment || property?.broker_id || null,
+    listing_status: nextStatus,
+    status: nextStatus === 'archived' ? 'archived' : ['closed', 'withdrawn', 'expired'].includes(nextStatus) ? 'inactive' : 'active',
+    internal_reviewed_at: nextStatus === 'internal_review' ? (payload.internal_reviewed_at || existing?.internal_reviewed_at || timestamp) : payload.internal_reviewed_at,
+    approved_at: nextStatus === 'approved' ? (payload.approved_at || existing?.approved_at || timestamp) : payload.approved_at,
+    published_at: nextStatus === 'published' ? (payload.published_at || existing?.published_at || timestamp) : payload.published_at,
+    closed_at: nextStatus === 'closed' ? (payload.closed_at || existing?.closed_at || timestamp) : payload.closed_at,
+    expired_at: nextStatus === 'expired' ? (payload.expired_at || existing?.expired_at || timestamp) : payload.expired_at,
+    withdrawn_at: nextStatus === 'withdrawn' ? (payload.withdrawn_at || existing?.withdrawn_at || timestamp) : payload.withdrawn_at,
+  }, { ...options, logActivity: false })
+
+  const previousStatus = normalizeCommercialListingStatus(existing?.listing_status, 'draft')
+  const activityType = nextStatus === 'published' && previousStatus !== 'published'
+    ? ['listing_published', 'Listing Published', `${updated?.title || 'Commercial listing'} was published.`]
+    : nextStatus === 'closed' && previousStatus !== 'closed'
+      ? ['listing_closed', 'Listing Closed', `${updated?.title || 'Commercial listing'} was closed.`]
+      : ['listing_updated', 'Listing Updated', `${updated?.title || 'Commercial listing'} was updated.`]
+  await logCommercialActivity({
+    organisation_id: updated?.organisation_id,
+    branch_id: updated?.branch_id,
+    team_id: updated?.team_id,
+    broker_id: updated?.broker_id,
+    entityType: 'commercial_listing',
+    entityId: updated?.id,
+    activityType: activityType[0],
+    title: activityType[1],
+    body: activityType[2],
+    metadata: { previousStatus, nextStatus, vacancyId: updated?.vacancy_id || null, propertyId: updated?.property_id || null },
+  })
+  return updated
+}
 
 export const archiveCommercialLandlord = (id) => archiveCommercialRecord('landlords', id)
 export const archiveCommercialTenant = (id) => archiveCommercialRecord('tenants', id)
+export const archiveCommercialCompany = (id) => archiveCommercialRecord('companies', id)
+export const archiveCommercialContact = (id) => archiveCommercialRecord('contacts', id)
 export const archiveCommercialProperty = (id) => archiveCommercialRecord('properties', id)
 export const archiveCommercialRequirement = (id) => archiveCommercialRecord('requirements', id)
 export const archiveCommercialDeal = (id) => archiveCommercialRecord('deals', id)
 export const archiveCommercialLease = (id) => archiveCommercialRecord('leases', id)
 export const archiveCommercialVacancy = (id) => archiveCommercialRecord('vacancies', id)
+
+export async function setCommercialPrimaryContact(companyId, contactId) {
+  const safeCompanyId = normalizeText(companyId)
+  const safeContactId = normalizeText(contactId)
+  if (!safeCompanyId || !safeContactId) return null
+  const company = await updateCommercialRecord('companies', safeCompanyId, { primary_contact_id: safeContactId }, { logActivity: false })
+  const contacts = await getCommercialContacts(company.organisation_id)
+  await Promise.all(
+    contacts
+      .filter((row) => row.company_id === safeCompanyId)
+      .map((row) => updateCommercialRecord('contacts', row.id, { is_primary: row.id === safeContactId }, { logActivity: false })),
+  )
+  return company
+}
 
 export async function getCommercialDocuments(entityType, entityId, organisationId) {
   const resolvedOrganisationId = await resolveOrganisationId(organisationId)
@@ -2107,6 +2639,93 @@ export async function getCommercialDocumentRequests(entityType, entityId, organi
   return query.data || []
 }
 
+async function notifyPortalDocumentRequest({ organisationId, request = {} } = {}) {
+  if (!organisationId || !request?.id || !isSupabaseConfigured || !supabase) return { notified: 0, emailed: 0 }
+  const entityType = normalizeText(request.entity_type)
+  const entityId = normalizeText(request.entity_id)
+  if (!entityType || !entityId) return { notified: 0, emailed: 0 }
+
+  const { data: accessRows, error } = await supabase
+    .from(COMMERCIAL_PORTAL_ACCESS_TABLE)
+    .select(`*, contact:${COMMERCIAL_PORTAL_CONTACTS_TABLE}(*)`)
+    .eq('organisation_id', organisationId)
+    .eq('status', 'active')
+
+  if (error) {
+    if (isMissingCommercialTableError(error)) return { notified: 0, emailed: 0 }
+    throw error
+  }
+
+  const matches = (accessRows || []).filter((row) => [
+    ['commercial_transaction', row.commercial_transaction_id],
+    ['commercial_deal', row.deal_id],
+    ['commercial_heads_of_terms', row.heads_of_terms_id],
+    ['commercial_lease', row.lease_id],
+    ['commercial_requirement', row.requirement_id],
+    ['commercial_tenant', row.tenant_id],
+    ['commercial_landlord', row.landlord_id],
+    ['commercial_property', row.property_id],
+    ['commercial_vacancy', row.vacancy_id],
+    ['commercial_listing', row.listing_id],
+    ['commercial_company', row.company_id],
+    ['commercial_contact', row.commercial_contact_id],
+  ].some(([type, id]) => type === entityType && normalizeText(id) === entityId))
+
+  if (!matches.length) return { notified: 0, emailed: 0 }
+
+  const notifications = matches.map((row) => ({
+    organisation_id: organisationId,
+    access_id: row.id,
+    commercial_transaction_id: row.commercial_transaction_id || '',
+    portal_role: row.portal_role || 'tenant',
+    company_id: row.company_id || null,
+    commercial_contact_id: row.commercial_contact_id || null,
+    notification_type: 'document_requested',
+    title: 'Document requested',
+    description: `${request.document_name || 'A commercial document'} has been requested.`,
+    priority: request.priority || 'normal',
+    status: 'unread',
+    action_route: 'documents',
+    related_entity_type: entityType,
+    related_entity_id: entityId,
+  }))
+
+  const insertResult = await supabase.from(COMMERCIAL_PORTAL_NOTIFICATIONS_TABLE).insert(notifications)
+  if (insertResult.error && !isMissingCommercialTableError(insertResult.error)) throw insertResult.error
+
+  let emailed = 0
+  for (const row of matches) {
+    const email = normalizeText(row.contact?.contact_email)
+    if (!email) continue
+    try {
+      const portalUrl = typeof window !== 'undefined' && window.location?.origin
+        ? `${window.location.origin}/commercial/portal/${row.token}`
+        : `/commercial/portal/${row.token}`
+      const response = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'client_portal_link',
+          to: email,
+          clientName: row.contact?.contact_name || 'Commercial client',
+          recipientName: row.contact?.contact_name || 'Commercial client',
+          portalUrl,
+          onboardingUrl: portalUrl,
+          actionLink: portalUrl,
+          transactionId: row.commercial_transaction_id,
+          transactionTitle: request.document_name || 'Document requested',
+          organisationName: 'Bridge Commercial',
+          subject: `${request.document_name || 'Commercial document'} requested`,
+        },
+      })
+      const sendError = response?.error || response?.data?.error
+      if (!sendError) emailed += 1
+    } catch {
+      // Portal notifications remain the source of truth when email delivery is unavailable.
+    }
+  }
+
+  return { notified: matches.length, emailed }
+}
+
 export async function createCommercialDocumentRequest(payload = {}) {
   const organisationId = await resolveOrganisationId(payload.organisationId || payload.organisation_id)
   const entityType = normalizeText(payload.entityType || payload.entity_type)
@@ -2154,6 +2773,8 @@ export async function createCommercialDocumentRequest(payload = {}) {
     body: `${requestPayload.document_name || 'A commercial document'} was requested.`,
     metadata: { requestId: query.data?.id, category: requestPayload.category, priority: requestPayload.priority, dueDate: requestPayload.due_date },
   })
+
+  await notifyPortalDocumentRequest({ organisationId, request: query.data }).catch(() => null)
 
   return query.data || null
 }
@@ -2314,9 +2935,9 @@ export async function updateHeadsOfTermsStatus(id, status) {
       sent: 'hot_in_progress',
       under_review: 'hot_in_progress',
       accepted: 'hot_in_progress',
-      signed: 'lease_pending',
-      converted: 'lease_pending',
-      rejected: 'under_offer',
+      signed: 'hot_in_progress',
+      converted: 'hot_in_progress',
+      rejected: 'under_negotiation',
     }
     if (vacancyStatusByHotStatus[normalizedStatus]) {
       await updateCommercialRecord('vacancies', updated.vacancy_id, { status: vacancyStatusByHotStatus[normalizedStatus] }, { logActivity: false }).catch(() => null)
@@ -2331,6 +2952,9 @@ export async function updateHeadsOfTermsStatus(id, status) {
     body: `Heads of Terms marked ${normalizedStatus.replace(/_/g, ' ')}.`,
     metadata: { headsOfTermsId: id, status: normalizedStatus, automatedDealStage: dealStageByHotStatus[normalizedStatus] || null },
   })
+  if (updated?.deal_id && ['accepted', 'signed'].includes(normalizedStatus)) {
+    await updateCommercialTransactionStatusForDeal(updated.deal_id, 'hot_signed', normalizedStatus, updated.organisation_id).catch(() => null)
+  }
   return updated
 }
 
@@ -2364,12 +2988,579 @@ export async function updateCommercialDealStage(id, stage, previousStage = '') {
   return updated
 }
 
+function viewingDisplayDate(row = {}) {
+  const date = normalizeText(row.viewing_date)
+  const time = normalizeText(row.viewing_time).slice(0, 5)
+  return [date, time].filter(Boolean).join(' at ') || 'scheduled time'
+}
+
+function viewingActivityCopy(row = {}, fallback = 'Commercial viewing updated') {
+  const label = viewingDisplayDate(row)
+  return `${fallback} for ${label}.`
+}
+
+async function notifyCommercialViewingBroker(viewing = {}, eventType = 'viewing_updated', title = 'Commercial viewing update', message = '') {
+  if (!viewing?.id || !isSupabaseConfigured || !supabase) return { notificationCount: 0, skippedReason: 'notification_unavailable' }
+  const result = await supabase.rpc('bridge_notify_commercial_viewing', {
+    p_viewing_id: viewing.id,
+    p_event_type: eventType,
+    p_title: title,
+    p_message: message || title,
+  })
+  if (result.error) {
+    if (isMissingCommercialNotificationError(result.error)) {
+      return { notificationCount: 0, skippedReason: 'notification_helper_missing' }
+    }
+    console.warn('[Commercial viewings] broker notification failed.', result.error)
+    return { notificationCount: 0, skippedReason: 'notification_failed' }
+  }
+  return {
+    notificationCount: Array.isArray(result.data) ? result.data.length : 0,
+    notifiedUserIds: (result.data || []).map((row) => normalizeText(row.recipient_user_id)).filter(Boolean),
+  }
+}
+
+async function countRequirementViewings(organisationId, requirementId) {
+  const resolvedOrganisationId = await resolveOrganisationId(organisationId)
+  const safeRequirementId = normalizeText(requirementId)
+  if (!resolvedOrganisationId || !safeRequirementId || !isSupabaseConfigured || !supabase) return 0
+  const scope = await resolveCommercialAccessContext()
+  if (!scope.hasCommercialAccess) return 0
+  const query = await applyCommercialScope(
+    supabase
+      .from(TABLES.viewings)
+      .select('id', { count: 'exact', head: true })
+      .eq('organisation_id', resolvedOrganisationId)
+      .eq('requirement_id', safeRequirementId),
+    'viewings',
+    scope,
+  )
+  if (query.error) {
+    if (isMissingCommercialTableError(query.error) || isCommercialSchemaMismatchError(query.error)) return 0
+    throw query.error
+  }
+  return query.count || 0
+}
+
+export async function createCommercialViewing(payload = {}) {
+  const organisationId = await resolveOrganisationId(payload.organisationId || payload.organisation_id)
+  const requirementId = normalizeText(payload.requirement_id)
+  if (!organisationId) throw new Error('Commercial organisation context is not available.')
+  if (!requirementId) throw new Error('A requirement is required before a viewing can be scheduled.')
+
+  const relationshipContext = await resolveCommercialRelationshipContext(payload, organisationId)
+  const firstViewing = await countRequirementViewings(organisationId, requirementId) === 0
+  const viewing = await createCommercialRecord('viewings', {
+    ...withCommercialRelationshipPayload(payload, relationshipContext),
+    organisation_id: organisationId,
+    requirement_id: requirementId,
+    broker_id: payload.broker_id || payload.assigned_broker || relationshipContext.company?.broker_id || null,
+    status: payload.status || 'scheduled',
+  }, { logActivity: false })
+
+  if (firstViewing) {
+    await updateCommercialRecord('requirements', requirementId, { stage: 'viewing_scheduled' }, { logActivity: false }).catch(() => null)
+  }
+
+  await Promise.all([
+    logCommercialActivity({
+      organisation_id: viewing?.organisation_id,
+      branch_id: viewing?.branch_id,
+      team_id: viewing?.team_id,
+      broker_id: viewing?.broker_id,
+      entityType: 'commercial_viewing',
+      entityId: viewing?.id,
+      activityType: 'viewing_scheduled',
+      title: 'Viewing Scheduled',
+      body: viewingActivityCopy(viewing, 'Viewing scheduled'),
+      metadata: { requirementId, propertyId: viewing?.property_id || null, vacancyId: viewing?.vacancy_id || null, listingId: viewing?.listing_id || null },
+    }),
+    logCommercialActivity({
+      organisation_id: viewing?.organisation_id,
+      branch_id: viewing?.branch_id,
+      team_id: viewing?.team_id,
+      broker_id: viewing?.broker_id,
+      entityType: 'commercial_requirement',
+      entityId: requirementId,
+      activityType: 'viewing_scheduled',
+      title: 'Viewing Scheduled',
+      body: viewingActivityCopy(viewing, 'Viewing scheduled'),
+      metadata: { viewingId: viewing?.id, propertyId: viewing?.property_id || null, vacancyId: viewing?.vacancy_id || null, listingId: viewing?.listing_id || null, firstViewing },
+    }),
+    notifyCommercialViewingBroker(
+      viewing,
+      'viewing_scheduled',
+      'Commercial viewing scheduled',
+      viewingActivityCopy(viewing, 'Viewing scheduled'),
+    ),
+  ])
+
+  return viewing
+}
+
+export async function updateCommercialViewing(id, payload = {}, options = {}) {
+  const previous = payload.previousRecord || null
+  const updatePayload = { ...payload }
+  delete updatePayload.previousRecord
+  const existing = await findCommercialRecordById('viewings', id, payload.organisation_id || payload.organisationId)
+  const relationshipContext = await resolveCommercialRelationshipContext({ ...existing, ...updatePayload }, existing?.organisation_id || payload.organisation_id)
+  const updated = await updateCommercialRecord('viewings', id, withCommercialRelationshipPayload({
+    ...updatePayload,
+    broker_id: updatePayload.broker_id || existing?.broker_id || relationshipContext.company?.broker_id || null,
+  }, relationshipContext, existing), { logActivity: false })
+  const status = normalizeLower(updated?.status)
+  const dateChanged = previous && (
+    normalizeText(previous.viewing_date) !== normalizeText(updated?.viewing_date) ||
+    normalizeText(previous.viewing_time).slice(0, 5) !== normalizeText(updated?.viewing_time).slice(0, 5)
+  )
+  const statusActivity = {
+    completed: ['viewing_completed', 'Viewing Completed', 'Viewing completed'],
+    cancelled: ['viewing_cancelled', 'Viewing Cancelled', 'Viewing cancelled'],
+    no_show: ['viewing_no_show', 'No Show', 'Viewing marked as no show'],
+  }[status]
+  const activityTuple = statusActivity || (dateChanged ? ['viewing_rescheduled', 'Viewing Rescheduled', 'Viewing rescheduled'] : ['viewing_updated', 'Viewing Updated', 'Viewing updated'])
+  const shouldNotify = dateChanged || ['cancelled'].includes(status) || options.notify === true
+
+  await Promise.all([
+    logCommercialActivity({
+      organisation_id: updated?.organisation_id,
+      branch_id: updated?.branch_id,
+      team_id: updated?.team_id,
+      broker_id: updated?.broker_id,
+      entityType: 'commercial_viewing',
+      entityId: updated?.id,
+      activityType: activityTuple[0],
+      title: activityTuple[1],
+      body: viewingActivityCopy(updated, activityTuple[2]),
+      metadata: { requirementId: updated?.requirement_id || null, previousStatus: previous?.status || null, nextStatus: updated?.status || null, dateChanged },
+    }),
+    updated?.requirement_id ? logCommercialActivity({
+      organisation_id: updated?.organisation_id,
+      branch_id: updated?.branch_id,
+      team_id: updated?.team_id,
+      broker_id: updated?.broker_id,
+      entityType: 'commercial_requirement',
+      entityId: updated.requirement_id,
+      activityType: activityTuple[0],
+      title: activityTuple[1],
+      body: viewingActivityCopy(updated, activityTuple[2]),
+      metadata: { viewingId: updated?.id, previousStatus: previous?.status || null, nextStatus: updated?.status || null, dateChanged },
+    }) : null,
+    shouldNotify ? notifyCommercialViewingBroker(
+      updated,
+      activityTuple[0],
+      activityTuple[1],
+      viewingActivityCopy(updated, activityTuple[2]),
+    ) : null,
+  ])
+  return updated
+}
+
+export async function archiveCommercialViewing(id) {
+  return updateCommercialViewing(id, { status: 'cancelled' }, { notify: true })
+}
+
+async function notifyCommercialTransactionStakeholders(transaction = {}, eventType = 'transaction_updated', title = 'Commercial transaction update', message = '') {
+  if (!transaction?.id || !isSupabaseConfigured || !supabase) return { notificationCount: 0, skippedReason: 'notification_unavailable' }
+  const result = await supabase.rpc('bridge_notify_commercial_transaction', {
+    p_transaction_id: transaction.id,
+    p_event_type: eventType,
+    p_title: title,
+    p_message: message || title,
+  })
+  if (result.error) {
+    if (isMissingCommercialNotificationError(result.error)) {
+      return { notificationCount: 0, skippedReason: 'notification_helper_missing' }
+    }
+    console.warn('[Commercial transactions] stakeholder notification failed.', result.error)
+    return { notificationCount: 0, skippedReason: 'notification_failed' }
+  }
+  return {
+    notificationCount: Array.isArray(result.data) ? result.data.length : 0,
+    notifiedUserIds: (result.data || []).map((row) => normalizeText(row.recipient_user_id)).filter(Boolean),
+  }
+}
+
+async function resolveCommercialTransactionLinks(payload = {}, organisationId = '') {
+  const resolvedOrganisationId = await resolveOrganisationId(organisationId || payload.organisation_id || payload.organisationId)
+  const [transactions, deals, requirements, listings, vacancies, properties, companies, contacts, tenants] = await Promise.all([
+    getCommercialTransactions(resolvedOrganisationId),
+    getCommercialDeals(resolvedOrganisationId),
+    getCommercialRequirements(resolvedOrganisationId),
+    getCommercialListings(resolvedOrganisationId),
+    getCommercialVacancies(resolvedOrganisationId),
+    getCommercialProperties(resolvedOrganisationId),
+    getCommercialCompanies(resolvedOrganisationId),
+    getCommercialContacts(resolvedOrganisationId),
+    getCommercialTenants(resolvedOrganisationId),
+  ])
+
+  const deal = deals.find((row) => row.id === normalizeText(payload.deal_id || payload.dealId)) || null
+  const requirement = requirements.find((row) => row.id === normalizeText(payload.requirement_id || payload.requirementId || deal?.requirement_id)) || null
+  const listing = listings.find((row) => row.id === normalizeText(payload.listing_id || payload.listingId || deal?.listing_id)) || null
+  const vacancy = vacancies.find((row) => row.id === normalizeText(payload.vacancy_id || payload.vacancyId || deal?.vacancy_id || listing?.vacancy_id)) || null
+  const property = properties.find((row) => row.id === normalizeText(payload.property_id || payload.propertyId || deal?.property_id || vacancy?.property_id || listing?.property_id)) || null
+  const contact = contacts.find((row) => row.id === normalizeText(payload.contact_id || payload.contactId || deal?.contact_id || requirement?.contact_id)) || null
+  const company = companies.find((row) => row.id === normalizeText(payload.company_id || payload.companyId || contact?.company_id || deal?.company_id || requirement?.company_id))
+    || companies.find((row) => companyLegacyId(row, 'tenant') === normalizeText(deal?.tenant_id || requirement?.tenant_id))
+    || tenants.find((row) => row.id === normalizeText(payload.company_id || payload.companyId || deal?.tenant_id || requirement?.tenant_id))
+    || null
+  const existingTransaction = deal?.id ? transactions.find((row) => row.deal_id === deal.id) || null : null
+
+  return {
+    organisationId: resolvedOrganisationId,
+    existingTransaction,
+    deal,
+    requirement,
+    listing,
+    vacancy,
+    property,
+    company,
+    contact,
+  }
+}
+
+function mapCommercialCommissionStatus(transactionStatus = '', currentStatus = '') {
+  const current = normalizeLower(currentStatus || 'projected')
+  const normalizedTransactionStatus = normalizeCommercialTransactionStatus(transactionStatus || '', 'draft')
+  if (current === 'paid') return 'paid'
+  if (normalizedTransactionStatus === 'completed') return current === 'projected' ? 'approved' : current || 'approved'
+  return current || 'projected'
+}
+
+function deriveCommercialCommissionPayload(transaction = {}, linked = {}) {
+  const deal = linked.deal || {}
+  const lease = linked.lease || {}
+  const hot = linked.hot || {}
+  const transactionType = normalizeLower(transaction.transaction_type || linked.transactionType || 'lease')
+  const targetValue = toNumber(transaction.target_value || linked.targetValue)
+  const saleBase = targetValue || toNumber(deal.deal_value)
+  const leaseBase = toNumber(lease.monthly_rental) * Math.max(toNumber(lease.lease_term_months || hot.lease_term_months || 12), 1)
+    || toNumber(hot.monthly_rental) * Math.max(toNumber(hot.lease_term_months || lease.lease_term_months || 12), 1)
+    || targetValue
+    || toNumber(deal.deal_value)
+  const baseValue = Math.max(0, transactionType === 'sale' ? saleBase : leaseBase)
+  const estimatedAmount = toNumber(deal.estimated_commission || linked.commission_amount || linked.commissionAmount)
+  const commissionAmount = estimatedAmount || (baseValue * 0.05)
+  const commissionPercent = baseValue > 0 && estimatedAmount > 0
+    ? (estimatedAmount / baseValue) * 100
+    : toNumber(linked.commission_percent || linked.commissionPercent) || 5
+
+  return {
+    branch_id: transaction.branch_id || null,
+    team_id: transaction.team_id || null,
+    broker_id: transaction.broker_id || null,
+    transaction_id: transaction.id,
+    commission_percent: Math.round(commissionPercent * 100) / 100,
+    commission_amount: Math.round(commissionAmount * 100) / 100,
+    status: mapCommercialCommissionStatus(transaction.status, linked.status),
+  }
+}
+
+async function findCommercialCommissionByTransaction(transactionId, organisationId = '') {
+  const safeTransactionId = normalizeText(transactionId)
+  if (!safeTransactionId) return null
+  const commissions = await getCommercialCommissions(organisationId)
+  return commissions.find((row) => row.transaction_id === safeTransactionId) || null
+}
+
+async function syncCommercialCommissionForTransaction(transaction = {}, linked = {}, options = {}) {
+  if (!transaction?.id || !transaction?.organisation_id || !transaction?.broker_id) return null
+  const existing = await findCommercialCommissionByTransaction(transaction.id, transaction.organisation_id)
+  const derived = deriveCommercialCommissionPayload(transaction, {
+    ...linked,
+    status: existing?.status || options.status || linked.status || 'projected',
+  })
+  const payload = {
+    organisation_id: transaction.organisation_id,
+    branch_id: derived.branch_id,
+    team_id: derived.team_id,
+    broker_id: derived.broker_id,
+    transaction_id: transaction.id,
+    commission_percent: existing?.manual_override ? existing.commission_percent : derived.commission_percent,
+    commission_amount: existing?.manual_override ? existing.commission_amount : derived.commission_amount,
+    status: mapCommercialCommissionStatus(transaction.status, existing?.status || derived.status),
+    manual_override: existing?.manual_override || false,
+  }
+
+  const commission = existing?.id
+    ? await updateCommercialRecord('commissions', existing.id, payload, { logActivity: false })
+    : await createCommercialRecord('commissions', payload, { logActivity: false })
+
+  if (!existing?.id) {
+    await Promise.all([
+      logCommercialActivity({
+        organisation_id: transaction.organisation_id,
+        branch_id: transaction.branch_id,
+        team_id: transaction.team_id,
+        broker_id: transaction.broker_id,
+        entityType: 'commercial_transaction',
+        entityId: transaction.id,
+        activityType: 'commission_created',
+        title: 'Commission created',
+        body: `Projected commission of ${Number(payload.commission_amount || 0).toLocaleString('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 })} was created.`,
+        metadata: { commissionId: commission?.id || null, status: payload.status, transactionId: transaction.id },
+      }),
+      notifyCommercialTransactionStakeholders(
+        transaction,
+        'transaction_updated',
+        'Commercial commission created',
+        `${transaction?.transaction_name || 'Commercial transaction'} commission was created.`,
+      ),
+    ])
+  }
+
+  return commission
+}
+
+async function updateCommercialTransactionStatusForDeal(dealId, status, previousStatus = '', organisationId = '') {
+  const safeDealId = normalizeText(dealId)
+  if (!safeDealId) return null
+  const resolvedOrganisationId = await resolveOrganisationId(organisationId)
+  const transactions = await getCommercialTransactions(resolvedOrganisationId)
+  const linked = transactions.find((row) => row.deal_id === safeDealId) || null
+  if (!linked?.id) return null
+  return updateCommercialTransactionStatus(linked.id, status, previousStatus)
+}
+
+export async function createCommercialTransaction(payload = {}) {
+  const {
+    organisationId,
+    existingTransaction,
+    deal,
+    requirement,
+    listing,
+    vacancy,
+    property,
+    company,
+    contact,
+  } = await resolveCommercialTransactionLinks(payload)
+
+  if (!organisationId) throw new Error('Commercial organisation context is not available.')
+  if (existingTransaction?.id) return existingTransaction
+
+  const brokerId = normalizeText(
+    payload.broker_id ||
+      payload.brokerId ||
+      deal?.broker_id ||
+      deal?.assigned_broker ||
+      requirement?.broker_id ||
+      requirement?.assigned_broker ||
+      vacancy?.broker_assignment ||
+      vacancy?.broker_id ||
+      listing?.broker_id ||
+      property?.broker_id,
+  )
+  if (!brokerId) throw new Error('A broker owner is required before a commercial transaction can be created.')
+
+  const transactionType = transactionTypeFromRecord(payload, deal, listing, requirement)
+  const initialStatus = normalizeCommercialTransactionStatus(payload.status || (deal?.id ? 'negotiating' : 'draft'), deal?.id ? 'negotiating' : 'draft')
+  const transaction = await createCommercialRecord('transactions', {
+    ...payload,
+    organisation_id: organisationId,
+    branch_id: payload.branch_id || deal?.branch_id || requirement?.branch_id || listing?.branch_id || vacancy?.branch_id || property?.branch_id || null,
+    team_id: payload.team_id || deal?.team_id || requirement?.team_id || listing?.team_id || vacancy?.team_id || property?.team_id || null,
+    deal_id: payload.deal_id || deal?.id || null,
+    requirement_id: payload.requirement_id || requirement?.id || deal?.requirement_id || null,
+    property_id: payload.property_id || property?.id || null,
+    vacancy_id: payload.vacancy_id || vacancy?.id || null,
+    listing_id: payload.listing_id || listing?.id || deal?.listing_id || null,
+    broker_id: brokerId,
+    company_id: payload.company_id || company?.id || deal?.tenant_id || requirement?.tenant_id || null,
+    contact_id: payload.contact_id || payload.contactId || contact?.id || requirement?.contact_id || deal?.contact_id || company?.primary_contact_id || null,
+    transaction_type: transactionType,
+    status: initialStatus,
+    transaction_name: transactionNameFromLinks({ payload, deal, requirement, listing, vacancy, property, company }),
+    target_value: payload.target_value ?? payload.targetValue ?? deal?.deal_value ?? listing?.pricing ?? vacancy?.asking_rental ?? property?.asking_sale_price ?? null,
+    expected_close_date: payload.expected_close_date || payload.expectedCloseDate || deal?.expected_close_date || null,
+    actual_close_date: payload.actual_close_date || payload.actualCloseDate || null,
+    notes: payload.notes || deal?.notes || requirement?.notes || listing?.notes || vacancy?.notes || null,
+  }, { logActivity: false })
+
+  await Promise.all([
+    logCommercialActivity({
+      organisation_id: transaction?.organisation_id,
+      branch_id: transaction?.branch_id,
+      team_id: transaction?.team_id,
+      broker_id: transaction?.broker_id,
+      entityType: 'commercial_transaction',
+      entityId: transaction?.id,
+      activityType: 'transaction_created',
+      title: 'Transaction created',
+      body: `${transaction?.transaction_name || 'Commercial transaction'} was created.`,
+      metadata: {
+        dealId: transaction?.deal_id || null,
+        requirementId: transaction?.requirement_id || null,
+        propertyId: transaction?.property_id || null,
+        vacancyId: transaction?.vacancy_id || null,
+        listingId: transaction?.listing_id || null,
+        transactionType,
+      },
+    }),
+    transaction?.deal_id ? logCommercialActivity({
+      organisation_id: transaction?.organisation_id,
+      branch_id: transaction?.branch_id,
+      team_id: transaction?.team_id,
+      broker_id: transaction?.broker_id,
+      entityType: 'commercial_deal',
+      entityId: transaction.deal_id,
+      activityType: 'transaction_linked',
+      title: 'Transaction linked',
+      body: `${transaction?.transaction_name || 'Commercial transaction'} was linked to this deal.`,
+      metadata: { transactionId: transaction?.id, transactionType },
+    }) : null,
+    transaction?.requirement_id ? logCommercialActivity({
+      organisation_id: transaction?.organisation_id,
+      branch_id: transaction?.branch_id,
+      team_id: transaction?.team_id,
+      broker_id: transaction?.broker_id,
+      entityType: 'commercial_requirement',
+      entityId: transaction.requirement_id,
+      activityType: 'transaction_created',
+      title: 'Transaction created',
+      body: `${transaction?.transaction_name || 'Commercial transaction'} was opened from this requirement.`,
+      metadata: { transactionId: transaction?.id, dealId: transaction?.deal_id || null },
+    }) : null,
+    notifyCommercialTransactionStakeholders(
+      transaction,
+      'transaction_created',
+      'Commercial transaction created',
+      `${transaction?.transaction_name || 'Commercial transaction'} was created.`,
+    ),
+    syncCommercialCommissionForTransaction(transaction, { deal, lease: null, hot: null, status: 'projected' }),
+  ])
+
+  return transaction
+}
+
+export async function updateCommercialTransaction(id, payload = {}, options = {}) {
+  const existing = await findCommercialRecordById('transactions', id, payload.organisation_id || payload.organisationId)
+  const relationshipContext = await resolveCommercialRelationshipContext({ ...existing, ...payload }, existing?.organisation_id || payload.organisation_id)
+  const updated = await updateCommercialRecord('transactions', id, withCommercialRelationshipPayload(payload, relationshipContext, existing), options)
+  await syncCommercialCommissionForTransaction(updated, { deal: payload.deal || null }).catch(() => null)
+  return updated
+}
+
+export async function updateCommercialCommission(id, payload = {}, options = {}) {
+  const existing = await findCommercialRecordById('commissions', id, payload.organisation_id || payload.organisationId)
+  const updated = await updateCommercialRecord('commissions', id, {
+    ...payload,
+    manual_override: payload.manual_override ?? true,
+  }, { ...options, logActivity: false })
+  await logCommercialActivity({
+    organisation_id: updated?.organisation_id,
+    branch_id: updated?.branch_id,
+    team_id: updated?.team_id,
+    broker_id: updated?.broker_id,
+    entityType: 'commercial_transaction',
+    entityId: updated?.transaction_id,
+    activityType: 'commission_updated',
+    title: 'Commission updated',
+    body: 'Commercial commission was updated.',
+    metadata: {
+      commissionId: updated?.id,
+      previousStatus: existing?.status || null,
+      nextStatus: updated?.status || null,
+      manualOverride: updated?.manual_override || false,
+    },
+  })
+  return updated
+}
+
+export async function createCommercialLease(payload = {}) {
+  const lease = await createCommercialRecord('leases', payload)
+  if (lease?.deal_id) {
+    const nextStatus = ['executed', 'active'].includes(normalizeLower(lease.status)) ? 'completed' : 'lease_pending'
+    await updateCommercialTransactionStatusForDeal(lease.deal_id, nextStatus, '', lease.organisation_id).catch(() => null)
+  }
+  if (lease?.vacancy_id) {
+    const vacancyStatus = ['executed', 'active'].includes(normalizeLower(lease.status)) ? 'occupied' : 'hot_in_progress'
+    await updateCommercialVacancy(lease.vacancy_id, { status: vacancyStatus }, { logActivity: false }).catch(() => null)
+  }
+  return lease
+}
+
+export async function updateCommercialTransactionStatus(id, status, previousStatus = '') {
+  const nextStatus = normalizeCommercialTransactionStatus(status, 'draft')
+  const payload = {
+    status: nextStatus,
+  }
+  if (nextStatus === 'completed') {
+    payload.actual_close_date = new Date().toISOString().slice(0, 10)
+  }
+  const updated = await updateCommercialRecord('transactions', id, payload, { logActivity: false })
+  await Promise.all([
+    logCommercialActivity({
+      organisation_id: updated?.organisation_id,
+      branch_id: updated?.branch_id,
+      team_id: updated?.team_id,
+      broker_id: updated?.broker_id,
+      entityType: 'commercial_transaction',
+      entityId: id,
+      activityType: 'transaction_stage_changed',
+      title: 'Transaction stage changed',
+      body: previousStatus ? `Moved from ${previousStatus} to ${nextStatus}.` : `Moved to ${nextStatus}.`,
+      metadata: { previousStatus, nextStatus, dealId: updated?.deal_id || null },
+    }),
+    ['completed', 'lost', 'cancelled'].includes(nextStatus)
+      ? notifyCommercialTransactionStakeholders(
+          updated,
+          `transaction_${nextStatus}`,
+          `Commercial transaction ${nextStatus.replace(/_/g, ' ')}`,
+          `${updated?.transaction_name || 'Commercial transaction'} was marked ${nextStatus.replace(/_/g, ' ')}.`,
+        )
+      : null,
+    syncCommercialCommissionForTransaction(updated, { status: nextStatus }),
+  ])
+  return updated
+}
+
+export async function archiveCommercialTransaction(id) {
+  return updateCommercialTransactionStatus(id, 'cancelled')
+}
+
+export async function updateCommercialDeal(id, payload = {}, options = {}) {
+  const existing = await findCommercialRecordById('deals', id, payload.organisation_id || payload.organisationId)
+  const relationshipContext = await resolveCommercialRelationshipContext({ ...existing, ...payload }, existing?.organisation_id || payload.organisation_id)
+  const brokerId = normalizeText(payload.broker_id || payload.assigned_broker || existing?.broker_id || existing?.assigned_broker || relationshipContext.company?.broker_id)
+  return updateCommercialRecord('deals', id, withCommercialRelationshipPayload({
+    ...payload,
+    broker_id: brokerId || null,
+    assigned_broker: payload.assigned_broker || existing?.assigned_broker || brokerId || null,
+  }, relationshipContext, existing), options)
+}
+
+export async function updateCommercialLease(id, payload = {}, options = {}) {
+  const previous = payload.previousRecord || null
+  const updatePayload = { ...payload }
+  delete updatePayload.previousRecord
+  const updated = await updateCommercialRecord('leases', id, updatePayload, options)
+  const statusChanged = previous && normalizeLower(previous.status) !== normalizeLower(updated?.status)
+  if (statusChanged && updated?.deal_id) {
+    const nextStatus = ['executed', 'active'].includes(normalizeLower(updated.status))
+      ? 'completed'
+      : ['draft', 'pending_signature'].includes(normalizeLower(updated.status))
+        ? 'lease_pending'
+        : ''
+    if (nextStatus) {
+      await updateCommercialTransactionStatusForDeal(updated.deal_id, nextStatus, previous?.status || '', updated.organisation_id).catch(() => null)
+    }
+  }
+  if (statusChanged && updated?.vacancy_id) {
+    const vacancyStatus = ['executed', 'active'].includes(normalizeLower(updated.status)) ? 'occupied' : 'hot_in_progress'
+    await updateCommercialVacancy(updated.vacancy_id, { status: vacancyStatus }, { logActivity: false }).catch(() => null)
+  }
+  return updated
+}
+
 export async function createDealFromRequirement(requirement, payload = {}) {
   const sourceRequirement = requirement || {}
   const deal = await createCommercialRecord('deals', {
     ...payload,
     organisation_id: payload.organisation_id || sourceRequirement.organisation_id,
     requirement_id: payload.requirement_id || sourceRequirement.id,
+    company_id: payload.company_id || sourceRequirement.company_id,
+    contact_id: payload.contact_id || sourceRequirement.contact_id,
     tenant_id: payload.tenant_id || sourceRequirement.tenant_id,
     landlord_id: payload.landlord_id || sourceRequirement.landlord_id,
     property_id: payload.property_id || sourceRequirement.property_id,
@@ -2384,10 +3575,10 @@ export async function createDealFromRequirement(requirement, payload = {}) {
   }, { logActivity: false })
 
   if (sourceRequirement.id) {
-    await updateCommercialRecord('requirements', sourceRequirement.id, { stage: 'converted' }, { logActivity: false }).catch(() => null)
+    await updateCommercialRecord('requirements', sourceRequirement.id, { stage: 'negotiating' }, { logActivity: false }).catch(() => null)
   }
   if (deal?.vacancy_id) {
-    await updateCommercialRecord('vacancies', deal.vacancy_id, { status: 'under_offer' }, { logActivity: false }).catch(() => null)
+    await updateCommercialRecord('vacancies', deal.vacancy_id, { status: 'under_negotiation' }, { logActivity: false }).catch(() => null)
   }
 
   await logCommercialActivity({
@@ -2421,7 +3612,7 @@ export async function createLeaseFromHeadsOfTerms(headsOfTerms, payload = {}) {
 
   const leaseStart = payload.lease_start_date || hot.lease_commencement_date || hot.beneficial_occupation_date || null
   const leaseTermMonths = payload.lease_term_months || hot.lease_term_months || null
-  const lease = await createCommercialRecord('leases', {
+  const lease = await createCommercialLease({
     organisation_id: organisationId,
     deal_id: payload.deal_id || hot.deal_id,
     heads_of_terms_id: hot.id,
@@ -2444,12 +3635,13 @@ export async function createLeaseFromHeadsOfTerms(headsOfTerms, payload = {}) {
     rent_free_period_months: payload.rent_free_period_months ?? hot.rent_free_period_months,
     status: payload.status || 'draft',
     notes: payload.notes || hot.special_conditions || null,
-  }, { logActivity: false })
+  })
 
   await Promise.all([
     hot.deal_id ? updateCommercialRecord('deals', hot.deal_id, { stage: 'converted' }, { logActivity: false }).catch(() => null) : null,
-    hot.vacancy_id ? updateCommercialRecord('vacancies', hot.vacancy_id, { status: lease.status === 'active' ? 'occupied' : 'lease_pending' }, { logActivity: false }).catch(() => null) : null,
+    hot.vacancy_id ? updateCommercialVacancy(hot.vacancy_id, { status: lease.status === 'active' ? 'occupied' : 'hot_in_progress' }, { logActivity: false }).catch(() => null) : null,
     updateHeadsOfTerms(hot.id, { status: 'converted', converted_at: new Date().toISOString() }, { logActivity: false }).catch(() => null),
+    hot.deal_id ? updateCommercialTransactionStatusForDeal(hot.deal_id, ['executed', 'active'].includes(normalizeLower(lease.status)) ? 'completed' : 'lease_pending', hot.status || '', organisationId).catch(() => null) : null,
   ])
 
   await logCommercialActivity({
@@ -2530,10 +3722,12 @@ export async function addCommercialNote({ organisationId, entityType, entityId, 
 export async function getCommercialLookupData(organisationId) {
   const resolvedOrganisationId = await resolveOrganisationId(organisationId)
   if (!resolvedOrganisationId) {
-    return { landlords: [], tenants: [], properties: [], requirements: [], deals: [], leases: [], vacancies: [], listings: [], brokers: [], branches: [], teams: [] }
+    return { companies: [], contacts: [], landlords: [], tenants: [], properties: [], requirements: [], deals: [], leases: [], vacancies: [], listings: [], viewings: [], transactions: [], commissions: [], brokers: [], branches: [], teams: [] }
   }
 
-  const [landlords, tenants, properties, requirements, deals, leases, vacancies, listings, brokers, branches, teams] = await Promise.all([
+  const [companies, contacts, landlords, tenants, properties, requirements, deals, leases, vacancies, listings, viewings, transactions, commissions, brokers, branches, teams] = await Promise.all([
+    getCommercialCompanies(resolvedOrganisationId),
+    getCommercialContacts(resolvedOrganisationId),
     getCommercialLandlords(resolvedOrganisationId),
     getCommercialTenants(resolvedOrganisationId),
     getCommercialProperties(resolvedOrganisationId),
@@ -2542,12 +3736,15 @@ export async function getCommercialLookupData(organisationId) {
     getCommercialLeases(resolvedOrganisationId),
     getCommercialVacancies(resolvedOrganisationId),
     getCommercialListings(resolvedOrganisationId),
+    getCommercialViewings(resolvedOrganisationId),
+    getCommercialTransactions(resolvedOrganisationId),
+    getCommercialCommissions(resolvedOrganisationId),
     listOrganisationUsers().catch(() => []),
     listCommercialBranches(resolvedOrganisationId),
     listCommercialTeams(resolvedOrganisationId),
   ])
 
-  return { landlords, tenants, properties, requirements, deals, leases, vacancies, listings, brokers, branches, teams }
+  return { companies, contacts, landlords, tenants, properties, requirements, deals, leases, vacancies, listings, viewings, transactions, commissions, brokers, branches, teams }
 }
 
 export async function getCommercialDocumentCentreData(organisationId) {
@@ -2675,7 +3872,7 @@ export function buildCommercialDashboardData({
     const date = row.expected_close_date ? new Date(row.expected_close_date) : null
     return date && !Number.isNaN(date.getTime()) && date >= now && date <= closeSoonHorizon
   })
-  const requirementsNeedingFollowUp = requirements.filter((row) => isActiveStatus(row) && ['new_requirement', 'shortlisting', 'viewing'].includes(normalizeLower(row.stage)))
+  const requirementsNeedingFollowUp = requirements.filter((row) => isActiveStatus(row) && ['new_requirement', 'new', 'shortlisting', 'matching', 'viewing', 'viewing_scheduled'].includes(normalizeLower(row.stage)))
   const negotiationItems = [
     ...requirements.filter((row) => isActiveStatus(row) && normalizeLower(row.stage) === 'negotiation'),
     ...deals.filter((row) => isActiveStatus(row) && ['proposal', 'heads_of_terms', 'lease_draft'].includes(normalizeLower(row.stage))),

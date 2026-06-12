@@ -33,6 +33,44 @@ function formatDate(value, fallback = 'Not set') {
   })
 }
 
+function formatDateTime(value, fallback = 'Not set') {
+  const parsed = Date.parse(value || '')
+  if (Number.isNaN(parsed)) return fallback
+  return new Date(parsed).toLocaleString('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function toYesNo(value, fallback = 'No') {
+  if (value === true) return 'Yes'
+  if (String(value || '').trim().toLowerCase() === 'yes') return 'Yes'
+  if (String(value || '').trim() === '') return fallback
+  return 'No'
+}
+
+function normalizeCounterAmount(value) {
+  const digits = String(value || '').replace(/[^\d.]/g, '')
+  if (!digits) return null
+  const amount = Number(digits)
+  return Number.isFinite(amount) && amount > 0 ? amount : null
+}
+
+function buildCounterTermsPayload(counterTerms = {}) {
+  const nextTerms = {
+    counterOfferAmount: normalizeCounterAmount(counterTerms.counterOfferAmount),
+    counterDepositAmount: normalizeCounterAmount(counterTerms.counterDepositAmount),
+    counterOccupationDate: toText(counterTerms.counterOccupationDate),
+    counterExpiryDate: toText(counterTerms.counterExpiryDate),
+    counterExpiryTime: toText(counterTerms.counterExpiryTime),
+    counterSpecialTerms: toText(counterTerms.counterSpecialTerms),
+  }
+  return Object.fromEntries(Object.entries(nextTerms).filter(([, value]) => value !== null && value !== ''))
+}
+
 function listingLabel(listing = {}) {
   const details = listing.property_details && typeof listing.property_details === 'object' ? listing.property_details : {}
   const marketing = listing.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
@@ -95,6 +133,14 @@ function SellerOfferReviewPage() {
   const [decisionSaving, setDecisionSaving] = useState('')
   const [decisionMessage, setDecisionMessage] = useState('')
   const [decisionWarning, setDecisionWarning] = useState('')
+  const [counterTerms, setCounterTerms] = useState({
+    counterOfferAmount: '',
+    counterDepositAmount: '',
+    counterOccupationDate: '',
+    counterExpiryDate: '',
+    counterExpiryTime: '',
+    counterSpecialTerms: '',
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -124,11 +170,19 @@ function SellerOfferReviewPage() {
   const listing = context?.listing || {}
   const buyer = context?.buyer || {}
   const agent = context?.agent || {}
+  const sessionMetadata = context?.session?.metadata && typeof context.session.metadata === 'object' ? context.session.metadata : {}
   const propertyTitle = listingLabel(listing)
   const buyerName = toText(conditions.buyerName, contactName(buyer, 'Buyer'))
   const sellerStatus = toText(context?.session?.status, 'viewed').replaceAll('_', ' ')
   const sellerName = toText(conditions.sellerReviewRecipientName || conditions.sellerName, contactName(context?.seller || {}, 'Seller'))
   const isDecided = ['accepted', 'rejected', 'countered'].includes(toText(context?.session?.status).toLowerCase())
+  const purchaserLabel = toText(conditions.purchaserType || conditions.buyerType, 'individual').replaceAll('_', ' ')
+  const expiryLabel = conditions.expiryTime
+    ? `${formatDate(offer.expiryDate)} at ${conditions.expiryTime}`
+    : formatDate(offer.expiryDate)
+  const sellerReviewDeliveryModeLabel = toText(sessionMetadata.deliveryModeLabel, 'Seller review')
+  const authorityWarnings = Array.isArray(sessionMetadata.warnings) ? sessionMetadata.warnings : []
+  const authorityStatus = toText(sessionMetadata.authorityStatus, 'ready')
 
   async function sendDecisionNotification(payload = {}, recipient = {}) {
     const to = toText(recipient.email)
@@ -145,6 +199,11 @@ function SellerOfferReviewPage() {
         body: {
           type: 'offer_decision_notification',
           to,
+          organisationId: toText(payload.organisationId || offer.organisationId),
+          leadId: toText(payload.leadId || offer.buyerLeadId),
+          listingId: toText(payload.listingId || offer.listingId),
+          offerId: toText(payload.offerId || offer.id),
+          transactionId: toText(payload.transactionId || offer.transactionId || offer.transaction_id),
           recipientName: recipient.name,
           recipientRole: recipient.role,
           decision: payload.decision,
@@ -229,7 +288,16 @@ function SellerOfferReviewPage() {
     setDecisionWarning('')
     setError('')
     try {
-      const result = await submitSellerOfferDecision({ token, decision, notes: decisionNotes })
+      const counterPayload = decision === 'countered' ? buildCounterTermsPayload(counterTerms) : null
+      if (decision === 'countered' && !Object.keys(counterPayload || {}).length && !toText(decisionNotes)) {
+        throw new Error('Add at least one counter term or a note for your agent before requesting a counter.')
+      }
+      const result = await submitSellerOfferDecision({
+        token,
+        decision,
+        notes: decisionNotes,
+        counterTerms: counterPayload,
+      })
       const nextContext = { ...(context || {}), ...(result || {}) }
       const nextOffer = nextContext.offer || offer
       const nextConditions = nextOffer.conditions || conditions
@@ -299,7 +367,7 @@ function SellerOfferReviewPage() {
             ? 'Offer accepted. The transaction was created and buyer onboarding was triggered.'
             : 'Offer accepted. The canonical offer and buyer lead have been updated.'
           : decision === 'countered'
-            ? 'Counter request submitted. Your agent will continue the negotiation.'
+            ? 'Counter request submitted. Your agent will continue the negotiation with the updated terms.'
             : 'Offer rejected. The canonical offer and buyer lead have been updated.',
       )
     } catch (decisionError) {
@@ -368,11 +436,17 @@ function SellerOfferReviewPage() {
             <div className="mt-6 grid gap-4 md:grid-cols-2">
               {[
                 ['Buyer', buyerName],
+                ['Purchaser Structure', purchaserLabel],
                 ['Finance Type', toText(offer.financeType, 'To be confirmed')],
                 ['Deposit', toMoney(offer.depositAmount)],
+                ['Deposit Due', formatDate(conditions.depositDueDate)],
                 ['Cash Component', toMoney(offer.cashComponent)],
                 ['Bond Component', toMoney(offer.bondComponent)],
-                ['Offer Expires', formatDate(offer.expiryDate)],
+                ['Bond Approval Deadline', formatDate(conditions.bondApprovalDeadline)],
+                ['Occupation Date', formatDate(conditions.occupationDate)],
+                ['Occupational Rent', conditions.occupationalRent ? `${toMoney(conditions.occupationalRentAmount)} (${toYesNo(conditions.occupationalRent)})` : 'No'],
+                ['Subject To Sale', toYesNo(conditions.subjectToSale)],
+                ['Offer Expires', expiryLabel],
               ].map(([label, value]) => (
                 <div key={label} className="border-b border-[#edf2f7] pb-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#76889c]">{label}</p>
@@ -382,11 +456,45 @@ function SellerOfferReviewPage() {
             </div>
 
             <div className="mt-6 space-y-4">
+              <section className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <h2 className="text-lg font-semibold tracking-[-0.03em] text-[#102235]">Funding Evidence</h2>
+                  <div className="mt-2 rounded-2xl bg-[#f7fafc] p-4 text-sm leading-6 text-[#40566d]">
+                    <p><span className="font-semibold text-[#102235]">Proof reference:</span> {toText(conditions.proofOfFundsReference, 'Not supplied')}</p>
+                    <p className="mt-1"><span className="font-semibold text-[#102235]">Pre-approval:</span> {toText(conditions.preApprovalReference, 'Not supplied')}</p>
+                    {conditions.purchaserEntityName ? (
+                      <p className="mt-1"><span className="font-semibold text-[#102235]">Entity name:</span> {conditions.purchaserEntityName}</p>
+                    ) : null}
+                  </div>
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold tracking-[-0.03em] text-[#102235]">Occupation & Sale Dependencies</h2>
+                  <div className="mt-2 rounded-2xl bg-[#f7fafc] p-4 text-sm leading-6 text-[#40566d]">
+                    <p><span className="font-semibold text-[#102235]">Subject sale property:</span> {toText(conditions.subjectSaleProperty, 'Not supplied')}</p>
+                    <p className="mt-1"><span className="font-semibold text-[#102235]">Subject sale timeline:</span> {toText(conditions.subjectSaleTimeline, 'Not supplied')}</p>
+                    <p className="mt-1"><span className="font-semibold text-[#102235]">Submitted:</span> {formatDateTime(offer.buyerSubmittedAt || offer.submittedAt)}</p>
+                  </div>
+                </div>
+              </section>
               <section>
                 <h2 className="text-lg font-semibold tracking-[-0.03em] text-[#102235]">Conditions</h2>
                 <p className="mt-2 rounded-2xl bg-[#f7fafc] p-4 text-sm leading-6 text-[#40566d]">
                   {toText(conditions.specialConditions || conditions.suspensiveConditions, 'No special conditions supplied.')}
                 </p>
+              </section>
+              <section className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <h2 className="text-lg font-semibold tracking-[-0.03em] text-[#102235]">Included Fixtures</h2>
+                  <p className="mt-2 rounded-2xl bg-[#f7fafc] p-4 text-sm leading-6 text-[#40566d]">
+                    {toText(conditions.includedFixtures, 'No fixtures listed.')}
+                  </p>
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold tracking-[-0.03em] text-[#102235]">Excluded Fixtures</h2>
+                  <p className="mt-2 rounded-2xl bg-[#f7fafc] p-4 text-sm leading-6 text-[#40566d]">
+                    {toText(conditions.excludedFixtures, 'No exclusions listed.')}
+                  </p>
+                </div>
               </section>
               {conditions.proofOfFundsUrl ? (
                 <a
@@ -407,6 +515,15 @@ function SellerOfferReviewPage() {
               <p className="mt-2 text-sm leading-6 text-[#60758c]">
                 Accept the offer, reject it, or request a counter. Your decision is recorded against the canonical offer.
               </p>
+              <div className="mt-4 rounded-2xl border border-[#d9e7f5] bg-[#f7fbff] px-4 py-3 text-sm text-[#35546c]">
+                <p className="font-semibold text-[#203a54]">Delivery Mode</p>
+                <p className="mt-1">{sellerReviewDeliveryModeLabel}</p>
+              </div>
+              {authorityStatus !== 'ready' && authorityWarnings.length ? (
+                <div className="mt-3 rounded-2xl border border-[#f5d6a8] bg-[#fff8ed] px-4 py-3 text-sm text-[#9a5b11]">
+                  {authorityWarnings.join(' ')}
+                </div>
+              ) : null}
               {decisionMessage ? (
                 <div className="mt-4 rounded-2xl border border-[#cde8d8] bg-[#effaf3] px-4 py-3 text-sm font-medium text-[#26724c]">
                   {decisionMessage}
@@ -433,6 +550,52 @@ function SellerOfferReviewPage() {
                       placeholder="Optional note for your agent"
                     />
                   </label>
+                  <div className="mt-4 rounded-2xl border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#76889c]">Counter Terms</p>
+                    <div className="mt-3 grid gap-3">
+                      <input
+                        value={counterTerms.counterOfferAmount}
+                        onChange={(event) => setCounterTerms((previous) => ({ ...previous, counterOfferAmount: event.target.value }))}
+                        className="w-full rounded-2xl border border-[#dfe7f0] bg-white px-4 py-3 text-sm text-[#102235] outline-none transition focus:border-[#9fb9d4]"
+                        placeholder="Counter purchase price"
+                        inputMode="decimal"
+                      />
+                      <input
+                        value={counterTerms.counterDepositAmount}
+                        onChange={(event) => setCounterTerms((previous) => ({ ...previous, counterDepositAmount: event.target.value }))}
+                        className="w-full rounded-2xl border border-[#dfe7f0] bg-white px-4 py-3 text-sm text-[#102235] outline-none transition focus:border-[#9fb9d4]"
+                        placeholder="Counter deposit amount"
+                        inputMode="decimal"
+                      />
+                      <input
+                        type="date"
+                        value={counterTerms.counterOccupationDate}
+                        onChange={(event) => setCounterTerms((previous) => ({ ...previous, counterOccupationDate: event.target.value }))}
+                        className="w-full rounded-2xl border border-[#dfe7f0] bg-white px-4 py-3 text-sm text-[#102235] outline-none transition focus:border-[#9fb9d4]"
+                      />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <input
+                          type="date"
+                          value={counterTerms.counterExpiryDate}
+                          onChange={(event) => setCounterTerms((previous) => ({ ...previous, counterExpiryDate: event.target.value }))}
+                          className="w-full rounded-2xl border border-[#dfe7f0] bg-white px-4 py-3 text-sm text-[#102235] outline-none transition focus:border-[#9fb9d4]"
+                        />
+                        <input
+                          type="time"
+                          value={counterTerms.counterExpiryTime}
+                          onChange={(event) => setCounterTerms((previous) => ({ ...previous, counterExpiryTime: event.target.value }))}
+                          className="w-full rounded-2xl border border-[#dfe7f0] bg-white px-4 py-3 text-sm text-[#102235] outline-none transition focus:border-[#9fb9d4]"
+                        />
+                      </div>
+                      <textarea
+                        value={counterTerms.counterSpecialTerms}
+                        onChange={(event) => setCounterTerms((previous) => ({ ...previous, counterSpecialTerms: event.target.value }))}
+                        rows={3}
+                        className="w-full resize-none rounded-2xl border border-[#dfe7f0] bg-white px-4 py-3 text-sm leading-6 text-[#102235] outline-none transition focus:border-[#9fb9d4]"
+                        placeholder="Specific changes the buyer should discuss with the agent"
+                      />
+                    </div>
+                  </div>
                   <div className="mt-4 grid gap-2">
                     <Button type="button" onClick={() => void handleSellerDecision('accepted')} disabled={Boolean(decisionSaving)}>
                       {decisionSaving === 'accepted' ? 'Accepting...' : 'Accept Offer'}

@@ -252,7 +252,10 @@ try {
   assert.ok(workspaceSource.includes('function LeadOfferTransactionConversionPanel'), 'offers tab should expose accepted-offer transaction conversion')
   assert.ok(workspaceSource.includes('createTransactionFromAcceptedCanonicalOffer'), 'accepted offers should convert through the canonical transaction service')
   assert.ok(workspaceSource.includes('buyer_lead_offer_conversion'), 'buyer onboarding should be sent from the lead offer conversion flow')
-  assert.ok(workspaceSource.includes('Accepted offer only'), 'transaction conversion should clearly require an accepted offer')
+  assert.ok(
+    workspaceSource.includes('Accepted offer ready') || workspaceSource.includes('Accepted offer is ready for conversion'),
+    'transaction conversion should clearly require an accepted offer before creating a transaction',
+  )
   assert.ok(workspaceSource.includes('Create Transaction'), 'accepted offer conversion should expose a create transaction action')
   assert.ok(workspaceSource.includes('Open Transaction'), 'converted offers should expose the linked transaction')
   assert.ok(workspaceSource.includes('function LeadTransactionHandoffPanel'), 'offers tab should expose a post-conversion handoff checklist')

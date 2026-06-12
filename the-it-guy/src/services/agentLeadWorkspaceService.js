@@ -126,6 +126,11 @@ function normalizeTransaction(row = {}) {
     leadId: readId(row, ['originatingBuyerLeadId', 'originating_buyer_lead_id', 'leadId', 'lead_id']),
     contactId: getContactId(row),
     listingId: getListingId(row),
+    currentMainStage: normalizeText(row?.currentMainStage || row?.current_main_stage),
+    onboardingStatus: normalizeText(row?.onboardingStatus || row?.onboarding_status),
+    onboardingCompletedAt: row?.onboardingCompletedAt || row?.onboarding_completed_at || null,
+    lifecycleState: normalizeText(row?.lifecycleState || row?.lifecycle_state),
+    cancelledAt: row?.cancelledAt || row?.cancelled_at || null,
     status: normalizeText(row?.status || row?.stage || row?.current_stage) || 'Transaction',
     createdAt: row?.createdAt || row?.created_at || null,
     updatedAt: row?.updatedAt || row?.updated_at || row?.createdAt || row?.created_at || null,
@@ -359,7 +364,7 @@ async function safeReadAllOffers(organisationId = '') {
 
 async function safeReadTransactions(organisationId = '', context = {}) {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
-  const fields = 'id, organisation_id, originating_buyer_lead_id, buyer_contact_id, seller_contact_id, listing_id, current_stage, stage, status, created_at, updated_at'
+  const fields = 'id, organisation_id, originating_buyer_lead_id, buyer_contact_id, seller_contact_id, listing_id, current_stage, current_main_stage, stage, status, onboarding_status, onboarding_completed_at, lifecycle_state, cancelled_at, created_at, updated_at'
   let query = supabase.from('transactions').select(fields).eq('organisation_id', organisationId).order('updated_at', { ascending: false }).limit(1000)
   if (context.convertedTransactionId) query = query.eq('id', context.convertedTransactionId)
   const { data, error } = await query

@@ -8,6 +8,11 @@ const KEY_AGENT_DEMO_TRANSACTIONS = 'itg:agent-demo-transactions:v1'
 const KEY_TRANSACTION_LIFECYCLE_EVENTS = 'itg:transaction-lifecycle-events:v1'
 
 const DEFAULT_AGENT_SPLIT_PERCENTAGE = 70
+const CLIENT_INTAKE_PREFERENCE = {
+  DIGITAL_PORTAL: 'digital_portal',
+  AGENT_ASSISTED: 'agent_assisted',
+  HARD_COPY: 'hard_copy',
+}
 
 function readJson(key, fallback) {
   if (typeof window === 'undefined') return fallback
@@ -51,6 +56,8 @@ function normalize(value) {
 function normalizeLower(value) {
   return normalize(value).toLowerCase()
 }
+
+const TRANSACTION_IDENTITY_SELECT = 'id, organisation_id, accepted_offer_id, listing_id, originating_lead_id, originating_buyer_lead_id, stage, current_main_stage, finance_type, assigned_agent_email, buyer_id, created_at, updated_at'
 
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalize(value))
@@ -116,6 +123,38 @@ function normalizePurchaserType(value) {
   if (['company', 'pty_ltd', 'pty', 'business'].includes(key)) return 'company'
   if (['trust', 'family_trust'].includes(key)) return 'trust'
   return 'individual'
+}
+
+function normalizeClientIntakePreference(value) {
+  const key = normalize(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (['agent', 'assisted', 'agent_assisted', 'assisted_capture'].includes(key)) {
+    return CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED
+  }
+  if (['hard_copy', 'hardcopy', 'paper', 'printed'].includes(key)) {
+    return CLIENT_INTAKE_PREFERENCE.HARD_COPY
+  }
+  return CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL
+}
+
+function getClientIntakePreferenceLabel(value) {
+  const normalized = normalizeClientIntakePreference(value)
+  if (normalized === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED) return 'Agent Assisted'
+  if (normalized === CLIENT_INTAKE_PREFERENCE.HARD_COPY) return 'Hard Copy'
+  return 'Digital Portal'
+}
+
+function resolveOnboardingStatusForPreference(value) {
+  const normalized = normalizeClientIntakePreference(value)
+  if (normalized === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED) return 'agent_assisted_pending'
+  if (normalized === CLIENT_INTAKE_PREFERENCE.HARD_COPY) return 'hard_copy_pending'
+  return 'awaiting_client_onboarding'
+}
+
+function resolveNextActionForPreference(value) {
+  const normalized = normalizeClientIntakePreference(value)
+  if (normalized === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED) return 'Capture buyer onboarding with the client and prepare OTP intake'
+  if (normalized === CLIENT_INTAKE_PREFERENCE.HARD_COPY) return 'Prepare hard-copy onboarding pack and capture OTP intake manually'
+  return 'Send buyer onboarding and prepare OTP intake'
 }
 
 function compactObject(value = {}) {
@@ -199,6 +238,7 @@ function resolveInitialMainStage(stageValue) {
   const normalized = normalize(stageValue).toLowerCase()
   if (!normalized || normalized === 'available') return 'AVAIL'
   if (normalized === 'registered') return 'REG'
+  if (normalized.includes('otp') || normalized.includes('onboarding')) return 'OTP'
   return 'DEP'
 }
 
@@ -307,6 +347,10 @@ function buildTransactionRow({
   const organisationId = getOrganisationId({ organisationId: payload?.organisationId, listing, offerRecord })
   const routingProfile = resolveRoutingProfileForTransaction({ listing, offerRecord, lead, payload })
   const routingFields = buildRoutingProfileTransactionFields(routingProfile)
+  const clientIntakePreference = normalizeClientIntakePreference(payload?.clientIntakePreference || payload?.deliveryMode)
+  const onboardingStatus = resolveOnboardingStatusForPreference(clientIntakePreference)
+  const onboardingNextAction = resolveNextActionForPreference(clientIntakePreference)
+  const onboardingLabel = getClientIntakePreferenceLabel(clientIntakePreference)
 
   const assignedAgentId = normalize(
     payload?.assignedAgentId || listing?.assignedAgentId || lead?.assignedAgentId || actor?.id || offerRecord?.agentId || null,
@@ -381,16 +425,16 @@ function buildTransactionRow({
       routing_profile_json: routingProfile,
       stage,
       current_main_stage: mainStage,
-      next_action: workflowHealthIssues.length ? 'Resolve workflow health warnings' : 'Buyer onboarding pending',
+      next_action: workflowHealthIssues.length ? 'Resolve workflow health warnings' : onboardingNextAction,
       comment:
         source === 'accepted_offer'
-          ? 'Transaction auto-created from accepted offer.'
+          ? `Transaction auto-created from accepted offer. Client intake mode: ${onboardingLabel}.`
           : 'Transaction created from lead with manual override (accepted offer missing).',
       assigned_agent: assignedAgentName || null,
       assigned_agent_email: assignedAgentEmail || null,
       lifecycle_state: 'active',
       is_active: true,
-      onboarding_status: 'buyer_onboarding_pending',
+      onboarding_status: onboardingStatus,
       onboarding_token: onboardingToken,
       onboarding_url: onboardingUrl,
       transaction_workflow_stage: 'created',
@@ -414,6 +458,7 @@ function buildTransactionRow({
       agency_commission_amount: commissionSnapshot.agency_commission_amount,
       commission_snapshot_source: commissionSnapshot.commission_snapshot_source,
       workflow_health_issues: workflowHealthIssues,
+      client_intake_preference: clientIntakePreference,
       created_at: nowIso,
       updated_at: nowIso,
     },
@@ -428,6 +473,7 @@ function buildTransactionRow({
     mainStage,
     onboarding: {
       status: 'not_started',
+      deliveryMode: clientIntakePreference,
     },
     documentSummary: {
       uploadedCount: 0,
@@ -640,6 +686,33 @@ async function findExistingTransactionForLead({
   return null
 }
 
+export async function findExistingTransactionForAcceptedOffer({
+  organisationId = '',
+  acceptedOfferId = '',
+} = {}) {
+  if (!supabase || !organisationId) return null
+
+  const normalizedOfferId = normalize(acceptedOfferId)
+  if (!isUuidLike(normalizedOfferId)) return null
+
+  const query = await supabase
+    .from('transactions')
+    .select(TRANSACTION_IDENTITY_SELECT)
+    .eq('organisation_id', organisationId)
+    .eq('accepted_offer_id', normalizedOfferId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  if (query.error) {
+    if (isMissingColumnError(query.error, 'accepted_offer_id') || isMissingTableError(query.error, 'transactions')) {
+      return null
+    }
+    throw query.error
+  }
+
+  return (query.data || [])[0] || null
+}
+
 async function insertAgentParticipant({
   transactionId = '',
   organisationId = '',
@@ -694,9 +767,9 @@ async function updateLeadConversionLinkage({
   const updatePayload = {
     converted_transaction_id: transactionId,
     converted_at: new Date().toISOString(),
-    current_stage: 'Finance',
-    stage: 'Finance',
-    status: 'Finance',
+    current_stage: 'Onboarding',
+    stage: 'Onboarding',
+    status: 'Onboarding',
     updated_at: new Date().toISOString(),
   }
 
@@ -787,6 +860,46 @@ export async function createTransactionFromLeadOverride({
   }
 
   try {
+    const duplicateByAcceptedOffer = acceptedOfferId
+      ? await findExistingTransactionForAcceptedOffer({
+        organisationId: nextOrganisationId,
+        acceptedOfferId,
+      })
+      : null
+
+    if (duplicateByAcceptedOffer?.id) {
+      let leadLinkageResult = { updated: false, reason: null }
+      try {
+        leadLinkageResult = await updateLeadConversionLinkage({
+          leadId: nextLeadId,
+          transactionId: duplicateByAcceptedOffer.id,
+          organisationId: nextOrganisationId,
+        })
+      } catch (linkageError) {
+        leadLinkageResult = {
+          updated: false,
+          reason: normalize(linkageError?.message || linkageError?.code || 'lead_linkage_failed'),
+        }
+      }
+
+      return {
+        ...created,
+        transactionId: duplicateByAcceptedOffer.id,
+        existing: true,
+        persisted: true,
+        transactionRow: mapSupabaseTransactionRowToRuntimeShape({
+          transaction: duplicateByAcceptedOffer,
+          listing,
+          lead,
+          payload,
+        }),
+        leadLinkageUpdated: leadLinkageResult?.updated === true,
+        warning: !leadLinkageResult?.updated
+          ? leadLinkageResult?.reason || 'existing_offer_transaction_reused'
+          : 'existing_offer_transaction_reused',
+      }
+    }
+
     const duplicate = await findExistingTransactionForLead({
       organisationId: nextOrganisationId,
       leadId: nextLeadId,
@@ -794,17 +907,35 @@ export async function createTransactionFromLeadOverride({
     })
 
     if (duplicate?.id) {
+      let leadLinkageResult = { updated: false, reason: null }
+      try {
+        leadLinkageResult = await updateLeadConversionLinkage({
+          leadId: nextLeadId,
+          transactionId: duplicate.id,
+          organisationId: nextOrganisationId,
+        })
+      } catch (linkageError) {
+        leadLinkageResult = {
+          updated: false,
+          reason: normalize(linkageError?.message || linkageError?.code || 'lead_linkage_failed'),
+        }
+      }
+
       return {
         ...created,
         transactionId: duplicate.id,
         existing: true,
+        persisted: true,
         transactionRow: mapSupabaseTransactionRowToRuntimeShape({
           transaction: duplicate,
           listing,
           lead,
           payload,
         }),
-        warning: 'existing_transaction_reused',
+        leadLinkageUpdated: leadLinkageResult?.updated === true,
+        warning: !leadLinkageResult?.updated
+          ? leadLinkageResult?.reason || 'existing_transaction_reused'
+          : 'existing_transaction_reused',
       }
     }
 
@@ -817,6 +948,10 @@ export async function createTransactionFromLeadOverride({
     const nextMainStage = resolveInitialMainStage(created?.transactionRow?.transaction?.stage || payload?.stage || 'Reserved')
     const routingProfile = resolveRoutingProfileForTransaction({ listing, lead, payload })
     const routingFields = buildRoutingProfileTransactionFields(routingProfile)
+    const clientIntakePreference = normalizeClientIntakePreference(payload?.clientIntakePreference || payload?.deliveryMode)
+    const onboardingStatus = resolveOnboardingStatusForPreference(clientIntakePreference)
+    const onboardingNextAction = resolveNextActionForPreference(clientIntakePreference)
+    const onboardingLabel = getClientIntakePreferenceLabel(clientIntakePreference)
     const baseInsertPayload = {
       id: created.transactionId,
       organisation_id: nextOrganisationId,
@@ -848,11 +983,11 @@ export async function createTransactionFromLeadOverride({
       routing_profile_json: routingProfile,
       stage: normalize(payload?.stage || 'Reserved') || 'Reserved',
       current_main_stage: nextMainStage,
-      next_action: 'Buyer onboarding pending',
+      next_action: onboardingNextAction,
       comment: acceptedOfferId
-        ? 'Transaction created from accepted buyer offer. Buyer onboarding pending.'
+        ? `Transaction created from accepted buyer offer. Client intake mode: ${onboardingLabel}.`
         : 'Transaction created from lead with manual override (accepted offer missing).',
-      onboarding_status: 'awaiting_client_onboarding',
+      onboarding_status: onboardingStatus,
       assigned_agent: normalize(payload?.assignedAgentName || lead?.assignedAgentName || actor?.name) || null,
       assigned_agent_email: nextAssignedAgentEmail || null,
       assigned_agent_id: isUuidLike(nextAssignedAgentId) ? nextAssignedAgentId : null,

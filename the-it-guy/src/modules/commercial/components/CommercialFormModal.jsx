@@ -58,6 +58,7 @@ function validateForm(fields, values, crossValidate) {
       if (Number.isFinite(parsed) && (parsed < 0 || parsed > 100)) errors[field.name] = 'Percentage must be between 0 and 100.'
     }
     if (field.type === 'date' && !isValidDate(textValue)) errors[field.name] = 'Enter a valid date.'
+    if (field.type === 'time' && textValue && !/^\d{2}:\d{2}(:\d{2})?$/.test(textValue)) errors[field.name] = 'Enter a valid time.'
   }
 
   return { ...errors, ...(crossValidate?.(values) || {}) }
@@ -176,7 +177,7 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
 
     return (
       <input
-        type={field.type === 'date' ? 'date' : field.type === 'number' || field.type === 'percentage' ? 'number' : field.type === 'email' ? 'email' : 'text'}
+        type={field.type === 'date' ? 'date' : field.type === 'time' ? 'time' : field.type === 'number' || field.type === 'percentage' ? 'number' : field.type === 'email' ? 'email' : 'text'}
         value={value}
         step={field.step || (field.type === 'number' || field.type === 'percentage' ? 'any' : undefined)}
         onChange={(event) => setValues((previous) => ({ ...previous, [field.name]: event.target.value }))}

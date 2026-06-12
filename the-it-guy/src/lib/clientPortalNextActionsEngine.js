@@ -26,7 +26,7 @@ function normalizeDocumentStatus(status = '') {
 }
 
 function isOnboardingComplete(status) {
-  return new Set(['submitted', 'reviewed', 'approved', 'complete', 'completed', 'client_onboarding_complete']).has(
+  return new Set(['submitted', 'reviewed', 'approved', 'complete', 'completed', 'client_onboarding_complete', 'awaiting_signed_otp', 'signed_otp_received']).has(
     normalizeValue(status),
   )
 }

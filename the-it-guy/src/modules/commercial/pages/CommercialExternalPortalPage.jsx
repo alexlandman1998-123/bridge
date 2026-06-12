@@ -4,8 +4,10 @@ import {
   Building2,
   CalendarClock,
   CheckCircle2,
+  Download,
   FileText,
   LayoutDashboard,
+  LockKeyhole,
   MessageCircle,
   Send,
   ShieldCheck,
@@ -14,8 +16,10 @@ import {
 } from 'lucide-react'
 import { createElement, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { formatDate, titleize } from '../commercialFormatters'
+import { formatCurrency, formatDate, titleize } from '../commercialFormatters'
 import {
+  activateCommercialPortalAccess,
+  getCommercialPortalDocumentDownloadUrl,
   getCommercialPortalWorkspaceData,
   sendCommercialPortalMessage,
   uploadCommercialPortalDocument,
@@ -25,6 +29,8 @@ const CARD_CLASS = 'rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_1
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'assets', label: 'Assets', icon: Building2 },
+  { id: 'transaction', label: 'Transaction', icon: CheckCircle2 },
   { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'timeline', label: 'Timeline', icon: CalendarClock },
   { id: 'messages', label: 'Messages', icon: MessageCircle },
@@ -186,6 +192,98 @@ function MessageForm({ token, onSent }) {
   )
 }
 
+function ActivationPanel({ workspace, token, onActivated }) {
+  const [displayName, setDisplayName] = useState(workspace?.contact?.name || '')
+  const [password, setPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  if (workspace?.access?.acceptedAt || workspace?.access?.passwordSetAt) return null
+
+  async function handleActivate(event) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    try {
+      await activateCommercialPortalAccess({ token, displayName, password })
+      onActivated?.()
+    } catch (activationError) {
+      setError(activationError?.message || 'Portal activation failed.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="rounded-3xl border border-sky-200 bg-sky-50 p-5 text-sky-900">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-sky-700">
+            <LockKeyhole size={18} />
+          </div>
+          <h2 className="mt-3 text-lg font-semibold tracking-[-0.035em]">Activate Secure Access</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-sky-800">Confirm your portal access for this company/contact. This invitation remains private to the secure link issued by your broker.</p>
+        </div>
+        <form onSubmit={handleActivate} className="grid w-full gap-3 rounded-2xl bg-white p-4 lg:max-w-xl">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-sm font-semibold text-[#102236]">
+              Name
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none" />
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-[#102236]">
+              Password
+              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none" />
+            </label>
+          </div>
+          {error ? <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+          <button type="submit" disabled={saving} className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white disabled:opacity-60">
+            {saving ? 'Activating...' : 'Activate Portal'}
+          </button>
+        </form>
+      </div>
+    </section>
+  )
+}
+
+function RoleDashboard({ dashboard }) {
+  if (!dashboard?.cards?.length) return null
+  return (
+    <section className={CARD_CLASS}>
+      <h2 className="text-lg font-semibold tracking-[-0.035em]">{dashboard.title}</h2>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {dashboard.cards.map((card) => (
+          <article key={card.label} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{card.label}</p>
+            <p className="mt-2 text-xl font-semibold tracking-[-0.04em] text-[#102236]">{card.value || '-'}</p>
+            <p className="mt-1 text-sm text-slate-500">{card.detail || '-'}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AssetRows({ title, rows = [], fields = [] }) {
+  return (
+    <section className={CARD_CLASS}>
+      <h2 className="text-lg font-semibold tracking-[-0.035em]">{title}</h2>
+      <div className="mt-4 grid gap-3">
+        {rows.length ? rows.map((row) => (
+          <article key={row.id} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-[#102236]">{row.title}</p>
+                <p className="mt-1 text-sm text-slate-500">{fields.map((field) => row[field]).filter(Boolean).join(' · ') || '-'}</p>
+              </div>
+              <StatusPill value={row.status} />
+            </div>
+          </article>
+        )) : <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No records visible for this portal yet.</p>}
+      </div>
+    </section>
+  )
+}
+
 function CommercialExternalPortalPage() {
   const { token } = useParams()
   const [workspace, setWorkspace] = useState(null)
@@ -218,6 +316,15 @@ function CommercialExternalPortalPage() {
     void refresh()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token])
+
+  async function handleDownload(document) {
+    try {
+      const url = await getCommercialPortalDocumentDownloadUrl({ token, document })
+      if (url) window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Document download failed.')
+    }
+  }
 
   if (loading) return <LoadingState />
   if (error) return <ErrorState message={error} />
@@ -264,14 +371,17 @@ function CommercialExternalPortalPage() {
           </nav>
         </section>
 
+        <ActivationPanel workspace={workspace} token={token} onActivated={refresh} />
+
         {activeTab === 'dashboard' ? (
           <>
             <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <DetailCard label="Status" value={summary.status} detail="Current commercial progress" icon={CheckCircle2} />
               <DetailCard label="Outstanding Documents" value={summary.outstandingDocuments} detail={`${summary.receivedDocuments} documents received`} icon={FileText} />
-              <DetailCard label="Tenant" value={summary.tenant} detail="Occupier" icon={Users} />
-              <DetailCard label="Landlord" value={summary.landlord} detail="Property owner" icon={Building2} />
+              <DetailCard label="Company" value={summary.companyName} detail={workspace.access.portalLabel} icon={Users} />
+              <DetailCard label="Property" value={summary.property} detail={summary.unit} icon={Building2} />
             </section>
+            <RoleDashboard dashboard={workspace.roleDashboard} />
             <section className={CARD_CLASS}>
               <h2 className="text-lg font-semibold tracking-[-0.035em]">Progress</h2>
               <div className="mt-4 grid gap-3 md:grid-cols-4">
@@ -316,6 +426,53 @@ function CommercialExternalPortalPage() {
           </>
         ) : null}
 
+        {activeTab === 'assets' ? (
+          <section className="grid gap-4 xl:grid-cols-3">
+            <AssetRows title="Properties" rows={workspace.properties} fields={['type', 'location']} />
+            <AssetRows title="Vacancies" rows={workspace.vacancies} fields={['unit', 'area', 'rental']} />
+            <AssetRows title="Listings" rows={workspace.listings} fields={['type', 'category', 'pricing']} />
+          </section>
+        ) : null}
+
+        {activeTab === 'transaction' ? (
+          <section className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+            <section className={CARD_CLASS}>
+              <h2 className="text-lg font-semibold tracking-[-0.035em]">Transaction</h2>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {[
+                  ['Stage', titleize(workspace.transaction.status)],
+                  ['Type', titleize(workspace.transaction.type)],
+                  ['Value', formatCurrency(workspace.transaction.value || 0)],
+                  ['Expected Close', formatDate(workspace.transaction.expectedCloseDate)],
+                  ['Actual Close', formatDate(workspace.transaction.actualCloseDate)],
+                  ['Broker', summary.broker],
+                ].map(([label, value]) => (
+                  <article key={label} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+                    <p className="mt-2 text-sm font-semibold text-[#102236]">{value || '-'}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className={CARD_CLASS}>
+              <h2 className="text-lg font-semibold tracking-[-0.035em]">Viewings</h2>
+              <div className="mt-4 grid gap-3">
+                {workspace.viewings.length ? workspace.viewings.map((viewing) => (
+                  <article key={viewing.id} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#102236]">{formatDate(viewing.date)} {viewing.time || ''}</p>
+                        <p className="mt-1 text-sm text-slate-500">{viewing.notes || viewing.feedback || 'Commercial viewing'}</p>
+                      </div>
+                      <StatusPill value={viewing.status} />
+                    </div>
+                  </article>
+                )) : <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No viewings visible yet.</p>}
+              </div>
+            </section>
+          </section>
+        ) : null}
+
         {activeTab === 'documents' ? (
           <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
             <section className={CARD_CLASS}>
@@ -338,8 +495,18 @@ function CommercialExternalPortalPage() {
               <div className="mt-4 grid gap-3">
                 {workspace.documents.length ? workspace.documents.map((document) => (
                   <article key={document.id} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
-                    <p className="text-sm font-semibold">{document.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">{document.category} · {document.status} · {formatDate(document.uploadedAt)}</p>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold">{document.title}</p>
+                        <p className="mt-1 text-sm text-slate-500">{document.category} · {document.status} · {formatDate(document.uploadedAt)}</p>
+                      </div>
+                      {document.filePath ? (
+                        <button type="button" onClick={() => void handleDownload(document)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-600">
+                          <Download size={15} />
+                          Download
+                        </button>
+                      ) : null}
+                    </div>
                   </article>
                 )) : <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No documents uploaded yet.</p>}
               </div>

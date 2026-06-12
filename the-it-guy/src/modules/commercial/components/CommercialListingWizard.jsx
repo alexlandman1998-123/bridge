@@ -5,6 +5,7 @@ const CATEGORY_OPTIONS = [
   { value: 'office', label: 'Office' },
   { value: 'industrial', label: 'Industrial' },
   { value: 'retail', label: 'Retail' },
+  { value: 'investment', label: 'Investment' },
   { value: 'agricultural', label: 'Agricultural' },
   { value: 'mixed_use', label: 'Mixed Use' },
   { value: 'development_land', label: 'Development Land' },
@@ -12,8 +13,9 @@ const CATEGORY_OPTIONS = [
 
 const STATUS_OPTIONS = [
   { value: 'draft', label: 'Draft' },
-  { value: 'coming_soon', label: 'Coming Soon' },
-  { value: 'active', label: 'Active' },
+  { value: 'internal_review', label: 'Internal Review' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'published', label: 'Published' },
   { value: 'under_offer', label: 'Under Offer' },
 ]
 
@@ -68,6 +70,15 @@ const CATEGORY_FIELDS = {
     { name: 'visibility_rating', label: 'Visibility Rating' },
     { name: 'trading_hours', label: 'Trading Hours' },
     { name: 'signage_opportunities', label: 'Signage Opportunities' },
+  ],
+  investment: [
+    { name: 'noi', label: 'NOI', type: 'number' },
+    { name: 'cap_rate', label: 'Cap Rate', type: 'number' },
+    { name: 'wale', label: 'WALE', type: 'number' },
+    { name: 'gross_yield', label: 'Gross Yield', type: 'number' },
+    { name: 'net_yield', label: 'Net Yield', type: 'number' },
+    { name: 'vacancy_rate', label: 'Vacancy Rate', type: 'number' },
+    { name: 'annual_income', label: 'Annual Income', type: 'number' },
   ],
   agricultural: [
     { name: 'farm_size', label: 'Farm Size', type: 'number' },
@@ -202,7 +213,7 @@ function CommercialListingWizard({ open, lookups = {}, onClose, onSubmit }) {
         ...values,
         pricing: String(values.pricing || '').trim() ? Number(values.pricing) : null,
         metadata_json: metadata,
-        marketing_json: { status: values.listing_status === 'active' ? 'live' : 'draft' },
+        marketing_json: { status: values.listing_status === 'published' ? 'live' : values.listing_status },
         media_json: { photos: [], videos: [], brochure: null },
         performance_json: { views: 0, enquiries: 0, requirements_matched: 0, deals_created: 0, conversion_rate: 0 },
       })

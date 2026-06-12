@@ -1,6 +1,7 @@
 import { Activity, BriefcaseBusiness, ClipboardList, Handshake, Users } from 'lucide-react'
+import { createElement } from 'react'
 import { Link } from 'react-router-dom'
-import { formatCurrency, formatDate } from '../commercialFormatters'
+import { formatCurrency } from '../commercialFormatters'
 import CommercialEmptyState from '../components/CommercialEmptyState'
 import { useCommercialData } from '../hooks/useCommercialData'
 import { getCommercialBrokerageData } from '../services/commercialBrokerageApi'
@@ -11,7 +12,7 @@ function SummaryCard({ label, value, detail, icon: Icon }) {
   return (
     <article className={CARD_CLASS}>
       <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#eef5fb] text-[#123b61]">
-        <Icon size={19} />
+        {createElement(Icon, { size: 19 })}
       </span>
       <p className="mt-4 text-sm font-semibold text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-semibold tracking-[-0.045em] text-[#102236]">{value}</p>
@@ -53,7 +54,7 @@ function CommercialBrokerOverviewPage() {
         <SummaryCard label="Unassigned Work" value={loading ? '...' : summary.unassignedWork || 0} detail="Needs principal review" icon={ClipboardList} />
         <SummaryCard label="Active Pipeline" value={loading ? '...' : formatCurrency(summary.activePipeline || 0)} detail={`${summary.activeDeals || 0} active deals`} icon={BriefcaseBusiness} />
         <SummaryCard label="HOTs In Progress" value={loading ? '...' : summary.hotsInProgress || 0} detail="Negotiation workload" icon={Handshake} />
-        <SummaryCard label="Broker Activity" value={loading ? '...' : summary.brokerActivity || 0} detail="Brokers with recent work" icon={Activity} />
+        <SummaryCard label="Broker Activity" value={loading ? '...' : summary.brokerActivity || 0} detail={`${summary.overloadedBrokers || 0} overloaded`} icon={Activity} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
@@ -72,9 +73,9 @@ function CommercialBrokerOverviewPage() {
                   <p className="truncate text-sm font-semibold text-[#102236]">{broker.name}</p>
                   <p className="mt-1 truncate text-xs text-slate-500">{broker.branchName}</p>
                 </div>
-                <p className="text-sm font-semibold text-[#102236]">{broker.activeRequirements} reqs</p>
-                <p className="text-sm font-semibold text-[#102236]">{broker.activeDeals} deals</p>
-                <p className="text-sm text-slate-600">{formatDate(broker.lastActivityAt)}</p>
+                <p className="text-sm font-semibold text-[#102236]">{broker.activeTransactions || 0} tx</p>
+                <p className="text-sm font-semibold text-[#102236]">{formatCurrency(broker.projectedCommission || 0)}</p>
+                <p className="text-sm text-slate-600">{broker.capacityLabel}</p>
               </Link>
             ))}
             {!loading && !brokers.length ? <CommercialEmptyState title="No brokers yet" description="Invite commercial brokers from workspace user settings to start assigning records." /> : null}

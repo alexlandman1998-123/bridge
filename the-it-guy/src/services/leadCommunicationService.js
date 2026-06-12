@@ -411,35 +411,57 @@ function fromAppointment(appointment = {}) {
 }
 
 function fromOffer(offer = {}) {
+  const status = normalizeLower(offer.status)
   return timelineItem({
     id: `offer:${readId(offer, ['id', 'offerId', 'offer_id']) || normalizeText(offer.status)}`,
     kind: 'offer',
     communicationType: 'system',
     direction: 'system',
-    title: normalizeLower(offer.status).includes('submitted') ? 'Offer Submitted' : 'Offer Updated',
+    title: status.includes('accepted')
+      ? 'Offer Accepted'
+      : status.includes('counter')
+        ? 'Offer Countered'
+        : status.includes('reject')
+          ? 'Offer Rejected'
+          : status.includes('converted')
+            ? 'Offer Converted To Transaction'
+            : status.includes('submitted')
+              ? 'Offer Submitted'
+              : 'Offer Updated',
     summary: normalizeText(offer.status) || 'Offer linked to lead',
     status: normalizeText(offer.status),
-    occurredAt: readDate(offer, ['submittedAt', 'submitted_at', 'updatedAt', 'updated_at', 'createdAt', 'created_at']) || new Date(0).toISOString(),
+    occurredAt: readDate(offer, ['acceptedAt', 'accepted_at', 'counteredAt', 'countered_at', 'rejectedAt', 'rejected_at', 'submittedAt', 'submitted_at', 'updatedAt', 'updated_at', 'createdAt', 'created_at']) || new Date(0).toISOString(),
     raw: offer,
   })
 }
 
 function fromTransaction(transaction = {}) {
+  const onboardingStatus = normalizeLower(transaction.onboardingStatus || transaction.onboarding_status)
+  const currentMainStage = normalizeText(transaction.currentMainStage || transaction.current_main_stage)
   return timelineItem({
     id: `transaction:${readId(transaction, ['id', 'transactionId', 'transaction_id']) || normalizeText(transaction.status)}`,
     kind: 'transaction',
     communicationType: 'system',
     direction: 'system',
-    title: 'Transaction Linked',
-    summary: normalizeText(transaction.status || transaction.stage || transaction.current_stage) || 'Lead converted through existing transaction flow',
-    status: normalizeText(transaction.status || transaction.stage || transaction.current_stage),
-    occurredAt: readDate(transaction, ['createdAt', 'created_at', 'updatedAt', 'updated_at']) || new Date(0).toISOString(),
+    title: onboardingStatus === 'signed_otp_received'
+      ? 'Signed OTP Received'
+      : onboardingStatus === 'awaiting_signed_otp'
+        ? 'Buyer Onboarding Completed'
+        : 'Transaction Linked',
+    summary: onboardingStatus === 'signed_otp_received'
+      ? 'The signed OTP has been received and the transaction can move into the next handoff.'
+      : onboardingStatus === 'awaiting_signed_otp'
+        ? 'Buyer onboarding is complete and the transaction is waiting for the signed OTP.'
+        : normalizeText(transaction.status || transaction.stage || transaction.current_stage || currentMainStage) || 'Lead converted through existing transaction flow',
+    status: normalizeText(transaction.status || transaction.stage || transaction.current_stage || currentMainStage),
+    occurredAt: readDate(transaction, ['onboardingCompletedAt', 'onboarding_completed_at', 'updatedAt', 'updated_at', 'createdAt', 'created_at']) || new Date(0).toISOString(),
     raw: transaction,
   })
 }
 
 function fromDelivery(delivery = {}) {
   const status = normalizeLower(delivery.status)
+  const openedAt = readDate(delivery, ['openedAt', 'opened_at'])
   const labels = {
     prepared: 'Communication Prepared',
     queued: 'Communication Queued',
@@ -452,20 +474,22 @@ function fromDelivery(delivery = {}) {
     kind: 'communication_delivery',
     communicationType: normalizeType(delivery.channel || delivery.communication_type || delivery.communicationType),
     direction: 'outbound',
-    title: labels[status] || 'Communication Delivery Updated',
+    title: openedAt ? 'Communication Opened' : labels[status] || 'Communication Delivery Updated',
     subject: normalizeText(delivery.subject),
     summary: normalizeText(delivery.error_message || delivery.errorMessage || delivery.message_preview || delivery.messagePreview),
     message: normalizeText(delivery.message_preview || delivery.messagePreview),
     status: status || 'prepared',
     source: 'communication_delivery',
     agentId: readId(delivery, ['sent_by', 'sentBy', 'prepared_by', 'preparedBy', 'agent_id', 'agentId']),
-    occurredAt: readDate(delivery, ['delivered_at', 'deliveredAt', 'sent_at', 'sentAt', 'failed_at', 'failedAt', 'prepared_at', 'preparedAt', 'created_at', 'createdAt']) || new Date(0).toISOString(),
+    occurredAt: openedAt || readDate(delivery, ['delivered_at', 'deliveredAt', 'sent_at', 'sentAt', 'failed_at', 'failedAt', 'prepared_at', 'preparedAt', 'created_at', 'createdAt']) || new Date(0).toISOString(),
     metadata: {
       deliveryId: readId(delivery, ['id', 'deliveryId', 'delivery_id']),
+      openedAt,
       provider: normalizeText(delivery.provider),
       providerMessageId: normalizeText(delivery.provider_message_id || delivery.providerMessageId),
       listingId: readId(delivery, ['listing_id', 'listingId']),
       recipient: normalizeText(delivery.recipient),
+      recipientRole: normalizeText(delivery.recipient_role || delivery.recipientRole),
     },
     raw: delivery,
   })

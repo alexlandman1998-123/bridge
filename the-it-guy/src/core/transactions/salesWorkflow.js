@@ -26,11 +26,24 @@ const OTP_GENERATED_TYPES = new Set([
 
 const OTP_SIGNED_TYPES = new Set([OTP_DOCUMENT_TYPES.signedReuploaded, OTP_DOCUMENT_TYPES.signedFinal])
 const ONBOARDING_COMPLETE_STATUSES = new Set(['submitted', 'reviewed', 'approved'])
+const MANUAL_SIGNING_PREFERENCES = new Set(['agent_assisted', 'hard_copy', 'manual'])
 
 function normalizeText(value) {
   return String(value || '')
     .trim()
     .toLowerCase()
+}
+
+function resolveSigningPreference(input = {}) {
+  return normalizeText(
+    input?.intakePreference ||
+      input?.clientIntakePreference ||
+      input?.onboardingFormData?.bridge_client_intake_preference ||
+      input?.onboardingFormData?.client_intake_preference ||
+      input?.onboardingFormData?.delivery_mode ||
+      input?.onboardingFormData?.deliveryMode ||
+      input?.onboardingFormData?.__bridge_onboarding_mode,
+  )
 }
 
 export function normalizeOtpDocumentType(value) {
@@ -109,6 +122,8 @@ export function resolveSalesWorkflowSnapshot({
   onboardingStatus = '',
   onboardingCompletedAt = null,
   externalOnboardingSubmittedAt = null,
+  onboardingFormData = {},
+  intakePreference = '',
   documents = [],
   requiredDocuments = [],
   permissions = null,
@@ -130,6 +145,8 @@ export function resolveSalesWorkflowSnapshot({
     generatedCategory.includes('sent to client') ||
     generatedCategory.includes('client visible') ||
     generatedName.includes('sent to client')
+  const signingPreference = resolveSigningPreference({ onboardingFormData, intakePreference })
+  const manualSignatureCapture = MANUAL_SIGNING_PREFERENCES.has(signingPreference)
   const otpAvailableToClient =
     Boolean(latestGeneratedOtpDocument) &&
     (generatedType === OTP_DOCUMENT_TYPES.sentToClient || inferredSentFromText || Boolean(latestGeneratedOtpDocument?.is_client_visible))
@@ -139,6 +156,7 @@ export function resolveSalesWorkflowSnapshot({
       inferredApprovedFromText ||
       otpAvailableToClient)
   const signedOtpReceived = Boolean(latestSignedOtpDocument)
+  const otpReleasedForSignature = otpAvailableToClient || (manualSignatureCapture && otpApproved)
 
   const activeRequiredDocuments = (requiredDocuments || []).filter((item) => item?.isEnabled !== false && item?.isRequired !== false)
   const supportingCompletedCount = activeRequiredDocuments.filter((item) => resolveRequiredDocumentComplete(item)).length
@@ -155,10 +173,14 @@ export function resolveSalesWorkflowSnapshot({
       ? 'Generate the OTP document first.'
       : !otpApproved
         ? 'Approve the generated OTP before sharing it.'
-        : !otpAvailableToClient
-          ? 'Make the approved OTP available to the client.'
+        : !otpReleasedForSignature
+          ? manualSignatureCapture
+            ? 'Prepare the approved OTP for assisted or hard-copy signing.'
+            : 'Make the approved OTP available to the client.'
           : !signedOtpReceived
-            ? 'Upload the signed OTP to complete this stage.'
+            ? manualSignatureCapture
+              ? 'Capture the signed OTP and upload it once the parties have signed.'
+              : 'Upload the signed OTP to complete this stage.'
             : ''
   const stageThreeBlocker = !onboardingComplete
     ? 'Onboarding is still incomplete.'
@@ -185,19 +207,12 @@ export function resolveSalesWorkflowSnapshot({
     nextAction = 'generate_otp'
   } else if (!otpApproved) {
     nextAction = 'approve_otp'
-  } else if (!otpAvailableToClient) {
-    nextAction = 'share_otp'
+  } else if (!otpReleasedForSignature) {
+    nextAction = manualSignatureCapture ? 'upload_signed_otp' : 'share_otp'
   } else if (!signedOtpReceived) {
     nextAction = 'upload_signed_otp'
   } else if (!supportingDocsComplete) {
     nextAction = 'complete_supporting_documents'
-  }
-
-  const sourceStatusByStageKey = {
-    new_transaction_onboarding: onboardingComplete ? 'completed' : 'in_progress',
-    otp_prep_signing: signedOtpReceived ? 'completed' : onboardingComplete ? 'in_progress' : 'not_started',
-    supporting_documentation: supportingDocsComplete ? 'completed' : onboardingComplete && signedOtpReceived ? 'in_progress' : 'not_started',
-    ready_for_finance: readyForFinance ? 'completed' : 'not_started',
   }
 
   const nextActionLabelMap = {
@@ -205,9 +220,16 @@ export function resolveSalesWorkflowSnapshot({
     generate_otp: 'Generate OTP',
     approve_otp: 'Approve OTP',
     share_otp: 'Make OTP Available',
-    upload_signed_otp: 'Upload Signed OTP',
+    upload_signed_otp: manualSignatureCapture ? 'Capture Signed OTP' : 'Upload Signed OTP',
     complete_supporting_documents: 'Open Documents',
     move_ready_for_finance: 'Move to Ready for Finance',
+  }
+
+  const sourceStatusByStageKey = {
+    new_transaction_onboarding: onboardingComplete ? 'completed' : 'in_progress',
+    otp_prep_signing: signedOtpReceived ? 'completed' : onboardingComplete ? 'in_progress' : 'not_started',
+    supporting_documentation: supportingDocsComplete ? 'completed' : onboardingComplete && signedOtpReceived ? 'in_progress' : 'not_started',
+    ready_for_finance: readyForFinance ? 'completed' : 'not_started',
   }
 
   const laneState = buildWorkflowLaneSnapshot({
@@ -250,6 +272,12 @@ export function resolveSalesWorkflowSnapshot({
     latestSignedOtpDocument,
     otpApproved,
     otpAvailableToClient,
+    otpReleasedForSignature,
+    approvedForRelease: otpApproved,
+    sentForSignature: onboardingComplete && otpReleasedForSignature && !signedOtpReceived,
+    otpOutstanding: onboardingComplete && !signedOtpReceived,
+    signingPreference,
+    manualSignatureCapture,
     supportingCompletedCount,
     supportingTotalCount,
     missingSupportingCount,

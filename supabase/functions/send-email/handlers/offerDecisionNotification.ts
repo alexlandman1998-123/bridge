@@ -5,6 +5,11 @@ import {
   renderBridgeSteps,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -155,6 +160,14 @@ export async function handleOfferDecisionNotificationEmail(
     "Powered by Bridge",
   ].filter(Boolean).join("\n");
 
+  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
+    communicationType: "offer_decision_notification",
+    recipient: to,
+    recipientRole: recipientRole || "buyer",
+    subject,
+    messagePreview: text,
+  });
+
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
@@ -165,6 +178,11 @@ export async function handleOfferDecisionNotificationEmail(
   });
 
   if (!emailResult.ok) {
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage:
+        emailResult.error?.message ||
+        "Failed to send offer decision notification.",
+    });
     return jsonResponse(500, {
       error: emailResult.error?.message ||
         "Failed to send offer decision notification.",
@@ -172,9 +190,14 @@ export async function handleOfferDecisionNotificationEmail(
     });
   }
 
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: emailResult.data?.id || null,
+  });
+
   return jsonResponse(200, {
     ok: true,
     type: "offer_decision_notification",
     emailId: emailResult.data?.id || null,
+    deliveryId: delivery?.id || null,
   });
 }

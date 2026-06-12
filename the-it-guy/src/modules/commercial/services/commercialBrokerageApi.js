@@ -7,7 +7,11 @@ import {
   getCommercialListings,
   getCommercialProperties,
   getCommercialRequirements,
+  getCommercialTransactions,
   getCommercialVacancies,
+  getCommercialViewings,
+  getCommercialCommissions,
+  getCommercialRecentActivity,
   logCommercialActivity,
   isCommercialMembershipRow,
   resolveCommercialAccessContext,
@@ -45,6 +49,10 @@ function isActive(row) {
   return !['archived', 'inactive', 'closed_lost', 'expired', 'terminated', 'cancelled'].includes(normalizeLower(row?.status || 'active'))
 }
 
+function isOpenVacancy(row) {
+  return !['occupied', 'archived', 'withdrawn', 'suspended', 'terminated', 'inactive'].includes(normalizeLower(row?.status || 'draft'))
+}
+
 function isBrokerMember(member = {}) {
   return BROKER_ROLES.has(normalizeLower(member.role)) || normalizeLower(member.role).includes('broker')
 }
@@ -73,6 +81,17 @@ function latestDate(values = []) {
     .map(asDate)
     .filter(Boolean)
     .sort((left, right) => right - left)[0] || null
+}
+
+function capacityScoreForBroker({ activeRequirements = 0, activeDeals = 0, activeTransactions = 0, activeListings = 0, activeVacancies = 0, upcomingViewings = 0 } = {}) {
+  return activeRequirements + (activeDeals * 2) + (activeTransactions * 2) + activeListings + activeVacancies + upcomingViewings
+}
+
+function capacityLabelForScore(score = 0) {
+  if (score >= 18) return 'Overloaded'
+  if (score >= 12) return 'High'
+  if (score >= 6) return 'Medium'
+  return 'Low'
 }
 
 function formatName(member = {}) {
@@ -136,7 +155,7 @@ async function listCommercialMembers(organisationId) {
   }))
 }
 
-function buildBrokerRows({ members = [], branches = [], requirements = [], deals = [], vacancies = [], listings = [], properties = [], headsOfTerms = [], leases = [], activity = [] }) {
+function buildBrokerRows({ members = [], branches = [], requirements = [], deals = [], vacancies = [], listings = [], properties = [], headsOfTerms = [], leases = [], transactions = [], viewings = [], commissions = [], activity = [] }) {
   const branchNames = new Map(branches.map((branch) => [normalizeText(branch.id), normalizeText(branch.name) || 'Branch']))
   const linkedDealById = new Map(deals.map((deal) => [deal.id, deal]))
   const brokerMembers = members.filter((member) => isBrokerMember(member) || brokerIdFor(member))
@@ -148,13 +167,40 @@ function buildBrokerRows({ members = [], branches = [], requirements = [], deals
     const assignedVacancies = vacancies.filter((row) => brokerIdFor(row, 'vacancies') === id)
     const assignedListings = listings.filter((row) => brokerIdFor(row, 'listings') === id)
     const assignedProperties = properties.filter((row) => brokerIdFor(row, 'properties') === id)
+    const assignedTransactions = transactions.filter((row) => normalizeText(row.broker_id || row.brokerId) === id)
+    const assignedViewings = viewings.filter((row) => normalizeText(row.broker_id) === id)
+    const assignedCommissions = commissions.filter((row) => normalizeText(row.broker_id) === id)
     const assignedHots = headsOfTerms.filter((row) => brokerIdFor(row, 'headsOfTerms') === id || brokerIdFor(linkedDealById.get(row.deal_id), 'deals') === id)
     const assignedLeases = leases.filter((row) => brokerIdFor(row, 'leases') === id || brokerIdFor(linkedDealById.get(row.deal_id), 'deals') === id)
     const brokerActivity = activity.filter((row) => brokerIdFor(row, 'activity') === id || normalizeText(row.created_by) === id)
+    const activeRequirements = assignedRequirements.filter(isActive)
+    const activeDeals = assignedDeals.filter(isActive)
+    const activeTransactions = assignedTransactions.filter((row) => !['completed', 'lost', 'cancelled'].includes(normalizeLower(row.status)))
+    const upcomingViewings = assignedViewings.filter((row) => {
+      const date = asDate(`${row.viewing_date || ''}T${String(row.viewing_time || '00:00').slice(0, 5) || '00:00'}`)
+      return date && date >= new Date() && !['completed', 'cancelled', 'no_show'].includes(normalizeLower(row.status))
+    })
+    const completedViewings = assignedViewings.filter((row) => normalizeLower(row.status) === 'completed')
+    const closedTransactions = assignedTransactions.filter((row) => normalizeLower(row.status) === 'completed')
+    const activeListings = assignedListings.filter(isActive)
+    const activeVacancies = assignedVacancies.filter(isOpenVacancy)
+    const projectedCommission = assignedCommissions.filter((row) => normalizeLower(row.status) === 'projected').reduce((sum, row) => sum + toNumber(row.commission_amount), 0)
+    const approvedRevenue = assignedCommissions.filter((row) => normalizeLower(row.status) === 'approved').reduce((sum, row) => sum + toNumber(row.commission_amount), 0)
+    const paidRevenue = assignedCommissions.filter((row) => normalizeLower(row.status) === 'paid').reduce((sum, row) => sum + toNumber(row.commission_amount), 0)
+    const capacityScore = capacityScoreForBroker({
+      activeRequirements: activeRequirements.length,
+      activeDeals: activeDeals.length,
+      activeTransactions: activeTransactions.length,
+      activeListings: activeListings.length,
+      activeVacancies: activeVacancies.length,
+      upcomingViewings: upcomingViewings.length,
+    })
     const lastActivity = latestDate([
       member.lastActiveAt,
       ...assignedRequirements.map((row) => row.updated_at || row.created_at),
       ...assignedDeals.map((row) => row.updated_at || row.created_at),
+      ...assignedTransactions.map((row) => row.updated_at || row.created_at || row.actual_close_date),
+      ...assignedViewings.map((row) => row.updated_at || row.created_at || row.viewing_date),
       ...assignedVacancies.map((row) => row.updated_at || row.created_at),
       ...assignedListings.map((row) => row.updated_at || row.created_at),
       ...assignedHots.map((row) => row.updated_at || row.created_at),
@@ -173,19 +219,33 @@ function buildBrokerRows({ members = [], branches = [], requirements = [], deals
       branchId: normalizeText(member.branchId),
       branchName: branchNames.get(normalizeText(member.branchId)) || (member.branchId ? 'Assigned branch' : 'HQ / Unassigned'),
       teamId: normalizeText(member.teamId),
-      activeRequirements: assignedRequirements.filter(isActive).length,
-      activeDeals: assignedDeals.filter(isActive).length,
+      activeRequirements: activeRequirements.length,
+      activeDeals: activeDeals.length,
+      activeTransactions: activeTransactions.length,
+      transactionsCreated: assignedTransactions.length,
+      transactionsClosed: closedTransactions.length,
+      valueClosed: closedTransactions.reduce((sum, row) => sum + toNumber(row.target_value), 0),
+      viewingsCompleted: completedViewings.length,
+      upcomingViewings: upcomingViewings.length,
       hotsInProgress: assignedHots.filter((row) => !['ready_for_lease', 'archived', 'superseded'].includes(normalizeLower(row.status))).length,
       hotsSigned: assignedHots.filter((row) => ['signed', 'ready_for_lease', 'approved_by_landlord', 'approved_by_tenant'].includes(normalizeLower(row.status))).length,
       leasesManaged: assignedLeases.filter(isActive).length,
-      vacanciesManaged: assignedVacancies.filter(isActive).length,
-      activeListings: assignedListings.filter(isActive).length,
+      vacanciesManaged: activeVacancies.length,
+      activeListings: activeListings.length,
       propertiesManaged: assignedProperties.filter(isActive).length,
-      pipelineValue: assignedDeals.filter(isActive).reduce((sum, row) => sum + toNumber(row.deal_value), 0),
-      commissionValue: assignedDeals.filter(isActive).reduce((sum, row) => sum + toNumber(row.estimated_commission), 0),
+      pipelineValue: activeTransactions.reduce((sum, row) => sum + toNumber(row.target_value), 0) || activeDeals.reduce((sum, row) => sum + toNumber(row.deal_value), 0),
+      commissionValue: projectedCommission + approvedRevenue + paidRevenue,
+      projectedCommission,
+      approvedRevenue,
+      paidRevenue,
+      capacityScore,
+      capacityLabel: capacityLabelForScore(capacityScore),
       lastActivityAt: lastActivity?.toISOString() || null,
       requirements: assignedRequirements,
       deals: assignedDeals,
+      transactions: assignedTransactions,
+      viewings: assignedViewings,
+      commissions: assignedCommissions,
       vacancies: assignedVacancies,
       listings: assignedListings,
       properties: assignedProperties,
@@ -334,7 +394,7 @@ export async function getCommercialBrokerageData(organisationId) {
     return { context, brokers: [], managers: [], branches: [], teams: [], unassigned: {}, summary: {} }
   }
 
-  const [members, branches, commercialTeams, requirements, deals, vacancies, listings, properties, headsOfTerms, leases] = await Promise.all([
+  const [members, branches, commercialTeams, requirements, deals, vacancies, listings, properties, headsOfTerms, leases, transactions, viewings, commissions, activity] = await Promise.all([
     listCommercialMembers(resolvedOrganisationId),
     listCommercialBranches(resolvedOrganisationId),
     listCommercialTeams(resolvedOrganisationId),
@@ -345,6 +405,10 @@ export async function getCommercialBrokerageData(organisationId) {
     getCommercialProperties(resolvedOrganisationId),
     getCommercialAllHeadsOfTerms(resolvedOrganisationId),
     getCommercialLeases(resolvedOrganisationId),
+    getCommercialTransactions(resolvedOrganisationId),
+    getCommercialViewings(resolvedOrganisationId),
+    getCommercialCommissions(resolvedOrganisationId),
+    getCommercialRecentActivity(resolvedOrganisationId, 250),
   ])
 
   const visibleMembers = members.filter((member) => {
@@ -359,7 +423,7 @@ export async function getCommercialBrokerageData(organisationId) {
   const visibleCommercialTeams = context.scopeLevel === 'organisation'
     ? commercialTeams
     : commercialTeams.filter((team) => visibleBranchIds.has(normalizeText(team.branch_id)) || normalizeText(team.id) === normalizeText(context.teamId))
-  const brokers = buildBrokerRows({ members: visibleMembers, branches: visibleBranches, requirements, deals, vacancies, listings, properties, headsOfTerms, leases })
+  const brokers = buildBrokerRows({ members: visibleMembers, branches: visibleBranches, requirements, deals, vacancies, listings, properties, headsOfTerms, leases, transactions, viewings, commissions, activity })
   const managers = visibleMembers.filter(isManagerMember)
   const unassigned = buildUnassignedWork({ requirements, deals, vacancies, listings, headsOfTerms, leases })
   const unassignedCount = Object.values(unassigned).reduce((sum, rows) => sum + rows.length, 0)
@@ -376,10 +440,16 @@ export async function getCommercialBrokerageData(organisationId) {
       brokers: 0,
       pipelineValue: 0,
       activeDeals: 0,
+      activeTransactions: 0,
+      closedValue: 0,
+      expectedRevenue: 0,
     }
     current.brokers += 1
     current.pipelineValue += broker.pipelineValue
     current.activeDeals += broker.activeDeals
+    current.activeTransactions += broker.activeTransactions
+    current.closedValue += broker.valueClosed
+    current.expectedRevenue += broker.projectedCommission
     groups.set(id, current)
     return groups
   }, new Map())
@@ -393,7 +463,32 @@ export async function getCommercialBrokerageData(organisationId) {
         brokers: 0,
         pipelineValue: 0,
         activeDeals: 0,
+        activeTransactions: 0,
+        closedValue: 0,
+        expectedRevenue: 0,
       })
+    }
+  })
+
+  const branchRows = visibleBranches.map((branch) => {
+    const branchBrokers = brokers.filter((broker) => normalizeText(broker.branchId) === normalizeText(branch.id))
+    const branchProperties = properties.filter((row) => normalizeText(row.branch_id) === normalizeText(branch.id))
+    const branchVacancies = vacancies.filter((row) => normalizeText(row.branch_id) === normalizeText(branch.id))
+    const totalGla = branchProperties.reduce((sum, row) => sum + toNumber(row.gla_m2), 0)
+    const available = branchVacancies.filter(isOpenVacancy).reduce((sum, row) => sum + toNumber(row.available_area_m2), 0)
+    return {
+      ...branch,
+      brokers: branchBrokers.length,
+      activeDeals: branchBrokers.reduce((sum, broker) => sum + broker.activeDeals, 0),
+      activeRequirements: branchBrokers.reduce((sum, broker) => sum + broker.activeRequirements, 0),
+      activeTransactions: branchBrokers.reduce((sum, broker) => sum + broker.activeTransactions, 0),
+      pipelineValue: branchBrokers.reduce((sum, broker) => sum + broker.pipelineValue, 0),
+      expectedRevenue: branchBrokers.reduce((sum, broker) => sum + broker.projectedCommission, 0),
+      approvedRevenue: branchBrokers.reduce((sum, broker) => sum + broker.approvedRevenue, 0),
+      paidRevenue: branchBrokers.reduce((sum, broker) => sum + broker.paidRevenue, 0),
+      occupancy: totalGla ? Math.max(0, 100 - ((available / totalGla) * 100)) : 0,
+      activeListings: listings.filter((row) => normalizeText(row.branch_id) === normalizeText(branch.id) && isActive(row)).length,
+      activeVacancies: branchVacancies.filter(isOpenVacancy).length,
     }
   })
 
@@ -411,7 +506,12 @@ export async function getCommercialBrokerageData(organisationId) {
     properties,
     headsOfTerms,
     leases,
+    transactions,
+    viewings,
+    commissions,
+    activity,
     unassigned,
+    branchRows,
     summary: {
       totalBrokers: brokers.length,
       activeBrokers: activeBrokerCount,
@@ -421,9 +521,15 @@ export async function getCommercialBrokerageData(organisationId) {
       brokerActivity: brokers.filter((broker) => broker.lastActivityAt).length,
       activeRequirements: brokers.reduce((sum, broker) => sum + broker.activeRequirements, 0),
       activeDeals: brokers.reduce((sum, broker) => sum + broker.activeDeals, 0),
+      activeTransactions: brokers.reduce((sum, broker) => sum + broker.activeTransactions, 0),
       activeListings: brokers.reduce((sum, broker) => sum + broker.activeListings, 0),
+      activeVacancies: brokers.reduce((sum, broker) => sum + broker.vacanciesManaged, 0),
       hotsInProgress: brokers.reduce((sum, broker) => sum + broker.hotsInProgress, 0),
       leasesManaged: brokers.reduce((sum, broker) => sum + broker.leasesManaged, 0),
+      projectedRevenue: brokers.reduce((sum, broker) => sum + broker.projectedCommission, 0),
+      approvedRevenue: brokers.reduce((sum, broker) => sum + broker.approvedRevenue, 0),
+      paidRevenue: brokers.reduce((sum, broker) => sum + broker.paidRevenue, 0),
+      overloadedBrokers: brokers.filter((broker) => broker.capacityLabel === 'Overloaded').length,
     },
   }
 }

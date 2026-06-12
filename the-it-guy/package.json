@@ -15,6 +15,7 @@
     "test:principal-agent-command-centre": "node scripts/principal-agent-command-centre.test.mjs",
     "test:agency-crm-lead-persistence": "node scripts/agency-crm-lead-persistence.test.mjs",
     "test:agent-leads-workspace": "node scripts/agent-leads-workspace.test.mjs",
+    "test:offer-to-transaction-scenario-matrix": "node scripts/offer-to-transaction-scenario-matrix.test.mjs",
     "test:lead-listing-interest": "node scripts/lead-listing-interest.test.mjs",
     "test:lead-requirements": "node scripts/lead-requirements.test.mjs",
     "test:lead-matching": "node scripts/lead-matching.test.mjs",

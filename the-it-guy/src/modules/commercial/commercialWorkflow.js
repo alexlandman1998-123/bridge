@@ -2,19 +2,34 @@ export const REQUIREMENT_LIFECYCLE = [
   { value: 'new', label: 'New', tone: 'blue' },
   { value: 'qualified', label: 'Qualified', tone: 'violet' },
   { value: 'matching', label: 'Matching', tone: 'amber' },
-  { value: 'viewing', label: 'Viewing', tone: 'amber' },
+  { value: 'viewing_scheduled', label: 'Viewing Scheduled', tone: 'amber' },
   { value: 'negotiating', label: 'Negotiating', tone: 'emerald' },
-  { value: 'converted', label: 'Converted', tone: 'emerald' },
+  { value: 'hot', label: 'HOT', tone: 'violet' },
+  { value: 'won', label: 'Won', tone: 'emerald' },
   { value: 'lost', label: 'Lost', tone: 'rose' },
 ]
 
 export const VACANCY_LIFECYCLE = [
+  { value: 'draft', label: 'Draft', tone: 'slate' },
   { value: 'available', label: 'Available', tone: 'emerald' },
   { value: 'marketing', label: 'Marketing', tone: 'blue' },
-  { value: 'under_offer', label: 'Under Offer', tone: 'amber' },
+  { value: 'under_negotiation', label: 'Under Negotiation', tone: 'amber' },
   { value: 'hot_in_progress', label: 'HOT In Progress', tone: 'violet' },
-  { value: 'lease_pending', label: 'Lease Pending', tone: 'amber' },
   { value: 'occupied', label: 'Occupied', tone: 'emerald' },
+  { value: 'withdrawn', label: 'Withdrawn', tone: 'rose' },
+  { value: 'suspended', label: 'Suspended', tone: 'slate' },
+  { value: 'archived', label: 'Archived', tone: 'slate' },
+]
+
+export const LISTING_LIFECYCLE = [
+  { value: 'draft', label: 'Draft', tone: 'slate' },
+  { value: 'internal_review', label: 'Internal Review', tone: 'blue' },
+  { value: 'approved', label: 'Approved', tone: 'emerald' },
+  { value: 'published', label: 'Published', tone: 'emerald' },
+  { value: 'under_offer', label: 'Under Offer', tone: 'amber' },
+  { value: 'closed', label: 'Closed', tone: 'violet' },
+  { value: 'withdrawn', label: 'Withdrawn', tone: 'rose' },
+  { value: 'expired', label: 'Expired', tone: 'rose' },
   { value: 'archived', label: 'Archived', tone: 'slate' },
 ]
 
@@ -50,22 +65,45 @@ export const LEASE_LIFECYCLE = [
   { value: 'terminated', label: 'Terminated', tone: 'rose' },
 ]
 
+export const TRANSACTION_LIFECYCLE = [
+  { value: 'draft', label: 'Draft', tone: 'slate' },
+  { value: 'negotiating', label: 'Negotiating', tone: 'amber' },
+  { value: 'hot_in_progress', label: 'HOT In Progress', tone: 'violet' },
+  { value: 'hot_signed', label: 'HOT Signed', tone: 'emerald' },
+  { value: 'lease_pending', label: 'Lease Pending', tone: 'amber' },
+  { value: 'sale_pending', label: 'Sale Pending', tone: 'amber' },
+  { value: 'completed', label: 'Completed', tone: 'emerald' },
+  { value: 'lost', label: 'Lost', tone: 'rose' },
+  { value: 'cancelled', label: 'Cancelled', tone: 'slate' },
+]
+
 const LIFECYCLE_ALIASES = {
   requirements: {
     new_requirement: 'new',
     shortlisting: 'matching',
+    viewing: 'viewing_scheduled',
+    viewing_scheduled: 'viewing_scheduled',
     proposal: 'negotiating',
     negotiation: 'negotiating',
-    lease_stage: 'converted',
-    closed_won: 'converted',
+    lease_stage: 'hot',
+    converted: 'won',
+    closed_won: 'won',
     closed_lost: 'lost',
   },
   vacancies: {
     active: 'available',
-    reserved: 'under_offer',
-    under_negotiation: 'under_offer',
+    reserved: 'under_negotiation',
+    under_offer: 'under_negotiation',
+    under_negotiation: 'under_negotiation',
     leased: 'occupied',
     upcoming: 'marketing',
+    lease_pending: 'hot_in_progress',
+  },
+  listings: {
+    coming_soon: 'internal_review',
+    active: 'published',
+    leased: 'closed',
+    sold: 'closed',
   },
   deals: {
     requirement: 'new',
@@ -88,6 +126,16 @@ const LIFECYCLE_ALIASES = {
     expiring_soon: 'renewal_pending',
     renewed: 'active',
   },
+  transactions: {
+    hot_signed: 'hot_signed',
+    hot_accepted: 'hot_signed',
+    signed_hot: 'hot_signed',
+    completed_sale: 'completed',
+    executed: 'completed',
+    active: 'completed',
+    closed_won: 'completed',
+    closed_lost: 'lost',
+  },
 }
 
 function normalize(value) {
@@ -103,8 +151,10 @@ export function getCommercialLifecycle(kind) {
   if (kind === 'requirements') return REQUIREMENT_LIFECYCLE
   if (kind === 'vacancies') return VACANCY_LIFECYCLE
   if (kind === 'deals') return DEAL_LIFECYCLE
+  if (kind === 'listings') return LISTING_LIFECYCLE
   if (kind === 'headsOfTerms' || kind === 'heads_of_terms') return HOT_LIFECYCLE
   if (kind === 'leases') return LEASE_LIFECYCLE
+  if (kind === 'transactions') return TRANSACTION_LIFECYCLE
   return []
 }
 

@@ -5,6 +5,11 @@ import {
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -103,6 +108,14 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
     "Powered by Bridge",
   ].filter(Boolean).join("\n");
 
+  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
+    communicationType: "buyer_offer_link",
+    recipient: to,
+    recipientRole: "buyer",
+    subject,
+    messagePreview: text,
+  });
+
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
@@ -113,15 +126,23 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
   });
 
   if (!emailResult.ok) {
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage: emailResult.error?.message || "Failed to send buyer offer link email.",
+    });
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send buyer offer link email.",
       details: emailResult.error,
     });
   }
 
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: emailResult.data?.id || null,
+  });
+
   return jsonResponse(200, {
     ok: true,
     type: "buyer_offer_link",
     emailId: emailResult.data?.id || null,
+    deliveryId: delivery?.id || null,
   });
 }

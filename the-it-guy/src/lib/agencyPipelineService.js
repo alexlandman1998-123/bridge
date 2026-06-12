@@ -3367,6 +3367,7 @@ export async function convertLeadToTransactionRecord(organisationId, leadId, pay
 
   const assigned = resolveAgentSnapshot(payload?.assignedAgent || actor || {})
   const listingId = normalizeText(payload?.listingId)
+  const acceptedOfferId = normalizeText(payload?.acceptedOfferId) || null
   const shouldUseMockMode =
     payload?.mockMode === true ||
     !isSupabaseConfigured ||
@@ -3382,10 +3383,10 @@ export async function convertLeadToTransactionRecord(organisationId, leadId, pay
       listingTitle: normalizeText(payload?.listingTitle),
       dealValue: Number(payload?.dealValue || lead?.estimatedValue || lead?.budget || 0) || 0,
       purchasePrice: Number(payload?.dealValue || lead?.estimatedValue || lead?.budget || 0) || 0,
-      stage: normalizeText(payload?.stage || 'Reserved'),
+      stage: normalizeText(payload?.stage || (acceptedOfferId ? 'Buyer Onboarding Pending' : 'Reserved')),
       originatingBuyerLeadId: targetLeadId,
       originatingLeadId: targetLeadId,
-      acceptedOfferId: normalizeText(payload?.acceptedOfferId) || null,
+      acceptedOfferId,
       assignedAgentId: normalizeText(lead?.assignedAgentId || assigned.id),
       assignedAgentName: normalizeText(lead?.assignedAgentName || assigned.name),
       assignedAgentEmail: normalizeText(lead?.assignedAgentEmail || assigned.email),

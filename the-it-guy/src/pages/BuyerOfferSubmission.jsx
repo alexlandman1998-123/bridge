@@ -5,6 +5,7 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import {
   getCanonicalOfferInviteContext,
+  getOfferLifecycleSummary,
   submitCanonicalBuyerOffer,
 } from '../lib/buyerLifecycleService'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
@@ -36,6 +37,12 @@ function statusLabel(value) {
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function moneyInputValue(value) {
+  if (value === null || value === undefined || value === '') return ''
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? String(numeric) : ''
 }
 
 function formatDateTime(value) {
@@ -112,14 +119,51 @@ function BuyerOfferSubmission() {
   const listing = context?.listing || null
   const invite = context?.invite || null
   const existingOffers = Array.isArray(context?.offers) ? context.offers : []
+  const canonicalOffer = context?.source === 'canonical' ? (context?.canonicalOffer || existingOffers[0] || null) : null
+  const canonicalLifecycle = context?.source === 'canonical' && canonicalOffer ? getOfferLifecycleSummary(canonicalOffer) : null
   const latestOffer = existingOffers
     .slice()
-    .sort((left, right) => new Date(right?.submittedAt || 0) - new Date(left?.submittedAt || 0))[0] || null
+    .sort((left, right) => new Date(right?.updatedAt || right?.submittedAt || right?.createdAt || 0) - new Date(left?.updatedAt || left?.submittedAt || left?.createdAt || 0))[0] || null
   const latestStatus = normalizeOfferWorkflowStatus(latestOffer?.status || '')
-  const counterPendingBuyer = latestStatus === OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER || latestStatus === OFFER_WORKFLOW_STATUS.COUNTERED
+  const counterPendingBuyer = canonicalLifecycle?.effectiveStatus === 'countered' || latestStatus === OFFER_WORKFLOW_STATUS.BUYER_REVIEW_COUNTER || latestStatus === OFFER_WORKFLOW_STATUS.COUNTERED
+  const canSubmitCanonicalOffer = !canonicalLifecycle || canonicalLifecycle.buyerCanResubmit
   const financeType = String(form.financeType || '').toLowerCase()
   const showHybridFinanceFields = financeType === 'hybrid'
   const showBondAssistance = ['bond', 'hybrid'].includes(financeType)
+  const canonicalBanner = useMemo(() => {
+    if (!canonicalLifecycle) return null
+    if (canonicalLifecycle.effectiveStatus === 'countered') {
+      return {
+        tone: 'amber',
+        text: 'Seller sent a counter offer. Update the terms below and submit a revised offer if you still want to proceed.',
+      }
+    }
+    if (canonicalLifecycle.effectiveStatus === 'changes_requested') {
+      return {
+        tone: 'amber',
+        text: 'The agent asked for changes before the offer goes back to the seller. Update the details and resubmit.',
+      }
+    }
+    if (canonicalLifecycle.activeNegotiation) {
+      return {
+        tone: 'amber',
+        text: canonicalLifecycle.blockedReason || 'This offer is already under review. Wait for feedback before sending another version.',
+      }
+    }
+    if (canonicalLifecycle.acceptedOrConverted) {
+      return {
+        tone: 'green',
+        text: canonicalLifecycle.blockedReason,
+      }
+    }
+    if (canonicalLifecycle.terminal && !canonicalLifecycle.buyerCanResubmit) {
+      return {
+        tone: 'red',
+        text: canonicalLifecycle.blockedReason || 'This offer is closed. Ask the agent for a new secure link if negotiations restart.',
+      }
+    }
+    return null
+  }, [canonicalLifecycle])
 
   useEffect(() => {
     if (!context?.ok) return
@@ -131,6 +175,23 @@ function BuyerOfferSubmission() {
       phone: previous.phone || conditions.buyerPhone || '',
     }))
   }, [context?.canonicalOffer?.conditions, context?.ok, invite?.buyerLeadName])
+
+  useEffect(() => {
+    if (!canonicalLifecycle?.counterTerms || !counterPendingBuyer) return
+    const counterTerms = canonicalLifecycle.counterTerms || {}
+    setForm((previous) => ({
+      ...previous,
+      offerAmount: previous.offerAmount || moneyInputValue(counterTerms.offerAmount || counterTerms.amount),
+      depositAmount: previous.depositAmount || moneyInputValue(counterTerms.depositAmount),
+      bondAmount: previous.bondAmount || moneyInputValue(counterTerms.bondAmount),
+      cashContribution: previous.cashContribution || moneyInputValue(counterTerms.cashContribution),
+      occupationDate: previous.occupationDate || normalizeText(counterTerms.occupationDate),
+      expiryDate: previous.expiryDate || normalizeText(counterTerms.expiryDate),
+      includedFixtures: previous.includedFixtures || normalizeText(counterTerms.includedFixtures),
+      excludedFixtures: previous.excludedFixtures || normalizeText(counterTerms.excludedFixtures),
+      specialConditions: previous.specialConditions || normalizeText(counterTerms.specialConditions || counterTerms.suspensiveConditions),
+    }))
+  }, [canonicalLifecycle?.counterTerms, counterPendingBuyer])
 
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
@@ -151,6 +212,9 @@ function BuyerOfferSubmission() {
     setErrorMessage('')
     setSuccessMessage('')
     try {
+      if (context?.source === 'canonical' && !canSubmitCanonicalOffer) {
+        throw new Error(canonicalLifecycle?.blockedReason || 'This offer cannot be updated from this link anymore.')
+      }
       setSubmitting(true)
       let submittedOffer = null
       if (context?.source === 'canonical') {
@@ -186,6 +250,11 @@ function BuyerOfferSubmission() {
       body: {
         type: 'buyer_offer_submitted_agent',
         to: agentEmail,
+        organisationId: normalizeText(offer?.organisationId || context?.canonicalOffer?.organisationId),
+        leadId: normalizeText(offer?.buyerLeadId || context?.canonicalOffer?.buyerLeadId || context?.invite?.buyerLeadId),
+        listingId: normalizeText(offer?.listingId || listing?.id || context?.canonicalOffer?.listingId),
+        appointmentId: normalizeText(offer?.viewingAppointmentId || context?.canonicalOffer?.viewingAppointmentId),
+        offerId: normalizeText(offer?.id),
         agentName: normalizeText(conditions.agentName || context?.invite?.agentName),
         buyerName: normalizeText(form.fullName || conditions.buyerName || context?.invite?.buyerLeadName),
         propertyTitle: listing?.listingTitle || listing?.propertyAddress || 'Listing',
@@ -273,6 +342,18 @@ function BuyerOfferSubmission() {
             <Clock3 size={15} />
             Seller sent a counter offer. Submit a revised offer to respond.
           </div>
+        </section>
+      ) : null}
+
+      {canonicalBanner ? (
+        <section className={`rounded-[20px] px-4 py-3 text-sm ${
+          canonicalBanner.tone === 'green'
+            ? 'border border-[#cfe8dc] bg-[#edf9f0] text-[#17643a]'
+            : canonicalBanner.tone === 'red'
+              ? 'border border-[#f4d4d4] bg-[#fff5f5] text-[#b42318]'
+              : 'border border-[#f5dbb0] bg-[#fff8ec] text-[#8a4b08]'
+        }`}>
+          {canonicalBanner.text}
         </section>
       ) : null}
 
@@ -410,19 +491,21 @@ function BuyerOfferSubmission() {
             Your agent will review the offer before sending it to the seller. Formal legal documentation will follow if the offer is accepted.
           </p>
           <div className="mt-5 flex justify-end">
-            <Button type="submit" disabled={submitting}>{submitting ? 'Submitting offer...' : 'Submit Offer'}</Button>
+            <Button type="submit" disabled={submitting || (context?.source === 'canonical' && !canSubmitCanonicalOffer)}>
+              {submitting ? 'Submitting offer...' : counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer'}
+            </Button>
           </div>
         </section>
       </form>
 
-      {latestOffer ? (
+      {(latestOffer || canonicalOffer) ? (
         <section className="rounded-[20px] border border-[#dce6f2] bg-white p-4">
           <p className="text-[0.72rem] font-semibold uppercase tracking-[0.09em] text-[#7b8ca2]">Latest Offer Record</p>
           <p className="mt-2 text-sm text-[#142132]">
-            Status: <span className="font-semibold">{statusLabel(normalizeOfferWorkflowStatus(latestOffer?.status || 'submitted'))}</span>
+            Status: <span className="font-semibold">{statusLabel(canonicalLifecycle?.effectiveStatus || normalizeOfferWorkflowStatus(latestOffer?.status || canonicalOffer?.status || 'submitted'))}</span>
           </p>
-          <p className="mt-1 text-sm text-[#607387]">Submitted: {formatDate(latestOffer?.submittedAt)}</p>
-          <p className="mt-1 text-sm text-[#607387]">Offer amount: {formatCurrency(latestOffer?.offer?.offerAmount)}</p>
+          <p className="mt-1 text-sm text-[#607387]">Submitted: {formatDate(latestOffer?.submittedAt || canonicalOffer?.submittedAt || canonicalOffer?.createdAt)}</p>
+          <p className="mt-1 text-sm text-[#607387]">Offer amount: {formatCurrency(latestOffer?.offer?.offerAmount || canonicalOffer?.offerAmount)}</p>
         </section>
       ) : null}
 

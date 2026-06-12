@@ -2,11 +2,19 @@ import { formatCurrency, formatDate, formatList, formatNumber, titleize } from '
 
 export function toLookupOptions(lookups = {}) {
   return {
+    companies: (lookups.companies || []).map((row) => ({ value: row.id, label: row.company_name || row.name || 'Unnamed company' })),
+    contacts: (lookups.contacts || []).map((row) => ({ value: row.id, label: row.name || [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Unnamed contact' })),
     landlords: (lookups.landlords || []).map((row) => ({ value: row.id, label: row.name || 'Unnamed landlord' })),
     tenants: (lookups.tenants || []).map((row) => ({ value: row.id, label: row.name || 'Unnamed tenant' })),
     properties: (lookups.properties || []).map((row) => ({ value: row.id, label: row.property_name || 'Unnamed property' })),
+    vacancies: (lookups.vacancies || []).map((row) => ({ value: row.id, label: [row.vacancy_name || 'Unnamed vacancy', row.unit_or_floor].filter(Boolean).join(' · ') })),
+    listings: (lookups.listings || []).map((row) => ({ value: row.id, label: row.title || 'Unnamed listing' })),
     requirements: (lookups.requirements || []).map((row) => ({ value: row.id, label: row.requirement_name || 'Unnamed requirement' })),
     deals: (lookups.deals || []).map((row) => ({ value: row.id, label: row.deal_name || 'Unnamed deal' })),
+    brokers: (lookups.brokers || []).map((row) => ({
+      value: row.userId || row.user_id || row.id,
+      label: row.fullName || [row.firstName || row.first_name, row.lastName || row.last_name].filter(Boolean).join(' ') || row.email || 'Broker',
+    })).filter((row) => row.value),
   }
 }
 
@@ -15,7 +23,7 @@ export function lookupLabel(lookups, kind, id, fallback = '-') {
   const rows = Array.isArray(lookups?.[kind]) ? lookups[kind] : []
   const match = rows.find((row) => row.id === id)
   if (!match) return fallback
-  return match.name || match.property_name || match.requirement_name || match.deal_name || fallback
+  return match.name || match.property_name || match.vacancy_name || match.title || match.requirement_name || match.deal_name || fallback
 }
 
 export function formatSizeRange(row) {

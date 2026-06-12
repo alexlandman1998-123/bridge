@@ -23,7 +23,7 @@ function CommercialExpiryTable({ rows = [] }) {
           <span>Property</span>
           <span>GLA</span>
           <span>Expiry</span>
-          <span>Months</span>
+          <span>Days</span>
           <span>Risk</span>
           <span>Broker</span>
         </div>
@@ -34,7 +34,7 @@ function CommercialExpiryTable({ rows = [] }) {
               <p>{row.property}</p>
               <p>{formatNumber(row.gla, 'm²')}</p>
               <p>{formatDate(row.leaseExpiry)}</p>
-              <p>{row.monthsRemaining} months</p>
+              <p>{row.daysToExpiry} days</p>
               <p><span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${riskClass(row.risk)}`}>{row.risk}</span></p>
               <p>{row.assignedBroker}</p>
             </div>

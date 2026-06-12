@@ -72,11 +72,18 @@ import {
   OFFER_WORKFLOW_STATUS,
 } from '../lib/listingOffersService'
 import {
+  CLIENT_INTAKE_PREFERENCE,
   createCanonicalOffer,
   createOfferSellerReviewSession,
   createTransactionFromAcceptedCanonicalOffer,
+  getClientIntakePreferenceLabel,
+  getSellerOfferReviewDeliveryModeLabel,
   listCanonicalOffersForListing,
+  normalizeSellerReviewDeliveryMode,
+  buildSellerOfferReviewPreparation,
+  normalizeClientIntakePreference,
   recordBuyerLeadActivity,
+  SELLER_REVIEW_DELIVERY_MODE,
   updateCanonicalOfferStatus,
 } from '../lib/buyerLifecycleService'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -114,6 +121,18 @@ const DETAIL_TABS = [
   { key: 'seller', label: 'Seller / Mandate' },
   { key: 'documents', label: 'Documents' },
   { key: 'role_players', label: 'Role Players' },
+]
+
+const CLIENT_INTAKE_PREFERENCE_OPTIONS = [
+  { value: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL, label: getClientIntakePreferenceLabel(CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL) },
+  { value: CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED, label: getClientIntakePreferenceLabel(CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED) },
+  { value: CLIENT_INTAKE_PREFERENCE.HARD_COPY, label: getClientIntakePreferenceLabel(CLIENT_INTAKE_PREFERENCE.HARD_COPY) },
+]
+
+const SELLER_REVIEW_DELIVERY_OPTIONS = [
+  { value: SELLER_REVIEW_DELIVERY_MODE.EMAIL, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.EMAIL) },
+  { value: SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED) },
+  { value: SELLER_REVIEW_DELIVERY_MODE.HARD_COPY, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.HARD_COPY) },
 ]
 
 const SELLER_WORKSPACE_TABS = [
@@ -466,6 +485,17 @@ function resolveSellerNameFromListing(listing = {}) {
       listing?.seller_name ||
       listing?.seller?.name,
   )
+}
+
+function describeSellerReviewPreparation(preparation = {}) {
+  const blockers = Array.isArray(preparation?.blockers) ? preparation.blockers : []
+  const warnings = Array.isArray(preparation?.warnings) ? preparation.warnings : []
+  return {
+    blockers,
+    warnings,
+    blockerText: blockers.join(' '),
+    warningText: warnings.join(' '),
+  }
 }
 
 function extractSellerPortalTokenFromLink(link = '') {
@@ -1161,6 +1191,7 @@ function AgentListingDetail() {
   const [offerInviteDraft, setOfferInviteDraft] = useState({
     buyerLeadId: '',
     expiresInDays: 7,
+    clientIntakePreference: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
   })
   const [offerActionMessage, setOfferActionMessage] = useState('')
   const [offerActionError, setOfferActionError] = useState('')
@@ -1178,6 +1209,7 @@ function AgentListingDetail() {
   const [followUpActionId, setFollowUpActionId] = useState('')
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
+  const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const [externalLinkDraft, setExternalLinkDraft] = useState(() => createExternalLinkDraft())
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState('overview')
@@ -1775,6 +1807,11 @@ function AgentListingDetail() {
         listingId: listingRecord.id,
         agentId: profile?.id || listingRecord?.agentId,
         status: 'draft',
+        conditionsJson: {
+          clientIntakePreference: normalizeClientIntakePreference(
+            offerInviteDraft.clientIntakePreference || selectedLead?.clientIntakePreference,
+          ),
+        },
       }, {
         actor: {
           id: profile?.id || listingRecord?.agentId || '',
@@ -1829,7 +1866,11 @@ function AgentListingDetail() {
 
       setOfferActionMessage('Secure offer link generated and sent to the buyer.')
       setShowSendOfferLinkForm(false)
-      setOfferInviteDraft({ buyerLeadId: '', expiresInDays: 7 })
+      setOfferInviteDraft({
+        buyerLeadId: '',
+        expiresInDays: 7,
+        clientIntakePreference: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL,
+      })
       setOffersRefreshTick((value) => value + 1)
     } catch (error) {
       setOfferActionError(error?.message || 'Unable to generate offer link.')
@@ -2292,6 +2333,32 @@ function AgentListingDetail() {
     }
   }
 
+  function getSellerReviewDeliveryModeForOffer(offerId, sellerContact = {}) {
+    return normalizeSellerReviewDeliveryMode(
+      sellerReviewDeliveryModeByOfferId?.[offerId],
+      { sellerEmail: sellerContact.email, sellerPhone: sellerContact.phone },
+    )
+  }
+
+  function buildListingSellerReviewPreparation(offerRow, offer = canonicalListingOffers.find((item) => String(item.id) === String(offerRow?.canonicalOfferId || ''))) {
+    const sellerContact = {
+      email: resolveSellerEmailFromListing(listingRecord),
+      phone: resolveSellerPhoneFromListing(listingRecord),
+      name: resolveSellerNameFromListing(listingRecord),
+    }
+    const deliveryMode = getSellerReviewDeliveryModeForOffer(offerRow?.id, sellerContact)
+    return buildSellerOfferReviewPreparation({
+      listing: listingRecord,
+      offer,
+      deliveryMode,
+      sellerEmail: sellerContact.email,
+      sellerPhone: sellerContact.phone,
+      sellerName: sellerContact.name,
+      sellerLeadId: offer?.sellerLeadId || listingRecord?.sellerLeadId || listingRecord?.leadId,
+      sellerContactId: offer?.sellerContactId || listingRecord?.sellerContactId,
+    })
+  }
+
   async function handleCanonicalListingOfferStatus(offerRow, nextStatus, actionLabel) {
     if (!listingOrganisationId || !offerRow?.canonicalOfferId) return
     const note = offerNotesDraftById?.[offerRow.id] || ''
@@ -2323,20 +2390,22 @@ function AgentListingDetail() {
     setOfferActionMessage('')
     try {
       setCanonicalOfferActionId(`${offerRow.id}:sent_to_seller`)
-      const sellerEmail = resolveSellerEmailFromListing(listingRecord)
-      if (!isValidEmail(sellerEmail)) {
-        throw new Error('No seller email is linked to this listing yet. Add the seller email before sending the offer for review.')
-      }
-      const sellerName = resolveSellerNameFromListing(listingRecord) || 'Seller'
+      const reviewPreparation = buildListingSellerReviewPreparation(offerRow, canonicalOffer)
+      const sellerEmail = reviewPreparation.sellerEmail
+      const sellerPhone = reviewPreparation.sellerPhone
+      const sellerName = reviewPreparation.sellerName || 'Seller'
       const { session } = await createOfferSellerReviewSession({
         organisationId: listingOrganisationId,
         offerId: offerRow.canonicalOfferId,
         offer: canonicalOffer,
+        listing: listingRecord,
         listingId: listingRecord.id,
-        sellerLeadId: canonicalOffer?.sellerLeadId || listingRecord?.sellerLeadId || listingRecord?.leadId,
-        sellerContactId: canonicalOffer?.sellerContactId || listingRecord?.sellerContactId,
+        sellerLeadId: reviewPreparation.sellerLeadId,
+        sellerContactId: reviewPreparation.sellerContactId,
         sellerEmail,
         sellerName,
+        sellerPhone,
+        deliveryMode: reviewPreparation.deliveryMode,
         agentId: getCanonicalOfferActor().id,
         agentReviewNotes: note,
         metadata: {
@@ -2344,6 +2413,7 @@ function AgentListingDetail() {
           listingId: listingRecord.id,
           sellerEmail,
           sellerName,
+          sellerPhone,
         },
       }, {
         actor: getCanonicalOfferActor(),
@@ -2355,25 +2425,35 @@ function AgentListingDetail() {
       if (reviewLink && typeof navigator !== 'undefined') {
         void navigator.clipboard?.writeText(reviewLink)
       }
-      const emailResponse = await invokeEdgeFunction('send-email', {
-        body: {
-          type: 'seller_offer_review',
-          to: sellerEmail,
-          sellerName,
-          propertyTitle: listingRecord?.listingTitle || listingRecord?.title || listingRecord?.propertyAddress || 'your property',
-          buyerName: offerRow.buyerName || canonicalOffer?.conditions?.buyerName || 'Buyer',
-          offerAmount: formatCurrency(offerRow.offerPrice || canonicalOffer?.offerAmount),
-          reviewLink,
-          expiresAt: session?.expiresAt || '',
-          agentName: getCanonicalOfferActor().name,
-          note,
-        },
-      })
-      if (emailResponse?.error || emailResponse?.data?.error) {
-        throw emailResponse.error || new Error(emailResponse.data.error)
+      if (reviewPreparation.deliveryMode === SELLER_REVIEW_DELIVERY_MODE.EMAIL) {
+        const emailResponse = await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'seller_offer_review',
+            to: sellerEmail,
+            sellerName,
+            propertyTitle: listingRecord?.listingTitle || listingRecord?.title || listingRecord?.propertyAddress || 'your property',
+            buyerName: offerRow.buyerName || canonicalOffer?.conditions?.buyerName || 'Buyer',
+            offerAmount: formatCurrency(offerRow.offerPrice || canonicalOffer?.offerAmount),
+            reviewLink,
+            expiresAt: session?.expiresAt || '',
+            agentName: getCanonicalOfferActor().name,
+            note,
+          },
+        })
+        if (emailResponse?.error || emailResponse?.data?.error) {
+          throw emailResponse.error || new Error(emailResponse.data.error)
+        }
       }
       setOfferNotesDraftById((previous) => ({ ...previous, [offerRow.id]: '' }))
-      setOfferActionMessage(reviewLink ? `Offer emailed to ${sellerEmail}. Seller link copied.` : `Offer emailed to ${sellerEmail}.`)
+      setOfferActionMessage(
+        reviewPreparation.deliveryMode === SELLER_REVIEW_DELIVERY_MODE.EMAIL
+          ? reviewLink
+            ? `Offer emailed to ${sellerEmail}. Seller link copied.`
+            : `Offer emailed to ${sellerEmail}.`
+          : reviewLink
+            ? `Seller review prepared for ${reviewPreparation.deliveryModeLabel.toLowerCase()}. Review link copied for the agent handoff.`
+            : `Seller review prepared for ${reviewPreparation.deliveryModeLabel.toLowerCase()}.`,
+      )
       setOffersRefreshTick((value) => value + 1)
     } catch (error) {
       if (createdReviewSession?.id) {
@@ -2450,19 +2530,39 @@ function AgentListingDetail() {
           buyerName: offerRow.buyerName,
           buyerEmail: linkedLead?.email || acceptedOffer?.conditions?.buyerEmail || canonicalOffer?.conditions?.buyerEmail,
           buyerPhone: linkedLead?.phone || acceptedOffer?.conditions?.buyerPhone || canonicalOffer?.conditions?.buyerPhone,
+          clientIntakePreference: normalizeClientIntakePreference(
+            acceptedOffer?.conditions?.clientIntakePreference ||
+              acceptedOffer?.conditions?.deliveryMode ||
+              canonicalOffer?.conditions?.clientIntakePreference ||
+              canonicalOffer?.conditions?.deliveryMode ||
+              linkedLead?.clientIntakePreference ||
+              offerInviteDraft.clientIntakePreference,
+          ),
         },
       })
       const transactionId = String(createdTransaction?.transactionId || createdTransaction?.transactionRow?.transaction?.id || '').trim()
       const reusedTransaction = Boolean(createdTransaction?.alreadyConverted || (createdTransaction?.existing && transactionId))
+      const intakePreference = normalizeClientIntakePreference(
+        acceptedOffer?.conditions?.clientIntakePreference ||
+          acceptedOffer?.conditions?.deliveryMode ||
+          canonicalOffer?.conditions?.clientIntakePreference ||
+          canonicalOffer?.conditions?.deliveryMode ||
+          linkedLead?.clientIntakePreference ||
+          offerInviteDraft.clientIntakePreference,
+      )
+      const intakeLabel = getClientIntakePreferenceLabel(intakePreference)
       let onboardingSendWarning = ''
+      let manualHandoff = false
       if (transactionId && isSupabaseConfigured) {
         const onboardingEmail = await invokeEdgeFunction('send-email', {
           body: {
             type: 'client_onboarding',
             transactionId,
             source: 'accepted_offer_conversion',
+            deliveryMode: intakePreference,
           },
         })
+        manualHandoff = onboardingEmail?.data?.manualHandoff === true
         const onboardingEmailError = onboardingEmail?.error || onboardingEmail?.data?.error
         if (onboardingEmailError) {
           onboardingSendWarning = typeof onboardingEmailError === 'string'
@@ -2476,8 +2576,10 @@ function AgentListingDetail() {
           leadId: acceptedOffer?.buyerLeadId || canonicalOffer?.buyerLeadId || linkedLead?.leadId,
           activityType: reusedTransaction ? 'Buyer Onboarding Resent' : 'Buyer Onboarding Sent',
           activityNote: onboardingSendWarning
-            ? `Buyer onboarding email attempted for transaction ${transactionId}, but delivery needs attention: ${onboardingSendWarning}`
-            : `${reusedTransaction ? 'Buyer onboarding resent' : 'Buyer onboarding sent'} for transaction ${transactionId}.`,
+            ? `${manualHandoff ? `${intakeLabel} onboarding prepared` : 'Buyer onboarding delivery attempted'} for transaction ${transactionId}, but delivery needs attention: ${onboardingSendWarning}`
+            : manualHandoff
+              ? `${reusedTransaction ? 'Manual onboarding pack reopened' : 'Manual onboarding pack prepared'} for transaction ${transactionId} via ${intakeLabel}.`
+              : `${reusedTransaction ? 'Buyer onboarding resent' : 'Buyer onboarding sent'} for transaction ${transactionId}.`,
           outcome: onboardingSendWarning ? 'Delivery Warning' : 'Sent',
           actor: getCanonicalOfferActor(),
         }).catch(() => null)
@@ -5494,7 +5596,24 @@ function AgentListingDetail() {
                       onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, expiresInDays: Number(event.target.value || 7) }))}
                     />
                   </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Client intake mode</span>
+                    <Field
+                      as="select"
+                      value={offerInviteDraft.clientIntakePreference}
+                      onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, clientIntakePreference: event.target.value }))}
+                    >
+                      {CLIENT_INTAKE_PREFERENCE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
                 </div>
+                <p className="mt-3 text-sm text-[#6b7d93]">
+                  Keep this aligned with how the buyer wants to work: portal, agent-assisted capture, or a hard-copy pack.
+                </p>
                 <div className="mt-4 flex justify-end gap-2">
                   <Button type="button" variant="secondary" onClick={() => setShowSendOfferLinkForm(false)}>
                     Cancel
@@ -5538,6 +5657,9 @@ function AgentListingDetail() {
               {offerRows.length ? (
                 offerRows.map((offer) => {
                   const statusKey = normalizeOfferWorkflowStatus(offer.status)
+                  const sellerReviewPreparation = offer.sourceSystem === 'canonical_offer' ? buildListingSellerReviewPreparation(offer) : null
+                  const sellerReviewPreparationSummary = describeSellerReviewPreparation(sellerReviewPreparation)
+                  const sellerReviewDeliveryMode = sellerReviewPreparation?.deliveryMode || SELLER_REVIEW_DELIVERY_MODE.EMAIL
                   const sellerReviewSession = offer.sellerReviewSession || {}
                   const sellerReviewToken = String(sellerReviewSession.token || offer.conditionsJson?.sellerReviewSessionToken || '').trim()
                   const sellerReviewLink = sellerReviewToken && typeof window !== 'undefined'
@@ -5658,6 +5780,16 @@ function AgentListingDetail() {
                           OFFER_WORKFLOW_STATUS.EXPIRED,
                         ].includes(normalizeOfferWorkflowStatus(offer.status)) ? (
                           <>
+                            <Field
+                              as="select"
+                              className="min-w-[150px]"
+                              value={sellerReviewDeliveryMode}
+                              onChange={(event) => setSellerReviewDeliveryModeByOfferId((previous) => ({ ...previous, [offer.id]: event.target.value }))}
+                            >
+                              {SELLER_REVIEW_DELIVERY_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </Field>
                             <Button
                               size="sm"
                               type="button"
@@ -5707,6 +5839,16 @@ function AgentListingDetail() {
                         {offer.transactionId ? (
                           <Button size="sm" type="button" variant="secondary" onClick={() => navigate(`/transactions/${offer.transactionId}`)}>Open Transaction</Button>
                         ) : null}
+                      </div>
+                    ) : null}
+                    {offer.sourceSystem === 'canonical_offer' && sellerReviewPreparationSummary.blockers.length ? (
+                      <div className="mt-3 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">
+                        {sellerReviewPreparationSummary.blockerText}
+                      </div>
+                    ) : null}
+                    {offer.sourceSystem === 'canonical_offer' && !sellerReviewPreparationSummary.blockers.length && sellerReviewPreparationSummary.warnings.length ? (
+                      <div className="mt-3 rounded-[14px] border border-[#f5d6a8] bg-[#fff8ed] px-3 py-2 text-sm text-[#9a5b11]">
+                        {sellerReviewPreparationSummary.warningText}
                       </div>
                     ) : null}
                   </article>
@@ -6057,6 +6199,9 @@ function AgentListingDetail() {
                     <tbody className="divide-y divide-[#edf2f7]">
                       {offerRows.length ? offerRows.map((offer) => {
                         const statusKey = normalizeOfferWorkflowStatus(offer.status)
+                        const sellerReviewPreparation = offer.sourceSystem === 'canonical_offer' ? buildListingSellerReviewPreparation(offer) : null
+                        const sellerReviewPreparationSummary = describeSellerReviewPreparation(sellerReviewPreparation)
+                        const sellerReviewDeliveryMode = sellerReviewPreparation?.deliveryMode || SELLER_REVIEW_DELIVERY_MODE.EMAIL
                         const sellerReviewSession = offer.sellerReviewSession || {}
                         const sellerReviewToken = String(sellerReviewSession.token || offer.conditionsJson?.sellerReviewSessionToken || '').trim()
                         const sellerReviewLink = sellerReviewToken && typeof window !== 'undefined'
@@ -6123,18 +6268,36 @@ function AgentListingDetail() {
                                   Copy seller link
                                 </button>
                               ) : null}
+                              {sellerReviewPreparationSummary.blockers.length ? (
+                                <p className="mt-2 text-xs font-semibold text-[#b42318]">{sellerReviewPreparationSummary.blockerText}</p>
+                              ) : null}
+                              {!sellerReviewPreparationSummary.blockers.length && sellerReviewPreparationSummary.warnings.length ? (
+                                <p className="mt-2 text-xs font-semibold text-[#9a5b11]">{sellerReviewPreparationSummary.warningText}</p>
+                              ) : null}
                             </td>
                             <td className="px-5 py-4">
                               <div className="flex flex-col items-end gap-2">
                                 {canSendToSeller ? (
-                                  <Button
-                                    size="sm"
-                                    type="button"
-                                    disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
-                                    onClick={() => void handleCanonicalListingOfferSendToSeller(offer)}
-                                  >
-                                    {[OFFER_WORKFLOW_STATUS.SELLER_REVIEW, OFFER_WORKFLOW_STATUS.SELLER_VIEWED].includes(statusKey) ? 'Resend to Seller' : 'Send Offer to Seller'}
-                                  </Button>
+                                  <>
+                                    <Field
+                                      as="select"
+                                      className="w-full min-w-[150px]"
+                                      value={sellerReviewDeliveryMode}
+                                      onChange={(event) => setSellerReviewDeliveryModeByOfferId((previous) => ({ ...previous, [offer.id]: event.target.value }))}
+                                    >
+                                      {SELLER_REVIEW_DELIVERY_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                      ))}
+                                    </Field>
+                                    <Button
+                                      size="sm"
+                                      type="button"
+                                      disabled={canonicalOfferActionId === `${offer.id}:sent_to_seller`}
+                                      onClick={() => void handleCanonicalListingOfferSendToSeller(offer)}
+                                    >
+                                      {[OFFER_WORKFLOW_STATUS.SELLER_REVIEW, OFFER_WORKFLOW_STATUS.SELLER_VIEWED].includes(statusKey) ? 'Resend to Seller' : 'Send Offer to Seller'}
+                                    </Button>
+                                  </>
                                 ) : null}
                                 {canConvert ? (
                                   <Button

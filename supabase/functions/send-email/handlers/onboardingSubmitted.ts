@@ -11,6 +11,11 @@ import {
   logOnboardingSubmittedEmailSideEffects,
   notifyOwnerOnOnboardingSubmitted,
 } from "../services/onboardingSubmittedLogging.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { buildOnboardingSubmittedEmailPayload } from "../services/onboardingSubmittedPayload.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import type { SendOnboardingSubmittedPayload } from "../types.ts";
@@ -249,6 +254,9 @@ export async function handleOnboardingSubmittedEmail(
   const emailText = isClientPortalLinkEmail
     ? buildClientPortalLinkEmailText(payloadModel)
     : buildOnboardingSubmittedEmailText(payloadModel);
+  const communicationType = isClientPortalLinkEmail
+    ? "client_portal_link"
+    : "onboarding_submitted";
 
   let authProfileExists = false;
   const authProfileQuery = await supabase
@@ -269,6 +277,21 @@ export async function handleOnboardingSubmittedEmail(
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
     "Bridge <onboarding@resend.dev>";
 
+  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
+    communicationType,
+    recipient: buyerEmail,
+    recipientRole: "buyer",
+    subject: emailSubject,
+    messagePreview: emailText,
+    context: {
+      transactionId: resolvedTransactionId,
+      metadata: {
+        clientPortalToken,
+        portalBuyerAligned,
+      },
+    },
+  });
+
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
@@ -279,12 +302,21 @@ export async function handleOnboardingSubmittedEmail(
   });
 
   if (!emailResult.ok) {
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage:
+        emailResult.error?.message ||
+        "Failed to send onboarding submitted email.",
+    });
     await notifyOwnerIfPossible();
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send onboarding submitted email.",
       details: emailResult.error,
     });
   }
+
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: emailResult.data?.id || null,
+  });
 
   await logOnboardingSubmittedEmailSideEffects({
     supabase,
@@ -315,6 +347,7 @@ export async function handleOnboardingSubmittedEmail(
     authProfileExists,
     portalBuyerAligned,
     emailId: emailResult.data?.id || null,
+    deliveryId: delivery?.id || null,
     emailSentAt: nowIso,
   });
 }

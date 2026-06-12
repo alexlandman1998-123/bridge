@@ -52,9 +52,9 @@ const KPI_TONES = {
 const REQUIREMENT_STAGE_GROUPS = [
   { label: 'New', keys: ['new'], tone: 'bg-blue-500' },
   { label: 'Qualified', keys: ['qualified'], tone: 'bg-violet-500' },
-  { label: 'Matching / Viewing', keys: ['matching', 'viewing'], tone: 'bg-orange-400' },
+  { label: 'Matching / Viewing', keys: ['matching', 'viewing_scheduled'], tone: 'bg-orange-400' },
   { label: 'Negotiating', keys: ['negotiating'], tone: 'bg-emerald-500' },
-  { label: 'Converted / Lost', keys: ['converted', 'lost'], tone: 'bg-slate-400' },
+  { label: 'HOT / Won / Lost', keys: ['hot', 'won', 'lost'], tone: 'bg-slate-400' },
 ]
 
 const DEAL_STAGE_GROUPS = [
@@ -67,14 +67,18 @@ const DEAL_STAGE_GROUPS = [
 
 const LISTING_STAGE_GROUPS = [
   { label: 'Draft', keys: ['draft'], tone: 'bg-slate-400' },
-  { label: 'Coming Soon', keys: ['coming_soon'], tone: 'bg-blue-500' },
-  { label: 'Active', keys: ['active'], tone: 'bg-emerald-500' },
+  { label: 'Review / Approved', keys: ['internal_review', 'approved'], tone: 'bg-blue-500' },
+  { label: 'Published', keys: ['published'], tone: 'bg-emerald-500' },
   { label: 'Under Offer', keys: ['under_offer'], tone: 'bg-orange-400' },
-  { label: 'Closed / Expired', keys: ['leased', 'sold', 'expired'], tone: 'bg-violet-500' },
+  { label: 'Closed / Expired', keys: ['closed', 'withdrawn', 'expired', 'archived'], tone: 'bg-violet-500' },
 ]
 
 const QUICK_ACCESS_LINKS = [
+  { label: 'Principal', to: '/commercial/principal', icon: TrendingUp },
+  { label: 'Companies', to: '/commercial/companies', icon: Building2 },
+  { label: 'Contacts', to: '/commercial/contacts', icon: Users },
   { label: 'Vacancies', to: '/commercial/vacancies', icon: DoorOpen },
+  { label: 'Viewings', to: '/commercial/viewings', icon: CalendarDays },
   { label: 'Listings', to: '/commercial/listings', icon: ClipboardList },
   { label: 'Requirements', to: '/commercial/requirements', icon: Users },
   { label: 'Deals', to: '/commercial/deals/leasing', icon: Handshake },
@@ -176,7 +180,7 @@ function buildWorkflowScrollerItems(data = {}, brokerMap = new Map()) {
   expiryHorizon.setMonth(expiryHorizon.getMonth() + 6)
 
   const activeRequirements = (data.requirements || [])
-    .filter((row) => isActiveStatus(row) && !['converted', 'lost'].includes(normalizeCommercialLifecycleStage('requirements', row.stage, 'new')))
+    .filter((row) => isActiveStatus(row) && !['won', 'lost'].includes(normalizeCommercialLifecycleStage('requirements', row.stage, 'new')))
     .slice(0, 4)
     .map((row) => ({
       id: `requirement-${row.id}`,
@@ -369,7 +373,7 @@ function KpiCard({ icon, label, value, detail, tone = 'blue', loading = false })
 function PortfolioOccupancyCard({ summary, vacancies = [], loading }) {
   const totalGla = toNumber(summary.totalGla)
   const underOfferSpace = vacancies
-    .filter((vacancy) => ['reserved', 'under_negotiation'].includes(normalize(vacancy.status)))
+    .filter((vacancy) => ['reserved', 'under_negotiation', 'under_offer', 'hot_in_progress'].includes(normalize(vacancy.status)))
     .reduce((total, vacancy) => total + toNumber(vacancy.available_area_m2), 0)
   const vacantSpace = Math.max(0, toNumber(summary.availableSpace) - underOfferSpace)
   const occupiedSpace = Math.max(0, totalGla - vacantSpace - underOfferSpace)
@@ -510,8 +514,8 @@ function PlatformIntegrationCard({ transactions = [], financialSummary = {}, tas
     <section id="transactions" className={`${CARD_CLASS} p-5`}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-base font-semibold tracking-[-0.035em] text-[#102236]">Bridge Transaction Integration</h2>
-          <p className="mt-1 text-sm text-slate-500">Commercial transactions, tasks, notifications, financial visibility, and renewal signals exposed to the wider Bridge ecosystem.</p>
+          <h2 className="text-base font-semibold tracking-[-0.035em] text-[#102236]">Recent Transactions</h2>
+          <p className="mt-1 text-sm text-slate-500">Live commercial transaction flow, close visibility, and renewal watch from the persisted transaction engine.</p>
         </div>
         <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
           {loading ? 'Loading' : `${formatNumber(transactions.length)} transactions`}
@@ -649,6 +653,38 @@ function RecentActivityCard({ items = [], loading }) {
   )
 }
 
+function UpcomingViewingsCard({ rows = [], loading }) {
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.035em] text-[#102236]">Upcoming Viewings</h2>
+          <p className="mt-1 text-sm text-slate-500">Next broker inspections.</p>
+        </div>
+        <Link to="/commercial/viewings" className="text-sm font-semibold text-blue-600 hover:text-blue-700">View all</Link>
+      </div>
+      <div className="mt-5 space-y-3">
+        {loading ? (
+          Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-14 animate-pulse rounded-xl bg-slate-100" />)
+        ) : rows.length ? rows.map((row) => (
+          <Link key={row.id} to={row.to || '/commercial/viewings'} className="block rounded-2xl border border-slate-200 bg-[#fbfcfe] p-3 transition hover:border-blue-200 hover:bg-white">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[#102236]">{row.property}</p>
+                <p className="mt-1 truncate text-xs text-slate-500">{row.company} · {row.broker}</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{titleize(row.status)}</span>
+            </div>
+            <p className="mt-2 text-xs font-semibold text-slate-500">{formatDate(row.date)} · {row.time || '-'}</p>
+          </Link>
+        )) : (
+          <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No upcoming viewings scheduled.</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function DocumentComplianceCard({ compliance = {}, loading }) {
   const riskRows = compliance.riskRows || []
   return (
@@ -725,6 +761,141 @@ function TopBrokersCard({ rows = [], loading }) {
   )
 }
 
+function RecentCompaniesCard({ rows = [], loading }) {
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.035em] text-[#102236]">Recent Companies</h2>
+          <p className="mt-1 text-sm text-slate-500">Latest commercial CRM accounts created or updated.</p>
+        </div>
+        <Link to="/commercial/companies" className="text-sm font-semibold text-blue-600 hover:text-blue-700">Open CRM</Link>
+      </div>
+      <div className="mt-5 space-y-3">
+        {loading ? (
+          Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-xl bg-slate-100" />)
+        ) : rows.length ? rows.map((row) => (
+          <Link key={row.id} to={`/commercial/companies/${row.id}`} className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-[#fbfcfe] px-3 py-3 transition hover:border-blue-200 hover:bg-white">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#102236]">{row.company_name || row.name}</p>
+              <p className="truncate text-xs text-slate-500">{[titleize(row.company_type), row.industry].filter(Boolean).join(' · ') || 'Commercial company'}</p>
+            </div>
+            <span className="text-xs font-semibold text-slate-400">{formatDate(row.updated_at || row.created_at)}</span>
+          </Link>
+        )) : (
+          <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No companies captured yet.</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function TopClientsCard({ rows = [], loading }) {
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.035em] text-[#102236]">Top Clients</h2>
+          <p className="mt-1 text-sm text-slate-500">Companies with the most active linked opportunities.</p>
+        </div>
+        <Link to="/commercial/companies" className="text-sm font-semibold text-blue-600 hover:text-blue-700">View companies</Link>
+      </div>
+      <div className="mt-5 space-y-3">
+        {loading ? (
+          Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-xl bg-slate-100" />)
+        ) : rows.length ? rows.map((row) => (
+          <Link key={row.id} to={`/commercial/companies/${row.id}`} className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-[#fbfcfe] px-3 py-3 transition hover:border-blue-200 hover:bg-white">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#102236]">{row.company_name || row.name}</p>
+              <p className="truncate text-xs text-slate-500">{titleize(row.company_type) || 'Commercial company'}</p>
+            </div>
+            <span className="text-xs font-semibold text-slate-500">{row.requirements + row.deals + row.transactions} linked</span>
+          </Link>
+        )) : (
+          <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">No linked client activity yet.</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function InventorySummaryCard({ summary = {}, loading }) {
+  const tiles = [
+    ['Properties', formatNumber(summary.properties || 0), 'Tracked commercial assets'],
+    ['Vacancies', formatNumber(summary.vacancies || 0), 'Open stock items'],
+    ['Listings', formatNumber(summary.listings || 0), 'Live market opportunities'],
+    ['Available Space', formatArea(summary.availableSpace || 0), 'Current vacant space'],
+    ['Occupied Space', formatArea(summary.occupiedSpace || 0), 'Space currently occupied'],
+    ['Occupancy %', `${formatPercent(summary.occupancyRate || 0)}%`, 'Portfolio occupancy rate'],
+  ]
+
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.035em] text-[#102236]">Inventory Dashboard</h2>
+          <p className="mt-1 text-sm text-slate-500">Supply-side stock, space, and occupancy at a glance.</p>
+        </div>
+        <Link to="/commercial/properties" className="text-sm font-semibold text-blue-600 hover:text-blue-700">Open stock</Link>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {tiles.map(([label, value, detail]) => (
+          <div key={label} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</p>
+            <p className="mt-2 text-xl font-semibold tracking-[-0.04em] text-[#102236]">{loading ? '...' : value}</p>
+            <p className="mt-1 text-xs text-slate-500">{detail}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function TopPerformingAssetsCard({ groups = {}, loading }) {
+  const sections = [
+    ['Most Viewed', groups.mostViewed || []],
+    ['Most Active', groups.mostActive || []],
+    ['Most Leased', groups.mostLeased || []],
+    ['Most In Demand', groups.mostInDemand || []],
+  ]
+
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.035em] text-[#102236]">Top Performing Assets</h2>
+          <p className="mt-1 text-sm text-slate-500">Buildings attracting the most operational attention and demand.</p>
+        </div>
+        <Link to="/commercial/properties" className="text-sm font-semibold text-blue-600 hover:text-blue-700">View assets</Link>
+      </div>
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        {sections.map(([label, rows]) => (
+          <div key={label} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</p>
+            <div className="mt-3 space-y-2">
+              {loading ? (
+                Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-10 animate-pulse rounded-xl bg-slate-100" />)
+              ) : rows.length ? rows.slice(0, 3).map((row) => (
+                <Link key={`${label}-${row.id}`} to={`/commercial/properties/${row.propertyId}`} className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-3 py-3 transition hover:border-blue-200 hover:bg-slate-50">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[#102236]">{row.title}</p>
+                    <p className="truncate text-xs text-slate-500">{row.location}</p>
+                  </div>
+                  <span className="text-xs font-semibold text-slate-500">
+                    {label === 'Most Viewed' ? formatNumber(row.viewed) : label === 'Most Active' ? formatNumber(row.active) : label === 'Most Leased' ? formatNumber(row.leased) : formatNumber(row.demand)}
+                  </span>
+                </Link>
+              )) : (
+                <p className="rounded-xl bg-white px-4 py-3 text-sm text-slate-500">No asset signals yet.</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function priorityClass(priority) {
   const value = normalize(priority)
   if (value === 'high') return 'border-rose-200 bg-rose-50 text-rose-700'
@@ -766,6 +937,75 @@ function NextBestActionsCard({ actions = [], loading }) {
           <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500 md:col-span-2 xl:col-span-4">No urgent next-best actions right now.</p>
         )}
       </div>
+    </section>
+  )
+}
+
+function ManagementAlertsCard({ alerts = [], loading }) {
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.035em] text-[#102236]">Management Alerts</h2>
+          <p className="mt-1 text-sm text-slate-500">Stale vacancies, aging requirements, stalled transactions, overload, and lease expiry risk.</p>
+        </div>
+        <Link to="/commercial/principal" className="text-sm font-semibold text-blue-600 hover:text-blue-700">Principal view</Link>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {loading ? (
+          Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-24 animate-pulse rounded-2xl bg-slate-100" />)
+        ) : alerts.length ? alerts.slice(0, 4).map((alert) => (
+          <Link key={alert.id} to={alert.to} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4 transition hover:border-blue-200 hover:bg-white">
+            <div className="flex items-start justify-between gap-3">
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${priorityClass(alert.priority)}`}>{alert.priority}</span>
+              <ArrowUpRight size={15} className="text-slate-400" />
+            </div>
+            <h3 className="mt-3 line-clamp-2 text-sm font-semibold text-[#102236]">{alert.title}</h3>
+            <p className="mt-2 text-xs leading-5 text-slate-500">{alert.type} · {alert.detail}</p>
+          </Link>
+        )) : (
+          <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500 md:col-span-2 xl:col-span-4">No management alerts right now.</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function PortalAdoptionCard({ adoption = {}, loading }) {
+  const roles = Object.entries(adoption.roleCounts || {})
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.035em] text-[#102236]">Portal Adoption</h2>
+          <p className="mt-1 text-sm text-slate-500">External collaboration activity across invited commercial clients.</p>
+        </div>
+        <Link to="/commercial/principal" className="text-sm font-semibold text-blue-600 hover:text-blue-700">Manage access</Link>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        {loading ? (
+          Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-24 animate-pulse rounded-2xl bg-slate-100" />)
+        ) : [
+          ['Active Users', adoption.activeUsers || 0],
+          ['Active Links', adoption.activeAccess || 0],
+          ['Pending Invites', adoption.pendingInvitations || 0],
+          ['Recent Uploads', adoption.recentUploads?.length || 0],
+        ].map(([label, value]) => (
+          <article key={label} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</p>
+            <p className="mt-2 text-xl font-semibold tracking-[-0.04em] text-[#102236]">{formatNumber(value)}</p>
+          </article>
+        ))}
+      </div>
+      {!loading && roles.length ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {roles.map(([role, count]) => (
+            <span key={role} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500">
+              {titleize(role)} · {formatNumber(count)}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -994,6 +1234,20 @@ function CommercialDashboard() {
       tone: 'purple',
     },
     {
+      label: 'Active Companies',
+      value: formatNumber(summary.activeCompanies || 0),
+      detail: 'Commercial CRM accounts',
+      icon: Building2,
+      tone: 'blue',
+    },
+    {
+      label: 'Active Contacts',
+      value: formatNumber(summary.activeContacts || 0),
+      detail: 'Decision makers and roleplayers',
+      icon: Users,
+      tone: 'green',
+    },
+    {
       label: 'Available Space',
       value: formatArea(summary.availableSpace),
       detail: `${formatArea(summary.occupiedSpace)} occupied`,
@@ -1005,6 +1259,41 @@ function CommercialDashboard() {
       value: formatNumber(summary.dealsInNegotiation),
       detail: formatMoney(summary.activeNegotiationValue),
       icon: Handshake,
+      tone: 'green',
+    },
+    {
+      label: 'Active Transactions',
+      value: formatNumber(summary.activeTransactions || 0),
+      detail: 'Open commercial closings',
+      icon: Handshake,
+      tone: 'blue',
+    },
+    {
+      label: 'Transactions Closed',
+      value: formatNumber(summary.transactionsClosedThisMonth || 0),
+      detail: 'Closed this month',
+      icon: ListChecks,
+      tone: 'green',
+    },
+    {
+      label: 'Transaction Value',
+      value: formatMoney(summary.transactionValue || 0),
+      detail: 'Open transaction pipeline',
+      icon: WalletCards,
+      tone: 'purple',
+    },
+    {
+      label: 'Viewings This Month',
+      value: formatNumber(summary.viewings?.thisMonth || 0),
+      detail: `${formatNumber(summary.viewings?.upcoming || 0)} upcoming`,
+      icon: CalendarDays,
+      tone: 'blue',
+    },
+    {
+      label: 'Viewings Completed',
+      value: formatNumber(summary.viewings?.completed || 0),
+      detail: 'Completed commercial inspections',
+      icon: ListChecks,
       tone: 'green',
     },
     {
@@ -1051,9 +1340,15 @@ function CommercialDashboard() {
 
       <TransactionScroller items={scrollerItems} loading={loading} />
       <NextBestActionsCard actions={intelligence.nextBestActions || []} loading={loading} />
+      <ManagementAlertsCard alerts={intelligence.managementAlerts || []} loading={loading} />
+      <PortalAdoptionCard adoption={intelligence.portalAdoption || data?.portalAdoption || {}} loading={loading} />
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.85fr)_minmax(340px,0.85fr)]">
         <div className="grid gap-4">
+          <div className="grid gap-4 xl:grid-cols-2">
+            <InventorySummaryCard summary={intelligence.inventorySummary || {}} loading={loading} />
+            <TopPerformingAssetsCard groups={intelligence.topPerformingAssets || {}} loading={loading} />
+          </div>
           <div className="grid gap-4 xl:grid-cols-2">
             <VacancyRiskWatchCard risk={intelligence.vacancyRisk || {}} loading={loading} />
             <RequirementMatchHighlightsCard matches={intelligence.requirementMatches || []} loading={loading} />
@@ -1061,6 +1356,10 @@ function CommercialDashboard() {
           <div className="grid gap-4 xl:grid-cols-2">
             <ListingQualityAlertsCard rows={intelligence.listingsNeedingAttention || []} loading={loading} />
             <TopBrokersCard rows={brokerRows.map((row) => ({ ...row, value: row.pipelineValue }))} loading={loading} />
+          </div>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <RecentCompaniesCard rows={intelligence.recentCompanies || []} loading={loading} />
+            <TopClientsCard rows={intelligence.topClients || []} loading={loading} />
           </div>
           <div className="grid gap-4 xl:grid-cols-3">
             <PipelineSummaryCard title="Listing Pipeline" rows={listingRows} to="/commercial/listings" loading={loading} />
@@ -1074,6 +1373,7 @@ function CommercialDashboard() {
           <PortfolioOccupancyCard summary={summary} vacancies={data?.vacancies || []} loading={loading} />
           <ConversionMetricsCard metrics={summary.conversionMetrics || {}} loading={loading} />
           <DocumentComplianceCard compliance={summary.documentCompliance || {}} loading={loading} />
+          <UpcomingViewingsCard rows={intelligence.upcomingViewings || []} loading={loading} />
           <RecentActivityCard items={data?.latestActivity || []} loading={loading} />
           <LeaseExpiryWatchCard rows={expiryRows} loading={loading} />
         </div>

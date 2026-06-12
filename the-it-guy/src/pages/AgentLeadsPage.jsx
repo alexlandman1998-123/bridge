@@ -36,14 +36,17 @@ import {
   ensureAgencyCrmLeadRecordPersisted,
   updateAgencyCrmLeadRecord,
 } from '../lib/agencyCrmRepository'
-import { buildSellerOnboardingLink } from '../lib/agentListingStorage'
+import { buildSellerClientPortalLink } from '../lib/agentListingStorage'
 import { createAppointmentAsync, updateAppointmentAsync } from '../lib/agencyPipelineService'
 import {
   createCanonicalOffer,
   createOfferPortalSession,
   createTransactionFromAcceptedCanonicalOffer,
+  getOfferLifecycleSummary,
+  updateCanonicalOfferStatus,
   upsertAppointmentViewedListings,
 } from '../lib/buyerLifecycleService'
+import { cancelTransactionLifecycle } from '../lib/api'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
@@ -914,11 +917,166 @@ function getBuyerPropertyReadiness(row = {}) {
 }
 
 function getBuyerWorkspaceCommand(row = {}) {
+  const deal = getBuyerDealSnapshot(row)
   const steps = getBuyerOutreachSteps(row)
   const finance = getBuyerFinanceReadiness(row)
   const documents = getBuyerDocumentReadiness(row)
   const property = getBuyerPropertyReadiness(row)
   const nextStep = steps.find((step) => !step.done)
+  const viewingCompleted = Boolean(
+    deal.latestViewing &&
+      (String(deal.latestViewing.status || '').toLowerCase() === 'completed' || deal.latestViewing.completedAt || deal.latestViewing.completed_at),
+  )
+
+  if (deal.latestTransaction) {
+    if (deal.transactionStateLabel === 'Deal fell through') {
+      return {
+        title: 'Deal fell through',
+        copy: deal.transactionStateHelper,
+        actionLabel: 'Open Offers',
+        actionId: 'offers',
+        tone: 'amber',
+        blockers: ['Restart or close out'],
+        snapshot: deal,
+      }
+    }
+    if (deal.transactionStateLabel === 'Onboarding needs attention') {
+      return {
+        title: 'Buyer onboarding needs attention',
+        copy: deal.transactionStateHelper,
+        actionLabel: 'Open Offers',
+        actionId: 'offers',
+        tone: 'amber',
+        blockers: ['Buyer onboarding'],
+        snapshot: deal,
+      }
+    }
+    if (deal.transactionStateLabel === 'Signed OTP outstanding') {
+      return {
+        title: 'Signed OTP is the blocker',
+        copy: deal.transactionStateHelper,
+        actionLabel: 'Open Transaction',
+        actionId: 'convert',
+        tone: 'amber',
+        blockers: ['Signed OTP'],
+        snapshot: deal,
+      }
+    }
+    if (deal.transactionStateLabel === 'Buyer onboarding pending' || deal.transactionStateLabel === 'Buyer onboarding sent' || deal.transactionStateLabel === 'Onboarding complete') {
+      return {
+        title: deal.transactionStateLabel,
+        copy: deal.transactionStateHelper,
+        actionLabel: deal.transactionStateLabel === 'Buyer onboarding pending' ? 'Open Offers' : 'Open Transaction',
+        actionId: deal.transactionStateLabel === 'Buyer onboarding pending' ? 'offers' : 'convert',
+        tone: deal.transactionStateTone,
+        blockers: deal.transactionStateLabel === 'Buyer onboarding pending' ? ['Buyer onboarding'] : deal.transactionStateLabel === 'Buyer onboarding sent' ? ['Buyer response'] : ['Prepare OTP'],
+        snapshot: deal,
+      }
+    }
+    return {
+      title: deal.transactionStateLabel,
+      copy: deal.transactionStateHelper,
+      actionLabel: 'Open Transaction',
+      actionId: 'convert',
+      tone: deal.transactionStateTone,
+      blockers: deal.transactionStateLabel === 'Signed OTP received' ? [] : ['Transaction follow-up'],
+      snapshot: deal,
+    }
+  }
+
+  if (deal.acceptedOffer) {
+    return {
+      title: 'Accepted offer is ready for conversion',
+      copy: deal.transactionStateHelper,
+      actionLabel: 'Open Offers',
+      actionId: 'offers',
+      tone: 'amber',
+      blockers: ['Transaction workspace'],
+      snapshot: deal,
+    }
+  }
+
+  if (deal.latestOffer) {
+    if (['Buyer withdrew offer', 'Offer expired', 'Offer rejected'].includes(deal.offerStateLabel)) {
+      return {
+        title: deal.offerStateLabel,
+        copy: deal.offerStateHelper,
+        actionLabel: 'Open Offers',
+        actionId: 'offers',
+        tone: 'amber',
+        blockers: ['Restart or close out'],
+        snapshot: deal,
+      }
+    }
+    if (deal.offerStateLabel === 'Offer link failed' || deal.offerStateLabel === 'Seller review failed') {
+      return {
+        title: deal.offerStateLabel,
+        copy: deal.offerStateHelper,
+        actionLabel: 'Open Offers',
+        actionId: 'offers',
+        tone: 'amber',
+        blockers: ['Delivery retry'],
+        snapshot: deal,
+      }
+    }
+    if (deal.offerStateLabel === 'Agent review required') {
+      return {
+        title: 'Buyer offer needs seller routing',
+        copy: deal.offerStateHelper,
+        actionLabel: 'Open Offers',
+        actionId: 'offers',
+        tone: 'blue',
+        blockers: ['Seller review'],
+        snapshot: deal,
+      }
+    }
+    if (deal.offerStateLabel === 'Offer link sent' || deal.offerStateLabel === 'Buyer reviewing offer') {
+      return {
+        title: deal.offerStateLabel,
+        copy: deal.offerStateHelper,
+        actionLabel: 'Open Offers',
+        actionId: 'offers',
+        tone: deal.offerStateTone,
+        blockers: ['Buyer response'],
+        snapshot: deal,
+      }
+    }
+    if (deal.offerStateLabel === 'Seller review sent' || deal.offerStateLabel === 'Seller reviewing offer') {
+      return {
+        title: deal.offerStateLabel,
+        copy: deal.offerStateHelper,
+        actionLabel: 'Open Offers',
+        actionId: 'offers',
+        tone: deal.offerStateTone,
+        blockers: ['Seller decision'],
+        snapshot: deal,
+      }
+    }
+    if (deal.offerStateLabel === 'Counter-offer in play') {
+      return {
+        title: 'Counter-offer needs buyer feedback',
+        copy: deal.offerStateHelper,
+        actionLabel: 'Open Offers',
+        actionId: 'offers',
+        tone: 'amber',
+        blockers: ['Buyer response'],
+        snapshot: deal,
+      }
+    }
+  }
+
+  if (viewingCompleted) {
+    return {
+      title: 'Viewing is done, lock the next move',
+      copy: 'Capture the actual outcome now: send the offer link, book the second viewing, or close out the property cleanly.',
+      actionLabel: 'Open Offers',
+      actionId: 'offers',
+      tone: 'blue',
+      blockers: ['Viewing outcome'],
+      snapshot: deal,
+    }
+  }
+
   if (finance.score < 60) {
     return {
       title: 'Finance position needs confirmation',
@@ -927,6 +1085,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       actionId: 'property_match',
       tone: 'amber',
       blockers: finance.missing,
+      snapshot: deal,
     }
   }
   if (documents.percent < 50 && finance.score < 90) {
@@ -937,6 +1096,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       actionId: 'tasks',
       tone: 'amber',
       blockers: documents.missing,
+      snapshot: deal,
     }
   }
   if (property.percent < 55) {
@@ -947,6 +1107,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       actionId: 'property_match',
       tone: 'blue',
       blockers: ['Property requirement', 'Matched listings'],
+      snapshot: deal,
     }
   }
   if (nextStep) {
@@ -965,15 +1126,17 @@ function getBuyerWorkspaceCommand(row = {}) {
       actionId,
       tone: 'blue',
       blockers: [],
+      snapshot: deal,
     }
   }
   return {
     title: 'Buyer journey is transaction-ready',
     copy: 'The buyer has enough journey signal to review transaction handoff.',
-    actionLabel: 'Open Transaction',
-    actionId: 'convert',
+    actionLabel: deal.latestTransaction ? 'Open Transaction' : 'Open Offers',
+    actionId: deal.latestTransaction ? 'convert' : 'offers',
     tone: 'green',
     blockers: [],
+    snapshot: deal,
   }
 }
 
@@ -1590,6 +1753,14 @@ function getOfferStatus(offer = {}) {
   return normalizeText(safeOffer.status).toLowerCase()
 }
 
+function getOfferLifecycleState(offer = {}) {
+  const summary = getOfferLifecycleSummary(offer || {})
+  return {
+    ...summary,
+    label: formatCleanValue(summary.effectiveStatus || summary.status || 'draft'),
+  }
+}
+
 function isOfferAcceptedForConversion(offer = {}) {
   const status = getOfferStatus(offer)
   return status === 'accepted' || status === 'converted_to_transaction' || Boolean(getOfferTransactionId(offer))
@@ -1644,6 +1815,343 @@ function getLeadHandoffState(lead = {}) {
     financeTaskReady: hasOpenTaskLike('finance') || hasOpenTaskLike('bond'),
     ficaTaskReady: hasOpenTaskLike('fica') || hasOpenTaskLike('document'),
     conveyancerTaskReady: hasOpenTaskLike('conveyancer') || hasOpenTaskLike('handover'),
+  }
+}
+
+function getLatestViewingAppointment(row = {}) {
+  return (Array.isArray(row?.appointments) ? row.appointments : [])
+    .filter(Boolean)
+    .filter(isViewingAppointment)
+    .sort((left, right) => {
+      const leftTime = new Date(left.completedAt || left.completed_at || left.dateTime || left.date_time || left.updatedAt || left.updated_at || left.createdAt || left.created_at || 0).getTime()
+      const rightTime = new Date(right.completedAt || right.completed_at || right.dateTime || right.date_time || right.updatedAt || right.updated_at || right.createdAt || right.created_at || 0).getTime()
+      return rightTime - leftTime
+    })[0] || null
+}
+
+function getLatestOffer(row = {}) {
+  return (Array.isArray(row?.offers) ? row.offers : [])
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftTime = new Date(left.acceptedAt || left.accepted_at || left.updatedAt || left.updated_at || left.submittedAt || left.submitted_at || left.createdAt || left.created_at || 0).getTime()
+      const rightTime = new Date(right.acceptedAt || right.accepted_at || right.updatedAt || right.updated_at || right.submittedAt || right.submitted_at || right.createdAt || right.created_at || 0).getTime()
+      return rightTime - leftTime
+    })[0] || null
+}
+
+function sortOffersNewestFirst(offers = []) {
+  return (Array.isArray(offers) ? offers : [])
+    .filter(Boolean)
+    .slice()
+    .sort((left, right) => {
+      const leftTime = new Date(left.acceptedAt || left.accepted_at || left.updatedAt || left.updated_at || left.submittedAt || left.submitted_at || left.createdAt || left.created_at || 0).getTime()
+      const rightTime = new Date(right.acceptedAt || right.accepted_at || right.updatedAt || right.updated_at || right.submittedAt || right.submitted_at || right.createdAt || right.created_at || 0).getTime()
+      return rightTime - leftTime
+    })
+}
+
+function getLatestTransaction(row = {}) {
+  const transaction = (Array.isArray(row?.transactions) ? row.transactions : [])
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftTime = new Date(left.updatedAt || left.updated_at || left.createdAt || left.created_at || 0).getTime()
+      const rightTime = new Date(right.updatedAt || right.updated_at || right.createdAt || right.created_at || 0).getTime()
+      return rightTime - leftTime
+    })[0] || null
+  if (transaction) return transaction
+  const fallbackId = getLeadLinkedTransactionId(row)
+  return fallbackId ? { id: fallbackId, status: 'Linked' } : null
+}
+
+function normalizeClientIntakePreference(value = '') {
+  const normalized = normalizeText(value).toLowerCase()
+  if (['hard_copy', 'hardcopy', 'paper', 'printed'].includes(normalized)) return 'hard_copy'
+  if (['agent_assisted', 'assisted', 'manual', 'agent'].includes(normalized)) return 'agent_assisted'
+  return normalized ? 'digital_portal' : ''
+}
+
+function formatClientIntakePreference(value = '') {
+  const normalized = normalizeClientIntakePreference(value)
+  if (normalized === 'hard_copy') return 'Hard copy'
+  if (normalized === 'agent_assisted') return 'Agent assisted'
+  if (normalized === 'digital_portal') return 'Digital portal'
+  return 'Not set'
+}
+
+function buildLeadCanonicalOfferActionPatch(offer = {}, actor = null, actionLabel = '', note = '', extraConditions = {}) {
+  const safeOffer = offer || {}
+  const trimmedNote = normalizeText(note)
+  const existingConditions = safeOffer.conditions || safeOffer.conditionsJson || safeOffer.conditions_json || {}
+  return {
+    conditions_json: {
+      ...existingConditions,
+      ...extraConditions,
+      agentActionHistory: [
+        ...(Array.isArray(existingConditions.agentActionHistory) ? existingConditions.agentActionHistory : []),
+        {
+          action: actionLabel || 'status_update',
+          note: trimmedNote,
+          at: new Date().toISOString(),
+          actorId: actor?.id || actor?.userId || '',
+          actorName: actor?.fullName || actor?.name || actor?.email || 'Agent',
+        },
+      ],
+      latestAgentNote: trimmedNote || existingConditions.latestAgentNote || '',
+    },
+  }
+}
+
+function getLeadOfferEdgeWarnings(lead = {}, selectedOffer = null) {
+  const warnings = []
+  const safeOffers = sortOffersNewestFirst(lead?.offers || [])
+  const selectedOfferId = getOfferId(selectedOffer)
+  const byListing = new Map()
+  const acceptedOffers = []
+
+  for (const offer of safeOffers) {
+    const listingId = getOfferListingId(offer)
+    const lifecycle = getOfferLifecycleState(offer)
+    if (listingId && !lifecycle.terminal) {
+      const current = byListing.get(listingId) || []
+      current.push(offer)
+      byListing.set(listingId, current)
+    }
+    if (lifecycle.acceptedOrConverted) acceptedOffers.push(offer)
+  }
+
+  for (const [listingId, offers] of byListing.entries()) {
+    if (offers.length < 2) continue
+    const touchesSelected = !selectedOfferId || offers.some((offer) => getOfferId(offer) === selectedOfferId)
+    if (!touchesSelected) continue
+    warnings.push({
+      tone: 'amber',
+      text: `${offers.length} open offer records exist on ${listingId}. Keep one live negotiation path and close the others cleanly.`,
+    })
+  }
+
+  if (acceptedOffers.length > 1) {
+    warnings.push({
+      tone: 'red',
+      text: `${acceptedOffers.length} offers are marked accepted or converted for this lead. Check that only one real deal is still active.`,
+    })
+  }
+
+  const latestTransaction = getLatestTransaction(lead)
+  const transactionLifecycleState = normalizeText(latestTransaction?.lifecycleState || latestTransaction?.lifecycle_state).toLowerCase()
+  if (latestTransaction && transactionLifecycleState === 'cancelled') {
+    warnings.push({
+      tone: 'red',
+      text: 'The linked transaction has been cancelled. Keep the history, then decide whether negotiations restart or the lead should be closed out.',
+    })
+  }
+
+  const selectedLifecycle = selectedOffer ? getOfferLifecycleState(selectedOffer) : null
+  if (selectedLifecycle?.effectiveStatus === 'expired') {
+    warnings.push({
+      tone: 'amber',
+      text: 'This offer has expired. Send a fresh offer link if the buyer still wants to proceed.',
+    })
+  }
+  if (selectedLifecycle?.effectiveStatus === 'withdrawn') {
+    warnings.push({
+      tone: 'amber',
+      text: 'The buyer withdrew this offer. Restart with a new offer only if they explicitly come back in.',
+    })
+  }
+  if (selectedLifecycle?.acceptedOrConverted && !getOfferTransactionId(selectedOffer) && transactionLifecycleState !== 'cancelled') {
+    warnings.push({
+      tone: 'blue',
+      text: 'This offer is accepted but not visibly linked to a transaction yet. Reuse the conversion panel below rather than creating parallel records.',
+    })
+  }
+
+  return warnings
+}
+
+function getLeadClientIntakePreference(row = {}) {
+  const acceptedOffer = getAcceptedOfferForConversion(row?.offers || [])
+  const latestOffer = acceptedOffer || getLatestOffer(row)
+  const latestTransaction = getLatestTransaction(row)
+  return normalizeClientIntakePreference(
+    latestTransaction?.clientIntakePreference ||
+      latestTransaction?.client_intake_preference ||
+      latestOffer?.clientIntakePreference ||
+      latestOffer?.client_intake_preference ||
+      latestOffer?.conditions?.clientIntakePreference ||
+      latestOffer?.conditions?.client_intake_preference ||
+      latestOffer?.conditionsJson?.clientIntakePreference ||
+      latestOffer?.conditions_json?.clientIntakePreference,
+  )
+}
+
+function getLatestDeliveryByType(row = {}, types = []) {
+  const expected = new Set((Array.isArray(types) ? types : [types]).map((item) => normalizeText(item).toLowerCase()).filter(Boolean))
+  if (!expected.size) return null
+  return (Array.isArray(row?.communicationDeliveries) ? row.communicationDeliveries : [])
+    .filter(Boolean)
+    .filter((delivery) => expected.has(normalizeText(delivery.communicationType || delivery.communication_type).toLowerCase()))
+    .sort((left, right) => {
+      const leftTime = new Date(left.openedAt || left.opened_at || left.deliveredAt || left.delivered_at || left.sentAt || left.sent_at || left.failedAt || left.failed_at || left.preparedAt || left.prepared_at || left.createdAt || left.created_at || 0).getTime()
+      const rightTime = new Date(right.openedAt || right.opened_at || right.deliveredAt || right.delivered_at || right.sentAt || right.sent_at || right.failedAt || right.failed_at || right.preparedAt || right.prepared_at || right.createdAt || right.created_at || 0).getTime()
+      return rightTime - leftTime
+    })[0] || null
+}
+
+function getBuyerDealSnapshot(row = {}) {
+  const latestViewing = getLatestViewingAppointment(row)
+  const latestOffer = getLatestOffer(row)
+  const acceptedOffer = getAcceptedOfferForConversion(row?.offers || [])
+  const latestTransaction = getLatestTransaction(row)
+  const handoff = getLeadHandoffState(row)
+  const intakePreference = getLeadClientIntakePreference(row)
+  const offerLinkDelivery = getLatestDeliveryByType(row, ['buyer_offer_link'])
+  const sellerReviewDelivery = getLatestDeliveryByType(row, ['seller_offer_review'])
+  const onboardingDelivery = getLatestDeliveryByType(row, ['client_onboarding'])
+  const offerLifecycle = latestOffer ? getOfferLifecycleState(latestOffer) : null
+  const offerStatus = offerLifecycle?.effectiveStatus || getOfferStatus(latestOffer)
+  const transactionId = getLeadLinkedTransactionId(row)
+  const onboardingStatus = normalizeText(latestTransaction?.onboardingStatus || latestTransaction?.onboarding_status).toLowerCase()
+  const mainStage = normalizeText(latestTransaction?.currentMainStage || latestTransaction?.current_main_stage).toLowerCase()
+  const transactionLifecycleState = normalizeText(latestTransaction?.lifecycleState || latestTransaction?.lifecycle_state).toLowerCase()
+
+  let offerStateLabel = latestOffer ? formatCleanValue(latestOffer.status || 'Draft') : 'No offer yet'
+  let offerStateHelper = latestOffer
+    ? `Latest update ${formatRelativeTime(latestOffer.acceptedAt || latestOffer.accepted_at || latestOffer.updatedAt || latestOffer.updated_at || latestOffer.createdAt || latestOffer.created_at, 'recently')}.`
+    : 'Complete a viewing and capture the next move before pushing the deal.'
+  let offerStateTone = latestOffer ? getOfferStatusTone(offerLifecycle?.effectiveStatus || latestOffer.status) : 'slate'
+
+  if (offerLinkDelivery?.status === 'failed') {
+    offerStateLabel = 'Offer link failed'
+    offerStateHelper = offerLinkDelivery.errorMessage || 'The buyer did not receive the offer link.'
+    offerStateTone = 'red'
+  } else if (!latestOffer && latestViewing && (String(latestViewing.status || '').toLowerCase() === 'completed' || latestViewing.completedAt || latestViewing.completed_at)) {
+    offerStateLabel = 'Viewing done, offer next step pending'
+    offerStateHelper = 'Either send the offer link, book another viewing, or close this property out.'
+    offerStateTone = 'amber'
+  } else if (offerStatus === 'sent_to_buyer' || offerStatus === 'draft') {
+    if (offerLinkDelivery?.openedAt || offerLinkDelivery?.opened_at) {
+      offerStateLabel = 'Buyer reviewing offer'
+      offerStateHelper = `Buyer opened the offer link ${formatRelativeTime(offerLinkDelivery.openedAt || offerLinkDelivery.opened_at, 'recently')}.`
+      offerStateTone = 'blue'
+    } else if (offerLinkDelivery?.sentAt || offerLinkDelivery?.sent_at || offerLinkDelivery?.preparedAt || offerLinkDelivery?.prepared_at) {
+      offerStateLabel = 'Offer link sent'
+      offerStateHelper = 'Waiting for the buyer to open or submit the offer.'
+      offerStateTone = 'amber'
+    }
+  } else if (offerStatus.includes('submitted') || offerStatus.includes('review')) {
+    if (sellerReviewDelivery?.status === 'failed') {
+      offerStateLabel = 'Seller review failed'
+      offerStateHelper = sellerReviewDelivery.errorMessage || 'The seller review pack needs to be resent or handled manually.'
+      offerStateTone = 'red'
+    } else if (sellerReviewDelivery?.openedAt || sellerReviewDelivery?.opened_at) {
+      offerStateLabel = 'Seller reviewing offer'
+      offerStateHelper = `Seller opened the review ${formatRelativeTime(sellerReviewDelivery.openedAt || sellerReviewDelivery.opened_at, 'recently')}.`
+      offerStateTone = 'amber'
+    } else if (sellerReviewDelivery?.sentAt || sellerReviewDelivery?.sent_at || sellerReviewDelivery?.preparedAt || sellerReviewDelivery?.prepared_at) {
+      offerStateLabel = 'Seller review sent'
+      offerStateHelper = 'Waiting for the seller to open and decide.'
+      offerStateTone = 'amber'
+    } else {
+      offerStateLabel = 'Agent review required'
+      offerStateHelper = 'Buyer submitted the offer, but it still needs to go to the seller.'
+      offerStateTone = 'blue'
+    }
+  } else if (offerStatus.includes('counter')) {
+    offerStateLabel = 'Counter-offer in play'
+    offerStateHelper = 'Review the seller counter terms and decide how to take them back to the buyer.'
+    offerStateTone = 'amber'
+  } else if (offerStatus === 'withdrawn') {
+    offerStateLabel = 'Buyer withdrew offer'
+    offerStateHelper = 'Only restart this deal if the buyer clearly re-engages. A fresh offer link is usually cleaner than reusing the old one.'
+    offerStateTone = 'red'
+  } else if (offerStatus === 'expired') {
+    offerStateLabel = 'Offer expired'
+    offerStateHelper = 'The secure offer window has lapsed. Send a new offer link if negotiations are still alive.'
+    offerStateTone = 'red'
+  } else if (offerStatus === 'rejected') {
+    offerStateLabel = 'Offer rejected'
+    offerStateHelper = 'This offer is closed. Restart with new terms only if the seller and buyer want to reopen the discussion.'
+    offerStateTone = 'red'
+  } else if (acceptedOffer) {
+    offerStateLabel = transactionId ? 'Accepted offer linked' : 'Accepted offer ready'
+    offerStateHelper = transactionId
+      ? 'This accepted offer is already tied to a transaction workspace.'
+      : 'Seller has accepted. The next move is to create the transaction workspace.'
+    offerStateTone = transactionId ? 'green' : 'amber'
+  }
+
+  let transactionStateLabel = latestTransaction ? formatCleanValue(latestTransaction.status || latestTransaction.currentMainStage || 'Transaction linked') : 'No transaction yet'
+  let transactionStateHelper = latestTransaction
+    ? 'Open the transaction workspace to continue the deal.'
+    : acceptedOffer
+      ? 'Create the transaction from the accepted offer.'
+      : 'A transaction appears only after a real accepted offer.'
+  let transactionStateTone = latestTransaction ? 'blue' : acceptedOffer ? 'amber' : 'slate'
+
+  if (latestTransaction) {
+    if (transactionLifecycleState === 'cancelled') {
+      transactionStateLabel = 'Deal fell through'
+      transactionStateHelper = latestTransaction?.cancelledAt || latestTransaction?.cancelled_at
+        ? `Transaction cancelled ${formatRelativeTime(latestTransaction.cancelledAt || latestTransaction.cancelled_at, 'recently')}. Decide whether to restart negotiations or close the lead.`
+        : 'The transaction has been cancelled. Decide whether negotiations restart or the lead should be closed.'
+      transactionStateTone = 'red'
+    } else if (onboardingStatus.includes('signed_otp_received')) {
+      transactionStateLabel = 'Signed OTP received'
+      transactionStateHelper = 'Finance and attorney handoff can now continue from the transaction.'
+      transactionStateTone = 'green'
+    } else if (onboardingStatus.includes('awaiting_signed_otp')) {
+      transactionStateLabel = 'Signed OTP outstanding'
+      transactionStateHelper = intakePreference === 'hard_copy'
+        ? 'Prepare the hard-copy OTP pack, collect signatures, and upload the signed OTP.'
+        : intakePreference === 'agent_assisted'
+          ? 'Assist the client through OTP signing and upload the signed OTP once completed.'
+          : 'Release or resend the OTP for signature, then follow up until the signed OTP is back.'
+      transactionStateTone = 'amber'
+    } else if (onboardingStatus.includes('completed')) {
+      transactionStateLabel = 'Onboarding complete'
+      transactionStateHelper = 'Prepare the OTP and move the buyer into signing.'
+      transactionStateTone = 'blue'
+    } else if (onboardingDelivery?.status === 'failed') {
+      transactionStateLabel = 'Onboarding needs attention'
+      transactionStateHelper = onboardingDelivery.errorMessage || 'Buyer onboarding did not send cleanly.'
+      transactionStateTone = 'red'
+    } else if (handoff.buyerOnboardingSent || onboardingDelivery?.sentAt || onboardingDelivery?.sent_at || onboardingDelivery?.preparedAt || onboardingDelivery?.prepared_at) {
+      transactionStateLabel = 'Buyer onboarding sent'
+      transactionStateHelper = intakePreference === 'hard_copy'
+        ? 'Use the onboarding pack offline, then return with the signed paperwork.'
+        : intakePreference === 'agent_assisted'
+          ? 'Help the buyer finish onboarding and keep the transaction in OTP prep.'
+          : 'Waiting for the buyer to complete onboarding before OTP.'
+      transactionStateTone = 'amber'
+    } else if (mainStage === 'otp') {
+      transactionStateLabel = 'OTP stage active'
+      transactionStateHelper = 'The transaction is in OTP and still needs the buyer-side paperwork to move.'
+      transactionStateTone = 'amber'
+    } else {
+      transactionStateLabel = 'Buyer onboarding pending'
+      transactionStateHelper = intakePreference === 'hard_copy'
+        ? 'Prepare the offline onboarding pack and capture documents manually.'
+        : intakePreference === 'agent_assisted'
+          ? 'Open the transaction and start assisted onboarding with the buyer.'
+          : 'Send or reopen buyer onboarding from the transaction workspace.'
+      transactionStateTone = 'amber'
+    }
+  }
+
+  return {
+    latestViewing,
+    latestOffer,
+    acceptedOffer,
+    latestTransaction,
+    transactionId,
+    intakePreference,
+    intakeLabel: formatClientIntakePreference(intakePreference),
+    offerStateLabel,
+    offerStateHelper,
+    offerStateTone,
+    transactionStateLabel,
+    transactionStateHelper,
+    transactionStateTone,
   }
 }
 
@@ -1889,13 +2397,17 @@ function BuyerHeaderStatusBlock({ icon, label, value, tone = 'slate', helper = '
   )
 }
 
-function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onOpenTimeline, onDelete, onConvert }) {
+function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onOpenTimeline, onDelete, onRunCommand }) {
   const [moreOpen, setMoreOpen] = useState(false)
+  const command = getBuyerWorkspaceCommand(row)
+  const deal = command.snapshot || getBuyerDealSnapshot(row)
   const finance = getBuyerFinanceReadiness(row)
   const documents = getBuyerDocumentReadiness(row)
   const property = getBuyerPropertyReadiness(row)
-  const transactionReady = Boolean(row.convertedTransactionId || row.converted_transaction_id || (Array.isArray(row.transactions) && row.transactions.length))
   const stageLabel = formatCleanValue(row.stage || row.status)
+  const transactionValue = deal.latestTransaction ? deal.transactionStateLabel : 'Not Created'
+  const transactionTone = deal.latestTransaction ? deal.transactionStateTone : 'slate'
+  const runPrimaryAction = () => onRunCommand?.(command.actionId || 'overview')
   return (
     <header className={`${panelClass} overflow-visible bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.08)]`}>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,1fr)_220px] xl:items-start">
@@ -1926,12 +2438,12 @@ function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onOpenTimel
           <BuyerHeaderStatusBlock icon={CreditCard} label="Finance" value={finance.label} tone={finance.tone} helper={`${finance.score}% ready`} />
           <BuyerHeaderStatusBlock icon={Target} label="Property Match" value={property.label} tone={property.tone} helper={`${property.percent}% fit`} />
           <BuyerHeaderStatusBlock icon={FileText} label="Documents" value={documents.label} tone={documents.tone} helper={`${documents.complete}/${documents.total} complete`} />
-          <BuyerHeaderStatusBlock icon={Home} label="Transaction" value={transactionReady ? 'Created' : 'Not Created'} tone={transactionReady ? 'green' : 'slate'} />
+          <BuyerHeaderStatusBlock icon={Home} label="Transaction" value={transactionValue} tone={transactionTone} helper={deal.intakePreference ? deal.intakeLabel : ''} />
         </div>
 
         <div className="flex flex-col gap-2 xl:items-stretch">
-          <button type="button" onClick={onConvert} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800">
-            {transactionReady ? 'Open Transaction' : 'Convert to Transaction'}
+          <button type="button" onClick={runPrimaryAction} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800">
+            {command.actionLabel}
             <ExternalLink size={15} />
           </button>
           <button type="button" onClick={onOpenTimeline} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
@@ -1984,10 +2496,7 @@ function BuyerCommandMetric({ icon, label, value, tone = 'slate', helper = '' })
 
 function BuyerJourneyCommandRow({ row, onNavigate, onConvert }) {
   const command = getBuyerWorkspaceCommand(row)
-  const finance = getBuyerFinanceReadiness(row)
-  const documents = getBuyerDocumentReadiness(row)
-  const property = getBuyerPropertyReadiness(row)
-  const requirement = property.requirement || {}
+  const deal = command.snapshot || getBuyerDealSnapshot(row)
   const missing = command.blockers?.length ? command.blockers : ['No major blocker visible']
   const toneClass = command.tone === 'green'
     ? 'border-emerald-100 bg-emerald-50/70'
@@ -2024,35 +2533,65 @@ function BuyerJourneyCommandRow({ row, onNavigate, onConvert }) {
       <article className={`${panelClass} p-5`}>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Buyer Readiness</p>
-            <h2 className="mt-2 text-lg font-semibold tracking-[-0.035em] text-slate-950">Finance and documents</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Deal Path</p>
+            <h2 className="mt-2 text-lg font-semibold tracking-[-0.035em] text-slate-950">Viewing and offer state</h2>
           </div>
-          <StatusPill tone={finance.tone}>{finance.label}</StatusPill>
+          <StatusPill tone={deal.offerStateTone}>{deal.offerStateLabel}</StatusPill>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <BuyerCommandMetric icon={CreditCard} label="Finance" value={`${finance.score}%`} tone={finance.tone} helper={finance.helper} />
-          <BuyerCommandMetric icon={FileText} label="Docs" value={`${documents.percent}%`} tone={documents.tone} helper={`${documents.complete}/${documents.total} complete`} />
-        </div>
+        <dl className="mt-4 grid gap-2 text-sm">
+          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+            <dt className="font-semibold text-slate-500">Latest viewing</dt>
+            <dd className="truncate text-right font-semibold text-slate-950">{deal.latestViewing ? getAppointmentDateLabel(deal.latestViewing) : 'No viewing logged'}</dd>
+          </div>
+          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+            <dt className="font-semibold text-slate-500">Latest offer</dt>
+            <dd className="truncate text-right font-semibold text-slate-950">{deal.latestOffer ? formatCurrency(getOfferAmount(deal.latestOffer)) : 'No offer yet'}</dd>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+            <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Current offer state</dt>
+            <dd className="mt-1 text-sm font-semibold text-slate-950">{deal.offerStateLabel}</dd>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{deal.offerStateHelper}</p>
+          </div>
+        </dl>
       </article>
 
       <article className={`${panelClass} overflow-hidden p-5`}>
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-          <MapPin size={15} />
-          Property Requirement
+          <Home size={15} />
+          Transaction
         </p>
-        <h2 className="mt-3 line-clamp-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">{getLeadContextSummary(row) || 'Requirement pending'}</h2>
+        <div className="mt-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="line-clamp-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">{deal.transactionStateLabel}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{deal.transactionStateHelper}</p>
+          </div>
+          <StatusPill tone={deal.transactionStateTone}>{deal.latestTransaction ? 'Linked' : 'Pending'}</StatusPill>
+        </div>
         <dl className="mt-4 grid gap-2 text-sm">
           <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
-            <dt className="font-semibold text-slate-500">Budget</dt>
-            <dd className="truncate font-semibold text-slate-950">{getBuyerBudgetLabel(row, requirement)}</dd>
+            <dt className="font-semibold text-slate-500">Client mode</dt>
+            <dd className="truncate text-right font-semibold text-slate-950">{deal.intakeLabel}</dd>
           </div>
           <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
-            <dt className="font-semibold text-slate-500">Area</dt>
-            <dd className="truncate font-semibold text-slate-950">{getBuyerAreaLabel(row, requirement)}</dd>
+            <dt className="font-semibold text-slate-500">Transaction link</dt>
+            <dd className="truncate text-right font-semibold text-slate-950">{deal.transactionId || 'Not created'}</dd>
           </div>
-          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
-            <dt className="font-semibold text-slate-500">Matches</dt>
-            <dd className="font-semibold text-slate-950">{property.propertyCount}</dd>
+          <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+            <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Practical note</dt>
+            <dd className="mt-1 text-sm font-semibold text-slate-950">
+              {deal.intakePreference === 'hard_copy'
+                ? 'Paper-led client path'
+                : deal.intakePreference === 'agent_assisted'
+                  ? 'Agent-assisted client path'
+                  : 'Digital client path'}
+            </dd>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {deal.intakePreference === 'hard_copy'
+                ? 'Keep the workflow moving even when signatures and onboarding happen offline.'
+                : deal.intakePreference === 'agent_assisted'
+                  ? 'The agent can step in and capture the process without forcing the buyer through self-service.'
+                  : 'The portal flow is available end to end when the buyer is comfortable using it.'}
+            </p>
           </div>
         </dl>
       </article>
@@ -5399,6 +5938,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
   const transactions = Array.isArray(lead?.transactions) ? lead.transactions : []
   const acceptedOffer = getAcceptedOfferForConversion(offers)
   const acceptedOfferId = getOfferId(acceptedOffer)
+  const deal = getBuyerDealSnapshot(lead)
   const existingTransactionId = normalizeText(
     getOfferTransactionId(acceptedOffer) ||
       lead?.convertedTransactionId ||
@@ -5542,7 +6082,9 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h3 className="text-sm font-semibold text-slate-950">Transaction Conversion</h3>
-          <p className="mt-1 text-sm text-slate-500">A buyer transaction should be created from the accepted offer, then buyer onboarding can start from the transaction record.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Accepted offers should land in one transaction workspace. Once it exists, keep working from that transaction instead of creating another one.
+          </p>
         </div>
         <StatusPill tone={createdTransactionId ? 'green' : acceptedOffer ? 'amber' : 'blue'}>
           {createdTransactionId ? 'Transaction linked' : acceptedOffer ? 'Accepted offer ready' : 'Seller acceptance required'}
@@ -5556,9 +6098,9 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
             <p className="mt-1 text-xs text-slate-500">{acceptedListing?.label || getOfferListingId(acceptedOffer) || 'Property pending'}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Conversion Rule</p>
-            <p className="mt-1 text-sm font-semibold text-slate-950">Accepted offer only</p>
-            <p className="mt-1 text-xs text-slate-500">Sent, submitted, and seller-review offers stay blocked until accepted.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Current State</p>
+            <p className="mt-1 text-sm font-semibold text-slate-950">{deal.transactionStateLabel}</p>
+            <p className="mt-1 text-xs text-slate-500">{deal.transactionStateHelper}</p>
           </div>
           {createdTransactionId ? (
             <Link to={`/transactions/${createdTransactionId}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
@@ -5573,9 +6115,229 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
         </div>
       ) : (
         <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-          No accepted offer yet. Keep the offer in review until the seller accepts, then return here to create the transaction.
+          No accepted offer yet. Keep the offer in review until the seller accepts, then convert once into the transaction workspace.
         </div>
       )}
+      {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
+      {message ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+    </section>
+  )
+}
+
+function LeadOfferEdgeCasesPanel({ organisationId, lead, actor, onSaved }) {
+  const offers = useMemo(() => sortOffersNewestFirst(lead?.offers || []), [lead?.offers])
+  const [selectedOfferId, setSelectedOfferId] = useState(getOfferId(offers[0]))
+  const [note, setNote] = useState('')
+  const [workingAction, setWorkingAction] = useState('')
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const propertyContexts = useMemo(() => getLeadOfferPropertyContexts(lead), [lead])
+  const propertyById = useMemo(() => new Map(propertyContexts.map((context) => [context.listingId, context])), [propertyContexts])
+
+  useEffect(() => {
+    if (!offers.length) {
+      setSelectedOfferId('')
+      return
+    }
+    if (offers.some((offer) => getOfferId(offer) === selectedOfferId)) return
+    setSelectedOfferId(getOfferId(offers[0]))
+  }, [offers, selectedOfferId])
+
+  const selectedOffer = offers.find((offer) => getOfferId(offer) === selectedOfferId) || offers[0] || null
+  const selectedLifecycle = selectedOffer ? getOfferLifecycleState(selectedOffer) : null
+  const selectedListing = selectedOffer ? propertyById.get(getOfferListingId(selectedOffer)) : null
+  const selectedTransactionId = normalizeText(getOfferTransactionId(selectedOffer) || getLeadLinkedTransactionId(lead))
+  const latestTransaction = getLatestTransaction(lead)
+  const transactionLifecycleState = normalizeText(latestTransaction?.lifecycleState || latestTransaction?.lifecycle_state).toLowerCase()
+  const warnings = useMemo(() => getLeadOfferEdgeWarnings(lead, selectedOffer), [lead, selectedOffer])
+
+  async function runOfferStatusUpdate(nextStatus, actionLabel, extraConditions = {}) {
+    if (!organisationId || !selectedOfferId || !selectedOffer) {
+      setError('Choose an offer first.')
+      return
+    }
+    try {
+      setWorkingAction(nextStatus)
+      setError('')
+      setMessage('')
+      await updateCanonicalOfferStatus(selectedOfferId, nextStatus, {
+        organisationId,
+        actor,
+        patch: buildLeadCanonicalOfferActionPatch(selectedOffer, actor, actionLabel, note, extraConditions),
+      })
+      setMessage(`Offer moved to ${formatCleanValue(nextStatus)}.`)
+      setNote('')
+      await onSaved?.()
+    } catch (actionError) {
+      setError(actionError?.message || 'Unable to update this offer right now.')
+    } finally {
+      setWorkingAction('')
+    }
+  }
+
+  async function markDealFellThrough() {
+    const transactionId = normalizeText(latestTransaction?.id || latestTransaction?.transactionId || latestTransaction?.transaction_id || selectedTransactionId)
+    const reason = normalizeText(note) || (typeof window !== 'undefined'
+      ? window.prompt('Reason for cancelling this transaction?')
+      : '')
+    if (!transactionId) {
+      setError('There is no linked transaction to cancel.')
+      return
+    }
+    if (!reason) {
+      setError('Add a practical reason before cancelling the transaction.')
+      return
+    }
+    try {
+      setWorkingAction('cancel_transaction')
+      setError('')
+      setMessage('')
+      await cancelTransactionLifecycle({
+        transactionId,
+        reason,
+      })
+      setMessage('Transaction marked as cancelled. The lead can now be restarted or closed cleanly.')
+      setNote('')
+      await onSaved?.()
+    } catch (actionError) {
+      setError(actionError?.message || 'Unable to cancel this transaction.')
+    } finally {
+      setWorkingAction('')
+    }
+  }
+
+  if (!offers.length && !latestTransaction) {
+    return (
+      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-950">Edge Cases & Overrides</h3>
+            <p className="mt-1 text-sm text-slate-500">Manual corrections appear here once there is an offer or linked transaction to work with.</p>
+          </div>
+          <StatusPill tone="slate">Waiting for offer</StatusPill>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">Edge Cases & Overrides</h3>
+          <p className="mt-1 text-sm text-slate-500">Handle the practical exceptions here: manual seller decisions, buyer withdrawals, expired offers, and deals that fall through after acceptance.</p>
+        </div>
+        <StatusPill tone={transactionLifecycleState === 'cancelled' ? 'red' : selectedLifecycle?.acceptedOrConverted ? 'green' : selectedLifecycle?.activeNegotiation ? 'amber' : 'blue'}>
+          {transactionLifecycleState === 'cancelled'
+            ? 'Deal fell through'
+            : selectedLifecycle?.label || (latestTransaction ? 'Transaction linked' : 'Manual controls')}
+        </StatusPill>
+      </div>
+
+      {offers.length ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1.1fr_1fr]">
+          <label className="grid gap-1 text-sm font-semibold text-slate-700">
+            Offer record
+            <select value={selectedOfferId} onChange={(event) => setSelectedOfferId(event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
+              {offers.map((offer) => (
+                <option key={getOfferId(offer)} value={getOfferId(offer)}>
+                  {[formatCleanValue(getOfferLifecycleState(offer).effectiveStatus || offer.status || 'draft'), formatCurrency(getOfferAmount(offer)), selectedOffer && getOfferId(selectedOffer) === getOfferId(offer) ? selectedListing?.label : propertyById.get(getOfferListingId(offer))?.label || getOfferListingId(offer)].filter(Boolean).join(' - ')}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Selected Context</p>
+            <p className="mt-1 text-sm font-semibold text-slate-950">{selectedListing?.label || getOfferListingId(selectedOffer) || 'Property pending'}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {selectedLifecycle?.blockedReason || 'Use the least-destructive manual correction that matches what happened in the real world.'}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {warnings.length ? (
+        <div className="mt-4 space-y-2">
+          {warnings.map((warning) => (
+            <div key={warning.text} className={`rounded-xl border px-3 py-2 text-sm ${warning.tone === 'red' ? 'border-rose-200 bg-rose-50 text-rose-700' : warning.tone === 'blue' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+              {warning.text}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1.2fr_1fr_auto]">
+        <input
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300"
+          placeholder="Agent note / reason for the manual update"
+        />
+        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Linked transaction</p>
+          <p className="mt-1 text-sm font-semibold text-slate-950">{selectedTransactionId || 'Not linked'}</p>
+        </div>
+        {selectedTransactionId ? (
+          <Link to={`/transactions/${selectedTransactionId}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+            Open Transaction <ExternalLink size={13} />
+          </Link>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={!selectedOffer || selectedLifecycle?.acceptedOrConverted || workingAction === 'accepted'}
+          onClick={() => runOfferStatusUpdate('accepted', 'Accepted outside system', {
+            acceptedOutsideSystem: true,
+            acceptedOutsideSystemAt: new Date().toISOString(),
+            acceptedOutsideSystemBy: actor?.fullName || actor?.name || actor?.email || 'Agent',
+          })}
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <CheckCircle2 size={15} />
+          {workingAction === 'accepted' ? 'Saving...' : 'Mark Accepted (Offline)'}
+        </button>
+        <button
+          type="button"
+          disabled={!selectedOffer || selectedLifecycle?.acceptedOrConverted || selectedLifecycle?.terminal || workingAction === 'rejected'}
+          onClick={() => runOfferStatusUpdate('rejected', 'Rejected outside system')}
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <AlertTriangle size={15} />
+          {workingAction === 'rejected' ? 'Saving...' : 'Mark Rejected'}
+        </button>
+        <button
+          type="button"
+          disabled={!selectedOffer || !selectedLifecycle?.buyerCanWithdraw || workingAction === 'withdrawn'}
+          onClick={() => runOfferStatusUpdate('withdrawn', 'Buyer withdrew offer')}
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Archive size={15} />
+          {workingAction === 'withdrawn' ? 'Saving...' : 'Mark Withdrawn'}
+        </button>
+        <button
+          type="button"
+          disabled={!selectedOffer || selectedLifecycle?.acceptedOrConverted || selectedLifecycle?.terminal || workingAction === 'expired'}
+          onClick={() => runOfferStatusUpdate('expired', 'Offer expired manually')}
+          className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-white px-3 text-sm font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Clock3 size={15} />
+          {workingAction === 'expired' ? 'Saving...' : 'Mark Expired'}
+        </button>
+        {latestTransaction && transactionLifecycleState !== 'cancelled' ? (
+          <button
+            type="button"
+            disabled={workingAction === 'cancel_transaction'}
+            onClick={markDealFellThrough}
+            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            <Archive size={15} />
+            {workingAction === 'cancel_transaction' ? 'Cancelling...' : 'Mark Deal Fell Through'}
+          </button>
+        ) : null}
+      </div>
+
       {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
       {message ? <p className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
     </section>
@@ -5796,11 +6558,27 @@ function OfferTransactionList({ offers = [], transactions = [], convertedTransac
         <div className="space-y-3">
           {safeOffers.length ? safeOffers.map((offer, index) => (
             <article key={getOfferId(offer) || `${getOfferListingId(offer) || 'offer'}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              {(() => {
+                const lifecycle = getOfferLifecycleState(offer)
+                return (
+                  <>
               <div className="flex items-center justify-between gap-3">
                 <strong className="text-sm text-slate-950">{formatCurrency(getOfferAmount(offer))}</strong>
-                <StatusPill tone={getOfferStatusTone(offer.status)}>{offer.status || 'draft'}</StatusPill>
+                <StatusPill tone={getOfferStatusTone(lifecycle.effectiveStatus || offer.status)}>{lifecycle.label}</StatusPill>
               </div>
+              <p className="mt-2 text-xs font-semibold text-slate-600">
+                {getOfferTransactionId(offer)
+                  ? 'Already linked to a transaction.'
+                  : lifecycle.activeNegotiation
+                    ? 'Offer is still inside live review.'
+                    : lifecycle.buyerCanResubmit
+                      ? 'Buyer can still revise or resubmit from this path.'
+                      : 'Offer workflow is paused or closed.'}
+              </p>
               <p className="mt-2 text-xs text-slate-500">Updated {formatDateTime(offer.updatedAt || offer.updated_at || offer.createdAt || offer.created_at)}</p>
+                  </>
+                )
+              })()}
             </article>
           )) : <p className="text-sm text-slate-500">No offers linked.</p>}
         </div>
@@ -5810,12 +6588,20 @@ function OfferTransactionList({ offers = [], transactions = [], convertedTransac
         <div className="space-y-3">
           {safeTransactions.length ? safeTransactions.map((transaction, index) => {
             const transactionId = normalizeText(transaction.id || transaction.transactionId || transaction.transaction_id)
+            const transactionLifecycleState = normalizeText(transaction.lifecycleState || transaction.lifecycle_state).toLowerCase()
             return (
             <article key={transactionId || `transaction-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center justify-between gap-3">
                 <strong className="text-sm text-slate-950">Transaction</strong>
-                <StatusPill tone="green">{transaction.status || 'Linked'}</StatusPill>
+                <StatusPill tone={transactionLifecycleState === 'cancelled' ? 'red' : normalizeText(transaction.onboardingStatus || transaction.onboarding_status).toLowerCase().includes('signed_otp_received') ? 'green' : 'blue'}>
+                  {transactionLifecycleState === 'cancelled' ? 'Cancelled' : transaction.currentMainStage || transaction.current_main_stage || transaction.status || 'Linked'}
+                </StatusPill>
               </div>
+              <p className="mt-2 text-xs font-semibold text-slate-600">
+                {transactionLifecycleState === 'cancelled'
+                  ? `Deal fell through${transaction.cancelledAt || transaction.cancelled_at ? ` on ${formatDateTime(transaction.cancelledAt || transaction.cancelled_at)}` : ''}.`
+                  : normalizeText(transaction.onboardingStatus || transaction.onboarding_status || transaction.status || 'linked')}
+              </p>
               {transactionId ? (
                 <Link to={`/transactions/${transactionId}`} className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-blue-700">
                   Open transaction <ExternalLink size={13} />
@@ -5964,6 +6750,10 @@ function getSellerOnboardingToken(row = {}, listing = null) {
 }
 
 function getSellerPortalLink(row = {}, listing = null) {
+  const token = getSellerOnboardingToken(row, listing)
+  const portalLink = buildSellerClientPortalLink(token)
+  if (portalLink) return portalLink
+
   const directLink = normalizeText(
     row?.sellerOnboardingLink ||
       row?.seller_onboarding_link ||
@@ -5972,8 +6762,11 @@ function getSellerPortalLink(row = {}, listing = null) {
       listing?.sellerOnboardingLink ||
       listing?.seller_onboarding_link,
   )
+  if (directLink.includes('/client/')) return directLink
+  const onboardingToken = directLink.match(/\/seller\/onboarding\/([^/?#]+)/i)?.[1]
+  if (onboardingToken) return buildSellerClientPortalLink(decodeURIComponent(onboardingToken))
   if (directLink) return directLink
-  return buildSellerOnboardingLink(getSellerOnboardingToken(row, listing))
+  return ''
 }
 
 function sellerOnboardingIsSubmitted(status = '') {
@@ -6615,7 +7408,9 @@ function SellerLeadActions({
   listing = null,
   onboardingStatus = '',
   sendingOnboarding = false,
+  sendingPortalLink = false,
   onSendSellerOnboarding,
+  onResendSellerPortalLink,
   onGenerateMandate,
   onOpenListing,
   onOpenAppointments,
@@ -6655,9 +7450,9 @@ function SellerLeadActions({
             <OnboardingIcon size={15} />
             {sendingOnboarding ? 'Sending...' : onboardingMeta.label}
           </button>
-          <button type="button" onClick={() => onSendSellerOnboarding?.()} disabled={sendingOnboarding} className={menuButtonClass}>
+          <button type="button" onClick={() => onResendSellerPortalLink?.()} disabled={sendingPortalLink} className={menuButtonClass}>
             <RefreshCw size={15} />
-            Resend Seller Portal Link
+            {sendingPortalLink ? 'Resending...' : 'Resend Seller Portal Link'}
           </button>
           <button
             type="button"
@@ -6699,7 +7494,9 @@ function SellerLeadHeader({
   listing = null,
   onboardingStatus = '',
   sendingOnboarding = false,
+  sendingPortalLink = false,
   onSendSellerOnboarding,
+  onResendSellerPortalLink,
   onGenerateMandate,
   onOpenListing,
   onOpenAppointments,
@@ -6740,7 +7537,9 @@ function SellerLeadHeader({
             listing={listing}
             onboardingStatus={onboardingStatus}
             sendingOnboarding={sendingOnboarding}
+            sendingPortalLink={sendingPortalLink}
             onSendSellerOnboarding={onSendSellerOnboarding}
+            onResendSellerPortalLink={onResendSellerPortalLink}
             onGenerateMandate={onGenerateMandate}
             onOpenListing={onOpenListing}
             onOpenAppointments={onOpenAppointments}
@@ -7761,6 +8560,7 @@ function SellerLeadWorkspaceLayout({
   linkedSellerListing,
   sellerOnboardingStatus,
   sendingSellerOnboarding,
+  sendingSellerPortalLink,
   sellerActionError,
   sellerActionMessage,
   organisationId,
@@ -7770,6 +8570,8 @@ function SellerLeadWorkspaceLayout({
   onSaved,
   onSaveCommission,
   onSendSellerOnboarding,
+  onResendSellerPortalLink,
+  onOpenSellerPortalLink,
   onGenerateMandate,
   onOpenListing,
   onCopySellerPortalLink,
@@ -7784,17 +8586,7 @@ function SellerLeadWorkspaceLayout({
   const [commissionStructuresLoading, setCommissionStructuresLoading] = useState(false)
   useEffect(() => {
     setCommissionDraft(buildSellerCommissionDraft(commissionSummary))
-  }, [
-    commissionSummary.agencyStructureId,
-    commissionSummary.agencyStructureName,
-    commissionSummary.amount,
-    commissionSummary.commissionType,
-    commissionSummary.mandateTerms,
-    commissionSummary.notes,
-    commissionSummary.paymentResponsibility,
-    commissionSummary.percentage,
-    commissionSummary.vatHandling,
-  ])
+  }, [commissionSummary])
   useEffect(() => {
     let active = true
     async function loadCommissionStructures() {
@@ -7802,7 +8594,7 @@ function SellerLeadWorkspaceLayout({
         setCommissionStructuresLoading(true)
         const rows = await listOrganisationCommissionStructures()
         if (active) setCommissionStructures(Array.isArray(rows) ? rows : [])
-      } catch (structureError) {
+      } catch {
         if (active) setCommissionStructures([])
       } finally {
         if (active) setCommissionStructuresLoading(false)
@@ -7825,7 +8617,8 @@ function SellerLeadWorkspaceLayout({
   }, [])
   const handleAcquisitionAction = useCallback((actionId = '') => {
     const key = normalizeText(actionId).toLowerCase()
-    if (['send_onboarding', 'open_seller_portal'].includes(key)) onSendSellerOnboarding?.()
+    if (key === 'send_onboarding') onSendSellerOnboarding?.()
+    else if (key === 'open_seller_portal') onOpenSellerPortalLink?.()
     else if (['generate_mandate', 'send_mandate', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(key)) onGenerateMandate?.()
     else if (['add_commission', 'review_commission', 'open_commission'].includes(key)) setActiveWorkspaceTab('mandate')
     else if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(key)) onOpenListing?.()
@@ -7846,7 +8639,7 @@ function SellerLeadWorkspaceLayout({
       setActiveWorkspaceTab('documents')
     }
     else setActiveWorkspaceTab('overview')
-  }, [focusSellerWorkspaceSection, onGenerateMandate, onOpenListing, onSendSellerOnboarding])
+  }, [focusSellerWorkspaceSection, onGenerateMandate, onOpenListing, onOpenSellerPortalLink, onSendSellerOnboarding])
 
   return (
     <div className="space-y-6">
@@ -7857,7 +8650,9 @@ function SellerLeadWorkspaceLayout({
         listing={linkedSellerListing}
         onboardingStatus={sellerOnboardingStatus}
         sendingOnboarding={sendingSellerOnboarding}
+        sendingPortalLink={sendingSellerPortalLink}
         onSendSellerOnboarding={onSendSellerOnboarding}
+        onResendSellerPortalLink={onResendSellerPortalLink}
         onGenerateMandate={onGenerateMandate}
         onOpenListing={onOpenListing}
         onOpenAppointments={() => setActiveWorkspaceTab('appointments')}
@@ -8016,6 +8811,7 @@ function AgentLeadWorkspace() {
   const [sellerActionError, setSellerActionError] = useState('')
   const [sellerActionMessage, setSellerActionMessage] = useState('')
   const [sendingSellerOnboarding, setSendingSellerOnboarding] = useState(false)
+  const [sendingSellerPortalLink, setSendingSellerPortalLink] = useState(false)
   const [savingSellerCommission, setSavingSellerCommission] = useState(false)
 
   const loadWorkspace = useCallback(async () => {
@@ -8187,6 +8983,59 @@ function AgentLeadWorkspace() {
     }
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sendingSellerOnboarding, workspaceName])
 
+  const resendSellerPortalLink = useCallback(async () => {
+    if (!row || !isSellerLeadWorkspace || sendingSellerPortalLink) return
+    if (!organisationId) {
+      setSellerActionError('Select an agency workspace before resending the seller portal link.')
+      return
+    }
+    const sellerEmail = normalizeText(row.email || row.contact?.email)
+    if (!sellerEmail || !sellerEmail.includes('@')) {
+      setSellerActionError('Seller email is required to resend the seller portal link.')
+      return
+    }
+    const portalLink = getSellerPortalLink(row, linkedSellerListing)
+    if (!portalLink) {
+      setSellerActionError('Send seller onboarding first to create the seller portal link.')
+      return
+    }
+
+    try {
+      setSendingSellerPortalLink(true)
+      setSellerActionError('')
+      setSellerActionMessage('')
+      const portalEmail = await invokeEdgeFunction('send-email', {
+        body: buildSellerOnboardingEmailPayload({
+          row,
+          listing: linkedSellerListing,
+          onboarding: { link: portalLink },
+          organisationId,
+          actor,
+          workspaceName,
+        }),
+      })
+      if (portalEmail?.error || portalEmail?.data?.error) {
+        throw new Error(
+          portalEmail?.error?.message ||
+            portalEmail?.data?.error ||
+            'Seller portal email could not be sent.',
+        )
+      }
+      await createAgencyCrmLeadActivity(organisationId, row.leadId, {
+        agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
+        activityType: 'Seller Portal Link Resent',
+        activityNote: `Seller portal link was resent to ${row.name || 'Seller'}.`,
+        outcome: 'Seller portal link resent',
+        activityDate: new Date().toISOString(),
+      }, { actor }).catch(() => {})
+      setSellerActionMessage('Seller portal link resent.')
+    } catch (actionError) {
+      setSellerActionError(actionError?.message || 'Unable to resend the seller portal link right now.')
+    } finally {
+      setSendingSellerPortalLink(false)
+    }
+  }, [actor, isSellerLeadWorkspace, linkedSellerListing, organisationId, row, sendingSellerPortalLink, workspaceName])
+
   const saveSellerCommissionForLead = useCallback(async (draft = {}) => {
     if (!row || !isSellerLeadWorkspace || savingSellerCommission) return
     if (!organisationId) {
@@ -8270,6 +9119,20 @@ function AgentLeadWorkspace() {
     if (listingId) navigate(`/agent/listings/${encodeURIComponent(listingId)}`)
     else navigate('/listings')
   }, [linkedSellerListing, navigate, row])
+
+  const openSellerPortalLink = useCallback(() => {
+    const link = getSellerPortalLink(row, linkedSellerListing)
+    if (!link) {
+      setSellerActionError('Send seller onboarding first to create the seller portal link.')
+      return
+    }
+    setSellerActionError('')
+    if (typeof window !== 'undefined') {
+      window.open(link, '_blank', 'noopener,noreferrer')
+    } else {
+      setSellerActionMessage(link)
+    }
+  }, [linkedSellerListing, row])
 
   const copySellerPortalLink = useCallback(async () => {
     const link = getSellerPortalLink(row, linkedSellerListing)
@@ -8377,9 +9240,18 @@ function AgentLeadWorkspace() {
   }, [actor, loadWorkspace, organisationId, row])
 
   const convertBuyerLead = useCallback(() => {
-    if (row?.convertedTransactionId) navigate(`/transactions/${row.convertedTransactionId}`)
+    const transactionId = getLeadLinkedTransactionId(row)
+    if (transactionId) navigate(`/transactions/${transactionId}`)
     else setActiveTab('offers')
-  }, [navigate, row?.convertedTransactionId])
+  }, [navigate, row])
+
+  const runBuyerWorkspaceAction = useCallback((actionId = 'overview') => {
+    if (actionId === 'convert') {
+      convertBuyerLead()
+      return
+    }
+    setActiveTab(actionId || 'overview')
+  }, [convertBuyerLead])
 
   return (
     <main className={pageShell}>
@@ -8401,6 +9273,7 @@ function AgentLeadWorkspace() {
               linkedSellerListing={linkedSellerListing}
               sellerOnboardingStatus={sellerOnboardingStatus}
               sendingSellerOnboarding={sendingSellerOnboarding}
+              sendingSellerPortalLink={sendingSellerPortalLink}
               sellerActionError={sellerActionError}
               sellerActionMessage={sellerActionMessage}
               organisationId={organisationId}
@@ -8410,6 +9283,8 @@ function AgentLeadWorkspace() {
               onSaved={loadWorkspace}
               onSaveCommission={saveSellerCommissionForLead}
               onSendSellerOnboarding={sendSellerOnboardingForLead}
+              onResendSellerPortalLink={resendSellerPortalLink}
+              onOpenSellerPortalLink={openSellerPortalLink}
               onGenerateMandate={openMandateWorkspace}
               onOpenListing={openSellerListing}
               onCopySellerPortalLink={copySellerPortalLink}
@@ -8426,7 +9301,7 @@ function AgentLeadWorkspace() {
                 lastActivity={getBuyerLastActivity(row)}
                 onOpenTimeline={() => setActiveTab('timeline')}
                 onDelete={deleteCurrentLead}
-                onConvert={convertBuyerLead}
+                onRunCommand={runBuyerWorkspaceAction}
               />
 
               <BuyerJourneyCommandRow
@@ -8512,6 +9387,12 @@ function AgentLeadWorkspace() {
                         onSaved={loadWorkspace}
                       />
                       <LeadOfferTransactionConversionPanel
+                        organisationId={organisationId}
+                        lead={row}
+                        actor={actor}
+                        onSaved={loadWorkspace}
+                      />
+                      <LeadOfferEdgeCasesPanel
                         organisationId={organisationId}
                         lead={row}
                         actor={actor}

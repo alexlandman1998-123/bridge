@@ -252,7 +252,7 @@ export function isBuyerOnboardingComplete(input = {}) {
       formData.onboarding_status,
   )
   return (
-    ['submitted', 'reviewed', 'approved', 'complete', 'completed', 'client_onboarding_complete'].includes(onboardingStatus) ||
+    ['submitted', 'reviewed', 'approved', 'complete', 'completed', 'client_onboarding_complete', 'awaiting_signed_otp', 'signed_otp_received'].includes(onboardingStatus) ||
     Boolean(
       normalizeDateValue(transaction.onboarding_completed_at || transaction.onboardingCompletedAt) ||
         normalizeDateValue(transaction.external_onboarding_submitted_at || transaction.externalOnboardingSubmittedAt) ||

@@ -13,6 +13,7 @@ import {
   Network,
   Settings,
   Store,
+  TrendingUp,
   Users,
   UserRoundCheck,
   WalletCards,
@@ -26,6 +27,15 @@ export const COMMERCIAL_DASHBOARD_NAV_ITEM = {
 }
 
 export const COMMERCIAL_NAV_GROUPS = [
+  {
+    id: 'crm',
+    label: 'CRM',
+    icon: BriefcaseBusiness,
+    items: [
+      { label: 'Companies', to: '/commercial/companies', icon: Building2 },
+      { label: 'Contacts', to: '/commercial/contacts', icon: Users },
+    ],
+  },
   {
     id: 'demand',
     label: 'Demand',
@@ -64,6 +74,7 @@ export const COMMERCIAL_NAV_GROUPS = [
     label: 'Brokers',
     icon: UserRoundCheck,
     items: [
+      { label: 'Principal View', to: '/commercial/principal', icon: TrendingUp },
       { label: 'Overview', to: '/commercial/brokers/overview', icon: Gauge },
       { label: 'Brokers', to: '/commercial/brokers', icon: Users },
       { label: 'Teams', to: '/commercial/brokers/teams', icon: Network },
@@ -78,6 +89,7 @@ export const COMMERCIAL_NAV_GROUPS = [
     icon: BarChart3,
     items: [
       { label: 'Documents', to: '/commercial/docs', icon: FileCheck2, activePaths: ['/commercial/docs', '/commercial/documents'] },
+      { label: 'Market Intelligence', to: '/commercial/market-intelligence', icon: TrendingUp },
       { label: 'Reports', to: '/commercial/reports', icon: BarChart3 },
       { label: 'Activity', to: '/commercial/activity', icon: Activity },
     ],

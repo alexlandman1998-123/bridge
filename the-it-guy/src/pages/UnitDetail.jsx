@@ -55,6 +55,7 @@ import {
   resendTransactionDocumentRequest,
   updateTransactionDocumentRequestStatus,
   buildWorkflowStepComment,
+  finalizeSignedOtpWorkflow,
   getTransactionRollup,
   fetchUnitDetail,
   fetchUnitWorkspaceShell,
@@ -74,6 +75,11 @@ import {
   updateTransactionSubprocessStep,
   uploadDocument,
 } from '../lib/api'
+import {
+  CLIENT_INTAKE_PREFERENCE,
+  getClientIntakePreferenceLabel,
+  normalizeClientIntakePreference,
+} from '../lib/buyerLifecycleService'
 import { MAIN_PROCESS_STAGES, MAIN_STAGE_LABELS } from '../lib/stages'
 import { DOCUMENTS_BUCKET_CANDIDATES, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
@@ -4269,7 +4275,15 @@ function UnitDetail() {
       return
     }
 
-    if (!buyer?.email) {
+    const deliveryMode = normalizeClientIntakePreference(
+      detail?.onboardingFormData?.formData?.bridge_client_intake_preference ||
+        detail?.onboardingFormData?.formData?.deliveryMode ||
+        detail?.transaction?.routing_profile_json?.clientIntakePreference ||
+        detail?.transaction?.routing_profile_json?.deliveryMode,
+    )
+    const manualHandoff = [CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED, CLIENT_INTAKE_PREFERENCE.HARD_COPY].includes(deliveryMode)
+
+    if (!buyer?.email && !manualHandoff) {
       setError('Capture buyer email before sending onboarding.')
       return
     }
@@ -4288,6 +4302,7 @@ function UnitDetail() {
           type: 'client_onboarding',
           transactionId: transaction.id,
           resend,
+          deliveryMode,
         },
       })
 
@@ -4632,6 +4647,11 @@ function UnitDetail() {
         documentType: OTP_DOCUMENT_TYPES.signedReuploaded,
         stageKey: 'otp_prep_signing',
         isClientVisible: false,
+      })
+      await finalizeSignedOtpWorkflow({
+        transactionId: transaction.id,
+        financeType: transaction?.finance_type || stageForm.finance_type || 'cash',
+        actorRole: effectiveEditorRole,
       })
       await postSystemDiscussionUpdates([
         `Sales workflow updated: Signed OTP uploaded by ${resolveActingParticipantName()} at ${formatDateTime(new Date().toISOString())}.`,
@@ -5545,10 +5565,18 @@ function UnitDetail() {
     canEditAttorneyWorkflow: Boolean(actingPermissions.canEditAttorneyWorkflow),
     isFinanceOwner: effectiveEditorRole === 'bond_originator',
   })
+  const onboardingIntakePreference = normalizeClientIntakePreference(
+    detail?.onboardingFormData?.formData?.bridge_client_intake_preference ||
+      detail?.onboardingFormData?.formData?.deliveryMode ||
+      transaction?.routing_profile_json?.clientIntakePreference ||
+      transaction?.routing_profile_json?.deliveryMode,
+  )
   const salesWorkflowSnapshot = resolveSalesWorkflowSnapshot({
     onboardingStatus,
     onboardingCompletedAt: transaction?.onboarding_completed_at || null,
     externalOnboardingSubmittedAt: transaction?.external_onboarding_submitted_at || null,
+    onboardingFormData: onboardingFormData || {},
+    intakePreference: onboardingIntakePreference,
     documents: documents || [],
     requiredDocuments: requiredDocumentChecklist || [],
     permissions: salesLanePermissions,
@@ -6480,6 +6508,19 @@ function UnitDetail() {
   })
   const workspaceTransactionLifecycleState = String(transaction?.lifecycle_state || '').toLowerCase()
   const canArchiveTransaction = ['registered', 'completed'].includes(workspaceTransactionLifecycleState)
+  const onboardingDeliveryMode = onboardingIntakePreference
+  const onboardingDeliveryLabel = getClientIntakePreferenceLabel(onboardingDeliveryMode)
+  const onboardingRequiresManualHandoff = [
+    CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED,
+    CLIENT_INTAKE_PREFERENCE.HARD_COPY,
+  ].includes(onboardingDeliveryMode)
+  const sendOnboardingActionLabel = onboardingRequiresManualHandoff
+    ? onboardingEmailSent
+      ? `Reopen ${onboardingDeliveryLabel}`
+      : `Prepare ${onboardingDeliveryLabel}`
+    : onboardingEmailSent
+      ? 'Resend Onboarding'
+      : 'Send Onboarding'
   const workspaceHeaderActionItems = [
     {
       id: 'print-report',
@@ -6517,21 +6558,21 @@ function UnitDetail() {
   if (!onboardingComplete && !onboardingEmailSent) {
     workspaceHeaderActionItems.push({
       id: 'send-onboarding',
-      label: sendingOnboardingEmail ? 'Sending…' : 'Send Onboarding',
+      label: sendingOnboardingEmail ? 'Saving…' : sendOnboardingActionLabel,
       icon: 'onboarding_link',
       variant: 'primary',
       onClick: () => void handleSendOnboardingEmail({ resend: false }),
-      disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+      disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
       hidden: !canEditSalesWorkflow,
     })
   } else if (onboardingEmailSent && !onboardingComplete) {
     workspaceHeaderActionItems.push({
       id: 'resend-onboarding',
-      label: sendingOnboardingEmail ? 'Sending…' : 'Resend Onboarding',
+      label: sendingOnboardingEmail ? 'Saving…' : sendOnboardingActionLabel,
       icon: 'onboarding_link',
       variant: 'secondary',
       onClick: () => void handleSendOnboardingEmail({ resend: true }),
-      disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+      disabled: !canEditSalesWorkflow || sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
       hidden: !canEditSalesWorkflow,
     })
   }
@@ -6815,15 +6856,13 @@ function UnitDetail() {
           onboardingEmailSent ? 'resend_onboarding' : 'send_onboarding',
           sendingOnboardingEmail
             ? onboardingEmailSent
-              ? 'Resending…'
-              : 'Sending…'
-            : onboardingEmailSent
-              ? 'Resend Onboarding'
-              : 'Send Onboarding',
+              ? 'Saving…'
+              : 'Saving…'
+            : sendOnboardingActionLabel,
           () => void handleSendOnboardingEmail({ resend: onboardingEmailSent }),
           {
             variant: 'primary',
-            disabled: sendingOnboardingEmail || !transaction?.id || !buyer?.email,
+            disabled: sendingOnboardingEmail || !transaction?.id || (!onboardingRequiresManualHandoff && !buyer?.email),
           },
         )
         addAction(

@@ -24,8 +24,8 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { leadCategoryLabel, normalizeLeadCategory } from '../lib/leadCategory'
 import { readAgentPrivateListings } from '../lib/agentListingStorage'
+import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
-  CANVASSING_UPDATED_EVENT,
   createCanvassingActivity,
   createCanvassingProspect,
   deleteCanvassingProspect,
@@ -36,7 +36,6 @@ import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/setting
 import { getOrganisationPrivateListings } from '../services/privateListingService'
 
 const CANVASSING_CONTEXT_TIMEOUT_MS = 20000
-const BRIDGE9_PRINCIPAL_DEMO_AGENT_EMAIL = 'principal.demo@bridgenine.co.za'
 
 function withCanvassingTimeout(task, message, timeoutMs = CANVASSING_CONTEXT_TIMEOUT_MS) {
   let timeoutId = null
@@ -355,7 +354,7 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'buyer', cur
 
 function PipelineCanvassingPage() {
   const navigate = useNavigate()
-  const { profile, currentWorkspace } = useWorkspace()
+  const { profile, currentWorkspace, role, currentMembership, workspaceRole } = useWorkspace()
   const [organisationId, setOrganisationId] = useState('')
   const [organisationName, setOrganisationName] = useState('Organisation')
   const [loading, setLoading] = useState(true)
@@ -415,6 +414,30 @@ function PipelineCanvassingPage() {
     [profile?.email, profile?.firstName, profile?.fullName, profile?.id, profile?.lastName],
   )
 
+  const currentAgentIdentity = useMemo(
+    () => normalizeText(currentAgent.id || currentAgent.email),
+    [currentAgent.email, currentAgent.id],
+  )
+
+  const currentMembershipRole = useMemo(
+    () => normalizeOrganisationMembershipRole(
+      workspaceRole ||
+      currentMembership?.workspaceRole ||
+      currentMembership?.role ||
+      profile?.workspaceRole ||
+      profile?.workspace_role,
+    ),
+    [currentMembership?.role, currentMembership?.workspaceRole, profile?.workspaceRole, profile?.workspace_role, workspaceRole],
+  )
+
+  const isPrincipalAgentView = useMemo(
+    () => canAccessPrincipalExperience({
+      appRole: role,
+      membershipRole: currentMembershipRole,
+    }),
+    [currentMembershipRole, role],
+  )
+
   const agentOptions = useMemo(() => {
     const normalized = (Array.isArray(agentUsers) ? agentUsers : [])
       .map((row) => {
@@ -448,11 +471,6 @@ function PipelineCanvassingPage() {
 
     return normalized
   }, [agentUsers, currentAgent.branchId, currentAgent.email, currentAgent.fullName, currentAgent.id, currentAgent.userId])
-
-  const preferredDemoAgentId = useMemo(() => {
-    const demoAgent = agentOptions.find((agent) => normalizeKey(agent.email) === BRIDGE9_PRINCIPAL_DEMO_AGENT_EMAIL)
-    return normalizeText(demoAgent?.id || demoAgent?.email)
-  }, [agentOptions])
 
   const resolveAgentById = useCallback(
     (id) => {
@@ -553,10 +571,10 @@ function PipelineCanvassingPage() {
       if (normalizeText(previous.assignedAgentId)) return previous
       return {
         ...previous,
-        assignedAgentId: preferredDemoAgentId || normalizeText(currentAgent.id || currentAgent.email),
+        assignedAgentId: currentAgentIdentity,
       }
     })
-  }, [currentAgent.email, currentAgent.id, preferredDemoAgentId])
+  }, [currentAgentIdentity])
 
   useEffect(() => {
     if (!openActionMenuId) return undefined
@@ -568,13 +586,14 @@ function PipelineCanvassingPage() {
   }, [openActionMenuId])
 
   const scopedProspects = useMemo(() => {
-    const agentKey = normalizeKey(currentAgent.id || currentAgent.email)
+    if (isPrincipalAgentView) return Array.isArray(prospects) ? prospects : []
+    const agentKey = normalizeKey(currentAgentIdentity)
     return prospects.filter((prospect) => {
       const assignedId = normalizeKey(prospect?.assignedAgentId)
       const assignedEmail = normalizeKey(prospect?.assignedAgentEmail)
       return assignedId === agentKey || assignedEmail === agentKey
     })
-  }, [currentAgent.email, currentAgent.id, prospects])
+  }, [currentAgentIdentity, isPrincipalAgentView, prospects])
 
   const scopedActivities = useMemo(() => {
     const scopedIds = new Set(scopedProspects.map((prospect) => normalizeText(prospect?.id)))
@@ -692,7 +711,7 @@ function PipelineCanvassingPage() {
       area: '',
       propertyType: '',
       canvassingMethod: 'Cold Call',
-      assignedAgentId: preferredDemoAgentId || normalizeText(currentAgent.id || currentAgent.email),
+      assignedAgentId: currentAgentIdentity,
       linkedListingId: '',
       status: 'New',
       nextFollowUpDate: '',
@@ -720,7 +739,7 @@ function PipelineCanvassingPage() {
       setError('Prospect name and one contact method are required.')
       return
     }
-    const assignedAgent = resolveAgentById(prospectForm.assignedAgentId || preferredDemoAgentId || currentAgent.id || currentAgent.email)
+    const assignedAgent = resolveAgentById(prospectForm.assignedAgentId || currentAgentIdentity)
     const selectedListing = listingOptions.find((listing) => normalizeText(listing.id) === normalizeText(prospectForm.linkedListingId)) || null
 
     const createdPayload = {

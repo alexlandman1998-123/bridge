@@ -27,7 +27,7 @@ function CommercialBrokerPerformancePage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">Broker Performance</h1>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Broker workload, active pipeline, HOT movement, leases managed, and recent activity.</p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Broker scorecards for workload, viewings, transactions, revenue, and capacity.</p>
           </div>
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef5fb] text-[#123b61]"><BarChart3 size={18} /></span>
         </div>
@@ -67,6 +67,7 @@ function CommercialBrokerPerformancePage() {
               <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">#{index + 1}</p>
               <p className="mt-1 truncate text-sm font-semibold text-[#102236]">{broker.name}</p>
               <p className="mt-2 text-base font-semibold text-[#102236]">{formatCurrency(broker.pipelineValue)} Pipeline</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">{broker.capacityLabel} capacity</p>
             </article>
           ))}
         </div>
@@ -77,33 +78,35 @@ function CommercialBrokerPerformancePage() {
                 <th className="px-3 py-3">Broker</th>
                 <th className="px-3 py-3">Branch</th>
                 <th className="px-3 py-3 text-right">Requirements</th>
+                <th className="px-3 py-3 text-right">Viewings</th>
                 <th className="px-3 py-3 text-right">Deals</th>
-                <th className="px-3 py-3 text-right">HOTs Sent</th>
-                <th className="px-3 py-3 text-right">HOTs Signed</th>
-                <th className="px-3 py-3 text-right">Leases</th>
+                <th className="px-3 py-3 text-right">Transactions</th>
+                <th className="px-3 py-3 text-right">Closed</th>
                 <th className="px-3 py-3 text-right">Pipeline</th>
-                <th className="px-3 py-3 text-right">Commission</th>
+                <th className="px-3 py-3 text-right">Expected Commission</th>
+                <th className="px-3 py-3 text-right">Capacity</th>
                 <th className="px-3 py-3 text-right">Last Activity</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td className="px-3 py-5 text-slate-500" colSpan={10}>Loading broker performance...</td></tr>
+                <tr><td className="px-3 py-5 text-slate-500" colSpan={11}>Loading broker performance...</td></tr>
               ) : brokers.length ? brokers.map((broker) => (
                 <tr key={broker.id} className="align-top hover:bg-slate-50">
                   <td className="px-3 py-3 font-semibold text-[#102236]"><Link to={`/commercial/brokers/${encodeURIComponent(broker.id)}`}>{broker.name}</Link></td>
                   <td className="px-3 py-3 text-slate-600">{broker.branchName}</td>
                   <td className="px-3 py-3 text-right text-slate-600">{broker.activeRequirements}</td>
+                  <td className="px-3 py-3 text-right text-slate-600">{broker.viewingsCompleted || 0}</td>
                   <td className="px-3 py-3 text-right text-slate-600">{broker.activeDeals}</td>
-                  <td className="px-3 py-3 text-right text-slate-600">{broker.hotsInProgress}</td>
-                  <td className="px-3 py-3 text-right text-slate-600">{broker.hotsSigned || 0}</td>
-                  <td className="px-3 py-3 text-right text-slate-600">{broker.leasesManaged}</td>
+                  <td className="px-3 py-3 text-right text-slate-600">{broker.activeTransactions || 0}</td>
+                  <td className="px-3 py-3 text-right text-slate-600">{broker.transactionsClosed || 0}</td>
                   <td className="px-3 py-3 text-right font-semibold text-[#102236]">{formatCurrency(broker.pipelineValue)}</td>
-                  <td className="px-3 py-3 text-right text-slate-600">{formatCurrency(broker.commissionValue || 0)}</td>
+                  <td className="px-3 py-3 text-right text-slate-600">{formatCurrency(broker.projectedCommission || 0)}</td>
+                  <td className="px-3 py-3 text-right text-slate-600">{broker.capacityLabel}</td>
                   <td className="px-3 py-3 text-right text-slate-600">{formatDate(broker.lastActivityAt)}</td>
                 </tr>
               )) : (
-                <tr><td className="px-3 py-5 text-slate-500" colSpan={10}>No brokers found.</td></tr>
+                <tr><td className="px-3 py-5 text-slate-500" colSpan={11}>No brokers found.</td></tr>
               )}
             </tbody>
           </table>

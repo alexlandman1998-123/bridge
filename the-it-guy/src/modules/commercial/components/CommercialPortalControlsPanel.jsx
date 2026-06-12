@@ -2,20 +2,16 @@ import { Copy, ExternalLink, Loader2, Plus, RotateCw, ShieldCheck, XCircle } fro
 import { useEffect, useState } from 'react'
 import { formatDate, titleize } from '../commercialFormatters'
 import {
+  COMMERCIAL_PORTAL_ROLE_OPTIONS,
   createCommercialPortalInvitation,
+  disableCommercialPortalAccess,
   listCommercialPortalAccessForTransaction,
+  resendCommercialPortalInvitation,
   revokeCommercialPortalAccess,
 } from '../services/commercialPortalApi'
 
-const ROLE_OPTIONS = [
-  { value: 'tenant', label: 'Tenant' },
-  { value: 'landlord', label: 'Landlord' },
-  { value: 'property_manager', label: 'Property Manager' },
-  { value: 'corporate_contact', label: 'Corporate Contact' },
-]
-
 function defaultContactForRole(transaction = {}, role = 'tenant') {
-  if (role === 'landlord') {
+  if (['landlord', 'seller', 'property_manager'].includes(role)) {
     return {
       name: transaction.landlord?.contact_person || transaction.landlord?.name || '',
       email: transaction.landlord?.email || '',
@@ -24,10 +20,10 @@ function defaultContactForRole(transaction = {}, role = 'tenant') {
     }
   }
   return {
-    name: transaction.tenant?.contact_person || transaction.tenant?.name || '',
-    email: transaction.tenant?.email || '',
-    phone: transaction.tenant?.phone || '',
-    company: transaction.tenant?.name || '',
+    name: transaction.contact?.name || transaction.contact?.email || transaction.tenant?.contact_person || transaction.tenant?.name || '',
+    email: transaction.contact?.email || transaction.company?.email || transaction.tenant?.email || '',
+    phone: transaction.contact?.mobile || transaction.contact?.phone || transaction.tenant?.phone || '',
+    company: transaction.company?.company_name || transaction.company?.name || transaction.tenant?.name || '',
   }
 }
 
@@ -114,7 +110,7 @@ function CommercialPortalControlsPanel({ organisationId = '', transaction = null
         <div>
           <h2 className="text-lg font-semibold tracking-[-0.035em] text-[#102236]">Portal Access</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-            Create and manage curated external access for tenants, landlords, property managers, and corporate contacts. External users cannot see commissions, internal notes, management dashboards, or broker tools.
+            Create and manage curated external access for landlords, tenants, buyers, sellers, investors, property managers, and corporate contacts. External users cannot see commissions, internal notes, management dashboards, or broker tools.
           </p>
         </div>
         <button type="button" onClick={loadRows} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-600">
@@ -130,7 +126,7 @@ function CommercialPortalControlsPanel({ organisationId = '', transaction = null
           <label className="grid gap-1 text-sm font-semibold text-[#102236]">
             Portal Type
             <select value={role} onChange={(event) => setRole(event.target.value)} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none">
-              {ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              {COMMERCIAL_PORTAL_ROLE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
           <label className="grid gap-1 text-sm font-semibold text-[#102236]">
@@ -178,15 +174,25 @@ function CommercialPortalControlsPanel({ organisationId = '', transaction = null
                     <Copy size={15} />
                     Copy
                   </button>
+                  <button type="button" onClick={() => resendCommercialPortalInvitation(row.id).then(loadRows).catch((resendError) => setError(resendError?.message || 'Portal invitation could not be resent.'))} disabled={saving} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-600 disabled:opacity-60">
+                    <RotateCw size={15} />
+                    Resend
+                  </button>
                   <a href={path} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-600">
                     <ExternalLink size={15} />
                     Open
                   </a>
                   {isActive ? (
-                    <button type="button" onClick={() => handleRevoke(row)} disabled={saving} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60">
-                      <XCircle size={15} />
-                      Revoke
-                    </button>
+                    <>
+                      <button type="button" onClick={() => disableCommercialPortalAccess(row.id).then(loadRows).catch((disableError) => setError(disableError?.message || 'Portal access could not be disabled.'))} disabled={saving} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-60">
+                        <XCircle size={15} />
+                        Disable
+                      </button>
+                      <button type="button" onClick={() => handleRevoke(row)} disabled={saving} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60">
+                        <XCircle size={15} />
+                        Revoke
+                      </button>
+                    </>
                   ) : null}
                 </div>
               </div>

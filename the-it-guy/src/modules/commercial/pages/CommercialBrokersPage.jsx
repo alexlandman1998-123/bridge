@@ -30,14 +30,15 @@ function BrokerCard({ broker }) {
         <Metric label="Requirements" value={broker.activeRequirements} />
         <Metric label="Listings" value={broker.activeListings} />
         <Metric label="Deals" value={broker.activeDeals} />
+        <Metric label="Transactions" value={broker.activeTransactions || 0} />
         <Metric label="HOTs" value={broker.hotsInProgress} />
-        <Metric label="Leases" value={broker.leasesManaged} />
+        <Metric label="Expected Comm." value={formatCurrency(broker.projectedCommission || 0)} />
       </div>
       <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
         <span className="text-sm font-semibold text-slate-500">Pipeline</span>
         <span className="text-sm font-semibold text-[#102236]">{formatCurrency(broker.pipelineValue)}</span>
       </div>
-      <p className="mt-2 text-xs text-slate-500">Last activity {formatDate(broker.lastActivityAt)}</p>
+      <p className="mt-2 text-xs text-slate-500">{broker.capacityLabel} capacity · Last activity {formatDate(broker.lastActivityAt)}</p>
     </Link>
   )
 }
@@ -80,20 +81,22 @@ function BrokerProfile({ data, brokerId }) {
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
         <Metric label="Requirements" value={broker.activeRequirements} />
         <Metric label="Listings" value={broker.activeListings} />
         <Metric label="Deals" value={broker.activeDeals} />
+        <Metric label="Transactions" value={broker.activeTransactions || 0} />
         <Metric label="Vacancies" value={broker.vacanciesManaged} />
-        <Metric label="HOTs" value={broker.hotsInProgress} />
-        <Metric label="Leases" value={broker.leasesManaged} />
-        <Metric label="Pipeline" value={formatCurrency(broker.pipelineValue)} />
+        <Metric label="Viewings" value={broker.viewingsCompleted || 0} />
+        <Metric label="Expected Comm." value={formatCurrency(broker.projectedCommission || 0)} />
+        <Metric label="Capacity" value={broker.capacityLabel} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-2">
         <RecordList title="Assigned Requirements" rows={broker.requirements} getTitle={(row) => row.requirement_name || 'Requirement'} getMeta={(row) => `${titleize(row.stage)} · ${formatNumber(row.min_size_m2, 'm²')} - ${formatNumber(row.max_size_m2, 'm²')}`} />
         <RecordList title="Assigned Listings" rows={broker.listings} getTitle={(row) => row.title || 'Listing'} getMeta={(row) => `${titleize(row.listing_status)} · ${titleize(row.listing_category)} · ${formatCurrency(row.pricing)}`} />
         <RecordList title="Assigned Deals" rows={broker.deals} getTitle={(row) => row.deal_name || 'Deal'} getMeta={(row) => `${titleize(row.stage)} · ${formatCurrency(row.deal_value)}`} />
+        <RecordList title="Transactions & Viewings" rows={[...broker.transactions, ...broker.viewings]} getTitle={(row) => row.transaction_name || row.viewing_date || row.id || 'Commercial workflow'} getMeta={(row) => `${titleize(row.status)} · ${formatDate(row.updated_at || row.created_at || row.viewing_date)}`} />
         <RecordList title="Assigned Properties / Vacancies" rows={[...broker.properties, ...broker.vacancies]} getTitle={(row) => row.property_name || row.vacancy_name || 'Commercial stock'} getMeta={(row) => row.available_area_m2 ? `${formatNumber(row.available_area_m2, 'm²')} available` : titleize(row.status)} />
         <RecordList title="HOTs and Leases" rows={[...broker.headsOfTerms, ...broker.leases]} getTitle={(row) => row.premises_description || row.id || 'Commercial record'} getMeta={(row) => `${titleize(row.status)} · ${formatDate(row.updated_at || row.created_at || row.lease_end_date)}`} />
       </section>
@@ -127,9 +130,11 @@ function CommercialBrokersPage() {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="Total Brokers" value={loading ? '...' : brokers.length} />
         <Metric label="Active Deals" value={loading ? '...' : brokers.reduce((sum, row) => sum + row.activeDeals, 0)} />
+        <Metric label="Active Transactions" value={loading ? '...' : brokers.reduce((sum, row) => sum + (row.activeTransactions || 0), 0)} />
         <Metric label="Active Listings" value={loading ? '...' : brokers.reduce((sum, row) => sum + row.activeListings, 0)} />
         <Metric label="Leases Managed" value={loading ? '...' : brokers.reduce((sum, row) => sum + row.leasesManaged, 0)} />
         <Metric label="Pipeline Value" value={loading ? '...' : formatCurrency(brokers.reduce((sum, row) => sum + row.pipelineValue, 0))} />
+        <Metric label="Projected Comm." value={loading ? '...' : formatCurrency(brokers.reduce((sum, row) => sum + (row.projectedCommission || 0), 0))} />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">

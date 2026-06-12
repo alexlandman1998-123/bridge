@@ -4492,7 +4492,7 @@ function AttorneyTransactionDetail() {
   const onboardingLifecycleStatus = String(transaction?.onboarding_status || '').trim().toLowerCase()
   const onboardingRecordStatus = String(data?.onboarding?.status || '').trim().toLowerCase()
   const onboardingCompleted =
-    onboardingLifecycleStatus === 'client_onboarding_complete' ||
+    ['client_onboarding_complete', 'awaiting_signed_otp', 'signed_otp_received'].includes(onboardingLifecycleStatus) ||
     Boolean(transaction?.onboarding_completed_at) ||
     ['submitted', 'reviewed', 'approved', 'completed'].includes(onboardingRecordStatus)
   const normalizedFinanceType = normalizeFinanceType(transaction?.finance_type, { allowUnknown: true })

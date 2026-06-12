@@ -5,6 +5,11 @@ import {
   renderBridgeIntroParagraphs,
   renderBridgeSummaryCard,
 } from "../content/bridgeEmailLayout.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import { normalizeText } from "../utils/text.ts";
@@ -102,6 +107,14 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
     "Powered by Bridge",
   ].filter(Boolean).join("\n");
 
+  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
+    communicationType: "seller_offer_review",
+    recipient: to,
+    recipientRole: "seller",
+    subject,
+    messagePreview: text,
+  });
+
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
@@ -112,15 +125,24 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
   });
 
   if (!emailResult.ok) {
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage:
+        emailResult.error?.message || "Failed to send seller offer review email.",
+    });
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send seller offer review email.",
       details: emailResult.error,
     });
   }
 
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: emailResult.data?.id || null,
+  });
+
   return jsonResponse(200, {
     ok: true,
     type: "seller_offer_review",
     emailId: emailResult.data?.id || null,
+    deliveryId: delivery?.id || null,
   });
 }

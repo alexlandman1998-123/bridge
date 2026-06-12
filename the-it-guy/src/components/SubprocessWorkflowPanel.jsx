@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Circle, Clock3, Download, FileUp, X } from 'lucide-react'
-import { buildWorkflowStepComment, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
+import { buildWorkflowStepComment, finalizeSignedOtpWorkflow, parseWorkflowStepComment, SUBPROCESS_STEP_STATUSES, uploadDocument } from '../lib/api'
 import { getWorkflowStepChecklistTemplate } from '../core/transactions/workflowChecklistConfig'
 import ConfirmDialog from './ui/ConfirmDialog'
 
@@ -319,6 +319,9 @@ function SubprocessWorkflowPanel({
         category: 'Signed OTP',
         stageKey: step.step_key || null,
         isClientVisible: false,
+      })
+      await finalizeSignedOtpWorkflow({
+        transactionId: process.transaction_id,
       })
 
       setStepUploadFiles((previous) => {

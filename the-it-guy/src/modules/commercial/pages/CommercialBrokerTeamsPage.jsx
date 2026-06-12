@@ -30,8 +30,10 @@ function CommercialBrokerTeamsPage() {
             <h2 className="text-base font-semibold text-[#102236]">{team.name}</h2>
             <div className="mt-5 grid grid-cols-2 gap-3">
               <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Brokers</p><p className="mt-1 font-semibold text-[#102236]">{team.brokers}</p></div>
-              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Deals</p><p className="mt-1 font-semibold text-[#102236]">{team.activeDeals}</p></div>
-              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3 md:col-span-2"><p className="text-xs text-slate-400">Pipeline</p><p className="mt-1 font-semibold text-[#102236]">{formatCurrency(team.pipelineValue)}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Transactions</p><p className="mt-1 font-semibold text-[#102236]">{team.activeTransactions || 0}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Pipeline</p><p className="mt-1 font-semibold text-[#102236]">{formatCurrency(team.pipelineValue)}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3"><p className="text-xs text-slate-400">Closed Value</p><p className="mt-1 font-semibold text-[#102236]">{formatCurrency(team.closedValue || 0)}</p></div>
+              <div className="rounded-2xl border border-slate-100 bg-[#fbfcfe] px-4 py-3 md:col-span-2"><p className="text-xs text-slate-400">Expected Revenue</p><p className="mt-1 font-semibold text-[#102236]">{formatCurrency(team.expectedRevenue || 0)}</p></div>
             </div>
           </article>
         ))}

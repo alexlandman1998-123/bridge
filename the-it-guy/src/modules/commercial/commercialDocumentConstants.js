@@ -25,6 +25,7 @@ export const COMMERCIAL_DOCUMENT_ENTITY_TYPES = [
   { value: 'commercial_vacancy', label: 'Vacancy' },
   { value: 'commercial_requirement', label: 'Requirement' },
   { value: 'commercial_deal', label: 'Deal' },
+  { value: 'commercial_transaction', label: 'Transaction' },
   { value: 'commercial_heads_of_terms', label: 'Heads of Terms' },
   { value: 'commercial_lease', label: 'Lease' },
   { value: 'commercial_listing', label: 'Listing' },
@@ -96,6 +97,15 @@ export const COMMERCIAL_DOCUMENT_CATEGORIES = {
     { value: 'tenant_approval', label: 'Tenant Approval' },
     { value: 'supporting_documents', label: 'Supporting Documentation' },
   ],
+  commercial_transaction: [
+    { value: 'hot', label: 'HOT' },
+    { value: 'lease', label: 'Lease' },
+    { value: 'offer', label: 'Offer' },
+    { value: 'board_resolution', label: 'Board Resolution' },
+    { value: 'proof_of_funds', label: 'Proof of Funds' },
+    { value: 'fica', label: 'FICA' },
+    { value: 'supporting_documents', label: 'Supporting Documentation' },
+  ],
   commercial_heads_of_terms: [
     { value: 'draft_hot', label: 'Draft HOT' },
     { value: 'sent_hot', label: 'Sent HOT' },
@@ -158,6 +168,13 @@ export const COMMERCIAL_DOCUMENT_REQUIREMENT_TEMPLATES = {
     { category: 'proposal', label: 'Proposal', required: true },
     { category: 'commercial_terms', label: 'Commercial Terms', required: true },
     { category: 'supporting_correspondence', label: 'Supporting Correspondence', required: false },
+  ],
+  commercial_transaction: [
+    { category: 'hot', label: 'HOT', required: false },
+    { category: 'lease', label: 'Lease', required: false },
+    { category: 'offer', label: 'Offer', required: false },
+    { category: 'fica', label: 'FICA', required: false },
+    { category: 'supporting_documents', label: 'Supporting Documentation', required: false },
   ],
   commercial_heads_of_terms: [
     { category: 'draft_hot', label: 'Draft HOT', required: true },
