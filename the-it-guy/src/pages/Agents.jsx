@@ -3875,22 +3875,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 </div>
               )}
             </WorkspaceCard>
-
-            <AppointmentDashboardSection
-              module="agent"
-              organisationId={String(agent?.organisationId || '').trim()}
-              appointmentRows={workspaceSnapshot?.appointments || []}
-              users={[agent].filter(Boolean)}
-              userId={agent?.userId || agent?.id || ''}
-              userEmail={agent?.email || ''}
-              includeAll={false}
-              onViewCalendar={() => navigate('/pipeline/calendar')}
-              onOpenCalendar={() => navigate('/pipeline/calendar')}
-              onManageAppointment={() => navigate('/pipeline/calendar')}
-              onOpenAppointment={() => navigate('/pipeline/calendar')}
-              onScheduleAppointment={() => navigate('/pipeline/calendar')}
-              refreshKey={`${(workspaceSnapshot?.appointments || []).length}:${agent?.id || agent?.email || ''}`}
-            />
           </div>
 
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">
@@ -3925,6 +3909,22 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             <ListingsOverviewCard statuses={listingStatuses} total={allListings.length} />
             <FinancialPerformanceCard rows={financialRows} />
           </div>
+
+          <AppointmentDashboardSection
+            module="agent"
+            organisationId={String(agent?.organisationId || '').trim()}
+            appointmentRows={workspaceSnapshot?.appointments || []}
+            users={[agent].filter(Boolean)}
+            userId={agent?.userId || agent?.id || ''}
+            userEmail={agent?.email || ''}
+            includeAll={false}
+            onViewCalendar={() => navigate('/pipeline/calendar')}
+            onOpenCalendar={() => navigate('/pipeline/calendar')}
+            onManageAppointment={() => navigate('/pipeline/calendar')}
+            onOpenAppointment={() => navigate('/pipeline/calendar')}
+            onScheduleAppointment={() => navigate('/pipeline/calendar')}
+            refreshKey={`${(workspaceSnapshot?.appointments || []).length}:${agent?.id || agent?.email || ''}`}
+          />
 
           <WorkspaceCard title="Recent Activity">
             {recentActivity.length ? (

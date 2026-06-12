@@ -368,6 +368,8 @@ export default function AppointmentDashboardSection({
   emptyActionLabel = 'Schedule Appointment',
   maxRowsPerGroup = 4,
   refreshKey = '',
+  heading = 'Appointments',
+  subheading = 'Manage upcoming appointments and requests across your pipeline.',
 }) {
   const [state, setState] = useState({ loading: true, error: '', data: null })
 
@@ -422,8 +424,8 @@ export default function AppointmentDashboardSection({
             <CalendarDays className="h-8 w-8" />
           </span>
           <div>
-            <h2 className="text-[2rem] font-semibold tracking-[-0.04em] text-[#102033]">Appointments</h2>
-            <p className="mt-2 text-[1.02rem] text-[#5f7690]">Manage upcoming appointments and requests across your pipeline.</p>
+            <h2 className="text-[2rem] font-semibold tracking-[-0.04em] text-[#102033]">{heading}</h2>
+            <p className="mt-2 text-[1.02rem] text-[#5f7690]">{subheading}</p>
           </div>
         </div>
         <button
