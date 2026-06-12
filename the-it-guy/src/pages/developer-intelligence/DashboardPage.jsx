@@ -1,4 +1,7 @@
 import { AlertTriangle, Building2, MapPinned, Users } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import AppointmentDashboardSection from '../../components/appointments/dashboard/AppointmentDashboardSection'
+import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   IntelligenceShell,
   IntelligenceKpiCard,
@@ -10,7 +13,19 @@ import {
 import { formatCurrency, formatPercent } from './formatters'
 import { developerIntelligenceOverview } from './mockData'
 
+function normalizeText(value) {
+  return String(value || '').trim()
+}
+
 function DeveloperIntelligenceDashboardPage() {
+  const navigate = useNavigate()
+  const workspaceContext = useWorkspace()
+  const organisationId = normalizeText(
+    workspaceContext.currentWorkspace?.id ||
+      workspaceContext.currentMembership?.organisation_id ||
+      workspaceContext.currentMembership?.organisationId ||
+      workspaceContext.workspaceId,
+  )
   const topKpis = [
     {
       label: 'Market Share',
@@ -52,6 +67,20 @@ function DeveloperIntelligenceDashboardPage() {
         <h2 className="mt-2 text-[2rem] font-semibold tracking-[-0.05em] text-[#142132]">You are capturing 6.8% of your market</h2>
         <p className="mt-1 text-[1.04rem] leading-7 text-[#59718a]">{formatCurrency(developerIntelligenceOverview.opportunityValueMonthly)}/month opportunity identified</p>
       </section>
+
+      <AppointmentDashboardSection
+        module="developer"
+        organisationId={organisationId}
+        userId={normalizeText(workspaceContext.profile?.id || workspaceContext.profile?.userId)}
+        userEmail={normalizeText(workspaceContext.profile?.email)}
+        canManage
+        onViewCalendar={() => navigate('/pipeline/calendar')}
+        onOpenCalendar={() => navigate('/pipeline/calendar')}
+        onManageAppointment={() => navigate('/pipeline/calendar')}
+        onOpenAppointment={() => navigate('/pipeline/calendar')}
+        onScheduleAppointment={() => navigate('/pipeline/calendar')}
+        refreshKey={organisationId}
+      />
 
       <section className="grid gap-4 xl:grid-cols-5">
         {topKpis.map((kpi) => (

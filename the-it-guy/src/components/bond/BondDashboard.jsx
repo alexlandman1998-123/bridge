@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowRight, Banknote, Building2, ChevronDown, CircleCheck, CircleDashed, CircleAlert, Clock3, FileCheck2, FileText, HandCoins, UsersRound } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import AppointmentDashboardSection from '../appointments/dashboard/AppointmentDashboardSection'
 import BondEmptyState from './BondEmptyState'
 import BondHqCommandCentre from './BondHqCommandCentre'
 import BondPageShell from './BondPageShell'
@@ -77,6 +79,7 @@ export default function BondDashboard({
   service = bondCommandCenterService,
   initialState = null,
 }) {
+  const navigate = useNavigate()
   const safeWorkspaceId = normalizeText(workspaceId)
   const location = useLocation()
   const [rangeKey] = useState(DEFAULT_RANGE_KEY)
@@ -203,6 +206,20 @@ export default function BondDashboard({
           ) : (
             <>
               <KpiStrip items={heroKpis} />
+
+              <AppointmentDashboardSection
+                module="bond"
+                organisationId={safeWorkspaceId}
+                userId={normalizeText(user?.profile?.id || user?.id || user?.userId)}
+                userEmail={normalizeText(user?.profile?.email || user?.email)}
+                canManage
+                onViewCalendar={() => navigate('/bond/calendar')}
+                onOpenCalendar={() => navigate('/bond/calendar')}
+                onManageAppointment={() => navigate('/bond/calendar')}
+                onOpenAppointment={() => navigate('/bond/calendar')}
+                onScheduleAppointment={() => navigate('/bond/calendar')}
+                refreshKey={safeWorkspaceId}
+              />
 
               <ActiveApplicationsSection
                 items={visibleActiveApplications}

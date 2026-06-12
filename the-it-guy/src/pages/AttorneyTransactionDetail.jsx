@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import ProgressTimeline from '../components/ProgressTimeline'
 import SharedTransactionShell from '../components/SharedTransactionShell'
@@ -7752,6 +7753,21 @@ function AttorneyTransactionDetail() {
               onViewActionPlan={() => openWorkspaceMenu('tasks')}
             />
 
+            <AppointmentDashboardSection
+              module="transaction"
+              organisationId={String(transaction?.organisation_id || currentMembership?.organisation_id || '').trim()}
+              userId={String(profile?.id || profile?.userId || '').trim()}
+              userEmail={String(profile?.email || '').trim()}
+              transactionId={String(transactionId || '').trim()}
+              canManage
+              onViewCalendar={() => navigate('/bond/calendar')}
+              onOpenCalendar={() => navigate('/bond/calendar')}
+              onManageAppointment={() => void handleQuickScheduleSigning()}
+              onOpenAppointment={() => void handleQuickScheduleSigning()}
+              onScheduleAppointment={() => void handleQuickScheduleSigning()}
+              refreshKey={`${transactionId}:${String(transaction?.organisation_id || currentMembership?.organisation_id || '').trim()}`}
+            />
+
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]">
               <BankSubmissionTracker rows={bondSubmissionRows} onViewAll={() => setWorkspaceMenu('banks_quotes')} />
               <BestQuoteSummary
@@ -7856,6 +7872,22 @@ function AttorneyTransactionDetail() {
           <>
             <section className={activeWorkspaceMenu === 'overview' ? 'grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]' : 'space-y-5'}>
               <div className="space-y-4">
+                {activeWorkspaceMenu === 'overview' ? (
+                  <AppointmentDashboardSection
+                    module="transaction"
+                    organisationId={String(transaction?.organisation_id || currentMembership?.organisation_id || '').trim()}
+                    userId={String(profile?.id || profile?.userId || '').trim()}
+                    userEmail={String(profile?.email || '').trim()}
+                    transactionId={String(transactionId || '').trim()}
+                    canManage
+                    onViewCalendar={() => navigate('/attorney/scheduling')}
+                    onOpenCalendar={() => navigate('/attorney/scheduling')}
+                    onManageAppointment={() => void handleQuickScheduleSigning()}
+                    onOpenAppointment={() => void handleQuickScheduleSigning()}
+                    onScheduleAppointment={() => void handleQuickScheduleSigning()}
+                    refreshKey={`${transactionId}:${String(transaction?.organisation_id || currentMembership?.organisation_id || '').trim()}`}
+                  />
+                ) : null}
                 {activeWorkspaceMenu !== 'overview' ? (
                   activeLegalWorkflowDetailKey ? (
                     (() => {

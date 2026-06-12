@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, CalendarD
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
+import AppointmentDashboardSection from '../../components/appointments/dashboard/AppointmentDashboardSection'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWorkspace'
 import Button from '../../components/ui/Button'
@@ -11978,6 +11979,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                   {leadWorkspaceTab === 'appointments' ? (
                   <div className="space-y-4">
+                    <AppointmentDashboardSection
+                      module="lead"
+                      organisationId={organisationId}
+                      appointmentRows={selectedLeadAppointments}
+                      users={users}
+                      userId={currentAgent.id}
+                      userEmail={currentAgent.email}
+                      leadId={selectedLead?.leadId || ''}
+                      canManage
+                      onViewCalendar={() => navigate('/pipeline/calendar')}
+                      onOpenCalendar={() => navigate('/pipeline/calendar')}
+                      onManageAppointment={(appointment) => handleOpenAppointmentModal(appointment)}
+                      onOpenAppointment={(appointment) => handleOpenAppointmentModal(appointment)}
+                      onScheduleAppointment={() => handleOpenAppointmentModal()}
+                      refreshKey={`${selectedLead?.leadId || ''}:${selectedLeadAppointments.length}`}
+                    />
                     <section className="rounded-[18px] border border-[#e1eaf4] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>

@@ -2,7 +2,7 @@ import {
   APPOINTMENT_TEMPLATE_ALIASES,
   APPOINTMENT_TYPE_TEMPLATES,
   GENERIC_APPOINTMENT_TEMPLATE,
-} from '../lib/appointmentTypeTemplates'
+} from '../lib/appointmentTypeTemplates.js'
 
 function normalizeText(value = '') {
   return String(value || '').trim()

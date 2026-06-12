@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -1946,6 +1947,7 @@ function RecentActivityFeed({ rows }) {
 
 function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
   const { profile, currentMembership, workspaceRole, workspaceType } = useWorkspace()
+  const navigate = useNavigate()
   const [dateRange, setDateRange] = useState('last_30_days')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
   const [overviewMode, setOverviewMode] = useState('overview')
@@ -2083,6 +2085,20 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
         {data ? (
           <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
             <PrincipalKpiRow data={data} />
+            <AppointmentDashboardSection
+              module="principal"
+              organisationId={resolvedAgencyId}
+              userId={profile?.id || profile?.userId || ''}
+              userEmail={profile?.email || ''}
+              includeAll
+              canManage={canViewAllTransactions}
+              onViewCalendar={() => navigate('/pipeline/calendar')}
+              onOpenCalendar={() => navigate('/pipeline/calendar')}
+              onManageAppointment={() => navigate('/pipeline/calendar')}
+              onOpenAppointment={() => navigate('/pipeline/calendar')}
+              onScheduleAppointment={() => navigate('/pipeline/calendar')}
+              refreshKey={`${resolvedAgencyId}:${dateRange}:${selectedWorkspaceId}`}
+            />
             <PipelineSalesOverview data={data} dateRange={dateRange} onDateRangeChange={setDateRange} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
             <p className="pb-2 text-center text-xs text-[#667085]">
               <Loader2 size={12} className="mr-1 inline-block" />

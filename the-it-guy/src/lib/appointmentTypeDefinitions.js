@@ -1,5 +1,5 @@
-import { getAppointmentTypeTemplate } from '../services/appointmentTemplateService'
-import { APPOINTMENT_TYPE_TEMPLATES } from './appointmentTypeTemplates'
+import { getAppointmentTypeTemplate } from '../services/appointmentTemplateService.js'
+import { APPOINTMENT_TYPE_TEMPLATES } from './appointmentTypeTemplates.js'
 
 const TEMPLATE_KEYS = Object.keys(APPOINTMENT_TYPE_TEMPLATES)
 

@@ -1,6 +1,7 @@
 import { ArrowLeft, BriefcaseBusiness, CalendarClock, FileText, Search, ShieldCheck, Users } from 'lucide-react'
 import { createElement, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import AppointmentDashboardSection from '../../../components/appointments/dashboard/AppointmentDashboardSection'
 import { formatCurrency, formatDate, titleize } from '../commercialFormatters'
 import CommercialDocumentLibrary from '../components/CommercialDocumentLibrary'
 import CommercialEmptyState from '../components/CommercialEmptyState'
@@ -67,6 +68,7 @@ function ActivityList({ rows = [], emptyTitle, emptyDescription }) {
 
 function CommercialTransactionWorkspacePage() {
   const { transactionId } = useParams()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
   const [searchTerm, setSearchTerm] = useState('')
   const [transaction, setTransaction] = useState(null)
@@ -181,6 +183,18 @@ function CommercialTransactionWorkspacePage() {
           <p className="mt-2 text-lg font-semibold tracking-[-0.04em] text-[#102236]">{formatDate(transaction.updatedAt)}</p>
         </article>
       </div>
+
+      <AppointmentDashboardSection
+        module="transaction"
+        organisationId={organisationId}
+        transactionId={transactionId}
+        includeAll
+        onViewCalendar={() => navigate('/commercial/viewings')}
+        onOpenCalendar={() => navigate('/commercial/viewings')}
+        onManageAppointment={() => navigate('/commercial/viewings')}
+        onOpenAppointment={() => navigate('/commercial/viewings')}
+        onScheduleAppointment={() => navigate('/commercial/viewings')}
+      />
 
       <nav className="flex gap-2 overflow-x-auto rounded-3xl border border-slate-200 bg-white p-2 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
         {TABS.map((tab) => (

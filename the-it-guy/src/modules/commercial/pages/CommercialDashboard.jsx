@@ -17,7 +17,8 @@ import {
   Warehouse,
 } from 'lucide-react'
 import { createElement } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import AppointmentDashboardSection from '../../../components/appointments/dashboard/AppointmentDashboardSection'
 import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
 import { normalizeCommercialLifecycleStage } from '../commercialWorkflow'
 import CommercialEmptyState from '../components/CommercialEmptyState'
@@ -1201,7 +1202,8 @@ function QuickAccessStrip() {
 }
 
 function CommercialDashboard() {
-  const { data, loading, error } = useCommercialData(getCommercialPrincipalDashboardData, [])
+  const navigate = useNavigate()
+  const { data, loading, error, organisationId } = useCommercialData(getCommercialPrincipalDashboardData, [])
   const summary = data?.summary || {}
   const intelligence = data?.intelligence || {}
   const brokerMap = new Map((data?.brokers || []).map((broker) => [String(broker.userId || broker.id), broker.name]))
@@ -1328,6 +1330,17 @@ function CommercialDashboard() {
           <KpiCard key={card.label} {...card} loading={loading} />
         ))}
       </section>
+
+      <AppointmentDashboardSection
+        module="commercial"
+        organisationId={organisationId}
+        includeAll
+        onViewCalendar={() => navigate('/commercial/viewings')}
+        onOpenCalendar={() => navigate('/commercial/viewings')}
+        onManageAppointment={() => navigate('/commercial/viewings')}
+        onOpenAppointment={() => navigate('/commercial/viewings')}
+        onScheduleAppointment={() => navigate('/commercial/viewings')}
+      />
 
       <PlatformIntegrationCard
         transactions={data?.commercialTransactions || []}

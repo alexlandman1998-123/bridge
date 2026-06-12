@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
@@ -3875,38 +3876,21 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               )}
             </WorkspaceCard>
 
-            <WorkspaceCard title="Calendar & Appointments">
-              {commandCentre?.calendarSummary?.hasAppointments ? (
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Today&apos;s Schedule</p>
-                    <div className="mt-3 space-y-2">
-                      {(commandCentre.calendarSummary.todayItems || []).length ? commandCentre.calendarSummary.todayItems.map((item) => (
-                        <div key={item.id} className="rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] px-4 py-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-sm font-semibold text-[#10243a]">{item.title}</p>
-                            <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getAppointmentStatusClass(item.status)}`}>{item.statusLabel}</span>
-                          </div>
-                          <p className="mt-1 text-sm text-[#60758d]">{formatTime(item.dateTime)}{item.relatedLabel ? ` • ${item.relatedLabel}` : ''}</p>
-                        </div>
-                      )) : <p className="rounded-xl bg-[#f8fbff] px-4 py-3 text-sm text-[#61778f]">No appointments scheduled today.</p>}
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Next 7 Days</p>
-                    <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      {commandCentre.calendarSummary.nextSevenDayCounts.map((item) => (
-                        <AgentMetricCard key={item.key} label={item.label} value={item.count} helper="Scheduled" />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
-                  No appointments scheduled.
-                </div>
-              )}
-            </WorkspaceCard>
+            <AppointmentDashboardSection
+              module="agent"
+              organisationId={String(agent?.organisationId || '').trim()}
+              appointmentRows={workspaceSnapshot?.appointments || []}
+              users={[agent].filter(Boolean)}
+              userId={agent?.userId || agent?.id || ''}
+              userEmail={agent?.email || ''}
+              includeAll={false}
+              onViewCalendar={() => navigate('/pipeline/calendar')}
+              onOpenCalendar={() => navigate('/pipeline/calendar')}
+              onManageAppointment={() => navigate('/pipeline/calendar')}
+              onOpenAppointment={() => navigate('/pipeline/calendar')}
+              onScheduleAppointment={() => navigate('/pipeline/calendar')}
+              refreshKey={`${(workspaceSnapshot?.appointments || []).length}:${agent?.id || agent?.email || ''}`}
+            />
           </div>
 
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.2fr)]">

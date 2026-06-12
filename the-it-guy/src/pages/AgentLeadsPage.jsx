@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -5507,6 +5508,7 @@ function LeadAppointmentForm({ organisationId, lead, actor, onSaved }) {
 }
 
 function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved }) {
+  const navigate = useNavigate()
   return (
     <section className={buyerWorkspaceCardClass}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -5514,6 +5516,22 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved }) {
           <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Appointments</h2>
           <p className="mt-1 text-sm text-slate-500">Create appointments directly for this lead with buyer details already linked.</p>
         </div>
+      </div>
+      <div className="mt-5">
+        <AppointmentDashboardSection
+          module="lead"
+          organisationId={organisationId}
+          appointmentRows={lead?.appointments || []}
+          userId={actor?.id || ''}
+          userEmail={actor?.email || ''}
+          leadId={lead?.leadId || ''}
+          onViewCalendar={() => navigate('/pipeline/calendar')}
+          onOpenCalendar={() => navigate('/pipeline/calendar')}
+          onManageAppointment={() => navigate('/pipeline/calendar')}
+          onOpenAppointment={() => navigate('/pipeline/calendar')}
+          onScheduleAppointment={() => navigate('/pipeline/calendar')}
+          refreshKey={`${lead?.leadId || ''}:${(lead?.appointments || []).length}`}
+        />
       </div>
       <LeadAppointmentForm organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
       <div className="mt-5">
@@ -5672,9 +5690,25 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
 }
 
 function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, onSaved }) {
+  const navigate = useNavigate()
   return (
     <SellerWorkspaceCard title="Appointments" action={<StatusPill tone={(lead?.appointments || []).length ? 'blue' : 'slate'}>{(lead?.appointments || []).length} linked</StatusPill>}>
       <div className="grid gap-5">
+        <AppointmentDashboardSection
+          module="lead"
+          organisationId={organisationId}
+          appointmentRows={lead?.appointments || []}
+          userId={actor?.id || ''}
+          userEmail={actor?.email || ''}
+          leadId={lead?.leadId || ''}
+          listingId={getSellerListingId(lead, listing)}
+          onViewCalendar={() => navigate('/pipeline/calendar')}
+          onOpenCalendar={() => navigate('/pipeline/calendar')}
+          onManageAppointment={() => navigate('/pipeline/calendar')}
+          onOpenAppointment={() => navigate('/pipeline/calendar')}
+          onScheduleAppointment={() => navigate('/pipeline/calendar')}
+          refreshKey={`${lead?.leadId || ''}:${(lead?.appointments || []).length}`}
+        />
         <SellerAppointmentForm organisationId={organisationId} lead={lead} listing={listing} actor={actor} onSaved={onSaved} />
         <AppointmentList items={lead.appointments} organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
       </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
+import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import AttorneySchedulingWorkspace from '../components/attorney/scheduling/AttorneySchedulingWorkspace'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { listAppointmentResourcesAsync } from '../lib/agencyPipelineService'
@@ -11,6 +12,7 @@ function normalizeText(value = '') {
 }
 
 function AttorneySchedulingPage() {
+  const navigate = useNavigate()
   const { role } = useWorkspace()
   const permissionsState = useAttorneyPermissions()
   const [loading, setLoading] = useState(true)
@@ -105,6 +107,21 @@ function AttorneySchedulingPage() {
           <p className="status-message" style={{ margin: 0, color: '#b42318' }}>{error}</p>
         </div>
       ) : null}
+
+      <AppointmentDashboardSection
+        module="attorney"
+        organisationId={normalizeText(data?.matterQueue?.[0]?.organisationId || data?.appointmentQueue?.[0]?.organisationId)}
+        appointmentRows={data?.appointmentQueue || []}
+        userId={normalizeText(data?.currentUser?.id || data?.currentUser?.userId)}
+        userEmail={normalizeText(data?.currentUser?.email)}
+        canManage={showAppointments}
+        onViewCalendar={() => navigate('/attorney/scheduling')}
+        onOpenCalendar={() => navigate('/attorney/scheduling')}
+        onManageAppointment={() => navigate('/attorney/scheduling')}
+        onOpenAppointment={() => navigate('/attorney/scheduling')}
+        onScheduleAppointment={() => navigate('/attorney/scheduling')}
+        refreshKey={`${data?.appointmentQueue?.length || 0}:${data?.currentUser?.id || ''}`}
+      />
 
       <AttorneySchedulingWorkspace
         appointmentRows={data?.appointmentQueue || []}
