@@ -10,7 +10,7 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
@@ -18,7 +18,6 @@ import SummaryCards from '../components/SummaryCards'
 import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
 import BridgeCommandCenterDashboard from '../components/dashboard/BridgeCommandCenterDashboard'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
-import PrincipalDashboard from './PrincipalDashboard'
 import { PillToggle } from '../components/ui/FilterBar'
 import {
   STAGE_AGING_BUCKETS,
@@ -108,6 +107,7 @@ const PRINCIPAL_TIME_FILTER_OPTIONS = [
   { key: 'last_7_days', label: 'Last 7 Days' },
   { key: 'this_month', label: 'This Month' },
 ]
+const PrincipalDashboard = lazy(() => import('./PrincipalDashboard'))
 
 function formatPercent(value) {
   if (!Number.isFinite(value)) {
@@ -3147,11 +3147,13 @@ function renderActiveTransactionsBlock({
 
   if (isPrincipalAgentView) {
     return (
-      <PrincipalDashboard
-        agencyId={organisationIdForAppointments}
-        workspaceId={workspace.id}
-        canViewAllTransactions={isPrincipalAgentView}
-      />
+      <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" />}>
+        <PrincipalDashboard
+          agencyId={organisationIdForAppointments}
+          workspaceId={workspace.id}
+          canViewAllTransactions={isPrincipalAgentView}
+        />
+      </Suspense>
     )
   }
 
