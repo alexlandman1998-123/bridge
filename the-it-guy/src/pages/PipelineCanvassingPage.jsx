@@ -122,6 +122,7 @@ const CANVASSING_SOURCE_PILL_STYLES = {
 
 const CANVASSING_SOURCE_PILL_FALLBACK = CANVASSING_SOURCE_PILL_STYLES.unknown
 const CANVASSING_SOURCE_PILL_ORDER = ['property24', 'privateProperty', 'whatsapp', 'call', 'website', 'referral', 'walkIn', 'unknown']
+const CANVASSING_PROSPECT_VIEW_STORAGE_KEY = 'itg:canvassing:prospectView'
 
 const CANVASSING_SOURCE_TONE_STYLES = {
   slate: 'border-slate-200 bg-slate-50 text-slate-600',
@@ -523,7 +524,11 @@ function PipelineCanvassingPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedProspectId, setSelectedProspectId] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
-  const [prospectView, setProspectView] = useState('seller')
+  const [prospectView, setProspectView] = useState(() => {
+    if (typeof window === 'undefined') return 'seller'
+    const stored = normalizeKey(window.sessionStorage.getItem(CANVASSING_PROSPECT_VIEW_STORAGE_KEY))
+    return stored === 'buyer' || stored === 'seller' ? stored : 'seller'
+  })
   const [filters, setFilters] = useState({
     search: '',
     method: 'all',
@@ -564,6 +569,11 @@ function PipelineCanvassingPage() {
   })
   const [activityForm, setActivityForm] = useState({ activityType: 'Call', activityNote: '', outcome: '' })
   const [convertLeadType, setConvertLeadType] = useState('buyer')
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.sessionStorage.setItem(CANVASSING_PROSPECT_VIEW_STORAGE_KEY, prospectView)
+  }, [prospectView])
 
   const currentAgent = useMemo(
     () => ({
@@ -966,10 +976,11 @@ function PipelineCanvassingPage() {
         ? true
         : normalizeCanvassingSourceKey(prospect?.resolvedSource) === filters.method
       const prospectStatus = normalizeText(prospect?.status)
-      const convertedWithoutLead = prospectStatus === 'Converted to Lead' && !normalizeText(prospect?.convertedLeadId)
+      const prospectStatusKey = normalizeKey(prospectStatus)
+      const convertedWithoutLead = prospectStatusKey === 'converted to lead' && !normalizeText(prospect?.convertedLeadId)
       const statusMatch = filters.status === 'all'
-        ? prospectStatus !== 'Archived' || convertedWithoutLead
-        : prospectStatus === filters.status
+        ? prospectStatusKey !== 'archived' || convertedWithoutLead
+        : prospectStatusKey === normalizeKey(filters.status)
       const assignedMatch = filters.assigned === 'all'
         ? true
         : filters.assigned === 'unassigned'
