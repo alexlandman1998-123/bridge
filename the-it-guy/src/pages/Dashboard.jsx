@@ -17,6 +17,7 @@ import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import SummaryCards from '../components/SummaryCards'
 import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
 import BridgeCommandCenterDashboard from '../components/dashboard/BridgeCommandCenterDashboard'
+import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import PrincipalDashboard from './PrincipalDashboard'
 import { PillToggle } from '../components/ui/FilterBar'
 import {
@@ -290,12 +291,6 @@ function formatRelativeTime(value) {
   if (diffMs < day * 7) return `${Math.floor(diffMs / day)}d ago`
 
   return formatDateTime(value)
-}
-
-function formatAppointmentStatusLabel(value) {
-  return String(value || '')
-    .trim()
-    .replace(/\s+/g, ' ')
 }
 
 function getTransactionDealValue(row) {
@@ -640,23 +635,6 @@ function listingMatchesAgentIdentity(listing, profileIdentitySet) {
   }
 
   return candidates.some((candidate) => profileIdentitySet.has(candidate))
-}
-
-function getAppointmentStatusMeta(status) {
-  const normalized = toLookupText(status)
-  if (normalized === 'needs reschedule') {
-    return { label: 'Needs Reschedule', tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' }
-  }
-  if (normalized === 'pending confirmation' || normalized === 'draft') {
-    return { label: 'Pending', tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' }
-  }
-  if (normalized === 'confirmed') {
-    return { label: 'Confirmed', tone: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]' }
-  }
-  if (normalized === 'cancelled') {
-    return { label: 'Declined', tone: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]' }
-  }
-  return { label: formatAppointmentStatusLabel(status) || 'Pending', tone: 'border-[#dbe6f2] bg-white text-[#35546c]' }
 }
 
 function getBondStageProgress(stageKey) {
@@ -2339,30 +2317,6 @@ function Dashboard() {
         }
       })
   }, [isPrincipalAgentView, roleScopedRows])
-  const principalAppointmentsThisWeek = useMemo(() => {
-    if (!isPrincipalAgentView) return []
-    return (appointmentSummary.thisWeek || [])
-      .slice(0, 8)
-      .map((row) => {
-        const rawStatus = String(row?.status || '').trim().toLowerCase()
-        const statusLabel = formatAppointmentStatusLabel(row?.status)
-        const dateLabel = [row?.date || '', row?.startTime || ''].join(' ').trim() || formatDateTime(row?.dateTime)
-        const participants = Array.isArray(row?.participants) ? row.participants : []
-        const clientParticipant = participants.find((participant) => {
-          const roleKey = toLookupText(participant?.participantRole)
-          return roleKey === 'buyer' || roleKey === 'seller' || roleKey === 'other contact'
-        })
-        return {
-          id: row?.appointmentId || Math.random().toString(36),
-          listing: row?.title || row?.appointmentType || 'Appointment',
-          client: clientParticipant?.name || row?.contactId || 'Linked contact pending',
-          agent: row?.assignedAgentName || row?.assignedAgentEmail || 'Unassigned',
-          dateLabel,
-          statusLabel,
-          rawStatus,
-        }
-      })
-  }, [appointmentSummary.thisWeek, isPrincipalAgentView])
   const agentAppointmentSummary = useMemo(() => {
     if (!isAgentRole || isPrincipalAgentView) {
       return appointmentSummary
@@ -3608,135 +3562,23 @@ function renderActiveTransactionsBlock({
                 </section>
               )}
 
-              <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
-                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="min-w-0">
-                    <h3 className="text-[1.06rem] font-semibold tracking-[-0.02em] text-[#142132]">
-                      {isPrincipalAgentView ? 'Appointment Requests This Week' : 'Appointment Requests'}
-                    </h3>
-                    <p className="mt-1 text-[0.9rem] text-[#6b7d93]">
-                      {isPrincipalAgentView
-                        ? 'Weekly appointment activity across the agency with status and ownership visibility.'
-                        : 'Pending confirmations, upcoming appointments, and reschedule requests across the agent pipeline.'}
-                    </p>
-                  </div>
-                  <span className={DASHBOARD_CHIP_CLASS}>{isPrincipalAgentView ? principalAppointmentsThisWeek.length : agentAppointmentSummary.rows.length} appointments</span>
-                </div>
-
-                <div className="grid gap-4 lg:grid-cols-3">
-                  {[
-                    { label: 'Pending Confirmation', value: isPrincipalAgentView ? appointmentSummary.pending.length : agentAppointmentSummary.pending.length, tone: 'border-[#f2debf] bg-[#fdf5e8] text-[#976427]' },
-                    { label: 'Upcoming', value: isPrincipalAgentView ? appointmentSummary.upcoming.length : agentAppointmentSummary.upcoming.length, tone: 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]' },
-                    { label: 'Needs Reschedule', value: isPrincipalAgentView ? appointmentSummary.reschedule.length : agentAppointmentSummary.reschedule.length, tone: 'border-[#f1ced2] bg-[#fff2f4] text-[#a0383f]' },
-                  ].map((item) => (
-                    <article key={item.label} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[0.74rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{item.label}</p>
-                          <p className="mt-2 text-[1.3rem] font-semibold text-[#142132]">{item.value}</p>
-                        </div>
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${item.tone}`}>Live</span>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-
-                <div className="mt-5">
-                  {isPrincipalAgentView ? (
-                    principalAppointmentsThisWeek.length ? (
-                      <div className="grid gap-4 lg:grid-cols-2">
-                        {principalAppointmentsThisWeek.map((appointment) => (
-                          <article key={`principal-appointment-${appointment.id}`} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-[#22374d]">{appointment.listing}</p>
-                                <p className="mt-1 text-sm text-[#607387]">Client: {appointment.client}</p>
-                              </div>
-                              <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
-                                {appointment.statusLabel}
-                              </span>
-                            </div>
-                            <div className="mt-3 grid gap-2 md:grid-cols-2">
-                              <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Assigned Agent</p>
-                                <p className="mt-1 text-[0.85rem] font-medium text-[#35546c]">{appointment.agent}</p>
-                              </div>
-                              <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Proposed Date & Time</p>
-                                <p className="mt-1 text-[0.85rem] font-medium text-[#35546c]">{appointment.dateLabel}</p>
-                              </div>
-                            </div>
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                              <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/listings')}>
-                                Open Listing
-                              </button>
-                              <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/agents')}>
-                                View Agent
-                              </button>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
-                        <p className="text-[0.96rem] font-medium text-[#33475d]">No appointment requests this week.</p>
-                        <p className="mt-1 text-[0.86rem] text-[#6f8298]">New weekly appointment activity will appear here as requests come in.</p>
-                      </div>
-                    )
-                  ) : agentAppointmentSummary.rows.slice(0, 4).length ? (
-                    <div className="space-y-3">
-                      {agentAppointmentSummary.rows.slice(0, 4).map((appointment) => {
-                        const statusMeta = getAppointmentStatusMeta(appointment?.status)
-                        const appointmentType = appointment?.appointmentType || 'Appointment'
-                        return (
-                        <article key={appointment.appointmentId} className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <CalendarDays size={15} className="text-[#5f738a]" />
-                                <p className="truncate text-sm font-semibold text-[#22374d]">{appointment.title || appointmentType}</p>
-                              </div>
-                              <p className="mt-1 text-sm text-[#607387]">Agent: {appointment.assignedAgentName || appointment.assignedAgentEmail || 'Assigned agent'}</p>
-                              <p className="mt-1 text-xs text-[#6b7d93]">{appointment.date || 'Date pending'} {appointment.startTime || ''}</p>
-                            </div>
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusMeta.tone}`}>
-                              {statusMeta.label}
-                            </span>
-                          </div>
-
-                          <div className="mt-3 grid gap-2 md:grid-cols-2">
-                            <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Appointment Type</p>
-                              <p className="mt-1 text-[0.85rem] font-medium text-[#35546c]">{appointmentType}</p>
-                            </div>
-                            <div className="rounded-[12px] border border-[#e2eaf4] bg-white px-3 py-2">
-                              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Status</p>
-                              <p className="mt-1 text-[0.85rem] font-medium text-[#35546c]">{statusMeta.label}</p>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/pipeline')}>
-                              Open Calendar
-                            </button>
-                            <button type="button" className={DASHBOARD_ACTION_SECONDARY_CLASS} onClick={() => navigate('/pipeline')}>
-                              Manage Appointment
-                            </button>
-                          </div>
-                        </article>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <div className="rounded-[16px] border border-dashed border-[#d4e0ee] bg-[#f8fbff] px-5 py-8 text-center">
-                      <p className="text-[0.96rem] font-medium text-[#33475d]">No appointment requests yet.</p>
-                      <p className="mt-1 text-[0.86rem] text-[#6f8298]">
-                        Appointments will appear here once they are created in your CRM workspace.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </section>
+              <div className="mt-6">
+                <AppointmentDashboardSection
+                  module="agent"
+                  organisationId={organisationIdForAppointments}
+                  appointmentRows={agentAppointmentSummary.rows || []}
+                  userId={String(profile?.id || '').trim()}
+                  userEmail={String(profile?.email || '').trim()}
+                  includeAll={false}
+                  subheading="Manage upcoming appointments and requests across your pipeline."
+                  onViewCalendar={() => navigate('/pipeline/calendar')}
+                  onOpenCalendar={() => navigate('/pipeline/calendar')}
+                  onManageAppointment={() => navigate('/pipeline/calendar')}
+                  onOpenAppointment={() => navigate('/pipeline/calendar')}
+                  onScheduleAppointment={() => navigate('/pipeline/calendar')}
+                  refreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}`}
+                />
+              </div>
 
               {!isPrincipalAgentView ? (
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>

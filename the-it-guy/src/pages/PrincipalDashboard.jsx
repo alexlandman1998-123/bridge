@@ -2085,6 +2085,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
         {data ? (
           <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
             <PrincipalKpiRow data={data} />
+            <PipelineSalesOverview data={data} dateRange={dateRange} onDateRangeChange={setDateRange} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
             <AppointmentDashboardSection
               module="principal"
               organisationId={resolvedAgencyId}
@@ -2100,7 +2101,6 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
               onScheduleAppointment={() => navigate('/pipeline/calendar')}
               refreshKey={`${resolvedAgencyId}:${dateRange}:${selectedWorkspaceId}`}
             />
-            <PipelineSalesOverview data={data} dateRange={dateRange} onDateRangeChange={setDateRange} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
             <p className="pb-2 text-center text-xs text-[#667085]">
               <Loader2 size={12} className="mr-1 inline-block" />
               Data last updated: {lastUpdated || 'just now'}
