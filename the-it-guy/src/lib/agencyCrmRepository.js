@@ -120,7 +120,7 @@ function mapSupabaseLead(row = {}) {
     assignedUserId: normalizeText(row?.assigned_user_id),
     createdBy: normalizeText(row?.created_by),
     assignedAgentId: normalizeText(row?.assigned_agent_id),
-    assignedAgentName: '',
+    assignedAgentName: normalizeText(row?.assigned_agent_name || row?.assigned_agent),
     assignedAgentEmail: normalizeText(row?.assigned_agent_email).toLowerCase(),
     contactId: normalizeText(row?.contact_id),
     leadCategory: inferLeadCategoryFromRecord(row, 'other'),
@@ -331,7 +331,7 @@ async function resolveLeadScopeContext(workspaceId = '', payload = {}, actor = n
     payload?.branchId ||
     leadPayload?.branchId,
   )
-  const assignedAgentEmail = normalizeText(
+  let assignedAgentEmail = normalizeText(
     assignedAgentInput?.email ||
     payload?.assignedAgentEmail ||
     leadPayload?.assignedAgentEmail ||
@@ -343,7 +343,7 @@ async function resolveLeadScopeContext(workspaceId = '', payload = {}, actor = n
     actor?.id,
   )
 
-  if ((!assignedUserId || !branchId) && typeof lookupScope === 'function') {
+  if ((!assignedUserId || !branchId || !assignedAgentEmail) && typeof lookupScope === 'function') {
     const membership = await lookupScope(workspaceId, {
       userId: assignedUserId || assignedAgentId || actor?.id,
       email: assignedAgentEmail,
@@ -351,6 +351,9 @@ async function resolveLeadScopeContext(workspaceId = '', payload = {}, actor = n
     if (membership) {
       assignedUserId = assignedUserId || normalizeNullableUuid(membership.user_id)
       branchId = branchId || normalizeNullableUuid(membership.branch_id)
+      if (!assignedAgentEmail) {
+        assignedAgentEmail = normalizeText(membership.email).toLowerCase()
+      }
     }
   }
 

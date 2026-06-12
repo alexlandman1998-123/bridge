@@ -15,6 +15,7 @@ import { listRecommendations } from './leadRecommendationService'
 import { buildRequirementSummary, listLeadRequirements } from './leadRequirementService'
 import { getSuggestionsForLead } from './leadSuggestionService'
 import { getPrivateListing } from './privateListingService'
+import { listOrganisationUsers } from '../lib/settingsApi'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LEAD_WORKSPACE_CAN_VIEW_ALL_ROLES = new Set(['owner', 'principal', 'admin', 'admin_staff'])
@@ -39,6 +40,62 @@ function normalizeText(value) {
 
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeAgentDirectoryValue(value = '') {
+  return normalizeLower(value)
+}
+
+function normalizeAgentDirectoryName(agent = {}) {
+  const fullName = normalizeText(agent?.fullName || agent?.name)
+  const firstName = normalizeText(agent?.firstName)
+  const lastName = normalizeText(agent?.lastName)
+  return fullName || [firstName, lastName].filter(Boolean).join(' ').trim() || normalizeAgentDirectoryValue(agent?.email).split('@')[0] || 'Agent'
+}
+
+function normalizeAgentDirectoryRow(agent = {}) {
+  const entry = {
+    id: normalizeText(agent?.id),
+    userId: normalizeText(agent?.userId || agent?.user_id),
+    email: normalizeAgentDirectoryValue(agent?.email),
+    name: normalizeAgentDirectoryName(agent),
+  }
+  return {
+    id: entry.id,
+    userId: normalizeAgentDirectoryValue(entry.userId),
+    email: entry.email,
+    name: entry.name,
+    fullName: entry.name,
+  }
+}
+
+function buildAgentDirectoryLookup(users = []) {
+  const byId = new Map()
+  const byEmail = new Map()
+  for (const row of Array.isArray(users) ? users : []) {
+    const normalized = normalizeAgentDirectoryRow(row)
+    const idKeys = [normalized.id, normalized.userId].filter(Boolean)
+    const email = normalized.email
+    for (const key of idKeys) {
+      byId.set(key, { ...normalized })
+    }
+    if (email) byEmail.set(email, { ...normalized, email })
+  }
+  return { byId, byEmail }
+}
+
+function resolveDirectoryAgent(lead = {}, listing = null, directoryLookup = {}) {
+  const directoryById = directoryLookup?.byId || new Map()
+  const directoryByEmail = directoryLookup?.byEmail || new Map()
+  const leadAssignedAgentId = normalizeAgentDirectoryValue(readId(lead, ['assignedAgentId', 'assigned_agent_id', 'assignedUserId', 'assigned_user_id']))
+  const leadAssignedAgentEmail = normalizeAgentDirectoryValue(readId(lead, ['assignedAgentEmail', 'assigned_agent_email']))
+  const listingAssignedAgentId = normalizeAgentDirectoryValue(readId(listing || {}, ['assignedAgentId', 'assigned_agent_id']))
+  const listingAssignedAgentEmail = normalizeAgentDirectoryValue(readId(listing || {}, ['assignedAgentEmail', 'assigned_agent_email']))
+  return directoryById.get(leadAssignedAgentId) ||
+    directoryByEmail.get(leadAssignedAgentEmail) ||
+    directoryById.get(listingAssignedAgentId) ||
+    directoryByEmail.get(listingAssignedAgentEmail) ||
+    null
 }
 
 function normalizeActorRole(actor = {}) {
@@ -261,6 +318,7 @@ export function buildAgentLeadRows({
   savedSearches = [],
   propertyShares = [],
   assignmentHistory = [],
+  agentDirectory = {},
 } = {}) {
   const contactsById = new Map(contacts.map((contact) => [readId(contact, ['contactId', 'contact_id', 'id']), contact]).filter(([id]) => id))
   const normalizedOffers = offers.map(normalizeOffer).filter((offer) => offer.id || offer.leadId || offer.contactId || offer.listingId)
@@ -286,6 +344,26 @@ export function buildAgentLeadRows({
     const relatedSuggestions = suggestions
       .filter((suggestion) => getLeadId(suggestion) === leadId || readId(suggestion, ['leadId', 'lead_id']) === leadId)
       .sort((left, right) => Number(right.score || 0) - Number(left.score || 0) || new Date(right.generatedAt || right.generated_at || 0).getTime() - new Date(left.generatedAt || left.generated_at || 0).getTime())
+    const resolvedDirectoryAgent = resolveDirectoryAgent(lead, relatedListings[0], agentDirectory)
+    const resolvedDirectoryName = normalizeText(
+      resolvedDirectoryAgent?.name ||
+      resolvedDirectoryAgent?.fullName ||
+      resolvedDirectoryAgent?.email,
+    )
+    const relatedListingAssignedAgentEmail = normalizeText(relatedListings[0]?.assignedAgentEmail || relatedListings[0]?.assigned_agent_email).toLowerCase()
+    const leadAssignedAgentEmail = normalizeText(lead?.assignedAgentEmail || lead?.assigned_agent_email).toLowerCase()
+    const resolvedAssignedAgentEmail = normalizeText(
+      resolvedDirectoryAgent?.email ||
+      leadAssignedAgentEmail ||
+      lead?.assignedAgentEmail ||
+      lead?.assigned_agent_email ||
+      relatedListingAssignedAgentEmail,
+    ).toLowerCase()
+    const resolvedAssignedAgentId = normalizeText(
+      resolvedDirectoryAgent?.id ||
+      readId(lead, ['assignedAgentId', 'assigned_agent_id', 'assignedUserId', 'assigned_user_id']) ||
+      readId(relatedListings[0] || {}, ['assignedAgentId', 'assigned_agent_id']),
+    )
     const relatedRecommendations = recommendations
       .filter((recommendation) => getLeadId(recommendation) === leadId || readId(recommendation, ['leadId', 'lead_id']) === leadId)
       .sort((left, right) => {
@@ -364,9 +442,11 @@ export function buildAgentLeadRows({
       source: normalizeText(lead?.leadSource || lead?.lead_source) || 'Unknown',
       stage: normalizeText(lead?.stage || lead?.status) || 'Unknown',
       status: normalizeText(lead?.status || lead?.stage) || 'Unknown',
-      assignedAgentId: readId(lead, ['assignedAgentId', 'assigned_agent_id', 'assignedUserId', 'assigned_user_id']) || readId(relatedListings[0] || {}, ['assignedAgentId', 'assigned_agent_id']),
-      assignedAgentEmail: normalizeText(lead?.assignedAgentEmail || lead?.assigned_agent_email || relatedListings[0]?.assignedAgentEmail || relatedListings[0]?.assigned_agent_email).toLowerCase(),
-      assignedAgent: normalizeText(lead?.assignedAgentName || lead?.assigned_agent_name || lead?.assignedAgentEmail || lead?.assigned_agent_email || relatedListings[0]?.assignedAgentEmail || relatedListings[0]?.assigned_agent_email || lead?.assignedAgentId || lead?.assigned_agent_id) || 'Unassigned',
+      assignedAgentId: resolvedAssignedAgentId || readId(relatedListings[0] || {}, ['assignedAgentId', 'assigned_agent_id']),
+      assignedAgentEmail: resolvedAssignedAgentEmail,
+      assignedAgent: resolvedDirectoryName || lead?.assignedAgentName || lead?.assigned_agent_name || resolvedAssignedAgentEmail || 'Unassigned',
+      assignedAgentName: resolvedDirectoryName || lead?.assignedAgentName || lead?.assigned_agent_name || resolvedAssignedAgentEmail || 'Unassigned',
+      assigned_agent_name: resolvedDirectoryName || lead?.assignedAgentName || lead?.assigned_agent_name || resolvedAssignedAgentEmail || 'Unassigned',
       assignedQueueId: readId(lead, ['assignedQueueId', 'assigned_queue_id']),
       assignedQueue: normalizeText(lead?.assignedQueueId || lead?.assigned_queue_id) || '—',
       assignedAt,
@@ -628,6 +708,8 @@ async function safeReadAppointments(organisationId = '') {
 
 export async function listAgentLeadWorkspaceRows({ organisationId = '', actor = null } = {}) {
   const snapshot = await listAgencyCrmLeadContacts(organisationId)
+  const directory = await listOrganisationUsers().catch(() => [])
+  const directoryLookup = buildAgentDirectoryLookup(directory)
   const [appointments, offers, transactions, listings, listingInterests, requirements, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, ownershipRows] = await Promise.all([
     safeReadAppointments(organisationId),
     safeReadAllOffers(organisationId),
@@ -658,6 +740,7 @@ export async function listAgentLeadWorkspaceRows({ organisationId = '', actor = 
     propertyShares,
     communicationDeliveries,
     communicationPreferences,
+    agentDirectory: directoryLookup,
   })
   const scopedRows = canViewAllWorkspaceLeads(actor || {})
     ? rows
@@ -728,6 +811,8 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     listLeadAssignmentHistory({ organisationId, leadId: context.leadId }).catch(() => []),
     safeReadLeadOwnershipRows(organisationId),
   ])
+  const directory = await listOrganisationUsers().catch(() => [])
+  const directoryLookup = buildAgentDirectoryLookup(directory)
   const normalizedListings = listings.map(normalizeListing)
   const linkedListing = normalizedListings.find((listing) => matchesLeadContext(listing, context)) || null
   const hydratedLinkedListing = await safeReadHydratedPrivateListing(context.listingId || linkedListing?.id || linkedListing?.listingId)
@@ -758,6 +843,7 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     communicationDeliveries,
     communicationPreferences,
     assignmentHistory,
+    agentDirectory: directoryLookup,
   })
   if (!canViewAllWorkspaceLeads(actor) && !isLeadVisibleToActor(rows[0] || {}, actor || {})) {
     return {

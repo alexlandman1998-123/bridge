@@ -1380,9 +1380,57 @@ function PipelineCanvassingPage() {
         overrideLooksLikeProspect ? resolveDefaultLeadCategory(targetProspect) : convertLeadType,
         resolveDefaultLeadCategory(targetProspect),
       )
+      const selectedAssignee = resolveAgentById(
+        normalizeText(
+          targetProspect?.assignedAgentId ||
+          targetProspect?.assignedUserId ||
+          currentAgentForWrites.id ||
+          currentAgent.id,
+        ),
+      )
+      const conversionAssignedAgent = {
+        ...selectedAssignee,
+        id: normalizeText(
+          selectedAssignee?.id ||
+          selectedAssignee?.userId ||
+          targetProspect?.assignedUserId ||
+          targetProspect?.assignedAgentId ||
+          currentAgent.userId ||
+          currentAgent.id,
+        ),
+        userId: normalizeText(
+          selectedAssignee?.userId ||
+          targetProspect?.assignedUserId ||
+          targetProspect?.assignedAgentId ||
+          selectedAssignee?.id ||
+          currentAgent.userId ||
+          currentAgent.id,
+        ),
+        name: normalizeText(
+          selectedAssignee?.name ||
+          selectedAssignee?.fullName ||
+          targetProspect?.assignedAgentName ||
+          currentAgent.fullName,
+        ),
+        fullName: normalizeText(
+          selectedAssignee?.fullName ||
+          selectedAssignee?.name ||
+          targetProspect?.assignedAgentName ||
+          currentAgent.fullName,
+        ),
+        email: normalizeText(
+          selectedAssignee?.email ||
+          targetProspect?.assignedAgentEmail ||
+          currentAgent.email,
+        ).toLowerCase(),
+        branchId: normalizeText(selectedAssignee?.branchId || currentAgent.branchId),
+      }
+      const conversionPayload = buildLeadPayloadFromProspect(targetProspect, leadCategory, currentAgent, existingConvertedLeadId)
+      conversionPayload.assignedAgent = conversionAssignedAgent
+      conversionPayload.assignedUserId = conversionAssignedAgent.userId || conversionAssignedAgent.id
       const createdLead = await createAgencyCrmLeadRecord(
         organisationId,
-        buildLeadPayloadFromProspect(targetProspect, leadCategory, currentAgent, existingConvertedLeadId),
+        conversionPayload,
         {
           actor: {
             id: currentAgentForWrites.id,
