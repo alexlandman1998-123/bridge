@@ -143,6 +143,12 @@ export const APPOINTMENT_PARTICIPANT_ROLES = [
   'Other Contact',
 ]
 export const APPOINTMENT_RSVP_STATUSES = ['Pending', 'Accepted', 'Declined', 'Proposed New Time']
+const APPOINTMENT_LOCATION_TYPES = [
+  'physical_address',
+  'video_call',
+  'phone_call',
+  'to_be_confirmed',
+]
 
 const INBOUND_BUYER_SOURCES = [
   'Property24',
@@ -1469,6 +1475,18 @@ function normalizeExternalCalendarStatus(value) {
   return 'not_synced'
 }
 
+function normalizeAppointmentLocationType(value) {
+  const normalized = normalizeLowerText(value)
+  if (!normalized) return 'to_be_confirmed'
+  if (APPOINTMENT_LOCATION_TYPES.includes(normalized)) return normalized
+  if (normalized === 'physical') return 'physical_address'
+  if (normalized === 'address' || normalized === 'onsite' || normalized === 'inperson' || normalized === 'in person') return 'physical_address'
+  if (normalized === 'call' || normalized === 'phone' || normalized === 'phonecall') return 'phone_call'
+  if (normalized === 'videocall' || normalized === 'video' || normalized === 'zoom') return 'video_call'
+  if (normalized === 'tbc' || normalized === 'to be confirmed') return 'to_be_confirmed'
+  return 'to_be_confirmed'
+}
+
 function deriveDateTime({ date = '', startTime = '' } = {}) {
   if (!normalizeText(date)) return null
   const safeTime = normalizeText(startTime) || '00:00'
@@ -1581,7 +1599,7 @@ function normalizeAppointmentRecord(appointment = {}, { organisationId = '', fal
     startTime: normalizedStart || null,
     endTime: normalizedEnd || null,
     dateTime: derivedDateTime,
-    locationType: normalizeText(appointment?.locationType || appointment?.location_type) || 'to_be_confirmed',
+    locationType: normalizeAppointmentLocationType(appointment?.locationType || appointment?.location_type),
     location: normalizeText(appointment?.location),
     meetingUrl: normalizeText(appointment?.meetingUrl || appointment?.meeting_url) || null,
     timezone: normalizeText(appointment?.timezone || appointment?.appointment_timezone) || DEFAULT_APPOINTMENT_BUSINESS_HOURS.timezone,
@@ -1672,7 +1690,7 @@ function mapDbAppointmentRow(row = {}, organisationId = '') {
       startTime: normalizeTimeText(row?.start_time),
       endTime: normalizeTimeText(row?.end_time),
       dateTime: row?.date_time,
-      locationType: row?.location_type,
+      locationType: normalizeAppointmentLocationType(row?.location_type),
       location: row?.location,
       meetingUrl: row?.meeting_url,
       timezone: row?.timezone,
@@ -1763,7 +1781,7 @@ function mapAppointmentToDbInsert(appointment = {}, organisationId = '') {
     start_time: normalizeTimeText(normalized.startTime),
     end_time: normalizeTimeText(normalized.endTime),
     date_time: normalized.dateTime || deriveDateTime({ date: normalized.date, startTime: normalized.startTime }) || new Date().toISOString(),
-    location_type: normalizeText(normalized.locationType) || 'to_be_confirmed',
+    location_type: normalizeAppointmentLocationType(normalized.locationType),
     location: normalizeText(normalized.location) || null,
     meeting_url: normalizeText(normalized.meetingUrl) || null,
     timezone: normalizeText(normalized.timezone) || DEFAULT_APPOINTMENT_BUSINESS_HOURS.timezone,

@@ -4344,14 +4344,21 @@ export async function archiveDevelopmentSetting(developmentId) {
 }
 
 function normalizeOrganisationUserRow(row) {
+  const profileFirstName = normalizeText(row?.profile?.first_name || row?.profile?.firstName)
+  const profileLastName = normalizeText(row?.profile?.last_name || row?.profile?.lastName)
+  const profileFullName = normalizeText(row?.profile?.full_name || row?.profile?.fullName)
   return {
     id: row?.id || null,
     userId: row?.user_id || null,
     organisationId: row?.organisation_id || null,
     branchId: row?.branch_id || null,
-    firstName: normalizeText(row?.first_name),
-    lastName: normalizeText(row?.last_name),
-    fullName: [normalizeText(row?.first_name), normalizeText(row?.last_name)].filter(Boolean).join(' ') || normalizeText(row?.email),
+    firstName: normalizeText(row?.first_name) || profileFirstName,
+    lastName: normalizeText(row?.last_name) || profileLastName,
+    fullName:
+      [normalizeText(row?.first_name), normalizeText(row?.last_name)].filter(Boolean).join(' ') ||
+      profileFullName ||
+      [profileFirstName, profileLastName].filter(Boolean).join(' ') ||
+      normalizeText(row?.email),
     email: normalizeText(row?.email),
     avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profile?.avatar_url),
     role: normalizeText(row?.role) || 'viewer',
@@ -4372,11 +4379,18 @@ async function fetchOrganisationUserProfileAvatars(client, rows = []) {
 
     const { data, error } = await client
       .from('profiles')
-      .select('id, email, avatar_url')
+      .select('id, email, avatar_url, first_name, last_name, full_name')
       .in(column, values)
 
     if (error) {
-      if (isMissingTableError(error, 'profiles') || isMissingColumnError(error, 'avatar_url') || isPermissionDeniedError(error)) {
+      if (
+        isMissingTableError(error, 'profiles') ||
+        isMissingColumnError(error, 'avatar_url') ||
+        isMissingColumnError(error, 'first_name') ||
+        isMissingColumnError(error, 'last_name') ||
+        isMissingColumnError(error, 'full_name') ||
+        isPermissionDeniedError(error)
+      ) {
         return []
       }
       throw error
@@ -4391,12 +4405,16 @@ async function fetchOrganisationUserProfileAvatars(client, rows = []) {
   ])
 
   return [...profilesById, ...profilesByEmail].reduce((accumulator, row) => {
-    const avatarUrl = normalizeText(row?.avatar_url)
-    if (!avatarUrl) return accumulator
+    const profile = {
+      avatar_url: normalizeText(row?.avatar_url),
+      first_name: normalizeText(row?.first_name),
+      last_name: normalizeText(row?.last_name),
+      full_name: normalizeText(row?.full_name),
+    }
     const id = normalizeText(row?.id)
     const email = normalizeEmail(row?.email)
-    if (id) accumulator.byUserId[id] = avatarUrl
-    if (email) accumulator.byEmail[email] = avatarUrl
+    if (id) accumulator.byUserId[id] = profile
+    if (email) accumulator.byEmail[email] = profile
     return accumulator
   }, { byUserId: {}, byEmail: {} })
 }
@@ -4451,10 +4469,14 @@ export async function listOrganisationUsers() {
     const avatarLookup = await fetchOrganisationUserProfileAvatars(client, data || [])
     return (data || []).map((row) => normalizeOrganisationUserRow({
       ...row,
-      avatar_url:
-        normalizeText(row?.avatar_url) ||
+      profile:
         avatarLookup.byUserId[normalizeText(row?.user_id)] ||
         avatarLookup.byEmail[normalizeEmail(row?.email)] ||
+        null,
+      avatar_url:
+        normalizeText(row?.avatar_url) ||
+        normalizeText(avatarLookup.byUserId[normalizeText(row?.user_id)]?.avatar_url) ||
+        normalizeText(avatarLookup.byEmail[normalizeEmail(row?.email)]?.avatar_url) ||
         '',
     }))
   })()

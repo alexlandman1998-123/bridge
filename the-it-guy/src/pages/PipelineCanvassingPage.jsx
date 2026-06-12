@@ -16,6 +16,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -106,6 +107,7 @@ const PROSPECT_LOST_REASONS = [
 ]
 
 const ACTIVITY_TYPES = ['Call', 'WhatsApp', 'Email', 'Door Knock', 'Note', 'Follow-Up']
+const CANVASSING_ACTION_MENU_WIDTH = 192
 
 const CANVASSING_SOURCE_PILL_STYLES = {
   property24: { tone: 'blue', label: 'Property24' },
@@ -530,6 +532,7 @@ function PipelineCanvassingPage() {
     sort: 'newest',
   })
   const [openActionMenuId, setOpenActionMenuId] = useState('')
+  const [openActionMenuPosition, setOpenActionMenuPosition] = useState(null)
   const [archiveModal, setArchiveModal] = useState({
     open: false,
     prospectId: '',
@@ -832,14 +835,54 @@ function PipelineCanvassingPage() {
     })
   }, [currentAgentIdentity])
 
+  const closeActionMenu = useCallback(() => {
+    setOpenActionMenuId('')
+    setOpenActionMenuPosition(null)
+  }, [])
+
+  const toggleActionMenu = useCallback((prospectId, event) => {
+    const nextId = normalizeText(prospectId)
+    if (!nextId) {
+      closeActionMenu()
+      return
+    }
+
+    const nextButton = event?.currentTarget
+    const nextRect = nextButton?.getBoundingClientRect?.()
+    const nextPosition = nextRect
+      ? {
+        top: Math.min(nextRect.bottom + 8, window.innerHeight - 12),
+        left: Math.max(12, nextRect.right - CANVASSING_ACTION_MENU_WIDTH),
+      }
+      : null
+
+    setOpenActionMenuId((previous) => {
+      if (previous === nextId) {
+        setOpenActionMenuPosition(null)
+        return ''
+      }
+      setOpenActionMenuPosition(nextPosition)
+      return nextId
+    })
+  }, [closeActionMenu])
+
   useEffect(() => {
     if (!openActionMenuId) return undefined
     function handleWindowClick() {
-      setOpenActionMenuId('')
+      closeActionMenu()
+    }
+    function handleViewportChange() {
+      closeActionMenu()
     }
     window.addEventListener('click', handleWindowClick)
-    return () => window.removeEventListener('click', handleWindowClick)
-  }, [openActionMenuId])
+    window.addEventListener('resize', handleViewportChange)
+    window.addEventListener('scroll', handleViewportChange, true)
+    return () => {
+      window.removeEventListener('click', handleWindowClick)
+      window.removeEventListener('resize', handleViewportChange)
+      window.removeEventListener('scroll', handleViewportChange, true)
+    }
+  }, [closeActionMenu, openActionMenuId])
 
   const scopedProspects = useMemo(() => {
     if (isPrincipalAgentView) return Array.isArray(prospects) ? prospects : []
@@ -925,7 +968,7 @@ function PipelineCanvassingPage() {
       const prospectStatus = normalizeText(prospect?.status)
       const convertedWithoutLead = prospectStatus === 'Converted to Lead' && !normalizeText(prospect?.convertedLeadId)
       const statusMatch = filters.status === 'all'
-        ? (!['Converted to Lead', 'Archived'].includes(prospectStatus) || convertedWithoutLead)
+        ? prospectStatus !== 'Archived' || convertedWithoutLead
         : prospectStatus === filters.status
       const assignedMatch = filters.assigned === 'all'
         ? true
@@ -996,6 +1039,23 @@ function PipelineCanvassingPage() {
       .filter((activity) => normalizeText(activity?.prospectId) === normalizeText(selectedProspect?.id))
       .sort((a, b) => new Date(b?.activityDate || b?.createdAt || 0) - new Date(a?.activityDate || a?.createdAt || 0))
   }, [scopedActivities, selectedProspect])
+
+  const openActionProspect = useMemo(() => {
+    if (!openActionMenuId) return null
+    return prospectRows.find((prospect) => normalizeText(prospect?.id) === openActionMenuId) || null
+  }, [openActionMenuId, prospectRows])
+
+  const openActionProspectMenuItems = openActionProspect
+    ? [
+      ['Open Prospect', () => handleOpenProspectDetail(openActionProspect)],
+      ['Call Prospect', () => handleQuickLogActivity(openActionProspect, 'Call')],
+      ['WhatsApp Prospect', () => handleQuickLogActivity(openActionProspect, 'WhatsApp')],
+      ['Email Prospect', () => handleQuickLogActivity(openActionProspect, 'Email')],
+      ['Convert To Lead', () => handleConvertProspectToLead(openActionProspect)],
+      ['Archive', () => openArchiveProspectModal(openActionProspect.id)],
+      ['Delete', () => openDeleteProspectModal(openActionProspect.id)],
+    ]
+    : []
 
   const metrics = useMemo(() => {
     const today = new Date()
@@ -1589,40 +1649,13 @@ function PipelineCanvassingPage() {
                             className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
                             onClick={(event) => {
                               event.stopPropagation()
-                              setOpenActionMenuId((previous) => (previous === normalizeText(prospect.id) ? '' : normalizeText(prospect.id)))
+                              toggleActionMenu(prospect.id, event)
                             }}
                           >
                             Open
                             <ChevronDown size={13} />
                           </button>
-                          {actionMenuOpen ? (
-                            <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
-                              {[
-                                ['Open Prospect', () => handleOpenProspectDetail(prospect)],
-                                ['Call Prospect', () => handleQuickLogActivity(prospect, 'Call')],
-                                ['WhatsApp Prospect', () => handleQuickLogActivity(prospect, 'WhatsApp')],
-                                ['Email Prospect', () => handleQuickLogActivity(prospect, 'Email')],
-                                ['Convert To Lead', () => handleConvertProspectToLead(prospect)],
-                                ['Archive', () => openArchiveProspectModal(prospect.id)],
-                                ['Delete', () => openDeleteProspectModal(prospect.id)],
-                              ].map(([label, action]) => (
-                                <button
-                                  key={label}
-                                  type="button"
-                                  className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-slate-50 ${
-                                    label === 'Delete' ? 'text-rose-700' : 'text-slate-700'
-                                  }`}
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    setOpenActionMenuId('')
-                                    action()
-                                  }}
-                                >
-                                  {label}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
+                          {actionMenuOpen ? <span className="sr-only">Action menu open</span> : null}
                         </div>
                       </td>
                     </tr>
@@ -1682,40 +1715,13 @@ function PipelineCanvassingPage() {
                         className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600"
                         onClick={(event) => {
                           event.stopPropagation()
-                          setOpenActionMenuId((previous) => (previous === normalizeText(prospect.id) ? '' : normalizeText(prospect.id)))
+                          toggleActionMenu(prospect.id, event)
                         }}
                       >
                         Open
                         <ChevronDown size={13} />
                       </button>
-                      {actionMenuOpen ? (
-                        <div className="absolute right-0 top-full z-30 mt-2 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]">
-                          {[
-                            ['Open Prospect', () => handleOpenProspectDetail(prospect)],
-                            ['Call Prospect', () => handleQuickLogActivity(prospect, 'Call')],
-                            ['WhatsApp Prospect', () => handleQuickLogActivity(prospect, 'WhatsApp')],
-                            ['Email Prospect', () => handleQuickLogActivity(prospect, 'Email')],
-                            ['Convert To Lead', () => handleConvertProspectToLead(prospect)],
-                            ['Archive', () => openArchiveProspectModal(prospect.id)],
-                            ['Delete', () => openDeleteProspectModal(prospect.id)],
-                          ].map(([label, action]) => (
-                            <button
-                              key={label}
-                              type="button"
-                              className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-slate-50 ${
-                                label === 'Delete' ? 'text-rose-700' : 'text-slate-700'
-                              }`}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                setOpenActionMenuId('')
-                                action()
-                              }}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
+                      {actionMenuOpen ? <span className="sr-only">Action menu open</span> : null}
                     </div>
                   </div>
                   <div className="mt-3 grid gap-2 text-xs text-slate-500">
@@ -1744,6 +1750,44 @@ function PipelineCanvassingPage() {
           )}
         </div>
       </section>
+
+      {openActionProspect && openActionMenuPosition && typeof document !== 'undefined'
+        ? createPortal(
+          <div
+            className="fixed inset-0 z-40"
+            onClick={closeActionMenu}
+          >
+            <div
+              className="absolute w-48 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-[0_18px_38px_rgba(15,23,42,0.14)]"
+              style={{
+                top: `${openActionMenuPosition.top}px`,
+                left: `${openActionMenuPosition.left}px`,
+                width: `${CANVASSING_ACTION_MENU_WIDTH}px`,
+              }}
+              onClick={(event) => event.stopPropagation()}
+              role="menu"
+              aria-label="Prospect actions"
+            >
+              {openActionProspectMenuItems.map(([label, action]) => (
+                <button
+                  key={label}
+                  type="button"
+                  className={`block w-full px-3 py-2 text-left text-xs font-semibold transition hover:bg-slate-50 ${
+                    label === 'Delete' ? 'text-rose-700' : 'text-slate-700'
+                  }`}
+                  onClick={() => {
+                    closeActionMenu()
+                    action()
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )
+        : null}
 
       <Modal
         open={showCreateModal}
