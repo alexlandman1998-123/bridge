@@ -153,6 +153,8 @@ import {
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
+import { inferUniversalPartnerRoutingRoleTypes, resolvePartnerRoutingSelections } from '../services/universalPartnerRoutingService'
+import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from '../services/universalAssignmentService'
 
 const CANONICAL_PILOT_BUILD_MARKER = 'CANONICAL_PILOT_BUILD_MARKER_20260525'
 const CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH_FLAG = 'VITE_CANONICAL_DOCUMENTS_SOURCE_OF_TRUTH'
@@ -19723,16 +19725,16 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
       physical_address: item.physicalAddress || null,
       province: item.province || null,
       notes: item.notes || null,
-      status: 'active',
-      assignment_status: 'active',
-      activation_trigger: 'immediate',
+      status: item.assignmentStatus === 'pending_assignment' ? 'pending' : 'active',
+      assignment_status: item.assignmentStatus || 'active',
+      activation_trigger: item.assignmentStatus === 'pending_assignment' ? 'routing_queue' : 'immediate',
       activated_at: nowIso,
       assigned_by: actorProfile?.userId || null,
       removed_at: null,
       snapshot_json: {
         ...(item.snapshot || {}),
         canonicalTransactionId: transactionId,
-        roleplayerStatus: 'assigned',
+        roleplayerStatus: item.assignmentStatus || 'assigned',
         userId: resolvedUserId,
         organisationId: item.partnerOrganisationId || null,
         workspaceUnitId: item.workspaceUnitId || null,
@@ -19771,6 +19773,24 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
         payload,
         'id',
       )
+      await recordUniversalRolePlayerAssignmentEvent(client, {
+        transactionId,
+        roleType: item.roleType,
+        assignedUserId: resolvedUserId,
+        organisationId: item.partnerOrganisationId || null,
+        branchId: item.branchId || null,
+        sourceModule: 'transaction',
+        sourceEvent: 'persist_transaction_role_players',
+        assignmentSource: item.assignmentSource || item.selectionSource || 'transaction_direct',
+        selectionSource: item.selectionSource || '',
+        actorUserId: actorProfile?.userId || null,
+        previousOwnerId: null,
+        fallbackUsed: item.assignmentStatus === 'pending_assignment',
+        assignmentStatus: item.assignmentStatus || 'active',
+        metadata: {
+          ...(item.snapshot || {}),
+        },
+      })
       continue
     }
 
@@ -19779,6 +19799,24 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
       created_at: nowIso,
     }
     await insertRecordWithMissingColumnFallback(client, 'transaction_role_players', insertPayload, 'id')
+    await recordUniversalRolePlayerAssignmentEvent(client, {
+      transactionId,
+      roleType: item.roleType,
+      assignedUserId: resolvedUserId,
+      organisationId: item.partnerOrganisationId || null,
+      branchId: item.branchId || null,
+      sourceModule: 'transaction',
+      sourceEvent: 'persist_transaction_role_players',
+      assignmentSource: item.assignmentSource || item.selectionSource || 'transaction_direct',
+      selectionSource: item.selectionSource || '',
+      actorUserId: actorProfile?.userId || null,
+      previousOwnerId: null,
+      fallbackUsed: item.assignmentStatus === 'pending_assignment',
+      assignmentStatus: item.assignmentStatus || 'active',
+      metadata: {
+        ...(item.snapshot || {}),
+      },
+    })
   }
 
   return rolePlayers
@@ -19804,6 +19842,7 @@ function resolveRoleplayerSelectionScope(selection = {}, assignedUserId = null) 
   const workspaceUnitId = normalizeNullableUuid(selection.workspaceUnitId || selection.branchId)
   const branchId = normalizeNullableUuid(selection.branchId || selection.workspaceUnitId)
   const userId = normalizeNullableUuid(assignedUserId || selection.userId)
+  const explicitAssignmentStatus = normalizeText(selection.assignmentStatus || selection.assignment_status)
   const hasUnitScope = Boolean(teamId || workspaceUnitId || branchId)
   const scopeLevel = userId && !regionId && !hasUnitScope
     ? 'independent'
@@ -19826,7 +19865,7 @@ function resolveRoleplayerSelectionScope(selection = {}, assignedUserId = null) 
         ? 'branch_queue'
         : regionId
           ? 'region_queue'
-          : 'organisation_queue'
+          : explicitAssignmentStatus || 'organisation_queue'
 
   return {
     organisationId,
@@ -19929,6 +19968,23 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
     throw upsertResult.error
   }
 
+  await recordUniversalRolePlayerAssignmentEvent(client, {
+    transactionId: normalizedTransactionId,
+    roleType: normalizedRole,
+    assignedUserId: resolvedUserId,
+    sourceModule: 'transaction',
+    sourceEvent: 'ensure_roleplayer_participant_for_onboarding',
+    assignmentSource: 'transaction_direct',
+    selectionSource: 'transaction_direct',
+    actorUserId: actorProfile?.userId || null,
+    assignmentStatus: normalizedStatus,
+    metadata: {
+      participantName,
+      participantEmail: email || null,
+      legalRole: normalizedRole === 'attorney' ? normalizeAttorneyLegalRole(legalRole, 'transfer') : 'none',
+      visibilityScope: normalizedVisibility,
+    },
+  })
   return Array.isArray(upsertResult.data) ? upsertResult.data[0] || null : upsertResult.data || null
 }
 
@@ -20486,6 +20542,65 @@ async function updateRecordByIdWithMissingColumnFallback(client, table, id, payl
   return result.data || null
 }
 
+function resolveUniversalAssignmentMethodFromSource(source = '') {
+  const normalized = normalizeTextValue(source).toLowerCase()
+  if (normalized.includes('routing')) return UNIVERSAL_ASSIGNMENT_METHODS.partnerRouting
+  if (normalized.includes('queue')) return UNIVERSAL_ASSIGNMENT_METHODS.queueAllocation
+  if (normalized.includes('workflow')) return UNIVERSAL_ASSIGNMENT_METHODS.workflowGenerated
+  if (normalized.includes('bulk')) return UNIVERSAL_ASSIGNMENT_METHODS.bulkAssignment
+  if (normalized.includes('manager')) return UNIVERSAL_ASSIGNMENT_METHODS.managerAssignment
+  if (normalized.includes('system')) return UNIVERSAL_ASSIGNMENT_METHODS.systemGenerated
+  return UNIVERSAL_ASSIGNMENT_METHODS.manual
+}
+
+async function recordUniversalRolePlayerAssignmentEvent(client, {
+  transactionId,
+  roleType,
+  assignedUserId = null,
+  organisationId = null,
+  regionId = null,
+  branchId = null,
+  teamId = null,
+  sourceModule = 'transaction',
+  sourceEvent = 'roleplayer_assignment',
+  assignmentSource = '',
+  selectionSource = '',
+  actorUserId = null,
+  previousOwnerId = null,
+  fallbackUsed = false,
+  assignmentStatus = '',
+  metadata = {},
+} = {}) {
+  try {
+    await recordUniversalAssignmentEvent('assignment.created', {
+      itemType: 'transaction_role_player',
+      itemId: `${normalizeTextValue(transactionId)}:${normalizeTextValue(roleType)}`,
+      transactionId,
+      organisationId,
+      regionId,
+      branchId,
+      teamId,
+      assignedUserId,
+      previousOwnerId,
+      assignmentMethod: resolveUniversalAssignmentMethodFromSource(assignmentSource || selectionSource),
+      sourceModule,
+      sourceEvent,
+      fallbackUsed,
+      assignmentStatus,
+      reason: assignmentSource || selectionSource || 'transaction role player assignment',
+      actorUserId,
+      metadata: {
+        ...metadata,
+        roleType,
+        assignmentSource,
+        selectionSource,
+      },
+    })
+  } catch (error) {
+    console.warn('[api] universal roleplayer assignment event skipped', error)
+  }
+}
+
 async function upsertTransactionRoleplayerSelection(client, { transactionId, selection, actorProfile }) {
   const now = new Date().toISOString()
   const profileIdByEmail = !selection.userId && selection.email ? await resolveProfileIdsByEmail(client, [selection.email]) : {}
@@ -20628,6 +20743,28 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
   if (!Array.isArray(result.data) || !result.data.length) {
     throw new Error(`Unable to save ${selection.roleType.replaceAll('_', ' ')} roleplayer.`)
   }
+  await recordUniversalRolePlayerAssignmentEvent(client, {
+    transactionId,
+    roleType: selection.roleType,
+    assignedUserId: resolvedUserId,
+    organisationId: scope.organisationId,
+    regionId: scope.regionId,
+    branchId: scope.branchId,
+    teamId: scope.teamId,
+    sourceModule: 'transaction',
+    sourceEvent: 'upsert_transaction_roleplayer_selection',
+    assignmentSource: selection.selectionSource || 'connected_partner',
+    selectionSource: selection.selectionSource || 'connected_partner',
+    actorUserId: actorProfile?.userId || null,
+    previousOwnerId: null,
+    fallbackUsed: selection.assignmentStatus === 'pending_assignment',
+    assignmentStatus: selection.assignmentStatus || 'selected',
+    metadata: {
+      relationshipId: selection.relationshipId || null,
+      partnerName: selection.companyName || selection.contactPerson || null,
+      email: selection.email || null,
+    },
+  })
   return result.data || null
 }
 
@@ -21909,7 +22046,42 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
 
   const deferFinanceType = Boolean(options?.deferFinanceType)
   const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [])
-  const primaryPartnerSelection = rolePlayerSelections.find((item) => item.partnerOrganisationId || item.partnerRelationshipId) || null
+  const sourceContext = options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {}
+  const autoRoutingRoleTypes = Array.isArray(options?.partnerRoleTypes) && options.partnerRoleTypes.length
+    ? options.partnerRoleTypes.map((roleType) => normalizeRoleType(roleType)).filter(Boolean)
+    : inferUniversalPartnerRoutingRoleTypes({
+        role: actorRole,
+        workspaceRole: actorProfile.role,
+        appRole: actorProfile.role,
+        transactionType,
+        financeManagedBy: setup.financeManagedBy,
+      })
+  const autoResolvedSelections = await resolvePartnerRoutingSelections({
+    sourceOrganisationId: normalizeText(sourceContext.organisationId || sourceContext.workspaceId || actorProfile.workspaceId || actorProfile.organisationId || ''),
+    sourceUserId: normalizeText(sourceContext.agentUserId || sourceContext.userId || actorProfile.userId || ''),
+    sourceTeamId: normalizeText(sourceContext.teamId || sourceContext.team_id || ''),
+    sourceBranchId: normalizeText(sourceContext.branchId || sourceContext.branch_id || setup.assignedBranchId || ''),
+    sourceRegionId: normalizeText(sourceContext.regionId || sourceContext.region_id || ''),
+    moduleContext: {
+      role: actorRole,
+      appRole: actorProfile.role,
+      workspaceRole: actorProfile.role,
+      transactionType,
+      financeManagedBy: setup.financeManagedBy,
+    },
+    targetRoleTypes: autoRoutingRoleTypes,
+    routingRules: Array.isArray(options?.routingRules) ? options.routingRules : undefined,
+    partnerConnections: Array.isArray(options?.partnerConnections) ? options.partnerConnections : undefined,
+    partnerPeopleByRelationshipId: options?.partnerPeopleByRelationshipId || undefined,
+    transactionOverride: options?.transactionOverride || null,
+  })
+  const mergedRolePlayerSelections = [
+    ...rolePlayerSelections,
+    ...autoResolvedSelections.filter(
+      (selection) => selection?.roleType && !rolePlayerSelections.some((existing) => normalizeRoleType(existing.roleType) === normalizeRoleType(selection.roleType)),
+    ),
+  ]
+  const primaryPartnerSelection = mergedRolePlayerSelections.find((item) => item.partnerOrganisationId || item.partnerRelationshipId) || null
   const hierarchyScope =
     options?.hierarchyScope && typeof options.hierarchyScope === 'object'
       ? options.hierarchyScope
@@ -22504,7 +22676,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
             'documents',
             'transaction_events',
           ],
-      rolePlayers: rolePlayerSelections.map((item) => ({
+      rolePlayers: mergedRolePlayerSelections.map((item) => ({
         roleType: item.roleType,
         selectionSource: item.selectionSource,
         preferredPartnerId: item.preferredPartnerId || null,
@@ -22518,7 +22690,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   try {
     await persistTransactionRolePlayersIfPossible(client, {
       transactionId: transaction.id,
-      rolePlayers: rolePlayerSelections,
+      rolePlayers: mergedRolePlayerSelections,
       actorProfile,
     })
   } catch (error) {
@@ -22582,14 +22754,14 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       },
     })
 
-    const propagationResult = await propagateTransactionRoleplayersIfPossible(client, {
+      const propagationResult = await propagateTransactionRoleplayersIfPossible(client, {
       transactionId: transaction.id,
       transaction: {
         ...transactionPayload,
         id: transaction.id,
         finance_type: normalizedFinanceType,
       },
-      rolePlayers: rolePlayerSelections,
+      rolePlayers: mergedRolePlayerSelections,
       actorProfile,
       actorRole,
       buyerId: buyer?.id || null,
@@ -24325,6 +24497,23 @@ export async function addStakeholder({
       roleType: participant.roleType,
       legalRole: participant.legalRole,
       status: participant.stakeholderStatus,
+    },
+  })
+
+  await recordUniversalRolePlayerAssignmentEvent(client, {
+    transactionId,
+    roleType: participant.roleType,
+    assignedUserId: participant.userId || null,
+    sourceModule: 'transaction',
+    sourceEvent: 'add_stakeholder',
+    assignmentSource: 'transaction_direct',
+    selectionSource: 'transaction_direct',
+    actorUserId: actorProfile.userId || null,
+    assignmentStatus: participant.stakeholderStatus || 'active',
+    metadata: {
+      legalRole: participant.legalRole,
+      participantEmail: participant.participantEmail,
+      visibilityScope: participant.visibilityScope,
     },
   })
 

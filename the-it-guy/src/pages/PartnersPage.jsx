@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   LockKeyhole,
   Network,
+  Route,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -13,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
   acceptPartnerInvitation,
   canConnectPartnerTypes,
@@ -32,11 +34,25 @@ import {
   fetchDiscoverablePartnerDirectory,
   updatePartnerRelationshipStatus,
 } from '../lib/partnersRepository'
+import {
+  listOrganisationPartnerRoutingRules,
+  listUserPreferredPartnerRoutingRules,
+  removeOrganisationPartnerRoutingRule,
+  saveOrganisationPartnerRoutingRule,
+} from '../lib/settingsApi'
 import { recordWorkspaceAuditEvent } from '../services/auditLogService'
+import { getWorkspaceHierarchy } from '../services/bondWorkspaceHierarchyService'
+import { getBondPartnerPeople } from '../services/bondPartnerProfileService'
+import { buildPartnerNetworkIntelligence } from '../services/partnerNetworkIntelligenceService'
+import { PARTNER_ROUTING_MODES, PARTNER_ROUTING_ROLE_TYPE_OPTIONS, PARTNER_ROUTING_ROLE_TYPES, PARTNER_ROUTING_SOURCE_TYPES, PARTNER_ROUTING_TARGET_TYPES } from '../constants/bondRoutingContract'
 import OrganisationAvatar from '../components/organisation/OrganisationAvatar'
+import PartnerNetworkIntelligencePanel from '../components/partner-network/PartnerNetworkIntelligencePanel'
 
 const TABS = [
   { key: 'connected', label: 'Connected Partners' },
+  { key: 'preferred', label: 'My Preferred Partners' },
+  { key: 'defaults', label: 'Default Routing' },
+  { key: 'network', label: 'Network Intelligence' },
   { key: 'invitations', label: 'Invitations' },
   { key: 'discover', label: 'Discover Partners' },
   { key: 'referrals', label: 'Referrals & Opportunities' },
@@ -72,6 +88,19 @@ function formatDate(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Not recorded'
   return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
+}
+
+function formatDateTime(value) {
+  if (!value) return 'Not updated'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Not updated'
+  return new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
 function normalizeText(value = '') {
@@ -137,6 +166,102 @@ function parseScopeValue(value = '') {
     scopeId: rest.join(':'),
   }
 }
+
+function getDefaultRoutingScopeOptions(organisationId = '', hierarchy = {}) {
+  const regionOptions = Array.isArray(hierarchy.regions)
+    ? hierarchy.regions.map((region) => ({
+        value: `${PARTNER_ROUTING_SOURCE_TYPES.region}:${region.id}`,
+        label: `Region: ${region.name || region.code || region.id}`,
+        requiresTarget: false,
+        scopeId: region.id,
+        scopeName: region.name || region.code || region.id,
+      }))
+    : []
+  const unitOptions = Array.isArray(hierarchy.units)
+    ? hierarchy.units.flatMap((unit) => {
+        const unitType = normalizeLower(unit.unit_type || unit.unitType || unit.type || '')
+        if (unitType === 'team') {
+          return [{
+            value: `${PARTNER_ROUTING_SOURCE_TYPES.team}:${unit.id}`,
+            label: `Team: ${unit.name || unit.code || unit.id}`,
+            requiresTarget: false,
+            scopeId: unit.id,
+            scopeName: unit.name || unit.code || unit.id,
+          }]
+        }
+        return [{
+          value: `${PARTNER_ROUTING_SOURCE_TYPES.branch}:${unit.id}`,
+          label: `Branch: ${unit.name || unit.code || unit.id}`,
+          requiresTarget: false,
+          scopeId: unit.id,
+          scopeName: unit.name || unit.code || unit.id,
+        }]
+      })
+    : []
+  return [
+    { value: PARTNER_ROUTING_SOURCE_TYPES.organisation, label: 'Organisation', requiresTarget: false, scopeId: organisationId, scopeName: 'Organisation' },
+    ...regionOptions,
+    ...unitOptions,
+  ]
+}
+
+function getRoutingModeForDefaultRole(roleType = '', hasPerson = false) {
+  if (!hasPerson) return PARTNER_ROUTING_MODES.organisationQueue
+  if (roleType === PARTNER_ROUTING_ROLE_TYPES.agent) return PARTNER_ROUTING_MODES.directAgent
+  if (roleType === PARTNER_ROUTING_ROLE_TYPES.transferAttorney || roleType === PARTNER_ROUTING_ROLE_TYPES.bondAttorney || roleType === PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney) {
+    return PARTNER_ROUTING_MODES.directAttorney
+  }
+  return PARTNER_ROUTING_MODES.directConsultant
+}
+
+function personMatchesDefaultRole(person = {}, roleType = '') {
+  const normalizedRole = normalizeLower(person?.role || person?.organisationRole)
+  if (!roleType) return true
+  if (roleType === PARTNER_ROUTING_ROLE_TYPES.agent) return normalizedRole === 'agent'
+  if (roleType === PARTNER_ROUTING_ROLE_TYPES.transferAttorney) return ['transfer_attorney', 'attorney', 'conveyancer'].includes(normalizedRole)
+  if (roleType === PARTNER_ROUTING_ROLE_TYPES.bondAttorney) return ['bond_attorney', 'attorney'].includes(normalizedRole)
+  if (roleType === PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney) return ['cancellation_attorney', 'attorney'].includes(normalizedRole)
+  if (roleType === PARTNER_ROUTING_ROLE_TYPES.developer || roleType === PARTNER_ROUTING_ROLE_TYPES.developerContact) return ['developer', 'developer_contact'].includes(normalizedRole)
+  return ['bond_originator', 'consultant', 'bond_consultant', 'processor', 'bond_processor', 'principal', 'director', 'manager', 'branch_manager', 'regional_manager', 'hq_manager'].includes(normalizedRole)
+}
+
+function normalizeDefaultRoutingPeople(payload = {}) {
+  const groups = payload?.groups || {}
+  const mapPerson = (person = {}, fallbackRole = '') => ({
+    ...person,
+    id: normalizeText(person.userId || person.id),
+    userId: normalizeText(person.userId || person.id),
+    role: normalizeText(person.role || fallbackRole),
+    label: [person.firstName, person.lastName].map(normalizeText).filter(Boolean).join(' ') || person.name || person.email || person.id || 'Unknown person',
+    branchId: normalizeText(person.branchId || person.branch_id),
+    branchName: normalizeText(person.branchName || person.branch_name),
+    regionId: normalizeText(person.regionId || person.region_id),
+    regionName: normalizeText(person.regionName || person.region_name),
+    teamId: normalizeText(person.teamId || person.team_id),
+    teamName: normalizeText(person.teamName || person.team_name),
+    department: normalizeText(person.department),
+    title: normalizeText(person.title || person.jobTitle || person.job_title),
+  })
+  return [
+    ...(Array.isArray(groups.principal) ? groups.principal.map((person) => mapPerson(person, 'principal')) : []),
+    ...(Array.isArray(groups.branchManagers) ? groups.branchManagers.map((person) => mapPerson(person, 'branch_manager')) : []),
+    ...(Array.isArray(groups.agents) ? groups.agents.map((person) => mapPerson(person, 'agent')) : []),
+  ]
+}
+
+const DEFAULT_ROUTING_MANAGER_ROLES = new Set([
+  'principal',
+  'owner',
+  'director',
+  'partner',
+  'manager',
+  'branch_manager',
+  'regional_manager',
+  'team_lead',
+  'hq_manager',
+  'admin',
+  'admin_staff',
+])
 
 function MetricCard({ label, value, subtext }) {
   return (
@@ -218,15 +343,19 @@ function PartnerCard({ partner, relationship, action, actionLabel, actionDisable
   )
 }
 
-function ProfilePanel({ partner, relationship }) {
+function ProfilePanel({ partner, relationship, people = [], intelligence = null }) {
   if (!partner) {
     return (
       <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
         <p className="text-sm font-semibold text-[#10243a]">Select a partner profile</p>
-        <p className="mt-2 text-sm leading-6 text-[#60758d]">Profiles show operating areas, relationship status, shared visibility, and performance signals.</p>
+        <p className="mt-2 text-sm leading-6 text-[#60758d]">Profiles show operating areas, relationship status, shared visibility, staff directories, and performance signals.</p>
       </aside>
     )
   }
+
+  const staff = Array.isArray(people) ? people : []
+  const healthScore = Number(intelligence?.healthScore || 0)
+  const healthLabel = intelligence?.healthLabel || (healthScore >= 80 ? 'Healthy' : healthScore >= 65 ? 'Watch' : healthScore >= 45 ? 'Inactive' : 'Dormant')
 
   return (
     <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)] xl:sticky xl:top-4">
@@ -239,6 +368,22 @@ function ProfilePanel({ partner, relationship }) {
       </div>
 
       <div className="mt-5 grid gap-3">
+        {intelligence ? (
+          <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Partner Health</p>
+            <div className="mt-2 flex items-end justify-between gap-3">
+              <div>
+                <strong className="block text-2xl font-semibold tracking-[-0.02em] text-[#10243a]">{healthScore}</strong>
+                <p className="text-sm text-[#60758d]">{healthLabel}</p>
+              </div>
+              <div className="text-right text-xs text-[#60758d]">
+                <p>{formatNumber(intelligence.transactionVolume || 0)} transactions</p>
+                <p>{formatNumber(intelligence.referralCount || 0)} referrals</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Overview</p>
           <p className="mt-2 text-sm leading-6 text-[#40556c]">
@@ -255,6 +400,23 @@ function ProfilePanel({ partner, relationship }) {
             {(partner.activeAreas || []).map((area) => (
               <span key={area} className="rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">{area}</span>
             ))}
+          </div>
+        </div>
+        <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Staff Directory</p>
+          <div className="mt-3 space-y-2">
+            {staff.length ? (
+              staff.slice(0, 6).map((person) => (
+                <div key={person.userId || person.id || person.name} className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-2.5">
+                  <p className="text-sm font-semibold text-[#10243a]">{person.label || person.fullName || person.name || 'Partner user'}</p>
+                  <p className="mt-1 text-xs text-[#60758d]">
+                    {[person.role, person.branchName, person.regionName, person.teamName].filter(Boolean).join(' · ') || 'Visible through partner permissions'}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-[#60758d]">No approved staff has been loaded for this connection yet.</p>
+            )}
           </div>
         </div>
         <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
@@ -506,6 +668,13 @@ export default function PartnersPage() {
   const [discoverDirectoryLoading, setDiscoverDirectoryLoading] = useState(false)
   const [connectingPartnerIds, setConnectingPartnerIds] = useState(() => new Set())
   const [sentConnectionPartnerIds, setSentConnectionPartnerIds] = useState(() => new Set())
+  const [preferredRoutingRules, setPreferredRoutingRules] = useState([])
+  const [defaultRoutingRules, setDefaultRoutingRules] = useState([])
+  const [workspaceHierarchy, setWorkspaceHierarchy] = useState({ regions: [], units: [] })
+  const [defaultRoutingPeopleByRelationshipId, setDefaultRoutingPeopleByRelationshipId] = useState({})
+  const [defaultRoutingLoadingRelationshipId, setDefaultRoutingLoadingRelationshipId] = useState('')
+  const [savingDefaultRouting, setSavingDefaultRouting] = useState(false)
+  const [editingDefaultRoutingId, setEditingDefaultRoutingId] = useState('')
   const connectingPartnerIdsRef = useRef(new Set())
 
   const [inviteEmail, setInviteEmail] = useState('')
@@ -538,6 +707,28 @@ export default function PartnersPage() {
     type: '',
   })
   const [referralFilters, setReferralFilters] = useState({ query: '', status: 'all', dateRange: 'all' })
+  const [defaultRoutingFilters, setDefaultRoutingFilters] = useState({
+    scope: 'all',
+    roleType: 'all',
+    status: 'all',
+    query: '',
+  })
+  const [networkSearchQuery, setNetworkSearchQuery] = useState('')
+  const [defaultRoutingForm, setDefaultRoutingForm] = useState({
+    ruleName: '',
+    isActive: true,
+    isDefault: true,
+    assignmentPriority: 500,
+    sourceScopeType: PARTNER_ROUTING_SOURCE_TYPES.organisation,
+    sourceScopeId: '',
+    targetRelationshipId: '',
+    targetOrganisationId: '',
+    targetRoleType: PARTNER_ROUTING_ROLE_TYPES.bondOriginator,
+    targetUserId: '',
+    targetScopeType: PARTNER_ROUTING_TARGET_TYPES.orgQueue,
+    assignmentMode: PARTNER_ROUTING_MODES.organisationQueue,
+    notes: '',
+  })
 
   const accessContext = useMemo(
     () => ({
@@ -547,6 +738,17 @@ export default function PartnersPage() {
       currentMembership,
     }),
     [currentMembership, organisationId, profile, role],
+  )
+  const canManageDefaultRouting = useMemo(
+    () =>
+      DEFAULT_ROUTING_MANAGER_ROLES.has(
+        normalizeOrganisationMembershipRole(currentMembership?.role || currentMembership?.workspaceRole || currentMembership?.organisationRole || 'viewer'),
+      ) ||
+      canManageOrganisationSettings({
+        appRole: role,
+        membershipRole: normalizeOrganisationMembershipRole(currentMembership?.role || currentMembership?.workspaceRole || currentMembership?.organisationRole || 'viewer'),
+      }),
+    [currentMembership?.organisationRole, currentMembership?.role, currentMembership?.workspaceRole, role],
   )
   const isBondPartnersRoute = location.pathname.startsWith('/bond/partners')
 
@@ -568,19 +770,34 @@ export default function PartnersPage() {
   }, [allowedScopes, inviteScopeValue, organisationId])
 
   const inviteScopeNeedsTarget = Boolean(selectedInviteScope?.requiresTarget)
+  const defaultRoutingScopeOptions = useMemo(
+    () => getDefaultRoutingScopeOptions(organisationId, workspaceHierarchy),
+    [organisationId, workspaceHierarchy],
+  )
 
   const loadSnapshot = useCallback(async () => {
     try {
       setLoading(true)
       setError('')
       setDiscoverDirectory([])
-      const nextSnapshot = await fetchPartnersSnapshot({
-        organisationId,
-        workspaceType: resolvedWorkspaceType,
-        accessContext,
-        includeDirectory: false,
-      })
+      const [nextSnapshot, nextPreferredRoutingRules, nextDefaultRoutingRules, nextHierarchy] = await Promise.all([
+        fetchPartnersSnapshot({
+          organisationId,
+          workspaceType: resolvedWorkspaceType,
+          accessContext,
+          includeDirectory: false,
+        }),
+        listUserPreferredPartnerRoutingRules().catch(() => []),
+        listOrganisationPartnerRoutingRules().catch(() => []),
+        getWorkspaceHierarchy(organisationId).catch(() => ({ regions: [], units: [] })),
+      ])
       setSnapshot(nextSnapshot)
+      setPreferredRoutingRules(Array.isArray(nextPreferredRoutingRules) ? nextPreferredRoutingRules : [])
+      setDefaultRoutingRules(Array.isArray(nextDefaultRoutingRules) ? nextDefaultRoutingRules : [])
+      setWorkspaceHierarchy({
+        regions: Array.isArray(nextHierarchy?.regions) ? nextHierarchy.regions : [],
+        units: Array.isArray(nextHierarchy?.units) ? nextHierarchy.units : [],
+      })
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load partner network.')
     } finally {
@@ -625,6 +842,126 @@ export default function PartnersPage() {
     () => filterPartnerRelationshipsByScope(relationships, accessContext).filter((item) => item.relationshipStatus === 'accepted'),
     [accessContext, relationships],
   )
+
+  const connectedRelationshipById = useMemo(
+    () =>
+      new Map(
+        connectedRelationships.map((relationship) => [
+          normalizeText(relationship.id),
+          relationship,
+        ]),
+      ),
+    [connectedRelationships],
+  )
+
+  useEffect(() => {
+    if (!['defaults', 'network'].includes(activeTab)) return
+    const missingRelationships = connectedRelationships
+      .filter((relationship) => relationship.relationshipStatus === 'accepted')
+      .filter((relationship) => !defaultRoutingPeopleByRelationshipId[normalizeText(relationship.id || '')])
+      .slice(0, 12)
+    if (!missingRelationships.length) return
+    void Promise.all(missingRelationships.map((relationship) => ensureDefaultRoutingPeople(relationship.id)))
+  }, [activeTab, connectedRelationships, defaultRoutingPeopleByRelationshipId])
+
+  const preferredPartnerRows = useMemo(() => {
+    const connectedByOrgId = new Map(
+      connectedRelationships.map((relationship) => [
+        normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId || relationship.partnerOrganisationId),
+        relationship,
+      ]),
+    )
+
+    return (preferredRoutingRules || [])
+      .map((rule) => {
+        const targetOrganisationId = normalizeText(rule?.targetOrganisationId || rule?.target_organisation_id)
+        if (!targetOrganisationId) return null
+        const relationship = connectedByOrgId.get(targetOrganisationId) || null
+        const partner = relationship?.partner || null
+        const partnerType = partner?.type || 'unknown'
+        const personName = normalizeText(rule?.targetScopeName || partner?.name || 'Preferred partner')
+        return {
+          id: rule.id,
+          partner,
+          relationship,
+          partnerType,
+          personName,
+          organisationName: partner?.name || 'Connected partner',
+          organisationId: targetOrganisationId,
+          contactPerson: personName,
+          email: partner?.contactEmails?.[0] || '',
+          groupLabel:
+            partnerType === 'bond_originator'
+              ? 'Bond Originators'
+              : partnerType === 'attorney_firm'
+                ? 'Attorneys'
+                : partnerType === 'developer_company'
+                  ? 'Developers'
+                  : partnerType === 'agency_network'
+                    ? 'Agency Networks'
+                    : partnerType === 'agency'
+                      ? 'Agents'
+                      : 'Other Partners',
+          routingRule: rule,
+        }
+      })
+      .filter(Boolean)
+      .sort((left, right) => {
+        const leftGroup = left.groupLabel || ''
+        const rightGroup = right.groupLabel || ''
+        if (leftGroup !== rightGroup) return leftGroup.localeCompare(rightGroup)
+        return String(left.personName || '').localeCompare(String(right.personName || ''))
+      })
+  }, [connectedRelationships, preferredRoutingRules])
+
+  const defaultRoutingRows = useMemo(() => {
+    return (defaultRoutingRules || [])
+      .filter((rule) => {
+        const scopeType = normalizeText(rule.sourceScopeType || rule.source_scope)
+        return Boolean(rule.isDefault) && [
+          PARTNER_ROUTING_SOURCE_TYPES.organisation,
+          PARTNER_ROUTING_SOURCE_TYPES.region,
+          PARTNER_ROUTING_SOURCE_TYPES.branch,
+          PARTNER_ROUTING_SOURCE_TYPES.team,
+        ].includes(scopeType)
+      })
+      .map((rule) => {
+        const targetOrganisationId = normalizeText(rule.targetOrganisationId || rule.target_organisation_id || '')
+        const relationship =
+          connectedRelationships.find((item) => normalizeText(item.partner?.id || item.counterpartOrganisationId || item.partnerOrganisationId) === targetOrganisationId) ||
+          connectedRelationshipById.get(normalizeText(rule.targetRelationshipId || rule.partnerRelationshipId || rule.relationshipId || '')) ||
+          null
+        const partner = relationship?.partner || null
+        const people = defaultRoutingPeopleByRelationshipId[normalizeText(relationship?.id || '')] || []
+        const targetUserId = normalizeText(rule.targetUserId || rule.target_user_id || '')
+        const selectedPerson = people.find((person) => normalizeText(person.userId || person.id) === targetUserId) || null
+        const scopeType = normalizeLower(rule.sourceScopeType || rule.source_scope)
+        const scopeId = normalizeText(rule.sourceScopeId || rule.sourceContextId || rule.source_context_id || '')
+        const scopeLabel = scopeType === PARTNER_ROUTING_SOURCE_TYPES.region
+          ? (workspaceHierarchy.regions.find((item) => normalizeText(item.id) === scopeId)?.name || 'Region')
+          : scopeType === PARTNER_ROUTING_SOURCE_TYPES.branch || scopeType === PARTNER_ROUTING_SOURCE_TYPES.team
+            ? (workspaceHierarchy.units.find((item) => normalizeText(item.id) === scopeId)?.name || 'Branch / Team')
+            : 'Organisation'
+        return {
+          ...rule,
+          relationship,
+          partner,
+          selectedPerson,
+          targetOrganisationId,
+          scopeLabel,
+          roleLabel:
+            PARTNER_ROUTING_ROLE_TYPE_OPTIONS.find((option) => option.value === normalizeText(rule.targetRoleType || rule.target_role_type))?.label ||
+            normalizeText(rule.targetRoleType || rule.target_role_type) ||
+            'Default partner',
+        }
+      })
+      .sort((left, right) => {
+        const leftScope = normalizeText(left.scopeLabel || '')
+        const rightScope = normalizeText(right.scopeLabel || '')
+        if (leftScope !== rightScope) return leftScope.localeCompare(rightScope)
+        return normalizeText(left.roleLabel || '').localeCompare(normalizeText(right.roleLabel || ''))
+      })
+  }, [connectedRelationshipById, defaultRoutingPeopleByRelationshipId, defaultRoutingRules, workspaceHierarchy.regions, workspaceHierarchy.units])
 
   const visibleConnectedRelationships = useMemo(
     () =>
@@ -728,6 +1065,51 @@ export default function PartnersPage() {
     [connectedRelationships, selectedPartner?.id],
   )
 
+  const selectedPartnerPeople = useMemo(
+    () => defaultRoutingPeopleByRelationshipId[normalizeText(selectedRelationship?.id || '')] || [],
+    [defaultRoutingPeopleByRelationshipId, selectedRelationship?.id],
+  )
+
+  const selectedDefaultRelationship = useMemo(
+    () => connectedRelationshipById.get(normalizeText(defaultRoutingForm.targetRelationshipId || '')) || null,
+    [connectedRelationshipById, defaultRoutingForm.targetRelationshipId],
+  )
+
+  const selectedDefaultPeople = useMemo(
+    () => defaultRoutingPeopleByRelationshipId[normalizeText(selectedDefaultRelationship?.id || '')] || [],
+    [defaultRoutingPeopleByRelationshipId, selectedDefaultRelationship?.id],
+  )
+
+  const defaultRoutingSourceUnitOptions = useMemo(() => {
+    const scopeType = normalizeText(defaultRoutingForm.sourceScopeType || '')
+    return (workspaceHierarchy.units || []).filter((unit) => {
+      const unitType = normalizeLower(unit.unit_type || unit.unitType || unit.type || '')
+      if (!unitType) return true
+      if (scopeType === PARTNER_ROUTING_SOURCE_TYPES.team) return unitType === 'team'
+      if (scopeType === PARTNER_ROUTING_SOURCE_TYPES.branch) return unitType === 'branch'
+      return true
+    })
+  }, [defaultRoutingForm.sourceScopeType, workspaceHierarchy.units])
+
+  const filteredDefaultRoutingRows = useMemo(() => {
+    return defaultRoutingRows.filter((rule) => {
+      if (defaultRoutingFilters.scope !== 'all' && normalizeText(rule.sourceScopeType || rule.source_scope) !== defaultRoutingFilters.scope) return false
+      if (defaultRoutingFilters.roleType !== 'all' && normalizeText(rule.targetRoleType || rule.target_role_type) !== defaultRoutingFilters.roleType) return false
+      if (defaultRoutingFilters.status === 'active' && !rule.isActive) return false
+      if (defaultRoutingFilters.status === 'inactive' && rule.isActive) return false
+      if (!defaultRoutingFilters.query) return true
+      const query = normalizeLower(defaultRoutingFilters.query)
+      const haystack = [
+        rule.ruleName,
+        rule.notes,
+        rule.partner?.name,
+        rule.selectedPerson?.label,
+        rule.scopeLabel,
+      ].join(' ')
+      return normalizeLower(haystack).includes(query)
+    })
+  }, [defaultRoutingFilters.query, defaultRoutingFilters.roleType, defaultRoutingFilters.scope, defaultRoutingFilters.status, defaultRoutingRows])
+
   const transactionPartnerOptions = useMemo(
     () => ({
       attorneys: getPartnerAssignmentOptions(snapshot || {}, 'transfer_attorney', accessContext),
@@ -751,6 +1133,18 @@ export default function PartnersPage() {
       return matchQuery && statusMatch && ageOk
     })
   }, [referralFilters.dateRange, referralFilters.query, referralFilters.status, relatedOrganisations, snapshot?.referrals])
+
+  const partnerNetworkIntelligence = useMemo(
+    () =>
+      buildPartnerNetworkIntelligence({
+        snapshot: snapshot || {},
+        selectedPartnerId: selectedPartner?.id || '',
+        selectedRelationshipId: selectedRelationship?.id || '',
+        peopleByRelationshipId: defaultRoutingPeopleByRelationshipId,
+        query: networkSearchQuery,
+      }),
+    [defaultRoutingPeopleByRelationshipId, networkSearchQuery, selectedPartner?.id, selectedRelationship?.id, snapshot],
+  )
 
   async function handleInvite(event) {
     event.preventDefault()
@@ -923,6 +1317,214 @@ export default function PartnersPage() {
     setInviteOrganisationQuery(nextOrganisation?.name || '')
   }
 
+  function resetDefaultRoutingForm() {
+    setEditingDefaultRoutingId('')
+    setDefaultRoutingForm({
+      ruleName: '',
+      isActive: true,
+      isDefault: true,
+      assignmentPriority: 500,
+      sourceScopeType: PARTNER_ROUTING_SOURCE_TYPES.organisation,
+      sourceScopeId: '',
+      targetRelationshipId: '',
+      targetOrganisationId: '',
+      targetRoleType: PARTNER_ROUTING_ROLE_TYPES.bondOriginator,
+      targetUserId: '',
+      targetScopeType: PARTNER_ROUTING_TARGET_TYPES.orgQueue,
+      assignmentMode: PARTNER_ROUTING_MODES.organisationQueue,
+      notes: '',
+    })
+  }
+
+  function updateDefaultRoutingFormField(field, value) {
+    setDefaultRoutingForm((previous) => ({ ...previous, [field]: value }))
+  }
+
+  async function ensureDefaultRoutingPeople(relationshipId = '') {
+    const safeRelationshipId = normalizeText(relationshipId)
+    if (!safeRelationshipId) return []
+    const existing = defaultRoutingPeopleByRelationshipId[safeRelationshipId]
+    if (Array.isArray(existing)) return existing
+
+    try {
+      setDefaultRoutingLoadingRelationshipId(safeRelationshipId)
+      const payload = await getBondPartnerPeople(safeRelationshipId)
+      const people = normalizeDefaultRoutingPeople(payload)
+      setDefaultRoutingPeopleByRelationshipId((previous) => ({
+        ...previous,
+        [safeRelationshipId]: people,
+      }))
+      return people
+    } catch (peopleError) {
+      setError(peopleError?.message || 'Unable to load partner staff directory.')
+      return []
+    } finally {
+      setDefaultRoutingLoadingRelationshipId('')
+    }
+  }
+
+  async function handleDefaultRoutingRelationshipChange(relationshipId) {
+    setError('')
+    const nextRelationship = connectedRelationshipById.get(normalizeText(relationshipId)) || null
+    await ensureDefaultRoutingPeople(relationshipId)
+    setDefaultRoutingForm((previous) => ({
+      ...previous,
+      targetRelationshipId: normalizeText(relationshipId),
+      targetOrganisationId: nextRelationship?.partner?.id || nextRelationship?.partnerOrganisationId || nextRelationship?.counterpartOrganisationId || '',
+      targetUserId: '',
+      targetScopeType: PARTNER_ROUTING_TARGET_TYPES.orgQueue,
+      assignmentMode: getRoutingModeForDefaultRole(previous.targetRoleType, false),
+      ruleName:
+        previous.ruleName ||
+        `${nextRelationship?.partner?.name || 'Partner'} · ${PARTNER_ROUTING_ROLE_TYPE_OPTIONS.find((option) => option.value === previous.targetRoleType)?.label || 'Default'}`,
+    }))
+  }
+
+  function startEditDefaultRoutingRule(rule = {}) {
+    setEditingDefaultRoutingId(rule.id || '')
+    const targetOrganisationId = normalizeText(rule.targetOrganisationId || rule.target_organisation_id || '')
+    const relationshipId =
+      normalizeText(rule.targetRelationshipId || rule.partnerRelationshipId || rule.relationshipId || '') ||
+      connectedRelationships.find((item) => normalizeText(item.partner?.id || item.counterpartOrganisationId || item.partnerOrganisationId) === targetOrganisationId)?.id ||
+      ''
+    setDefaultRoutingForm({
+      ruleName: rule.ruleName || '',
+      isActive: Boolean(rule.isActive),
+      isDefault: true,
+      assignmentPriority: Number.isFinite(Number(rule.assignmentPriority)) ? Number(rule.assignmentPriority) : 500,
+      sourceScopeType: normalizeText(rule.sourceScopeType || rule.source_scope) || PARTNER_ROUTING_SOURCE_TYPES.organisation,
+      sourceScopeId: normalizeText(rule.sourceScopeId || rule.sourceContextId || rule.source_context_id || ''),
+      targetRelationshipId: relationshipId,
+      targetOrganisationId,
+      targetRoleType: normalizeText(rule.targetRoleType || rule.target_role_type) || PARTNER_ROUTING_ROLE_TYPES.bondOriginator,
+      targetUserId: normalizeText(rule.targetUserId || rule.target_user_id || ''),
+      targetScopeType: normalizeText(rule.targetScopeType || rule.target_scope) || PARTNER_ROUTING_TARGET_TYPES.orgQueue,
+      assignmentMode: normalizeText(rule.assignmentMode || rule.assignment_mode) || PARTNER_ROUTING_MODES.organisationQueue,
+      notes: rule.notes || '',
+    })
+    if (relationshipId) {
+      void ensureDefaultRoutingPeople(relationshipId)
+    }
+  }
+
+  async function handleSaveDefaultRoutingRule(event) {
+    event.preventDefault()
+    if (!canManageDefaultRouting) return
+
+    try {
+      setError('')
+      setMessage('')
+      setSavingDefaultRouting(true)
+
+      const relationship = connectedRelationshipById.get(normalizeText(defaultRoutingForm.targetRelationshipId || '')) || null
+      if (!relationship || relationship.relationshipStatus !== 'accepted') {
+        throw new Error('Choose a connected partner organisation before saving a default route.')
+      }
+
+      const sourceScopeType = normalizeText(defaultRoutingForm.sourceScopeType || PARTNER_ROUTING_SOURCE_TYPES.organisation)
+      const sourceScopeId = sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.organisation ? '' : normalizeText(defaultRoutingForm.sourceScopeId || '')
+      if (sourceScopeType !== PARTNER_ROUTING_SOURCE_TYPES.organisation && !sourceScopeId) {
+        throw new Error('Choose a source region, branch, or team before saving this default route.')
+      }
+
+      const partnerPeople = await ensureDefaultRoutingPeople(relationship.id)
+      const selectedPerson = partnerPeople.find((person) => normalizeText(person.userId || person.id) === normalizeText(defaultRoutingForm.targetUserId || '')) || null
+      if (defaultRoutingForm.targetUserId && (!selectedPerson || selectedPerson.isActive === false)) {
+        throw new Error('Choose an active person from the connected partner organisation.')
+      }
+
+      if (selectedPerson && !personMatchesDefaultRole(selectedPerson, defaultRoutingForm.targetRoleType)) {
+        throw new Error('The selected person does not match the chosen role type.')
+      }
+
+      const hasPerson = Boolean(selectedPerson?.userId)
+      const assignmentMode = getRoutingModeForDefaultRole(defaultRoutingForm.targetRoleType, hasPerson)
+      const targetScopeType = hasPerson ? PARTNER_ROUTING_TARGET_TYPES.consultant : PARTNER_ROUTING_TARGET_TYPES.orgQueue
+      const targetScopeName = hasPerson
+        ? selectedPerson.label
+        : `${relationship.partner?.name || 'Partner'} queue`
+
+      const payload = {
+        id: editingDefaultRoutingId || undefined,
+        ruleName:
+          normalizeText(defaultRoutingForm.ruleName) ||
+          `${defaultRoutingScopeOptions.find((option) => option.value === (sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.organisation ? sourceScopeType : `${sourceScopeType}:${sourceScopeId}`))?.label || 'Organisation'} · ${
+            PARTNER_ROUTING_ROLE_TYPE_OPTIONS.find((option) => option.value === defaultRoutingForm.targetRoleType)?.label || 'Default'
+          }`,
+        isActive: Boolean(defaultRoutingForm.isActive),
+        isDefault: true,
+        assignmentPriority: Number(defaultRoutingForm.assignmentPriority) || 500,
+        sourceScopeType,
+        sourceScopeId,
+        sourceOrganisationId: organisationId,
+        targetOrganisationId: relationship.partner?.id || relationship.partnerOrganisationId || relationship.counterpartOrganisationId || defaultRoutingForm.targetOrganisationId || '',
+        targetScopeType,
+        targetRoleType: defaultRoutingForm.targetRoleType,
+        targetScopeId: hasPerson ? selectedPerson.userId : '',
+        targetUserId: hasPerson ? selectedPerson.userId : '',
+        targetConsultantUserId: hasPerson ? selectedPerson.userId : '',
+        targetScopeName,
+        assignmentMode,
+        notes: normalizeText(defaultRoutingForm.notes),
+      }
+
+      const savedRule = await saveOrganisationPartnerRoutingRule(payload)
+      try {
+        await recordWorkspaceAuditEvent(editingDefaultRoutingId ? 'partner_default_route_updated' : 'partner_default_route_created', {
+          userId: profile?.id || '',
+          workspaceId: organisationId,
+          targetType: 'partner_routing_rule',
+          targetId: savedRule?.id || editingDefaultRoutingId || payload.id || '',
+          metadata: {
+            sourceScopeType,
+            sourceScopeId,
+            targetRoleType: defaultRoutingForm.targetRoleType,
+            targetOrganisationId: payload.targetOrganisationId,
+            targetUserId: payload.targetUserId || '',
+          },
+        })
+      } catch {
+        // Audit logging should not block a successful routing save.
+      }
+      setMessage(editingDefaultRoutingId ? 'Default route updated.' : 'Default route added.')
+      resetDefaultRoutingForm()
+      await loadSnapshot()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save default route.')
+    } finally {
+      setSavingDefaultRouting(false)
+    }
+  }
+
+  async function handleRemoveDefaultRoutingRule(rule = {}) {
+    if (!canManageDefaultRouting) return
+    if (!rule?.id) return
+    if (!confirm('Remove this default route?')) return
+    try {
+      setSavingDefaultRouting(true)
+      await removeOrganisationPartnerRoutingRule(rule.id)
+      try {
+        await recordWorkspaceAuditEvent('partner_default_route_removed', {
+          userId: profile?.id || '',
+          workspaceId: organisationId,
+          targetType: 'partner_routing_rule',
+          targetId: rule.id,
+        })
+      } catch {
+        // Audit logging should not block a successful routing removal.
+      }
+      if (String(editingDefaultRoutingId) === String(rule.id)) {
+        resetDefaultRoutingForm()
+      }
+      setMessage('Default route removed.')
+      await loadSnapshot()
+    } catch (removeError) {
+      setError(removeError?.message || 'Unable to remove default route.')
+    } finally {
+      setSavingDefaultRouting(false)
+    }
+  }
+
   return (
     <div className="min-h-full bg-[#f6f8fb] pb-10 text-[#10243a]">
       <PartnerInviteModal
@@ -976,7 +1578,7 @@ export default function PartnersPage() {
 
       <section className="mt-5 rounded-[24px] border border-[#d9e3ee] bg-[rgba(248,251,254,0.94)] p-3 shadow-[0_14px_28px_rgba(15,23,42,0.1)] backdrop-blur-md md:p-4">
         <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_220px]">
-          <nav className="grid gap-2 md:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Partner workspace sections">
+          <nav className="grid gap-2 md:grid-cols-2 xl:grid-cols-5" role="tablist" aria-label="Partner workspace sections">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
@@ -1084,6 +1686,434 @@ export default function PartnersPage() {
                 {connectedRelationships.length && !visibleConnectedRelationships.length ? (
                   <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">No partners match the selected filters</div>
                 ) : null}
+              </section>
+            ) : null}
+
+            {activeTab === 'preferred' ? (
+              <section className="space-y-4">
+                <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-4">
+                  <p className="text-sm font-semibold text-[#10243a]">My Preferred Partners</p>
+                  <p className="mt-1 text-sm leading-6 text-[#60758d]">
+                    These are the people Bridge will try to route to first when you create new work from a connected partner organisation.
+                  </p>
+                </div>
+
+                {!preferredPartnerRows.length ? (
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">
+                    No preferred partners have been set yet.
+                  </div>
+                ) : (
+                  (() => {
+                    const groups = preferredPartnerRows.reduce((accumulator, row) => {
+                      const key = row.groupLabel || 'Other Partners'
+                      if (!accumulator[key]) accumulator[key] = []
+                      accumulator[key].push(row)
+                      return accumulator
+                    }, {})
+
+                    return Object.entries(groups).map(([groupName, rows]) => (
+                      <div key={groupName} className="space-y-3">
+                        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8ba5]">{groupName}</h3>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {rows.map((row) => (
+                            <article key={row.id} className="rounded-[8px] border border-[#dbe5f0] bg-white p-4">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-[#10243a]">{row.personName}</p>
+                                  <p className="mt-1 text-sm text-[#60758d]">{row.organisationName}</p>
+                                  <p className="mt-1 text-xs font-medium uppercase tracking-[0.12em] text-[#8ba0b8]">{row.contactPerson ? 'Preferred contact' : 'Preferred partner'}</p>
+                                </div>
+                                <Link
+                                  to={`/partners/${encodeURIComponent(row.organisationId)}`}
+                                  className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
+                                >
+                                  Profile <ArrowUpRight size={14} />
+                                </Link>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <span className="inline-flex rounded-full border border-[#d8eefe] bg-[#f4f9ff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#1e4d82]">
+                                  {row.contactPerson}
+                                </span>
+                                {row.email ? (
+                                  <span className="inline-flex rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#52677f]">
+                                    {row.email}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  })()
+                )}
+              </section>
+            ) : null}
+
+            {activeTab === 'defaults' ? (
+              <section className="space-y-4">
+                <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#10243a]">Default Routing</p>
+                      <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758d]">
+                        Set organisation, region, branch, and team partner defaults so Bridge has a sensible first choice before personal preferences or manual overrides.
+                      </p>
+                    </div>
+                    {canManageDefaultRouting ? (
+                      <button
+                        type="button"
+                        onClick={resetDefaultRoutingForm}
+                        className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
+                      >
+                        <Route size={14} /> New Default
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="relative min-w-0 flex-1">
+                      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8ba0b8]" />
+                      <input
+                        value={defaultRoutingFilters.query}
+                        onChange={(event) => setDefaultRoutingFilters((previous) => ({ ...previous, query: event.target.value }))}
+                        placeholder="Search defaults"
+                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10"
+                      />
+                    </label>
+                    <select
+                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                      value={defaultRoutingFilters.scope}
+                      onChange={(event) => setDefaultRoutingFilters((previous) => ({ ...previous, scope: event.target.value }))}
+                    >
+                      <option value="all">All scopes</option>
+                      {[
+                        PARTNER_ROUTING_SOURCE_TYPES.organisation,
+                        PARTNER_ROUTING_SOURCE_TYPES.region,
+                        PARTNER_ROUTING_SOURCE_TYPES.branch,
+                        PARTNER_ROUTING_SOURCE_TYPES.team,
+                      ].map((scopeType) => (
+                        <option key={scopeType} value={scopeType}>
+                          {scopeType.charAt(0).toUpperCase() + scopeType.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                      value={defaultRoutingFilters.roleType}
+                      onChange={(event) => setDefaultRoutingFilters((previous) => ({ ...previous, roleType: event.target.value }))}
+                    >
+                      <option value="all">All roles</option>
+                      {PARTNER_ROUTING_ROLE_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm"
+                      value={defaultRoutingFilters.status}
+                      onChange={(event) => setDefaultRoutingFilters((previous) => ({ ...previous, status: event.target.value }))}
+                    >
+                      <option value="all">All statuses</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                {!filteredDefaultRoutingRows.length ? (
+                  <div className="rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm text-[#60758d]">
+                    No default routes found.
+                  </div>
+                ) : (
+                  <div className="grid gap-4">
+                    {filteredDefaultRoutingRows.map((rule) => (
+                      <article key={rule.id} className="rounded-[8px] border border-[#dbe5f0] bg-white p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[#10243a]">
+                              {rule.scopeLabel} · {rule.roleLabel}
+                            </p>
+                            <p className="mt-1 text-sm text-[#60758d]">
+                              {rule.partner?.name || 'Partner organisation'}
+                              {rule.selectedPerson ? ` · ${rule.selectedPerson.label}` : ' · Queue'}
+                            </p>
+                            <p className="mt-1 text-xs text-[#7b8ba5]">
+                              Updated {formatDateTime(rule.updatedAt || rule.updated_at || rule.createdAt || rule.created_at)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] ${rule.isActive ? 'border-[#cce8d6] bg-[#f1fbf4] text-[#1f7a45]' : 'border-[#f0d4d4] bg-[#fff5f5] text-[#a23b3b]'}`}>
+                              {rule.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                            {rule.isDefault ? (
+                              <span className="inline-flex rounded-full border border-[#d8e6f7] bg-[#eef5ff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#2b5f93]">
+                                Default
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        {rule.notes ? <p className="mt-3 text-sm leading-6 text-[#40556c]">{rule.notes}</p> : null}
+                        {canManageDefaultRouting ? (
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => startEditDefaultRoutingRule(rule)}
+                              className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveDefaultRoutingRule(rule)}
+                              className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#f0d4d4] bg-white px-3 text-sm font-semibold text-[#a23b3b] transition hover:bg-[#fff5f5]"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveDefaultRoutingRule} className="rounded-[8px] border border-[#dbe5f0] bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#10243a]">{editingDefaultRoutingId ? 'Edit Default Route' : 'Add Default Route'}</p>
+                      <p className="mt-1 text-sm leading-6 text-[#60758d]">
+                        Choose a source scope, connected partner organisation, and a preferred person if you want Bridge to assign directly.
+                      </p>
+                    </div>
+                    {defaultRoutingLoadingRelationshipId ? (
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ba5]">Loading staff directory...</p>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label className="relative min-w-0 flex-1">
+                      <span className="mb-1 block text-sm font-medium text-[#51657b]">Scope</span>
+                      <select
+                        value={
+                          defaultRoutingForm.sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.organisation
+                            ? PARTNER_ROUTING_SOURCE_TYPES.organisation
+                            : `${defaultRoutingForm.sourceScopeType}:${defaultRoutingForm.sourceScopeId}`
+                        }
+                        onChange={(event) => {
+                          const nextScope = parseScopeValue(event.target.value)
+                          setDefaultRoutingForm((previous) => ({
+                            ...previous,
+                            sourceScopeType: nextScope.scopeType,
+                            sourceScopeId: nextScope.scopeId,
+                          }))
+                        }}
+                        disabled={!canManageDefaultRouting}
+                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:bg-[#f8fafc]"
+                      >
+                        {defaultRoutingScopeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="relative min-w-0 flex-1">
+                      <span className="mb-1 block text-sm font-medium text-[#51657b]">Role type</span>
+                      <select
+                        value={defaultRoutingForm.targetRoleType}
+                        onChange={(event) => {
+                          const nextRoleType = event.target.value
+                          setDefaultRoutingForm((previous) => ({
+                            ...previous,
+                            targetRoleType: nextRoleType,
+                            targetUserId: '',
+                            targetScopeType: PARTNER_ROUTING_TARGET_TYPES.orgQueue,
+                            assignmentMode: getRoutingModeForDefaultRole(nextRoleType, false),
+                          }))
+                        }}
+                        disabled={!canManageDefaultRouting}
+                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:bg-[#f8fafc]"
+                      >
+                        {PARTNER_ROUTING_ROLE_TYPE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {defaultRoutingForm.sourceScopeType !== PARTNER_ROUTING_SOURCE_TYPES.organisation ? (
+                      <label className="relative min-w-0 flex-1">
+                        <span className="mb-1 block text-sm font-medium text-[#51657b]">
+                          {defaultRoutingForm.sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.region
+                            ? 'Region'
+                            : defaultRoutingForm.sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.team
+                              ? 'Team'
+                              : 'Branch'}
+                        </span>
+                        <select
+                          value={defaultRoutingForm.sourceScopeId}
+                          onChange={(event) => updateDefaultRoutingFormField('sourceScopeId', event.target.value)}
+                          disabled={!canManageDefaultRouting}
+                          className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:bg-[#f8fafc]"
+                        >
+                          <option value="">Select source</option>
+                          {(defaultRoutingForm.sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.region
+                            ? workspaceHierarchy.regions
+                            : defaultRoutingSourceUnitOptions
+                          ).map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name || item.code || item.id}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3 text-sm text-[#40556c]">
+                        Organisation scope applies to the whole organisation.
+                      </div>
+                    )}
+
+                    <label className="relative min-w-0 flex-1">
+                      <span className="mb-1 block text-sm font-medium text-[#51657b]">Partner organisation</span>
+                      <select
+                        value={defaultRoutingForm.targetRelationshipId}
+                        onChange={(event) => {
+                          void handleDefaultRoutingRelationshipChange(event.target.value)
+                        }}
+                        disabled={!canManageDefaultRouting}
+                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:bg-[#f8fafc]"
+                      >
+                        <option value="">Select connected organisation</option>
+                        {connectedRelationships.map((relationship) => (
+                          <option key={relationship.id} value={relationship.id}>
+                            {relationship.partner?.name || 'Connected organisation'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="relative min-w-0 flex-1">
+                      <span className="mb-1 block text-sm font-medium text-[#51657b]">Preferred person</span>
+                      <select
+                        value={defaultRoutingForm.targetUserId}
+                        onChange={(event) =>
+                          setDefaultRoutingForm((previous) => ({
+                            ...previous,
+                            targetUserId: event.target.value,
+                            targetScopeType: event.target.value ? PARTNER_ROUTING_TARGET_TYPES.consultant : PARTNER_ROUTING_TARGET_TYPES.orgQueue,
+                            assignmentMode: getRoutingModeForDefaultRole(previous.targetRoleType, Boolean(event.target.value)),
+                          }))
+                        }
+                        disabled={!canManageDefaultRouting || !selectedDefaultRelationship}
+                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:bg-[#f8fafc]"
+                      >
+                        <option value="">Partner queue only</option>
+                        {selectedDefaultPeople
+                          .filter((person) => person.isActive !== false)
+                          .filter((person) => personMatchesDefaultRole(person, defaultRoutingForm.targetRoleType))
+                          .map((person) => (
+                            <option key={person.userId} value={person.userId}>
+                              {person.label}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+
+                    <label className="relative min-w-0 flex-1">
+                      <span className="mb-1 block text-sm font-medium text-[#51657b]">Rule name</span>
+                      <input
+                        value={defaultRoutingForm.ruleName}
+                        onChange={(event) => updateDefaultRoutingFormField('ruleName', event.target.value)}
+                        disabled={!canManageDefaultRouting}
+                        placeholder="Optional friendly name"
+                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:bg-[#f8fafc]"
+                      />
+                    </label>
+
+                    <label className="relative min-w-0 flex-1">
+                      <span className="mb-1 block text-sm font-medium text-[#51657b]">Notes</span>
+                      <input
+                        value={defaultRoutingForm.notes}
+                        onChange={(event) => updateDefaultRoutingFormField('notes', event.target.value)}
+                        disabled={!canManageDefaultRouting}
+                        placeholder="Optional notes"
+                        className="h-10 w-full rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:bg-[#f8fafc]"
+                      />
+                    </label>
+
+                    <label className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm font-semibold text-[#35546c]">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(defaultRoutingForm.isActive)}
+                        disabled={!canManageDefaultRouting}
+                        onChange={(event) => updateDefaultRoutingFormField('isActive', event.target.checked)}
+                        className="h-4 w-4 rounded border-[#c8d6e5] text-[#10243a]"
+                      />
+                      Active
+                    </label>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {canManageDefaultRouting ? (
+                      <>
+                        <button
+                          type="submit"
+                          disabled={savingDefaultRouting}
+                          className="inline-flex h-10 items-center gap-2 rounded-[8px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e] disabled:cursor-not-allowed disabled:bg-[#dbe5ef] disabled:text-[#52677f]"
+                        >
+                          {savingDefaultRouting ? 'Saving...' : editingDefaultRoutingId ? 'Save Default' : 'Add Default'}
+                        </button>
+                        {editingDefaultRoutingId ? (
+                          <button
+                            type="button"
+                            onClick={resetDefaultRoutingForm}
+                            className="inline-flex h-10 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-4 text-sm font-semibold text-[#35546c] transition hover:bg-[#f8fafc]"
+                          >
+                            Cancel Edit
+                          </button>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="text-sm text-[#60758d]">You can view default routing rules, but your current role cannot modify them.</p>
+                    )}
+                  </div>
+                </form>
+              </section>
+            ) : null}
+
+            {activeTab === 'network' ? (
+              <section className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <MetricCard
+                    label="Total Connections"
+                    value={formatNumber(partnerNetworkIntelligence.summary.totalConnections)}
+                    subtext={`${formatNumber(partnerNetworkIntelligence.summary.activeConnections)} active · ${formatNumber(partnerNetworkIntelligence.summary.dormantConnections)} dormant`}
+                  />
+                  <MetricCard
+                    label="Average Health"
+                    value={`${formatNumber(partnerNetworkIntelligence.summary.averageHealthScore)} / 100`}
+                    subtext={partnerNetworkIntelligence.summary.topProfile?.organisationName || 'No top partner yet'}
+                  />
+                  <MetricCard
+                    label="Active Users"
+                    value={formatNumber(partnerNetworkIntelligence.summary.totalUsers)}
+                    subtext="Across visible partner staff directories"
+                  />
+                  <MetricCard
+                    label="Partner Activity"
+                    value={formatNumber(partnerNetworkIntelligence.summary.recentActivity)}
+                    subtext={`${formatCurrency(partnerNetworkIntelligence.summary.referralVolume)} referral value`}
+                  />
+                </div>
+
+                <PartnerNetworkIntelligencePanel
+                  intelligence={partnerNetworkIntelligence}
+                  searchQuery={networkSearchQuery}
+                  onSearchQueryChange={setNetworkSearchQuery}
+                />
               </section>
             ) : null}
 
@@ -1302,7 +2332,12 @@ export default function PartnersPage() {
           </main>
 
           <div className="space-y-5">
-            <ProfilePanel partner={selectedPartner} relationship={selectedRelationship} />
+            <ProfilePanel
+              partner={selectedPartner}
+              relationship={selectedRelationship}
+              people={selectedPartnerPeople}
+              intelligence={partnerNetworkIntelligence.selectedProfile}
+            />
             <section className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
               <div className="flex items-center gap-2 text-sm font-semibold text-[#10243a]">
                 <SlidersHorizontal size={16} /> Transaction defaults

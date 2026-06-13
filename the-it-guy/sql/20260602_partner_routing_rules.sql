@@ -15,6 +15,7 @@ create table if not exists public.partner_routing_rules (
   source_user_id uuid references public.profiles(id) on delete set null,
   source_scope_name text,
   target_scope text not null,
+  target_role_type text,
   target_region_id uuid references public.workspace_regions(id) on delete set null,
   target_workspace_unit_id uuid references public.workspace_units(id) on delete set null,
   target_user_id uuid references public.profiles(id) on delete set null,
@@ -24,11 +25,11 @@ create table if not exists public.partner_routing_rules (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint partner_routing_rules_source_scope_check
-    check (source_scope in ('organisation', 'branch', 'team', 'development', 'agent')),
+    check (source_scope in ('organisation', 'region', 'branch', 'team', 'development', 'agent', 'user')),
   constraint partner_routing_rules_target_scope_check
     check (target_scope in ('organisation_queue', 'region', 'branch', 'team', 'consultant')),
   constraint partner_routing_rules_assignment_mode_check
-    check (assignment_mode in ('direct_consultant', 'team_queue', 'organisation_queue', 'manual', 'fallback_queue', 'round_robin')),
+    check (assignment_mode in ('direct_consultant', 'direct_attorney', 'direct_agent', 'branch_queue', 'team_queue', 'organisation_queue', 'manual', 'fallback_queue', 'round_robin')),
   constraint partner_routing_rules_assignment_priority_check
     check (assignment_priority >= 0)
 );

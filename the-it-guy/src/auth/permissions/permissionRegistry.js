@@ -44,6 +44,23 @@ export const PERMISSIONS = Object.freeze({
   advanceTransactionStage: 'advance_transaction_stage',
   manageAppointments: 'manage_appointments',
   manageBranches: 'manage_branches',
+  partnersViewNetwork: 'partners_view_network',
+  partnersViewDirectory: 'partners_view_directory',
+  partnersViewDefaultRouting: 'partners_view_default_routing',
+  partnersManagePreferences: 'partners_manage_preferences',
+  partnersManageOrgDefaults: 'partners_manage_org_defaults',
+  partnersManageRegionDefaults: 'partners_manage_region_defaults',
+  partnersManageBranchDefaults: 'partners_manage_branch_defaults',
+  partnersManageTeamDefaults: 'partners_manage_team_defaults',
+  partnersOverrideAssignment: 'partners_override_assignment',
+
+  assignmentView: 'assignment_view',
+  assignmentAssign: 'assignment_assign',
+  assignmentReassign: 'assignment_reassign',
+  assignmentTransfer: 'assignment_transfer',
+  assignmentBulkAssign: 'assignment_bulk_assign',
+  assignmentManageQueues: 'assignment_manage_queues',
+  assignmentViewHistory: 'assignment_view_history',
 
   viewDeveloperDashboard: 'view_developer_dashboard',
   viewDevelopments: 'view_developments',
@@ -120,6 +137,13 @@ const GENERAL_ADMIN = [
   PERMISSIONS.viewReports,
   PERMISSIONS.exportReports,
   PERMISSIONS.viewAuditLog,
+  PERMISSIONS.assignmentView,
+  PERMISSIONS.assignmentAssign,
+  PERMISSIONS.assignmentReassign,
+  PERMISSIONS.assignmentTransfer,
+  PERMISSIONS.assignmentBulkAssign,
+  PERMISSIONS.assignmentManageQueues,
+  PERMISSIONS.assignmentViewHistory,
 ]
 
 const AGENCY_PERMISSIONS = [

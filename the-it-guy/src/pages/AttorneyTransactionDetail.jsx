@@ -102,6 +102,7 @@ import { buildSellerClientPortalLink } from '../lib/agentListingStorage'
 import { canAccessAttorneyMatter } from '../lib/attorneyPermissions'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
 import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partnersRepository'
+import { listUserPreferredPartnerRoutingRules } from '../lib/settingsApi'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
@@ -882,6 +883,7 @@ function findRoleplayerOptionInList(options = [], id = '') {
 function buildPartnerRoleplayerOption(option = {}, roleType = 'transfer_attorney') {
   const normalizedOption = option || {}
   const companyName = normalizeRoleplayerOptionValue(normalizedOption.companyName)
+  const contactPerson = normalizeRoleplayerOptionValue(normalizedOption.contactPerson || normalizedOption.contact_person || normalizedOption.companyName)
   const scopeLabel = normalizeRoleplayerOptionValue(normalizedOption.scopeLabel)
   const preferred = Boolean(normalizedOption.preferred || normalizedOption.relationshipType === 'preferred')
   return {
@@ -889,7 +891,7 @@ function buildPartnerRoleplayerOption(option = {}, roleType = 'transfer_attorney
     roleType,
     group: preferred ? 'Preferred Partners' : 'Connected Partners',
     companyName,
-    contactPerson: companyName,
+    contactPerson,
     email: normalizeRoleplayerOptionValue(normalizedOption.email),
     organisationId: normalizeRoleplayerOptionValue(normalizedOption.organisationId),
     relationshipId: normalizeRoleplayerUuidValue(normalizedOption.relationshipId || normalizedOption.id),
@@ -897,6 +899,8 @@ function buildPartnerRoleplayerOption(option = {}, roleType = 'transfer_attorney
     scopeId: normalizeRoleplayerOptionValue(normalizedOption.scopeId),
     scopeLabel,
     preferred,
+    userId: normalizeRoleplayerUuidValue(normalizedOption.userId || normalizedOption.user_id),
+    preferredRoutingRuleId: normalizeRoleplayerOptionValue(normalizedOption.preferredRoutingRuleId || normalizedOption.routingRuleId),
     label: `${companyName || 'Connected partner'}${scopeLabel ? ` · ${preferred ? 'Preferred for ' : ''}${scopeLabel.replace(/^Scope:\s*/i, '')}` : ''}`,
   }
 }
@@ -4065,6 +4069,7 @@ function AttorneyTransactionDetail() {
     cancellationAttorney: '',
   })
   const [partnerSnapshot, setPartnerSnapshot] = useState(null)
+  const [preferredRoutingRules, setPreferredRoutingRules] = useState([])
   const [partnerOptionsLoading, setPartnerOptionsLoading] = useState(false)
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
   const [detailPanelKey, setDetailPanelKey] = useState('matter')
@@ -4320,8 +4325,10 @@ function AttorneyTransactionDetail() {
       role: workspaceRole,
       profile,
       currentMembership,
+      userId: profile?.id || '',
+      preferredPartnerRoutingRules: preferredRoutingRules,
     }),
-    [currentMembership, profile, workspaceOrganisationId, workspaceRole],
+    [currentMembership, preferredRoutingRules, profile, workspaceOrganisationId, workspaceRole],
   )
   const activeLegalWorkflowDetailKey = normalizeLegalWorkflowDetailKey(workflowDetailKey)
   const canManageTransactionRoleplayers = ['agent', 'agency_admin', 'principal', 'admin', 'internal_admin', 'developer'].includes(String(workspaceRole || '').toLowerCase())
@@ -4423,12 +4430,16 @@ function AttorneyTransactionDetail() {
     async function loadPartnerDefaults() {
       try {
         setPartnerOptionsLoading(true)
-        const snapshot = await fetchPartnersSnapshot({
-          organisationId: workspaceOrganisationId,
-          workspaceType: workspaceType || workspaceRole,
-          accessContext: partnerAccessContext,
-        })
+        const [snapshot, routingRules] = await Promise.all([
+          fetchPartnersSnapshot({
+            organisationId: workspaceOrganisationId,
+            workspaceType: workspaceType || workspaceRole,
+            accessContext: partnerAccessContext,
+          }),
+          listUserPreferredPartnerRoutingRules().catch(() => []),
+        ])
         if (active) setPartnerSnapshot(snapshot)
+        if (active) setPreferredRoutingRules(Array.isArray(routingRules) ? routingRules : [])
       } catch (partnerLoadError) {
         console.warn('[AttorneyTransactionDetail] scoped partner defaults unavailable', partnerLoadError)
       } finally {
@@ -6951,6 +6962,7 @@ function AttorneyTransactionDetail() {
       roleType,
       organisationId: option.organisationId,
       relationshipId: option.relationshipId,
+      userId: option.userId || null,
       companyName: option.companyName,
       contactPerson: option.contactPerson || option.companyName,
       email: option.email,
@@ -6958,7 +6970,13 @@ function AttorneyTransactionDetail() {
       scopeId: option.scopeId,
       scopeLabel: option.scopeLabel,
       preferred: option.preferred,
-      selectionSource: option.preferred ? 'preferred_partner' : option.group === 'Recently Used' ? 'recently_used' : 'connected_partner',
+      preferredRoutingRuleId: option.preferredRoutingRuleId || null,
+      selectionSource:
+        option.preferredRoutingRuleId || option.preferred
+          ? 'preferred_partner'
+          : option.group === 'Recently Used'
+            ? 'recently_used'
+            : 'connected_partner',
       assignmentStatus: 'selected',
       activationTrigger:
         roleType === 'bond_originator'

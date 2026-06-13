@@ -3,7 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createTransactionFromWizard, fetchDevelopmentOptions, fetchUnitsForTransactionSetup } from '../lib/api'
 import { readAgentPrivateListings, writeAgentPrivateListings } from '../lib/agentListingStorage'
-import { fetchOrganisationSettings, listOrganisationPreferredPartners, resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
+import {
+  fetchOrganisationSettings,
+  listOrganisationPreferredPartners,
+  listUserPreferredPartnerRoutingRules,
+  resolveCommissionSnapshotForAgent,
+} from '../lib/settingsApi'
 import {
   filterPreferredPartners,
   getDefaultPreferredPartnerByType,
@@ -335,6 +340,71 @@ function mapPartnerAssignmentToPreferredPartner(assignment, partnerType) {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
+}
+
+function mapRoutingRuleToPreferredPartner(rule = {}, partnerType = 'transfer_attorney', fallbackOrganisation = null) {
+  const partnerName = normalizeText(rule?.targetScopeName || fallbackOrganisation?.name)
+  const organisationId = normalizeText(rule?.targetOrganisationId || rule?.target_organisation_id || fallbackOrganisation?.id)
+  if (!partnerName || !organisationId) {
+    return null
+  }
+
+  const personLabel = normalizeText(rule?.targetScopeName || fallbackOrganisation?.name)
+  const targetUserId = normalizeText(rule?.targetUserId || rule?.target_user_id)
+  const baseId = `${normalizePreferredPartnerType(partnerType)}-${organisationId}-${targetUserId || 'preferred'}`
+
+  return {
+    id: baseId,
+    partnerType: normalizePreferredPartnerType(partnerType),
+    companyName: partnerName,
+    contactPerson: personLabel || partnerName,
+    email: normalizeText(fallbackOrganisation?.contactEmails?.[0] || '').toLowerCase(),
+    phone: '',
+    website: '',
+    physicalAddress: '',
+    province: '',
+    notes: 'Selected from personal preferred partner routing.',
+    isActive: true,
+    isPreferredDefault: Boolean(rule?.isDefault),
+    createdAt: rule?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    userId: targetUserId || null,
+    partnerOrganisationId: organisationId,
+    targetOrganisationId: organisationId,
+    routingRuleId: normalizeText(rule?.id),
+  }
+}
+
+function getPreferredPartnerRowsFromRoutingRules(partnerSnapshot = null, routingRules = []) {
+  const relationships = Array.isArray(partnerSnapshot?.relationships) ? partnerSnapshot.relationships : []
+  return (Array.isArray(routingRules) ? routingRules : []).flatMap((rule) => {
+    const targetOrganisationId = normalizeText(rule?.targetOrganisationId || rule?.target_organisation_id)
+    if (!targetOrganisationId) return []
+    const relationship = relationships.find(
+      (item) => normalizeText(item?.partnerOrganisationId || item?.counterpartOrganisationId || item?.partner?.id) === targetOrganisationId,
+    )
+    const partner = relationship?.partner || null
+    const basePartnerType = normalizePreferredPartnerType(
+      partner?.type === 'bond_originator'
+        ? 'bond_originator'
+        : partner?.type === 'developer_company'
+          ? 'bond_originator'
+          : 'transfer_attorney',
+    )
+    const primaryRow = mapRoutingRuleToPreferredPartner(rule, basePartnerType, partner)
+    if (!primaryRow) return []
+    if (partner?.type === 'attorney_firm') {
+      return [
+        primaryRow,
+        {
+          ...primaryRow,
+          partnerType: 'bond_attorney',
+          id: `${primaryRow.id}-bond-attorney`,
+        },
+      ]
+    }
+    return [primaryRow]
+  })
 }
 
 function getFallbackPreferredPartnersFromSnapshot(partnerSnapshot, accessContext) {
@@ -706,11 +776,17 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         try {
           let partnerRows = []
           let partnerRowsLoadFailed = false
+          let preferredRoutingRules = []
           try {
             partnerRows = await listOrganisationPreferredPartners()
           } catch (error) {
             partnerRowsLoadFailed = true
             console.error('[Transactions] Unable to load agency preferred partners.', error)
+          }
+          try {
+            preferredRoutingRules = await listUserPreferredPartnerRoutingRules()
+          } catch (error) {
+            console.error('[Transactions] Unable to load personal preferred partner routing rules.', error)
           }
           const settingsPromise = isSupabaseConfigured
             ? fetchOrganisationSettings().catch(() => null)
@@ -727,13 +803,15 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             currentMembership,
           }
           let fallbackRows = []
+          let routingRows = []
 
           if (
             isSupabaseConfigured
             && (partnerRowsLoadFailed
               || !hasActivePartnerType(partnerRows, 'transfer_attorney')
               || !hasActivePartnerType(partnerRows, 'bond_originator')
-              || !hasActivePartnerType(partnerRows, 'bond_attorney'))
+              || !hasActivePartnerType(partnerRows, 'bond_attorney')
+              || preferredRoutingRules.length)
           ) {
             try {
               const partnerSnapshot = await fetchPartnersSnapshot({
@@ -741,20 +819,23 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                 workspaceType: workspace?.type || 'agency',
                 accessContext: partnerFallbackContext,
               })
+              routingRows = getPreferredPartnerRowsFromRoutingRules(partnerSnapshot, preferredRoutingRules)
               fallbackRows = getFallbackPreferredPartnersFromSnapshot(partnerSnapshot, partnerFallbackContext)
               console.debug('[Transactions] Agency preferred partner fallback snapshot rows', {
                 organisationId,
                 fallbackCount: fallbackRows.length,
+                routingCount: routingRows.length,
               })
             } catch (error) {
               console.warn('[Transactions] Could not load partner snapshot fallback.', error)
             }
           }
 
-          const mergedPreferredPartners = mergePreferredPartnerOptions(partnerRows, fallbackRows)
+          const mergedPreferredPartners = mergePreferredPartnerOptions([...routingRows, ...partnerRows], fallbackRows)
           console.debug('[Transactions] Agency preferred partners loaded', {
             organisationId,
             primaryCount: Array.isArray(partnerRows) ? partnerRows.length : 0,
+            routingCount: Array.isArray(routingRows) ? routingRows.length : 0,
             fallbackCount: Array.isArray(fallbackRows) ? fallbackRows.length : 0,
             mergedCount: mergedPreferredPartners.length,
             transferAttorneyCount: mergedPreferredPartners.filter((partner) => normalizePreferredPartnerType(partner?.partnerType) === 'transfer_attorney').length,

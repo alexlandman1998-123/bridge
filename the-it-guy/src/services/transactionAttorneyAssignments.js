@@ -9,6 +9,7 @@ import {
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
 import { getAttorneyFirmById, getAttorneyFirmDepartments } from './attorneyFirms'
 import { prepareBondAssignmentPayload } from './bondAssignmentService'
+import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from './universalAssignmentService'
 
 export const ATTORNEY_ASSIGNMENT_TYPES = ['transfer', 'bond', 'transfer_and_bond', 'cancellation']
 export const TRANSACTION_ATTORNEY_ROLES = ['transfer_attorney', 'bond_attorney', 'cancellation_attorney']
@@ -600,6 +601,28 @@ export async function createTransactionAttorneyAssignment(payload = {}) {
     assignment: result,
     actorId: actor.id,
   })
+  try {
+    await recordUniversalAssignmentEvent('assignment.created', {
+      itemType: 'transaction_attorney_assignment',
+      itemId: result.id,
+      transactionId: result.transactionId,
+      organisationId: result.attorneyFirmId || result.firmId || null,
+      assignedUserId: result.attorneyUserId || result.primaryAttorneyId || null,
+      assignedQueueId: null,
+      assignmentMethod: UNIVERSAL_ASSIGNMENT_METHODS.manual,
+      sourceModule: 'attorney',
+      sourceEvent: 'create_transaction_attorney_assignment',
+      reason: 'Attorney assignment created.',
+      actorUserId: actor.id,
+      metadata: {
+        attorneyRole: result.attorneyRole,
+        assignmentType: result.assignmentType,
+        departmentId: result.departmentId,
+      },
+    })
+  } catch (error) {
+    console.warn('[transactionAttorneyAssignments] universal assignment event skipped', error)
+  }
   await syncTransactionAssignmentLegacyFields(result.transactionId).catch(() => null)
   return result
 }
@@ -705,6 +728,29 @@ export async function updateTransactionAttorneyAssignment(assignmentId, payload 
     previousAssignment: existing,
     actorId: actor.id,
   })
+  try {
+    await recordUniversalAssignmentEvent(result.status === 'removed' ? 'assignment.removed' : 'assignment.reassigned', {
+      itemType: 'transaction_attorney_assignment',
+      itemId: result.id,
+      transactionId: result.transactionId,
+      organisationId: result.attorneyFirmId || result.firmId || null,
+      assignedUserId: result.attorneyUserId || result.primaryAttorneyId || null,
+      assignedQueueId: null,
+      previousOwnerId: existing.attorneyUserId || existing.primaryAttorneyId || null,
+      assignmentMethod: result.status === 'removed' ? UNIVERSAL_ASSIGNMENT_METHODS.remove : UNIVERSAL_ASSIGNMENT_METHODS.managerAssignment,
+      sourceModule: 'attorney',
+      sourceEvent: result.status === 'removed' ? 'remove_transaction_attorney_assignment' : 'update_transaction_attorney_assignment',
+      reason: result.status === 'removed' ? 'Attorney assignment removed.' : 'Attorney assignment updated.',
+      actorUserId: actor.id,
+      metadata: {
+        attorneyRole: result.attorneyRole,
+        assignmentType: result.assignmentType,
+        previousAttorneyUserId: existing.attorneyUserId || existing.primaryAttorneyId || null,
+      },
+    }, existing)
+  } catch (error) {
+    console.warn('[transactionAttorneyAssignments] universal assignment update skipped', error)
+  }
   await syncTransactionAssignmentLegacyFields(result.transactionId).catch(() => null)
   return result
 }
@@ -781,6 +827,27 @@ export async function replacePrimaryAttorneyForRole({
     assignment: result,
     previousAssignment: existingQuery.data ? mapAssignmentRow(existingQuery.data) : null,
   })
+  try {
+    await recordUniversalAssignmentEvent('assignment.transferred', {
+      itemType: 'transaction_attorney_assignment',
+      itemId: result.id,
+      transactionId: normalizedTransactionId,
+      organisationId: result.attorneyFirmId || result.firmId || attorneyFirmId || null,
+      assignedUserId: result.attorneyUserId || result.primaryAttorneyId || attorneyUserId || null,
+      assignedQueueId: null,
+      previousOwnerId: existingQuery.data?.attorney_user_id || existingQuery.data?.primary_attorney_id || null,
+      assignmentMethod: UNIVERSAL_ASSIGNMENT_METHODS.transfer,
+      sourceModule: 'attorney',
+      sourceEvent: 'replace_primary_attorney_for_role',
+      reason: 'Primary attorney replaced for role.',
+      metadata: {
+        attorneyRole: normalizedRole,
+        assignmentType: result.assignmentType,
+      },
+    }, existingQuery.data ? mapAssignmentRow(existingQuery.data) : null)
+  } catch (error) {
+    console.warn('[transactionAttorneyAssignments] universal transfer event skipped', error)
+  }
 
   return result
 }

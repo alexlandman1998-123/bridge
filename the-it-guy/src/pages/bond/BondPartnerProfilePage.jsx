@@ -4,6 +4,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { getPartnerTypeLabel } from '../../lib/partnersRepository'
+import {
+  listUserPreferredPartnerRoutingRules,
+  removeUserPreferredPartnerRoutingRule,
+  saveUserPreferredPartnerRoutingRule,
+} from '../../lib/settingsApi'
 import { bondPerfLog } from '../../lib/performanceTrace'
 import {
   createBondPartnerFinanceCampaign,
@@ -197,7 +202,14 @@ function PeopleLockedState() {
   )
 }
 
-function PeopleSection({ people, loading, error }) {
+function PeopleSection({ people, loading, error, preferredRoutingRules = [], onTogglePreferred, savingKey = '' }) {
+  const isPreferredPerson = (person = {}) =>
+    preferredRoutingRules.some(
+      (rule) =>
+        normalizeText(rule?.targetUserId || rule?.target_user_id) === normalizeText(person?.userId) &&
+        Boolean(rule?.isActive !== false),
+    )
+
   if (loading) {
     return (
       <div className="grid gap-6 md:grid-cols-3">
@@ -273,15 +285,29 @@ function PeopleSection({ people, loading, error }) {
                         <ContactLine icon={Phone}>{person.phone}</ContactLine>
                       </div>
                     </div>
-                    {person.email ? (
-                      <a href={`mailto:${person.email}`} className="inline-flex h-10 items-center justify-center rounded-[12px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]">
-                        Contact
-                      </a>
-                    ) : (
-                      <button type="button" disabled className="inline-flex h-10 cursor-not-allowed items-center justify-center rounded-[12px] bg-[#d8e1ea] px-4 text-sm font-semibold text-[#60758d]">
-                        Contact
+                    <div className="flex shrink-0 flex-col gap-2">
+                      {person.email ? (
+                        <a href={`mailto:${person.email}`} className="inline-flex h-10 items-center justify-center rounded-[12px] bg-[#10243a] px-4 text-sm font-semibold text-white transition hover:bg-[#173a5e]">
+                          Contact
+                        </a>
+                      ) : (
+                        <button type="button" disabled className="inline-flex h-10 cursor-not-allowed items-center justify-center rounded-[12px] bg-[#d8e1ea] px-4 text-sm font-semibold text-[#60758d]">
+                          Contact
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onTogglePreferred?.(person)}
+                        disabled={!person.userId || savingKey === person.userId}
+                        className={`inline-flex h-10 items-center justify-center rounded-[12px] px-4 text-sm font-semibold transition ${
+                          isPreferredPerson(person)
+                            ? 'bg-[#edf7f1] text-[#1f7a45] hover:bg-[#e2f4e8]'
+                            : 'border border-[#dbe5f0] bg-white text-[#27445f] hover:bg-[#f8fafc]'
+                        } disabled:cursor-not-allowed disabled:opacity-55`}
+                      >
+                        {savingKey === person.userId ? 'Saving…' : isPreferredPerson(person) ? 'Remove Preferred' : 'Set Preferred'}
                       </button>
-                    )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -300,17 +326,33 @@ function PeopleSection({ people, loading, error }) {
           </div>
           {branchManagers.length ? (
             <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {branchManagers.map((person) => (
-                <div key={person.userId || person.email} className="rounded-[16px] bg-[#f7fafc] p-5">
-                  <h3 className="text-base font-semibold text-[#10243a]">{person.fullName}</h3>
-                  <p className="mt-1 text-sm capitalize text-[#60758d]"><PersonRole value={person.role} /></p>
-                  <p className="mt-1 text-sm text-[#60758d]">{person.branchName || 'Branch pending'}</p>
-                  <div className="mt-4 flex flex-col gap-2">
-                    <ContactLine icon={Mail}>{person.email}</ContactLine>
-                    <ContactLine icon={Phone}>{person.phone}</ContactLine>
-                  </div>
-                </div>
-              ))}
+                  {branchManagers.map((person) => (
+                    <div key={person.userId || person.email} className="rounded-[16px] bg-[#f7fafc] p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-[#10243a]">{person.fullName}</h3>
+                          <p className="mt-1 text-sm capitalize text-[#60758d]"><PersonRole value={person.role} /></p>
+                          <p className="mt-1 text-sm text-[#60758d]">{person.branchName || 'Branch pending'}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onTogglePreferred?.(person)}
+                          disabled={!person.userId || savingKey === person.userId}
+                          className={`inline-flex h-9 items-center justify-center rounded-[10px] px-3 text-sm font-semibold transition ${
+                            isPreferredPerson(person)
+                              ? 'bg-[#edf7f1] text-[#1f7a45] hover:bg-[#e2f4e8]'
+                              : 'border border-[#dbe5f0] bg-white text-[#27445f] hover:bg-[#f8fafc]'
+                          } disabled:cursor-not-allowed disabled:opacity-55`}
+                        >
+                          {savingKey === person.userId ? 'Saving…' : isPreferredPerson(person) ? 'Remove Preferred' : 'Set Preferred'}
+                        </button>
+                      </div>
+                      <div className="mt-4 flex flex-col gap-2">
+                        <ContactLine icon={Mail}>{person.email}</ContactLine>
+                        <ContactLine icon={Phone}>{person.phone}</ContactLine>
+                      </div>
+                    </div>
+                  ))}
             </div>
           ) : (
             <p className="mt-6 text-sm leading-6 text-[#60758d]">No branch managers found yet.</p>
@@ -351,8 +393,17 @@ function PeopleSection({ people, loading, error }) {
                         <span className="inline-flex rounded-full bg-[#f1fbf6] px-2.5 py-1 text-xs font-semibold text-[#17613d]">Active</span>
                       </td>
                       <td className="px-3 py-4">
-                        <button type="button" disabled className="inline-flex h-9 cursor-not-allowed items-center justify-center rounded-[10px] border border-[#dbe5f0] px-3 text-sm font-semibold text-[#7b8fa7]">
-                          View
+                        <button
+                          type="button"
+                          onClick={() => onTogglePreferred?.(person)}
+                          disabled={!person.userId || savingKey === person.userId}
+                          className={`inline-flex h-9 items-center justify-center rounded-[10px] px-3 text-sm font-semibold transition ${
+                            isPreferredPerson(person)
+                              ? 'bg-[#edf7f1] text-[#1f7a45] hover:bg-[#e2f4e8]'
+                              : 'border border-[#dbe5f0] bg-white text-[#27445f] hover:bg-[#f8fafc]'
+                          } disabled:cursor-not-allowed disabled:opacity-55`}
+                        >
+                          {savingKey === person.userId ? 'Saving…' : isPreferredPerson(person) ? 'Remove Preferred' : 'Set Preferred'}
                         </button>
                       </td>
                     </tr>
@@ -1469,6 +1520,8 @@ export default function BondPartnerProfilePage() {
   const [campaignMessage, setCampaignMessage] = useState('')
   const [error, setError] = useState('')
   const [peopleError, setPeopleError] = useState('')
+  const [preferredRoutingRules, setPreferredRoutingRules] = useState([])
+  const [preferredRoutingSavingKey, setPreferredRoutingSavingKey] = useState('')
   const [listingsError, setListingsError] = useState('')
   const [applicationsError, setApplicationsError] = useState('')
   const [performanceError, setPerformanceError] = useState('')
@@ -1546,6 +1599,18 @@ export default function BondPartnerProfilePage() {
             onSettled: () => setPeopleLoading(false),
           }),
           loadSection({
+            label: 'preferred-routing',
+            task: () => listUserPreferredPartnerRoutingRules(),
+            onSuccess: (result) => {
+              setPreferredRoutingRules(Array.isArray(result) ? result : [])
+            },
+            onError: () => {
+              setPreferredRoutingRules([])
+            },
+            onSettled: () => {},
+            fallbackMessage: 'Preferred partner routing could not be loaded.',
+          }),
+          loadSection({
             label: 'listings',
             task: () => getBondPartnerListings(profileRelationshipId),
             onSuccess: setListings,
@@ -1617,6 +1682,7 @@ export default function BondPartnerProfilePage() {
         setAttribution(null)
         setCampaignPerformance(null)
         setListingAttribution(null)
+        setPreferredRoutingRules([])
         setPeopleLoading(false)
         setListingsLoading(false)
         setApplicationsLoading(false)
@@ -1685,6 +1751,61 @@ export default function BondPartnerProfilePage() {
       setCampaignMessage(createError?.message || 'Unable to create finance campaign.')
     } finally {
       setCampaignCreatingListingId('')
+    }
+  }
+
+  async function handlePreferredPersonToggle(person) {
+    const partnerOrganisationId = normalizeText(
+      profile?.partnerOrganisation?.id ||
+        profile?.partnerOrganisationId ||
+        profile?.partnerOrganisation_id ||
+        profile?.partnerOrganisation?.partnerOrganisationId ||
+        '',
+    )
+    if (!person?.userId || !partnerOrganisationId) {
+      setError('Unable to save a preferred partner without a partner organisation and user id.')
+      return
+    }
+
+    const existingRule = preferredRoutingRules.find(
+      (rule) =>
+        normalizeText(rule?.targetOrganisationId || rule?.target_organisation_id) === partnerOrganisationId &&
+        normalizeText(rule?.targetUserId || rule?.target_user_id) === normalizeText(person.userId),
+    )
+
+    try {
+      setPreferredRoutingSavingKey(person.userId)
+      setError('')
+      if (existingRule?.id) {
+        await removeUserPreferredPartnerRoutingRule(existingRule.id)
+        setPreferredRoutingRules((previous) => previous.filter((rule) => String(rule.id) !== String(existingRule.id)))
+        return
+      }
+
+      const saved = await saveUserPreferredPartnerRoutingRule({
+        id: existingRule?.id || undefined,
+        ruleName: `Preferred ${person.fullName || person.role || 'Partner'}`,
+        targetOrganisationId: partnerOrganisationId,
+        targetScopeType: 'consultant',
+        targetUserId: person.userId,
+        targetScopeName: person.fullName || person.email || 'Preferred partner',
+        targetScopeId: person.userId,
+        assignmentMode: 'direct_consultant',
+        assignmentPriority: 1,
+        isActive: true,
+        isDefault: true,
+        notes: `Preferred partner set from ${partner?.name || 'partner organisation'}.`,
+      })
+      if (saved?.id) {
+        setPreferredRoutingRules((previous) => {
+          const next = previous.filter((rule) => String(rule.id) !== String(saved.id))
+          return [...next, saved]
+        })
+      }
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save preferred partner.')
+    } finally {
+      setPreferredRoutingSavingKey('')
     }
   }
 
@@ -1875,7 +1996,14 @@ export default function BondPartnerProfilePage() {
         ) : null}
 
         {activeTab === 'people' ? (
-          <PeopleSection people={people} loading={peopleLoading} error={peopleError} />
+          <PeopleSection
+            people={people}
+            loading={peopleLoading}
+            error={peopleError}
+            preferredRoutingRules={preferredRoutingRules}
+            onTogglePreferred={handlePreferredPersonToggle}
+            savingKey={preferredRoutingSavingKey}
+          />
         ) : null}
 
         {activeTab === 'listings' ? (

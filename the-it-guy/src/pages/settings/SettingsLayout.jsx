@@ -26,7 +26,7 @@ const SETTINGS_NAV = [
   { to: '/settings/organisation', label: 'Organisation', icon: Building2 },
   { to: '/settings/preferred-partners', label: 'Preferred Partners', icon: Handshake },
   { to: '/settings/partner-directory', label: 'Partner Directory', icon: Network },
-  { to: '/settings/partner-routing-rules', label: 'Partner Routing Rules', icon: Route },
+  { to: '/settings/partner-routing-rules', label: 'Default Routing', icon: Route },
   { to: '/settings/commission-structures', label: 'Commission Structures', icon: BadgePercent },
   { to: '/settings/developments', label: 'Developments', icon: Home },
   { to: '/settings/workflows', label: 'Workflows & Rules', icon: Workflow },

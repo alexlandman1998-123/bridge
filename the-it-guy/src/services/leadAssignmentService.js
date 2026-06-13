@@ -1,5 +1,6 @@
 import { createAgencyCrmLeadActivity } from '../lib/agencyCrmRepository'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from './universalAssignmentService'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -362,6 +363,33 @@ async function updateLeadAssignment({ organisationId, leadId, patch, reason = ''
     })
   } catch (historyError) {
     console.warn('[leadAssignmentService] assignment history skipped', historyError)
+  }
+  try {
+    await recordUniversalAssignmentEvent(previous.assignedAgentId || previous.assignedQueueId ? 'assignment.reassigned' : 'assignment.created', {
+      itemType: 'lead',
+      itemId: leadId,
+      organisationId,
+      assignedUserId: lead.assignedAgentId || lead.assignedUserId || null,
+      assignedQueueId: lead.assignedQueueId || null,
+      previousOwnerId: previous.assignedAgentId || previous.assignedQueueId || null,
+      previousQueueId: previous.assignedQueueId || null,
+      assignmentMethod:
+        assignmentSource === 'manual_agent'
+          ? UNIVERSAL_ASSIGNMENT_METHODS.manual
+          : assignmentSource === 'manual_queue'
+            ? UNIVERSAL_ASSIGNMENT_METHODS.queueAllocation
+            : assignmentSource || UNIVERSAL_ASSIGNMENT_METHODS.systemGenerated,
+      sourceModule: 'lead',
+      sourceEvent: assignmentSource,
+      reason,
+      actorUserId: actorId(actor),
+      metadata: {
+        slaDueAt: lead.slaDueAt || lead.sla_due_at || null,
+        ownershipStatus: lead.ownershipStatus || lead.ownership_status || null,
+      },
+    }, previous)
+  } catch (assignmentError) {
+    console.warn('[leadAssignmentService] universal assignment event skipped', assignmentError)
   }
   const notificationType = previous.assignedAgentId || previous.assignedQueueId ? 'Lead reassigned' : 'New lead assigned'
   const notification = await notifyLeadAssignment({

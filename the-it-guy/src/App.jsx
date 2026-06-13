@@ -2370,7 +2370,7 @@ function AppRoutes() {
                 <Route
                   path="partner-routing-rules"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent']}>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                       <SettingsPartnerRoutingRulesPage />
                     </RoleRoute>
                   }

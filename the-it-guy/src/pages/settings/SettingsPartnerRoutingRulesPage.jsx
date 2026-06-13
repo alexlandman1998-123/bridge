@@ -37,7 +37,7 @@ const SOURCE_SCOPE_OPTIONS = [
 ]
 
 const TARGET_SCOPE_OPTIONS = [
-  { value: PARTNER_ROUTING_TARGET_TYPES.organisation_queue, label: 'Organisation queue' },
+  { value: PARTNER_ROUTING_TARGET_TYPES.orgQueue, label: 'Organisation queue' },
   { value: PARTNER_ROUTING_TARGET_TYPES.region, label: 'Region' },
   { value: PARTNER_ROUTING_TARGET_TYPES.branch, label: 'Branch' },
   { value: PARTNER_ROUTING_TARGET_TYPES.team, label: 'Team' },
@@ -65,7 +65,7 @@ function createRuleDraft() {
     sourceScopeType: PARTNER_ROUTING_SOURCE_TYPES.organisation,
     sourceScopeId: '',
     sourceUserId: '',
-    targetScopeType: PARTNER_ROUTING_TARGET_TYPES.organisation_queue,
+    targetScopeType: PARTNER_ROUTING_TARGET_TYPES.orgQueue,
     targetScopeId: '',
     targetRegionId: '',
     targetWorkspaceUnitId: '',
@@ -106,7 +106,7 @@ function formatRuleSource(rule, contexts) {
 
 function formatRuleTarget(rule, contexts) {
   const targetScopeType = String(rule.targetScopeType || '').trim()
-  if (targetScopeType === PARTNER_ROUTING_TARGET_TYPES.organisation_queue) {
+  if (targetScopeType === PARTNER_ROUTING_TARGET_TYPES.orgQueue) {
     return 'Organisation queue'
   }
   if (targetScopeType === PARTNER_ROUTING_TARGET_TYPES.consultant) {
@@ -243,7 +243,7 @@ export default function SettingsPartnerRoutingRulesPage() {
       sourceScopeType: rule?.sourceScopeType || PARTNER_ROUTING_SOURCE_TYPES.organisation,
       sourceScopeId: rule?.sourceScopeId || rule?.source_context_id || '',
       sourceUserId: rule?.sourceUserId || rule?.source_user_id || '',
-      targetScopeType: rule?.targetScopeType || PARTNER_ROUTING_TARGET_TYPES.organisation_queue,
+      targetScopeType: rule?.targetScopeType || PARTNER_ROUTING_TARGET_TYPES.orgQueue,
       targetScopeId: rule?.targetScopeId || '',
       targetRegionId: rule?.targetRegionId || rule?.target_region_id || '',
       targetWorkspaceUnitId: rule?.targetWorkspaceUnitId || rule?.target_workspace_unit_id || '',
@@ -357,9 +357,9 @@ export default function SettingsPartnerRoutingRulesPage() {
   return (
     <div className={settingsPageClass}>
       <SettingsPageHeader
-        kicker="Partner Routing"
-        title="Manage assignment routing rules"
-        description="Map source scope context to target consultants, teams, regions, or queues used during bond intake."
+        kicker="Default Routing"
+        title="Manage default partner routes"
+        description="Map source scope context to connected partner organisations, preferred people, or partner queues used during intake."
       />
 
       {!canEdit ? (

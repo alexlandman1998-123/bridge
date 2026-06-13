@@ -8,10 +8,13 @@ import {
   validateWorkspaceStateById,
 } from '../services/validation/validationEngine'
 import { getWorkflowEngineHealth } from '../lib/api'
+import { listOrganisationPartnerRoutingRules } from '../lib/settingsApi'
 import { getRecentOperationalEvents, getAuditMetrics } from '../services/observability/auditMetrics'
 import { deploymentHealthCheck, getOperationalHealthSummary } from '../services/observability/systemHealth'
 import { getDemoEnvironmentSummary, resetDemoEnvironment } from '../services/demo/demoEnvironmentService'
 import { calculateLaunchReadiness } from '../services/release/launchReadiness'
+import { getUniversalPartnerRoutingDiagnosticsSnapshot } from '../services/universalPartnerRoutingService'
+import { getUniversalAssignmentDiagnosticsSnapshot } from '../services/universalAssignmentService'
 
 function StatCard({ label, value, tone = 'neutral' }) {
   const toneClass =
@@ -74,6 +77,10 @@ export default function PlatformDiagnosticsPage() {
   const [demoLoading, setDemoLoading] = useState(false)
   const [launchReadiness, setLaunchReadiness] = useState(null)
   const [launchLoading, setLaunchLoading] = useState(false)
+  const [routingDiagnostics, setRoutingDiagnostics] = useState(null)
+  const [routingLoading, setRoutingLoading] = useState(false)
+  const [assignmentDiagnostics, setAssignmentDiagnostics] = useState(null)
+  const [assignmentLoading, setAssignmentLoading] = useState(false)
 
   useEffect(() => {
     if (entityType === 'user') setEntityId(authState.user?.id || '')
@@ -130,6 +137,38 @@ export default function PlatformDiagnosticsPage() {
       setError(demoError?.message || 'Demo reset dry-run failed.')
     } finally {
       setDemoLoading(false)
+    }
+  }
+
+  async function loadRoutingDiagnostics() {
+    try {
+      setRoutingLoading(true)
+      setError('')
+      const routingRules = await listOrganisationPartnerRoutingRules().catch(() => [])
+      const snapshot = await getUniversalPartnerRoutingDiagnosticsSnapshot({
+        workspaceId: currentWorkspace?.id || '',
+        routingRules,
+      })
+      setRoutingDiagnostics(snapshot)
+    } catch (routingError) {
+      setError(routingError?.message || 'Partner routing diagnostics failed.')
+    } finally {
+      setRoutingLoading(false)
+    }
+  }
+
+  async function loadAssignmentDiagnostics() {
+    try {
+      setAssignmentLoading(true)
+      setError('')
+      const snapshot = await getUniversalAssignmentDiagnosticsSnapshot({
+        workspaceId: currentWorkspace?.id || '',
+      })
+      setAssignmentDiagnostics(snapshot)
+    } catch (assignmentError) {
+      setError(assignmentError?.message || 'Assignment diagnostics failed.')
+    } finally {
+      setAssignmentLoading(false)
     }
   }
 
@@ -267,6 +306,120 @@ export default function PlatformDiagnosticsPage() {
             </div>
           </div>
         ) : null}
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Partner routing diagnostics</h2>
+              <p className="mt-2 text-sm text-[#60758d]">
+                Track route outcomes, fallback pressure, and the most-used routing rules for the universal partner routing engine.
+              </p>
+            </div>
+            <button type="button" className="header-secondary-cta" onClick={loadRoutingDiagnostics} disabled={routingLoading}>
+              {routingLoading ? 'Checking routing...' : 'Run routing diagnostics'}
+            </button>
+          </div>
+
+          {routingDiagnostics ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Total routes" value={routingDiagnostics.totals?.totalRoutes || 0} />
+                <StatCard label="Successful" value={routingDiagnostics.totals?.successfulRoutes || 0} tone="success" />
+                <StatCard label="Fallbacks" value={routingDiagnostics.totals?.fallbackRoutes || 0} tone={routingDiagnostics.totals?.fallbackRoutes ? 'warning' : 'success'} />
+                <StatCard label="Failed" value={routingDiagnostics.totals?.failedRoutes || 0} tone={routingDiagnostics.totals?.failedRoutes ? 'critical' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Most used rules</h3>
+                  {routingDiagnostics.mostUsedRules?.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {routingDiagnostics.mostUsedRules.map((rule) => (
+                        <li key={rule.ruleId} className="flex items-center justify-between gap-3">
+                          <span>{rule.ruleName || rule.ruleId}</span>
+                          <span className="font-semibold text-[#31485e]">{rule.count}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No routing events yet.</p>
+                  )}
+                </div>
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Recent decisions</h3>
+                  {routingDiagnostics.recentEvents?.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {routingDiagnostics.recentEvents.map((event) => (
+                        <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f6] py-2 last:border-0">
+                          <span>{event.resolutionScope || 'system'} · {event.assignmentMode || 'manual'}</span>
+                          <span className="font-semibold text-[#31485e]">{event.resolutionReason || 'Resolved'}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No recent routing events recorded.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Assignment diagnostics</h2>
+              <p className="mt-2 text-sm text-[#60758d]">
+                Track assignment events, ownership pressure, and the most recent ownership changes from the universal assignment engine.
+              </p>
+            </div>
+            <button type="button" className="header-secondary-cta" onClick={loadAssignmentDiagnostics} disabled={assignmentLoading}>
+              {assignmentLoading ? 'Checking assignments...' : 'Run assignment diagnostics'}
+            </button>
+          </div>
+
+          {assignmentDiagnostics ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatCard label="Events" value={assignmentDiagnostics.totals?.totalEvents || 0} />
+                <StatCard label="Assigned" value={assignmentDiagnostics.totals?.assignedToUser || 0} tone="success" />
+                <StatCard label="Queue" value={assignmentDiagnostics.totals?.assignedToQueue || 0} tone="warning" />
+                <StatCard label="Fallbacks" value={assignmentDiagnostics.totals?.fallbacks || 0} tone={assignmentDiagnostics.totals?.fallbacks ? 'warning' : 'success'} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Event types</h3>
+                  {Object.keys(assignmentDiagnostics.totals?.byType || {}).length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {Object.entries(assignmentDiagnostics.totals.byType).map(([type, count]) => (
+                        <li key={type} className="flex items-center justify-between gap-3">
+                          <span>{String(type).replace(/_/g, ' ')}</span>
+                          <span className="font-semibold text-[#31485e]">{count}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No assignment events yet.</p>
+                  )}
+                </div>
+                <div className="rounded-[14px] border border-[#dde4ee] bg-[#f9fbfe] p-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#31485e]">Recent events</h3>
+                  {assignmentDiagnostics.recentEvents?.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-[#60758d]">
+                      {assignmentDiagnostics.recentEvents.map((event) => (
+                        <li key={event.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f6] py-2 last:border-0">
+                          <span>{event.payload?.itemType || 'assignment'} · {event.payload?.itemId || event.id}</span>
+                          <span className="font-semibold text-[#31485e]">{event.type}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#60758d]">No recent assignment events recorded.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         {demoSummary ? (
           <div className="grid gap-4 rounded-[14px] border border-[#dde4ee] bg-white p-4">

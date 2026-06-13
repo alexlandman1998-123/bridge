@@ -2,10 +2,12 @@ import { ORG_ROLES } from './orgRoles'
 
 export const PARTNER_ROUTING_SOURCE_TYPES = Object.freeze({
   organisation: 'organisation',
+  region: 'region',
   branch: 'branch',
   team: 'team',
   development: 'development',
   agent: 'agent',
+  user: 'user',
 })
 
 export const PARTNER_ROUTING_TARGET_TYPES = Object.freeze({
@@ -18,12 +20,35 @@ export const PARTNER_ROUTING_TARGET_TYPES = Object.freeze({
 
 export const PARTNER_ROUTING_MODES = Object.freeze({
   directConsultant: 'direct_consultant',
+  directAttorney: 'direct_attorney',
+  directAgent: 'direct_agent',
+  branchQueue: 'branch_queue',
   teamQueue: 'team_queue',
   organisationQueue: 'organisation_queue',
   manual: 'manual',
   fallbackQueue: 'fallback_queue',
   roundRobin: 'round_robin',
 })
+
+export const PARTNER_ROUTING_ROLE_TYPES = Object.freeze({
+  agent: 'agent',
+  bondOriginator: 'bond_originator',
+  transferAttorney: 'transfer_attorney',
+  bondAttorney: 'bond_attorney',
+  cancellationAttorney: 'cancellation_attorney',
+  developer: 'developer',
+  developerContact: 'developer_contact',
+})
+
+export const PARTNER_ROUTING_ROLE_TYPE_OPTIONS = Object.freeze([
+  { value: PARTNER_ROUTING_ROLE_TYPES.bondOriginator, label: 'Bond Originator' },
+  { value: PARTNER_ROUTING_ROLE_TYPES.transferAttorney, label: 'Transfer Attorney' },
+  { value: PARTNER_ROUTING_ROLE_TYPES.bondAttorney, label: 'Bond Attorney' },
+  { value: PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney, label: 'Cancellation Attorney' },
+  { value: PARTNER_ROUTING_ROLE_TYPES.agent, label: 'Agent' },
+  { value: PARTNER_ROUTING_ROLE_TYPES.developer, label: 'Developer' },
+  { value: PARTNER_ROUTING_ROLE_TYPES.developerContact, label: 'Developer Contact' },
+])
 
 export const PARTNER_ROUTING_ASSIGNMENT_SEQUENCE = Object.freeze([
   'manual',
@@ -71,4 +96,3 @@ export function isPartnerRoutingHqManagerRole(role = '') {
   const normalized = String(role || '').trim().toLowerCase()
   return PARTNER_ROUTING_HQ_MANAGER_ROLES.includes(normalized)
 }
-

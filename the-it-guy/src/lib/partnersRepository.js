@@ -1381,9 +1381,44 @@ export function getPartnerAssignmentOptions(snapshot = {}, roleType = 'transfer_
         ? new Set(['developer_company'])
         : new Set(['attorney_firm'])
 
+  const preferredRoutingRules = Array.isArray(accessContext.preferredPartnerRoutingRules)
+    ? accessContext.preferredPartnerRoutingRules
+        .filter((rule) => {
+          const sourceScopeType = normalizePartnerScopeType(rule?.sourceScopeType || rule?.source_scope || rule?.source_scope_type)
+          const sourceUserId = normalizeText(rule?.sourceUserId || rule?.source_user_id)
+          const targetScopeType = normalizeText(rule?.targetScopeType || rule?.target_scope || rule?.target_scope_type)
+          return (
+            Boolean(rule?.isActive !== false) &&
+            sourceScopeType === 'agent' &&
+            (!accessContext.userId || sourceUserId === normalizeText(accessContext.userId)) &&
+            targetScopeType === 'consultant'
+          )
+        })
+        .sort((left, right) => {
+          const leftDefault = Number(Boolean(left?.isDefault))
+          const rightDefault = Number(Boolean(right?.isDefault))
+          if (leftDefault !== rightDefault) return rightDefault - leftDefault
+          const leftPriority = Number.isFinite(Number(left?.assignmentPriority)) ? Number(left.assignmentPriority) : Number.POSITIVE_INFINITY
+          const rightPriority = Number.isFinite(Number(right?.assignmentPriority)) ? Number(right.assignmentPriority) : Number.POSITIVE_INFINITY
+          if (leftPriority !== rightPriority) return leftPriority - rightPriority
+          return String(left?.ruleName || '').localeCompare(String(right?.ruleName || ''))
+        })
+    : []
+
+  const preferredRoutingRuleByOrganisationId = new Map()
+  preferredRoutingRules.forEach((rule) => {
+    const organisationId = normalizeText(rule?.targetOrganisationId || rule?.target_organisation_id)
+    if (!organisationId || preferredRoutingRuleByOrganisationId.has(organisationId)) return
+    preferredRoutingRuleByOrganisationId.set(organisationId, rule)
+  })
+
   return dedupeScopedPartnerRelationships(snapshot.relationships || [], accessContext || snapshot.accessContext || {})
     .filter((relationship) => relationship.relationshipStatus === 'accepted' && targetTypes.has(relationship.partner?.type))
     .sort((left, right) => {
+      const leftPreferredRule = preferredRoutingRuleByOrganisationId.get(normalizeText(left.partner?.id || left.counterpartOrganisationId)) || null
+      const rightPreferredRule = preferredRoutingRuleByOrganisationId.get(normalizeText(right.partner?.id || right.counterpartOrganisationId)) || null
+      const preferredRuleDiff = Number(Boolean(rightPreferredRule)) - Number(Boolean(leftPreferredRule))
+      if (preferredRuleDiff !== 0) return preferredRuleDiff
       const preferredDiff = Number(Boolean(right.preferred)) - Number(Boolean(left.preferred))
       if (preferredDiff !== 0) return preferredDiff
       const rankDiff = scopeRank(left) - scopeRank(right)
@@ -1396,12 +1431,26 @@ export function getPartnerAssignmentOptions(snapshot = {}, roleType = 'transfer_
       companyName: relationship.partner?.name || 'Connected partner',
       email: relationship.partner?.contactEmails?.[0] || '',
       relationshipType: relationship.relationshipType,
-      preferred: Boolean(relationship.preferred),
+      preferred: Boolean(relationship.preferred || preferredRoutingRuleByOrganisationId.get(normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId))),
       scopeType: relationship.scopeType,
       scopeId: relationship.scopeId,
       scopeLabel: getPartnerScopeBadge(relationship).label,
       relationshipId: normalizeNullableUuid(relationship.id),
       roleType,
+      userId: normalizeNullableUuid(
+        preferredRoutingRuleByOrganisationId.get(normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId))?.targetUserId ||
+          preferredRoutingRuleByOrganisationId.get(normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId))?.target_user_id ||
+          '',
+      ),
+      contactPerson: normalizeText(
+        preferredRoutingRuleByOrganisationId.get(normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId))?.targetScopeName ||
+          relationship.partner?.contactPerson ||
+          relationship.partner?.name ||
+          '',
+      ),
+      preferredRoutingRuleId: normalizeText(
+        preferredRoutingRuleByOrganisationId.get(normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId))?.id || '',
+      ),
     }))
 }
 

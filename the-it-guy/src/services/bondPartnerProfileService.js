@@ -403,6 +403,12 @@ function normalizePerson(row = {}) {
     organisationRole: normalizeText(row.organisation_role || row.organisationRole),
     branchId: normalizeText(row.branch_id || row.branchId),
     branchName: normalizeText(row.branch_name || row.branchName),
+    regionId: normalizeText(row.region_id || row.regionId),
+    regionName: normalizeText(row.region_name || row.regionName),
+    teamId: normalizeText(row.team_id || row.teamId),
+    teamName: normalizeText(row.team_name || row.teamName),
+    department: normalizeText(row.department),
+    title: normalizeText(row.title || row.job_title || row.jobTitle),
     isActive: row.is_active !== false,
   }
 }

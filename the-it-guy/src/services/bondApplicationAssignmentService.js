@@ -2,6 +2,9 @@ import { isMissingTableError } from './attorneyFirmServiceShared'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { ALL_BOND_ORGANISATION_SCOPE, BOND_ORGANISATION_LEVELS, resolveBondOrganisationScope } from './bondOrganisationScopeResolver'
 import { BOND_ROUTING_METHODS, recordRoutingRuleUsed, resolveBondApplicationRouting } from './bondRoutingRulesService'
+import { recordAuditEvent } from '../lib/activityAudit'
+import { compareRoutingDecisions, universalPartnerRoutingResolver } from './universalPartnerRoutingService'
+import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from './universalAssignmentService'
 
 export const BOND_APPLICATION_ASSIGNMENT_METHODS = Object.freeze({
   auto: 'AUTO',
@@ -516,6 +519,47 @@ function resolveRoutingTarget(application = {}, data = {}, options = {}) {
   const hasPhaseSevenRules = normalizeArray(options.routingRules).length || options.useRoutingRules
   if (hasPhaseSevenRules) {
     const route = resolveBondApplicationRouting(application, options.context || {}, options.workspaceId || '', { ...options, ...data })
+    const shadowInput = {
+      sourceOrganisationId: normalizeText(options.context?.organisationId || options.context?.workspaceId || options.workspaceId || ''),
+      sourceUserId: normalizeText(options.context?.userId || options.context?.actorUserId || options.context?.profile?.id || ''),
+      sourceTeamId: normalizeText(options.context?.teamId || ''),
+      sourceBranchId: normalizeText(options.context?.branchId || ''),
+      sourceRegionId: normalizeText(options.context?.regionId || ''),
+      developmentId: normalizeText(application.developmentId || application.development_id || options.developmentId || ''),
+      module: 'bond',
+      moduleContext: {
+        role: normalizeText(options.context?.role || options.context?.appRole || options.context?.workspaceRole || 'bond_originator'),
+        module: 'bond',
+      },
+      targetRoleType: PARTNER_ROUTING_ROLE_TYPES.bondOriginator,
+      routingRules: Array.isArray(options.routingRules) ? options.routingRules : [],
+      partnerConnections: options.partnerConnections || null,
+      partnerPeopleByRelationshipId: options.partnerPeopleByRelationshipId || {},
+      traceRouting: false,
+    }
+    void universalPartnerRoutingResolver(shadowInput)
+      .then((shadowDecision) => {
+        const legacyDecision = {
+          targetOrganisationId: normalizeText(route.branch?.organisationId || options.context?.organisationId || ''),
+          targetRegionId: normalizeText(route.region?.id || route.regionId || ''),
+          targetBranchId: normalizeText(route.branch?.id || route.branchId || ''),
+          targetTeamId: '',
+          targetUserId: normalizeText(route.consultant?.id || route.consultantId || ''),
+          assignmentMode: route.routingMethod || '',
+          resolutionScope: route.routingMethod || '',
+        }
+        const comparison = compareRoutingDecisions(legacyDecision, shadowDecision)
+        recordAuditEvent('partner.routing.shadow', {
+          workspaceId: options.workspaceId || options.context?.workspaceId || options.context?.organisationId || '',
+          module: 'bond',
+          comparison,
+          legacy: legacyDecision,
+          universal: shadowDecision,
+          route: route.routingMethod || '',
+          routeId: route.routingRuleId || '',
+        })
+      })
+      .catch(() => {})
     const assignmentMethod = route.routingMethod === BOND_ROUTING_METHODS.agencyDefault || route.routingMethod === BOND_ROUTING_METHODS.agencyConsultantDefault
       ? BOND_APPLICATION_ASSIGNMENT_METHODS.partnerDefault
       : route.routingMethod === BOND_ROUTING_METHODS.workloadBalanced
@@ -709,6 +753,30 @@ export async function assignApplication(applicationId = '', context = {}, worksp
   if (preview.route?.routingRuleId) {
     await recordRoutingRuleUsed(preview.route, updated, context, workspaceKey, options)
   }
+  try {
+    await recordUniversalAssignmentEvent(preview.route?.fallbackUsed ? 'assignment.reassigned' : 'assignment.created', {
+      itemType: 'bond_application',
+      itemId: updated.id,
+      transactionId: updated.applicationId || updated.id,
+      organisationId: updated.assignedRegionId || updated.regionId || null,
+      regionId: updated.assignedRegionId || null,
+      branchId: updated.assignedBranchId || null,
+      assignedUserId: updated.assignedConsultantId || null,
+      previousOwnerId: application.assignedConsultantId || null,
+      assignmentMethod: preview.assignmentMethod || UNIVERSAL_ASSIGNMENT_METHODS.partnerRouting,
+      sourceModule: 'bond',
+      sourceEvent: 'assign_application',
+      reason: preview.reason,
+      routingRuleId: preview.routingRuleId || null,
+      metadata: {
+        routingMode: preview.routingMode,
+        routingSource: preview.routingSource,
+        capacity: preview.capacity || null,
+      },
+    }, application)
+  } catch (error) {
+    console.warn('[bondApplicationAssignmentService] universal assignment event skipped', error)
+  }
   createAssignmentNotifications(workspaceKey, {
     application: updated,
     consultant: preview.consultant,
@@ -763,6 +831,28 @@ export async function reassignApplication(applicationId = '', toConsultantId = '
     createdAt: now,
   })
   await persistRemoteHistory(workspaceKey, historyEvent, options)
+  try {
+    await recordUniversalAssignmentEvent('assignment.reassigned', {
+      itemType: 'bond_application',
+      itemId: updated.id,
+      transactionId: updated.applicationId || updated.id,
+      organisationId: updated.assignedRegionId || updated.regionId || null,
+      regionId: updated.assignedRegionId || null,
+      branchId: updated.assignedBranchId || null,
+      assignedUserId: updated.assignedConsultantId || null,
+      previousOwnerId: previousConsultant?.id || application.assignedConsultantId || null,
+      assignmentMethod: UNIVERSAL_ASSIGNMENT_METHODS.managerAssignment,
+      sourceModule: 'bond',
+      sourceEvent: 'reassign_application',
+      reason,
+      metadata: {
+        previousConsultantId: previousConsultant?.id || null,
+        assignmentMethod: preview.assignmentMethod,
+      },
+    }, application)
+  } catch (error) {
+    console.warn('[bondApplicationAssignmentService] universal reassignment event skipped', error)
+  }
   createAssignmentNotifications(workspaceKey, {
     application: updated,
     consultant: toConsultant,

@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { recordUniversalAssignmentEvent, UNIVERSAL_ASSIGNMENT_METHODS } from './universalAssignmentService'
 
 export const QUEUE_TYPE_OPTIONS = Object.freeze([
   { value: 'transfer_matters', label: 'Transfer Matters' },
@@ -201,7 +202,25 @@ export async function assignQueueItem({ queueItemId, assignedUserId = null, assi
     p_assignment_method: assignmentMethod,
   })
   const data = assertRpcSuccess(result, 'Unable to assign queue item.')
-  return toQueueItem(data.queueItem || data.queue_item || {})
+  const queueItem = toQueueItem(data.queueItem || data.queue_item || {})
+  try {
+    await recordUniversalAssignmentEvent('assignment.queue_allocated', {
+      itemType: 'queue_item',
+      itemId: queueItem.id || queueItemId,
+      assignedUserId: queueItem.assignedUserId || assignedUserId || null,
+      assignedQueueId: queueItem.queueId || null,
+      organisationId: queueItem.organizationId || null,
+      branchId: queueItem.branchId || null,
+      regionId: queueItem.regionId || null,
+      assignmentMethod: assignmentMethod || UNIVERSAL_ASSIGNMENT_METHODS.queueAllocation,
+      sourceModule: 'assignment_engine',
+      sourceEvent: 'assign_queue_item',
+      reason: 'Queue item assigned through the universal assignment engine.',
+    })
+  } catch (error) {
+    console.warn('[assignmentEngineService] universal assignment event skipped', error)
+  }
+  return queueItem
 }
 
 export async function completeQueueItem(queueItemId) {
@@ -211,7 +230,25 @@ export async function completeQueueItem(queueItemId) {
     p_queue_item_id: queueItemId,
   })
   const data = assertRpcSuccess(result, 'Unable to complete queue item.')
-  return toQueueItem(data.queueItem || data.queue_item || {})
+  const queueItem = toQueueItem(data.queueItem || data.queue_item || {})
+  try {
+    await recordUniversalAssignmentEvent('assignment.completed', {
+      itemType: 'queue_item',
+      itemId: queueItem.id || queueItemId,
+      assignedUserId: queueItem.assignedUserId || null,
+      assignedQueueId: queueItem.queueId || null,
+      organizationId: queueItem.organizationId || null,
+      branchId: queueItem.branchId || null,
+      regionId: queueItem.regionId || null,
+      assignmentMethod: UNIVERSAL_ASSIGNMENT_METHODS.systemGenerated,
+      sourceModule: 'assignment_engine',
+      sourceEvent: 'complete_queue_item',
+      reason: 'Queue item completed through the universal assignment engine.',
+    })
+  } catch (error) {
+    console.warn('[assignmentEngineService] universal completion event skipped', error)
+  }
+  return queueItem
 }
 
 export const __assignmentEngineServiceTestUtils = {

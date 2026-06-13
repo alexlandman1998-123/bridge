@@ -1,6 +1,7 @@
 import { BOND_INTAKE_STATUSES, getBondIntakeSummary } from '../core/transactions/bondIntakeSelectors'
 import {
   PARTNER_ROUTING_MODES,
+  PARTNER_ROUTING_ROLE_TYPES,
   PARTNER_ROUTING_SOURCE_TYPES,
   PARTNER_ROUTING_TARGET_TYPES,
 } from '../constants/bondRoutingContract'
@@ -8,6 +9,7 @@ import { ENTITLEMENT_KEYS } from '../constants/workspaceEntitlements'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { supabase } from '../lib/supabaseClient'
 import { listOrganisationPartnerRoutingRules } from '../lib/settingsApi'
+import { universalPartnerRoutingResolver } from './universalPartnerRoutingService'
 import {
   BOND_NOTIFICATION_EVENTS,
   notifyBondIntakeEvent,
@@ -257,6 +259,7 @@ function getBondIntakeRoutingContext(row = {}, actor = {}) {
 function resolveRoutingScopeFromRule(rule = {}, actor = {}, context = {}) {
   const targetScopeType = normalizeText(rule.targetScopeType || rule.target_scope_type)
   const targetScopeId = normalizeText(rule.targetScopeId || rule.target_scope_id)
+  const targetOrganisationId = normalizeText(rule.targetOrganisationId || rule.target_organisation_id || context.targetOrganisationId || '')
   const targetUserId = normalizeText(
     rule.targetConsultantUserId ||
       rule.target_user_id ||
@@ -269,7 +272,7 @@ function resolveRoutingScopeFromRule(rule = {}, actor = {}, context = {}) {
     id: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.consultant ? (targetUserId || targetScopeId) : null,
     name: normalizeText(rule.targetScopeName || rule.targetName || ''),
     email: null,
-    organisationId: normalizeText(context.organisationId || actor.workspaceId) || null,
+    organisationId: targetOrganisationId || normalizeText(context.organisationId || actor.workspaceId) || null,
     regionId: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.region ? targetScopeId || null : null,
     branchId: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.branch ? targetScopeId || null : null,
     workspaceUnitId: targetScopeType === PARTNER_ROUTING_TARGET_TYPES.branch || targetScopeType === PARTNER_ROUTING_TARGET_TYPES.team ? targetScopeId || null : null,
@@ -277,7 +280,7 @@ function resolveRoutingScopeFromRule(rule = {}, actor = {}, context = {}) {
   }
 
   if (![
-    PARTNER_ROUTING_TARGET_TYPES.organisation_queue,
+    PARTNER_ROUTING_TARGET_TYPES.orgQueue,
     PARTNER_ROUTING_TARGET_TYPES.region,
     PARTNER_ROUTING_TARGET_TYPES.branch,
     PARTNER_ROUTING_TARGET_TYPES.team,
@@ -287,7 +290,7 @@ function resolveRoutingScopeFromRule(rule = {}, actor = {}, context = {}) {
   }
 
   if (
-    targetScopeType !== PARTNER_ROUTING_TARGET_TYPES.organisation_queue &&
+    targetScopeType !== PARTNER_ROUTING_TARGET_TYPES.orgQueue &&
     targetScopeType !== PARTNER_ROUTING_TARGET_TYPES.consultant &&
     !targetScopeId
   ) {
@@ -336,25 +339,39 @@ function resolveRoutingSourceMatch(rule = {}, context = {}) {
 
 async function resolveRoutingDecision({ row = {}, actor = {} } = {}) {
   const context = getBondIntakeRoutingContext(row, actor)
-  const rules = await listOrganisationPartnerRoutingRules()
-  if (!Array.isArray(rules) || !rules.length) return null
-
-  const activeRules = rules.filter((rule) => rule?.isActive)
-  if (!activeRules.length) return null
-
-  const matchingRule = activeRules.find((rule) => resolveRoutingSourceMatch(rule, context))
-  const chosenRule = matchingRule || activeRules.find((rule) => rule?.isDefault)
-  if (!chosenRule) return null
-
-  const mapped = resolveRoutingScopeFromRule(chosenRule, actor, context)
-  if (!mapped) return null
+  const decision = await universalPartnerRoutingResolver({
+    sourceOrganisationId: context.organisationId,
+    sourceUserId: context.agentId || actor.id || actor.userId || '',
+    sourceTeamId: context.teamId,
+    sourceBranchId: context.branchId,
+    sourceRegionId: context.regionId,
+    targetRoleType: PARTNER_ROUTING_ROLE_TYPES.bondOriginator,
+    moduleContext: { actor, row, context },
+    routingRules: await listOrganisationPartnerRoutingRules().catch(() => []),
+  })
 
   return {
-    source: 'rule',
-    method: mapped.method || PARTNER_ROUTING_MODES.manual,
-    ruleId: mapped.ruleId || null,
-    assignee: mapped.assignee,
-    scope: resolveAssignmentScope({ actor, assignee: mapped.assignee }),
+    source: decision?.resolutionScope === 'transaction_override' ? 'manual' : 'rule',
+    method: decision?.assignmentMode || PARTNER_ROUTING_MODES.manual,
+    ruleId: decision?.routingRuleId || null,
+    assignee: {
+      id: decision?.targetUserId || null,
+      organisationId: decision?.targetOrganisationId || context.organisationId || null,
+      regionId: decision?.targetBranchId ? null : context.regionId || null,
+      branchId: decision?.targetBranchId || null,
+      teamId: decision?.targetTeamId || null,
+      workspaceUnitId: decision?.targetBranchId || decision?.targetTeamId || null,
+    },
+    scope: resolveAssignmentScope({
+      actor,
+      assignee: {
+        id: decision?.targetUserId || null,
+        organisationId: decision?.targetOrganisationId || context.organisationId || null,
+        branchId: decision?.targetBranchId || null,
+        teamId: decision?.targetTeamId || null,
+        workspaceUnitId: decision?.targetBranchId || decision?.targetTeamId || null,
+      },
+    }),
   }
 }
 
