@@ -31,7 +31,6 @@ import {
 } from '../lib/partnersRepository'
 import {
   listUserPreferredPartnerRoutingRules,
-  removeUserPreferredPartnerRoutingRule,
   saveUserPreferredPartnerRoutingRule,
 } from '../lib/settingsApi'
 import { recordWorkspaceAuditEvent } from '../services/auditLogService'
@@ -224,14 +223,14 @@ function PartnerCard({ partner, relationship, action, actionLabel, actionDisable
             onClick={onProfileClick}
             className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
           >
-            Profile <ArrowUpRight size={14} />
+            View profile <ArrowUpRight size={14} />
           </button>
         ) : (
           <Link
             to={profileHref || `/partners/${partner?.id || ''}`}
             className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
           >
-            Profile <ArrowUpRight size={14} />
+            View profile <ArrowUpRight size={14} />
           </Link>
         )}
         {action ? (
@@ -742,7 +741,7 @@ export default function PartnersPage() {
           partner,
           relationship,
           partnerType,
-          personName: isPersonPreference ? targetName || 'Preferred person' : targetName || partner?.name || 'Organisation fallback',
+          personName: isPersonPreference ? targetName || 'Preferred person' : targetName || partner?.name || 'Organisation default',
           organisationName: partner?.name || 'Connected partner',
           organisationId: targetOrganisationId,
           contactPerson: isPersonPreference ? targetName : '',
@@ -1077,7 +1076,7 @@ export default function PartnersPage() {
         isDefault: true,
         notes: isPersonPreference
           ? `Operational partner set from Partner Network for ${relationship.partner?.name || 'connected organisation'}.`
-          : `Organisation fallback set from Partner Network for ${relationship.partner?.name || 'connected organisation'}.`,
+          : `Organisation default set from Partner Network for ${relationship.partner?.name || 'connected organisation'}.`,
       })
       if (saved?.id) {
         setPreferredRoutingRules((previous) => {
@@ -1102,7 +1101,7 @@ export default function PartnersPage() {
       setMessage(
         isPersonPreference
           ? `${personName || 'This person'} is now your operational partner at ${relationship.partner?.name || 'the connected organisation'}.`
-          : `${relationship.partner?.name || 'Partner'} is now your organisation fallback.`,
+          : `${relationship.partner?.name || 'Partner'} is now your organisation default.`,
       )
 
       await recordWorkspaceAuditEvent('partner_preferred_status_changed', {
@@ -1119,66 +1118,6 @@ export default function PartnersPage() {
       })
     } catch (updateError) {
       setError(updateError?.message || 'Unable to update preferred status.')
-    } finally {
-      setPreferredSavingRelationshipIds((previous) => {
-        const next = new Set(previous)
-        next.delete(relationship.id)
-        return next
-      })
-    }
-  }
-
-  async function handleMarkPreferred(relationship) {
-    const partnerOrganisationId = normalizeText(relationship?.partner?.id || relationship?.counterpartOrganisationId || relationship?.partnerOrganisationId)
-    const existingRoutingRule = preferredRoutingRuleByPartnerOrgId.get(partnerOrganisationId) || null
-    const isCurrentlyPreferred = Boolean(
-      relationship?.preferred ||
-        relationship?.relationshipType === 'preferred' ||
-        existingRoutingRule,
-    )
-
-    if (!relationship?.id || !partnerOrganisationId) {
-      setError('Unable to update an operational partner without an organisation connection.')
-      return
-    }
-
-    if (!isCurrentlyPreferred) {
-      await savePreferredRouteForRelationship(relationship)
-      return
-    }
-
-    try {
-      setError('')
-      setPreferredSavingRelationshipIds((previous) => new Set(previous).add(relationship.id))
-      if (existingRoutingRule?.id) {
-        await removeUserPreferredPartnerRoutingRule(existingRoutingRule.id)
-        setPreferredRoutingRules((previous) => previous.filter((rule) => String(rule.id) !== String(existingRoutingRule.id)))
-      }
-      setSnapshot((previous) => {
-        if (!previous?.relationships) return previous
-        return {
-          ...previous,
-          relationships: previous.relationships.map((item) =>
-            String(item.id) === String(relationship.id)
-              ? { ...item, preferred: false, relationshipType: item.relationshipType === 'preferred' ? 'approved' : item.relationshipType }
-              : item,
-          ),
-        }
-      })
-      setMessage(`${relationship.partner?.name || 'Partner'} removed from your operational partners.`)
-      await recordWorkspaceAuditEvent('partner_preferred_status_changed', {
-        userId: profile?.id || '',
-        workspaceId: organisationId,
-        targetType: 'partner_relationship',
-        targetId: relationship.id,
-        metadata: {
-          targetOrganisationId: partnerOrganisationId,
-          preferred: false,
-          source: 'partner_routing_rules',
-        },
-      })
-    } catch (updateError) {
-      setError(updateError?.message || 'Unable to update operational partner.')
     } finally {
       setPreferredSavingRelationshipIds((previous) => {
         const next = new Set(previous)
@@ -1314,7 +1253,7 @@ export default function PartnersPage() {
 
       <section className="grid gap-3 md:grid-cols-3">
         <MetricCard label="Organisation Connections" value={formatNumber(metrics.activePartners)} subtext={`${formatNumber(metrics.preferredPartners)} marked preferred`} />
-        <MetricCard label="Operational Partners" value={formatNumber(preferredPartnerRows.length)} subtext="Reusable people and organisation fallbacks" />
+        <MetricCard label="Operational Partners" value={formatNumber(preferredPartnerRows.length)} subtext="Reusable people and organisation defaults" />
         <MetricCard label="Invite Acceptance" value={`${formatNumber(metrics.inviteAcceptanceRate)}%`} subtext={`${formatNumber(metrics.newPartnerGrowth)} new in 30 days`} />
       </section>
 
@@ -1408,16 +1347,12 @@ export default function PartnersPage() {
                     const partnerOrganisationId = normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId || relationship.partnerOrganisationId)
                     const existingPreferredRule = preferredRoutingRuleByPartnerOrgId.get(partnerOrganisationId)
                     const isPreferred = Boolean(relationship.preferred || relationship.relationshipType === 'preferred' || existingPreferredRule)
-                    const isSavingPreferred = preferredSavingRelationshipIds.has(relationship.id)
                     return (
                       <PartnerCard
                         key={relationship.id}
                         partner={relationship.partner}
                         relationship={{ ...relationship, preferred: isPreferred, relationshipType: isPreferred ? 'preferred' : relationship.relationshipType }}
                         onProfileClick={() => handleOpenPartnerProfile(relationship)}
-                        action={() => handleMarkPreferred(relationship)}
-                        actionDisabled={isSavingPreferred}
-                        actionLabel={isSavingPreferred ? 'Saving...' : isPreferred ? 'Remove' : 'Make Fallback'}
                       />
                     )
                   })}
@@ -1471,7 +1406,7 @@ export default function PartnersPage() {
                                   onClick={() => row.relationship && handleOpenPartnerProfile(row.relationship)}
                                   className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
                                 >
-                                  Profile <ArrowUpRight size={14} />
+                                  View profile <ArrowUpRight size={14} />
                                 </button>
                               </div>
                               <div className="mt-3 flex flex-wrap gap-2">
@@ -1481,7 +1416,7 @@ export default function PartnersPage() {
                                   </span>
                                 ) : (
                                   <span className="inline-flex rounded-full border border-[#d8eefe] bg-[#f4f9ff] px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#1e4d82]">
-                                    Organisation fallback
+                                    Organisation default
                                   </span>
                                 )}
                                 {row.email ? (

@@ -65,6 +65,31 @@ function isRowLevelSecurityError(error) {
   return code === '42501' || message.includes('row-level security')
 }
 
+function isMissingTableError(error, tableName = '') {
+  if (!error) return false
+  const code = String(error.code || '').trim()
+  const message = `${error.message || ''} ${error.details || ''}`.toLowerCase()
+  if (message.includes('permission denied')) return false
+  return (
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    (tableName && message.includes(String(tableName).toLowerCase()) && (message.includes('does not exist') || message.includes('schema cache')))
+  )
+}
+
+function isMissingPeopleRpcError(error, functionName = '') {
+  if (!error) return false
+  const code = String(error.code || '').trim().toLowerCase()
+  const message = `${error.message || ''} ${error.details || ''}`.toLowerCase()
+  return (
+    code === '42883' ||
+    code === 'pgrst202' ||
+    message.includes('schema cache') ||
+    message.includes('could not find the function') ||
+    (functionName && message.includes(functionName.toLowerCase()))
+  )
+}
+
 function normalizePartnerScopeType(value = '') {
   const normalized = normalizeLower(value).replace(/\s+/g, '_')
   if (normalized === 'org' || normalized === 'organisation_wide' || normalized === 'organization') return 'organisation'
@@ -455,6 +480,102 @@ function normalizePeoplePayload(payload = {}) {
   }
 }
 
+function buildPeopleGroupRow(user = {}, branchName = '', profile = null) {
+  const profileName = normalizeText(profile?.full_name || profile?.fullName || '')
+  const firstName = normalizeText(user.first_name || user.firstName || profile?.first_name || profile?.firstName)
+  const lastName = normalizeText(user.last_name || user.lastName || profile?.last_name || profile?.lastName)
+  const email = normalizeText(user.email || profile?.email)
+  const fullName = profileName || [firstName, lastName].filter(Boolean).join(' ').trim() || email || 'Partner user'
+  return {
+    user_id: user.user_id || user.userId || profile?.id || null,
+    full_name: fullName,
+    email,
+    phone: normalizeText(user.phone_number || user.phoneNumber || profile?.phone_number || profile?.phoneNumber),
+    role: normalizeText(user.workspace_role || user.workspaceRole || user.organisation_role || user.organisationRole || user.role),
+    organisation_role: normalizeText(user.organisation_role || user.organisationRole || user.workspace_role || user.workspaceRole || user.role),
+    branch_id: normalizeText(user.branch_id || user.branchId || user.primary_branch_id || user.primaryBranchId),
+    branch_name: normalizeText(branchName),
+    is_active: normalizeLower(user.status || profile?.status || 'active') === 'active',
+  }
+}
+
+async function fetchBondPartnerPeopleFallback({ relationship, currentOrganisationId }) {
+  const ownerOrganisationId = normalizeText(relationship?.organisation_id || relationship?.organisationId)
+  const partnerOrganisationId = normalizeText(relationship?.partner_organisation_id || relationship?.partnerOrganisationId)
+  if (!ownerOrganisationId || !partnerOrganisationId || !currentOrganisationId) {
+    throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
+  }
+
+  const visiblePartnerOrganisationId = currentOrganisationId === ownerOrganisationId ? partnerOrganisationId : ownerOrganisationId
+
+  const [permissionsResult, usersResult, branchesResult, profilesResult] = await Promise.all([
+    supabase
+      .from('partner_visibility_permissions')
+      .select('permission_key, is_enabled')
+      .eq('relationship_id', relationship.id),
+    supabase
+      .from('organisation_users')
+      .select('user_id, first_name, last_name, email, phone_number, role, workspace_role, organisation_role, status, branch_id, primary_branch_id')
+      .eq('organisation_id', visiblePartnerOrganisationId)
+      .eq('status', 'active'),
+    supabase
+      .from('organisation_branches')
+      .select('id, name')
+      .eq('organisation_id', visiblePartnerOrganisationId),
+    supabase
+      .from('profiles')
+      .select('id, full_name, first_name, last_name, email, phone_number, status')
+  ])
+
+  if (usersResult.error) throw usersResult.error
+  if (branchesResult.error) throw branchesResult.error
+  if (profilesResult.error && !isMissingTableError(profilesResult.error, 'profiles')) throw profilesResult.error
+  if (permissionsResult.error && !isMissingTableError(permissionsResult.error, 'partner_visibility_permissions')) throw permissionsResult.error
+
+  const permissions = new Map((permissionsResult.data || []).map((row) => [normalizeLower(row.permission_key), row.is_enabled === true]))
+  const branchNameById = new Map((branchesResult.data || []).map((row) => [normalizeText(row.id), normalizeText(row.name)]))
+  const profileByUserId = new Map((profilesResult.data || []).map((row) => [normalizeText(row.id), row]))
+
+  const rows = usersResult.data || []
+  const principalRows = []
+  const branchManagerRows = []
+  const agentRows = []
+
+  for (const user of rows) {
+    const profile = profileByUserId.get(normalizeText(user.user_id)) || null
+    const branchId = normalizeText(user.branch_id || user.primary_branch_id)
+    const branchName = branchNameById.get(branchId) || ''
+    const row = buildPeopleGroupRow(user, branchName, profile)
+    const role = normalizeLower(row.role || row.organisation_role)
+    if (permissions.get('can_view_principal') && ['principal', 'owner', 'agency_principal'].includes(role)) {
+      principalRows.push(row)
+      continue
+    }
+    if (permissions.get('can_view_branch_managers') && ['branch_manager', 'manager', 'agency_manager'].includes(role)) {
+      branchManagerRows.push(row)
+      continue
+    }
+    if (permissions.get('can_view_agents') && ['agent', 'estate_agent', 'sales_agent'].includes(role)) {
+      agentRows.push(row)
+    }
+  }
+
+  return normalizePeoplePayload({
+    relationship_id: relationship.id,
+    partner_organisation_id: visiblePartnerOrganisationId,
+    permissions: {
+      can_view_principal: permissions.get('can_view_principal') === true,
+      can_view_branch_managers: permissions.get('can_view_branch_managers') === true,
+      can_view_agents: permissions.get('can_view_agents') === true,
+    },
+    groups: {
+      principal: principalRows,
+      branch_managers: branchManagerRows,
+      agents: agentRows,
+    },
+  })
+}
+
 function normalizePublicationStatuses(value = {}) {
   const statuses = value && typeof value === 'object' ? value : {}
   return {
@@ -750,22 +871,36 @@ export async function getBondPartnerPeople(relationshipId = '') {
   }
 
   const safeRelationshipId = await resolveBondPartnerProfileRelationshipId(relationshipId)
+  const relationshipContext = await resolveBondPartnerProfileRelationshipContext(safeRelationshipId)
+  const currentOrganisationId = relationshipContext.currentOrganisationId
+  const relationship = relationshipContext.relationship
 
-  const { data, error } = await supabase.rpc('get_bond_partner_people_phase2', {
-    p_relationship_id: safeRelationshipId,
+  try {
+    const { data, error } = await supabase.rpc('get_bond_partner_people_phase2', {
+      p_relationship_id: safeRelationshipId,
+    })
+
+    if (error) throw error
+
+    if (data?.error_code === 'not_accepted') {
+      throw createProfileError(PARTNER_PROFILE_NOT_ACCEPTED_MESSAGE, 'not_accepted')
+    }
+
+    if (data?.error_code) {
+      throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
+    }
+
+    return normalizePeoplePayload(data)
+  } catch (error) {
+    if (!isMissingPeopleRpcError(error, 'get_bond_partner_people_phase2')) {
+      throw error
+    }
+  }
+
+  return fetchBondPartnerPeopleFallback({
+    relationship,
+    currentOrganisationId,
   })
-
-  if (error) throw error
-
-  if (data?.error_code === 'not_accepted') {
-    throw createProfileError(PARTNER_PROFILE_NOT_ACCEPTED_MESSAGE, 'not_accepted')
-  }
-
-  if (data?.error_code) {
-    throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
-  }
-
-  return normalizePeoplePayload(data)
 }
 
 export async function getBondPartnerListings(relationshipId = '') {
