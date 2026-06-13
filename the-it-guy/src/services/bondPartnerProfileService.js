@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { normalizeOrganisationPartnerVisibilityLevel } from '../lib/partnersRepository'
 
 export const PARTNER_PROFILE_ACCESS_DENIED_MESSAGE = 'Partner relationship not found or access denied.'
 export const PARTNER_PROFILE_NOT_ACCEPTED_MESSAGE = 'This partner relationship is not active yet.'
@@ -56,6 +57,12 @@ function normalizeNullableUuid(value = '') {
 
 function normalizeLower(value = '') {
   return normalizeText(value).toLowerCase()
+}
+
+function isRowLevelSecurityError(error) {
+  const code = String(error?.code || '')
+  const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
+  return code === '42501' || message.includes('row-level security')
 }
 
 function normalizePartnerScopeType(value = '') {
@@ -211,6 +218,11 @@ async function resolveRelationshipCurrentOrganisationId(relationship = {}, optio
   const candidates = [...new Set([...collectExplicitOrganisationIds(options), ...activeIds])]
   const matchedId = candidates.find((id) => id === ownerOrganisationId || id === partnerOrganisationId)
   if (matchedId) return matchedId
+
+  if (!activeIds.length) {
+    return partnerOrganisationId || ownerOrganisationId
+  }
+
   throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_found')
 }
 
@@ -288,7 +300,7 @@ async function repairAcceptedRelationshipFromInvitation(invitation = {}, current
     scope_type: scopeType,
     scope_id: scopeId,
     scope_name: normalizeText(invitation.scope_name) || null,
-    visibility_level: 'connected_partners_only',
+    visibility_level: normalizeOrganisationPartnerVisibilityLevel('', { preferred: invitation.preferred === true }),
     accepted_at: now,
     created_by: normalizeNullableUuid(userId),
     updated_at: now,
@@ -301,6 +313,7 @@ async function repairAcceptedRelationshipFromInvitation(invitation = {}, current
     .single()
 
   if (!error && data?.id) return data
+  if (isRowLevelSecurityError(error)) return null
 
   const fallback = await supabase
     .from('organisation_partners')
@@ -309,13 +322,14 @@ async function repairAcceptedRelationshipFromInvitation(invitation = {}, current
       partner_organisation_id: partnerOrganisationId,
       relationship_status: 'accepted',
       relationship_type: normalizeText(invitation.relationship_type) || 'approved',
-      visibility_level: 'connected_partners_only',
+      visibility_level: normalizeOrganisationPartnerVisibilityLevel('', { preferred: invitation.preferred === true }),
       accepted_at: now,
       created_by: normalizeNullableUuid(userId),
     })
     .select('id')
     .single()
 
+  if (isRowLevelSecurityError(fallback.error)) return null
   if (fallback.error) throw error || fallback.error
   return fallback.data || null
 }

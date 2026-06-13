@@ -700,7 +700,16 @@ function normalizePartnerRoutingRuleRecord(input = {}, fallback = {}) {
   const rawTargetScopeType = normalizeText(
     input.targetScopeType || input.target_scope || input.target_scope_type || input.targetScope || input.targetType || '',
   )
-  const assignmentMode = normalizeText(input.assignmentMode || input.assignment_mode || input.assignmentMethod || input.method)
+  const assignmentMode = normalizeText(
+    input.assignmentMode ||
+      input.assignment_mode ||
+      input.assignmentMethod ||
+      input.method ||
+      fallback.assignmentMode ||
+      fallback.assignment_mode ||
+      fallback.assignmentMethod ||
+      fallback.method,
+  )
   const rawTargetRoleType = normalizeText(input.targetRoleType || input.target_role_type || fallback.targetRoleType || fallback.target_role_type || '')
 
   return {
@@ -737,8 +746,8 @@ function normalizePartnerRoutingRuleRecord(input = {}, fallback = {}) {
     sourceScopeId: normalizeText(
       input.sourceScopeId || input.source_context_id || input.sourceContextId || input.source_scope_id || input.sourceId || '',
     ),
-    sourceUserId: normalizeText(input.sourceUserId || input.source_user_id || input.sourceConsultantUserId || ''),
-    sourceScopeName: normalizeText(input.sourceScopeName || input.source_scope_name || ''),
+    sourceUserId: normalizeText(input.sourceUserId || input.source_user_id || input.sourceConsultantUserId || fallback.sourceUserId || fallback.source_user_id || ''),
+    sourceScopeName: normalizeText(input.sourceScopeName || input.source_scope_name || fallback.sourceScopeName || fallback.source_scope_name || ''),
     targetScopeType: ROUTING_RULE_TARGET_TYPES.has(normalizeText(rawTargetScopeType))
       ? normalizeText(rawTargetScopeType)
       : PARTNER_ROUTING_TARGET_TYPES.orgQueue,
@@ -751,7 +760,7 @@ function normalizePartnerRoutingRuleRecord(input = {}, fallback = {}) {
     ),
     targetRegionId: normalizeText(input.targetRegionId || input.target_region_id || ''),
     targetWorkspaceUnitId: normalizeText(input.targetWorkspaceUnitId || input.target_workspace_unit_id || ''),
-    targetScopeName: normalizeText(input.targetScopeName || input.target_scope_name || ''),
+    targetScopeName: normalizeText(input.targetScopeName || input.target_scope_name || fallback.targetScopeName || fallback.target_scope_name || ''),
     targetConsultantUserId: normalizeText(
       input.targetConsultantUserId || input.targetUserId || input.target_user_id || input.targetUser || '',
     ),
@@ -3466,7 +3475,7 @@ export async function listOrganisationPartnerRoutingRules() {
   const query = await client
     .from('partner_routing_rules')
     .select(
-      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, rule_name, notes, created_at, updated_at',
+      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
     )
     .eq('source_organisation_id', context.organisation.id)
     .order('is_default', { ascending: false })
@@ -3484,6 +3493,7 @@ export async function listOrganisationPartnerRoutingRules() {
     !isMissingColumnError(query.error, 'target_scope') &&
     !isMissingColumnError(query.error, 'assignment_mode') &&
     !isMissingColumnError(query.error, 'is_default') &&
+    !isMissingColumnError(query.error, 'target_scope_name') &&
     !isMissingColumnError(query.error, 'source_organisation_id') &&
     !isMissingColumnError(query.error, 'target_organisation_id')
   ) {
@@ -3564,7 +3574,7 @@ export async function saveOrganisationPartnerRoutingRule(input = {}) {
     .from('partner_routing_rules')
     .upsert(rowPayload, { onConflict: 'id' })
     .select(
-      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, rule_name, notes, created_at, updated_at',
+      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
     )
     .single()
 
@@ -3580,6 +3590,7 @@ export async function saveOrganisationPartnerRoutingRule(input = {}) {
     !isMissingColumnError(saveResult.error, 'target_scope') &&
     !isMissingColumnError(saveResult.error, 'assignment_mode') &&
     !isMissingColumnError(saveResult.error, 'target_user_id') &&
+    !isMissingColumnError(saveResult.error, 'target_scope_name') &&
     !isMissingColumnError(saveResult.error, 'rule_name') &&
     !isMissingColumnError(saveResult.error, 'source_organisation_id') &&
     !isMissingColumnError(saveResult.error, 'target_organisation_id') &&
@@ -3646,7 +3657,7 @@ export async function listUserPreferredPartnerRoutingRules() {
   const query = await client
     .from('partner_routing_rules')
     .select(
-      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, rule_name, notes, created_at, updated_at',
+      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
     )
     .eq('source_organisation_id', context.organisation.id)
     .eq('source_user_id', user.id)
@@ -3659,6 +3670,27 @@ export async function listUserPreferredPartnerRoutingRules() {
     return sortPartnerRoutingRules((query.data || []).map(normalizePartnerRoutingRuleRow))
   }
 
+  if (isMissingColumnError(query.error, 'target_role_type') || isMissingColumnError(query.error, 'target_scope_name')) {
+    const legacyQuery = await client
+      .from('partner_routing_rules')
+      .select(
+        'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, rule_name, notes, created_at, updated_at',
+      )
+      .eq('source_organisation_id', context.organisation.id)
+      .eq('source_user_id', user.id)
+      .in('source_scope', [PARTNER_ROUTING_SOURCE_TYPES.agent, PARTNER_ROUTING_SOURCE_TYPES.user])
+      .order('is_default', { ascending: false })
+      .order('assignment_priority', { ascending: true })
+      .order('rule_name', { ascending: true })
+
+    if (!legacyQuery.error) {
+      return sortPartnerRoutingRules((legacyQuery.data || []).map(normalizePartnerRoutingRuleRow))
+    }
+    if (!isMissingTableError(legacyQuery.error, 'partner_routing_rules')) {
+      throw legacyQuery.error
+    }
+  }
+
   if (
     !isMissingTableError(query.error, 'partner_routing_rules') &&
     !isMissingColumnError(query.error, 'is_active') &&
@@ -3666,6 +3698,7 @@ export async function listUserPreferredPartnerRoutingRules() {
     !isMissingColumnError(query.error, 'source_scope') &&
     !isMissingColumnError(query.error, 'target_scope') &&
     !isMissingColumnError(query.error, 'assignment_mode') &&
+    !isMissingColumnError(query.error, 'target_scope_name') &&
     !isMissingColumnError(query.error, 'source_organisation_id') &&
     !isMissingColumnError(query.error, 'target_organisation_id')
   ) {
@@ -3687,14 +3720,25 @@ export async function saveUserPreferredPartnerRoutingRule(input = {}) {
     throw new Error('Authenticated user and organisation are required.')
   }
 
+  const requestedTargetScopeType = normalizeText(input.targetScopeType || input.target_scope || input.target_scope_type || input.targetScope)
+  const targetScopeType = ROUTING_RULE_TARGET_TYPES.has(requestedTargetScopeType)
+    ? requestedTargetScopeType
+    : PARTNER_ROUTING_TARGET_TYPES.consultant
+  const requestedAssignmentMode = normalizeText(input.assignmentMode || input.assignment_mode || input.assignmentMethod || input.method)
+  const assignmentMode = ROUTING_RULE_METHODS.has(requestedAssignmentMode)
+    ? requestedAssignmentMode
+    : targetScopeType === PARTNER_ROUTING_TARGET_TYPES.orgQueue
+      ? PARTNER_ROUTING_MODES.organisationQueue
+      : PARTNER_ROUTING_MODES.directConsultant
+
   const normalizedInput = normalizePartnerRoutingRuleRecord(input, {
     id: String(input?.id || '').trim() || createLocalPartnerRoutingRuleId(),
     sourceScopeType: PARTNER_ROUTING_SOURCE_TYPES.agent,
     sourceUserId: user.id,
     sourceOrganisationId: context.organisation.id,
     targetOrganisationId: input.targetOrganisationId || input.target_organisation_id || context.organisation.id,
-    targetScopeType: PARTNER_ROUTING_TARGET_TYPES.consultant,
-    assignmentMode: PARTNER_ROUTING_MODES.directConsultant,
+    targetScopeType,
+    assignmentMode,
   })
 
   const rowPayload = mapPartnerRoutingRuleToRow(
@@ -3704,8 +3748,8 @@ export async function saveUserPreferredPartnerRoutingRule(input = {}) {
       sourceUserId: user.id,
       sourceOrganisationId: context.organisation.id,
       targetOrganisationId: normalizedInput.targetOrganisationId || context.organisation.id,
-      targetScopeType: PARTNER_ROUTING_TARGET_TYPES.consultant,
-      assignmentMode: normalizedInput.assignmentMode || PARTNER_ROUTING_MODES.directConsultant,
+      targetScopeType: normalizedInput.targetScopeType || targetScopeType,
+      assignmentMode: normalizedInput.assignmentMode || assignmentMode,
     },
     context.organisation.id,
   )
@@ -3718,12 +3762,33 @@ export async function saveUserPreferredPartnerRoutingRule(input = {}) {
     .from('partner_routing_rules')
     .upsert(rowPayload, { onConflict: 'id' })
     .select(
-      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, rule_name, notes, created_at, updated_at',
+      'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_role_type, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, target_scope_name, rule_name, notes, created_at, updated_at',
     )
     .single()
 
   if (!saveResult.error) {
     return normalizePartnerRoutingRuleRecord(saveResult.data)
+  }
+
+  if (isMissingColumnError(saveResult.error, 'target_role_type') || isMissingColumnError(saveResult.error, 'target_scope_name')) {
+    const legacyPayload = { ...rowPayload }
+    delete legacyPayload.target_role_type
+    delete legacyPayload.target_scope_name
+
+    const legacySaveResult = await client
+      .from('partner_routing_rules')
+      .upsert(legacyPayload, { onConflict: 'id' })
+      .select(
+        'id, is_active, is_default, assignment_priority, source_organisation_id, target_organisation_id, source_scope, source_context_id, source_user_id, source_scope_name, target_scope, target_region_id, target_workspace_unit_id, target_user_id, assignment_mode, rule_name, notes, created_at, updated_at',
+      )
+      .single()
+
+    if (!legacySaveResult.error) {
+      return normalizePartnerRoutingRuleRecord(legacySaveResult.data, normalizedInput)
+    }
+    if (!isMissingTableError(legacySaveResult.error, 'partner_routing_rules')) {
+      throw legacySaveResult.error
+    }
   }
 
   if (
@@ -3734,6 +3799,7 @@ export async function saveUserPreferredPartnerRoutingRule(input = {}) {
     !isMissingColumnError(saveResult.error, 'target_scope') &&
     !isMissingColumnError(saveResult.error, 'assignment_mode') &&
     !isMissingColumnError(saveResult.error, 'target_user_id') &&
+    !isMissingColumnError(saveResult.error, 'target_scope_name') &&
     !isMissingColumnError(saveResult.error, 'source_organisation_id') &&
     !isMissingColumnError(saveResult.error, 'target_organisation_id') &&
     !isOnConflictConstraintError(saveResult.error, 'id')

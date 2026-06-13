@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node src/services/__tests__/principalDashboardService.test.js && node src/services/__tests__/inviteService.test.js && node src/services/__tests__/transactionPartnerInvitationService.test.js && node src/services/__tests__/organizationService.test.js && node src/services/__tests__/partnerNetworkService.test.js && node src/services/__tests__/organizationHierarchyService.test.js && node src/services/__tests__/assignmentEngineService.test.js && node src/services/__tests__/networkIntelligenceService.test.js",
+    "test": "node src/services/__tests__/principalDashboardService.test.js && node src/services/__tests__/inviteService.test.js && node src/services/__tests__/transactionPartnerInvitationService.test.js && node src/services/__tests__/organizationService.test.js && node src/services/__tests__/partnerNetworkService.test.js && node src/lib/__tests__/partnersRepository.test.js && node src/services/__tests__/organizationHierarchyService.test.js && node src/services/__tests__/assignmentEngineService.test.js && node src/services/__tests__/networkIntelligenceService.test.js",
     "test:workspace-resolution": "node scripts/workspace-resolution.test.mjs",
     "test:workspace-branch-scope": "node scripts/workspace-branch-scope.test.mjs",
     "test:principal-agent-command-centre": "node scripts/principal-agent-command-centre.test.mjs",

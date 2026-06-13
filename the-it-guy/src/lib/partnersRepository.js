@@ -67,6 +67,18 @@ export const PARTNER_SCOPE_LABELS = {
 
 export const PARTNER_RELATIONSHIP_STATUSES = ['pending', 'accepted', 'declined', 'cancelled', 'expired', 'removed']
 
+export const ORGANISATION_PARTNER_VISIBILITY_LEVELS = [
+  'private',
+  'connected_partners',
+  'connected_partners_only',
+  'preferred_partners',
+  'preferred_partners_only',
+  'public_ecosystem',
+  'public',
+  'invite_only',
+  'hidden',
+]
+
 const DEMO_ORGANISATIONS = [
   {
     id: 'demo-daagency',
@@ -223,12 +235,25 @@ export function normalizePartnerRelationshipStatus(value) {
   return PARTNER_RELATIONSHIP_STATUSES.includes(normalized) ? normalized : 'pending'
 }
 
+export function normalizeOrganisationPartnerVisibilityLevel(value, { preferred = false } = {}) {
+  const normalized = normalizeLower(value).replace(/\s+/g, '_')
+  if (normalized === 'connected_partner' || normalized === 'connected_partner_only' || normalized === 'connected_partners_only') {
+    return 'connected_partners'
+  }
+  if (normalized === 'preferred_partner' || normalized === 'preferred_partner_only' || normalized === 'preferred_partners_only') {
+    return 'preferred_partners'
+  }
+  if (ORGANISATION_PARTNER_VISIBILITY_LEVELS.includes(normalized)) return normalized
+  return preferred ? 'preferred_partners' : 'connected_partners'
+}
+
 function isPreferredRelationship(row = {}) {
+  const visibilityLevel = normalizeOrganisationPartnerVisibilityLevel(row.visibility_level || row.visibilityLevel)
   return Boolean(
     row.preferred === true ||
       row.is_preferred === true ||
       normalizeLower(row.relationship_type || row.relationshipType) === 'preferred' ||
-      normalizeLower(row.visibility_level || row.visibilityLevel) === 'preferred_partners_only',
+      visibilityLevel === 'preferred_partners',
   )
 }
 
@@ -455,6 +480,7 @@ export function canConnectPartnerTypes(sourceType, targetType) {
 function isRecoverablePartnerSchemaError(error) {
   const code = String(error?.code || '')
   const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
+  if (isRowLevelSecurityError(error)) return false
   return (
     code === '42P01' ||
     code === '42703' ||
@@ -467,6 +493,12 @@ function isRecoverablePartnerSchemaError(error) {
     message.includes('partner_visibility_settings') ||
     message.includes('relationship')
   )
+}
+
+function isRowLevelSecurityError(error) {
+  const code = String(error?.code || '')
+  const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
+  return code === '42501' || message.includes('row-level security')
 }
 
 function readDemoState() {
@@ -867,7 +899,7 @@ export function mapPartnerRelationship(row = {}, currentOrganisationId = '') {
     scopeId,
     scopeName: normalizeText(row.scope_name || row.scopeName || row.scope_display_name || row.scopeDisplayName),
     createdBy: normalizeText(row.created_by || row.createdBy),
-    visibilityLevel: normalizeText(row.visibility_level || row.visibilityLevel) || 'connected_partners_only',
+    visibilityLevel: normalizeOrganisationPartnerVisibilityLevel(row.visibility_level || row.visibilityLevel, { preferred }),
     notes: normalizeText(row.notes),
     createdAt: normalizeText(row.created_at || row.createdAt),
     acceptedAt: normalizeText(row.accepted_at || row.acceptedAt),
@@ -1619,10 +1651,16 @@ async function ensureOrganisationRelationship({
   scopeName = '',
   preferred = false,
   partnerType = '',
+  userId = '',
 } = {}) {
   if (!senderOrganisationId || !recipientOrganisationId || !isSupabaseConfigured || !supabase) return
 
   const now = new Date().toISOString()
+  let createdBy = normalizeNullableUuid(userId)
+  if (!createdBy) {
+    const authResult = await supabase.auth.getUser()
+    createdBy = normalizeNullableUuid(authResult?.data?.user?.id)
+  }
   const normalizedScopeType = normalizePartnerScopeType(scopeType)
   const normalizedScopeId = normalizeText(scopeId) || (normalizedScopeType === 'organisation' ? senderOrganisationId : '')
   const found = await supabase
@@ -1682,20 +1720,21 @@ async function ensureOrganisationRelationship({
     scope_type: normalizedScopeType,
     scope_id: normalizedScopeId,
     scope_name: normalizeText(scopeName) || null,
-    visibility_level: 'connected_partners_only',
+    visibility_level: normalizeOrganisationPartnerVisibilityLevel('', { preferred: Boolean(preferred || relationshipType === 'preferred') }),
     accepted_at: now,
-    created_by: null,
+    created_by: createdBy,
   })
   if (insertResult.error && isRecoverablePartnerSchemaError(insertResult.error)) {
-    await supabase.from('organisation_partners').insert({
+    const fallbackInsert = await supabase.from('organisation_partners').insert({
       organisation_id: senderOrganisationId,
       partner_organisation_id: recipientOrganisationId,
       relationship_status: 'accepted',
       relationship_type: relationshipType,
-      visibility_level: 'connected_partners_only',
+      visibility_level: normalizeOrganisationPartnerVisibilityLevel('', { preferred: Boolean(preferred || relationshipType === 'preferred') }),
       accepted_at: now,
-      created_by: null,
+      created_by: createdBy,
     })
+    if (fallbackInsert.error) throw fallbackInsert.error
   } else if (insertResult.error) {
     throw insertResult.error
   }
@@ -1818,6 +1857,7 @@ export async function acceptPartnerInvitation({
     scopeName: invitation.scope_name,
     preferred: invitation.preferred,
     partnerType: invitation.partner_type || invitation.to_workspace_type,
+    userId,
   })
 
   return true
@@ -1913,7 +1953,12 @@ export async function updatePartnerRelationshipStatus({
   payload.status = status
   payload.updated_at = new Date().toISOString()
 
-  const result = await supabase.from('organisation_partners').update(payload).eq('id', id)
+  const result = await supabase
+    .from('organisation_partners')
+    .update(payload)
+    .eq('id', id)
+    .select('id, relationship_status, relationship_type, preferred, visibility_level')
+    .maybeSingle()
   if (result.error) {
     if (isRecoverablePartnerSchemaError(result.error)) {
       const legacyPayload = {
@@ -1921,14 +1966,21 @@ export async function updatePartnerRelationshipStatus({
       }
       if (relationshipType || typeof preferred === 'boolean') legacyPayload.relationship_type = preferred ? 'preferred' : relationshipType || 'approved'
       if (status === 'accepted') legacyPayload.accepted_at = new Date().toISOString()
-      const fallback = await supabase.from('organisation_partners').update(legacyPayload).eq('id', id)
+      const fallback = await supabase
+        .from('organisation_partners')
+        .update(legacyPayload)
+        .eq('id', id)
+        .select('id, relationship_status, relationship_type')
+        .maybeSingle()
       if (fallback.error && isRecoverablePartnerSchemaError(fallback.error)) {
         return updatePartnerRelationshipStatus({ relationshipId, status, relationshipType, preferred, workspaceType, organisationId, forceDemo: true })
       }
       if (fallback.error) throw fallback.error
+      if (!fallback.data?.id) throw new Error('Partner relationship was not updated. You may not have permission to change this relationship.')
       return true
     }
     throw result.error
   }
+  if (!result.data?.id) throw new Error('Partner relationship was not updated. You may not have permission to change this relationship.')
   return true
 }

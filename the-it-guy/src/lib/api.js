@@ -26,6 +26,7 @@ import {
   getRequiredDocumentsForPurchaserType,
   getTransactionPurchaserTypeValue,
   normalizePurchaserType,
+  resolvePurchaserTypeFromFormData,
   validateOnboardingSubmission,
 } from './purchaserPersonas'
 import {
@@ -3213,7 +3214,7 @@ export async function ensureTransactionSubprocesses(client, transactionId, { cre
   return normalizedSubprocesses
 }
 
-function deriveStageFromSubprocesses(transaction, subprocesses = []) {
+function _deriveStageFromSubprocesses(transaction, subprocesses = []) {
   const currentStage = normalizeStageLabel(transaction?.stage || 'Available')
   const currentIndex = getStageIndex(currentStage)
   let targetStage = currentStage
@@ -10636,7 +10637,7 @@ export async function recordBondOfferDecision(quoteId, { decision = 'accepted', 
   let actorProfile = { userId: null, role: actorRole || 'buyer' }
   try {
     actorProfile = await resolveActiveProfileContext(client)
-  } catch (_error) {
+  } catch {
     actorProfile = { userId: null, role: actorRole || 'buyer' }
   }
 
@@ -16509,7 +16510,6 @@ export async function deleteDevelopment(developmentId) {
   const linkedTransactions = [...transactionsById.values()]
   for (const transaction of linkedTransactions) {
     // Sequential delete keeps cleanup deterministic for linked workflow/doc records.
-    // eslint-disable-next-line no-await-in-loop
     await deleteTransactionEverywhere({
       transactionId: transaction.id,
       unitId: transaction.unit_id || null,
@@ -17792,7 +17792,7 @@ async function updateReservationFromRequiredDocumentStatusIfNeeded(
   }
 }
 
-async function requestReservationDepositEmailIfPossible(
+async function _requestReservationDepositEmailIfPossible(
   client,
   {
     transactionId,
@@ -19594,7 +19594,16 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
   }
 
   const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney'])
-  const allowedSources = new Set(['agency_preferred', 'buyer_appointed', 'manual', 'connected_partner', 'preferred_partner'])
+  const allowedSources = new Set([
+    'agency_preferred',
+    'buyer_appointed',
+    'manual',
+    'connected_partner',
+    'preferred_partner',
+    'partner_prospect',
+    'invited_partner',
+    'transaction_direct',
+  ])
 
   return rolePlayers
     .map((item) => {
@@ -19603,9 +19612,11 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
         return null
       }
 
-      const source = normalizeTextValue(item?.source || '').toLowerCase()
-      const normalizedSource = allowedSources.has(source) ? source : 'manual'
       const partner = item?.partner && typeof item.partner === 'object' ? item.partner : {}
+      const normalizedSource = resolveTransactionRoleplayerSelectionSource(item, partner, {
+        allowedSources,
+        fallback: 'transaction_direct',
+      })
       const partnerName = normalizeTextValue(partner.companyName || partner.contactPerson || '')
 
       if (!partnerName && normalizedSource !== 'agency_preferred') {
@@ -19672,6 +19683,54 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
       }
     })
     .filter(Boolean)
+}
+
+function resolveTransactionRoleplayerSelectionSource(item = {}, partner = {}, options = {}) {
+  const allowedSources =
+    options.allowedSources ||
+    new Set([
+      'agency_preferred',
+      'buyer_appointed',
+      'manual',
+      'connected_partner',
+      'preferred_partner',
+      'partner_prospect',
+      'invited_partner',
+      'transaction_direct',
+      'partner_routing_rule',
+    ])
+  const explicitSource = normalizeTextValue(
+    item.source ||
+      item.selectionSource ||
+      item.selection_source ||
+      partner.source ||
+      partner.selectionSource ||
+      partner.selection_source ||
+      '',
+  ).toLowerCase()
+  if (allowedSources.has(explicitSource)) return explicitSource
+
+  const relationshipId = normalizeNullableUuid(
+    item.partnerRelationshipId ||
+      item.partner_relationship_id ||
+      item.relationshipId ||
+      item.relationship_id ||
+      partner.partnerRelationshipId ||
+      partner.partner_relationship_id ||
+      partner.relationshipId ||
+      partner.relationship_id,
+  )
+  if (relationshipId) return 'connected_partner'
+
+  const prospectId = normalizeNullableUuid(
+    item.partnerProspectId ||
+      item.partner_prospect_id ||
+      partner.partnerProspectId ||
+      partner.partner_prospect_id,
+  )
+  if (prospectId) return 'partner_prospect'
+
+  return options.fallback || 'transaction_direct'
 }
 
 async function insertRecordWithMissingColumnFallback(client, table, payload = {}, select = 'id') {
@@ -19842,7 +19901,7 @@ function resolveRoleplayerSelectionScope(selection = {}, assignedUserId = null) 
   const workspaceUnitId = normalizeNullableUuid(selection.workspaceUnitId || selection.branchId)
   const branchId = normalizeNullableUuid(selection.branchId || selection.workspaceUnitId)
   const userId = normalizeNullableUuid(assignedUserId || selection.userId)
-  const explicitAssignmentStatus = normalizeText(selection.assignmentStatus || selection.assignment_status)
+  const explicitAssignmentStatus = normalizeTextValue(selection.assignmentStatus || selection.assignment_status)
   const hasUnitScope = Boolean(teamId || workspaceUnitId || branchId)
   const scopeLevel = userId && !regionId && !hasUnitScope
     ? 'independent'
@@ -19886,6 +19945,8 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
   const profileIdByEmail = selection?.email ? await resolveProfileIdsByEmail(client, [selection.email]) : {}
   const resolvedUserId = selection?.userId || (selection?.email ? profileIdByEmail[selection.email] || null : null)
   const scope = resolveRoleplayerSelectionScope(selection, resolvedUserId)
+  const participantName = selection.partnerName || selection.contactPerson || null
+  const participantEmail = selection.email || null
   const nowIso = new Date().toISOString()
   const payload = {
     transaction_id: transactionId,
@@ -19905,8 +19966,8 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
       source: 'transaction_roleplayer_participant',
       canonicalRoleType: selection.roleType,
     },
-    participant_name: selection.partnerName || selection.contactPerson || null,
-    participant_email: selection.email || null,
+    participant_name: participantName,
+    participant_email: participantEmail,
     invited_by_user_id: actorProfile?.userId || null,
     invited_at: nowIso,
     accepted_at: nowIso,
@@ -19969,20 +20030,20 @@ async function ensureRoleplayerTransactionParticipant(client, { transactionId, s
   }
 
   await recordUniversalRolePlayerAssignmentEvent(client, {
-    transactionId: normalizedTransactionId,
-    roleType: normalizedRole,
+    transactionId,
+    roleType: selection.roleType,
     assignedUserId: resolvedUserId,
     sourceModule: 'transaction',
     sourceEvent: 'ensure_roleplayer_participant_for_onboarding',
     assignmentSource: 'transaction_direct',
     selectionSource: 'transaction_direct',
     actorUserId: actorProfile?.userId || null,
-    assignmentStatus: normalizedStatus,
+    assignmentStatus: scope.assignmentStatus || 'active',
     metadata: {
       participantName,
-      participantEmail: email || null,
-      legalRole: normalizedRole === 'attorney' ? normalizeAttorneyLegalRole(legalRole, 'transfer') : 'none',
-      visibilityScope: normalizedVisibility,
+      participantEmail,
+      legalRole: roleType === 'attorney' ? normalizeAttorneyLegalRole(legalRole, 'transfer') : 'none',
+      visibilityScope: 'shared',
     },
   })
   return Array.isArray(upsertResult.data) ? upsertResult.data[0] || null : upsertResult.data || null
@@ -20437,7 +20498,7 @@ function normalizeTransactionRoleplayerSelection(item = {}) {
     contactPerson,
     email,
     phone: normalizeNullableText(partner.phone || partner.phoneNumber || partner.phone_number),
-    selectionSource: normalizeTextValue(item.selectionSource || item.selection_source || partner.selectionSource || 'connected_partner') || 'connected_partner',
+    selectionSource: resolveTransactionRoleplayerSelectionSource(item, partner),
     assignmentStatus,
     activationTrigger,
     snapshot: {
@@ -20606,10 +20667,11 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
   const profileIdByEmail = !selection.userId && selection.email ? await resolveProfileIdsByEmail(client, [selection.email]) : {}
   const resolvedUserId = selection.userId || (selection.email ? profileIdByEmail[selection.email] || null : null)
   const scope = resolveRoleplayerSelectionScope(selection, resolvedUserId)
+  const selectionSource = selection.selectionSource || 'transaction_direct'
   const payload = {
     transaction_id: transactionId,
     role_type: selection.roleType,
-    selection_source: selection.selectionSource || 'connected_partner',
+    selection_source: selectionSource,
     partner_relationship_id: selection.relationshipId || null,
     organisation_id: scope.organisationId,
     workspace_unit_id: scope.workspaceUnitId,
@@ -20719,7 +20781,7 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
     const fallbackPayload = {
       transaction_id: transactionId,
       role_type: selection.roleType,
-      selection_source: selection.selectionSource || 'manual',
+      selection_source: selectionSource,
       partner_name: selection.companyName || selection.contactPerson || null,
       contact_person: selection.contactPerson || selection.companyName || null,
       email_address: selection.email || null,
@@ -20753,8 +20815,8 @@ async function upsertTransactionRoleplayerSelection(client, { transactionId, sel
     teamId: scope.teamId,
     sourceModule: 'transaction',
     sourceEvent: 'upsert_transaction_roleplayer_selection',
-    assignmentSource: selection.selectionSource || 'connected_partner',
-    selectionSource: selection.selectionSource || 'connected_partner',
+    assignmentSource: selectionSource,
+    selectionSource,
     actorUserId: actorProfile?.userId || null,
     previousOwnerId: null,
     fallbackUsed: selection.assignmentStatus === 'pending_assignment',
@@ -22057,11 +22119,11 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         financeManagedBy: setup.financeManagedBy,
       })
   const autoResolvedSelections = await resolvePartnerRoutingSelections({
-    sourceOrganisationId: normalizeText(sourceContext.organisationId || sourceContext.workspaceId || actorProfile.workspaceId || actorProfile.organisationId || ''),
-    sourceUserId: normalizeText(sourceContext.agentUserId || sourceContext.userId || actorProfile.userId || ''),
-    sourceTeamId: normalizeText(sourceContext.teamId || sourceContext.team_id || ''),
-    sourceBranchId: normalizeText(sourceContext.branchId || sourceContext.branch_id || setup.assignedBranchId || ''),
-    sourceRegionId: normalizeText(sourceContext.regionId || sourceContext.region_id || ''),
+    sourceOrganisationId: normalizeTextValue(sourceContext.organisationId || sourceContext.workspaceId || actorProfile.workspaceId || actorProfile.organisationId || ''),
+    sourceUserId: normalizeTextValue(sourceContext.agentUserId || sourceContext.userId || actorProfile.userId || ''),
+    sourceTeamId: normalizeTextValue(sourceContext.teamId || sourceContext.team_id || ''),
+    sourceBranchId: normalizeTextValue(sourceContext.branchId || sourceContext.branch_id || setup.assignedBranchId || ''),
+    sourceRegionId: normalizeTextValue(sourceContext.regionId || sourceContext.region_id || ''),
     moduleContext: {
       role: actorRole,
       appRole: actorProfile.role,
@@ -27802,11 +27864,11 @@ export async function saveTransaction({
     let commissionSnapshotWithContext = autoRecalculatedSnapshot
     if (!normalizeNullableText(commissionSnapshotWithContext.organisationId)) {
       try {
-        const context = await ensureOrganisationContext(client)
-        if (context?.organisation?.id) {
+        const context = await resolveActiveProfileContext(client)
+        if (context?.workspaceId || context?.organisationId) {
           commissionSnapshotWithContext = {
             ...commissionSnapshotWithContext,
-            organisationId: context.organisation.id,
+            organisationId: context.workspaceId || context.organisationId,
           }
         }
       } catch {
@@ -34512,7 +34574,7 @@ export async function fetchClientPortalCoreByToken(token) {
     }
   }
 
-  const stage = normalizeStage(transaction.stage, unit?.status)
+  const stage = normalizeStage(transaction.stage, unitQuery.data?.status)
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
   const minimalChecklist = buildRequiredChecklistFromRows([], documents)
   const buyerRequirementProfile = getBuyerRequirementProfile({
