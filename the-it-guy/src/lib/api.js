@@ -22109,34 +22109,41 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const deferFinanceType = Boolean(options?.deferFinanceType)
   const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [])
   const sourceContext = options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {}
-  const autoRoutingRoleTypes = Array.isArray(options?.partnerRoleTypes) && options.partnerRoleTypes.length
-    ? options.partnerRoleTypes.map((roleType) => normalizeRoleType(roleType)).filter(Boolean)
-    : inferUniversalPartnerRoutingRoleTypes({
-        role: actorRole,
-        workspaceRole: actorProfile.role,
-        appRole: actorProfile.role,
-        transactionType,
-        financeManagedBy: setup.financeManagedBy,
+  const shouldAutoResolveRolePlayers = options?.disableAutoPartnerRouting !== true
+  const autoRoutingRoleTypes = shouldAutoResolveRolePlayers
+    ? (
+        Array.isArray(options?.partnerRoleTypes) && options.partnerRoleTypes.length
+          ? options.partnerRoleTypes.map((roleType) => normalizeRoleType(roleType)).filter(Boolean)
+          : inferUniversalPartnerRoutingRoleTypes({
+              role: actorRole,
+              workspaceRole: actorProfile.role,
+              appRole: actorProfile.role,
+              transactionType,
+              financeManagedBy: setup.financeManagedBy,
+            })
+      )
+    : []
+  const autoResolvedSelections = shouldAutoResolveRolePlayers
+    ? await resolvePartnerRoutingSelections({
+        sourceOrganisationId: normalizeTextValue(sourceContext.organisationId || sourceContext.workspaceId || actorProfile.workspaceId || actorProfile.organisationId || ''),
+        sourceUserId: normalizeTextValue(sourceContext.agentUserId || sourceContext.userId || actorProfile.userId || ''),
+        sourceTeamId: normalizeTextValue(sourceContext.teamId || sourceContext.team_id || ''),
+        sourceBranchId: normalizeTextValue(sourceContext.branchId || sourceContext.branch_id || setup.assignedBranchId || ''),
+        sourceRegionId: normalizeTextValue(sourceContext.regionId || sourceContext.region_id || ''),
+        moduleContext: {
+          role: actorRole,
+          appRole: actorProfile.role,
+          workspaceRole: actorProfile.role,
+          transactionType,
+          financeManagedBy: setup.financeManagedBy,
+        },
+        targetRoleTypes: autoRoutingRoleTypes,
+        routingRules: Array.isArray(options?.routingRules) ? options.routingRules : undefined,
+        partnerConnections: Array.isArray(options?.partnerConnections) ? options.partnerConnections : undefined,
+        partnerPeopleByRelationshipId: options?.partnerPeopleByRelationshipId || undefined,
+        transactionOverride: options?.transactionOverride || null,
       })
-  const autoResolvedSelections = await resolvePartnerRoutingSelections({
-    sourceOrganisationId: normalizeTextValue(sourceContext.organisationId || sourceContext.workspaceId || actorProfile.workspaceId || actorProfile.organisationId || ''),
-    sourceUserId: normalizeTextValue(sourceContext.agentUserId || sourceContext.userId || actorProfile.userId || ''),
-    sourceTeamId: normalizeTextValue(sourceContext.teamId || sourceContext.team_id || ''),
-    sourceBranchId: normalizeTextValue(sourceContext.branchId || sourceContext.branch_id || setup.assignedBranchId || ''),
-    sourceRegionId: normalizeTextValue(sourceContext.regionId || sourceContext.region_id || ''),
-    moduleContext: {
-      role: actorRole,
-      appRole: actorProfile.role,
-      workspaceRole: actorProfile.role,
-      transactionType,
-      financeManagedBy: setup.financeManagedBy,
-    },
-    targetRoleTypes: autoRoutingRoleTypes,
-    routingRules: Array.isArray(options?.routingRules) ? options.routingRules : undefined,
-    partnerConnections: Array.isArray(options?.partnerConnections) ? options.partnerConnections : undefined,
-    partnerPeopleByRelationshipId: options?.partnerPeopleByRelationshipId || undefined,
-    transactionOverride: options?.transactionOverride || null,
-  })
+    : []
   const mergedRolePlayerSelections = [
     ...rolePlayerSelections,
     ...autoResolvedSelections.filter(

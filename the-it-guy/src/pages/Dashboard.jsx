@@ -17,6 +17,16 @@ import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import SummaryCards from '../components/SummaryCards'
 import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
 import BridgeCommandCenterDashboard from '../components/dashboard/BridgeCommandCenterDashboard'
+import {
+  AttentionRequiredCard,
+  CommissionForecastCard,
+  DashboardKpiStrip,
+  MobileDashboardShell,
+  RecentActivityCard,
+  RecentTransactionsCard,
+  TransactionFlow,
+  TransactionHealthCard,
+} from '../components/dashboard/PremiumDashboard'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import { PillToggle } from '../components/ui/FilterBar'
 import {
@@ -25,6 +35,9 @@ import {
   selectStageAging,
 } from '../core/transactions/developerSelectors'
 import {
+  selectAgentAttention,
+  selectAgentPipeline,
+  selectAgentRecentActivity,
   selectAgentSummary,
 } from '../core/transactions/agentSelectors'
 import {
@@ -756,6 +769,70 @@ function buildTransferWorkflowSteps(mainStage, signalText) {
   }
 
   return createWorkflowSteps(SHARED_TRANSFER_WORKFLOW_STEPS, completedUntil, activeIndex)
+}
+
+function buildPremiumAgentFlowStages({ agentPerformanceMetrics = {}, agentPipeline = [] } = {}) {
+  const pipelineByKey = new Map((Array.isArray(agentPipeline) ? agentPipeline : []).map((stage) => [stage.key, stage]))
+  const buyerFunnel = agentPerformanceMetrics.conversionFunnel?.buyer || []
+  const sellerFunnel = agentPerformanceMetrics.conversionFunnel?.seller || []
+  const buyerByKey = new Map(buyerFunnel.map((stage) => [stage.key, stage]))
+  const sellerByKey = new Map(sellerFunnel.map((stage) => [stage.key, stage]))
+  const leadCount = Number(buyerByKey.get('leads')?.count || 0) + Number(sellerByKey.get('leads')?.count || 0)
+  const totalBase = Math.max(1, leadCount || agentPerformanceMetrics.totalDeals || 0)
+  const stageRows = [
+    { key: 'lead', label: 'Lead', count: leadCount, tone: 'blue', icon: Users },
+    { key: 'mandate', label: 'Mandate', count: Number(sellerByKey.get('mandate_signed')?.count || 0), tone: 'blue', icon: FileCheck2 },
+    { key: 'viewing', label: 'Viewing', count: Number(buyerByKey.get('viewings')?.count || 0), tone: 'slate', icon: CalendarDays },
+    { key: 'offer', label: 'Offer', count: Number(buyerByKey.get('offers')?.count || 0), tone: 'orange', icon: Banknote },
+    { key: 'otp', label: 'OTP', count: Number(pipelineByKey.get('OTP')?.count || 0), tone: 'green', icon: FileCheck2 },
+    { key: 'finance', label: 'Finance', count: Number(pipelineByKey.get('FIN')?.count || 0), tone: 'slate', icon: Banknote },
+    { key: 'transfer', label: 'Transfer', count: Number(pipelineByKey.get('ATTY')?.count || 0) + Number(pipelineByKey.get('XFER')?.count || 0), tone: 'purple', icon: ArrowRightLeft },
+    { key: 'registration', label: 'Registration', count: Number(pipelineByKey.get('REG')?.count || 0), tone: 'green', icon: FileCheck2 },
+  ]
+
+  return stageRows.map((stage, index) => {
+    const rawPercentage = index === 0 ? 100 : Math.round((Number(stage.count || 0) / totalBase) * 100)
+    return {
+      ...stage,
+      count: formatKpiCount(stage.count),
+      percentage: `${rawPercentage}%`,
+      rawPercentage,
+    }
+  })
+}
+
+function buildPremiumAgentForecast(rows = []) {
+  const now = new Date()
+  const thisMonthStart = startOfMonth(now)
+  const nextMonthStart = new Date(thisMonthStart.getFullYear(), thisMonthStart.getMonth() + 1, 1)
+  const afterNextMonthStart = new Date(thisMonthStart.getFullYear(), thisMonthStart.getMonth() + 2, 1)
+  const sixtyDayEnd = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000)
+  const buckets = {
+    thisMonth: 0,
+    nextMonth: 0,
+    sixtyDays: 0,
+  }
+
+  for (const row of rows) {
+    const amount = resolveAgentCommissionAmount(row).amount
+    if (!amount) continue
+    const expectedDate = getDateValue(
+      row?.transaction?.expected_transfer_date ||
+        row?.transaction?.target_registration_date ||
+        row?.transaction?.expected_registration_date ||
+        row?.transaction?.registration_date ||
+        row?.transaction?.updated_at,
+    ) || now
+    if (expectedDate >= thisMonthStart && expectedDate < nextMonthStart) buckets.thisMonth += amount
+    if (expectedDate >= nextMonthStart && expectedDate < afterNextMonthStart) buckets.nextMonth += amount
+    if (expectedDate >= startOfDay(now) && expectedDate < sixtyDayEnd) buckets.sixtyDays += amount
+  }
+
+  return [
+    { key: 'this_month', label: 'This Month', rawValue: buckets.thisMonth, value: formatKpiCurrency(buckets.thisMonth), trend: null, trendLabel: 'expected' },
+    { key: 'next_month', label: 'Next Month', rawValue: buckets.nextMonth, value: formatKpiCurrency(buckets.nextMonth), trend: null, trendLabel: 'expected' },
+    { key: 'sixty_day', label: '60 Day Expected Commission', rawValue: buckets.sixtyDays, value: formatKpiCurrency(buckets.sixtyDays), trend: null, trendLabel: 'expected' },
+  ]
 }
 
 function Dashboard() {
@@ -2632,6 +2709,171 @@ function Dashboard() {
       return !hasNextAction || days >= 7
     }).length
   }, [agentDashboardPipelineRows, isAgentRole])
+  const agentPipelineStages = useMemo(
+    () => (isAgentRole ? selectAgentPipeline(agentScopedRows) : []),
+    [agentScopedRows, isAgentRole],
+  )
+  const agentAttentionRows = useMemo(
+    () => (isAgentRole ? selectAgentAttention(agentScopedRows) : []),
+    [agentScopedRows, isAgentRole],
+  )
+  const agentRecentActivityRows = useMemo(
+    () => (isAgentRole ? selectAgentRecentActivity(agentScopedRows, 6) : []),
+    [agentScopedRows, isAgentRole],
+  )
+  const agentPremiumModel = useMemo(() => {
+    if (!isAgentRole || isPrincipalAgentView) return null
+    const sharedDashboard = agentSharedData?.dashboard || {}
+    const listingCount = Number(sharedDashboard.listingCount ?? agentPerformanceMetrics.listingCount) || 0
+    const activeDeals = Number(sharedDashboard.activeDealCount ?? agentPerformanceMetrics.openDeals) || 0
+    const registeredCount = Number(sharedDashboard.registeredCount ?? agentPerformanceMetrics.registeredDeals) || 0
+    const expectedCommission = Number(sharedDashboard.commissionEarned ?? sharedDashboard.estimatedCommission ?? agentPerformanceMetrics.commissionEarned) || 0
+    const sellerFunnel = agentPerformanceMetrics.conversionFunnel?.seller || []
+    const mandateCount = sellerFunnel.find((stage) => stage.key === 'mandate_signed')?.count || 0
+    const pipelineCounts = agentPipelineStages.map((stage) => Number(stage.count || 0))
+    const forecastRows = buildPremiumAgentForecast(agentDashboardPipelineRows)
+    const forecastValues = forecastRows.map((row) => row.rawValue)
+    const attentionCount = Number(AGENT_SUMMARY.requiresAttention || agentAttentionRows.length || 0)
+    const averageDaysToNextStage = agentDashboardPipelineRows.length
+      ? Math.round(agentDashboardPipelineRows.reduce((sum, row) => sum + getDaysSinceRowUpdate(row), 0) / agentDashboardPipelineRows.length)
+      : null
+    const awaitingBuyer = Number(AGENT_SUMMARY.awaitingBuyerAction || 0)
+    const awaitingDocuments = Number(AGENT_SUMMARY.missingDocuments || 0)
+    const awaitingBond = agentDashboardPipelineRows.filter((row) => {
+      const stage = getRowMainStage(row)
+      const signal = toSignalText(row)
+      return stage === 'FIN' || signal.includes('bond') || signal.includes('bank')
+    }).length
+    const awaitingAttorney = agentDashboardPipelineRows.filter((row) => {
+      const stage = getRowMainStage(row)
+      return (stage === 'ATTY' || stage === 'XFER') && getDaysSinceRowUpdate(row) >= 7
+    }).length
+    const rowByTransactionId = new Map(agentDashboardPipelineRows.map((row) => [row?.transaction?.id, row]))
+    const recentTransactions = activeTransactionCards.slice(0, 6).map((item) => {
+      const sourceRow = rowByTransactionId.get(item.transactionId) || null
+      const daysInStage = sourceRow ? getDaysSinceRowUpdate(sourceRow) : 0
+      const missing = Number(item.missingCount || sourceRow?.documentSummary?.missingCount || 0)
+      const risk = missing > 0 || daysInStage >= 10 ? (daysInStage >= 14 ? 'critical' : 'attention') : 'normal'
+      const commission = sourceRow ? resolveAgentCommissionAmount(sourceRow).amount : 0
+      return {
+        id: item.transactionId || item.unitId || item.id,
+        transactionId: item.transactionId,
+        unitId: item.unitId,
+        title: item.propertyIdentifier || item.developmentName || 'Transaction',
+        subtitle: item.buyerName || 'Buyer pending',
+        stage: item.stageLabel || 'In progress',
+        value: currency.format(Number(item.dealValue || 0)),
+        commission: formatKpiCurrency(commission),
+        daysInStage: `${daysInStage}d`,
+        risk,
+        riskLabel: risk === 'critical' ? 'Critical' : risk === 'attention' ? 'Attention' : 'On track',
+        nextAction: item.nextAction || 'Next action pending',
+      }
+    })
+
+    return {
+      kpis: [
+        {
+          key: 'active_transactions',
+          label: 'My Active Transactions',
+          value: formatKpiCount(activeDeals || AGENT_SUMMARY.activeTransactions),
+          trend: null,
+          icon: ArrowRightLeft,
+          tone: 'blue',
+          sparkline: pipelineCounts,
+        },
+        {
+          key: 'expected_commission',
+          label: 'Expected Commission',
+          value: formatKpiCurrency(expectedCommission),
+          trend: null,
+          icon: Banknote,
+          tone: 'green',
+          sparkline: forecastValues,
+        },
+        {
+          key: 'listings_mandates',
+          label: 'Listings / Mandates',
+          value: `${formatKpiCount(listingCount)} / ${formatKpiCount(mandateCount)}`,
+          trend: null,
+          icon: Building2,
+          tone: 'orange',
+          sparkline: [listingCount, mandateCount, registeredCount],
+        },
+        {
+          key: 'tasks_due',
+          label: 'Tasks Due / Attention Required',
+          value: formatKpiCount(AGENT_FOLLOW_UPS_DUE || attentionCount),
+          trend: null,
+          icon: FileCheck2,
+          tone: attentionCount || AGENT_FOLLOW_UPS_DUE ? 'red' : 'purple',
+          sparkline: [awaitingBuyer, awaitingDocuments, AGENT_FOLLOW_UPS_DUE || attentionCount],
+        },
+      ],
+      health: {
+        total: activeDeals || AGENT_SUMMARY.activeTransactions,
+        movingNormally: Math.max(0, (activeDeals || AGENT_SUMMARY.activeTransactions) - attentionCount),
+        attentionRequired: attentionCount,
+        criticalDelays: AGENT_FOLLOW_UPS_DUE,
+        averageRegistrationTime: averageDaysToNextStage,
+        averageRegistrationTrend: null,
+      },
+      attention: [
+        {
+          key: 'buyer_documents',
+          label: 'Buyers waiting on documents',
+          reason: 'Buyer FICA or onboarding outstanding',
+          count: awaitingDocuments || awaitingBuyer,
+          tone: 'red',
+          icon: Users,
+        },
+        {
+          key: 'seller_documents',
+          label: 'Seller documents outstanding',
+          reason: 'Mandate or seller document follow-up',
+          count: Math.max(0, Number(mandateCount || 0) - Number(listingCount || 0)),
+          tone: 'orange',
+          icon: FileCheck2,
+        },
+        {
+          key: 'bond_feedback',
+          label: 'Bond feedback pending',
+          reason: 'Bank or originator update required',
+          count: awaitingBond,
+          tone: 'blue',
+          icon: Banknote,
+        },
+        {
+          key: 'attorney_update',
+          label: 'Attorney update required',
+          reason: 'Transfer stage stale or waiting',
+          count: awaitingAttorney,
+          tone: 'purple',
+          icon: ArrowRightLeft,
+        },
+        {
+          key: 'tasks_overdue',
+          label: 'Tasks overdue',
+          reason: 'No next action or stale follow-up',
+          count: AGENT_FOLLOW_UPS_DUE,
+          tone: 'red',
+          icon: FileCheck2,
+        },
+      ],
+      flow: buildPremiumAgentFlowStages({ agentPerformanceMetrics, agentPipeline: agentPipelineStages }),
+      forecastRows,
+      forecastValues,
+      recentTransactions,
+      recentActivity: agentRecentActivityRows.map((item) => ({
+        id: item.transactionId || item.unitId || `${item.developmentName}-${item.unitNumber}`,
+        type: 'transaction',
+        title: `${item.stageLabel} updated`,
+        subtitle: `${item.developmentName} • ${item.buyerName}`,
+        time: formatRelativeTime(item.updatedAt),
+        tone: 'blue',
+      })),
+    }
+  }, [AGENT_FOLLOW_UPS_DUE, AGENT_SUMMARY.activeTransactions, AGENT_SUMMARY.awaitingBuyerAction, AGENT_SUMMARY.missingDocuments, AGENT_SUMMARY.requiresAttention, activeTransactionCards, agentAttentionRows.length, agentDashboardPipelineRows, agentPerformanceMetrics, agentPipelineStages, agentRecentActivityRows, agentSharedData?.dashboard, isAgentRole, isPrincipalAgentView])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
     if (isBondRole) return '/bond/pipeline'
@@ -3215,6 +3457,53 @@ function renderActiveTransactionsBlock({
 
           {isAgentRole ? (
             <>
+              {!isPrincipalAgentView && agentPremiumModel ? (
+                <section className="mt-6">
+                  <MobileDashboardShell>
+                    <DashboardKpiStrip items={agentPremiumModel.kpis} />
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                      <TransactionHealthCard
+                        {...agentPremiumModel.health}
+                        onViewAll={() => navigate('/transactions')}
+                      />
+                      <AttentionRequiredCard
+                        rows={agentPremiumModel.attention.map((row) => ({ ...row, onClick: () => navigate('/transactions') }))}
+                        title="Agent Attention Required"
+                        onViewAll={() => navigate('/transactions')}
+                      />
+                    </div>
+                    <TransactionFlow
+                      stages={agentPremiumModel.flow}
+                      onViewPipeline={() => navigate('/pipeline')}
+                    />
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+                      <CommissionForecastCard
+                        title="Agent Commission Forecast"
+                        rows={agentPremiumModel.forecastRows}
+                        chartPoints={agentPremiumModel.forecastValues}
+                        onViewForecast={() => navigate('/reports')}
+                      />
+                      <RecentActivityCard
+                        title="Agent Recent Activity"
+                        rows={agentPremiumModel.recentActivity}
+                        onViewAll={() => navigate('/transactions')}
+                      />
+                    </div>
+                    <RecentTransactionsCard
+                      rows={agentPremiumModel.recentTransactions}
+                      onOpenTransaction={(item) => {
+                        if (item.unitId) {
+                          navigate(`/units/${item.unitId}`, { state: { headerTitle: 'Transaction' } })
+                        } else if (item.transactionId) {
+                          navigate(`/transactions/${item.transactionId}`)
+                        }
+                      }}
+                    />
+                  </MobileDashboardShell>
+                </section>
+              ) : null}
+
+              {isPrincipalAgentView ? (
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 {isPrincipalAgentView ? (
                   principalExecutiveAnalytics ? (
@@ -3365,6 +3654,7 @@ function renderActiveTransactionsBlock({
                   </div>
                 )}
               </section>
+              ) : null}
 
               {isPrincipalAgentView ? (
                 <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>

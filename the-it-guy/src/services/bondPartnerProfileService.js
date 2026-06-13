@@ -1,3 +1,4 @@
+import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { normalizeOrganisationPartnerVisibilityLevel } from '../lib/partnersRepository'
 
@@ -43,6 +44,192 @@ const LOCKED_SECTIONS = [
   },
 ]
 const INVITE_RELATIONSHIP_PREFIX = 'partner-invite-relationship-'
+const importMetaEnv = import.meta.env || {}
+const PARTNER_PROFILE_DEMO_MODE = Boolean(
+  MOCK_DATA_ENABLED ||
+    (importMetaEnv.DEV && String(importMetaEnv.VITE_ENABLE_MOCK_DATA || '').trim().toLowerCase() === 'true'),
+)
+const MOCK_PARTNER_PEOPLE_BY_ORGANISATION_ID = Object.freeze({
+  'demo-ooba': [
+    {
+      id: '10000000-0000-4000-8000-000000000001',
+      userId: '10000000-0000-4000-8000-000000000001',
+      label: 'Warren Jacobs',
+      fullName: 'Warren Jacobs',
+      email: 'warren.jacobs@ooba.demo',
+      phone: '082 410 1101',
+      role: 'bond_consultant',
+      organisationRole: 'bond_consultant',
+      branchId: '20000000-0000-4000-8000-000000000001',
+      branchName: 'East Rand Branch',
+      regionId: '30000000-0000-4000-8000-000000000001',
+      regionName: 'Gauteng',
+      teamId: '40000000-0000-4000-8000-000000000001',
+      teamName: 'Residential Team',
+      department: 'Bond Consulting',
+      title: 'Senior Bond Consultant',
+      isActive: true,
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000002',
+      userId: '10000000-0000-4000-8000-000000000002',
+      label: 'Melissa Botha',
+      fullName: 'Melissa Botha',
+      email: 'melissa.botha@ooba.demo',
+      phone: '082 410 1102',
+      role: 'bond_consultant',
+      organisationRole: 'bond_consultant',
+      branchId: '20000000-0000-4000-8000-000000000002',
+      branchName: 'Johannesburg Central',
+      regionId: '30000000-0000-4000-8000-000000000001',
+      regionName: 'Gauteng',
+      teamId: '40000000-0000-4000-8000-000000000002',
+      teamName: 'Priority Deals',
+      department: 'Bond Consulting',
+      title: 'Bond Consultant',
+      isActive: true,
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000003',
+      userId: '10000000-0000-4000-8000-000000000003',
+      label: 'Jacques Botha',
+      fullName: 'Jacques Botha',
+      email: 'jacques.botha@ooba.demo',
+      phone: '082 410 1103',
+      role: 'bond_processor',
+      organisationRole: 'bond_processor',
+      branchId: '20000000-0000-4000-8000-000000000001',
+      branchName: 'East Rand Branch',
+      regionId: '30000000-0000-4000-8000-000000000001',
+      regionName: 'Gauteng',
+      teamId: '40000000-0000-4000-8000-000000000003',
+      teamName: 'Processing Team',
+      department: 'Fulfilment',
+      title: 'Bond Processor',
+      isActive: true,
+    },
+  ],
+  'demo-betterbond': [
+    {
+      id: '10000000-0000-4000-8000-000000000011',
+      userId: '10000000-0000-4000-8000-000000000011',
+      label: 'Naledi Mokoena',
+      fullName: 'Naledi Mokoena',
+      email: 'naledi.mokoena@betterbond.demo',
+      phone: '082 410 1111',
+      role: 'bond_consultant',
+      organisationRole: 'bond_consultant',
+      branchId: '20000000-0000-4000-8000-000000000011',
+      branchName: 'Pretoria East',
+      regionId: '30000000-0000-4000-8000-000000000001',
+      regionName: 'Gauteng',
+      teamId: '40000000-0000-4000-8000-000000000011',
+      teamName: 'Residential Team',
+      department: 'Bond Consulting',
+      title: 'Bond Consultant',
+      isActive: true,
+    },
+  ],
+  'demo-tuckers': [
+    {
+      id: '10000000-0000-4000-8000-000000000101',
+      userId: '10000000-0000-4000-8000-000000000101',
+      label: 'Michelle Botha',
+      fullName: 'Michelle Botha',
+      email: 'michelle.botha@tuckers.demo',
+      phone: '082 410 1201',
+      role: 'transfer_attorney',
+      organisationRole: 'attorney',
+      branchId: '20000000-0000-4000-8000-000000000101',
+      branchName: 'Sandton Office',
+      regionId: '30000000-0000-4000-8000-000000000001',
+      regionName: 'Gauteng',
+      teamId: '40000000-0000-4000-8000-000000000101',
+      teamName: 'Transfers',
+      department: 'Transfers',
+      title: 'Transfer Attorney',
+      isActive: true,
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000102',
+      userId: '10000000-0000-4000-8000-000000000102',
+      label: 'Christine Mokoena',
+      fullName: 'Christine Mokoena',
+      email: 'christine.mokoena@tuckers.demo',
+      phone: '082 410 1202',
+      role: 'bond_attorney',
+      organisationRole: 'attorney',
+      branchId: '20000000-0000-4000-8000-000000000101',
+      branchName: 'Sandton Office',
+      regionId: '30000000-0000-4000-8000-000000000001',
+      regionName: 'Gauteng',
+      teamId: '40000000-0000-4000-8000-000000000102',
+      teamName: 'Bonds',
+      department: 'Bonds',
+      title: 'Bond Registration Attorney',
+      isActive: true,
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000103',
+      userId: '10000000-0000-4000-8000-000000000103',
+      label: 'Amy Daniels',
+      fullName: 'Amy Daniels',
+      email: 'amy.daniels@tuckers.demo',
+      phone: '082 410 1203',
+      role: 'cancellation_attorney',
+      organisationRole: 'attorney',
+      branchId: '20000000-0000-4000-8000-000000000102',
+      branchName: 'Bryanston Office',
+      regionId: '30000000-0000-4000-8000-000000000001',
+      regionName: 'Gauteng',
+      teamId: '40000000-0000-4000-8000-000000000103',
+      teamName: 'Cancellations',
+      department: 'Cancellations',
+      title: 'Cancellation Attorney',
+      isActive: true,
+    },
+    {
+      id: '10000000-0000-4000-8000-000000000104',
+      userId: '10000000-0000-4000-8000-000000000104',
+      label: 'Ayesha Khan',
+      fullName: 'Ayesha Khan',
+      email: 'ayesha.khan@tuckers.demo',
+      phone: '082 410 1204',
+      role: 'paralegal',
+      organisationRole: 'support_staff',
+      branchId: '20000000-0000-4000-8000-000000000101',
+      branchName: 'Sandton Office',
+      regionId: '30000000-0000-4000-8000-000000000001',
+      regionName: 'Gauteng',
+      teamId: '40000000-0000-4000-8000-000000000104',
+      teamName: 'Matter Support',
+      department: 'Paralegal Support',
+      title: 'Conveyancing Paralegal',
+      isActive: true,
+    },
+  ],
+  'demo-daagency': [
+    {
+      id: '10000000-0000-4000-8000-000000000201',
+      userId: '10000000-0000-4000-8000-000000000201',
+      label: 'John Smith',
+      fullName: 'John Smith',
+      email: 'john.smith@daagency.demo',
+      phone: '082 410 1301',
+      role: 'agent',
+      organisationRole: 'agent',
+      branchId: '20000000-0000-4000-8000-000000000201',
+      branchName: 'Table View Branch',
+      regionId: '30000000-0000-4000-8000-000000000201',
+      regionName: 'Western Cape',
+      teamId: '40000000-0000-4000-8000-000000000201',
+      teamName: 'Residential Sales',
+      department: 'Sales',
+      title: 'Property Practitioner',
+      isActive: true,
+    },
+  ],
+})
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -57,6 +244,21 @@ function normalizeNullableUuid(value = '') {
 
 function normalizeLower(value = '') {
   return normalizeText(value).toLowerCase()
+}
+
+function getMockOperationalPeoplePayload(partnerOrganisationId = '') {
+  const safeOrganisationId = normalizeText(partnerOrganisationId)
+  const people = Array.isArray(MOCK_PARTNER_PEOPLE_BY_ORGANISATION_ID[safeOrganisationId])
+    ? MOCK_PARTNER_PEOPLE_BY_ORGANISATION_ID[safeOrganisationId].map((person) => ({ ...person }))
+    : []
+  return {
+    people,
+    message: people.length
+      ? ''
+      : 'No operational people are visible for this organisation connection yet. Set visibility permissions to expose specific people to this partner relationship.',
+    source: people.length ? 'mock_directory' : 'empty',
+    blockedByRls: false,
+  }
 }
 
 function isRowLevelSecurityError(error) {
@@ -480,6 +682,33 @@ function normalizePeoplePayload(payload = {}) {
   }
 }
 
+function flattenPeoplePayload(payload = {}) {
+  const peoplePayload = normalizePeoplePayload(payload)
+  return [
+    ...(Array.isArray(peoplePayload.groups.principal) ? peoplePayload.groups.principal : []),
+    ...(Array.isArray(peoplePayload.groups.branchManagers) ? peoplePayload.groups.branchManagers : []),
+    ...(Array.isArray(peoplePayload.groups.agents) ? peoplePayload.groups.agents : []),
+  ].map((person = {}) => ({
+    id: normalizeText(person.userId || person.user_id),
+    userId: normalizeText(person.userId || person.user_id),
+    label: normalizeText(person.fullName || person.full_name || person.email) || 'Partner user',
+    fullName: normalizeText(person.fullName || person.full_name || person.email) || 'Partner user',
+    email: normalizeText(person.email),
+    phone: normalizeText(person.phone),
+    role: normalizeText(person.role || person.organisationRole || person.organisation_role),
+    organisationRole: normalizeText(person.organisationRole || person.organisation_role || person.role),
+    branchId: normalizeText(person.branchId || person.branch_id),
+    branchName: normalizeText(person.branchName || person.branch_name),
+    regionId: normalizeText(person.regionId || person.region_id),
+    regionName: normalizeText(person.regionName || person.region_name),
+    teamId: normalizeText(person.teamId || person.team_id),
+    teamName: normalizeText(person.teamName || person.team_name),
+    department: normalizeText(person.department),
+    title: normalizeText(person.title),
+    isActive: person.isActive !== false,
+  }))
+}
+
 function buildPeopleGroupRow(user = {}, branchName = '', profile = null) {
   const profileName = normalizeText(profile?.full_name || profile?.fullName || '')
   const firstName = normalizeText(user.first_name || user.firstName || profile?.first_name || profile?.firstName)
@@ -901,6 +1130,144 @@ export async function getBondPartnerPeople(relationshipId = '') {
     relationship,
     currentOrganisationId,
   })
+}
+
+export async function fetchPartnerOperationalPeople(partnerOrganisationId = '', relationshipId = '') {
+  const emptyMessage =
+    'No operational people are visible for this organisation connection yet. Set visibility permissions to expose specific people to this partner relationship.'
+
+  if (PARTNER_PROFILE_DEMO_MODE) {
+    return getMockOperationalPeoplePayload(partnerOrganisationId)
+  }
+
+  if (!isSupabaseConfigured || !supabase) {
+    return {
+      people: [],
+      message: emptyMessage,
+      source: 'empty',
+      blockedByRls: false,
+    }
+  }
+
+  const safeRelationshipId = normalizeText(relationshipId)
+  if (safeRelationshipId) {
+    try {
+      const payload = await getBondPartnerPeople(safeRelationshipId)
+      const people = flattenPeoplePayload(payload)
+      return {
+        people,
+        message: people.length ? '' : emptyMessage,
+        source: 'relationship_permissions',
+        blockedByRls: false,
+      }
+    } catch (error) {
+      if (!isRowLevelSecurityError(error)) {
+        // Continue to the direct organisation fallback if relationship-scoped visibility is unavailable.
+      } else {
+        return {
+          people: [],
+          message: emptyMessage,
+          source: 'empty',
+          blockedByRls: true,
+        }
+      }
+    }
+  }
+
+  const safeOrganisationId = normalizeNullableUuid(partnerOrganisationId)
+  if (!safeOrganisationId) {
+    return {
+      people: [],
+      message: emptyMessage,
+      source: 'empty',
+      blockedByRls: false,
+    }
+  }
+
+  try {
+    const [usersResult, branchesResult, profilesResult] = await Promise.all([
+      supabase
+        .from('organisation_users')
+        .select('user_id, first_name, last_name, email, phone_number, role, workspace_role, organisation_role, status, branch_id, primary_branch_id')
+        .eq('organisation_id', safeOrganisationId)
+        .eq('status', 'active'),
+      supabase
+        .from('organisation_branches')
+        .select('id, name')
+        .eq('organisation_id', safeOrganisationId),
+      supabase
+        .from('profiles')
+        .select('id, full_name, first_name, last_name, email, phone_number, status'),
+    ])
+
+    if (usersResult.error) {
+      if (isRowLevelSecurityError(usersResult.error)) {
+        return {
+          people: [],
+          message: emptyMessage,
+          source: 'empty',
+          blockedByRls: true,
+        }
+      }
+      throw usersResult.error
+    }
+    if (branchesResult.error && !isRowLevelSecurityError(branchesResult.error)) throw branchesResult.error
+    if (profilesResult.error && !isMissingTableError(profilesResult.error, 'profiles') && !isRowLevelSecurityError(profilesResult.error)) {
+      throw profilesResult.error
+    }
+
+    const branchNameById = new Map((branchesResult.data || []).map((row) => [normalizeText(row.id), normalizeText(row.name)]))
+    const profileByUserId = new Map((profilesResult.data || []).map((row) => [normalizeText(row.id), row]))
+
+    const people = (usersResult.data || []).map((user) => {
+      const profile = profileByUserId.get(normalizeText(user.user_id)) || null
+      const branchId = normalizeText(user.branch_id || user.primary_branch_id)
+      const branchName = branchNameById.get(branchId) || ''
+      const row = buildPeopleGroupRow(user, branchName, profile)
+      return {
+        id: normalizeText(row.user_id),
+        userId: normalizeText(row.user_id),
+        label: normalizeText(row.full_name || row.email) || 'Partner user',
+        fullName: normalizeText(row.full_name || row.email) || 'Partner user',
+        email: normalizeText(row.email),
+        phone: normalizeText(row.phone),
+        role: normalizeText(row.role || row.organisation_role),
+        organisationRole: normalizeText(row.organisation_role || row.role),
+        branchId: normalizeText(row.branch_id),
+        branchName: normalizeText(row.branch_name),
+        regionId: '',
+        regionName: '',
+        teamId: '',
+        teamName: '',
+        department: '',
+        title: '',
+        isActive: row.is_active !== false,
+      }
+    })
+
+    return {
+      people,
+      message: people.length ? '' : emptyMessage,
+      source: 'organisation_directory',
+      blockedByRls: false,
+    }
+  } catch (error) {
+    if (isRowLevelSecurityError(error)) {
+      return {
+        people: [],
+        message: emptyMessage,
+        source: 'empty',
+        blockedByRls: true,
+      }
+    }
+
+    return {
+      people: [],
+      message: emptyMessage,
+      source: 'empty',
+      blockedByRls: false,
+    }
+  }
 }
 
 export async function getBondPartnerListings(relationshipId = '') {

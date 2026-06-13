@@ -684,7 +684,18 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
     }
   }
 
-  const defaultPartners = DEMO_ORGANISATIONS.filter((item) => canConnectPartnerTypes(type, item.type)).slice(0, 3)
+  const preferredPartnerIdsByType = {
+    agency: ['demo-ooba', 'demo-tuckers', 'demo-betterbond'],
+  }
+  const preferredPartnerIds = Array.isArray(preferredPartnerIdsByType[type]) ? preferredPartnerIdsByType[type] : []
+  const eligiblePartners = DEMO_ORGANISATIONS.filter((item) => canConnectPartnerTypes(type, item.type))
+  const orderedPartners = [
+    ...preferredPartnerIds
+      .map((partnerId) => eligiblePartners.find((item) => item.id === partnerId))
+      .filter(Boolean),
+    ...eligiblePartners.filter((item) => !preferredPartnerIds.includes(item.id)),
+  ]
+  const defaultPartners = orderedPartners.slice(0, 3)
 
   return {
     relationships: defaultPartners.map((partner, index) => ({
@@ -694,9 +705,9 @@ function mapDemoRecord({ id, workspaceType = 'agency' }) {
       relationshipStatus: 'accepted',
       relationshipType: index === 0 ? 'preferred' : 'approved',
       preferred: index === 0,
-      scopeType: index === 0 ? 'branch' : 'organisation',
-      scopeId: index === 0 ? 'demo-branch-sandton' : orgId,
-      scopeName: index === 0 ? 'Sandton Branch' : 'Organisation-wide',
+      scopeType: 'organisation',
+      scopeId: orgId,
+      scopeName: 'Organisation-wide',
       visibilityLevel: index === 0 ? 'preferred_partners_only' : 'connected_partners_only',
       notes: index === 0 ? 'Primary recommended partner for new matters.' : '',
       createdAt: new Date(Date.now() - (index + 7) * 86400000).toISOString(),

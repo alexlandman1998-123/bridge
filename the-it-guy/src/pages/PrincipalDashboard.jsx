@@ -34,6 +34,18 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
+import {
+  AttentionRequiredCard as PremiumAttentionRequiredCard,
+  CommissionForecastCard,
+  DashboardKpiStrip,
+  MobileDashboardShell,
+  PerformanceCard,
+  RecentActivityCard,
+  TopPerformersCard,
+  TransactionFlow,
+  TransactionHealthCard,
+  UpcomingRegistrationsCard,
+} from '../components/dashboard/PremiumDashboard'
 import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -1945,12 +1957,307 @@ function RecentActivityFeed({ rows }) {
   )
 }
 
+function getRowByKey(rows = [], key) {
+  return (Array.isArray(rows) ? rows : []).find((row) => row?.key === key) || null
+}
+
+function buildPrincipalTransactionFlow(data = {}) {
+  const salesStages = Array.isArray(data.pipeline?.salesFunnel?.stages) ? data.pipeline.salesFunnel.stages : []
+  const funnelStages = Array.isArray(data.pipeline?.funnel) ? data.pipeline.funnel : []
+  const transactionFlow = Array.isArray(data.transactions?.flow) ? data.transactions.flow : []
+  const countFrom = (rows, keys) => {
+    const normalizedKeys = new Set(keys)
+    return rows.find((row) => normalizedKeys.has(row?.key))?.count || 0
+  }
+  const leadCount = Math.max(1, countFrom(salesStages, ['leads', 'lead']) || countFrom(funnelStages, ['leads']))
+  const stageRows = [
+    { key: 'lead', label: 'Lead', count: countFrom(salesStages, ['leads', 'lead']) || countFrom(funnelStages, ['leads']), tone: 'blue', icon: Users },
+    { key: 'mandate', label: 'Mandate', count: countFrom(salesStages, ['mandates', 'mandate']) || countFrom(funnelStages, ['mandates']), tone: 'blue', icon: FileText },
+    { key: 'viewing', label: 'Viewing', count: countFrom(salesStages, ['viewings', 'viewing']) || countFrom(funnelStages, ['viewings']), tone: 'slate', icon: Eye },
+    { key: 'offer', label: 'Offer', count: countFrom(salesStages, ['offers', 'offer']) || countFrom(funnelStages, ['offers']), tone: 'orange', icon: Tag },
+    { key: 'otp', label: 'OTP', count: countFrom(salesStages, ['otp', 'acceptedOtps']) || countFrom(transactionFlow, ['otp']), tone: 'green', icon: ShieldCheck },
+    { key: 'finance', label: 'Finance', count: countFrom(transactionFlow, ['finance']), tone: 'slate', icon: Landmark },
+    { key: 'transfer', label: 'Transfer', count: countFrom(transactionFlow, ['transfer']), tone: 'purple', icon: WalletCards },
+    { key: 'registration', label: 'Registration', count: countFrom(funnelStages, ['registrations']) || countFrom(transactionFlow, ['registration', 'complete']), tone: 'green', icon: CheckCircle2 },
+  ]
+
+  return stageRows.map((stage, index) => {
+    const rawPercentage = index === 0 ? 100 : Math.round((Number(stage.count || 0) / leadCount) * 100)
+    return {
+      ...stage,
+      count: formatCount(stage.count),
+      percentage: `${rawPercentage}%`,
+      rawPercentage,
+    }
+  })
+}
+
+function buildPrincipalPremiumModel(data = {}) {
+  const kpis = data.kpis || {}
+  const kpiTrends = kpis.trends || {}
+  const forecastChart = Array.isArray(data.revenue?.forecastChart) ? data.revenue.forecastChart : []
+  const forecastValues = forecastChart.map((row) => Number(row.expectedCommission || 0))
+  const transactionFlowCounts = (Array.isArray(data.transactions?.flow) ? data.transactions.flow : []).map((row) => Number(row.count || 0))
+  const registrationForecastValue = Number(data.revenue?.forecast?.committedRevenue || forecastValues.slice(0, 2).reduce((sum, value) => sum + value, 0) || 0)
+
+  const healthSnapshot = data.overview?.transactionHealthSnapshot || {}
+  const totalActive = Number(kpis.activeTransactions || data.transactions?.totalActive || 0)
+  const criticalDelays = Number(healthSnapshot.delayedCount || getRowByKey(data.transactions?.commandCentre, 'delayed')?.count || 0)
+  const attentionRequired = Number(healthSnapshot.atRiskCount || getRowByKey(data.pipeline?.health, 'at_risk')?.count || 0)
+  const movingNormally = Math.max(0, totalActive - Math.max(attentionRequired, criticalDelays))
+
+  const leadToOtp = data.pipeline?.salesFunnel?.leadToOtpConversion ?? 0
+  const leadToRegistration = kpis.leadToDealConversion ?? 0
+  const monthGrowth = kpiTrends.likelyRevenue ?? kpiTrends.forecastRevenue ?? null
+
+  const attentionRows = [
+    {
+      key: 'buyer',
+      label: 'Deals waiting on Buyer',
+      reason: 'FICA, documents, or signature',
+      count: Number(getRowByKey(data.pipeline?.health, 'waiting_on_buyer')?.count || getRowByKey(data.transactions?.alerts, 'buyer_docs')?.count || 0),
+      tone: 'red',
+      icon: UserRound,
+    },
+    {
+      key: 'bond',
+      label: 'Deals waiting on Bond',
+      reason: 'Pre-approval or bank feedback',
+      count: Number(getRowByKey(data.transactions?.alerts, 'bond_approval')?.count || data.attentionRequired?.financeApprovalsPending || 0),
+      tone: 'orange',
+      icon: Landmark,
+    },
+    {
+      key: 'attorney',
+      label: 'Deals waiting on Attorney',
+      reason: 'Drafts, searches, or lodgement',
+      count: Number(getRowByKey(data.transactions?.alerts, 'attorney_followup')?.count || data.attentionRequired?.attorneyDelays || 0),
+      tone: 'blue',
+      icon: BriefcaseBusiness,
+    },
+    {
+      key: 'agent',
+      label: 'Deals waiting on Agent',
+      reason: 'Follow-up or next action',
+      count: Number(getRowByKey(data.pipeline?.health, 'no_activity')?.count || data.attentionRequired?.stuckTransactions || 0),
+      tone: 'purple',
+      icon: Users,
+    },
+  ]
+  const totalAttention = attentionRows.reduce((sum, row) => sum + Number(row.count || 0), 0)
+
+  const topRevenueAgents = Array.isArray(data.revenue?.topAgents) ? data.revenue.topAgents : []
+  const agentPerformance = Array.isArray(data.agentPerformance) ? data.agentPerformance : []
+  const performersSource = topRevenueAgents.length
+    ? topRevenueAgents.map((agent) => ({
+        id: agent.agentId || agent.agentName,
+        rank: agent.rank,
+        name: agent.agentName,
+        avatarUrl: agent.avatarUrl,
+        commission: formatCurrency(agent.commission, { compact: true, empty: 'R0' }),
+        deals: formatCount(agent.count),
+        dealsLabel: 'Registrations',
+        conversion: '—',
+        trend: null,
+      }))
+    : agentPerformance.map((agent, index) => ({
+        id: agent.agentId || agent.agentName,
+        rank: index + 1,
+        name: agent.agentName,
+        avatarUrl: agent.avatarUrl,
+        commission: formatCurrency(agent.pipelineValue, { compact: true, empty: 'R0' }),
+        deals: formatCount(agent.registeredCount || agent.activeDeals),
+        dealsLabel: agent.registeredCount ? 'Registrations' : 'Deals',
+        conversion: formatPercent(agent.conversionRate, '—'),
+        trend: agent.pipelineTrend,
+      }))
+
+  const thisMonthForecast = forecastChart[0] || { expectedCommission: data.revenue?.forecast?.expectedCommission || 0 }
+  const nextMonthForecast = forecastChart[1] || { expectedCommission: 0 }
+  const sixtyDayForecast = Number(thisMonthForecast.expectedCommission || 0) + Number(nextMonthForecast.expectedCommission || 0)
+
+  return {
+    kpiItems: [
+      {
+        key: 'active_transactions',
+        label: 'Active Transactions',
+        value: formatCount(kpis.activeTransactions),
+        trend: kpiTrends.activeTransactions,
+        icon: FileText,
+        tone: 'blue',
+        sparkline: transactionFlowCounts,
+      },
+      {
+        key: 'expected_commission',
+        label: 'Expected Commission',
+        value: kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true }),
+        trend: kpiTrends.expectedCommission,
+        icon: CircleDollarSign,
+        tone: 'green',
+        sparkline: forecastValues,
+      },
+      {
+        key: 'likely_revenue',
+        label: 'Likely Revenue',
+        value: formatCurrency(kpis.likelyRevenue ?? kpis.forecastRevenue, { compact: true }),
+        trend: kpiTrends.likelyRevenue ?? kpiTrends.forecastRevenue,
+        icon: LineChart,
+        tone: 'orange',
+        sparkline: [data.revenue?.forecast?.expectedCommission, data.revenue?.forecast?.likelyRevenue, data.revenue?.forecast?.committedRevenue],
+      },
+      {
+        key: 'registration_forecast',
+        label: 'Registration Forecast',
+        value: formatCurrency(registrationForecastValue, { compact: true }),
+        trend: kpiTrends.closingThisMonth,
+        icon: CalendarDays,
+        tone: 'purple',
+        sparkline: forecastValues,
+      },
+    ],
+    health: {
+      total: totalActive,
+      movingNormally,
+      attentionRequired,
+      criticalDelays,
+      averageRegistrationTime: kpis.avgDealCycleDays,
+      averageRegistrationTrend: kpiTrends.avgDealCycleDays,
+    },
+    performance: [
+      {
+        key: 'lead_otp',
+        label: 'Lead → OTP Conversion',
+        value: formatPercent(leadToOtp),
+        percentage: leadToOtp,
+        trend: data.pipeline?.salesFunnel?.leadToOtpConversionTrend,
+        trendLabel: 'pp vs last month',
+        tone: 'blue',
+      },
+      {
+        key: 'lead_registration',
+        label: 'Lead → Registration Conversion',
+        value: formatPercent(leadToRegistration),
+        percentage: leadToRegistration,
+        trend: kpiTrends.leadToDealConversion,
+        trendLabel: 'pp vs last month',
+        tone: 'green',
+      },
+      {
+        key: 'month_growth',
+        label: 'Month Growth',
+        value: monthGrowth === null || monthGrowth === undefined ? '—' : `${monthGrowth > 0 ? '+' : ''}${Math.round(monthGrowth)}%`,
+        percentage: Math.max(0, Math.min(100, 50 + Number(monthGrowth || 0))),
+        trend: monthGrowth,
+        trendLabel: 'vs last month',
+        tone: 'purple',
+      },
+    ],
+    flowStages: buildPrincipalTransactionFlow(data),
+    attentionRows,
+    attentionSummary: totalAttention ? `${formatCount(totalAttention)} deals need action` : null,
+    performers: performersSource,
+    forecastRows: [
+      {
+        key: 'this_month',
+        label: 'This Month',
+        value: formatCurrency(thisMonthForecast.expectedCommission, { compact: true }),
+        rawValue: Number(thisMonthForecast.expectedCommission || 0),
+        trend: kpiTrends.expectedCommission,
+        trendLabel: 'vs last month',
+      },
+      {
+        key: 'next_month',
+        label: 'Next Month',
+        value: formatCurrency(nextMonthForecast.expectedCommission, { compact: true }),
+        rawValue: Number(nextMonthForecast.expectedCommission || 0),
+        trend: kpiTrends.likelyRevenue,
+        trendLabel: 'vs this month',
+      },
+      {
+        key: 'sixty_day',
+        label: '60 Day Forecast',
+        value: formatCurrency(sixtyDayForecast, { compact: true }),
+        rawValue: sixtyDayForecast,
+        trend: kpiTrends.forecastRevenue,
+        trendLabel: 'vs last 60 days',
+      },
+    ],
+    forecastValues,
+    upcoming: data.upcomingRegistrations || { count: 0, expectedCommission: 0, dailyBreakdown: [] },
+    recentActivity: (Array.isArray(data.recentActivity) ? data.recentActivity : []).map((item) => ({
+      id: item.id,
+      type: item.type,
+      title: item.title,
+      subtitle: item.subtitle,
+      time: formatTimestamp(item.createdAt),
+      tone: item.type === 'registration_confirmed' ? 'green' : item.type === 'document_uploaded' ? 'blue' : item.type === 'otp_signed' ? 'orange' : 'green',
+    })),
+  }
+}
+
+function PrincipalPremiumCommandCenter({ data, onNavigate }) {
+  const model = buildPrincipalPremiumModel(data)
+  const upcomingDays = (model.upcoming.dailyBreakdown || []).map((day) => ({
+    ...day,
+    initials: day.shortLabel || String(day.label || '').slice(0, 2),
+  }))
+
+  return (
+    <MobileDashboardShell>
+      <DashboardKpiStrip items={model.kpiItems} />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <TransactionHealthCard
+          {...model.health}
+          onViewAll={() => onNavigate('/transactions')}
+        />
+        <PerformanceCard
+          title="Agency Performance"
+          metrics={model.performance}
+          onViewReport={() => onNavigate('/reports')}
+        />
+      </div>
+      <TransactionFlow
+        stages={model.flowStages}
+        onViewPipeline={() => onNavigate('/pipeline')}
+      />
+      <div className="grid gap-4 xl:grid-cols-3">
+        <PremiumAttentionRequiredCard
+          rows={model.attentionRows.map((row) => ({ ...row, onClick: () => onNavigate('/transactions') }))}
+          summary={model.attentionSummary}
+          onViewAll={() => onNavigate('/transactions')}
+        />
+        <TopPerformersCard
+          performers={model.performers}
+          onViewLeaderboard={() => onNavigate('/agents')}
+        />
+        <CommissionForecastCard
+          rows={model.forecastRows}
+          chartPoints={model.forecastValues}
+          onViewForecast={() => onNavigate('/reports')}
+        />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <UpcomingRegistrationsCard
+          count={model.upcoming.count || 0}
+          expectedCommission={formatCurrency(model.upcoming.expectedCommission, { compact: true })}
+          dailyBreakdown={upcomingDays}
+          onViewAll={() => onNavigate('/transactions')}
+        />
+        <RecentActivityCard
+          rows={model.recentActivity}
+          onViewAll={() => onNavigate('/transactions')}
+        />
+      </div>
+    </MobileDashboardShell>
+  )
+}
+
 function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransactions: canViewAllTransactionsOverride }) {
   const { profile, currentMembership, workspaceRole, workspaceType } = useWorkspace()
   const navigate = useNavigate()
   const [dateRange, setDateRange] = useState('last_30_days')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
-  const [overviewMode, setOverviewMode] = useState('overview')
+  const [overviewMode] = useState('overview')
   const [resolvedAgencyId, setResolvedAgencyId] = useState(agencyId)
   const [agencyResolutionComplete, setAgencyResolutionComplete] = useState(Boolean(agencyId))
   const [data, setData] = useState(null)
@@ -2084,8 +2391,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
 
         {data ? (
           <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
-            <PrincipalKpiRow data={data} />
-            <PipelineSalesOverview data={data} dateRange={dateRange} onDateRangeChange={setDateRange} overviewMode={overviewMode} onOverviewModeChange={setOverviewMode} />
+            <PrincipalPremiumCommandCenter data={data} onNavigate={navigate} />
             <AppointmentDashboardSection
               module="principal"
               organisationId={resolvedAgencyId}

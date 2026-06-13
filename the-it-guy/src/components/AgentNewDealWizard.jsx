@@ -5,6 +5,7 @@ import { createTransactionFromWizard, fetchDevelopmentOptions, fetchUnitsForTran
 import { readAgentPrivateListings, writeAgentPrivateListings } from '../lib/agentListingStorage'
 import {
   fetchOrganisationSettings,
+  listOrganisationPartnerRoutingRules,
   listOrganisationPreferredPartners,
   listUserPreferredPartnerRoutingRules,
   resolveCommissionSnapshotForAgent,
@@ -18,6 +19,7 @@ import { fetchPartnersSnapshot, getPartnerAssignmentOptions } from '../lib/partn
 import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { getAgentPrivateListingSummaries, getAgentPrivateListings } from '../services/privateListingService'
+import { inferPartnerRoutingRoleTypesForTransaction, resolvePartnerRoutingForTransaction } from '../services/universalPartnerRoutingService'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -50,6 +52,30 @@ const OPTIONAL_PARTNER_ROLE_FIELD_OPTIONS = [
   { value: PARTNER_MODE_NONE, label: 'Not Assigned Yet' },
   ...PARTNER_ROLE_FIELD_OPTIONS,
 ]
+const CORE_ROUTING_ROLE_TYPES = ['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney']
+const ROLE_FIELD_TO_ROLE_KEY = Object.freeze({
+  transferPartnerMode: 'transfer_attorney',
+  transferPreferredPartnerId: 'transfer_attorney',
+  transferBuyerCompanyName: 'transfer_attorney',
+  transferBuyerContactPerson: 'transfer_attorney',
+  transferBuyerEmail: 'transfer_attorney',
+  transferBuyerPhone: 'transfer_attorney',
+  transferBuyerNotes: 'transfer_attorney',
+  bondOriginatorMode: 'bond_originator',
+  bondOriginatorPreferredPartnerId: 'bond_originator',
+  bondOriginatorBuyerCompanyName: 'bond_originator',
+  bondOriginatorBuyerContactPerson: 'bond_originator',
+  bondOriginatorBuyerEmail: 'bond_originator',
+  bondOriginatorBuyerPhone: 'bond_originator',
+  bondOriginatorBuyerNotes: 'bond_originator',
+  bondAttorneyMode: 'bond_attorney',
+  bondAttorneyPreferredPartnerId: 'bond_attorney',
+  bondAttorneyBuyerCompanyName: 'bond_attorney',
+  bondAttorneyBuyerContactPerson: 'bond_attorney',
+  bondAttorneyBuyerEmail: 'bond_attorney',
+  bondAttorneyBuyerPhone: 'bond_attorney',
+  bondAttorneyBuyerNotes: 'bond_attorney',
+})
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
@@ -85,6 +111,45 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function getRoutingRoleLabel(roleType) {
+  switch (normalizeKey(roleType)) {
+    case 'bond_originator':
+      return 'Bond Originator'
+    case 'bond_attorney':
+      return 'Bond Attorney'
+    case 'cancellation_attorney':
+      return 'Cancellation Attorney'
+    default:
+      return 'Transfer Attorney'
+  }
+}
+
+function getRoutingResolutionLabel(value) {
+  switch (normalizeKey(value)) {
+    case 'agent':
+    case 'user':
+      return 'Agent preference'
+    case 'branch':
+      return 'Branch default'
+    case 'organisation':
+      return 'Organisation default'
+    case 'transaction_override':
+      return 'Manual transaction override'
+    case 'system_fallback':
+      return 'Manual selection required'
+    default:
+      return normalizeText(value).replace(/_/g, ' ') || 'Manual selection required'
+  }
+}
+
+function getPartnerTypeLabel(value = '') {
+  const normalized = normalizeKey(value)
+  if (normalized.includes('attorney')) return 'Attorney'
+  if (normalized.includes('bond') || normalized.includes('originator')) return 'Bond Originator'
+  if (normalized.includes('agency')) return 'Agency'
+  return 'Partner'
+}
+
 function getListingStatus(listing) {
   return normalizeKey(listing?.listingStatus || listing?.status || listing?.lifecycleStatus || listing?.listing_status)
 }
@@ -97,7 +162,7 @@ function hasActiveDeal(listing) {
   )
 }
 
-function getListingAssignedAgent(listing) {
+function _getListingAssignedAgent(listing) {
   return normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id || listing?.assignedAgentEmail || listing?.assignedAgentName || listing?.agentName)
 }
 
@@ -273,10 +338,6 @@ function resolveCommissionFromListing(listing = {}) {
     }
   }
 
-  if (amount !== null && amount > 0 && percentage === null && commissionType.includes('amount')) {
-    amount = amount
-  }
-
   return { percentage, amount }
 }
 
@@ -450,7 +511,7 @@ function mergePreferredPartnerOptions(primaryRows = [], fallbackRows = []) {
   return unique
 }
 
-function hasActivePartnerType(partners = [], partnerType = '') {
+function _hasActivePartnerType(partners = [], partnerType = '') {
   const normalizedType = normalizePreferredPartnerType(partnerType)
   return (Array.isArray(partners) ? partners : []).some(
     (partner) =>
@@ -630,6 +691,12 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
   const [preferredPartners, setPreferredPartners] = useState([])
   const [preferredPartnersLoading, setPreferredPartnersLoading] = useState(false)
   const [preferredPartnersError, setPreferredPartnersError] = useState('')
+  const [routingRules, setRoutingRules] = useState([])
+  const [partnerSnapshot, setPartnerSnapshot] = useState(null)
+  const [routingRecommendations, setRoutingRecommendations] = useState([])
+  const [routingRecommendationsLoading, setRoutingRecommendationsLoading] = useState(false)
+  const [routingRecommendationChoices, setRoutingRecommendationChoices] = useState({})
+  const [roleSelectionTouched, setRoleSelectionTouched] = useState({})
   const [partnerSearch, setPartnerSearch] = useState({
     transferAttorney: '',
     bondOriginator: '',
@@ -641,6 +708,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     developmentId: initialDevelopmentId || '',
     unitId: '',
     financeType: 'unknown',
+    hasExistingBondToCancel: false,
     importPropertyAddress: '',
     importSuburb: '',
     importCity: '',
@@ -737,12 +805,12 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       if (merged.length) {
         setPropertyOptionsError('')
       }
-    } catch (error) {
+    } catch {
       setPropertyOptionsError('Could not load properties. Try again.')
     } finally {
       setIsLoadingPropertyOptions(false)
     }
-  }, [agencyWorkflowMode, currentMembership?.membershipRole, currentMembership?.workspaceRole, currentMembership?.role, isSupabaseConfigured, profile?.email, profile?.id, workspace?.id])
+  }, [agencyWorkflowMode, currentMembership?.membershipRole, currentMembership?.workspaceRole, currentMembership?.role, profile?.email, profile?.id, workspace?.id])
 
   useEffect(() => {
     if (!open) return
@@ -756,6 +824,12 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     setPreferredPartnersLoading(true)
     setPreferredPartnersError('')
     setPreferredPartners([])
+    setRoutingRules([])
+    setPartnerSnapshot(null)
+    setRoutingRecommendations([])
+    setRoutingRecommendationsLoading(false)
+    setRoutingRecommendationChoices({})
+    setRoleSelectionTouched({})
     setPartnerSearch({ transferAttorney: '', bondOriginator: '', bondAttorney: '' })
     setPropertyOptionsError('')
     setIsLoadingPropertyOptions(true)
@@ -776,12 +850,18 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         try {
           let partnerRows = []
           let partnerRowsLoadFailed = false
+          let allRoutingRules = []
           let preferredRoutingRules = []
           try {
             partnerRows = await listOrganisationPreferredPartners()
           } catch (error) {
             partnerRowsLoadFailed = true
             console.error('[Transactions] Unable to load agency preferred partners.', error)
+          }
+          try {
+            allRoutingRules = await listOrganisationPartnerRoutingRules()
+          } catch (error) {
+            console.error('[Transactions] Unable to load organisation partner routing rules.', error)
           }
           try {
             preferredRoutingRules = await listUserPreferredPartnerRoutingRules()
@@ -804,23 +884,17 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
           }
           let fallbackRows = []
           let routingRows = []
+          let fetchedPartnerSnapshot = null
 
-          if (
-            isSupabaseConfigured
-            && (partnerRowsLoadFailed
-              || !hasActivePartnerType(partnerRows, 'transfer_attorney')
-              || !hasActivePartnerType(partnerRows, 'bond_originator')
-              || !hasActivePartnerType(partnerRows, 'bond_attorney')
-              || preferredRoutingRules.length)
-          ) {
+          if (isSupabaseConfigured && organisationId) {
             try {
-              const partnerSnapshot = await fetchPartnersSnapshot({
+              fetchedPartnerSnapshot = await fetchPartnersSnapshot({
                 organisationId,
                 workspaceType: workspace?.type || 'agency',
                 accessContext: partnerFallbackContext,
               })
-              routingRows = getPreferredPartnerRowsFromRoutingRules(partnerSnapshot, preferredRoutingRules)
-              fallbackRows = getFallbackPreferredPartnersFromSnapshot(partnerSnapshot, partnerFallbackContext)
+              routingRows = getPreferredPartnerRowsFromRoutingRules(fetchedPartnerSnapshot, preferredRoutingRules)
+              fallbackRows = getFallbackPreferredPartnersFromSnapshot(fetchedPartnerSnapshot, partnerFallbackContext)
               console.debug('[Transactions] Agency preferred partner fallback snapshot rows', {
                 organisationId,
                 fallbackCount: fallbackRows.length,
@@ -850,6 +924,8 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
           }
 
           setPreferredPartners(mergedPreferredPartners)
+          setRoutingRules(Array.isArray(allRoutingRules) && allRoutingRules.length ? allRoutingRules : preferredRoutingRules)
+          setPartnerSnapshot(fetchedPartnerSnapshot)
           const membershipRole = normalizeKey(settingsContext?.membershipRole || currentMembership?.workspaceRole || currentMembership?.role)
           const hasOrganisationScope = Boolean(organisationId && organisationId !== 'all')
           const includeAllOrganisationListings = hasOrganisationScope || agencyWorkflowMode === 'principal' || ['principal', 'owner', 'admin', 'hq'].includes(membershipRole)
@@ -890,7 +966,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       setLoading(false)
       setPreferredPartnersLoading(false)
     })()
-  }, [agencyWorkflowMode, currentMembership?.role, currentMembership?.workspaceRole, loadPropertyPickerListings, open, profile?.email, profile?.id, initialDevelopmentId, initialPrivateListingId, workspace?.id])
+  }, [agencyWorkflowMode, currentMembership, loadPropertyPickerListings, open, profile, initialDevelopmentId, initialPrivateListingId, workspace?.id, workspace?.type])
 
   useEffect(() => {
     if (!open || form.propertyMode !== PROPERTY_MODE_DEVELOPMENT || !form.developmentId || !isSupabaseConfigured) {
@@ -983,6 +1059,116 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     () => findPartnerById(activePreferredPartners, form.bondAttorneyPreferredPartnerId),
     [activePreferredPartners, form.bondAttorneyPreferredPartnerId],
   )
+  const sourceOrganisationId = useMemo(
+    () => normalizeText(workspace?.id),
+    [workspace?.id],
+  )
+  const sourceBranchId = useMemo(
+    () => normalizeText(currentMembership?.branchId || currentMembership?.branch_id),
+    [currentMembership?.branchId, currentMembership?.branch_id],
+  )
+  const partnerOrganisationLookup = useMemo(() => {
+    const relationships = Array.isArray(partnerSnapshot?.relationships) ? partnerSnapshot.relationships : []
+    return relationships.reduce((accumulator, relationship) => {
+      const organisationId = normalizeText(
+        relationship?.partnerOrganisationId ||
+        relationship?.counterpartOrganisationId ||
+        relationship?.partner?.id,
+      )
+      if (!organisationId) return accumulator
+      accumulator[organisationId] = {
+        id: organisationId,
+        name: normalizeText(relationship?.partner?.name || relationship?.counterpartName || relationship?.companyName),
+        type: normalizeText(relationship?.partner?.type || relationship?.partnerRoleType || relationship?.counterpartType),
+        relationshipId: normalizeText(relationship?.id || relationship?.relationshipId),
+      }
+      return accumulator
+    }, {})
+  }, [partnerSnapshot])
+  const recommendedRoutingRoleTypes = useMemo(
+    () =>
+      inferPartnerRoutingRoleTypesForTransaction({
+        financeType: normalizeFinanceTypeForApi(form.financeType),
+        hasExistingBondToCancel: Boolean(form.hasExistingBondToCancel),
+      }),
+    [form.financeType, form.hasExistingBondToCancel],
+  )
+  const routingRecommendationByRole = useMemo(
+    () =>
+      routingRecommendations.reduce((accumulator, item) => {
+        accumulator[item.roleType] = item
+        return accumulator
+      }, {}),
+    [routingRecommendations],
+  )
+
+  const describeManualRoleSelection = useCallback((roleType) => {
+    if (roleType === 'transfer_attorney') {
+      if (form.transferPartnerMode === PARTNER_MODE_BUYER) {
+        return {
+          roleType,
+          label: String(form.transferBuyerCompanyName || form.transferBuyerContactPerson || '').trim(),
+          detail: 'Buyer-appointed partner',
+        }
+      }
+      return selectedTransferPartner
+        ? {
+            roleType,
+            label: selectedTransferPartner.companyName || selectedTransferPartner.contactPerson || '',
+            detail: 'Agency selection',
+          }
+        : null
+    }
+
+    if (roleType === 'bond_originator') {
+      if (form.bondOriginatorMode === PARTNER_MODE_BUYER) {
+        return {
+          roleType,
+          label: String(form.bondOriginatorBuyerCompanyName || form.bondOriginatorBuyerContactPerson || '').trim(),
+          detail: 'Buyer-appointed partner',
+        }
+      }
+      return selectedBondOriginatorPartner
+        ? {
+            roleType,
+            label: selectedBondOriginatorPartner.companyName || selectedBondOriginatorPartner.contactPerson || '',
+            detail: 'Agency selection',
+          }
+        : null
+    }
+
+    if (roleType === 'bond_attorney') {
+      if (form.bondAttorneyMode === PARTNER_MODE_BUYER) {
+        return {
+          roleType,
+          label: String(form.bondAttorneyBuyerCompanyName || form.bondAttorneyBuyerContactPerson || '').trim(),
+          detail: 'Buyer-appointed partner',
+        }
+      }
+      return selectedBondAttorneyPartner
+        ? {
+            roleType,
+            label: selectedBondAttorneyPartner.companyName || selectedBondAttorneyPartner.contactPerson || '',
+            detail: 'Agency selection',
+          }
+        : null
+    }
+
+    return null
+  }, [
+    form.transferPartnerMode,
+    form.transferBuyerCompanyName,
+    form.transferBuyerContactPerson,
+    form.bondOriginatorMode,
+    form.bondOriginatorBuyerCompanyName,
+    form.bondOriginatorBuyerContactPerson,
+    form.bondAttorneyMode,
+    form.bondAttorneyBuyerCompanyName,
+    form.bondAttorneyBuyerContactPerson,
+    selectedTransferPartner,
+    selectedBondOriginatorPartner,
+    selectedBondAttorneyPartner,
+  ])
 
   const defaultAttorney = useMemo(() => {
     const privateAttorneyOptions = normalizeListingAttorneyOptions(selectedPrivateListing)
@@ -996,6 +1182,8 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     if (!open) return
 
     const defaultTransferPartner = getDefaultPreferredPartnerByType(activePreferredPartners, 'transfer_attorney')
+    const defaultBondOriginatorPartner = getDefaultPreferredPartnerByType(activePreferredPartners, 'bond_originator')
+    const defaultBondAttorneyPartner = getDefaultPreferredPartnerByType(activePreferredPartners, 'bond_attorney')
 
     setForm((previous) => {
       const next = { ...previous }
@@ -1008,6 +1196,16 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
       }
       if (!defaultTransferPartner && previous.transferPartnerMode === PARTNER_MODE_AGENCY) {
         next.transferPartnerMode = PARTNER_MODE_BUYER
+        changed = true
+      }
+      if (defaultBondOriginatorPartner && !previous.bondOriginatorPreferredPartnerId && previous.bondOriginatorMode === PARTNER_MODE_NONE) {
+        next.bondOriginatorPreferredPartnerId = defaultBondOriginatorPartner.id
+        next.bondOriginatorMode = PARTNER_MODE_AGENCY
+        changed = true
+      }
+      if (defaultBondAttorneyPartner && !previous.bondAttorneyPreferredPartnerId && previous.bondAttorneyMode === PARTNER_MODE_NONE) {
+        next.bondAttorneyPreferredPartnerId = defaultBondAttorneyPartner.id
+        next.bondAttorneyMode = PARTNER_MODE_AGENCY
         changed = true
       }
 
@@ -1111,8 +1309,132 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     }
   }, [open, inheritedDealTerms?.salePrice, inheritedDealTerms?.grossCommissionPercentage, profile?.id, profile?.email])
 
+  useEffect(() => {
+    if (!open || !['attorney', 'review'].includes(activeStep) || !sourceOrganisationId || !profile?.id) {
+      return
+    }
+
+    let active = true
+    setRoutingRecommendationsLoading(true)
+
+    ;(async () => {
+      try {
+        const propertyType =
+          form.propertyMode === PROPERTY_MODE_PRIVATE
+            ? mapPrivateListingToTransactionPropertyCategory(selectedPrivateListing)
+            : 'residential'
+        const results = await Promise.all(
+          CORE_ROUTING_ROLE_TYPES.map(async (roleType) => {
+            const required = recommendedRoutingRoleTypes.includes(roleType)
+            if (!required) {
+              return {
+                roleType,
+                required: false,
+                notRequired: true,
+                resolutionSource: 'not_required',
+                confidence: 1,
+                requiresManualSelection: false,
+                resolutionReason: roleType === 'cancellation_attorney'
+                  ? 'Only required when there is an existing bond to cancel.'
+                  : 'Not required for this finance profile.',
+              }
+            }
+
+            const decision = await resolvePartnerRoutingForTransaction({
+              sourceOrganisationId,
+              sourceBranchId,
+              sourceUserId: profile.id,
+              targetRoleType: roleType,
+              dealType: form.propertyMode === PROPERTY_MODE_DEVELOPMENT ? 'developer_sale' : 'private_property',
+              financeType: normalizeFinanceTypeForApi(form.financeType) || 'unknown',
+              propertyType,
+              module: 'agent',
+              moduleContext: {
+                role: 'agent',
+                workspaceRole: currentMembership?.workspaceRole || currentMembership?.role || profile?.role || 'agent',
+                appRole: profile?.role || 'agent',
+              },
+              routingRules,
+              partnerConnections: { connections: [], loaded: false },
+            })
+
+            const organisation =
+              partnerOrganisationLookup[decision.targetOrganisationId] ||
+              partnerOrganisationLookup[decision.targetOrganisationId || ''] ||
+              null
+
+            return {
+              ...decision,
+              roleType,
+              required: true,
+              notRequired: false,
+              targetOrganisationName:
+                decision.targetOrganisationName ||
+                organisation?.name ||
+                '',
+              partnerType: organisation?.type || '',
+            }
+          }),
+        )
+
+        if (!active) return
+        setRoutingRecommendations(results)
+        setRoutingRecommendationChoices((previous) =>
+          results.reduce((accumulator, item) => {
+            if (accumulator[item.roleType]) return accumulator
+            if (item.notRequired) {
+              accumulator[item.roleType] = 'skip'
+            } else if (roleSelectionTouched[item.roleType]) {
+              accumulator[item.roleType] = 'manual'
+            } else if (item.requiresManualSelection) {
+              accumulator[item.roleType] = 'manual'
+            } else {
+              accumulator[item.roleType] = 'confirm'
+            }
+            return accumulator
+          }, { ...previous }),
+        )
+      } catch (error) {
+        if (active) {
+          setRoutingRecommendations([])
+          setSaveError(error?.message || 'Unable to resolve recommended role players.')
+        }
+      } finally {
+        if (active) {
+          setRoutingRecommendationsLoading(false)
+        }
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [
+    activeStep,
+    currentMembership?.role,
+    currentMembership?.workspaceRole,
+    form.financeType,
+    form.hasExistingBondToCancel,
+    form.propertyMode,
+    open,
+    partnerOrganisationLookup,
+    profile?.id,
+    profile?.role,
+    recommendedRoutingRoleTypes,
+    roleSelectionTouched,
+    routingRules,
+    selectedPrivateListing,
+    sourceBranchId,
+    sourceOrganisationId,
+  ])
+
   function updateField(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
+    const roleKey = ROLE_FIELD_TO_ROLE_KEY[key]
+    if (roleKey) {
+      setRoleSelectionTouched((previous) => ({ ...previous, [roleKey]: true }))
+      setRoutingRecommendationChoices((previous) => ({ ...previous, [roleKey]: 'manual' }))
+    }
   }
 
   function updatePropertyMode(nextMode) {
@@ -1158,35 +1480,65 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     }
 
     if (stepKey === 'attorney') {
-      if (form.transferPartnerMode === PARTNER_MODE_AGENCY) {
+      const transferChoice = routingRecommendationChoices.transfer_attorney || ''
+      const bondOriginatorChoice = routingRecommendationChoices.bond_originator || ''
+      const bondAttorneyChoice = routingRecommendationChoices.bond_attorney || ''
+      const transferRecommendation = routingRecommendationByRole.transfer_attorney || null
+      const bondOriginatorRecommendation = routingRecommendationByRole.bond_originator || null
+      const bondAttorneyRecommendation = routingRecommendationByRole.bond_attorney || null
+
+      if (
+        transferChoice !== 'confirm'
+        && form.transferPartnerMode === PARTNER_MODE_AGENCY
+      ) {
         if (!String(form.transferPreferredPartnerId || '').trim()) {
           nextErrors.transferPreferredPartnerId = 'Select a transfer attorney partner.'
         }
       }
 
-      if (form.transferPartnerMode === PARTNER_MODE_BUYER) {
+      if (transferChoice !== 'confirm' && form.transferPartnerMode === PARTNER_MODE_BUYER) {
         if (!String(form.transferBuyerCompanyName || '').trim()) nextErrors.transferBuyerCompanyName = 'Company name is required.'
         if (!String(form.transferBuyerContactPerson || '').trim()) nextErrors.transferBuyerContactPerson = 'Contact person is required.'
         if (!String(form.transferBuyerEmail || '').trim()) nextErrors.transferBuyerEmail = 'Email is required.'
         if (!String(form.transferBuyerPhone || '').trim()) nextErrors.transferBuyerPhone = 'Phone is required.'
       }
 
-      if (form.bondOriginatorMode === PARTNER_MODE_AGENCY && !String(form.bondOriginatorPreferredPartnerId || '').trim()) {
+      if (
+        normalizeFinanceTypeForApi(form.financeType)
+        && bondOriginatorRecommendation?.required
+        && bondOriginatorChoice !== 'confirm'
+        && form.bondOriginatorMode === PARTNER_MODE_AGENCY
+        && !String(form.bondOriginatorPreferredPartnerId || '').trim()
+      ) {
         nextErrors.bondOriginatorPreferredPartnerId = 'Select a bond originator partner or change mode.'
       }
 
-      if (form.bondOriginatorMode === PARTNER_MODE_BUYER) {
+      if (bondOriginatorChoice !== 'confirm' && form.bondOriginatorMode === PARTNER_MODE_BUYER) {
         if (!String(form.bondOriginatorBuyerCompanyName || '').trim()) nextErrors.bondOriginatorBuyerCompanyName = 'Company name is required.'
         if (!String(form.bondOriginatorBuyerContactPerson || '').trim()) nextErrors.bondOriginatorBuyerContactPerson = 'Contact person is required.'
       }
 
-      if (form.bondAttorneyMode === PARTNER_MODE_AGENCY && !String(form.bondAttorneyPreferredPartnerId || '').trim()) {
+      if (
+        normalizeFinanceTypeForApi(form.financeType)
+        && bondAttorneyRecommendation?.required
+        && bondAttorneyChoice !== 'confirm'
+        && form.bondAttorneyMode === PARTNER_MODE_AGENCY
+        && !String(form.bondAttorneyPreferredPartnerId || '').trim()
+      ) {
         nextErrors.bondAttorneyPreferredPartnerId = 'Select a bond attorney partner or change mode.'
       }
 
-      if (form.bondAttorneyMode === PARTNER_MODE_BUYER) {
+      if (bondAttorneyChoice !== 'confirm' && form.bondAttorneyMode === PARTNER_MODE_BUYER) {
         if (!String(form.bondAttorneyBuyerCompanyName || '').trim()) nextErrors.bondAttorneyBuyerCompanyName = 'Company name is required.'
         if (!String(form.bondAttorneyBuyerContactPerson || '').trim()) nextErrors.bondAttorneyBuyerContactPerson = 'Contact person is required.'
+      }
+
+      if (
+        transferRecommendation?.required
+        && transferChoice !== 'confirm'
+        && !String(form.transferPreferredPartnerId || form.transferBuyerCompanyName || '').trim()
+      ) {
+        nextErrors.transferPreferredPartnerId = 'Choose a transfer attorney or use the recommended route.'
       }
     }
 
@@ -1206,6 +1558,44 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     const currentIndex = STEP_ORDER.indexOf(activeStep)
     if (currentIndex > 0) {
       setActiveStep(STEP_ORDER[currentIndex - 1])
+    }
+  }
+
+  function setRoutingRecommendationChoice(roleType, choice) {
+    setRoutingRecommendationChoices((previous) => ({ ...previous, [roleType]: choice }))
+    if (choice === 'manual') {
+      setRoleSelectionTouched((previous) => ({ ...previous, [roleType]: true }))
+      setActiveStep('attorney')
+    }
+  }
+
+  function buildRolePlayerSelectionFromRecommendation(recommendation) {
+    if (!recommendation?.targetOrganisationId) return null
+    return {
+      roleType: recommendation.roleType,
+      source: 'partner_routing_rule',
+      selectionSource: 'partner_routing_rule',
+      assignmentStatus: recommendation.targetUserId ? 'assigned' : 'pending_assignment',
+      partnerRelationshipId: recommendation.relationshipId || null,
+      partnerOrganisationId: recommendation.targetOrganisationId || null,
+      organisationId: recommendation.targetOrganisationId || null,
+      userId: recommendation.targetUserId || null,
+      regionId: recommendation.targetRegionId || null,
+      branchId: recommendation.targetBranchId || null,
+      teamId: recommendation.targetTeamId || null,
+      routingRuleId: recommendation.routingRuleId || null,
+      partner: {
+        companyName: recommendation.targetOrganisationName || getRoutingRoleLabel(recommendation.roleType),
+        contactPerson: recommendation.targetUserLabel || recommendation.targetOrganisationName || getRoutingRoleLabel(recommendation.roleType),
+        email: recommendation.targetUserEmail || '',
+        phone: recommendation.targetUserPhone || '',
+        organisationId: recommendation.targetOrganisationId || null,
+        partnerOrganisationId: recommendation.targetOrganisationId || null,
+        userId: recommendation.targetUserId || null,
+        regionId: recommendation.targetRegionId || null,
+        branchId: recommendation.targetBranchId || null,
+        teamId: recommendation.targetTeamId || null,
+      },
     }
   }
 
@@ -1327,10 +1717,91 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             }
           : null
 
-    const transferAttorneyLabel = transferSelection?.companyName || transferSelection?.contactPerson || ''
-    const transferAttorneyEmail = transferSelection?.email || ''
-    const bondOriginatorLabel = bondOriginatorSelection?.companyName || bondOriginatorSelection?.contactPerson || ''
-    const bondOriginatorEmail = bondOriginatorSelection?.email || ''
+    const manualRolePlayers = {
+      transfer_attorney: {
+        roleType: 'transfer_attorney',
+        source: transferSelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'buyer_appointed',
+        preferredPartnerId: transferSelection.partnerId || null,
+        partner: transferSelection,
+      },
+      bond_originator: bondOriginatorSelection
+        ? {
+            roleType: 'bond_originator',
+            source: bondOriginatorSelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'buyer_appointed',
+            preferredPartnerId: bondOriginatorSelection.partnerId || null,
+            partner: bondOriginatorSelection,
+          }
+        : null,
+      bond_attorney: bondAttorneySelection
+        ? {
+            roleType: 'bond_attorney',
+            source: bondAttorneySelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'buyer_appointed',
+            preferredPartnerId: bondAttorneySelection.partnerId || null,
+            partner: bondAttorneySelection,
+          }
+        : null,
+      cancellation_attorney: null,
+    }
+    const resolvedRolePlayers = CORE_ROUTING_ROLE_TYPES.flatMap((roleType) => {
+      const choice = routingRecommendationChoices[roleType] || ''
+      const recommendation = routingRecommendationByRole[roleType] || null
+      const manualSelection = manualRolePlayers[roleType] || null
+
+      if (choice === 'skip') {
+        return []
+      }
+      if (choice === 'manual') {
+        return manualSelection ? [manualSelection] : []
+      }
+      if (choice === 'confirm' && recommendation && !recommendation.requiresManualSelection && !recommendation.notRequired) {
+        const routedSelection = buildRolePlayerSelectionFromRecommendation(recommendation)
+        return routedSelection ? [routedSelection] : []
+      }
+      if (recommendation && !recommendation.requiresManualSelection && !recommendation.notRequired) {
+        const routedSelection = buildRolePlayerSelectionFromRecommendation(recommendation)
+        return routedSelection ? [routedSelection] : []
+      }
+      if (manualSelection) {
+        return [manualSelection]
+      }
+      return []
+    })
+
+    const findResolvedRolePlayer = (roleType) => resolvedRolePlayers.find((item) => item.roleType === roleType) || null
+    const resolveRolePlayerDisplay = (roleType, fallbackSelection = null) => {
+      const choice = routingRecommendationChoices[roleType] || ''
+      if (choice === 'skip') {
+        return {
+          label: '',
+          email: '',
+        }
+      }
+      const selected = findResolvedRolePlayer(roleType)
+      if (!selected) {
+        if (choice !== 'manual') {
+          return {
+            label: '',
+            email: '',
+          }
+        }
+        return {
+          label: fallbackSelection?.companyName || fallbackSelection?.contactPerson || '',
+          email: fallbackSelection?.email || '',
+        }
+      }
+      const partner = selected.partner && typeof selected.partner === 'object' ? selected.partner : {}
+      return {
+        label: partner.companyName || partner.contactPerson || '',
+        email: partner.email || '',
+      }
+    }
+
+    const transferAttorneyDisplay = resolveRolePlayerDisplay('transfer_attorney', transferSelection)
+    const bondOriginatorDisplay = resolveRolePlayerDisplay('bond_originator', bondOriginatorSelection)
+    const transferAttorneyLabel = transferAttorneyDisplay.label
+    const transferAttorneyEmail = transferAttorneyDisplay.email
+    const bondOriginatorLabel = bondOriginatorDisplay.label
+    const bondOriginatorEmail = bondOriginatorDisplay.email
     const hasBuyerSelectedRolePlayer = [transferSelection, bondOriginatorSelection, bondAttorneySelection]
       .filter(Boolean)
       .some((item) => item.mode === PARTNER_MODE_BUYER)
@@ -1347,6 +1818,14 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         salePrice: Number(inheritedDealTerms?.salePrice || 0),
         grossCommissionPercentage: Number(inheritedDealTerms?.grossCommissionPercentage || 0),
       })
+      if (import.meta.env.DEV) {
+        console.debug('[AgentNewDealWizard] createTransaction payload', {
+          disableAutoPartnerRouting: true,
+          rolePlayers: resolvedRolePlayers,
+          financeType,
+          hasExistingBondToCancel: Boolean(form.hasExistingBondToCancel),
+        })
+      }
       const result = await createTransactionFromWizard({
         setup: {
           transactionType: propertyMode === PROPERTY_MODE_DEVELOPMENT ? 'developer_sale' : 'private_property',
@@ -1380,7 +1859,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
           assignedAgent: String(profile?.fullName || profile?.name || profile?.email || 'Agent').trim(),
           assignedAgentUserId: String(profile?.id || '').trim(),
           assignedAgentEmail: String(profile?.email || '').trim(),
-          financeManagedBy: bondOriginatorSelection ? 'bond_originator' : 'internal',
+          financeManagedBy: findResolvedRolePlayer('bond_originator') ? 'bond_originator' : 'internal',
         },
         finance: {
           reservationRequired: Boolean(form.reservationRequired),
@@ -1426,33 +1905,9 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
           completeness,
           canonicalStructure: CANONICAL_TRANSACTION_STRUCTURE,
           rolePlayers: [
-            {
-              roleType: 'transfer_attorney',
-              source: transferSelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'buyer_appointed',
-              preferredPartnerId: transferSelection.partnerId || null,
-              partner: transferSelection,
-            },
-            ...(bondOriginatorSelection
-              ? [
-                  {
-                    roleType: 'bond_originator',
-                    source: bondOriginatorSelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'buyer_appointed',
-                    preferredPartnerId: bondOriginatorSelection.partnerId || null,
-                    partner: bondOriginatorSelection,
-                  },
-                ]
-              : []),
-            ...(bondAttorneySelection
-              ? [
-                  {
-                    roleType: 'bond_attorney',
-                    source: bondAttorneySelection.mode === PARTNER_MODE_AGENCY ? 'agency_preferred' : 'buyer_appointed',
-                    preferredPartnerId: bondAttorneySelection.partnerId || null,
-                    partner: bondAttorneySelection,
-                  },
-                ]
-              : []),
+            ...resolvedRolePlayers,
           ],
+          disableAutoPartnerRouting: true,
           commissionSnapshot: resolvedCommissionSnapshot,
         },
       })
@@ -1753,6 +2208,27 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                   <Field label="Phone" error={errors.clientPhone}>
                     <input className={fieldClass()} value={form.clientPhone} onChange={(event) => updateField('clientPhone', event.target.value)} />
                   </Field>
+                  <Field label="Finance Type">
+                    <select className={fieldClass()} value={form.financeType} onChange={(event) => updateField('financeType', event.target.value)}>
+                      <option value="unknown">Select later</option>
+                      <option value="cash">Cash</option>
+                      <option value="bond">Bond</option>
+                      <option value="combination">Hybrid</option>
+                    </select>
+                  </Field>
+                  <div className="md:col-span-2 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#48627f]">
+                    <label className="flex items-center gap-2 font-semibold text-[#22374d]">
+                      <input
+                        type="checkbox"
+                        checked={form.hasExistingBondToCancel}
+                        onChange={(event) => updateField('hasExistingBondToCancel', event.target.checked)}
+                      />
+                      Existing bond to cancel
+                    </label>
+                    <p className="mt-2 text-xs text-[#5f748c]">
+                      Turn this on when the seller has an existing bond and a cancellation attorney should be recommended.
+                    </p>
+                  </div>
                 </div>
               </section>
             ) : null}
@@ -2029,6 +2505,80 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                         </div>
                       )
                     })()}
+                    <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Recommended Role Players</p>
+                          <p className="mt-1 text-sm text-[#5f748c]">Bridge will use your saved operational partner preferences first, then fall back to manual selections.</p>
+                        </div>
+                        {routingRecommendationsLoading ? (
+                          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Resolving...</span>
+                        ) : null}
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {CORE_ROUTING_ROLE_TYPES.map((roleType) => {
+                          const recommendation = routingRecommendationByRole[roleType] || null
+                          const choice = routingRecommendationChoices[roleType] || ''
+                          const manualSelection = describeManualRoleSelection(roleType)
+                          const displayLabel =
+                            choice === 'manual'
+                              ? manualSelection?.label || 'Manual selection pending'
+                              : choice === 'skip'
+                                ? 'Skipped for now'
+                                : recommendation?.notRequired
+                                  ? 'Not required'
+                                  : [recommendation?.targetUserLabel, recommendation?.targetOrganisationName].filter(Boolean).join(', ') || 'Manual selection needed'
+                          const displayDetail =
+                            choice === 'manual'
+                              ? manualSelection?.detail || 'Go back to Transaction Roles to choose a person or organisation.'
+                              : choice === 'skip'
+                                ? 'This role will not be assigned during transaction creation.'
+                                : recommendation?.notRequired
+                                  ? recommendation?.resolutionReason || 'Not needed for this deal profile.'
+                                  : recommendation?.requiresManualSelection
+                                    ? recommendation?.resolutionReason || 'No saved preference matched, so choose manually if you need this role now.'
+                                    : `${getRoutingResolutionLabel(recommendation?.resolutionSource)}${recommendation?.partnerType ? ` · ${getPartnerTypeLabel(recommendation.partnerType)}` : ''}`
+
+                          return (
+                            <div key={roleType} className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{getRoutingRoleLabel(roleType)}</p>
+                                  <p className="mt-1 font-semibold text-[#22374d]">{displayLabel}</p>
+                                  <p className="mt-1 text-sm text-[#5f748c]">{displayDetail}</p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {!recommendation?.notRequired ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setRoutingRecommendationChoice(roleType, 'confirm')}
+                                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${choice === 'confirm' ? 'border-[#1f4f78] bg-[#1f4f78] text-white' : 'border-[#dce6f2] bg-white text-[#47627c]'}`}
+                                      disabled={recommendation?.requiresManualSelection}
+                                    >
+                                      {choice === 'confirm' ? 'Using recommendation' : 'Confirm'}
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => setRoutingRecommendationChoice(roleType, 'manual')}
+                                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${choice === 'manual' ? 'border-[#1f4f78] bg-[#edf4fb] text-[#1f4f78]' : 'border-[#dce6f2] bg-white text-[#47627c]'}`}
+                                  >
+                                    Change
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRoutingRecommendationChoice(roleType, 'skip')}
+                                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${choice === 'skip' ? 'border-[#7b8ca2] bg-[#f6f8fb] text-[#22374d]' : 'border-[#dce6f2] bg-white text-[#47627c]'}`}
+                                  >
+                                    Skip for now
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
                     <div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property</p>
                       <p className="mt-2 font-semibold text-[#22374d]">

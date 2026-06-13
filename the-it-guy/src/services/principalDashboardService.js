@@ -707,6 +707,47 @@ function buildForecastBuckets(transactions = [], commissionByTransaction = new M
   }))
 }
 
+function buildUpcomingRegistrationBuckets(transactions = [], commissionByTransaction = new Map(), now = new Date()) {
+  const today = startOfDay(now)
+  const end = addDays(today, 7)
+  const days = Array.from({ length: 7 }).map((_, index) => {
+    const date = addDays(today, index)
+    const key = date.toISOString().slice(0, 10)
+    return {
+      key,
+      date: date.toISOString(),
+      label: index === 0 ? 'Today' : date.toLocaleDateString('en-ZA', { weekday: 'short' }),
+      shortLabel: date.toLocaleDateString('en-ZA', { weekday: 'short' }).slice(0, 2),
+      count: 0,
+      commission: 0,
+    }
+  })
+  const dayMap = new Map(days.map((day) => [day.key, day]))
+
+  for (const row of transactions) {
+    if (isRegisteredTransaction(row)) continue
+    const expectedDate = toDate(getExpectedRegistrationAt(row))
+    if (!expectedDate || expectedDate < today || expectedDate >= end) continue
+    const key = expectedDate.toISOString().slice(0, 10)
+    const day = dayMap.get(key)
+    if (!day) continue
+    day.count += 1
+    day.commission += getCommissionAmount(row, commissionByTransaction)
+  }
+
+  const expectedCommission = days.reduce((sum, day) => sum + toNumber(day.commission), 0)
+  const count = days.reduce((sum, day) => sum + toNumber(day.count), 0)
+
+  return {
+    count,
+    expectedCommission,
+    dailyBreakdown: days.map((day) => ({
+      ...day,
+      commission: Math.round(day.commission),
+    })),
+  }
+}
+
 function buildSalesFunnelInsight(stages = []) {
   const drops = stages.slice(0, -1).map((stage, index) => {
     const next = stages[index + 1] || {}
@@ -1312,6 +1353,11 @@ function buildEmptyDashboard() {
       attorneyDelays: 0,
     },
     leadIntelligence: [],
+    upcomingRegistrations: {
+      count: 0,
+      expectedCommission: 0,
+      dailyBreakdown: [],
+    },
     recentActivity: [],
     meta: {
       lastUpdatedAt: new Date().toISOString(),
@@ -1769,6 +1815,7 @@ export async function getPrincipalDashboardData({
     .filter((item) => item.createdAt && isBetween(item.createdAt, range.start, range.end))
     .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0))
     .slice(0, 8)
+  const upcomingRegistrations = buildUpcomingRegistrationBuckets(activeTransactions, commissionByTransaction, now)
 
   return {
     filters: {
@@ -1857,6 +1904,7 @@ export async function getPrincipalDashboardData({
       attorneyDelays,
     },
     leadIntelligence,
+    upcomingRegistrations,
     recentActivity,
     meta: {
       lastUpdatedAt: new Date().toISOString(),

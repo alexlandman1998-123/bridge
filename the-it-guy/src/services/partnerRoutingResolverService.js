@@ -91,6 +91,16 @@ function normalizePartnerConnections(input = null) {
   return { connections: [] }
 }
 
+function hasLoadedPartnerConnections(input = null) {
+  if (!input) return false
+  if (Array.isArray(input)) return input.length > 0
+  if (typeof input === 'object') {
+    if (input.loaded === true || input.fetched === true) return true
+    if (Array.isArray(input.connections) && input.connections.length > 0) return true
+  }
+  return false
+}
+
 function normalizeDecisionInput(input = {}) {
   return {
     sourceOrganisationId: normalizeText(input.sourceOrganisationId || input.source_organisation_id || input.organisationId || input.workspaceId),
@@ -561,6 +571,24 @@ export function inferUniversalPartnerRoutingRoleTypes(moduleContext = {}) {
   ]
 }
 
+export function inferPartnerRoutingRoleTypesForTransaction({
+  financeType = '',
+  hasExistingBondToCancel = false,
+} = {}) {
+  const normalizedFinanceType = normalizeLower(financeType).replace(/[\s-]+/g, '_')
+  const roleTypes = [PARTNER_ROUTING_ROLE_TYPES.transferAttorney]
+
+  if (['bond', 'combination', 'hybrid'].includes(normalizedFinanceType)) {
+    roleTypes.push(PARTNER_ROUTING_ROLE_TYPES.bondOriginator, PARTNER_ROUTING_ROLE_TYPES.bondAttorney)
+  }
+
+  if (hasExistingBondToCancel) {
+    roleTypes.push(PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney)
+  }
+
+  return [...new Set(roleTypes)]
+}
+
 export async function universalPartnerRoutingResolver(input = {}) {
   const normalizedInput = normalizeDecisionInput(input)
 
@@ -607,6 +635,7 @@ export async function universalPartnerRoutingResolver(input = {}) {
       ? await listPartnerConnections(normalizedInput.sourceOrganisationId).catch(() => ({ connections: [] }))
       : { connections: [] }
   const connections = Array.isArray(partnerConnections?.connections) ? partnerConnections.connections : []
+  const hasConnectionData = hasLoadedPartnerConnections(partnerConnections)
   const connectionByOrganisationId = new Map()
   connections
     .filter((connection) => connection.status === 'connected')
@@ -621,37 +650,56 @@ export async function universalPartnerRoutingResolver(input = {}) {
     const targetIdentifiers = getTargetIdentifiers(rule)
     if (!targetIdentifiers.targetOrganisationId) continue
     const connection = connectionByOrganisationId.get(targetIdentifiers.targetOrganisationId)
-    if (!connection) {
+    if (!connection && hasConnectionData) {
       connectionFailureReason = 'This organisation is not connected as a partner yet.'
       continue
     }
 
     const peopleCache = normalizedInput.partnerPeopleByRelationshipId || {}
-    const relationshipId = normalizeText(connection.id || connection.relationshipId || '')
+    const relationshipId = normalizeText(connection?.id || connection?.relationshipId || rule?.relationshipId || rule?.relationship_id || '')
     const peoplePayload =
-      peopleCache[relationshipId] ||
-      (await getBondPartnerPeople(relationshipId).catch(() => null))
+      relationshipId
+        ? peopleCache[relationshipId] ||
+          (await getBondPartnerPeople(relationshipId).catch(() => null))
+        : null
     const peopleLookup = peoplePayload ? mapPartnerPeopleToLookup(peoplePayload) : new Map()
     const resolvedPerson = targetIdentifiers.targetUserId ? peopleLookup.get(targetIdentifiers.targetUserId) || null : null
     const scopeName = getResolutionScopeForRule(rule)
 
     if (
       targetIdentifiers.targetUserId &&
-      resolvedPerson &&
-      resolvedPerson.isActive !== false &&
-      personMatchesTargetRole(resolvedPerson, targetRoleType)
+      (
+        !resolvedPerson ||
+        (
+          resolvedPerson.isActive !== false &&
+          personMatchesTargetRole(resolvedPerson, targetRoleType)
+        )
+      )
     ) {
       const decision = {
         ...buildDirectDecision({ rule, input: normalizedInput, relationshipId, resolvedPerson }),
         targetOrganisationId: targetIdentifiers.targetOrganisationId,
-        targetRegionId: normalizeText(resolvedPerson.regionId || targetIdentifiers.targetRegionId || ''),
-        targetBranchId: normalizeText(resolvedPerson.branchId || targetIdentifiers.targetBranchId || ''),
-        targetTeamId: normalizeText(resolvedPerson.teamId || targetIdentifiers.targetTeamId || ''),
+        targetRegionId: normalizeText(resolvedPerson?.regionId || targetIdentifiers.targetRegionId || ''),
+        targetBranchId: normalizeText(resolvedPerson?.branchId || targetIdentifiers.targetBranchId || ''),
+        targetTeamId: normalizeText(resolvedPerson?.teamId || targetIdentifiers.targetTeamId || ''),
         targetUserId: targetIdentifiers.targetUserId,
         resolutionScope: scopeName,
         fallbackUsed: false,
         resolutionReason: `${scopeName.replace(/_/g, ' ')} preferred partner found.`,
         targetRoleType,
+        targetOrganisationName: normalizeText(
+          connection?.partnerName ||
+          connection?.companyName ||
+          rule?.targetOrganisationName ||
+          rule?.target_organisation_name,
+        ),
+        targetUserLabel: normalizeText(
+          resolvedPerson?.fullName ||
+          resolvedPerson?.label ||
+          rule?.targetScopeName ||
+          rule?.target_scope_name,
+        ),
+        confidence: resolvedPerson ? 1 : 0.88,
       }
       await recordUniversalPartnerRoutingEvent({
         input: normalizedInput,
@@ -690,6 +738,13 @@ export async function universalPartnerRoutingResolver(input = {}) {
       fallbackUsed: true,
       resolutionReason: fallbackReason,
       targetRoleType,
+      targetOrganisationName: normalizeText(
+        connection?.partnerName ||
+        connection?.companyName ||
+        rule?.targetOrganisationName ||
+        rule?.target_organisation_name,
+      ),
+      targetUserLabel: normalizeText(rule?.targetScopeName || rule?.target_scope_name),
     }
     await recordUniversalPartnerRoutingEvent({
       input: normalizedInput,
@@ -751,10 +806,15 @@ export async function resolvePartnerRoutingSelections(input = {}) {
       fallbackUsed: Boolean(decision.fallbackUsed),
       resolutionReason: decision.resolutionReason || decision.fallbackReason || '',
       fallbackReason: decision.resolutionReason || decision.fallbackReason || '',
-      companyName: ROLE_LABELS[targetRoleType] || targetRoleType,
-      contactPerson: ROLE_LABELS[targetRoleType] || targetRoleType,
-      email: '',
-      phone: '',
+      companyName: decision.targetOrganisationName || ROLE_LABELS[targetRoleType] || targetRoleType,
+      contactPerson:
+        decision.targetUser?.fullName ||
+        decision.targetUserLabel ||
+        decision.targetOrganisationName ||
+        ROLE_LABELS[targetRoleType] ||
+        targetRoleType,
+      email: decision.targetUser?.email || '',
+      phone: decision.targetUser?.phone || '',
       snapshot: {
         source: 'partner_routing_rule',
         resolutionScope: decision.resolutionScope || 'organisation',
@@ -762,10 +822,47 @@ export async function resolvePartnerRoutingSelections(input = {}) {
         confidence: Number(decision.confidence || 0),
         fallbackUsed: Boolean(decision.fallbackUsed),
         resolutionReason: decision.resolutionReason || decision.fallbackReason || '',
+        targetOrganisationName: decision.targetOrganisationName || '',
+        targetUserLabel: decision.targetUser?.fullName || decision.targetUserLabel || '',
       },
     })
   }
   return selections
+}
+
+export async function resolvePartnerRoutingForTransaction(input = {}) {
+  const decision = await universalPartnerRoutingResolver({
+    ...input,
+    targetRoleType: input.targetRoleType,
+    module: input.module || 'agent_transaction_creation',
+    moduleContext: {
+      ...(input.moduleContext && typeof input.moduleContext === 'object' ? input.moduleContext : {}),
+      dealType: input.dealType || input.transactionType || '',
+      financeType: input.financeType || '',
+      propertyType: input.propertyType || '',
+    },
+  })
+
+  return {
+    roleType: normalizeRoleType(input.targetRoleType),
+    targetOrganisationId: normalizeText(decision?.targetOrganisationId || ''),
+    targetUserId: normalizeText(decision?.targetUserId || ''),
+    resolutionSource: normalizeText(decision?.resolutionScope || decision?.assignmentMode || ''),
+    confidence: Number(decision?.confidence || 0),
+    requiresManualSelection: Boolean(!decision?.targetOrganisationId && !decision?.targetUserId),
+    routingRuleId: normalizeText(decision?.routingRuleId || ''),
+    assignmentMode: normalizeText(decision?.assignmentMode || ''),
+    relationshipId: normalizeText(decision?.relationshipId || ''),
+    fallbackUsed: Boolean(decision?.fallbackUsed),
+    resolutionReason: normalizeText(decision?.resolutionReason || decision?.fallbackReason || ''),
+    targetOrganisationName: normalizeText(decision?.targetOrganisationName || ''),
+    targetUserLabel: normalizeText(decision?.targetUser?.fullName || decision?.targetUserLabel || ''),
+    targetUserEmail: normalizeText(decision?.targetUser?.email || ''),
+    targetUserPhone: normalizeText(decision?.targetUser?.phone || ''),
+    targetBranchId: normalizeText(decision?.targetBranchId || ''),
+    targetTeamId: normalizeText(decision?.targetTeamId || ''),
+    targetRegionId: normalizeText(decision?.targetRegionId || ''),
+  }
 }
 
 export const universalPreferredPartnerResolver = universalPartnerRoutingResolver
@@ -774,6 +871,8 @@ export const UniversalPartnerRoutingService = Object.freeze({
   universalPartnerRoutingResolver,
   resolvePartnerRoutingSelections,
   inferUniversalPartnerRoutingRoleTypes,
+  inferPartnerRoutingRoleTypesForTransaction,
+  resolvePartnerRoutingForTransaction,
   compareRoutingDecisions,
   recordUniversalPartnerRoutingEvent,
   getUniversalPartnerRoutingDiagnosticsSnapshot,

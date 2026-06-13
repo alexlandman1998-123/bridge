@@ -9,7 +9,7 @@ import {
   UserPlus as InviteIcon,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -30,11 +30,11 @@ import {
   fetchDiscoverablePartnerDirectory,
 } from '../lib/partnersRepository'
 import {
-  listUserPreferredPartnerRoutingRules,
-  saveUserPreferredPartnerRoutingRule,
+  getPartnerRoutingRulesForUser,
+  upsertPartnerRoutingRule,
 } from '../lib/settingsApi'
 import { recordWorkspaceAuditEvent } from '../services/auditLogService'
-import { getBondPartnerPeople } from '../services/bondPartnerProfileService'
+import { fetchPartnerOperationalPeople } from '../services/bondPartnerProfileService'
 import { PARTNER_ROUTING_MODES, PARTNER_ROUTING_ROLE_TYPES, PARTNER_ROUTING_TARGET_TYPES } from '../constants/bondRoutingContract'
 import OrganisationAvatar from '../components/organisation/OrganisationAvatar'
 
@@ -125,52 +125,6 @@ function PartnerScopeBadge({ relationship }) {
   return <StatusBadge className={scopeBadgeClass(badge.scopeType)}>Scope: {badge.label}</StatusBadge>
 }
 
-function normalizeDefaultRoutingPeople(payload = {}) {
-  const groups = payload?.groups || {}
-  const mapPerson = (person = {}, fallbackRole = '') => ({
-    ...person,
-    id: normalizeText(person.userId || person.id),
-    userId: normalizeText(person.userId || person.id),
-    role: normalizeText(person.role || fallbackRole),
-    label: [person.firstName, person.lastName].map(normalizeText).filter(Boolean).join(' ') || person.name || person.email || person.id || 'Unknown person',
-    branchId: normalizeText(person.branchId || person.branch_id),
-    branchName: normalizeText(person.branchName || person.branch_name),
-    regionId: normalizeText(person.regionId || person.region_id),
-    regionName: normalizeText(person.regionName || person.region_name),
-    teamId: normalizeText(person.teamId || person.team_id),
-    teamName: normalizeText(person.teamName || person.team_name),
-    department: normalizeText(person.department),
-    title: normalizeText(person.title || person.jobTitle || person.job_title),
-  })
-  return [
-    ...(Array.isArray(groups.principal) ? groups.principal.map((person) => mapPerson(person, 'principal')) : []),
-    ...(Array.isArray(groups.branchManagers) ? groups.branchManagers.map((person) => mapPerson(person, 'branch_manager')) : []),
-    ...(Array.isArray(groups.agents) ? groups.agents.map((person) => mapPerson(person, 'agent')) : []),
-  ]
-}
-
-function getRoutingRoleTypeForPartnerOrganisationType(value = '') {
-  const normalized = normalizeLower(value)
-  if (normalized === 'bond_originator') return PARTNER_ROUTING_ROLE_TYPES.bondOriginator
-  if (normalized === 'attorney_firm') return PARTNER_ROUTING_ROLE_TYPES.transferAttorney
-  if (normalized === 'developer_company' || normalized === 'developer') return PARTNER_ROUTING_ROLE_TYPES.developer
-  if (normalized === 'agency' || normalized === 'agency_network') return PARTNER_ROUTING_ROLE_TYPES.agent
-  return PARTNER_ROUTING_ROLE_TYPES.agent
-}
-
-function getDirectAssignmentModeForPartnerOrganisationType(value = '') {
-  const roleType = getRoutingRoleTypeForPartnerOrganisationType(value)
-  if (roleType === PARTNER_ROUTING_ROLE_TYPES.agent) return PARTNER_ROUTING_MODES.directAgent
-  if (
-    roleType === PARTNER_ROUTING_ROLE_TYPES.transferAttorney ||
-    roleType === PARTNER_ROUTING_ROLE_TYPES.bondAttorney ||
-    roleType === PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney
-  ) {
-    return PARTNER_ROUTING_MODES.directAttorney
-  }
-  return PARTNER_ROUTING_MODES.directConsultant
-}
-
 function MetricCard({ label, value, subtext }) {
   return (
     <div className="rounded-[8px] border border-[#dde7f2] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
@@ -189,14 +143,144 @@ function isUuidLike(value = '') {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
 }
 
-function PartnerCard({ partner, relationship, action, actionLabel, actionDisabled = false, profileHref = '', onProfileClick, muted = false }) {
+function getPartnerProfileKind(value = '') {
+  const normalized = normalizeLower(value)
+  if (normalized === 'bond_originator') return 'bond_originator'
+  if (normalized === 'attorney_firm') return 'attorney'
+  if (normalized === 'agency' || normalized === 'agency_network') return 'agency'
+  return 'general'
+}
+
+function collectPartnerActiveAreas(partner = {}) {
+  const items = [
+    ...(Array.isArray(partner?.activeAreas) ? partner.activeAreas : []),
+    ...(Array.isArray(partner?.specialties) ? partner.specialties : []),
+  ]
+  return [...new Set(items.map((item) => normalizeText(item)).filter(Boolean))]
+}
+
+function collectVisibleBranchNames(people = []) {
+  return [...new Set((Array.isArray(people) ? people : []).map((person) => normalizeText(person.branchName)).filter(Boolean))]
+}
+
+function inferOperationalRoleLabel(person = {}) {
+  const candidates = [person.title, person.role, person.organisationRole, person.department]
+  return candidates.map(normalizeText).find(Boolean) || 'Operational user'
+}
+
+function getOperationalPeopleSectionTitle(partnerType = '') {
+  const kind = getPartnerProfileKind(partnerType)
+  if (kind === 'bond_originator') return 'Visible consultants'
+  if (kind === 'attorney') return 'Visible legal staff'
+  if (kind === 'agency') return 'Visible agents'
+  return 'Operational people'
+}
+
+function getRoutingRoleLabel(roleType = '') {
+  const normalized = normalizeText(roleType)
+  if (normalized === PARTNER_ROUTING_ROLE_TYPES.bondOriginator) return 'Preferred bond consultant'
+  if (normalized === PARTNER_ROUTING_ROLE_TYPES.transferAttorney) return 'Preferred transfer attorney'
+  if (normalized === PARTNER_ROUTING_ROLE_TYPES.bondAttorney) return 'Preferred bond attorney'
+  if (normalized === PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney) return 'Preferred cancellation attorney'
+  if (normalized === PARTNER_ROUTING_ROLE_TYPES.agent) return 'Preferred agent'
+  return 'Preferred partner'
+}
+
+function getRoutingRolePlaceholder(roleType = '') {
+  const normalized = normalizeText(roleType)
+  if (normalized === PARTNER_ROUTING_ROLE_TYPES.bondOriginator) return 'Select consultant'
+  if (
+    normalized === PARTNER_ROUTING_ROLE_TYPES.transferAttorney ||
+    normalized === PARTNER_ROUTING_ROLE_TYPES.bondAttorney ||
+    normalized === PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney
+  ) {
+    return 'Select attorney/paralegal'
+  }
+  if (normalized === PARTNER_ROUTING_ROLE_TYPES.agent) return 'Select agent'
+  return 'Select person'
+}
+
+function getRoutingAssignmentModeForRole(roleType = '') {
+  const normalized = normalizeText(roleType)
+  if (
+    normalized === PARTNER_ROUTING_ROLE_TYPES.transferAttorney ||
+    normalized === PARTNER_ROUTING_ROLE_TYPES.bondAttorney ||
+    normalized === PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney
+  ) {
+    return PARTNER_ROUTING_MODES.directAttorney
+  }
+  if (normalized === PARTNER_ROUTING_ROLE_TYPES.agent) {
+    return PARTNER_ROUTING_MODES.directAgent
+  }
+  return PARTNER_ROUTING_MODES.directConsultant
+}
+
+function getOperationalRoutingControlsForPartnerType(partnerType = '') {
+  const kind = getPartnerProfileKind(partnerType)
+  if (kind === 'bond_originator') {
+    return [{ roleType: PARTNER_ROUTING_ROLE_TYPES.bondOriginator }]
+  }
+  if (kind === 'attorney') {
+    return [
+      { roleType: PARTNER_ROUTING_ROLE_TYPES.transferAttorney },
+      { roleType: PARTNER_ROUTING_ROLE_TYPES.bondAttorney },
+      { roleType: PARTNER_ROUTING_ROLE_TYPES.cancellationAttorney },
+    ]
+  }
+  return []
+}
+
+function createPartnerRoleKey(partnerOrganisationId = '', roleType = '') {
+  return `${normalizeText(partnerOrganisationId)}::${normalizeText(roleType)}`
+}
+
+function getAttorneyCapabilityBadges(partner = {}) {
+  const tokens = collectPartnerActiveAreas(partner).map(normalizeLower)
+  const capabilities = []
+  if (tokens.some((item) => item.includes('transfer'))) capabilities.push('Transfer')
+  if (tokens.some((item) => item.includes('bond'))) capabilities.push('Bond')
+  if (tokens.some((item) => item.includes('cancel'))) capabilities.push('Cancellation')
+  return capabilities
+}
+
+function buildPartnerOverviewCopy(partner = {}) {
+  const kind = getPartnerProfileKind(partner?.type)
+  const location = [partner?.city, partner?.province].filter(Boolean).join(', ') || 'selected markets'
+  if (kind === 'bond_originator') {
+    return `Bond origination organisation operating in ${location}, available through this partner relationship for finance collaboration.`
+  }
+  if (kind === 'attorney') {
+    return `Attorney firm operating in ${location}, visible through this relationship for transfer, bond, and registration work where permissions allow.`
+  }
+  if (kind === 'agency') {
+    return `Agency organisation operating in ${location}, available for transaction collaboration and agent-level coordination through this relationship.`
+  }
+  return `Verified Bridge organisation operating in ${location}, available through this partner connection for operational collaboration.`
+}
+
+function PartnerCard({
+  partner,
+  relationship,
+  action,
+  actionLabel,
+  actionDisabled = false,
+  onProfileClick,
+  muted = false,
+  selected = false,
+}) {
   const isPreferred = Boolean(relationship?.preferred || relationship?.relationshipType === 'preferred')
   const statusLabel = relationship?.relationshipStatus || 'Pending'
   const typeLabel = getPartnerTypeLabel(partner?.type)
   const location = [partner?.city, partner?.province].filter(Boolean).join(', ') || 'Location pending'
 
   return (
-    <article className={`rounded-[8px] border border-[#dbe5f0] bg-white p-4 ${muted ? 'opacity-75' : ''}`}>
+    <article
+      className={`rounded-[8px] border p-4 transition ${
+        selected
+          ? 'border-[#9ebcda] bg-[#f7fbff] shadow-[0_14px_30px_rgba(31,79,120,0.12)]'
+          : 'border-[#dbe5f0] bg-white'
+      } ${muted ? 'opacity-75' : ''}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -217,22 +301,19 @@ function PartnerCard({ partner, relationship, action, actionLabel, actionDisable
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#edf2f7] pt-3">
-        {onProfileClick ? (
-          <button
-            type="button"
-            onClick={onProfileClick}
-            className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
-          >
-            View profile <ArrowUpRight size={14} />
-          </button>
-        ) : (
-          <Link
-            to={profileHref || `/partners/${partner?.id || ''}`}
-            className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
-          >
-            View profile <ArrowUpRight size={14} />
-          </Link>
-        )}
+        <button
+          type="button"
+          onClick={onProfileClick}
+          disabled={!onProfileClick || selected}
+          aria-pressed={selected}
+          className={`inline-flex h-9 items-center gap-2 rounded-[8px] border px-3 text-sm font-semibold transition ${
+            selected
+              ? 'border-[#c8daef] bg-[#10243a] text-white'
+              : 'border-[#d9e4ef] bg-white text-[#264563] hover:bg-[#f8fafc]'
+          } disabled:cursor-default`}
+        >
+          {selected ? 'Viewing' : 'View profile'} {!selected ? <ArrowUpRight size={14} /> : null}
+        </button>
         {action ? (
           <button
             type="button"
@@ -249,22 +330,50 @@ function PartnerCard({ partner, relationship, action, actionLabel, actionDisable
 }
 
 function ProfilePanel({
+  isOpen = false,
   partner,
   relationship,
   people = [],
-  onSetPreferredPerson,
-  savingPreferred = false,
+  peopleLoading = false,
+  peopleMessage = '',
+  routingRulesByRole = {},
+  routingSelectionValues = {},
+  routingSavingRoleKeys = new Set(),
+  onSelectRoutingPreference,
 }) {
-  if (!partner) {
+  if (!isOpen) {
     return (
       <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
         <p className="text-sm font-semibold text-[#10243a]">Select an organisation</p>
-        <p className="mt-2 text-sm leading-6 text-[#60758d]">Profiles show the organisation connection, visible staff, and reusable operational preferences.</p>
+        <p className="mt-2 text-sm leading-6 text-[#60758d]">Choose a partner to open the profile panel. This view shows the relationship, visible operational people, and preferred partner placeholders without leaving the page.</p>
+      </aside>
+    )
+  }
+
+  if (!partner) {
+    return (
+      <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+        <p className="text-sm font-semibold text-[#10243a]">Partner unavailable</p>
+        <p className="mt-2 text-sm leading-6 text-[#60758d]">This organisation is no longer available in the current partner snapshot.</p>
       </aside>
     )
   }
 
   const staff = Array.isArray(people) ? people : []
+  const partnerKind = getPartnerProfileKind(partner.type)
+  const activeAreas = collectPartnerActiveAreas(partner)
+  const scopeLabel = relationship ? getPartnerScopeBadge(relationship).label : 'No connection scope available'
+  const visibleBranches = collectVisibleBranchNames(staff)
+  const attorneyCapabilities = getAttorneyCapabilityBadges(partner)
+  const visibleAgentCount = staff.filter((person) => normalizeLower(person.role || person.organisationRole).includes('agent')).length
+  const routingControls = getOperationalRoutingControlsForPartnerType(partner.type)
+  const routingSummary = routingControls
+    .map((control) => {
+      const rule = routingRulesByRole[control.roleType]
+      const label = normalizeText(rule?.targetScopeName || rule?.target_scope_name)
+      return label ? `${getRoutingRoleLabel(control.roleType)}: ${label}` : ''
+    })
+    .filter(Boolean)
 
   return (
     <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)] xl:sticky xl:top-4">
@@ -278,48 +387,159 @@ function ProfilePanel({
 
       <div className="mt-5 grid gap-3">
         <div className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Overview</p>
-          <p className="mt-2 text-sm leading-6 text-[#40556c]">
-            Verified Bridge organisation operating in {[partner.city, partner.province].filter(Boolean).join(', ') || 'selected markets'} with a focus on {(partner.specialties || []).join(', ') || 'property transactions'}.
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Connection snapshot</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <StatusBadge className={statusBadgeClass(relationship?.relationshipStatus || 'pending')}>
+              {relationship?.relationshipStatus === 'accepted' ? 'Connected' : relationship?.relationshipStatus || 'Not connected'}
+            </StatusBadge>
+            {relationship ? <PartnerScopeBadge relationship={relationship} /> : null}
+          </div>
+          <p className="mt-3 text-sm leading-6 text-[#40556c]">{buildPartnerOverviewCopy(partner)}</p>
+          <p className="mt-2 text-xs text-[#60758d]">
+            {relationship ? `Connected since ${formatDate(relationship.acceptedAt || relationship.createdAt)}` : 'Open the organisation card from Connected Organisations to work with a live connection.'}
           </p>
         </div>
         <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Active Areas</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {(partner.activeAreas || []).map((area) => (
+            {(activeAreas.length ? activeAreas : ['Property transactions']).map((area) => (
               <span key={area} className="rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">{area}</span>
             ))}
           </div>
         </div>
         <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Operational People</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Organisation overview</p>
+          {partnerKind === 'bond_originator' ? (
+            <div className="mt-3 grid gap-2 text-sm text-[#40556c]">
+              <p>Connected scope: {scopeLabel}</p>
+              <p>Visible consultants: {staff.length}</p>
+              <p>Branch coverage: {visibleBranches.length ? visibleBranches.join(', ') : 'No branch visibility published yet'}</p>
+            </div>
+          ) : null}
+          {partnerKind === 'attorney' ? (
+            <div className="mt-3 grid gap-2 text-sm text-[#40556c]">
+              <p>Connected scope: {scopeLabel}</p>
+              <p>Visible legal staff: {staff.length}</p>
+              <div className="flex flex-wrap gap-2">
+                {(attorneyCapabilities.length ? attorneyCapabilities : ['Capability not published']).map((capability) => (
+                  <span key={capability} className="rounded-full border border-[#e4ebf4] bg-[#f8fafc] px-2.5 py-1 text-xs font-semibold text-[#52677f]">{capability}</span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {partnerKind === 'agency' ? (
+            <div className="mt-3 grid gap-2 text-sm text-[#40556c]">
+              <p>Connected scope: {scopeLabel}</p>
+              <p>Visible branches: {visibleBranches.length ? visibleBranches.join(', ') : 'No branches are visible yet'}</p>
+              <p>Visible agents: {visibleAgentCount || staff.length}</p>
+            </div>
+          ) : null}
+          {partnerKind === 'general' ? (
+            <div className="mt-3 grid gap-2 text-sm text-[#40556c]">
+              <p>Connected scope: {scopeLabel}</p>
+              <p>Visible operational people: {staff.length}</p>
+            </div>
+          ) : null}
+        </div>
+        <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Preferred partner settings</p>
+          <p className="mt-2 text-sm leading-6 text-[#40556c]">
+            {routingSummary.length
+              ? routingSummary.join(' ')
+              : partnerKind === 'bond_originator'
+                ? 'No preferred bond consultant has been selected for this partner yet.'
+                : partnerKind === 'attorney'
+                  ? 'No preferred attorney users have been selected for this partner yet.'
+                  : partnerKind === 'agency'
+                    ? 'No preferred agent has been selected for this partner yet.'
+                    : 'No preferred people have been selected for this partner yet.'}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-[#60758d]">
+            Phase 1 keeps the existing routing model intact. This panel surfaces current preference state without changing organisation-level connection architecture.
+          </p>
+        </div>
+        {routingControls.length ? (
+          <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Operational Routing</p>
+            {peopleLoading ? (
+              <p className="mt-3 text-sm text-[#60758d]">Loading people available for routing...</p>
+            ) : staff.length ? (
+              <div className="mt-3 grid gap-3">
+                {routingControls.map((control) => {
+                  const roleKey = createPartnerRoleKey(partner.id, control.roleType)
+                  const currentRule = routingRulesByRole[control.roleType] || null
+                  const currentValue =
+                    routingSelectionValues[roleKey] ??
+                    normalizeText(
+                      currentRule?.targetConsultantUserId ||
+                        currentRule?.targetUserId ||
+                        currentRule?.target_user_id,
+                    )
+                  const hiddenCurrentLabel = normalizeText(currentRule?.targetScopeName || currentRule?.target_scope_name)
+                  const hasVisibleCurrentValue = staff.some((person) => normalizeText(person.userId || person.id) === currentValue)
+                  const isSaving = routingSavingRoleKeys?.has?.(roleKey)
+
+                  return (
+                    <label key={control.roleType} className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#10243a]">{getRoutingRoleLabel(control.roleType)}</span>
+                      <select
+                        value={currentValue}
+                        disabled={!relationship || isSaving}
+                        onChange={(event) => onSelectRoutingPreference?.(control.roleType, event.target.value)}
+                        className="h-10 rounded-[8px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa]"
+                      >
+                        <option value="">{getRoutingRolePlaceholder(control.roleType)}</option>
+                        {!hasVisibleCurrentValue && currentValue && hiddenCurrentLabel ? (
+                          <option value={currentValue}>{hiddenCurrentLabel} (currently saved)</option>
+                        ) : null}
+                        {staff.map((person) => (
+                          <option key={`${control.roleType}-${person.userId || person.id}`} value={normalizeText(person.userId || person.id)}>
+                            {[person.label || person.fullName || person.name || 'Partner user', inferOperationalRoleLabel(person), person.branchName].filter(Boolean).join(' · ')}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-xs text-[#60758d]">
+                        {isSaving
+                          ? 'Saving preference...'
+                          : currentValue
+                            ? 'Saved per agent user for this partner organisation.'
+                            : 'No user-level preference selected yet.'}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="mt-3 rounded-[8px] border border-dashed border-[#d7e2ee] bg-[#fbfcfd] p-3 text-sm text-[#60758d]">
+                No people are visible yet. Ask this partner organisation to expose the correct staff members to this relationship.
+              </div>
+            )}
+          </div>
+        ) : null}
+        <div className="rounded-[8px] border border-[#e4ebf4] bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">{getOperationalPeopleSectionTitle(partner.type)}</p>
           <p className="mt-1 text-xs leading-5 text-[#60758d]">People visible through this organisation connection. Set one as the person you normally work with.</p>
           <div className="mt-3 space-y-2">
-            {staff.length ? (
+            {peopleLoading ? (
+              <p className="text-sm text-[#60758d]">Loading visible people...</p>
+            ) : staff.length ? (
               staff.slice(0, 6).map((person) => (
                 <div key={person.userId || person.id || person.name} className="rounded-[8px] border border-[#e4ebf4] bg-[#f8fafc] p-2.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-[#10243a]">{person.label || person.fullName || person.name || 'Partner user'}</p>
-                      <p className="mt-1 text-xs text-[#60758d]">
-                        {[person.role, person.branchName, person.regionName, person.teamName].filter(Boolean).join(' · ') || 'Visible through partner permissions'}
-                      </p>
-                    </div>
-                    {onSetPreferredPerson && (person.userId || person.id) ? (
-                      <button
-                        type="button"
-                        disabled={savingPreferred}
-                        onClick={() => onSetPreferredPerson(person)}
-                        className="shrink-0 rounded-[8px] border border-[#d9e4ef] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#264563] transition hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:bg-[#edf2f7] disabled:text-[#7a8ba3]"
-                      >
-                        {savingPreferred ? 'Saving...' : 'Set'}
-                      </button>
-                    ) : null}
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#10243a]">{person.label || person.fullName || person.name || 'Partner user'}</p>
+                    <p className="mt-1 text-xs text-[#60758d]">
+                      {[inferOperationalRoleLabel(person), person.branchName, person.regionName, person.teamName].filter(Boolean).join(' · ') || 'Visible through partner permissions'}
+                    </p>
                   </div>
                 </div>
               ))
             ) : (
-              <p className="text-sm text-[#60758d]">No staff is visible for this organisation connection yet.</p>
+              <div className="rounded-[8px] border border-dashed border-[#d7e2ee] bg-[#fbfcfd] p-3 text-sm text-[#60758d]">
+                <p>{peopleMessage || 'No operational people are visible for this organisation connection yet.'}</p>
+                {!peopleMessage ? (
+                  <p className="mt-1">Set visibility permissions to expose specific people to this partner relationship.</p>
+                ) : null}
+              </div>
             )}
           </div>
         </div>
@@ -329,7 +549,7 @@ function ProfilePanel({
             <p className="inline-flex items-center gap-2"><LockKeyhole size={15} className="text-[#52677f]" /> Organisation data stays permission-gated.</p>
             <p className="inline-flex items-center gap-2"><ShieldCheck size={15} className="text-[#52677f]" /> Transaction sharing is granted per transaction.</p>
             <p className="inline-flex items-center gap-2"><Network size={15} className="text-[#52677f]" /> Status: {relationship?.relationshipStatus || 'Not connected'}</p>
-            {relationship ? <p className="inline-flex items-center gap-2"><Network size={15} className="text-[#52677f]" /> {getPartnerScopeBadge(relationship).label}</p> : null}
+            {relationship ? <p className="inline-flex items-center gap-2"><Network size={15} className="text-[#52677f]" /> Scope: {scopeLabel}</p> : null}
           </div>
         </div>
       </div>
@@ -562,9 +782,11 @@ export default function PartnersPage() {
   const { organisation } = useOrganisation()
   const organisationId = organisation?.partnerOrganisationId || organisation?.organisationId || workspace?.organisationId || organisation?.id || workspace?.id || ''
   const resolvedWorkspaceType = organisation?.type || workspaceType || role
+  const profileQueryId = useMemo(() => normalizeText(new URLSearchParams(location.search).get('profile')), [location.search])
 
   const [activeTab, setActiveTab] = useState('connected')
-  const [selectedPartnerId, setSelectedPartnerId] = useState(partnerId)
+  const [selectedPartnerId, setSelectedPartnerId] = useState(() => profileQueryId || partnerId)
+  const [profilePanelOpen, setProfilePanelOpen] = useState(() => Boolean(profileQueryId || partnerId))
   const [snapshot, setSnapshot] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -574,9 +796,11 @@ export default function PartnersPage() {
   const [discoverDirectoryLoading, setDiscoverDirectoryLoading] = useState(false)
   const [connectingPartnerIds, setConnectingPartnerIds] = useState(() => new Set())
   const [sentConnectionPartnerIds, setSentConnectionPartnerIds] = useState(() => new Set())
-  const [preferredSavingRelationshipIds, setPreferredSavingRelationshipIds] = useState(() => new Set())
   const [preferredRoutingRules, setPreferredRoutingRules] = useState([])
+  const [routingSelectionValues, setRoutingSelectionValues] = useState({})
+  const [savingRoutingRoleKeys, setSavingRoutingRoleKeys] = useState(() => new Set())
   const [partnerPeopleByRelationshipId, setPartnerPeopleByRelationshipId] = useState({})
+  const [partnerPeopleMetaByRelationshipId, setPartnerPeopleMetaByRelationshipId] = useState({})
   const connectingPartnerIdsRef = useRef(new Set())
   const profilePanelRef = useRef(null)
 
@@ -651,7 +875,7 @@ export default function PartnersPage() {
           accessContext,
           includeDirectory: false,
         }),
-        listUserPreferredPartnerRoutingRules().catch(() => []),
+        getPartnerRoutingRulesForUser(organisationId, profile?.id || '').catch(() => []),
       ])
       setSnapshot(nextSnapshot)
       setPreferredRoutingRules(Array.isArray(nextPreferredRoutingRules) ? nextPreferredRoutingRules : [])
@@ -660,7 +884,7 @@ export default function PartnersPage() {
     } finally {
       setLoading(false)
     }
-  }, [accessContext, organisationId, resolvedWorkspaceType])
+  }, [accessContext, organisationId, profile?.id, resolvedWorkspaceType])
 
   const loadDiscoverDirectory = useCallback(async () => {
     if (!organisationId || discoverDirectoryLoading || snapshot?.directoryHydrated) return
@@ -684,8 +908,11 @@ export default function PartnersPage() {
   }, [loadSnapshot])
 
   useEffect(() => {
-    setSelectedPartnerId(partnerId)
-  }, [partnerId])
+    const nextSelectedId = profileQueryId || partnerId
+    if (!nextSelectedId) return
+    setSelectedPartnerId(nextSelectedId)
+    setProfilePanelOpen(true)
+  }, [partnerId, profileQueryId])
 
   useEffect(() => {
     if (activeTab !== 'discover' && !isInviteModalOpen) return
@@ -713,6 +940,19 @@ export default function PartnersPage() {
       rulesByOrganisationId.set(targetOrganisationId, rule)
     })
     return rulesByOrganisationId
+  }, [preferredRoutingRules])
+
+  const preferredRoutingRuleByPartnerOrgRoleKey = useMemo(() => {
+    const rulesByKey = new Map()
+    ;(preferredRoutingRules || []).forEach((rule) => {
+      if (rule?.isActive === false) return
+      const targetOrganisationId = normalizeText(rule.targetOrganisationId || rule.target_organisation_id)
+      const targetRoleType = normalizeText(rule.targetRoleType || rule.target_role_type)
+      const key = createPartnerRoleKey(targetOrganisationId, targetRoleType)
+      if (!targetOrganisationId || !targetRoleType || rulesByKey.has(key)) return
+      rulesByKey.set(key, rule)
+    })
+    return rulesByKey
   }, [preferredRoutingRules])
 
   const preferredPartnerRows = useMemo(() => {
@@ -917,18 +1157,26 @@ export default function PartnersPage() {
     () => connectedRelationships.find((item) => item.partner?.id === selectedPartner?.id) || null,
     [connectedRelationships, selectedPartner?.id],
   )
+  const selectedPartnerRoutingRulesByRole = useMemo(() => {
+    const selectedOrganisationId = normalizeText(selectedPartner?.id)
+    if (!selectedOrganisationId) return {}
+    return getOperationalRoutingControlsForPartnerType(selectedPartner?.type).reduce((accumulator, control) => {
+      const rule = preferredRoutingRuleByPartnerOrgRoleKey.get(createPartnerRoleKey(selectedOrganisationId, control.roleType))
+      if (rule) {
+        accumulator[control.roleType] = rule
+      }
+      return accumulator
+    }, {})
+  }, [preferredRoutingRuleByPartnerOrgRoleKey, selectedPartner?.id, selectedPartner?.type])
 
   const selectedPartnerPeople = useMemo(
-    () => partnerPeopleByRelationshipId[normalizeText(selectedRelationship?.id || '')] || [],
-    [partnerPeopleByRelationshipId, selectedRelationship?.id],
+    () => partnerPeopleByRelationshipId[normalizeText(selectedRelationship?.id || selectedPartner?.id || '')] || [],
+    [partnerPeopleByRelationshipId, selectedPartner?.id, selectedRelationship?.id],
   )
-
-  useEffect(() => {
-    const relationshipId = normalizeText(selectedRelationship?.id || '')
-    if (!relationshipId || partnerPeopleByRelationshipId[relationshipId]) return
-    void ensurePartnerPeople(relationshipId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partnerPeopleByRelationshipId, selectedRelationship?.id])
+  const selectedPartnerPeopleMeta = useMemo(
+    () => partnerPeopleMetaByRelationshipId[normalizeText(selectedRelationship?.id || selectedPartner?.id || '')] || null,
+    [partnerPeopleMetaByRelationshipId, selectedPartner?.id, selectedRelationship?.id],
+  )
 
   async function handleInvite(event) {
     event.preventDefault()
@@ -1040,69 +1288,71 @@ export default function PartnersPage() {
     }
   }
 
-  async function savePreferredRouteForRelationship(relationship, person = null) {
+  async function saveOperationalRoutingPreference(relationship, roleType, targetUserId) {
     const partnerOrganisationId = normalizeText(relationship?.partner?.id || relationship?.counterpartOrganisationId || relationship?.partnerOrganisationId)
-    const existingRoutingRule = preferredRoutingRuleByPartnerOrgId.get(partnerOrganisationId) || null
-    const personUserId = normalizeText(person?.userId || person?.id)
-    const personName = normalizeText(person?.label || person?.fullName || person?.name || person?.email)
-    const isPersonPreference = Boolean(personUserId)
+    const normalizedRoleType = normalizeText(roleType)
+    const normalizedTargetUserId = normalizeText(targetUserId)
+    const roleKey = createPartnerRoleKey(partnerOrganisationId, normalizedRoleType)
+    const existingRoutingRule = preferredRoutingRuleByPartnerOrgRoleKey.get(roleKey) || null
+    const previousValue = normalizeText(
+      existingRoutingRule?.targetConsultantUserId ||
+        existingRoutingRule?.targetUserId ||
+        existingRoutingRule?.target_user_id,
+    )
 
-    if (!relationship?.id || !partnerOrganisationId) {
-      setError('Unable to update an operational partner without an organisation connection.')
+    if (!relationship?.id || !partnerOrganisationId || !normalizedRoleType || !normalizedTargetUserId) {
+      return
+    }
+
+    const person = selectedPartnerPeople.find((item) => normalizeText(item.userId || item.id) === normalizedTargetUserId) || null
+    const personName = normalizeText(person?.label || person?.fullName || person?.name || person?.email)
+    if (!personName) {
+      setError('Unable to save this preference because the selected person is not available.')
       return
     }
 
     try {
       setError('')
-      setPreferredSavingRelationshipIds((previous) => new Set(previous).add(relationship.id))
+      setRoutingSelectionValues((previous) => ({
+        ...previous,
+        [roleKey]: normalizedTargetUserId,
+      }))
+      setSavingRoutingRoleKeys((previous) => new Set(previous).add(roleKey))
 
-      const saved = await saveUserPreferredPartnerRoutingRule({
+      const saved = await upsertPartnerRoutingRule({
         id: existingRoutingRule?.id,
-        ruleName: isPersonPreference
-          ? `Preferred ${personName || 'person'} at ${relationship.partner?.name || 'Partner'}`
-          : `Preferred ${relationship.partner?.name || 'Partner'}`,
+        sourceOrganisationId: organisationId,
+        sourceUserId: profile?.id || '',
+        scope: 'agent',
+        ruleName: `${getRoutingRoleLabel(normalizedRoleType)} · ${relationship.partner?.name || 'Partner'}`,
         targetOrganisationId: partnerOrganisationId,
-        targetScopeType: isPersonPreference ? PARTNER_ROUTING_TARGET_TYPES.consultant : PARTNER_ROUTING_TARGET_TYPES.orgQueue,
-        targetScopeId: isPersonPreference ? personUserId : '',
-        targetUserId: isPersonPreference ? personUserId : '',
-        targetConsultantUserId: isPersonPreference ? personUserId : '',
-        targetRoleType: getRoutingRoleTypeForPartnerOrganisationType(relationship.partner?.type),
-        targetScopeName: isPersonPreference ? personName || 'Preferred person' : relationship.partner?.name || 'Preferred organisation',
-        assignmentMode: isPersonPreference
-          ? getDirectAssignmentModeForPartnerOrganisationType(relationship.partner?.type)
-          : PARTNER_ROUTING_MODES.organisationQueue,
+        targetScopeType: PARTNER_ROUTING_TARGET_TYPES.consultant,
+        targetScopeId: normalizedTargetUserId,
+        targetUserId: normalizedTargetUserId,
+        targetConsultantUserId: normalizedTargetUserId,
+        targetRoleType: normalizedRoleType,
+        targetScopeName: personName,
+        assignmentMode: getRoutingAssignmentModeForRole(normalizedRoleType),
         assignmentPriority: 1,
         isActive: true,
         isDefault: true,
-        notes: isPersonPreference
-          ? `Operational partner set from Partner Network for ${relationship.partner?.name || 'connected organisation'}.`
-          : `Organisation default set from Partner Network for ${relationship.partner?.name || 'connected organisation'}.`,
+        notes: `Operational partner preference saved from Agent Partner Profile for ${relationship.partner?.name || 'partner organisation'}.`,
       })
+
       if (saved?.id) {
         setPreferredRoutingRules((previous) => {
           const next = previous.filter((rule) => {
-            const ruleTargetOrganisationId = normalizeText(rule.targetOrganisationId || rule.target_organisation_id)
-            return ruleTargetOrganisationId !== partnerOrganisationId && String(rule.id) !== String(saved.id)
+            const existingKey = createPartnerRoleKey(
+              normalizeText(rule.targetOrganisationId || rule.target_organisation_id),
+              normalizeText(rule.targetRoleType || rule.target_role_type),
+            )
+            return existingKey !== roleKey && String(rule.id) !== String(saved.id)
           })
           return [...next, saved]
         })
       }
-      setSnapshot((previous) => {
-        if (!previous?.relationships) return previous
-        return {
-          ...previous,
-          relationships: previous.relationships.map((item) =>
-            String(item.id) === String(relationship.id)
-              ? { ...item, preferred: true, relationshipType: 'preferred' }
-              : item,
-          ),
-        }
-      })
-      setMessage(
-        isPersonPreference
-          ? `${personName || 'This person'} is now your operational partner at ${relationship.partner?.name || 'the connected organisation'}.`
-          : `${relationship.partner?.name || 'Partner'} is now your organisation default.`,
-      )
+
+      setMessage(`${personName} is now your ${getRoutingRoleLabel(normalizedRoleType).toLowerCase()} at ${relationship.partner?.name || 'this partner organisation'}.`)
 
       await recordWorkspaceAuditEvent('partner_preferred_status_changed', {
         userId: profile?.id || '',
@@ -1110,25 +1360,46 @@ export default function PartnersPage() {
         targetType: 'partner_relationship',
         targetId: relationship.id,
         metadata: {
+          roleType: normalizedRoleType,
           targetOrganisationId: partnerOrganisationId,
-          targetUserId: isPersonPreference ? personUserId : null,
+          targetUserId: normalizedTargetUserId,
           preferred: true,
           source: 'partner_routing_rules',
         },
       })
     } catch (updateError) {
-      setError(updateError?.message || 'Unable to update preferred status.')
+      setRoutingSelectionValues((previous) => ({
+        ...previous,
+        [roleKey]: previousValue,
+      }))
+      setError(updateError?.message || 'Unable to save the operational routing preference.')
     } finally {
-      setPreferredSavingRelationshipIds((previous) => {
+      setSavingRoutingRoleKeys((previous) => {
         const next = new Set(previous)
-        next.delete(relationship.id)
+        next.delete(roleKey)
         return next
       })
     }
   }
 
-  function handleOpenPartnerProfile(relationship) {
-    const partnerOrganisationId = normalizeText(relationship?.partner?.id || relationship?.counterpartOrganisationId || relationship?.partnerOrganisationId)
+  function updateProfileQueryString(partnerOrganisationId = '') {
+    if (isBondPartnersRoute) return
+    const nextParams = new URLSearchParams(location.search)
+    if (partnerOrganisationId) nextParams.set('profile', partnerOrganisationId)
+    else nextParams.delete('profile')
+    navigate(
+      {
+        pathname: '/partners',
+        search: nextParams.toString() ? `?${nextParams.toString()}` : '',
+      },
+      { replace: false },
+    )
+  }
+
+  function handleOpenPartnerProfile(relationship = null, explicitPartner = null) {
+    const partnerOrganisationId = normalizeText(
+      explicitPartner?.id || relationship?.partner?.id || relationship?.counterpartOrganisationId || relationship?.partnerOrganisationId,
+    )
     if (!partnerOrganisationId) {
       setError('Unable to open this partner profile.')
       return
@@ -1140,10 +1411,9 @@ export default function PartnersPage() {
     }
 
     setSelectedPartnerId(partnerOrganisationId)
+    setProfilePanelOpen(true)
     setError('')
-    if (!partnerId || partnerId !== partnerOrganisationId) {
-      navigate(`/partners/${encodeURIComponent(partnerOrganisationId)}`, { replace: false })
-    }
+    updateProfileQueryString(partnerOrganisationId)
     requestAnimationFrame(() => {
       profilePanelRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     })
@@ -1187,25 +1457,83 @@ export default function PartnersPage() {
     setInviteOrganisationQuery(nextOrganisation?.name || '')
   }
 
-  async function ensurePartnerPeople(relationshipId = '') {
+  const ensurePartnerPeople = useCallback(async (partnerOrganisationId = '', relationshipId = '') => {
     const safeRelationshipId = normalizeText(relationshipId)
-    if (!safeRelationshipId) return []
-    const existing = partnerPeopleByRelationshipId[safeRelationshipId]
+    const safePartnerOrganisationId = normalizeText(partnerOrganisationId)
+    const cacheKey = safeRelationshipId || safePartnerOrganisationId
+    if (!cacheKey) return []
+    const existing = partnerPeopleByRelationshipId[cacheKey]
     if (Array.isArray(existing)) return existing
 
     try {
-      const payload = await getBondPartnerPeople(safeRelationshipId)
-      const people = normalizeDefaultRoutingPeople(payload)
+      setPartnerPeopleMetaByRelationshipId((previous) => ({
+        ...previous,
+        [cacheKey]: {
+          ...(previous[cacheKey] || {}),
+          loading: true,
+          message: '',
+        },
+      }))
+      const payload = await fetchPartnerOperationalPeople(safePartnerOrganisationId, safeRelationshipId)
+      const people = Array.isArray(payload?.people)
+        ? payload.people.map((person) => ({
+            ...person,
+            id: normalizeText(person.userId || person.id),
+            userId: normalizeText(person.userId || person.id),
+            role: normalizeText(person.role),
+            label:
+              normalizeText(person.label || person.fullName || person.name) ||
+              normalizeText(person.email) ||
+              'Partner user',
+            branchId: normalizeText(person.branchId || person.branch_id),
+            branchName: normalizeText(person.branchName || person.branch_name),
+            regionId: normalizeText(person.regionId || person.region_id),
+            regionName: normalizeText(person.regionName || person.region_name),
+            teamId: normalizeText(person.teamId || person.team_id),
+            teamName: normalizeText(person.teamName || person.team_name),
+            department: normalizeText(person.department),
+            title: normalizeText(person.title || person.jobTitle || person.job_title),
+          }))
+        : []
       setPartnerPeopleByRelationshipId((previous) => ({
         ...previous,
-        [safeRelationshipId]: people,
+        [cacheKey]: people,
+      }))
+      setPartnerPeopleMetaByRelationshipId((previous) => ({
+        ...previous,
+        [cacheKey]: {
+          loading: false,
+          message: normalizeText(payload?.message),
+          source: normalizeText(payload?.source),
+        },
       }))
       return people
-    } catch (peopleError) {
-      setError(peopleError?.message || 'Unable to load partner staff directory.')
+    } catch {
+      setPartnerPeopleByRelationshipId((previous) => ({
+        ...previous,
+        [cacheKey]: [],
+      }))
+      setPartnerPeopleMetaByRelationshipId((previous) => ({
+        ...previous,
+        [cacheKey]: {
+          loading: false,
+          message:
+            'No operational people are visible for this organisation connection yet. Set visibility permissions to expose specific people to this partner relationship.',
+          source: 'empty',
+        },
+      }))
       return []
     }
-  }
+  }, [partnerPeopleByRelationshipId])
+
+  useEffect(() => {
+    if (!profilePanelOpen) return
+    const relationshipId = normalizeText(selectedRelationship?.id || '')
+    const organisationTargetId = normalizeText(selectedPartner?.id)
+    const cacheKey = relationshipId || organisationTargetId
+    if (!cacheKey || partnerPeopleMetaByRelationshipId[cacheKey]?.loading || Array.isArray(partnerPeopleByRelationshipId[cacheKey])) return
+    void ensurePartnerPeople(organisationTargetId, relationshipId)
+  }, [ensurePartnerPeople, partnerPeopleByRelationshipId, partnerPeopleMetaByRelationshipId, profilePanelOpen, selectedPartner?.id, selectedRelationship?.id])
 
   return (
     <div className="min-h-full bg-[#f6f8fb] pb-10 text-[#10243a]">
@@ -1347,12 +1675,14 @@ export default function PartnersPage() {
                     const partnerOrganisationId = normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId || relationship.partnerOrganisationId)
                     const existingPreferredRule = preferredRoutingRuleByPartnerOrgId.get(partnerOrganisationId)
                     const isPreferred = Boolean(relationship.preferred || relationship.relationshipType === 'preferred' || existingPreferredRule)
+                    const isSelected = profilePanelOpen && normalizeText(selectedPartner?.id) === partnerOrganisationId
                     return (
                       <PartnerCard
                         key={relationship.id}
                         partner={relationship.partner}
                         relationship={{ ...relationship, preferred: isPreferred, relationshipType: isPreferred ? 'preferred' : relationship.relationshipType }}
                         onProfileClick={() => handleOpenPartnerProfile(relationship)}
+                        selected={isSelected}
                       />
                     )
                   })}
@@ -1404,9 +1734,14 @@ export default function PartnersPage() {
                                   type="button"
                                   disabled={!row.relationship}
                                   onClick={() => row.relationship && handleOpenPartnerProfile(row.relationship)}
-                                  className="inline-flex h-9 items-center gap-2 rounded-[8px] border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#264563] transition hover:bg-[#f8fafc]"
+                                  className={`inline-flex h-9 items-center gap-2 rounded-[8px] border px-3 text-sm font-semibold transition ${
+                                    row.relationship && profilePanelOpen && normalizeText(selectedPartner?.id) === normalizeText(row.organisationId)
+                                      ? 'border-[#c8daef] bg-[#10243a] text-white'
+                                      : 'border-[#d9e4ef] bg-white text-[#264563] hover:bg-[#f8fafc]'
+                                  }`}
                                 >
-                                  View profile <ArrowUpRight size={14} />
+                                  {row.relationship && profilePanelOpen && normalizeText(selectedPartner?.id) === normalizeText(row.organisationId) ? 'Viewing' : 'View profile'}
+                                  {!(row.relationship && profilePanelOpen && normalizeText(selectedPartner?.id) === normalizeText(row.organisationId)) ? <ArrowUpRight size={14} /> : null}
                                 </button>
                               </div>
                               <div className="mt-3 flex flex-wrap gap-2">
@@ -1572,6 +1907,8 @@ export default function PartnersPage() {
                     <PartnerCard
                       key={partner.id}
                       partner={partner}
+                      onProfileClick={() => handleOpenPartnerProfile(null, partner)}
+                      selected={profilePanelOpen && normalizeText(selectedPartner?.id) === normalizeText(partner.id)}
                       action={() => handleConnect(partner)}
                       actionDisabled={connectingPartnerIds.has(partner.id) || sentConnectionPartnerIds.has(partner.id) || pendingSentConnectionPartnerIds.has(partner.id)}
                       actionLabel={
@@ -1597,13 +1934,18 @@ export default function PartnersPage() {
 
           <div ref={profilePanelRef} className="space-y-5 scroll-mt-4">
             <ProfilePanel
-              partner={selectedPartner}
-              relationship={selectedRelationship}
-              people={selectedPartnerPeople}
-              savingPreferred={selectedRelationship?.id ? preferredSavingRelationshipIds.has(selectedRelationship.id) : false}
-              onSetPreferredPerson={
+              isOpen={profilePanelOpen}
+              partner={profilePanelOpen ? selectedPartner : null}
+              relationship={profilePanelOpen ? selectedRelationship : null}
+              people={profilePanelOpen ? selectedPartnerPeople : []}
+              peopleLoading={Boolean(selectedPartnerPeopleMeta?.loading)}
+              peopleMessage={selectedPartnerPeopleMeta?.message || ''}
+              routingRulesByRole={selectedPartnerRoutingRulesByRole}
+              routingSelectionValues={routingSelectionValues}
+              routingSavingRoleKeys={savingRoutingRoleKeys}
+              onSelectRoutingPreference={
                 selectedRelationship
-                  ? (person) => savePreferredRouteForRelationship(selectedRelationship, person)
+                  ? (roleType, targetUserId) => saveOperationalRoutingPreference(selectedRelationship, roleType, targetUserId)
                   : null
               }
             />

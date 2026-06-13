@@ -59,7 +59,14 @@ import { logUnsafeFallbackBlocked, resolveCurrentWorkspace, WorkspaceContextErro
 import { assertMembershipStatusTransition } from '../services/transitions/stateTransitionEngine'
 import { assertWorkspaceEntitlementLimit } from '../services/workspaceEntitlementsService'
 import { isUnsafeFallbackAllowed } from './envValidation'
+import { MOCK_DATA_ENABLED } from './mockData'
 import { loadSignupIntentForUser } from './signupIntent'
+
+const importMetaEnv = import.meta.env || {}
+const PARTNER_ROUTING_DEMO_MODE = Boolean(
+  MOCK_DATA_ENABLED ||
+    (importMetaEnv.DEV && String(importMetaEnv.VITE_ENABLE_MOCK_DATA || '').trim().toLowerCase() === 'true'),
+)
 
 const DEFAULT_NOTIFICATION_PREFERENCES = {
   emailMentions: true,
@@ -69,6 +76,7 @@ const DEFAULT_NOTIFICATION_PREFERENCES = {
 }
 
 const PROFILE_AVATAR_UPLOAD_CONTENT_TYPE = 'image/jpeg'
+const MOCK_PARTNER_ROUTING_RULES_STORAGE_KEY = 'itg:mock-partner-routing-rules:v1'
 
 const DEFAULT_ORGANISATION_SETTINGS = {
   onboardingRules: {
@@ -109,6 +117,28 @@ const DEFAULT_ORGANISATION_SETTINGS = {
   commissionStructures: [],
   commissionProfiles: [],
   emailTemplates: getDefaultEmailTemplateSettings(),
+}
+
+function readMockPartnerRoutingRules() {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(MOCK_PARTNER_ROUTING_RULES_STORAGE_KEY)
+    const parsed = JSON.parse(raw || '[]')
+    return Array.isArray(parsed) ? parsed.map((row) => normalizePartnerRoutingRuleRecord(row)) : []
+  } catch {
+    return []
+  }
+}
+
+function writeMockPartnerRoutingRules(rules = []) {
+  if (typeof window === 'undefined') return []
+  const normalized = [...(Array.isArray(rules) ? rules : []).map((row) => normalizePartnerRoutingRuleRecord(row))].sort(sortPartnerRoutingRules)
+  window.localStorage.setItem(MOCK_PARTNER_ROUTING_RULES_STORAGE_KEY, JSON.stringify(normalized))
+  return normalized
+}
+
+function sortNormalizedPartnerRoutingRules(rules = []) {
+  return [...(Array.isArray(rules) ? rules : []).map((row) => normalizePartnerRoutingRuleRecord(row))].sort(sortPartnerRoutingRules)
 }
 
 const DEFAULT_SUBSCRIPTION = {
@@ -3462,6 +3492,10 @@ export async function removeOrganisationPreferredPartner(partnerId) {
 }
 
 export async function listOrganisationPartnerRoutingRules() {
+  if (PARTNER_ROUTING_DEMO_MODE) {
+    return sortNormalizedPartnerRoutingRules(readMockPartnerRoutingRules())
+  }
+
   if (!isSupabaseConfigured || !supabase) {
     return []
   }
@@ -3483,7 +3517,7 @@ export async function listOrganisationPartnerRoutingRules() {
     .order('rule_name', { ascending: true })
 
   if (!query.error) {
-    return sortPartnerRoutingRules((query.data || []).map(normalizePartnerRoutingRuleRow))
+    return sortNormalizedPartnerRoutingRules((query.data || []).map(normalizePartnerRoutingRuleRow))
   }
 
   if (
@@ -3504,6 +3538,29 @@ export async function listOrganisationPartnerRoutingRules() {
 }
 
 export async function saveOrganisationPartnerRoutingRule(input = {}) {
+  if (PARTNER_ROUTING_DEMO_MODE) {
+    const normalizedInput = normalizePartnerRoutingRuleRecord(input, {
+      id: String(input?.id || '').trim() || createLocalPartnerRoutingRuleId(),
+    })
+    const existing = readMockPartnerRoutingRules()
+    const hasExisting = existing.some((item) => String(item.id) === String(normalizedInput.id))
+    const rows = hasExisting
+      ? existing.map((item) => (String(item.id) === String(normalizedInput.id) ? normalizePartnerRoutingRuleRecord(normalizedInput, item) : item))
+      : [...existing, normalizedInput]
+    const next = rows.map((item) => {
+      if (!normalizedInput.isDefault) return item
+      const sameScope = normalizeText(item.sourceScopeType) === normalizeText(normalizedInput.sourceScopeType)
+      const sameRole = normalizeText(item.targetRoleType) === normalizeText(normalizedInput.targetRoleType)
+      const sameContext = normalizeText(item.sourceScopeId) === normalizeText(normalizedInput.sourceScopeId)
+      const sameUser = normalizeText(item.sourceUserId) === normalizeText(normalizedInput.sourceUserId)
+      return sameScope && sameRole && sameContext && sameUser
+        ? { ...item, isDefault: String(item.id) === String(normalizedInput.id) }
+        : item
+    })
+    writeMockPartnerRoutingRules(next)
+    return normalizedInput
+  }
+
   if (!isSupabaseConfigured || !supabase) {
     return normalizePartnerRoutingRuleRecord(input)
   }
@@ -3609,6 +3666,12 @@ export async function removeOrganisationPartnerRoutingRule(ruleId) {
     throw new Error('Partner routing rule id is required.')
   }
 
+  if (PARTNER_ROUTING_DEMO_MODE) {
+    const existing = readMockPartnerRoutingRules()
+    writeMockPartnerRoutingRules(existing.filter((item) => String(item.id) !== normalizedId))
+    return true
+  }
+
   if (!isSupabaseConfigured || !supabase) {
     return true
   }
@@ -3642,6 +3705,15 @@ export async function removeOrganisationPartnerRoutingRule(ruleId) {
 }
 
 export async function listUserPreferredPartnerRoutingRules() {
+  if (PARTNER_ROUTING_DEMO_MODE) {
+    return sortNormalizedPartnerRoutingRules(
+      readMockPartnerRoutingRules().filter((rule) => {
+        const scope = normalizeText(rule.sourceScopeType || rule.source_scope).toLowerCase()
+        return scope === PARTNER_ROUTING_SOURCE_TYPES.agent || scope === PARTNER_ROUTING_SOURCE_TYPES.user
+      }),
+    )
+  }
+
   if (!isSupabaseConfigured || !supabase) {
     return []
   }
@@ -3667,7 +3739,7 @@ export async function listUserPreferredPartnerRoutingRules() {
     .order('rule_name', { ascending: true })
 
   if (!query.error) {
-    return sortPartnerRoutingRules((query.data || []).map(normalizePartnerRoutingRuleRow))
+    return sortNormalizedPartnerRoutingRules((query.data || []).map(normalizePartnerRoutingRuleRow))
   }
 
   if (isMissingColumnError(query.error, 'target_role_type') || isMissingColumnError(query.error, 'target_scope_name')) {
@@ -3684,7 +3756,7 @@ export async function listUserPreferredPartnerRoutingRules() {
       .order('rule_name', { ascending: true })
 
     if (!legacyQuery.error) {
-      return sortPartnerRoutingRules((legacyQuery.data || []).map(normalizePartnerRoutingRuleRow))
+      return sortNormalizedPartnerRoutingRules((legacyQuery.data || []).map(normalizePartnerRoutingRuleRow))
     }
     if (!isMissingTableError(legacyQuery.error, 'partner_routing_rules')) {
       throw legacyQuery.error
@@ -3708,7 +3780,37 @@ export async function listUserPreferredPartnerRoutingRules() {
   return []
 }
 
+export async function getPartnerRoutingRulesForUser(sourceOrganisationId = '', sourceUserId = '') {
+  const rules = await listUserPreferredPartnerRoutingRules()
+  const normalizedOrganisationId = normalizeText(sourceOrganisationId)
+  const normalizedUserId = normalizeText(sourceUserId)
+
+  return rules.filter((rule) => {
+    if (normalizedOrganisationId && normalizeText(rule.sourceOrganisationId || rule.source_organisation_id) !== normalizedOrganisationId) {
+      return false
+    }
+    if (normalizedUserId && normalizeText(rule.sourceUserId || rule.source_user_id) !== normalizedUserId) {
+      return false
+    }
+    return true
+  })
+}
+
 export async function saveUserPreferredPartnerRoutingRule(input = {}) {
+  if (PARTNER_ROUTING_DEMO_MODE) {
+    const user = await getAuthenticatedUser().catch(() => null)
+    const normalizedInput = normalizePartnerRoutingRuleRecord(input, {
+      id: String(input?.id || '').trim() || createLocalPartnerRoutingRuleId(),
+      sourceScopeType: PARTNER_ROUTING_SOURCE_TYPES.agent,
+      sourceUserId: input.sourceUserId || user?.id || '',
+    })
+    const existing = readMockPartnerRoutingRules()
+    const rows = existing.filter((item) => String(item.id) !== String(normalizedInput.id))
+    rows.push(normalizedInput)
+    writeMockPartnerRoutingRules(rows)
+    return normalizedInput
+  }
+
   if (!isSupabaseConfigured || !supabase) {
     return normalizePartnerRoutingRuleRecord(input)
   }
@@ -3811,10 +3913,63 @@ export async function saveUserPreferredPartnerRoutingRule(input = {}) {
   return fallback.find((item) => String(item.id) === String(normalizedInput.id)) || normalizedInput
 }
 
+export async function upsertPartnerRoutingRule(input = {}) {
+  if (PARTNER_ROUTING_DEMO_MODE) {
+    const user = await getAuthenticatedUser().catch(() => null)
+    const sourceScopeType = normalizeText(input.scope || input.sourceScopeType || input.source_scope || PARTNER_ROUTING_SOURCE_TYPES.agent)
+    return saveUserPreferredPartnerRoutingRule({
+      ...input,
+      sourceOrganisationId: normalizeText(input.sourceOrganisationId || input.source_organisation_id || ''),
+      sourceUserId: normalizeText(input.sourceUserId || input.source_user_id || user?.id || ''),
+      sourceScopeType:
+        sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.user || sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.agent
+          ? sourceScopeType
+          : PARTNER_ROUTING_SOURCE_TYPES.agent,
+    })
+  }
+
+  if (!isSupabaseConfigured || !supabase) {
+    return normalizePartnerRoutingRuleRecord(input)
+  }
+
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  const user = await getAuthenticatedUser()
+  const sourceOrganisationId = normalizeText(input.sourceOrganisationId || input.source_organisation_id || context.organisation.id)
+  const sourceUserId = normalizeText(input.sourceUserId || input.source_user_id || user?.id)
+  const sourceScopeType = normalizeText(input.scope || input.sourceScopeType || input.source_scope || PARTNER_ROUTING_SOURCE_TYPES.agent)
+
+  if (!context.organisation.id || !user?.id) {
+    throw new Error('Authenticated user and organisation are required.')
+  }
+  if (sourceOrganisationId && sourceOrganisationId !== context.organisation.id) {
+    throw new Error('You can only manage partner routing rules for your active organisation.')
+  }
+  if (sourceUserId && sourceUserId !== user.id) {
+    throw new Error('You can only manage your own partner routing preferences.')
+  }
+
+  return saveUserPreferredPartnerRoutingRule({
+    ...input,
+    sourceOrganisationId: context.organisation.id,
+    sourceUserId: user.id,
+    sourceScopeType:
+      sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.user || sourceScopeType === PARTNER_ROUTING_SOURCE_TYPES.agent
+        ? sourceScopeType
+        : PARTNER_ROUTING_SOURCE_TYPES.agent,
+  })
+}
+
 export async function removeUserPreferredPartnerRoutingRule(ruleId) {
   const normalizedId = String(ruleId || '').trim()
   if (!normalizedId) {
     throw new Error('Partner routing rule id is required.')
+  }
+
+  if (PARTNER_ROUTING_DEMO_MODE) {
+    const existing = readMockPartnerRoutingRules()
+    writeMockPartnerRoutingRules(existing.filter((item) => String(item.id) !== normalizedId))
+    return true
   }
 
   if (!isSupabaseConfigured || !supabase) {
@@ -4213,7 +4368,7 @@ export async function resolveCommissionSnapshotForAgent({
   salePrice = 0,
   grossCommissionPercentage = 0,
 } = {}) {
-  if (!isSupabaseConfigured || !supabase) {
+  const buildFallbackSnapshot = () => {
     const fallback = resolveCommissionCalculation({
       salePrice,
       grossCommissionPercentage,
@@ -4229,66 +4384,63 @@ export async function resolveCommissionSnapshotForAgent({
     }
   }
 
-  const client = requireClient()
-  const context = await ensureOrganisationContext(client)
-  if (!context.organisation.id) {
-    const fallback = resolveCommissionCalculation({
+  if (!isSupabaseConfigured || !supabase) {
+    return buildFallbackSnapshot()
+  }
+
+  try {
+    const client = requireClient()
+    const context = await ensureOrganisationContext(client)
+    if (!context.organisation.id) {
+      return buildFallbackSnapshot()
+    }
+
+    const structures = await listOrganisationCommissionStructures()
+    const structureMap = new Map(structures.map((item) => [normalizeText(item.id), item]))
+    const activeProfiles = await listOrganisationUserCommissionProfiles()
+
+    const normalizedUserId = normalizeText(assignedAgentUserId)
+    const normalizedEmail = normalizeText(assignedAgentEmail).toLowerCase()
+    const targetProfile =
+      activeProfiles.find((profile) => normalizedUserId && normalizeText(profile.userId) === normalizedUserId) ||
+      activeProfiles.find((profile) => normalizedEmail && normalizeText(profile.email).toLowerCase() === normalizedEmail) ||
+      null
+
+    let structure = null
+    if (targetProfile?.commissionStructureId) {
+      structure = structureMap.get(normalizeText(targetProfile.commissionStructureId)) || null
+    }
+
+    if (!structure) {
+      structure = structures.find((item) => item.isDefault && item.isActive) || null
+    }
+
+    if (!structure) {
+      structure = structures.find((item) => item.isActive) || null
+    }
+
+    const fallbackAgentSplit = Number.isFinite(Number(targetProfile?.overrideAgentSplitPercentage))
+      ? normalizePercentage(targetProfile.overrideAgentSplitPercentage, 70)
+      : structure
+        ? normalizePercentage(structure.agentSplitPercentage, 70)
+        : 70
+
+    const calculation = resolveCommissionCalculation({
       salePrice,
       grossCommissionPercentage,
-      agentSplitPercentage: 70,
+      agentSplitPercentage: fallbackAgentSplit,
     })
+
     return {
-      ...fallback,
-      organisationId: null,
-      commissionStructureId: null,
-      commissionStructureName: '',
-      isFallback: true,
+      ...calculation,
+      organisationId: context.organisation.id,
+      commissionStructureId: normalizeText(structure?.id),
+      commissionStructureName: normalizeText(structure?.name),
+      overrideAgentSplitPercentage: targetProfile?.overrideAgentSplitPercentage ?? null,
+      isFallback: !structure,
     }
-  }
-
-  const structures = await listOrganisationCommissionStructures()
-  const structureMap = new Map(structures.map((item) => [normalizeText(item.id), item]))
-  const activeProfiles = await listOrganisationUserCommissionProfiles()
-
-  const normalizedUserId = normalizeText(assignedAgentUserId)
-  const normalizedEmail = normalizeText(assignedAgentEmail).toLowerCase()
-  const targetProfile =
-    activeProfiles.find((profile) => normalizedUserId && normalizeText(profile.userId) === normalizedUserId) ||
-    activeProfiles.find((profile) => normalizedEmail && normalizeText(profile.email).toLowerCase() === normalizedEmail) ||
-    null
-
-  let structure = null
-  if (targetProfile?.commissionStructureId) {
-    structure = structureMap.get(normalizeText(targetProfile.commissionStructureId)) || null
-  }
-
-  if (!structure) {
-    structure = structures.find((item) => item.isDefault && item.isActive) || null
-  }
-
-  if (!structure) {
-    structure = structures.find((item) => item.isActive) || null
-  }
-
-  const fallbackAgentSplit = Number.isFinite(Number(targetProfile?.overrideAgentSplitPercentage))
-    ? normalizePercentage(targetProfile.overrideAgentSplitPercentage, 70)
-    : structure
-      ? normalizePercentage(structure.agentSplitPercentage, 70)
-      : 70
-
-  const calculation = resolveCommissionCalculation({
-    salePrice,
-    grossCommissionPercentage,
-    agentSplitPercentage: fallbackAgentSplit,
-  })
-
-  return {
-    ...calculation,
-    organisationId: context.organisation.id,
-    commissionStructureId: normalizeText(structure?.id),
-    commissionStructureName: normalizeText(structure?.name),
-    overrideAgentSplitPercentage: targetProfile?.overrideAgentSplitPercentage ?? null,
-    isFallback: !structure,
+  } catch {
+    return buildFallbackSnapshot()
   }
 }
 
