@@ -25,10 +25,6 @@ function normalizeKey(value) {
     .replace(/[^a-z0-9_]/g, '')
 }
 
-function normalizeText(value) {
-  return String(value || '').trim()
-}
-
 function hasValue(value) {
   if (typeof value === 'boolean') return true
   if (Array.isArray(value)) return value.length > 0
@@ -116,6 +112,22 @@ function normalizePropertyTenure(value, context = {}) {
   if (normalized === 'estate_hoa' || haystack.includes('estate') || haystack.includes('hoa')) return 'estate_hoa'
   if (normalized === 'freehold' || haystack.includes('freehold') || haystack.includes('full_title')) return 'freehold'
   if (haystack.includes('share_block')) return 'share_block'
+  if (
+    haystack.includes('vacant') ||
+    haystack.includes('agricultural') ||
+    haystack.includes('farm') ||
+    haystack.includes('smallholding') ||
+    haystack.includes('mixed_use') ||
+    haystack.includes('commercial') ||
+    haystack.includes('office') ||
+    haystack.includes('warehouse') ||
+    haystack.includes('retail') ||
+    haystack.includes('industrial') ||
+    haystack.includes('business') ||
+    haystack.includes('land')
+  ) {
+    return 'freehold'
+  }
   return 'unknown'
 }
 

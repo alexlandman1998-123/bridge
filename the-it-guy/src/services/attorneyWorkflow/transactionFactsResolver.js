@@ -1,3 +1,5 @@
+import { resolveBuyerOnboardingFlow } from '../../lib/buyerOnboardingFlow.js'
+
 const CASH_FINANCE_VALUES = new Set(['cash', 'cash_sale', 'cash_deal', 'proof_of_funds'])
 const BOND_FINANCE_VALUES = new Set(['bond', 'bonded', 'bond_finance', 'mortgage', 'home_loan'])
 const HYBRID_FINANCE_VALUES = new Set(['hybrid', 'cash_and_bond', 'partial_bond', 'combination'])
@@ -228,6 +230,22 @@ function normalizePropertyTenure(value, transaction = {}) {
   if (normalized === 'estate_hoa' || haystack.includes('estate') || haystack.includes('hoa')) return 'estate_hoa'
   if (normalized === 'freehold' || haystack.includes('freehold') || haystack.includes('full_title')) return 'freehold'
   if (haystack.includes('share_block')) return 'share_block'
+  if (
+    haystack.includes('vacant') ||
+    haystack.includes('agricultural') ||
+    haystack.includes('farm') ||
+    haystack.includes('smallholding') ||
+    haystack.includes('mixed_use') ||
+    haystack.includes('commercial') ||
+    haystack.includes('office') ||
+    haystack.includes('warehouse') ||
+    haystack.includes('retail') ||
+    haystack.includes('industrial') ||
+    haystack.includes('business') ||
+    haystack.includes('land')
+  ) {
+    return 'freehold'
+  }
   return normalized || 'unknown'
 }
 
@@ -251,11 +269,55 @@ function countRelated(transaction, keys = []) {
   return 0
 }
 
+function extractOnboardingFormData(transaction = {}) {
+  const candidates = [
+    transaction.onboardingFormData,
+    transaction.onboarding_form_data,
+    transaction.buyerOnboardingFormData,
+    transaction.buyer_onboarding_form_data,
+  ]
+
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate
+    }
+  }
+
+  return {}
+}
+
+function extractBuyerOnboardingFlowSnapshot(transaction = {}, onboardingFormData = {}) {
+  const candidates = [
+    transaction.buyer_onboarding_flow,
+    transaction.onboarding_flow,
+    transaction.buyerOnboardingFlow,
+    onboardingFormData.buyer_onboarding_flow,
+    onboardingFormData.onboarding_flow,
+  ]
+
+  for (const candidate of candidates) {
+    if (
+      candidate &&
+      typeof candidate === 'object' &&
+      !Array.isArray(candidate) &&
+      (Array.isArray(candidate.visible_fields) ||
+        Array.isArray(candidate.required_fields) ||
+        typeof candidate.purchaser_branch === 'string' ||
+        typeof candidate.finance_branch === 'string')
+    ) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
 export function resolveTransactionFacts(transaction = {}) {
   const rawFieldsUsed = {}
   const missingFields = []
   const confidenceWarnings = []
   const routingProfile = extractRoutingProfile(transaction)
+  const onboardingFormData = extractOnboardingFormData(transaction)
 
   const financeRaw = firstProfileField(routingProfile, ['financeType', 'finance_type'], rawFieldsUsed, 'financeType') ??
     firstField(transaction, FINANCE_FIELD_CANDIDATES, rawFieldsUsed, 'financeType')
@@ -281,6 +343,13 @@ export function resolveTransactionFacts(transaction = {}) {
   const propertyType = normalizeKey(transaction?.property_type || transaction?.propertyType || transaction?.unit?.property_type)
   const propertyTenure = normalizePropertyTenure(propertyTenureRaw || propertyType, transaction)
   const vatTreatment = normalizeVatTreatment(vatTreatmentRaw)
+  const buyerFlowSnapshot = extractBuyerOnboardingFlowSnapshot(transaction, onboardingFormData) ||
+    (Object.keys(onboardingFormData || {}).length
+      ? resolveBuyerOnboardingFlow(onboardingFormData, transaction, {
+          purchaserType: onboardingFormData?.purchaser_type || buyerEntityType || transaction?.purchaser_type || 'individual',
+          financeType: financeType || onboardingFormData?.purchase_finance_type || transaction?.finance_type || 'cash',
+        })
+      : null)
 
   if (financeType === 'unknown') {
     missingFields.push('finance_type')
@@ -342,6 +411,11 @@ export function resolveTransactionFacts(transaction = {}) {
     sellerIsIndividual: sellerEntityType === 'individual',
     sellerIsCompany: sellerEntityType === 'company',
     sellerIsTrust: sellerEntityType === 'trust',
+    buyerBranch: String(buyerFlowSnapshot?.buyer_branch || buyerFlowSnapshot?.purchaser_branch || buyerEntityType || '').trim().toLowerCase(),
+    buyerPurchaseMode: String(buyerFlowSnapshot?.buyer_purchase_mode || buyerFlowSnapshot?.purchase_mode || '').trim().toLowerCase(),
+    buyerFinanceSupportMode: String(buyerFlowSnapshot?.buyer_finance_support_mode || buyerFlowSnapshot?.finance_support_mode || '').trim().toLowerCase(),
+    buyerOnboardingFlowVersion: buyerFlowSnapshot?.version || buyerFlowSnapshot?.buyer_onboarding_flow_version || buyerFlowSnapshot?.onboarding_flow_version || '',
+    buyerOnboardingFlow: buyerFlowSnapshot || null,
     isDevelopmentSale,
     isPrivateSale,
     isResale,

@@ -4252,6 +4252,24 @@ function ClientPortal() {
       : buyerRequirementFinanceType === 'combination' || buyerRequirementFinanceType === 'hybrid'
         ? 'Because this is a hybrid purchase, both proof of funds for the cash portion and bond documents are required.'
         : 'Because this is a cash purchase, proof of funds is required.'
+  const buyerRequirementFlowSummary = buyerRequirementProfile?.branchSummary
+    ? [
+        buyerRequirementProfile.branchSummary.purchaser?.label
+          ? `Buyer: ${buyerRequirementProfile.branchSummary.purchaser.label}`
+          : null,
+        buyerRequirementProfile.branchSummary.purchase_mode?.label
+          ? `Purchase: ${buyerRequirementProfile.branchSummary.purchase_mode.label}`
+          : null,
+        buyerRequirementProfile.branchSummary.finance?.label
+          ? `Finance: ${buyerRequirementProfile.branchSummary.finance.label}`
+          : null,
+        buyerRequirementProfile.branchSummary.finance?.support_mode?.label
+          ? `Support: ${buyerRequirementProfile.branchSummary.finance.support_mode.label}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : ''
   const salesRequiredDocuments = groupedPortalRequiredDocuments.sales
   const ficaRequiredDocuments = groupedPortalRequiredDocuments.fica
   const bondRequiredDocuments = groupedPortalRequiredDocuments.bond
@@ -7701,6 +7719,9 @@ function ClientPortal() {
                   <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">
                     Buyer requirements: {buyerRequirementProfile?.buyerTypeLabel || toTitleLabel(buyerRequirementType || 'individual')}
                   </h4>
+                  {buyerRequirementFlowSummary ? (
+                    <p className="mt-2 text-xs leading-5 text-[#7b8ca2]">{buyerRequirementFlowSummary}</p>
+                  ) : null}
                   <p className="mt-1 text-sm leading-6 text-[#5f738a]">{buyerRequirementGuidance}</p>
                   <p className="mt-1 text-sm leading-6 text-[#5f738a]">{buyerRequirementFinanceGuidance}</p>
                 </div>

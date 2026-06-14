@@ -765,7 +765,7 @@ function buildRuntimeMandateStatusForLead({
 }
 
 const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
-const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 12000
+const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 65000
 const LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS = 18000
 
 function withLegalWorkspaceTimeout(task, message, timeoutMs = LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS) {
@@ -1460,7 +1460,7 @@ export default function LegalDocumentWorkspacePage() {
       return runtimeDraft
     }
 
-    onProgress?.('Generating mandate PDF...')
+    onProgress?.('Generating mandate PDF... this can take up to a minute.')
     const generationResult = await withLegalWorkspaceTimeout(
       generatePacketVersion({
         packetId: packet.id,

@@ -695,6 +695,7 @@ function hasForeignIndicators(form = {}, transaction = {}, facts = {}) {
     readPath(transaction, 'nationality') ||
     readPath(source, 'buyer.nationality') ||
     ''
+  const normalizedNationality = normalizeKey(nationality)
   const identityNumber =
     readPath(form, 'purchaser.identity_number') ||
     readPath(form, 'identity_number') ||
@@ -711,7 +712,7 @@ function hasForeignIndicators(form = {}, transaction = {}, facts = {}) {
   return (
     nonResidentFlag ||
     ['foreign_national', 'non_resident', 'non-resident', 'foreign', 'foreign_resident'].includes(normalizeKey(residencyStatus)) ||
-    (nationality && !['south african', 'south-african', 'za', 'rsa'].includes(normalizeKey(nationality))) ||
+    (normalizedNationality && !['south_african', 'south_africa', 'za', 'rsa'].includes(normalizedNationality)) ||
     (isFilled(passportNumber) && !isFilled(identityNumber))
   )
 }

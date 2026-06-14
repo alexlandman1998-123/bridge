@@ -151,4 +151,50 @@ function assertIncludes(values, expected, message) {
   assert.deepEqual(resolveWorkflowKeysForTransaction(staleTransaction), staleTransaction.routing_profile_json.requiredWorkflowKeys)
 }
 
+{
+  const buyerOnboardingFlow = {
+    version: 'buyer_onboarding_flow_v1',
+    buyer_branch: 'company',
+    buyer_branch_label: 'Company',
+    buyer_purchase_mode: 'individual',
+    buyer_purchase_mode_label: 'Individual',
+    buyer_finance_branch: 'hybrid',
+    buyer_finance_branch_label: 'Hybrid',
+    buyer_finance_support_mode: 'originator_led',
+    buyer_finance_support_mode_label: 'Originator Assisted',
+    visible_fields: ['buyer.company.name'],
+    required_fields: ['buyer.company.name'],
+    optional_fields: ['buyer.company.directors'],
+    document_triggers: ['cipc_registration'],
+    branch_summary: {
+      purchaser: { key: 'company', label: 'Company', legal_type: 'company' },
+      purchase_mode: { key: 'individual', label: 'Individual' },
+      finance: {
+        key: 'hybrid',
+        label: 'Hybrid',
+        support_mode: { key: 'originator_led', label: 'Originator Assisted' },
+      },
+    },
+  }
+  const transaction = transactionWithProfile({
+    id: 'buyer-flow-snapshot-overrides',
+    finance_type: 'cash',
+    transaction_type: 'private_sale',
+    property_type: 'freehold house',
+    buyer_entity_type: 'individual',
+    onboardingFormData: {
+      purchaser_type: 'individual',
+      purchase_finance_type: 'cash',
+      buyer_onboarding_flow: buyerOnboardingFlow,
+    },
+  })
+  const facts = resolveTransactionFacts(transaction)
+
+  assert.equal(facts.buyerBranch, 'company')
+  assert.equal(facts.buyerPurchaseMode, 'individual')
+  assert.equal(facts.buyerFinanceSupportMode, 'originator_led')
+  assert.equal(facts.buyerOnboardingFlowVersion, 'buyer_onboarding_flow_v1')
+  assert.equal(facts.buyerOnboardingFlow?.buyer_branch, 'company')
+}
+
 console.log('transaction-routing-workflow-adaptation tests passed')

@@ -109,6 +109,52 @@ try {
   assert.equal(otpFacts.purchase.finance_type, 'bond')
   assert.equal(otpFacts.workflow.current_main_stage, 'OTP')
 
+  const buyerFlowSnapshot = {
+    version: 'buyer_onboarding_flow_v1',
+    buyer_branch: 'company',
+    buyer_branch_label: 'Company',
+    buyer_purchase_mode: 'individual',
+    buyer_purchase_mode_label: 'Individual',
+    buyer_finance_branch: 'hybrid',
+    buyer_finance_branch_label: 'Hybrid',
+    buyer_finance_support_mode: 'originator_led',
+    buyer_finance_support_mode_label: 'Originator Assisted',
+    visible_fields: ['buyer.company.name'],
+    required_fields: ['buyer.company.name'],
+    optional_fields: ['buyer.company.directors'],
+    document_triggers: ['cipc_registration'],
+    branch_summary: {
+      purchaser: { key: 'company', label: 'Company', legal_type: 'company' },
+      purchase_mode: { key: 'individual', label: 'Individual' },
+      finance: {
+        key: 'hybrid',
+        label: 'Hybrid',
+        support_mode: { key: 'originator_led', label: 'Originator Assisted' },
+      },
+    },
+  }
+
+  const snapshotFacts = buildTransactionDocumentFacts({
+    transaction: {
+      ...otpBondTransaction,
+      buyer_entity_type: 'individual',
+      buyer_onboarding_flow: buyerFlowSnapshot,
+    },
+    formData: {
+      purchaser_type: 'individual',
+      purchase_finance_type: 'cash',
+      buyer_onboarding_flow: buyerFlowSnapshot,
+    },
+    documents: [],
+    subprocesses: [],
+  })
+
+  assert.equal(snapshotFacts.buyer.branch, 'company')
+  assert.equal(snapshotFacts.buyer.purchase_mode, 'individual')
+  assert.equal(snapshotFacts.buyer.finance_support_mode, 'originator_led')
+  assert.equal(snapshotFacts.buyer.onboarding_flow_version, 'buyer_onboarding_flow_v1')
+  assert.equal(snapshotFacts.buyer.onboarding_flow?.buyer_branch, 'company')
+
   const preFinanceVisibility = shouldDisplayRequirementAtStage({
     stageGates: ['finance_ready'],
     preCollectionAllowed: false,

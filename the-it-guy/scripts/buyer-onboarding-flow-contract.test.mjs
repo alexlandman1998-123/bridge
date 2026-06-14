@@ -201,6 +201,46 @@ test('normalizes the shared buyer flow wrapper', () => {
   assert.equal(getBuyerOnboardingBranchSummary(flow).finance.support_mode.key, 'self_managed')
 })
 
+test('prefers persisted buyer flow snapshots when hydrating the wrapper', () => {
+  const persistedFlow = {
+    version: BUYER_ONBOARDING_FLOW_VERSION,
+    buyer_branch: 'company',
+    buyer_branch_label: 'Company',
+    buyer_purchase_mode: 'individual',
+    buyer_purchase_mode_label: 'Individual',
+    buyer_finance_branch: 'bond',
+    buyer_finance_branch_label: 'Bond',
+    buyer_finance_support_mode: 'self_managed',
+    buyer_finance_support_mode_label: 'Self Managed',
+    visible_fields: ['buyer.company.name', 'buyer.company.registration_number'],
+    required_fields: ['buyer.company.name'],
+    optional_fields: ['buyer.company.directors'],
+    document_triggers: ['cipc_registration'],
+    branch_summary: {
+      purchaser: { key: 'company', label: 'Company', legal_type: 'company' },
+      purchase_mode: { key: 'individual', label: 'Individual' },
+      finance: {
+        key: 'bond',
+        label: 'Bond',
+        support_mode: { key: 'self_managed', label: 'Self Managed' },
+      },
+    },
+  }
+
+  const flow = resolveBuyerOnboardingFlowWrapper({
+    purchaser_type: 'individual',
+    purchase_finance_type: 'cash',
+    buyer_onboarding_flow: persistedFlow,
+    company_name: 'Conflicting Values Pty Ltd',
+  })
+
+  assert.equal(flow.buyer_branch, 'company')
+  assert.equal(flow.buyer_purchase_mode, 'individual')
+  assert.equal(flow.buyer_finance_branch, 'bond')
+  assertIncludes(asSet(flow.required_fields), ['buyer.company.name'], 'persisted flow required fields')
+  assert.equal(getBuyerOnboardingBranchSummary(flow).purchaser.key, 'company')
+})
+
 test('hydrates the same flow contract through derived buyer profiles', () => {
   const formData = {
     purchaser_type: 'company',
@@ -233,6 +273,8 @@ test('hydrates the same flow contract through derived buyer profiles', () => {
   assert.equal(derived.flow.finance_support_mode, 'self_managed')
 
   assert.equal(profile.flow.version, BUYER_ONBOARDING_FLOW_VERSION)
+  assert.equal(profile.buyerOnboardingFlowVersion, BUYER_ONBOARDING_FLOW_VERSION)
+  assert.equal(profile.buyerOnboardingFlow?.version, BUYER_ONBOARDING_FLOW_VERSION)
   assert.equal(profile.purchaseMode, 'individual')
   assert.equal(profile.buyerBranch, 'company')
   assert.equal(profile.financeBranch, 'hybrid')

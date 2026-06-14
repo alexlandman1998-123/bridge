@@ -3,6 +3,7 @@ import {
   deriveOnboardingConfiguration,
   normalizePurchaserType,
 } from '../../lib/purchaserPersonas'
+import { resolveBuyerOnboardingFlow } from '../../lib/buyerOnboardingFlow.js'
 import {
   getMainStageFromDetailedStage,
   getMainStageIndex,
@@ -359,19 +360,27 @@ export function buildTransactionDocumentFacts({
   documents = [],
   subprocesses = [],
 } = {}) {
-  const transactionFacts = resolveTransactionFacts(transaction || {})
   const detailedStage = normalizeText(transaction?.stage || 'Available') || 'Available'
   const currentMainStage = normalizeMainStage(transaction?.current_main_stage, detailedStage)
   const currentMainStageIndex = getMainStageIndex(currentMainStage)
   const purchaserType = normalizePurchaserType(
-    formData?.purchaser_type || transaction?.purchaser_type || transactionFacts.buyerEntityType || 'individual',
+    formData?.purchaser_type || transaction?.purchaser_type || transaction?.buyer_entity_type || transaction?.buyerEntityType || 'individual',
   )
   const financeType = hybridFinanceType(
     formData?.purchase_finance_type ||
     transaction?.finance_type ||
-    transactionFacts.financeType ||
+    transaction?.funding_type ||
     'cash',
   )
+  const buyerOnboardingFlow = resolveBuyerOnboardingFlow(formData, transaction, {
+    purchaserType,
+    financeType,
+  })
+  const transactionFacts = resolveTransactionFacts({
+    ...transaction,
+    onboardingFormData: formData,
+    buyer_onboarding_flow: buyerOnboardingFlow,
+  })
   const salesSnapshot = resolveSalesWorkflowSnapshot({
     onboardingStatus: transaction?.onboarding_status || '',
     onboardingCompletedAt: transaction?.onboarding_completed_at || null,
@@ -391,6 +400,13 @@ export function buildTransactionDocumentFacts({
     buyer: {
       legal_type: transactionFacts.buyerEntityType,
       type: transactionFacts.buyerEntityType,
+      branch: transactionFacts.buyerBranch || buyerOnboardingFlow.buyer_branch || purchaserType,
+      purchase_mode: transactionFacts.buyerPurchaseMode || buyerOnboardingFlow.buyer_purchase_mode || null,
+      finance_support_mode:
+        transactionFacts.buyerFinanceSupportMode || buyerOnboardingFlow.buyer_finance_support_mode || null,
+      onboarding_flow_version:
+        transactionFacts.buyerOnboardingFlowVersion || buyerOnboardingFlow.version || null,
+      onboarding_flow: transactionFacts.buyerOnboardingFlow || buyerOnboardingFlow || null,
       nationality:
         purchaserType === 'foreign_purchaser' || normalizeKey(formData?.buyer_type) === 'foreign_purchaser'
           ? 'foreign'

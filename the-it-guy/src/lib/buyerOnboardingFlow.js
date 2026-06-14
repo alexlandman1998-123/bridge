@@ -67,6 +67,34 @@ function buildBranchSummary(flow = {}) {
   }
 }
 
+function extractPersistedFlowSnapshot(form = {}, facts = {}) {
+  const candidates = [
+    facts?.buyer_onboarding_flow,
+    facts?.onboarding_flow,
+    form?.buyer_onboarding_flow,
+    form?.onboarding_flow,
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      continue
+    }
+    if (
+      Array.isArray(candidate.visible_fields) ||
+      Array.isArray(candidate.required_fields) ||
+      Array.isArray(candidate.optional_fields) ||
+      Array.isArray(candidate.document_triggers) ||
+      typeof candidate.purchaser_branch === 'string' ||
+      typeof candidate.finance_branch === 'string' ||
+      typeof candidate.purchase_mode === 'string'
+    ) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
 function normalizeResolvedFlow(flow = {}) {
   const visibleFields = mergeUnique(flow.visible_fields, flow.buyer_facing_questions, flow.required_fields, flow.optional_fields)
 
@@ -98,6 +126,11 @@ function normalizeResolvedFlow(flow = {}) {
 }
 
 export function resolveBuyerOnboardingFlow(form = {}, transaction = {}, facts = {}) {
+  const persistedFlow = extractPersistedFlowSnapshot(form, facts)
+  if (persistedFlow) {
+    return normalizeResolvedFlow(persistedFlow)
+  }
+
   return normalizeResolvedFlow(resolveBuyerOnboardingFlowContract(form, transaction, facts))
 }
 

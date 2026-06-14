@@ -31402,6 +31402,35 @@ function getOnboardingFinanceSnapshot({ formData = {}, transaction = null } = {}
   }
 }
 
+function buildBuyerOnboardingFlowSnapshot(formData = {}, transaction = {}, purchaserType = 'individual') {
+  const normalizedPurchaserType = normalizePurchaserType(
+    formData?.purchaser_type || purchaserType || transaction?.purchaser_type || 'individual',
+  )
+  const normalizedFinanceType = normalizeFinanceType(
+    formData?.purchase_finance_type || transaction?.finance_type || 'cash',
+  )
+  const flow = resolveBuyerOnboardingFlow(formData, transaction, {
+    purchaserType: normalizedPurchaserType,
+    financeType: normalizedFinanceType,
+  })
+
+  return {
+    buyer_onboarding_flow: flow,
+    onboarding_flow: flow,
+    buyer_onboarding_flow_version: flow.version || null,
+    onboarding_flow_version: flow.version || null,
+    buyer_branch: flow.buyer_branch || null,
+    buyer_branch_label: flow.buyer_branch_label || null,
+    buyer_purchase_mode: flow.buyer_purchase_mode || null,
+    buyer_purchase_mode_label: flow.buyer_purchase_mode_label || null,
+    buyer_finance_branch: flow.buyer_finance_branch || null,
+    buyer_finance_branch_label: flow.buyer_finance_branch_label || null,
+    buyer_finance_support_mode: flow.buyer_finance_support_mode || null,
+    buyer_finance_support_mode_label: flow.buyer_finance_support_mode_label || null,
+    buyer_legal_type: flow.buyer_legal_type || null,
+  }
+}
+
 function validateOnboardingFinanceAndReservation({ formData = {}, transaction = null } = {}) {
   const snapshot = getOnboardingFinanceSnapshot({ formData, transaction })
   const hasPurchasePrice = Number.isFinite(snapshot.purchasePrice) && snapshot.purchasePrice > 0
@@ -32230,12 +32259,16 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
   const financeReadinessSnapshot = submit
     ? buildOnboardingFinanceReadinessSnapshot(normalizedFormData, transaction)
     : normalizedFormData.finance_readiness || null
-  const formDataForPersistence = financeReadinessSnapshot
+  let formDataForPersistence = financeReadinessSnapshot
     ? {
         ...normalizedFormData,
         finance_readiness: financeReadinessSnapshot,
       }
     : normalizedFormData
+  formDataForPersistence = {
+    ...formDataForPersistence,
+    ...buildBuyerOnboardingFlowSnapshot(formDataForPersistence, transaction, purchaserType),
+  }
 
   const now = new Date().toISOString()
   const nextStatus = submit ? 'Submitted' : onboarding.status === 'Not Started' ? 'In Progress' : onboarding.status
@@ -32494,15 +32527,17 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
   })
   const fundingSources = getOnboardingFundingSources(normalizedFormData)
   const now = new Date().toISOString()
+  const formDataForPersistence = {
+    ...normalizedFormData,
+    ...buildBuyerOnboardingFlowSnapshot(normalizedFormData, transaction, purchaserType),
+    funding_sources: fundingSources,
+  }
 
   const { error: formDataError } = await client.from('onboarding_form_data').upsert(
     {
       transaction_id: transaction.id,
       purchaser_type: purchaserType,
-      form_data: {
-        ...normalizedFormData,
-        funding_sources: fundingSources,
-      },
+      form_data: formDataForPersistence,
       updated_at: now,
     },
     { onConflict: 'transaction_id' },

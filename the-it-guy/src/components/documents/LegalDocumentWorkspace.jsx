@@ -171,6 +171,10 @@ function firstNonEmptyText(...values) {
   return ''
 }
 
+function fullNameFromParts(...parts) {
+  return parts.map(normalizeText).filter(Boolean).join(' ')
+}
+
 function buildMergeChecklistRows({ packetType = 'mandate', placeholders = {} } = {}) {
   const normalized = normalizeMergeFieldPayload(placeholders, {
     packetType,
@@ -507,6 +511,83 @@ function mandateRequiresSpouseSignature({ sourceContext = {}, latestVersion = nu
   ].some(valueIndicatesMarried)
 }
 
+function buildSignerDefaultsFromContext({ sourceContext = {}, latestVersion = null, mandateDataSnapshot = null } = {}) {
+  const generatedSnapshot = sourceContext?.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
+    ? sourceContext.generatedDataSnapshot
+    : latestVersion?.validation_summary_json?.generatedDataSnapshot && typeof latestVersion.validation_summary_json.generatedDataSnapshot === 'object'
+      ? latestVersion.validation_summary_json.generatedDataSnapshot
+    : mandateDataSnapshot && typeof mandateDataSnapshot === 'object'
+      ? mandateDataSnapshot
+      : {}
+  const nestedSource = generatedSnapshot?.sourceContext && typeof generatedSnapshot.sourceContext === 'object'
+    ? generatedSnapshot.sourceContext
+    : latestVersion?.validation_summary_json?.sourceContext && typeof latestVersion.validation_summary_json.sourceContext === 'object'
+      ? latestVersion.validation_summary_json.sourceContext
+      : {}
+  const placeholders = {
+    ...(generatedSnapshot?.placeholders && typeof generatedSnapshot.placeholders === 'object' ? generatedSnapshot.placeholders : {}),
+    ...(latestVersion?.placeholders_resolved_json && typeof latestVersion.placeholders_resolved_json === 'object' ? latestVersion.placeholders_resolved_json : {}),
+  }
+  const lead = {
+    ...(nestedSource?.lead && typeof nestedSource.lead === 'object' ? nestedSource.lead : {}),
+    ...(generatedSnapshot?.lead && typeof generatedSnapshot.lead === 'object' ? generatedSnapshot.lead : {}),
+    ...(sourceContext?.lead && typeof sourceContext.lead === 'object' ? sourceContext.lead : {}),
+  }
+  const agent = {
+    ...(nestedSource?.agent && typeof nestedSource.agent === 'object' ? nestedSource.agent : {}),
+    ...(generatedSnapshot?.agent && typeof generatedSnapshot.agent === 'object' ? generatedSnapshot.agent : {}),
+    ...(sourceContext?.agent && typeof sourceContext.agent === 'object' ? sourceContext.agent : {}),
+  }
+  const sellerOnboarding = {
+    ...(nestedSource?.sellerOnboarding && typeof nestedSource.sellerOnboarding === 'object' ? nestedSource.sellerOnboarding : {}),
+    ...(generatedSnapshot?.sellerOnboarding && typeof generatedSnapshot.sellerOnboarding === 'object' ? generatedSnapshot.sellerOnboarding : {}),
+    ...(lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object' ? lead.sellerOnboarding : {}),
+    ...(sourceContext?.sellerOnboarding && typeof sourceContext.sellerOnboarding === 'object' ? sourceContext.sellerOnboarding : {}),
+  }
+  const onboardingFormData = {
+    ...(nestedSource?.onboardingFormData && typeof nestedSource.onboardingFormData === 'object' ? nestedSource.onboardingFormData : {}),
+    ...(generatedSnapshot?.onboardingFormData && typeof generatedSnapshot.onboardingFormData === 'object' ? generatedSnapshot.onboardingFormData : {}),
+    ...(sourceContext?.onboardingFormData && typeof sourceContext.onboardingFormData === 'object' ? sourceContext.onboardingFormData : {}),
+    ...(sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object' ? sellerOnboarding.formData : {}),
+  }
+
+  const sellerFirstName = firstNonEmptyText(placeholders.seller_first_name, lead.sellerName, onboardingFormData.sellerFirstName, onboardingFormData.firstName)
+  const sellerSurname = firstNonEmptyText(placeholders.seller_surname, lead.sellerSurname, onboardingFormData.sellerSurname, onboardingFormData.lastName, onboardingFormData.surname)
+  const spouseFirstName = firstNonEmptyText(placeholders.seller_spouse_first_name, onboardingFormData.spouseFirstName, onboardingFormData.spouse_first_name)
+  const spouseSurname = firstNonEmptyText(placeholders.seller_spouse_surname, onboardingFormData.spouseSurname, onboardingFormData.spouseLastName, onboardingFormData.spouse_surname)
+
+  return {
+    agent: {
+      signerName: firstNonEmptyText(placeholders.agent_full_name, agent.fullName, agent.name, sourceContext.generatedByName, sourceContext.agentName, lead.assignedAgentName),
+      signerEmail: firstNonEmptyText(placeholders.agent_email, agent.email, sourceContext.agentEmail, sourceContext.generatedByUserEmail, lead.assignedAgentEmail).toLowerCase(),
+    },
+    seller: {
+      signerName: firstNonEmptyText(
+        placeholders.seller_full_name,
+        lead.sellerFullName,
+        lead.name,
+        onboardingFormData.sellerFullName,
+        onboardingFormData.fullName,
+        onboardingFormData.displayName,
+        fullNameFromParts(sellerFirstName, sellerSurname),
+      ),
+      signerEmail: firstNonEmptyText(placeholders.seller_email, lead.sellerEmail, sourceContext.sellerEmail, nestedSource.sellerEmail, onboardingFormData.sellerEmail, onboardingFormData.email).toLowerCase(),
+    },
+    purchaser_2: {
+      signerName: firstNonEmptyText(
+        placeholders.seller_spouse_name,
+        sourceContext.spouseName,
+        nestedSource.spouseName,
+        onboardingFormData.spouseName,
+        onboardingFormData.spouseFullName,
+        onboardingFormData.spouse_full_name,
+        fullNameFromParts(spouseFirstName, spouseSurname),
+      ),
+      signerEmail: firstNonEmptyText(placeholders.seller_spouse_email, sourceContext.spouseEmail, nestedSource.spouseEmail, onboardingFormData.spouseEmail, onboardingFormData.spouse_email).toLowerCase(),
+    },
+  }
+}
+
 function resolveMandateSpouseRequirementFromSigningSummary(signingSummary = null) {
   const fields = Array.isArray(signingSummary?.fields) ? signingSummary.fields : []
   const spouseFields = fields.filter((field) => normalizeKey(field?.signer_role || field?.signerRole) === 'purchaser_2')
@@ -533,7 +614,7 @@ function resolveSignerStatusTone(status = '', statusState = '') {
   return 'border-[#dfe6ef] bg-[#f5f8fb] text-[#60758d]'
 }
 
-function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSpouseRequired = false } = {}) {
+function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSpouseRequired = false, signerDefaults = {} } = {}) {
   const rows = Array.isArray(signers) ? signers : []
   const byRole = new Map()
   for (const row of rows) {
@@ -552,13 +633,14 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSpou
 
   const roster = blueprint.map((item) => {
     const existing = byRole.get(item.role) || null
+    const defaults = signerDefaults?.[item.role] || {}
     return {
       role: item.role,
       label: item.label,
       required: Boolean(item.required),
       signer: existing,
-      signerName: normalizeText(existing?.signer_name || ''),
-      signerEmail: normalizeText(existing?.signer_email || '').toLowerCase(),
+      signerName: normalizeText(existing?.signer_name || defaults.signerName || ''),
+      signerEmail: normalizeText(existing?.signer_email || defaults.signerEmail || '').toLowerCase(),
       status: resolveSignerStatusLabel(existing?.status, ''),
       statusRaw: existing?.status || '',
       seenAt: normalizeText(existing?.viewed_at || ''),
@@ -571,13 +653,14 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSpou
     const role = normalizeKey(row?.signer_role || row?.role)
     if (!role || configured.has(role)) continue
     if (normalizedPacketType === 'mandate' && role === 'purchaser_2' && !mandateSpouseRequired) continue
+    const defaults = signerDefaults?.[role] || {}
     roster.push({
       role,
       label: role.replace(/_/g, ' '),
       required: false,
       signer: row,
-      signerName: normalizeText(row?.signer_name || ''),
-      signerEmail: normalizeText(row?.signer_email || '').toLowerCase(),
+      signerName: normalizeText(row?.signer_name || defaults.signerName || ''),
+      signerEmail: normalizeText(row?.signer_email || defaults.signerEmail || '').toLowerCase(),
       status: resolveSignerStatusLabel(row?.status, ''),
       statusRaw: row?.status || '',
       seenAt: normalizeText(row?.viewed_at || ''),
@@ -1322,7 +1405,7 @@ function DocumentOutlinePanel({
     : fallbackSections
       .map((label) => ({ key: label, label, custom: false, required: true, content: '' }))
   return (
-    <section className="flex h-full min-h-[560px] flex-col rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+    <section className="flex h-full min-h-[700px] flex-col rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h4 className="text-[1rem] font-semibold text-[#102033]">Document Outline</h4>
@@ -1339,7 +1422,7 @@ function DocumentOutlinePanel({
         ) : null}
       </div>
 
-      <ul className="mt-5 max-h-[300px] space-y-1.5 overflow-y-auto pr-1">
+      <ul className="mt-5 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
         {outlineSections.map((item, index) => {
           const validation = validationByKey?.[item.key] || { blockers: [], warnings: [] }
           const hasContent = normalizeText(item.content).length >= 8
@@ -1829,12 +1912,78 @@ function SignerPreparationPanel({
   )
 }
 
+function SignaturePreparationCard({
+  packetType = 'mandate',
+  roster = [],
+  validation = { blockers: [], warnings: [] },
+  busy = false,
+  canManageSigners = true,
+  onOpen = null,
+}) {
+  const rows = Array.isArray(roster) ? roster : []
+  const requiredRows = rows.filter((row) => row.required)
+  const readyRows = requiredRows.filter((row) => normalizeText(row.signerName) && isValidEmail(row.signerEmail))
+  const blockerCount = Array.isArray(validation?.blockers) ? validation.blockers.length : 0
+  const warningCount = Array.isArray(validation?.warnings) ? validation.warnings.length : 0
+  const readyLabel = requiredRows.length
+    ? `${readyRows.length}/${requiredRows.length} ready`
+    : 'No required signers'
+
+  return (
+    <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h4 className="text-sm font-semibold text-[#1a2f45]">Prepare for Signature</h4>
+          <p className="mt-1 text-xs leading-5 text-[#6f839b]">Signer details open in a popup so this page stays tidy.</p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5">
+          <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-2.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.06em] text-[#5a738d]">
+            {resolveDocumentLabel(packetType)}
+          </span>
+          <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+            blockerCount ? 'border-[#f2d7d2] bg-[#fff4f2] text-[#a03a2a]' : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+          }`}>
+            {readyLabel}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2">
+        {rows.map((row) => {
+          const rowReady = normalizeText(row.signerName) && isValidEmail(row.signerEmail)
+          return (
+            <div key={row.role} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#edf3fa] bg-[#fbfdff] px-3 py-2">
+              <span className="min-w-0 truncate text-xs font-semibold text-[#20344b]">{row.label}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold ${rowReady ? 'bg-[#effaf4] text-[#2e7b4f]' : 'bg-[#fff8ec] text-[#8a5b12]'}`}>
+                {rowReady ? 'Ready' : 'Needs details'}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      {blockerCount || warningCount ? (
+        <p className="mt-3 text-xs text-[#8a6a1d]">
+          {blockerCount ? `${blockerCount} signer detail${blockerCount === 1 ? '' : 's'} need attention.` : `${warningCount} signer warning${warningCount === 1 ? '' : 's'} to review.`}
+        </p>
+      ) : (
+        <p className="mt-3 text-xs text-[#2e7b4f]">Signer identities are ready to send.</p>
+      )}
+
+      <Button type="button" size="sm" className="mt-3 w-full" onClick={() => onOpen?.()} disabled={busy || !canManageSigners}>
+        {busy ? 'Working…' : 'Open Signature Prep'}
+      </Button>
+    </section>
+  )
+}
+
 function SigningMethodPanel({
   method = 'not_selected',
   canChange = false,
   lockedReason = '',
   onSelect = null,
   busy = false,
+  className = '',
 }) {
   const options = [
     {
@@ -1854,7 +2003,7 @@ function SigningMethodPanel({
   ]
 
   return (
-    <section className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+    <section className={`rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] ${className}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h4 className="text-[1rem] font-semibold text-[#102033]">Signing Method</h4>
@@ -2029,6 +2178,7 @@ function ActivityPanel({
   templateLabel = '',
   templateKey = '',
   templateStoragePath = '',
+  className = '',
 }) {
   const tabs = [
     { key: 'all', label: 'All' },
@@ -2074,7 +2224,7 @@ function ActivityPanel({
   })()
 
   return (
-    <section className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+    <section className={`flex flex-col rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] ${className}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h4 className="text-[1rem] font-semibold text-[#102033]">Activity</h4>
@@ -2100,7 +2250,7 @@ function ActivityPanel({
         ))}
       </div>
 
-      <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
+      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
         {visibleItems.length ? (
           visibleItems.map((item) => {
             const isVersion = item.type === 'version'
@@ -2189,6 +2339,7 @@ export default function LegalDocumentWorkspace({
   const [manualSignedAllPartiesSigned, setManualSignedAllPartiesSigned] = useState(false)
   const [manualUploadBusy, setManualUploadBusy] = useState(false)
   const [mergeDetailsOpen, setMergeDetailsOpen] = useState(false)
+  const [signerPrepOpen, setSignerPrepOpen] = useState(false)
   const [activityTab, setActivityTab] = useState('all')
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
   const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false)
@@ -2278,14 +2429,20 @@ export default function LegalDocumentWorkspace({
     },
     [isMandatePacket, latestVersion, sourceContext, statusState?.signingSummary],
   )
+  const signerDefaults = useMemo(() => (
+    isMandatePacket
+      ? buildSignerDefaultsFromContext({ sourceContext, latestVersion })
+      : {}
+  ), [isMandatePacket, latestVersion, sourceContext])
 
   const signerRoster = useMemo(() => {
     return resolveSignerRoster({
       packetType,
       signers: statusState?.signingSummary?.signers || [],
       mandateSpouseRequired,
+      signerDefaults,
     })
-  }, [mandateSpouseRequired, packetType, statusState?.signingSummary?.signers])
+  }, [mandateSpouseRequired, packetType, signerDefaults, statusState?.signingSummary?.signers])
 
   const signerValidation = useMemo(() => {
     const rosterWithDraft = signerRoster.map((row) => {
@@ -3100,7 +3257,7 @@ export default function LegalDocumentWorkspace({
         if (!signerName || !signerEmail || !isValidEmail(signerEmail) || isPlaceholder) return null
         if (!includeOptional && !isRequired) return null
         const existingEmail = normalizeText(row.signerEmail).toLowerCase()
-        if (existingEmail && existingEmail === signerEmail && normalizeText(row.signerName) === signerName) return null
+        if (row.signer && existingEmail && existingEmail === signerEmail && normalizeText(row.signerName) === signerName) return null
         return {
           signerRole: row.role,
           signerName,
@@ -3191,6 +3348,7 @@ export default function LegalDocumentWorkspace({
       packetType,
       signers: workingStatus?.signingSummary?.signers || [],
       mandateSpouseRequired,
+      signerDefaults,
     }).map((row) => {
       const draft = signerDraftByRole[row.role] || null
       if (!draft) return row
@@ -3212,6 +3370,7 @@ export default function LegalDocumentWorkspace({
         packetType,
         signers: workingStatus?.signingSummary?.signers || [],
         mandateSpouseRequired,
+        signerDefaults,
       }).map((row) => {
         const draft = signerDraftByRole[row.role] || null
         if (!draft) return row
@@ -3240,7 +3399,12 @@ export default function LegalDocumentWorkspace({
           (nextEmail && nextEmail !== normalizeText(row.signerEmail).toLowerCase()),
       )
     })
-    if (hasDraftOverrides && !isResend) {
+    const needsSignerPersistence = latestRoster.some((row) => {
+      const signerName = normalizeText((signerDraftByRole[row.role] || {}).signerName || row.signerName)
+      const signerEmail = normalizeText((signerDraftByRole[row.role] || {}).signerEmail || row.signerEmail).toLowerCase()
+      return !row.signer && (row.required || signerEmail) && signerName && isValidEmail(signerEmail)
+    })
+    if ((hasDraftOverrides || needsSignerPersistence) && !isResend) {
       await saveSignerDetails({ includeOptional: true })
       const refreshed = await refreshWorkspaceData()
       workingStatus = refreshed?.resolved || workingStatus
@@ -3866,6 +4030,7 @@ export default function LegalDocumentWorkspace({
       packetType,
       signers: currentStatus?.signingSummary?.signers || [],
       mandateSpouseRequired,
+      signerDefaults,
     })
     const currentAgentSigner = currentRoster.find((row) => normalizeKey(row.role) === 'agent') || null
     const agentHasSigned = Boolean(currentAgentSigner?.signedAt) || normalizeKey(currentAgentSigner?.statusRaw || currentAgentSigner?.status) === 'signed'
@@ -4618,6 +4783,15 @@ export default function LegalDocumentWorkspace({
         : isMandatePacket && launchSigningReadyState && signingMethod === 'digital'
           ? 'Send for Signature'
           : primaryLabel
+  const handleSendForSignatureIntent = () => {
+    if (isMandatePacket && signingMethod === 'digital' && signerValidation.blockers.length) {
+      setSignerPrepOpen(true)
+      setLoadError('')
+      setActionFeedback('Review signer details before sending the mandate.')
+      return
+    }
+    void runReviewAction('send_signature')
+  }
   const handleWorkspacePrimaryAction = () => {
     if (isMandatePacket && launchSigningReadyState && signingMethod === 'not_selected') {
       setLoadError('Choose Digital Mandate or Physical / Printed Mandate before continuing.')
@@ -4628,7 +4802,7 @@ export default function LegalDocumentWorkspace({
       return
     }
     if (isMandatePacket && launchSigningReadyState && signingMethod === 'digital') {
-      void runReviewAction('send_signature')
+      handleSendForSignatureIntent()
       return
     }
     void runPrimaryAction()
@@ -4672,9 +4846,9 @@ export default function LegalDocumentWorkspace({
   const contentClassName = isPageMode
     ? 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-5 sm:px-6 sm:pb-24 sm:pt-6'
     : 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-4 sm:px-5 sm:pb-24 sm:pt-5'
-  const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(560px,calc(100vh-25rem),700px)]'
+  const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(700px,calc(100vh-14rem),880px)]'
   const mainGridClassName = `grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[340px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
-  const secondaryGridClassName = 'mt-5 grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]'
+  const secondaryGridClassName = 'mt-5 grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-start 2xl:grid-cols-[380px_minmax(0,1fr)]'
 
   return (
     <>
@@ -4935,7 +5109,7 @@ export default function LegalDocumentWorkspace({
                 </div>
               </div>
 
-              <section className="min-h-[560px] rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_18px_48px_rgba(16,32,51,0.06)] sm:p-6 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
+              <section className="min-h-[700px] rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_18px_48px_rgba(16,32,51,0.06)] sm:p-6 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="text-[1.15rem] font-semibold text-[#102033]">
@@ -4977,13 +5151,13 @@ export default function LegalDocumentWorkspace({
 
                 <div className="mt-6 rounded-[28px] border border-[#edf3fa] bg-[#f5f7fb] p-4 sm:p-6 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
                   {loading ? (
-                    <div className="flex min-h-[420px] items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white text-sm text-[#6f839b]">
+                    <div className="flex min-h-[620px] items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white text-sm text-[#6f839b]">
                       Loading packet preview...
                     </div>
                   ) : null}
 
                   {!loading && !statusState?.packet?.id ? (
-                    <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
+                    <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <FileText size={24} className="text-[#7287a0]" />
                       <p className="mt-3 text-base font-semibold text-[#102033]">Generate the first draft to preview this document.</p>
                       <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Bridge will create a packet draft and load the document lifecycle here without changing your existing data flow.</p>
@@ -4992,7 +5166,7 @@ export default function LegalDocumentWorkspace({
 
                   {!loading && editableAllowed && centerTab === 'editor' && statusState?.packet?.id ? (
                     !editableSections.length ? (
-                      <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
+                      <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                         <AlertCircle size={24} className="text-[#9b6b1c]" />
                         <p className="mt-3 text-base font-semibold text-[#102033]">No editable draft sections are available yet.</p>
                         <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Generate a draft first, then reopen this workspace to edit clauses.</p>
@@ -5010,7 +5184,7 @@ export default function LegalDocumentWorkspace({
                   ) : null}
 
                   {!loading && (!editableAllowed || centerTab === 'preview') && statusState?.packet?.id && !hasPreviewSurface ? (
-                    <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
+                    <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <AlertCircle size={24} className="text-[#9b6b1c]" />
                       <p className="mt-3 text-base font-semibold text-[#102033]">
                         {latestVersion?.id
@@ -5039,7 +5213,7 @@ export default function LegalDocumentWorkspace({
                           title={`${documentLabel} preview`}
                           src={signedPreviewUrl || generatedPreviewUrl || undefined}
                           srcDoc={!signedPreviewUrl && !generatedPreviewUrl ? editablePreviewHtml : undefined}
-                          className="min-h-[560px] w-full rounded-[22px] border border-[#eef3f9] bg-white"
+                          className="min-h-[640px] w-full rounded-[22px] border border-[#eef3f9] bg-white"
                         />
                       </div>
                       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-[#e5edf7] bg-white px-4 py-3">
@@ -5083,6 +5257,7 @@ export default function LegalDocumentWorkspace({
                     lockedReason={signingMethodLockedReason}
                     onSelect={handleSelectSigningMethod}
                     busy={actionBusy || loading}
+                    className="xl:min-h-[360px]"
                   />
                 ) : null}
 
@@ -5107,20 +5282,12 @@ export default function LegalDocumentWorkspace({
                 ) : null}
 
                 {(!isMandatePacket || signingMethod === 'digital') ? (
-                  <SignerPreparationPanel
+                  <SignaturePreparationCard
                     packetType={packetType}
-                    lifecycleState={normalizedLifecycleState}
-                    signingStatus={statusState?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus}
                     canManageSigners={legalPermissions.canManageSigners}
                     roster={signerRoster}
-                    draftByRole={signerDraftByRole}
-                    onDraftChange={handleSignerDraftChange}
                     validation={signerValidation}
-                    onPrepare={handlePrepareSignerFields}
-                    onSave={handleSaveSignerDetails}
-                    onSend={() => runReviewAction('send_signature')}
-                    onResend={(role) => runReviewAction('resend_signature', { targetSignerRole: role })}
-                    onRefresh={handleRefreshSignerStatus}
+                    onOpen={() => setSignerPrepOpen(true)}
                     busy={actionBusy || signerBusy || loading}
                   />
                 ) : null}
@@ -5135,11 +5302,12 @@ export default function LegalDocumentWorkspace({
                   templateLabel={normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot)}
                   templateKey={normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot)}
                   templateStoragePath={normalizeText(templateDetail?.template_storage_path)}
+                  className="xl:h-[360px]"
                 />
               </aside>
             </div>
 
-            <div className="sticky bottom-4 z-10 mt-6 rounded-[28px] border border-[#e5edf7] bg-white/95 p-4 shadow-[0_20px_60px_rgba(16,32,51,0.12)] backdrop-blur sm:p-5">
+            <div className="mt-5 rounded-[28px] border border-[#e5edf7] bg-white p-4 shadow-[0_16px_40px_rgba(16,32,51,0.05)] sm:p-5">
               <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_auto] xl:items-center">
                 <div className="flex items-center gap-4">
                   <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-[6px] border-[#d9efe4] bg-white text-[1.35rem] font-semibold text-[#20b26b]">
@@ -5197,7 +5365,7 @@ export default function LegalDocumentWorkspace({
                     type="button"
                     size="md"
                     variant="secondary"
-                    onClick={() => void runReviewAction('send_signature')}
+                    onClick={handleSendForSignatureIntent}
                     disabled={loading || actionBusy || signerBusy || !canSendForSignatureAction}
                   >
                     Send for Signature
@@ -5278,6 +5446,31 @@ export default function LegalDocumentWorkspace({
             placeholders={latestVersion?.placeholders_resolved_json || {}}
           />
         </div>
+      </Drawer>
+
+      <Drawer
+        open={signerPrepOpen}
+        onClose={() => setSignerPrepOpen(false)}
+        title="Prepare for Signature"
+        subtitle="Confirm agent, seller, and spouse signer details before sending secure links."
+        widthClassName="max-w-[760px]"
+      >
+        <SignerPreparationPanel
+          packetType={packetType}
+          lifecycleState={normalizedLifecycleState}
+          signingStatus={statusState?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus}
+          canManageSigners={legalPermissions.canManageSigners}
+          roster={signerRoster}
+          draftByRole={signerDraftByRole}
+          onDraftChange={handleSignerDraftChange}
+          validation={signerValidation}
+          onPrepare={handlePrepareSignerFields}
+          onSave={handleSaveSignerDetails}
+          onSend={() => runReviewAction('send_signature')}
+          onResend={(role) => runReviewAction('resend_signature', { targetSignerRole: role })}
+          onRefresh={handleRefreshSignerStatus}
+          busy={actionBusy || signerBusy || loading}
+        />
       </Drawer>
     </>
   )

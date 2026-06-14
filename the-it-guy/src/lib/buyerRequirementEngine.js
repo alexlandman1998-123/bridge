@@ -142,6 +142,8 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
     purchaseMode: String(flow.purchase_mode || (derived?.derivedFields?.buyer_party_count > 1 ? 'co_purchasing' : 'individual')).trim().toLowerCase(),
     buyerBranch: String(flow.purchaser_branch || purchaserType).trim().toLowerCase(),
     financeBranch: String(flow.finance_branch || (financeType === 'combination' ? 'hybrid' : financeType)).trim().toLowerCase(),
+    buyerOnboardingFlow: flow || null,
+    buyerOnboardingFlowVersion: flow?.version || null,
     flow: flow || derived.flow || null,
     branchSummary: flow.branch_summary || derived?.flow?.branch_summary || null,
     buyerCount: Number(derived?.derivedFields?.buyer_party_count || 1),
