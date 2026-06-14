@@ -1,15 +1,22 @@
 import {
   ArrowUpRight,
+  BadgeCheck,
+  Building2,
   CheckCircle2,
+  ChevronRight,
+  Globe2,
+  Landmark,
   LockKeyhole,
   Network,
-  Search,
   ShieldCheck,
+  Search,
+  Sparkles,
   X,
   UserPlus as InviteIcon,
+  Users,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -256,6 +263,613 @@ function buildPartnerOverviewCopy(partner = {}) {
     return `Agency organisation operating in ${location}, available for transaction collaboration and agent-level coordination through this relationship.`
   }
   return `Verified Bridge organisation operating in ${location}, available through this partner connection for operational collaboration.`
+}
+
+function formatDaysOrHours(value = '') {
+  const hours = Number(value || 0)
+  if (!Number.isFinite(hours) || hours <= 0) return 'Not published'
+  if (hours < 24) return `${Math.max(1, Math.round(hours))}h`
+  return `${(hours / 24).toFixed(hours % 24 === 0 ? 0 : 1)}d`
+}
+
+function getProfileMetricValue(metric = {}) {
+  if (metric.value === null || metric.value === undefined || metric.value === '') return '—'
+  return metric.value
+}
+
+const ProfileBand = forwardRef(function ProfileBand({ children, className = '' }, ref) {
+  return (
+    <section ref={ref} className={`rounded-[28px] border border-[#dbe6f1] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)] ${className}`}>
+      {children}
+    </section>
+  )
+})
+
+function ProfileSectionHeader({ eyebrow, title, description, action }) {
+  return (
+    <div className="flex flex-col gap-3 border-b border-[#e8eff6] px-5 py-5 sm:px-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-[0.74rem] font-semibold uppercase tracking-[0.18em] text-[#7a8ba3]">{eyebrow}</p>
+        {action ? <span className="text-xs text-[#8b9bb0]">{action}</span> : null}
+      </div>
+      <div className="max-w-3xl">
+        <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#10243a] sm:text-2xl">{title}</h2>
+        {description ? <p className="mt-2 text-sm leading-6 text-[#60758d]">{description}</p> : null}
+      </div>
+    </div>
+  )
+}
+
+function ProfileTag({ children, muted = false, className = '' }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+        muted ? 'border-[#e5edf6] bg-[#f8fafc] text-[#52677f]' : 'border-[#d8eefe] bg-[#f4f9ff] text-[#1e4d82]'
+      } ${className}`}
+    >
+      {children}
+    </span>
+  )
+}
+
+function HeroStat({ label, value, subtext, icon }) {
+  const Icon = icon || BadgeCheck
+  return (
+    <div className="rounded-[24px] border border-[#e4ebf4] bg-white/85 p-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)] backdrop-blur">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">{label}</p>
+          <strong className="mt-3 block text-2xl font-semibold tracking-[-0.02em] text-[#10243a]">{value}</strong>
+          {subtext ? <p className="mt-2 text-sm leading-5 text-[#60758d]">{subtext}</p> : null}
+        </div>
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#f3f7fb] text-[#2f5573]">
+          <Icon size={20} />
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function PremiumEmptyState({ title, description, icon }) {
+  const Icon = icon || Sparkles
+  return (
+    <div className="rounded-[24px] border border-dashed border-[#d7e2ee] bg-[#fbfdff] p-8 text-center">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[18px] bg-white text-[#7a8ba3] shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+        <Icon size={24} />
+      </div>
+      <h3 className="mt-4 text-lg font-semibold tracking-[-0.02em] text-[#10243a]">{title}</h3>
+      <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-[#60758d]">{description}</p>
+    </div>
+  )
+}
+
+function VisiblePersonCard({ person = {}, preferred = false }) {
+  const displayName = normalizeText(person.label || person.fullName || person.name || person.email) || 'Partner user'
+  const roleLabel = normalizeText(person.title || person.role || person.organisationRole || person.department) || 'Operational user'
+  const locationBits = [person.branchName, person.regionName, person.teamName].map(normalizeText).filter(Boolean)
+  return (
+    <article className="rounded-[24px] border border-[#e4ebf4] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[#f3f7fb] text-sm font-bold text-[#2f5573]">
+          {displayName
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((part) => part[0]?.toUpperCase())
+            .join('') || 'P'}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold tracking-[-0.01em] text-[#10243a]">{displayName}</p>
+              <p className="mt-1 text-sm text-[#60758d]">{roleLabel}</p>
+            </div>
+            {preferred ? <ProfileTag>Preferred</ProfileTag> : null}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {locationBits.length ? <ProfileTag muted>{locationBits.join(' · ')}</ProfileTag> : null}
+            {person.phone ? <ProfileTag muted>{person.phone}</ProfileTag> : null}
+            {person.email ? <ProfileTag muted>{person.email}</ProfileTag> : null}
+          </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function RoutingPreferenceField({
+  roleType,
+  selectedPartnerId,
+  partnerPeople = [],
+  currentRule = null,
+  selectionValue = '',
+  saving = false,
+  onChange,
+}) {
+  const currentValue = normalizeText(selectionValue || currentRule?.targetConsultantUserId || currentRule?.targetUserId || currentRule?.target_user_id)
+  const visibleCurrent = partnerPeople.some((person) => normalizeText(person.userId || person.id) === currentValue)
+  const hiddenCurrentLabel = normalizeText(currentRule?.targetScopeName || currentRule?.target_scope_name)
+
+  return (
+    <label className="grid gap-2">
+      <span className="text-sm font-semibold text-[#10243a]">{getRoutingRoleLabel(roleType)}</span>
+      <select
+        value={currentValue}
+        disabled={!selectedPartnerId || saving}
+        onChange={(event) => onChange?.(roleType, event.target.value)}
+        className="h-11 rounded-[14px] border border-[#d7e2ee] bg-white px-3 text-sm outline-none transition focus:border-[#1f4f78] focus:ring-4 focus:ring-[#1f4f78]/10 disabled:cursor-not-allowed disabled:bg-[#f4f7fa]"
+      >
+        <option value="">{getRoutingRolePlaceholder(roleType)}</option>
+        {!visibleCurrent && currentValue && hiddenCurrentLabel ? <option value={currentValue}>{hiddenCurrentLabel} (currently saved)</option> : null}
+        {partnerPeople.map((person) => (
+          <option key={`${roleType}-${person.userId || person.id}`} value={normalizeText(person.userId || person.id)}>
+            {[person.label || person.fullName || person.name || 'Partner user', inferOperationalRoleLabel(person), person.branchName].filter(Boolean).join(' · ')}
+          </option>
+        ))}
+      </select>
+      <p className="text-xs leading-5 text-[#60758d]">
+        {saving ? 'Saving preference...' : currentValue ? 'Saved per user for this partner organisation.' : 'No user-level preference selected yet.'}
+      </p>
+    </label>
+  )
+}
+
+function PartnerOrganisationProfilePage({
+  organisation,
+  workspace,
+  selectedPartner,
+  selectedRelationship,
+  partnerPeople = [],
+  partnerPeopleMessage = '',
+  partnerPeopleLoading = false,
+  routingRulesByRole = {},
+  routingSelectionValues = {},
+  routingSavingRoleKeys = new Set(),
+  onSelectRoutingPreference,
+  snapshot = null,
+  message = '',
+  error = '',
+  loading = false,
+  onBack,
+}) {
+  const overviewRef = useRef(null)
+  const prefsRef = useRef(null)
+  const updatesRef = useRef(null)
+  const connectedRef = useRef(null)
+
+  const typeLabel = getPartnerTypeLabel(selectedPartner?.type)
+  const partnerName = selectedPartner?.name || 'Partner organisation'
+  const partnerProvince = normalizeText(selectedPartner?.province)
+  const partnerCity = normalizeText(selectedPartner?.city)
+  const scopeLabel = selectedRelationship ? getPartnerScopeBadge(selectedRelationship).label : 'No connection scope available'
+  const connectedSince = formatDate(selectedRelationship?.acceptedAt || selectedRelationship?.createdAt)
+  const activeAreas = collectPartnerActiveAreas(selectedPartner)
+  const visibleBranches = collectVisibleBranchNames(partnerPeople)
+  const visibleConsultants = Array.isArray(partnerPeople) ? partnerPeople : []
+  const routingControls = getOperationalRoutingControlsForPartnerType(selectedPartner?.type)
+  const transactionStats = selectedPartner?.transactionStats || {}
+  const bridgeMetrics = useMemo(
+    () => [
+      {
+        label: 'Visible Consultants',
+        value: visibleConsultants.length ? formatNumber(visibleConsultants.length) : '0',
+        subtext: visibleConsultants.length ? 'Published through relationship visibility' : 'No consultants published yet',
+        icon: Users,
+      },
+      {
+        label: 'Active Branches',
+        value: visibleBranches.length ? formatNumber(visibleBranches.length) : '0',
+        subtext: visibleBranches.length ? 'Branches currently visible in Bridge' : 'No branch visibility published yet',
+        icon: Building2,
+      },
+      {
+        label: 'Collaborations',
+        value: Number.isFinite(Number(transactionStats.activeTransactions)) ? formatNumber(transactionStats.activeTransactions) : '—',
+        subtext: Number.isFinite(Number(transactionStats.activeTransactions))
+          ? 'Shared work visible through the partner relationship'
+          : 'No collaboration volume published',
+        icon: Network,
+      },
+      {
+        label: 'Average Response Time',
+        value: Number.isFinite(Number(transactionStats.responseTimeHours)) ? formatDaysOrHours(transactionStats.responseTimeHours) : '—',
+        subtext: Number.isFinite(Number(transactionStats.responseTimeHours))
+          ? 'Typical responsiveness across visible work'
+          : 'No response metric published',
+        icon: ShieldCheck,
+      },
+    ],
+    [transactionStats.activeTransactions, transactionStats.responseTimeHours, visibleBranches.length, visibleConsultants.length],
+  )
+
+  const serviceTags = activeAreas.length ? activeAreas : selectedPartner?.specialties || []
+  const relatedOrganisations = useMemo(() => {
+    const items = Array.isArray(snapshot?.relationships) ? snapshot.relationships : []
+    return items
+      .filter((relationship) => normalizeText(relationship.partner?.id || relationship.counterpartOrganisationId || relationship.partnerOrganisationId) !== normalizeText(selectedPartner?.id))
+      .filter((relationship) => relationship.relationshipStatus === 'accepted')
+      .slice(0, 5)
+      .map((relationship) => ({
+        id: relationship.id,
+        partner: relationship.partner,
+        label: relationship.partner?.name || 'Connected partner',
+        type: getPartnerTypeLabel(relationship.partner?.type),
+        scope: getPartnerScopeBadge(relationship).label,
+      }))
+  }, [selectedPartner?.id, snapshot?.relationships])
+
+  const overviewCopy = buildPartnerOverviewCopy(selectedPartner)
+  const connectedHasData = relatedOrganisations.length > 0
+
+  if (loading) {
+    return (
+      <div className="min-h-full bg-[#f5f8fc] px-4 py-6 text-[#10243a] sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1440px]">
+          <div className="rounded-[28px] border border-[#dbe6f1] bg-white p-8 text-sm font-semibold text-[#60758d] shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
+            Loading partner profile...
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!selectedPartner) {
+    return (
+      <div className="min-h-full bg-[#f5f8fc] px-4 py-6 text-[#10243a] sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1440px]">
+          <ProfileBand className="p-8">
+            <div className="max-w-3xl">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#7a8ba3]">Partners</p>
+              <h1 className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-[#10243a]">Partner profile not available</h1>
+              <p className="mt-3 text-sm leading-6 text-[#60758d]">This partner relationship could not be found or is not visible in the current workspace.</p>
+              <div className="mt-6">
+                <Link
+                  to="/partners"
+                  className="inline-flex h-11 items-center gap-2 rounded-[14px] border border-[#d7e2ee] bg-white px-4 text-sm font-semibold text-[#27445f] shadow-[0_8px_18px_rgba(15,23,42,0.05)] transition hover:bg-[#f8fafc]"
+                >
+                  <ArrowUpRight size={16} className="rotate-[-135deg]" />
+                  Back to Partners
+                </Link>
+              </div>
+            </div>
+          </ProfileBand>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-full bg-[linear-gradient(180deg,#f6f8fb_0%,#f8fbfe_100%)] px-4 py-4 text-[#10243a] sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1440px] space-y-6">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onBack?.()}
+              className="inline-flex h-11 items-center gap-2 rounded-[14px] border border-[#d7e2ee] bg-white px-4 text-sm font-semibold text-[#27445f] shadow-[0_8px_18px_rgba(15,23,42,0.05)] transition hover:bg-[#f8fafc]"
+            >
+              <ArrowUpRight size={16} className="rotate-[-135deg]" />
+              Back to Partners
+            </button>
+            <nav className="hidden min-w-0 items-center gap-2 text-sm text-[#7a8ba3] md:flex" aria-label="Breadcrumb">
+              <Link to="/partners" className="font-semibold text-[#4f647a] hover:text-[#10243a]">Partners</Link>
+              <ChevronRight size={14} />
+              <span className="truncate font-semibold text-[#10243a]">{partnerName}</span>
+            </nav>
+          </div>
+        </header>
+
+        {error || message || snapshot?.source === 'demo' ? (
+          <div className="space-y-3">
+            {snapshot?.source === 'demo' ? (
+              <p className="rounded-[18px] border border-[#f0dfb8] bg-[#fff9ec] px-4 py-3 text-sm font-semibold text-[#8a5a12]">
+                Demo partner data is shown until the partners migration is available in this environment.
+              </p>
+            ) : null}
+            {error ? <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-semibold text-[#b42318]">{error}</p> : null}
+            {message ? <p className="rounded-[18px] border border-[#cfe8dc] bg-[#f1fbf6] px-4 py-3 text-sm font-semibold text-[#17613d]">{message}</p> : null}
+          </div>
+        ) : null}
+
+        <ProfileBand className="overflow-hidden">
+          <div className="relative overflow-hidden px-6 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
+            <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[#eef4fb] via-[#f8fbff] to-transparent" />
+            <div className="relative flex flex-col gap-8">
+              <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+                <div className="flex min-w-0 gap-4 sm:gap-5">
+                  <span className="pt-1">
+                    <OrganisationAvatar organisation={selectedPartner} size="lg" className="h-16 w-16 rounded-[18px] text-base sm:h-20 sm:w-20 sm:rounded-[22px]" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#7a8ba3]">
+                      <Link to="/partners" className="hover:text-[#10243a]">Partners</Link>
+                      <ChevronRight size={13} />
+                      <span className="truncate">{partnerName}</span>
+                    </div>
+                    <h1 className="mt-3 text-4xl font-semibold tracking-[-0.04em] text-[#10243a] sm:text-5xl">{partnerName}</h1>
+                    <p className="mt-3 text-lg text-[#4f647a] sm:text-xl">{typeLabel}</p>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <ProfileTag>
+                        {selectedRelationship?.relationshipStatus === 'accepted'
+                          ? 'Connected'
+                          : selectedRelationship?.relationshipStatus
+                            ? selectedRelationship.relationshipStatus
+                            : 'Not connected'}
+                      </ProfileTag>
+                      <ProfileTag muted>{scopeLabel}</ProfileTag>
+                      <ProfileTag muted>{partnerProvince || partnerCity || 'Location not published'}</ProfileTag>
+                      <ProfileTag muted>Connected since {connectedSince}</ProfileTag>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => prefsRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+                    className="inline-flex h-11 items-center gap-2 rounded-[14px] bg-[#10243a] px-4 text-sm font-semibold text-white shadow-[0_14px_26px_rgba(15,23,42,0.12)] transition hover:bg-[#173a5e]"
+                  >
+                    <Sparkles size={16} />
+                    Set Preferences
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => overviewRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+                    className="inline-flex h-11 items-center gap-2 rounded-[14px] border border-[#d7e2ee] bg-white px-4 text-sm font-semibold text-[#27445f] shadow-[0_8px_18px_rgba(15,23,42,0.05)] transition hover:bg-[#f8fafc]"
+                  >
+                    <Landmark size={16} />
+                    Manage Connection
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <HeroStat
+                  label="Consultants"
+                  value={visibleConsultants.length ? formatNumber(visibleConsultants.length) : '0'}
+                  subtext={visibleConsultants.length ? 'Visible through relationship permissions' : 'No consultants published yet'}
+                  icon={Users}
+                />
+                <HeroStat
+                  label="Branches"
+                  value={visibleBranches.length ? formatNumber(visibleBranches.length) : '0'}
+                  subtext={visibleBranches.length ? visibleBranches.join(' · ') : 'No branch visibility published yet'}
+                  icon={Building2}
+                />
+                <HeroStat
+                  label="Transactions"
+                  value={Number.isFinite(Number(transactionStats.activeTransactions)) ? formatNumber(transactionStats.activeTransactions) : '—'}
+                  subtext={Number.isFinite(Number(transactionStats.activeTransactions)) ? 'Shared collaborations visible in Bridge' : 'No transaction volume published'}
+                  icon={Network}
+                />
+                <HeroStat
+                  label="Coverage"
+                  value={partnerProvince || partnerCity || 'National'}
+                  subtext={activeAreas.length ? activeAreas.join(' · ') : 'Coverage details not published'}
+                  icon={Globe2}
+                />
+              </div>
+            </div>
+          </div>
+        </ProfileBand>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]">
+          <ProfileBand ref={overviewRef} className="overflow-hidden">
+            <ProfileSectionHeader
+              eyebrow="Company Overview"
+              title={`About ${partnerName}`}
+              description={overviewCopy}
+              action={`Relationship view for ${organisation?.name || workspace?.name || 'your organisation'}`}
+            />
+            <div className="space-y-6 px-5 py-5 sm:px-6">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+                <div className="rounded-[24px] border border-[#e4ebf4] bg-[#fbfdff] p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">About {partnerName}</p>
+                  <p className="mt-4 max-w-3xl text-sm leading-7 text-[#40556c]">
+                    {selectedPartner?.legalName ? `${selectedPartner.legalName}. ` : ''}
+                    {overviewCopy}
+                  </p>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    {(selectedPartner?.specialties || []).slice(0, 6).map((item) => (
+                      <ProfileTag key={item}>{item}</ProfileTag>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-[24px] border border-[#e4ebf4] bg-white p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Relationship Controls</p>
+                  <div className="mt-4 grid gap-3 text-sm leading-6 text-[#40556c]">
+                    <p className="inline-flex items-start gap-2"><LockKeyhole size={15} className="mt-0.5 text-[#52677f]" /> Organisation data stays permission-gated.</p>
+                    <p className="inline-flex items-start gap-2"><ShieldCheck size={15} className="mt-0.5 text-[#52677f]" /> Transaction sharing is granted per transaction.</p>
+                    <p className="inline-flex items-start gap-2"><Network size={15} className="mt-0.5 text-[#52677f]" /> Status: {selectedRelationship?.relationshipStatus || 'Not connected'}</p>
+                    <p className="inline-flex items-start gap-2"><Network size={15} className="mt-0.5 text-[#52677f]" /> Scope: {scopeLabel}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-[#e4ebf4] bg-white p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Services</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {(serviceTags.length ? serviceTags : ['Service details not published']).map((item) => (
+                    <ProfileTag key={item} muted={!serviceTags.length}>
+                      {item}
+                    </ProfileTag>
+                  ))}
+                </div>
+                <p className="mt-4 text-sm leading-6 text-[#60758d]">
+                  Operating areas:
+                  <span className="font-semibold text-[#40556c]">
+                    {' '}
+                    {activeAreas.length ? activeAreas.join(' · ') : 'No operating areas published yet'}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </ProfileBand>
+
+          <ProfileBand className="overflow-hidden">
+            <ProfileSectionHeader
+              eyebrow="Bridge Activity"
+              title="Live relationship activity"
+              description="A quick read on the visible work Bridge can associate with this partner connection."
+            />
+            <div className="grid gap-4 px-5 py-5 sm:px-6">
+              {bridgeMetrics.map((metric) => (
+                <HeroStat
+                  key={metric.label}
+                  label={metric.label}
+                  value={getProfileMetricValue(metric)}
+                  subtext={metric.subtext}
+                  icon={metric.icon}
+                />
+              ))}
+            </div>
+          </ProfileBand>
+        </div>
+
+        <ProfileBand>
+          <ProfileSectionHeader
+            eyebrow="Consultants"
+            title={getOperationalPeopleSectionTitle(selectedPartner?.type)}
+            description="Visible operational people inside this organisation connection. This is the list Bridge can safely expose through current visibility rules."
+          />
+          <div className="space-y-5 px-5 py-5 sm:px-6">
+            {partnerPeopleLoading ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {[0, 1, 2].map((index) => (
+                  <div key={index} className="h-44 animate-pulse rounded-[24px] bg-[#f7fafc]" />
+                ))}
+              </div>
+            ) : visibleConsultants.length ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {visibleConsultants.slice(0, 12).map((person) => {
+                  const personId = normalizeText(person.userId || person.id)
+                  const personName = normalizeText(person.label || person.fullName || person.name)
+                  const isPreferred = routingControls.some((control) => {
+                    const rule = routingRulesByRole?.[control.roleType] || null
+                    return (
+                      normalizeText(rule?.targetConsultantUserId || rule?.targetUserId || rule?.target_user_id) === personId ||
+                      normalizeText(rule?.targetScopeName || rule?.target_scope_name) === personName
+                    )
+                  })
+                  return <VisiblePersonCard key={person.userId || person.id || person.email || person.fullName} person={person} preferred={isPreferred} />
+                })}
+              </div>
+            ) : (
+              <PremiumEmptyState
+                title="No consultants have been published yet."
+                description={
+                  partnerPeopleMessage ||
+                  'This organisation has not made any consultants visible through Bridge. It is not an error, just an empty relationship surface until visibility permissions are set.'
+                }
+              />
+            )}
+          </div>
+        </ProfileBand>
+
+        {routingControls.length ? (
+          <ProfileBand ref={prefsRef}>
+            <ProfileSectionHeader
+              eyebrow="Operational Preferences"
+              title="Choose who you actually work with inside this organisation"
+              description="These preferences determine who is automatically recommended during transaction creation. Manual transaction overrides will always take priority."
+            />
+            <div className="space-y-5 px-5 py-5 sm:px-6">
+              {!visibleConsultants.length ? (
+                <PremiumEmptyState
+                  title="No people are visible yet."
+                  description="Ask this partner organisation to expose the correct staff members to this relationship."
+                />
+              ) : (
+                <div className="grid gap-5 lg:grid-cols-2">
+                  {routingControls.map((control) => {
+                    const currentRule = routingRulesByRole?.[control.roleType] || null
+                    const roleKey = createPartnerRoleKey(selectedPartner?.id, control.roleType)
+                    const saving = routingSavingRoleKeys?.has?.(roleKey)
+                    return (
+                      <div key={control.roleType} className="rounded-[24px] border border-[#e4ebf4] bg-[#fbfdff] p-5">
+                        <RoutingPreferenceField
+                          roleType={control.roleType}
+                          selectedPartnerId={selectedPartner?.id}
+                          partnerPeople={visibleConsultants}
+                          currentRule={currentRule}
+                          selectionValue={routingSelectionValues?.[roleKey] || ''}
+                          saving={saving}
+                          onChange={onSelectRoutingPreference}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="rounded-[24px] border border-[#d8e7f4] bg-[#f8fbff] px-5 py-4 text-sm leading-6 text-[#40556c]">
+                These preferences are saved against your user profile and used later during transaction creation. They do not change the underlying organisation connection.
+              </div>
+            </div>
+          </ProfileBand>
+        ) : null}
+
+        <ProfileBand>
+          <ProfileSectionHeader
+            eyebrow="Areas of Expertise"
+            title="What this organisation is known for"
+            description="Bridge keeps this lightweight now, but the structure can expand into deeper partner intelligence later."
+          />
+          <div className="px-5 py-5 sm:px-6">
+            <div className="flex flex-wrap gap-2">
+              {(selectedPartner?.specialties || activeAreas || []).length ? (
+                [...new Set([...(selectedPartner?.specialties || []), ...activeAreas])].slice(0, 12).map((item) => (
+                  <ProfileTag key={item}>{item}</ProfileTag>
+                ))
+              ) : (
+                <ProfileTag muted>Expertise not published yet</ProfileTag>
+              )}
+            </div>
+          </div>
+        </ProfileBand>
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+          <ProfileBand ref={updatesRef}>
+            <ProfileSectionHeader
+              eyebrow="Partner Updates"
+              title="Future-ready organisation updates"
+              description="No updates are published yet. This space is reserved for announcements, service updates, and organisation news."
+            />
+            <div className="px-5 py-5 sm:px-6">
+              <PremiumEmptyState
+                title="No updates published yet."
+                description="Future announcements, service updates, market insights and organisation news will appear here."
+              />
+            </div>
+          </ProfileBand>
+
+          {connectedHasData ? (
+            <ProfileBand ref={connectedRef}>
+              <ProfileSectionHeader
+                eyebrow="Connected Organisations"
+                title="Works with"
+                description="Other connected organisations currently visible within your Bridge network."
+              />
+              <div className="space-y-3 px-5 py-5 sm:px-6">
+                {relatedOrganisations.map((item) => (
+                  <div key={item.id} className="rounded-[24px] border border-[#e4ebf4] bg-white p-4">
+                    <div className="flex items-start gap-3">
+                      <OrganisationAvatar organisation={item.partner || { name: item.label }} size="md" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-base font-semibold tracking-[-0.01em] text-[#10243a]">{item.label}</p>
+                        <p className="mt-1 text-sm text-[#60758d]">{item.type}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <ProfileTag muted>{item.scope}</ProfileTag>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ProfileBand>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function PartnerCard({
@@ -1177,6 +1791,7 @@ export default function PartnersPage() {
     () => partnerPeopleMetaByRelationshipId[normalizeText(selectedRelationship?.id || selectedPartner?.id || '')] || null,
     [partnerPeopleMetaByRelationshipId, selectedPartner?.id, selectedRelationship?.id],
   )
+  const isPartnerProfilePage = Boolean(normalizeText(partnerId)) && !isBondPartnersRoute
 
   async function handleInvite(event) {
     event.preventDefault()
@@ -1382,20 +1997,6 @@ export default function PartnersPage() {
     }
   }
 
-  function updateProfileQueryString(partnerOrganisationId = '') {
-    if (isBondPartnersRoute) return
-    const nextParams = new URLSearchParams(location.search)
-    if (partnerOrganisationId) nextParams.set('profile', partnerOrganisationId)
-    else nextParams.delete('profile')
-    navigate(
-      {
-        pathname: '/partners',
-        search: nextParams.toString() ? `?${nextParams.toString()}` : '',
-      },
-      { replace: false },
-    )
-  }
-
   function handleOpenPartnerProfile(relationship = null, explicitPartner = null) {
     const partnerOrganisationId = normalizeText(
       explicitPartner?.id || relationship?.partner?.id || relationship?.counterpartOrganisationId || relationship?.partnerOrganisationId,
@@ -1410,13 +2011,7 @@ export default function PartnersPage() {
       return
     }
 
-    setSelectedPartnerId(partnerOrganisationId)
-    setProfilePanelOpen(true)
-    setError('')
-    updateProfileQueryString(partnerOrganisationId)
-    requestAnimationFrame(() => {
-      profilePanelRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-    })
+    navigate(`/partners/${partnerOrganisationId}`)
   }
 
   async function handleAcceptInvitation(invitation) {
@@ -1534,6 +2129,29 @@ export default function PartnersPage() {
     if (!cacheKey || partnerPeopleMetaByRelationshipId[cacheKey]?.loading || Array.isArray(partnerPeopleByRelationshipId[cacheKey])) return
     void ensurePartnerPeople(organisationTargetId, relationshipId)
   }, [ensurePartnerPeople, partnerPeopleByRelationshipId, partnerPeopleMetaByRelationshipId, profilePanelOpen, selectedPartner?.id, selectedRelationship?.id])
+
+  if (isPartnerProfilePage) {
+    return (
+      <PartnerOrganisationProfilePage
+        organisation={organisation}
+        workspace={workspace}
+        selectedPartner={selectedPartner}
+        selectedRelationship={selectedRelationship}
+        partnerPeople={selectedPartnerPeople}
+        partnerPeopleMessage={selectedPartnerPeopleMeta?.message || ''}
+        partnerPeopleLoading={Boolean(selectedPartnerPeopleMeta?.loading || (!selectedPartnerPeopleMeta && !selectedPartnerPeople.length && !loading && !error))}
+        routingRulesByRole={selectedPartnerRoutingRulesByRole}
+        routingSelectionValues={routingSelectionValues}
+        routingSavingRoleKeys={savingRoutingRoleKeys}
+        onSelectRoutingPreference={(roleType, targetUserId) => saveOperationalRoutingPreference(selectedRelationship, roleType, targetUserId)}
+        snapshot={snapshot}
+        message={message}
+        error={error}
+        loading={loading}
+        onBack={() => navigate('/partners')}
+      />
+    )
+  }
 
   return (
     <div className="min-h-full bg-[#f6f8fb] pb-10 text-[#10243a]">

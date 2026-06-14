@@ -1392,7 +1392,7 @@ function AgentListings({ initialTab = null } = {}) {
 
     if (isSupabaseConfigured && onboardingLink) {
       const sellerDisplayName = [sellerName, sellerSurname].filter(Boolean).join(' ') || 'Seller'
-      const propertyLabel = listingTitle || propertyAddress || 'your property'
+      const propertyLabel = propertyAddress || listingTitle || 'your property'
       const agentDisplayName = form.assignedAgent.trim() || String(profile?.fullName || profile?.name || '').trim() || 'your agent'
       const normalizedSellerPhone = formatSouthAfricanWhatsAppNumber(sellerPhone)
 
@@ -1403,6 +1403,7 @@ function AgentListings({ initialTab = null } = {}) {
           organisationId: String(organisationId || '').trim(),
           sellerName: sellerDisplayName,
           propertyTitle: propertyLabel,
+          propertyType: form.propertyType.trim(),
           onboardingLink,
           agentName: agentDisplayName,
         }

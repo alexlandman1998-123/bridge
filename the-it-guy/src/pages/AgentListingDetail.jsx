@@ -2102,7 +2102,7 @@ function AgentListingDetail() {
 
       let deliveryWarning = ''
       const sellerDisplayName = resolveSellerNameFromListing(localListing || listingRecord) || 'Seller'
-      const propertyLabel = listingRecord?.listingTitle || listingRecord?.title || listingRecord?.propertyAddress || marketingDraft.addressLine1 || 'your property'
+      const propertyLabel = listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || listingRecord?.title || 'your property'
       const agentDisplayName = getCanonicalOfferActor().name || 'your agent'
       if (isSupabaseConfigured && onboardingLink) {
         if (isValidEmail(sellerEmail)) {
@@ -2114,6 +2114,8 @@ function AgentListingDetail() {
                 organisationId: listingOrganisationId,
                 sellerName: sellerDisplayName,
                 propertyTitle: propertyLabel,
+                propertyType: listingRecord?.propertyType || marketingDraft.propertyType || '',
+                transactionReference: listingRecord?.listingCode || listingRecord?.listingReference || '',
                 onboardingLink,
                 agentName: agentDisplayName,
               },

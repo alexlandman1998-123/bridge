@@ -3862,7 +3862,8 @@ function renderActiveTransactionsBlock({
                   userId={String(profile?.id || '').trim()}
                   userEmail={String(profile?.email || '').trim()}
                   includeAll={false}
-                  subheading="Manage upcoming appointments and requests across your pipeline."
+                  subheading="Track upcoming appointments, confirmations, and reschedules."
+                  variant="compact"
                   onViewCalendar={() => navigate('/pipeline/calendar')}
                   onOpenCalendar={() => navigate('/pipeline/calendar')}
                   onManageAppointment={() => navigate('/pipeline/calendar')}

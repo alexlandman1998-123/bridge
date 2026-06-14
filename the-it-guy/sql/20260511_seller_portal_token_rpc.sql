@@ -109,6 +109,7 @@ set search_path = public
 as $$
 declare
   v_onboarding public.private_listing_seller_onboarding%rowtype;
+  v_listing public.private_listings%rowtype;
   v_form_data jsonb := coalesce(p_form_data, '{}'::jsonb);
 begin
   select *
@@ -141,6 +142,27 @@ begin
          seller_type = coalesce(nullif(trim(p_seller_type), ''), seller_type),
          updated_at = now()
    where id = v_onboarding.private_listing_id;
+
+  select *
+    into v_listing
+  from public.private_listings
+  where id = v_onboarding.private_listing_id
+  limit 1;
+
+  if found then
+    update public.leads
+       set stage = 'Seller Onboarding Submitted',
+           status = 'Submitted',
+           seller_onboarding_status = 'completed',
+           seller_onboarding_token = coalesce(nullif(trim(p_token), ''), seller_onboarding_token),
+           listing_id = v_onboarding.private_listing_id::text,
+           updated_at = now()
+     where organisation_id = v_listing.organisation_id
+       and lead_id::text in (
+         nullif(trim(coalesce(v_listing.seller_lead_id::text, '')), ''),
+         nullif(trim(coalesce(v_listing.originating_crm_lead_id::text, '')), '')
+       );
+  end if;
 
   if to_regclass('public.private_listing_activity') is not null then
     begin

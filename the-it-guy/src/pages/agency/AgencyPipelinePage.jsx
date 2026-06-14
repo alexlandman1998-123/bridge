@@ -6684,7 +6684,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             to: sellerEmail,
             organisationId: normalizeText(organisationId),
             sellerName,
-            propertyTitle: normalizeText(selectedLead?.propertyInterest || selectedLeadPropertyArea || 'your property'),
+            propertyTitle: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea || selectedLead?.propertyInterest || 'your property'),
+            propertyType: normalizeText(selectedLeadPropertyType),
+            transactionReference: (() => {
+              const explicitReference = normalizeText(
+                selectedLead?.displayReference ||
+                selectedLead?.display_reference ||
+                selectedLead?.referenceNumber ||
+                selectedLead?.reference_number ||
+                selectedLead?.reference ||
+                selectedLead?.leadReference ||
+                selectedLead?.lead_reference ||
+                selectedLead?.transactionReference ||
+                selectedLead?.transaction_reference,
+              )
+              if (!explicitReference || isUuidLike(explicitReference)) return ''
+              return explicitReference
+            })(),
             onboardingLink,
             agentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email),
           }

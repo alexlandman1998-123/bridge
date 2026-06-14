@@ -487,63 +487,131 @@ export function CommissionForecastCard({ rows = [], chartPoints = [], onViewFore
   )
 }
 
-export function UpcomingRegistrationsCard({
+function ForecastStatCard({ label, value, helper = 'Next 7 days', tone = 'slate' }) {
+  const toneDotClass = {
+    blue: 'bg-blue-500/75',
+    emerald: 'bg-emerald-500/75',
+    amber: 'bg-amber-500/75',
+    rose: 'bg-rose-500/75',
+    slate: 'bg-slate-400/75',
+  }[tone] || 'bg-slate-400/75'
+
+  const displayValue = typeof value === 'number' ? new Intl.NumberFormat('en-ZA').format(value) : value
+
+  return (
+    <article className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 rounded-full ${toneDotClass}`} />
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      </div>
+      <p className="mt-2 text-[1.35rem] font-semibold leading-none tracking-[-0.04em] text-slate-950 tabular-nums sm:text-[1.55rem]">
+        {displayValue}
+      </p>
+      <p className="mt-2 text-xs font-medium text-slate-500">{helper}</p>
+    </article>
+  )
+}
+
+function ForecastMiniChart({ dailyBreakdown = [] }) {
+  const chartDays = Array.isArray(dailyBreakdown) ? dailyBreakdown.slice(0, 7) : []
+  const hasForecast = chartDays.some((day) => toNumber(day.count) > 0 || toNumber(day.commission) > 0)
+  const maxValue = Math.max(1, ...chartDays.map((day) => toNumber(day.count)))
+  const total = chartDays.reduce((sum, day) => sum + toNumber(day.count), 0)
+
+  return (
+    <div className="rounded-3xl border border-slate-200/70 bg-slate-50/70 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">7-day forecast</p>
+        <p className="text-xs font-medium text-slate-500 tabular-nums">{total} expected</p>
+      </div>
+      {!hasForecast ? (
+        <p className="mt-3 text-sm leading-6 text-slate-500">No registrations forecast for the next 7 days.</p>
+      ) : null}
+      <div className="mt-4 grid grid-cols-7 gap-2">
+        {chartDays.map((day) => {
+          const count = toNumber(day.count)
+          const height = hasForecast
+            ? Math.max(count > 0 ? 18 : 8, (count / maxValue) * 100)
+            : 12
+          const isToday = String(day.label || '').toLowerCase() === 'today'
+          const barTone = isToday || count > 0 ? 'bg-blue-500/75' : 'bg-slate-300/60'
+          const label = isToday ? 'Today' : day.shortLabel || day.label || '—'
+
+          return (
+            <article key={day.key || day.label} className="flex min-w-0 flex-col items-center">
+              <div className="flex h-24 w-full items-end">
+                <span
+                  className={`block w-full rounded-full transition-all ${barTone} ${hasForecast ? 'shadow-[0_6px_18px_rgba(59,130,246,0.12)]' : ''}`}
+                  style={{ height: `${height}%` }}
+                />
+              </div>
+              <p className="mt-2 text-center text-[0.68rem] font-medium text-slate-500">{label}</p>
+            </article>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+export function RegistrationForecastCard({
   count = 0,
   expectedCommission = '',
   dailyBreakdown = [],
   onViewAll,
 }) {
-  const hasBreakdown = dailyBreakdown.some((day) => toNumber(day.count) > 0 || toNumber(day.commission) > 0)
+  const expectedRegistrations = Math.max(0, toNumber(count))
+  const expectedCommissionLabel = typeof expectedCommission === 'number'
+    ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(expectedCommission)
+    : expectedCommission || 'R0'
+
   return (
-    <section className={`${cardClass} ${cardPadding} min-h-[300px]`}>
+    <section className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[1.02rem] font-semibold text-[#101828]">Upcoming Registrations</h2>
-          <p className="mt-1 text-sm text-[#667085]">Near-term expected registration dates.</p>
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <CalendarDays className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Forecast</p>
+            <h2 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.03em] text-slate-950">Registration Forecast</h2>
+          </div>
         </div>
         {onViewAll ? (
-          <button type="button" onClick={onViewAll} className="shrink-0 text-xs font-semibold text-[#123c69]">
+          <button
+            type="button"
+            onClick={onViewAll}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/70 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+          >
             View all
+            <ChevronRight className="h-3.5 w-3.5" />
           </button>
         ) : null}
       </div>
-      {hasBreakdown || toNumber(count) > 0 ? (
-        <>
-          <div className="mt-5 grid gap-4 sm:grid-cols-[minmax(0,0.9fr)_1px_minmax(0,1fr)] sm:items-center">
-            <div className="flex items-center gap-3">
-              <span className="grid h-12 w-12 place-items-center rounded-full bg-[#edf5ff] text-[#1769d1]">
-                <CalendarDays size={20} />
-              </span>
-              <span>
-                <span className="block text-xs font-semibold text-[#667085]">Next 7 Days</span>
-                <span className="mt-1 block text-[1.8rem] font-semibold leading-none text-[#101828] tabular-nums">{count}</span>
-                <span className="mt-1 block text-xs text-[#667085]">Expected registrations</span>
-              </span>
-            </div>
-            <span className="hidden h-16 w-px bg-[#edf2f7] sm:block" />
-            <div>
-              <p className="text-xs font-semibold text-[#667085]">Expected Commission</p>
-              <p className="mt-2 text-[1.5rem] font-semibold leading-none text-[#101828]">{expectedCommission}</p>
-            </div>
-          </div>
-          <div className={`mt-6 flex gap-3 overflow-x-auto pb-1 ${scrollClass}`}>
-            {dailyBreakdown.map((day) => (
-              <article key={day.key || day.label} className="min-w-[72px] flex-1 text-center">
-                <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-[#f1f5f9] text-[0.72rem] font-semibold text-[#52657a]">{day.initials || day.shortLabel}</span>
-                <p className="mt-2 text-[0.72rem] font-medium text-[#667085]">{day.label}</p>
-                <p className="mt-1 text-[1rem] font-semibold text-[#101828] tabular-nums">{day.count}</p>
-              </article>
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="mt-5">
-          <EmptyState title="No registrations dated in the next 7 days" action="Expected registrations will appear once transactions have target dates." />
-        </div>
-      )}
+
+      <div className="mt-4">
+        <ForecastMiniChart dailyBreakdown={dailyBreakdown} />
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <ForecastStatCard
+          label="Expected Registrations"
+          value={expectedRegistrations}
+          helper="Next 7 days"
+          tone="blue"
+        />
+        <ForecastStatCard
+          label="Expected Commission"
+          value={expectedCommissionLabel}
+          helper="Next 7 days"
+          tone="emerald"
+        />
+      </div>
     </section>
   )
 }
+
+export const UpcomingRegistrationsCard = RegistrationForecastCard
 
 export function RecentActivityCard({ rows = [], onViewAll, title = 'Recent Activity' }) {
   const iconByType = {

@@ -3,8 +3,11 @@ export const EMAIL_TEMPLATE_KEYS = {
   SELLER_ONBOARDING: 'seller_onboarding',
 }
 
-const DEFAULT_SECURITY_BODY =
+const DEFAULT_CLIENT_SECURITY_BODY =
   'Your information and documents are handled securely through Bridge. Only authorised parties involved in your transaction can access your onboarding details.'
+
+const DEFAULT_SELLER_SECURITY_BODY =
+  'Your information is securely stored and only shared with authorised parties involved in your property sale.'
 
 export const DEFAULT_EMAIL_TEMPLATE_SETTINGS = {
   [EMAIL_TEMPLATE_KEYS.CLIENT_ONBOARDING]: {
@@ -31,30 +34,31 @@ export const DEFAULT_EMAIL_TEMPLATE_SETTINGS = {
     ],
     ctaLabel: 'Open Onboarding',
     securityTitle: 'Security & Privacy',
-    securityBody: DEFAULT_SECURITY_BODY,
+    securityBody: DEFAULT_CLIENT_SECURITY_BODY,
     helpBody: 'Need help? Reply to this email or contact your property representative directly.',
   },
   [EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING]: {
     templateKey: EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING,
     displayName: 'Seller Onboarding',
-    subject: 'Complete seller onboarding',
-    title: 'Seller Onboarding',
+    subject: 'Complete your seller information',
+    title: 'Your Property Sale Starts Here',
     preheader:
-      'Your Bridge seller onboarding is ready. Complete your details to continue mandate and listing preparation.',
+      'Your agent has invited you to complete seller information for your property.',
     introParagraphs: [
-      'Your property sale has been added to Bridge and your onboarding process is now ready to begin.',
-      'Bridge is a property transaction platform that keeps sellers, buyers, agents, attorneys, and supporting teams connected throughout the process.',
+      'Your agent has invited you to complete the seller onboarding process for your property.',
+      'This should only take a few minutes and helps ensure your property sale progresses smoothly from the start.',
+      'To get everything ready, we need a few details and any available property documents from you.',
     ],
     processSteps: [
-      'Complete your seller onboarding information.',
-      'Upload any required property and seller documents.',
-      'Your agent reviews the information and prepares mandate steps.',
-      'Progress and updates are shared through your Bridge workspace.',
+      'Complete your seller information.',
+      'Upload any available property documents.',
+      "Your agent reviews everything and prepares the property for listing.",
+      "We'll keep you updated as your sale progresses.",
     ],
-    ctaLabel: 'Open Onboarding',
-    securityTitle: 'Security & Privacy',
-    securityBody: DEFAULT_SECURITY_BODY,
-    helpBody: 'Need help? Reply to this email or contact your property representative directly.',
+    ctaLabel: 'Complete Seller Information',
+    securityTitle: 'Trust & Security',
+    securityBody: DEFAULT_SELLER_SECURITY_BODY,
+    helpBody: 'Need help? Reply to this email or contact your agent directly.',
   },
 }
 

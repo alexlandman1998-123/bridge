@@ -82,6 +82,8 @@ export function renderBridgeEmailLayout({
   securityBody = "Your information and documents are handled securely through Bridge. Only authorised parties involved in your transaction can access your onboarding details.",
   helpBody = "Need help? Reply to this email or contact your property representative directly.",
   organisationName = "Bridge",
+  senderOrganisationName = "",
+  senderOrganisationLogoUrl = "",
   supportEmail = "",
   supportPhone = "",
 }: {
@@ -93,13 +95,20 @@ export function renderBridgeEmailLayout({
   securityBody?: string;
   helpBody?: string;
   organisationName?: string;
+  senderOrganisationName?: string;
+  senderOrganisationLogoUrl?: string;
   supportEmail?: string;
   supportPhone?: string;
 }) {
   const safeSupportEmail = supportEmail ? escapeHtml(supportEmail) : "";
   const safeSupportPhone = supportPhone ? escapeHtml(supportPhone) : "";
-  const safeOrganisationName = escapeHtml(organisationName || "Bridge");
+  const resolvedOrganisationName = senderOrganisationName || organisationName || "Bridge";
+  const safeOrganisationName = escapeHtml(resolvedOrganisationName);
+  const safeOrganisationLogoUrl = senderOrganisationLogoUrl ? escapeHtml(senderOrganisationLogoUrl) : "";
   const supportLine = [safeSupportEmail, safeSupportPhone].filter(Boolean).join(" · ");
+  const headerBrandHtml = safeOrganisationLogoUrl
+    ? `<img src="${safeOrganisationLogoUrl}" alt="${safeOrganisationName}" style="display: block; max-height: 40px; max-width: 220px; width: auto; height: auto; object-fit: contain;" />`
+    : `<p style="margin: 0; font-size: 17px; line-height: 1.2; color: #ffffff; font-weight: 700; letter-spacing: 0.01em;">${safeOrganisationName}</p>`;
 
   return `
     <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">
@@ -108,7 +117,7 @@ export function renderBridgeEmailLayout({
     <div style="margin: 0; padding: 24px 12px; background: #eef3f8;">
       <div style="max-width: 660px; margin: 0 auto; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #142132;">
         <div style="background: #0b2743; border-radius: 16px 16px 0 0; padding: 24px;">
-          <p style="margin: 0; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: #c4d4e6; font-weight: 700;">Bridge</p>
+          <div style="margin: 0 0 18px;">${headerBrandHtml}</div>
           <h1 style="margin: 10px 0 0; font-size: 28px; line-height: 1.2; color: #ffffff;">${escapeHtml(title)}</h1>
         </div>
         <div style="background: #ffffff; border: 1px solid #d8e3ef; border-top: 0; border-radius: 0 0 16px 16px; padding: 28px;">

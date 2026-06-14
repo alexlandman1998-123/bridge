@@ -7075,6 +7075,15 @@ function AttorneyTransactionDetail() {
           organisationId: cleanDetailText(workspaceOrganisationId),
           sellerName: inviteContext.sellerName,
           propertyTitle: cleanDetailText(propertyAddress || matterHeadline || 'your property'),
+          propertyType: cleanDetailText(transaction?.property_type || transaction?.propertyType || ''),
+          transactionReference: cleanDetailText(
+            transaction?.transaction_reference ||
+              transaction?.transactionReference ||
+              transaction?.reference ||
+              transaction?.application_reference ||
+              transaction?.bond_application_reference ||
+              '',
+          ),
           onboardingLink: inviteContext.onboardingLink,
           agentName: cleanDetailText(transaction?.assigned_agent || profile?.fullName || profile?.name || profile?.email || 'Bridge'),
         },

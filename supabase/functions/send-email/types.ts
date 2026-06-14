@@ -159,6 +159,7 @@ export type SendSellerOnboardingPayload = {
   organisationId?: string;
   sellerName?: string;
   propertyTitle?: string;
+  propertyType?: string;
   onboardingLink?: string;
   transactionReference?: string;
   agentName?: string;

@@ -138,6 +138,7 @@ import {
 } from '../services/leadSuggestionService'
 
 const pageShell = 'mx-auto flex w-full max-w-[1480px] flex-col gap-5'
+const leadListShell = 'flex w-full min-w-0 flex-col gap-5 px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 const buyerWorkspaceCardClass = `${panelClass} card`
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -494,6 +495,22 @@ function isArchivedLead(row = {}) {
 
 function isUuidLike(value = '') {
   return UUID_PATTERN.test(normalizeText(value))
+}
+
+function getLeadDisplayReference(row = {}) {
+  const explicitReference = normalizeText(
+    row.displayReference ||
+      row.display_reference ||
+      row.referenceNumber ||
+      row.reference_number ||
+      row.reference ||
+      row.leadReference ||
+      row.lead_reference ||
+      row.transactionReference ||
+      row.transaction_reference,
+  )
+  if (!explicitReference || isUuidLike(explicitReference)) return ''
+  return explicitReference
 }
 
 function getOwnerName(row = {}) {
@@ -2771,11 +2788,11 @@ function EmptyLeadResults({ onCreate, onImport, onAdjustFilters }) {
     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
       <p className="text-sm font-semibold text-slate-900">No leads found</p>
       <p className="mx-auto mt-2 max-w-xl text-sm text-slate-500">Create your first buyer or seller lead to start managing the pipeline.</p>
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
-        <button type="button" onClick={() => onCreate('buyer')} className="inline-flex min-h-10 items-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">Create Buyer Lead</button>
-        <button type="button" onClick={() => onCreate('seller')} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Create Seller Lead</button>
-        <button type="button" onClick={onImport} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Import Leads</button>
-        <button type="button" onClick={onAdjustFilters} className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Adjust Filters</button>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <button type="button" onClick={() => onCreate('buyer')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white">Create Buyer Lead</button>
+        <button type="button" onClick={() => onCreate('seller')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Create Seller Lead</button>
+        <button type="button" onClick={onImport} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Import Leads</button>
+        <button type="button" onClick={onAdjustFilters} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Adjust Filters</button>
       </div>
     </div>
   )
@@ -2788,7 +2805,7 @@ function getCreateLeadButtonLabel(category = 'all') {
   return 'Create Lead'
 }
 
-function CreateLeadDropdown({ activeCategory = 'all', onCreate, onImport }) {
+function CreateLeadDropdown({ activeCategory = 'all', onCreate, onImport, className = '', buttonClassName = '' }) {
   const [open, setOpen] = useState(false)
   const defaultCategory = ['buyer', 'seller', 'other'].includes(activeCategory) ? activeCategory : ''
   const buttonLabel = getCreateLeadButtonLabel(activeCategory)
@@ -2804,11 +2821,11 @@ function CreateLeadDropdown({ activeCategory = 'all', onCreate, onImport }) {
   }
 
   return (
-    <div className="relative">
+    <div className={`relative ${className}`.trim()}>
       <button
         type="button"
         onClick={() => defaultCategory ? choose(defaultCategory) : setOpen((previous) => !previous)}
-        className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-700"
+        className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-700 ${buttonClassName}`.trim()}
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -4341,21 +4358,21 @@ function AgentLeadList() {
   }
 
   return (
-    <main className={pageShell}>
-      <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-slate-950">Leads</h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <main className={leadListShell}>
+      <header className="flex flex-col gap-3">
+        <h1 className="sr-only">Leads</h1>
+        <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-3">
           <CreateLeadDropdown
             activeCategory={filters.category}
             onCreate={openCreateLead}
             onImport={() => navigate('/pipeline/enquiries')}
+            className="w-full"
+            buttonClassName="w-full"
           />
-          <button type="button" onClick={() => navigate('/pipeline/enquiries')} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+          <button type="button" onClick={() => navigate('/pipeline/enquiries')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             Import
           </button>
-          <button type="button" onClick={loadRows} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+          <button type="button" onClick={loadRows} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
             <RefreshCw size={15} />
             Refresh
           </button>
@@ -6826,14 +6843,37 @@ function SellerDocumentsPanel({ journey = null }) {
 }
 
 function getSellerOnboardingStatus(row = {}, listing = null) {
-  return normalizeText(
-    row?.sellerOnboardingStatus ||
-    row?.seller_onboarding_status ||
-    row?.sellerOnboarding?.status ||
-    listing?.sellerOnboarding?.status ||
-    listing?.sellerOnboardingStatus ||
+  const statuses = [
+    row?.sellerOnboardingStatus,
+    row?.seller_onboarding_status,
+    row?.sellerOnboarding?.status,
+    listing?.sellerOnboarding?.status,
+    listing?.sellerOnboardingStatus,
     listing?.seller_onboarding_status,
-  ).toLowerCase()
+  ]
+    .map((value) => normalizeText(value).toLowerCase())
+    .filter(Boolean)
+
+  const submittedStatus = statuses.find((status) => sellerOnboardingIsSubmitted(status))
+  if (submittedStatus) return submittedStatus
+
+  const hasCompletionTimestamp = Boolean(
+    row?.sellerOnboarding?.submittedAt ||
+      row?.sellerOnboarding?.completedAt ||
+      row?.sellerOnboardingSubmittedAt ||
+      row?.sellerOnboardingCompletedAt ||
+      row?.seller_onboarding_submitted_at ||
+      row?.seller_onboarding_completed_at ||
+      listing?.sellerOnboarding?.submittedAt ||
+      listing?.sellerOnboarding?.completedAt ||
+      listing?.sellerOnboardingSubmittedAt ||
+      listing?.sellerOnboardingCompletedAt ||
+      listing?.seller_onboarding_submitted_at ||
+      listing?.seller_onboarding_completed_at,
+  )
+  if (hasCompletionTimestamp) return 'completed'
+
+  return statuses[0] || ''
 }
 
 function getSellerOnboardingToken(row = {}, listing = null) {
@@ -7333,12 +7373,15 @@ function getSellerJourneyStepDate(row = {}, listing = null, journey = null, step
 
 function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboarding = {}, organisationId = '', actor = {}, workspaceName = '' } = {}) {
   const propertyTitle = normalizeText(
-    listing?.title ||
+    row?.sellerPropertyAddress ||
+      row?.seller_property_address ||
+      listing?.propertyAddress ||
+      listing?.address ||
+      listing?.addressLine1 ||
+      listing?.title ||
       listing?.propertyTitle ||
       row?.propertyInterest ||
       row?.property_interest ||
-      row?.sellerPropertyAddress ||
-      row?.seller_property_address ||
       row?.areaInterest ||
       row?.area_interest ||
       'your property',
@@ -7349,8 +7392,9 @@ function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboardin
     organisationId: normalizeText(organisationId),
     sellerName: normalizeText(row.name || row.contact?.name || 'Seller'),
     propertyTitle,
+    propertyType: normalizeText(row?.propertyType || row?.property_type || listing?.propertyType || listing?.property_type),
     onboardingLink: normalizeText(onboarding?.link),
-    transactionReference: normalizeText(row.leadReference || row.lead_reference || row.leadId),
+    transactionReference: getLeadDisplayReference(row),
     agentName: normalizeText(row.assignedAgentName || actor.fullName || actor.name || actor.email),
     organisationName: normalizeText(workspaceName),
     supportEmail: normalizeText(actor.email),
@@ -8999,6 +9043,36 @@ function AgentLeadWorkspace() {
 
   useEffect(() => {
     void loadWorkspace()
+  }, [loadWorkspace])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return undefined
+
+    let cancelled = false
+    const refreshWorkspace = () => {
+      if (cancelled) return
+      void loadWorkspace()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshWorkspace()
+      }
+    }
+
+    window.addEventListener('itg:seller-onboarding-submitted', refreshWorkspace)
+    window.addEventListener('itg:listings-updated', refreshWorkspace)
+    window.addEventListener('itg:pipeline-updated', refreshWorkspace)
+    window.addEventListener('focus', refreshWorkspace)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      cancelled = true
+      window.removeEventListener('itg:seller-onboarding-submitted', refreshWorkspace)
+      window.removeEventListener('itg:listings-updated', refreshWorkspace)
+      window.removeEventListener('itg:pipeline-updated', refreshWorkspace)
+      window.removeEventListener('focus', refreshWorkspace)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [loadWorkspace])
 
   const row = data?.row || null

@@ -2887,6 +2887,34 @@ export async function submitSellerOnboarding(token, payload = {}) {
     }).catch((canonicalError) => {
       console.warn('[Private Listings] canonical seller requirement resolution skipped after onboarding submit', canonicalError)
     })
+    const leadOrganisationId = normalizeText(rpcContext.listing?.organisationId)
+    const rawLeadIds = [
+      normalizeText(rpcContext.listing?.sellerLeadId),
+      normalizeText(rpcContext.listing?.originatingCrmLeadId),
+    ]
+    const listingIdForLeadSync = normalizeText(rpcContext.listing?.id)
+    const leadTokenForLeadSync = normalizeText(rpcContext.onboarding?.token || rpcContext.listing?.sellerOnboarding?.token)
+    const leadIdsToSync = new Set(rawLeadIds.filter(Boolean))
+    for (const rawLeadId of rawLeadIds) {
+      if (isUuidLike(rawLeadId)) continue
+      const normalizedLeadId = normalizeUuid(rawLeadId)
+      if (normalizedLeadId) leadIdsToSync.add(normalizedLeadId)
+    }
+
+    await syncSellerJourneyLeadStage(client, {
+      organisationId: leadOrganisationId,
+      leadIds: Array.from(leadIdsToSync),
+      onboardingToken: leadTokenForLeadSync,
+      listingId: listingIdForLeadSync,
+      targetStage: 'Seller Onboarding Submitted',
+      targetStatus: 'Submitted',
+      extraPayload: {
+        seller_onboarding_status: 'completed',
+        seller_onboarding_token: normalizeNullableText(rpcContext.onboarding?.token || rpcContext.listing?.sellerOnboarding?.token || ''),
+        listing_id: listingIdForLeadSync || null,
+        updated_at: new Date().toISOString(),
+      },
+    }).catch(() => false)
     return rpcContext
   }
   if (isMissingPrivateListingActivityError(rpc.error)) {

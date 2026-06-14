@@ -2399,7 +2399,8 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
               userEmail={profile?.email || ''}
               includeAll
               canManage={canViewAllTransactions}
-              subheading="Track upcoming appointments, confirmations, and reschedules across the agency."
+              subheading="Track upcoming appointments, confirmations, and reschedules."
+              variant="compact"
               onViewCalendar={() => navigate('/pipeline/calendar')}
               onOpenCalendar={() => navigate('/pipeline/calendar')}
               onManageAppointment={() => navigate('/pipeline/calendar')}

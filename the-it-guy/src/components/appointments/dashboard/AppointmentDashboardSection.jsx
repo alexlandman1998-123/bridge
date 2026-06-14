@@ -25,6 +25,83 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function toDate(value) {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function cloneDate(value = new Date()) {
+  return new Date(value.getTime())
+}
+
+function startOfDay(value = new Date()) {
+  const date = cloneDate(toDate(value) || new Date())
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function addDays(value = new Date(), amount = 0) {
+  const date = cloneDate(toDate(value) || new Date())
+  date.setDate(date.getDate() + amount)
+  return date
+}
+
+function isSameDay(left = null, right = null) {
+  const leftDate = toDate(left)
+  const rightDate = toDate(right)
+  if (!leftDate || !rightDate) return false
+  return leftDate.getFullYear() === rightDate.getFullYear()
+    && leftDate.getMonth() === rightDate.getMonth()
+    && leftDate.getDate() === rightDate.getDate()
+}
+
+function isSameMonth(left = null, right = null) {
+  const leftDate = toDate(left)
+  const rightDate = toDate(right)
+  if (!leftDate || !rightDate) return false
+  return leftDate.getFullYear() === rightDate.getFullYear()
+    && leftDate.getMonth() === rightDate.getMonth()
+}
+
+function startOfMonth(value = new Date()) {
+  const date = cloneDate(toDate(value) || new Date())
+  date.setDate(1)
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function endOfMonth(value = new Date()) {
+  const date = startOfMonth(value)
+  date.setMonth(date.getMonth() + 1)
+  date.setDate(0)
+  date.setHours(23, 59, 59, 999)
+  return date
+}
+
+function startOfWeekMonday(value = new Date()) {
+  const date = startOfDay(value)
+  const dayOfWeek = date.getDay()
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  return addDays(date, mondayOffset)
+}
+
+function formatCompactDate(value) {
+  const date = toDate(value)
+  if (!date) return 'Date pending'
+  return date.toLocaleDateString('en-ZA', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
+function dateKey(value = new Date()) {
+  const date = toDate(value)
+  if (!date) return ''
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 function initials(value = '') {
   const parts = normalizeText(value).split(/\s+/).filter(Boolean)
   if (!parts.length) return 'U'
@@ -326,6 +403,367 @@ function AppointmentTimelineGroup({ group = {}, maxRows = 4, onOpenAppointment, 
   )
 }
 
+function compactToneClass(tone = '') {
+  if (tone === 'green') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (tone === 'amber') return 'border-amber-200 bg-amber-50 text-amber-700'
+  if (tone === 'red') return 'border-rose-200 bg-rose-50 text-rose-700'
+  if (tone === 'rose') return 'border-rose-200 bg-rose-50 text-rose-700'
+  if (tone === 'blue') return 'border-blue-200 bg-blue-50 text-blue-600'
+  return 'border-slate-200 bg-slate-100 text-slate-600'
+}
+
+function compactAccentClass(tone = '') {
+  if (tone === 'green') return 'bg-emerald-500/75'
+  if (tone === 'amber') return 'bg-amber-500/75'
+  if (tone === 'red') return 'bg-rose-500/75'
+  if (tone === 'rose') return 'bg-rose-500/75'
+  if (tone === 'blue') return 'bg-blue-500/75'
+  return 'bg-slate-400/75'
+}
+
+function CompactStatusPill({ status = '', tone = '' }) {
+  const presentation = getAppointmentStatusPresentation(status)
+  const resolvedTone = tone || presentation.tone
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${compactToneClass(resolvedTone)}`}>
+      {presentation.label}
+    </span>
+  )
+}
+
+function AppointmentMetric({ label, value, tone = 'slate' }) {
+  const displayValue = typeof value === 'number' ? new Intl.NumberFormat('en-ZA').format(value) : value
+  return (
+    <article className="rounded-2xl border border-slate-200/70 bg-slate-50/70 px-3.5 py-3">
+      <div className="flex items-center gap-2">
+        <span className={`h-2 w-2 rounded-full ${compactAccentClass(tone)}`} />
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      </div>
+      <p className="mt-2 text-[1.25rem] font-semibold leading-none tracking-[-0.04em] text-slate-950 tabular-nums sm:text-[1.45rem]">
+        {displayValue}
+      </p>
+    </article>
+  )
+}
+
+function buildCompactCalendarDays(appointments = [], selectedDate = null, now = new Date()) {
+  const referenceDate = toDate(now) || new Date()
+  const monthStart = startOfMonth(referenceDate)
+  const monthEnd = endOfMonth(referenceDate)
+  const gridStart = startOfWeekMonday(monthStart)
+  const visibleAppointments = []
+  const dayCounts = new Map()
+
+  for (const appointment of Array.isArray(appointments) ? appointments : []) {
+    const statusKey = normalizeText(appointment?.statusKey || appointment?.status).toLowerCase()
+    if (['completed', 'cancelled', 'canceled', 'no_show'].includes(statusKey)) continue
+    const date = toDate(appointment?.dateTime)
+    if (!date || !isSameMonth(date, referenceDate)) continue
+    const key = dateKey(date)
+    dayCounts.set(key, (dayCounts.get(key) || 0) + 1)
+    visibleAppointments.push(date)
+  }
+
+  let focusDate = toDate(selectedDate)
+  if (!focusDate || !isSameMonth(focusDate, referenceDate)) {
+    const futureAppointment = visibleAppointments
+      .filter((date) => date.getTime() >= startOfDay(referenceDate).getTime())
+      .sort((left, right) => left.getTime() - right.getTime())[0]
+    focusDate = futureAppointment
+      || visibleAppointments.slice().sort((left, right) => left.getTime() - right.getTime())[0]
+      || referenceDate
+  }
+
+  const weekdays = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
+  const days = Array.from({ length: 42 }).map((_, index) => {
+    const date = addDays(gridStart, index)
+    const key = dateKey(date)
+    return {
+      key,
+      date,
+      dayNumber: date.getDate(),
+      inMonth: date >= monthStart && date <= monthEnd,
+      isToday: isSameDay(date, referenceDate),
+      isSelected: isSameDay(date, focusDate),
+      count: dayCounts.get(key) || 0,
+    }
+  })
+
+  return {
+    monthLabel: referenceDate.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }),
+    weekdays,
+    days,
+  }
+}
+
+function MiniMonthCalendar({ appointments = [], selectedDate = null, currentMonthLabel = '' }) {
+  const calendar = useMemo(
+    () => buildCompactCalendarDays(appointments, selectedDate),
+    [appointments, selectedDate],
+  )
+
+  return (
+    <section className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Mini Calendar</p>
+          <h3 className="mt-1 text-sm font-semibold tracking-[-0.03em] text-slate-950">
+            {currentMonthLabel || calendar.monthLabel}
+          </h3>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-3 text-[0.68rem] font-medium text-slate-500">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-blue-500/80" />
+            With appointments
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-[0.55rem] font-semibold text-slate-500">
+              T
+            </span>
+            Today
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-7 gap-1 text-center">
+        {calendar.weekdays.map((day) => (
+          <span key={day} className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            {day}
+          </span>
+        ))}
+      </div>
+
+      <div className="mt-2 grid grid-cols-7 gap-1">
+        {calendar.days.map((day) => {
+          const baseClass = day.inMonth
+            ? 'border-slate-200/70 bg-white text-slate-700'
+            : 'border-transparent bg-transparent text-slate-300'
+          const stateClass = day.isSelected
+            ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
+            : day.isToday
+              ? 'border-slate-300 bg-slate-100 text-slate-950 shadow-sm'
+              : baseClass
+
+          return (
+            <div
+              key={day.key}
+              className={`flex min-h-[4.4rem] flex-col rounded-2xl border px-2 py-2 text-left transition ${stateClass}`}
+            >
+              <div className="flex items-start justify-between gap-1">
+                <span className="text-[0.76rem] font-semibold leading-none tabular-nums">{day.dayNumber}</span>
+                {day.count > 0 ? (
+                  <span className="inline-flex items-center gap-0.5 pt-0.5">
+                    {Array.from({ length: Math.min(day.count, 3) }).map((_, index) => (
+                      <span key={`${day.key}-${index}`} className="h-1.5 w-1.5 rounded-full bg-blue-500/75" />
+                    ))}
+                    {day.count > 3 ? (
+                      <span className="text-[0.58rem] font-semibold tracking-tight text-blue-600">+{day.count - 3}</span>
+                    ) : null}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-auto flex justify-center">
+                {day.count > 0 ? <span className="h-1.5 w-1.5 rounded-full bg-blue-500/80" /> : <span className="h-1.5 w-1.5 rounded-full bg-transparent" />}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function CompactNextAppointmentCard({
+  appointment = null,
+  canManage = true,
+  onOpenCalendar,
+  onManageAppointment,
+}) {
+  if (!appointment) {
+    return (
+      <section className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-sm">
+        <div className="flex items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-50 text-slate-500">
+            <CalendarDays className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Next Appointment</p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-3xl border border-dashed border-slate-200/80 bg-slate-50/70 px-4 py-5">
+            <p className="text-sm font-semibold text-slate-950">No upcoming appointments</p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Your upcoming viewings, consultations, and meetings will appear here.
+            </p>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => onOpenCalendar?.(appointment)}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700"
+          >
+            <CalendarDays className="h-4 w-4" />
+            Open Calendar
+          </button>
+          <button
+            type="button"
+            onClick={() => onManageAppointment?.(appointment)}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200/70 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+          >
+            <CalendarRange className="h-4 w-4" />
+            {canManage ? 'Manage Appointments' : 'View Appointments'}
+          </button>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <Clock3 className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Next Appointment</p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Your next scheduled client touchpoint.</p>
+          </div>
+        </div>
+        <CompactStatusPill status={appointment.statusLabel} tone={appointment.statusTone} />
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,140px)_minmax(0,1fr)]">
+        <div className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4">
+          <div className="flex items-center gap-2 text-slate-500">
+            <Clock3 className="h-4 w-4 text-blue-600" />
+            <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em]">Time</span>
+          </div>
+          <p className="mt-3 text-[2rem] font-semibold leading-none tracking-[-0.05em] text-slate-950 tabular-nums">
+            {appointment.timeLabel || '—'}
+          </p>
+          <p className="mt-2 text-sm font-medium text-slate-500">
+            {formatCompactDate(appointment.dateTime)}
+          </p>
+        </div>
+
+        <div className="min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="truncate text-[1.02rem] font-semibold tracking-[-0.03em] text-slate-950">
+                {appointment.typeLabel || 'Appointment'}
+              </h3>
+              <p className="mt-1 text-sm font-medium text-slate-600">{appointment.clientName || 'Client pending'}</p>
+            </div>
+            <span className="inline-flex shrink-0 items-center rounded-full border border-slate-200/70 bg-slate-50 px-2.5 py-1 text-[0.72rem] font-semibold text-slate-600">
+              {appointment.dateAnchorLabel || 'Upcoming'}
+            </span>
+          </div>
+
+          {appointment.propertyAddress ? (
+            <div className="mt-3 flex items-start gap-2 text-sm leading-6 text-slate-600">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+              <span className="line-clamp-2">{appointment.propertyAddress}</span>
+            </div>
+          ) : null}
+
+          {appointment.countdownLabel ? (
+            <div className="mt-3 inline-flex rounded-full bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
+              {appointment.countdownLabel}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onOpenCalendar?.(appointment)}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700"
+        >
+          <CalendarDays className="h-4 w-4" />
+          Open Calendar
+        </button>
+        <button
+          type="button"
+          onClick={() => onManageAppointment?.(appointment)}
+          disabled={!canManage && !onManageAppointment}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200/70 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <CalendarRange className="h-4 w-4" />
+          {canManage ? 'Manage Appointments' : 'View Appointments'}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function AppointmentsOverviewCard({
+  data = null,
+  canManage = true,
+  onViewCalendar,
+  onOpenCalendar,
+  onManageAppointment,
+  onOpenAppointment,
+}) {
+  const appointments = Array.isArray(data?.appointments) ? data.appointments : []
+  const counts = data?.counts || {}
+  const nextAppointment = data?.nextAppointment || null
+  const selectedDate = nextAppointment?.dateTime || data?.calendarStrip?.selectedDate || null
+  const manageHandler = onManageAppointment || onOpenAppointment || onViewCalendar
+  const openHandler = onOpenCalendar || onViewCalendar || manageHandler
+  const viewCalendarHandler = onViewCalendar || openHandler
+
+  return (
+    <section className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex flex-col gap-4 border-b border-slate-200/70 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+            <CalendarDays className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-slate-950">Appointments</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Track upcoming appointments, confirmations, and reschedules.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => viewCalendarHandler?.()}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-slate-200/70 bg-white px-3.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+        >
+          <CalendarDays className="h-4 w-4" />
+          View Calendar
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <AppointmentMetric label="Upcoming" value={counts.upcoming || 0} tone="blue" />
+        <AppointmentMetric label="Pending Confirmation" value={counts.pendingConfirmation || 0} tone="amber" />
+        <AppointmentMetric label="Needs Reschedule" value={counts.needsReschedule || 0} tone="rose" />
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <CompactNextAppointmentCard
+          appointment={nextAppointment}
+          canManage={canManage}
+          onOpenCalendar={openHandler}
+          onManageAppointment={manageHandler}
+        />
+        <MiniMonthCalendar
+          appointments={appointments}
+          selectedDate={selectedDate}
+          currentMonthLabel={data?.calendarStrip?.currentMonthLabel || ''}
+        />
+      </div>
+    </section>
+  )
+}
+
 function LoadingCard() {
   return (
     <section className="rounded-[24px] border border-[#dce6f2] bg-white p-6 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
@@ -341,6 +779,34 @@ function LoadingCard() {
             <div className="h-[170px] rounded-[20px] bg-[#f5f8fb]" />
             <div className="h-[170px] rounded-[20px] bg-[#f5f8fb]" />
           </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function CompactLoadingCard() {
+  return (
+    <section className="rounded-3xl border border-slate-200/70 bg-white p-4 shadow-sm sm:p-5">
+      <div className="animate-pulse space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-slate-100" />
+            <div className="space-y-2">
+              <div className="h-4 w-36 rounded-full bg-slate-100" />
+              <div className="h-3 w-64 rounded-full bg-slate-100" />
+            </div>
+          </div>
+          <div className="h-9 w-28 rounded-full bg-slate-100" />
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="h-20 rounded-2xl bg-slate-100" />
+          <div className="h-20 rounded-2xl bg-slate-100" />
+          <div className="h-20 rounded-2xl bg-slate-100" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="h-[260px] rounded-3xl bg-slate-100" />
+          <div className="h-[260px] rounded-3xl bg-slate-100" />
         </div>
       </div>
     </section>
@@ -370,8 +836,10 @@ export default function AppointmentDashboardSection({
   refreshKey = '',
   heading = 'Appointments',
   subheading = 'Manage upcoming appointments and requests across your pipeline.',
+  variant = 'legacy',
 }) {
   const [state, setState] = useState({ loading: true, error: '', data: null })
+  const isCompact = variant === 'compact'
 
   useEffect(() => {
     let active = true
@@ -414,7 +882,27 @@ export default function AppointmentDashboardSection({
     ? resolveUserMatch(data.nextAppointment, directoryIndex)
     : null
 
-  if (state.loading) return <LoadingCard />
+  if (state.loading) return isCompact ? <CompactLoadingCard /> : <LoadingCard />
+
+  if (isCompact) {
+    return (
+      <div className="space-y-3">
+        {state.error ? (
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 shadow-sm">
+            {state.error}
+          </div>
+        ) : null}
+        <AppointmentsOverviewCard
+          data={data}
+          canManage={canManage}
+          onViewCalendar={onViewCalendar}
+          onOpenCalendar={onOpenCalendar}
+          onManageAppointment={onManageAppointment}
+          onOpenAppointment={onOpenAppointment}
+        />
+      </div>
+    )
+  }
 
   return (
     <section className="rounded-[24px] border border-[#dce6f2] bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.05)] sm:p-7">
