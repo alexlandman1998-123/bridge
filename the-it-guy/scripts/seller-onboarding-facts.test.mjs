@@ -48,6 +48,8 @@ test('transforms seller onboarding into canonical resolver facts', () => {
     companyRegistrationNumber: '2024/123456/07',
     companyDirectorName: 'Alex Principal',
     propertyType: 'apartment',
+    propertyStructureType: 'sectional_title',
+    sectionalTitle: true,
     propertyAddressDetails: {
       query: '123 Main Street, Green Point, Cape Town, Western Cape, 8001',
       line1: '123 Main Street',
@@ -73,6 +75,8 @@ test('transforms seller onboarding into canonical resolver facts', () => {
   }, listing, { contextType: 'private_listing', contextId: listing.id, listingId: listing.id })
 
   assert.equal(facts.seller.legal_type, 'company')
+  assert.equal(facts.seller_branch, 'company')
+  assert.equal(facts.property_branch, 'sectional_title')
   assert.equal(facts.seller.company.registration_number, '2024/123456/07')
   assert.equal(facts.property.property_type, 'sectional_title')
   assert.equal(facts.property.sectional_title, true)
@@ -87,6 +91,7 @@ test('transforms seller onboarding into canonical resolver facts', () => {
   assert.equal(facts.finance.bond_bank, 'FNB')
   assert.equal(facts.compliance.gas_installation, true)
   assert.equal(facts.compliance.solar_installation, true)
+  assert.ok(Array.isArray(facts.document_triggers))
   assert.equal(facts.context.id, listing.id)
 })
 

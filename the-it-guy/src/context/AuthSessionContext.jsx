@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { clearStoredDevAuthRole, createDevAuthSession, getStoredDevAuthRole, isDevAuthBypassEnabled } from '../lib/devAuth'
 import { getDevBypassWorkspaceId } from '../lib/demoIds'
-import { loadBridgeAuthState } from '../lib/authBoot'
+import { getActiveAuthBootStepDiagnostics, loadBridgeAuthState } from '../lib/authBoot'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, isUnsupportedJwtAlgorithmError, supabase } from '../lib/supabaseClient'
 import { getProductionSafetyViolation } from '../lib/envValidation'
 import { APP_ROLE_LABELS } from '../lib/roles'
@@ -100,14 +100,33 @@ function createDevOnlyAuthState(devAuthRole) {
   }
 }
 
-async function withBootstrapTimeout(task, timeoutMs = SESSION_BOOTSTRAP_TIMEOUT_MS) {
+function buildBootstrapTimeoutMessage({ phase = '', diagnostics = [] } = {}) {
+  const labels = diagnostics
+    .map((step) => String(step?.label || '').trim())
+    .filter(Boolean)
+  if (phase === 'bridge' && labels.length) {
+    return `Authentication bootstrap timed out while loading ${labels.join(', ')}. Please retry.`
+  }
+  if (phase === 'session') {
+    return 'Authentication bootstrap timed out while restoring your session. Please retry.'
+  }
+  return 'Authentication bootstrap timed out. Please retry.'
+}
+
+async function withBootstrapTimeout(task, {
+  timeoutMs = SESSION_BOOTSTRAP_TIMEOUT_MS,
+  phase = '',
+  getDiagnostics = null,
+} = {}) {
   let timeoutId = null
-  const timeoutError = new Error('Authentication bootstrap timed out. Please retry.')
   try {
     return await Promise.race([
       task,
       new Promise((_, reject) => {
-        timeoutId = window.setTimeout(() => reject(timeoutError), timeoutMs)
+        timeoutId = window.setTimeout(() => {
+          const diagnostics = typeof getDiagnostics === 'function' ? getDiagnostics() : []
+          reject(new Error(buildBootstrapTimeoutMessage({ phase, diagnostics })))
+        }, timeoutMs)
       }),
     ])
   } finally {
@@ -176,7 +195,10 @@ export function AuthSessionProvider({ children }) {
       setAuthState((previous) => ({ ...previous, status: 'loading', bootError: '' }))
       try {
         console.debug('[AUTH] session-bootstrap:start')
-        const { data, error } = await withBootstrapTimeout(supabase.auth.getSession(), SESSION_BOOTSTRAP_TIMEOUT_MS)
+        const { data, error } = await withBootstrapTimeout(supabase.auth.getSession(), {
+          timeoutMs: SESSION_BOOTSTRAP_TIMEOUT_MS,
+          phase: 'session',
+        })
         if (!active) return
         if (error) {
           if (isUnsupportedJwtAlgorithmError(error)) await clearSupabaseLocalAuthState()
@@ -269,7 +291,11 @@ export function AuthSessionProvider({ children }) {
         })
         const nextState = await measureAsyncOperation(
           'auth_bridge_boot',
-          () => withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }), BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS),
+          () => withBootstrapTimeout(loadBridgeAuthState({ session, selectedWorkspaceId }), {
+            timeoutMs: BRIDGE_AUTH_BOOTSTRAP_TIMEOUT_MS,
+            phase: 'bridge',
+            getDiagnostics: getActiveAuthBootStepDiagnostics,
+          }),
           { userId: session.user.id, route: typeof window !== 'undefined' ? window.location.pathname : '' },
         )
         if (!active) return

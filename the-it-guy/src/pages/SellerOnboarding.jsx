@@ -55,6 +55,10 @@ import {
   formatPropertyAddress,
   normalizePropertyAddress,
 } from '../lib/sellerPropertyAddress'
+import {
+  buildSellerRequirementProfile,
+  getRequiredSellerDocuments,
+} from '../lib/privateListingRequirementEngine'
 
 const STEPS = ['Seller Information', 'Property Details', 'FICA & Compliance', 'Review & Submit']
 
@@ -77,6 +81,68 @@ const PROPERTY_FEATURES = [
   { key: 'flatlet', label: 'Flatlet / Second Dwelling' },
   { key: 'staff_quarters', label: 'Staff Quarters' },
 ]
+
+const PRIMARY_COMPLIANCE_SIGNALS = [
+  {
+    key: 'gasInstallation',
+    label: 'Gas installation',
+    description: 'Adds a gas compliance certificate task.',
+  },
+  {
+    key: 'solarInstallation',
+    label: 'Solar installation',
+    description: 'Adds solar compliance documents to the task list.',
+  },
+  {
+    key: 'boreholeInstallation',
+    label: 'Borehole / water source',
+    description: 'Adds a borehole certificate or water-source task.',
+  },
+]
+
+const SECONDARY_COMPLIANCE_SIGNALS = [
+  { key: 'electricFence', label: 'Electric fence', description: 'Adds an electric fence certificate task.' },
+  { key: 'generatorInstallation', label: 'Generator', description: 'Captured as an installation note for the agent.' },
+  { key: 'swimmingPool', label: 'Swimming pool', description: 'Captured as a property feature and condition note.' },
+  { key: 'beetleCertificateRegion', label: 'Beetle region', description: 'Marks beetle certificate sensitivity for the property.' },
+  { key: 'plumbingCertificateRequired', label: 'Plumbing certificate', description: 'Marks plumbing certificate follow-up where needed.' },
+  { key: 'occupationCertificateAvailable', label: 'Occupation certificate available', description: 'Confirms an occupation certificate is already on hand.' },
+  { key: 'electricalCocAvailable', label: 'Electrical COC available', description: 'Confirms an electrical certificate is already on hand.' },
+  { key: 'gasCocAvailable', label: 'Gas COC available', description: 'Confirms a gas certificate is already on hand.' },
+  { key: 'electricFenceCertificateAvailable', label: 'Electric fence certificate available', description: 'Confirms the electric fence certificate is already on hand.' },
+  { key: 'plumbingCertificateAvailable', label: 'Plumbing certificate available', description: 'Confirms the plumbing certificate is already on hand.' },
+  { key: 'solarComplianceAvailable', label: 'Solar compliance available', description: 'Confirms the solar compliance paperwork is already on hand.' },
+]
+
+const COMPLIANCE_GROUP_ORDER = [
+  'financial',
+  'property_finance_existing_bond',
+  'tenant_occupancy',
+  'occupancy',
+  'property_compliance',
+  'sectional_title_body_corporate',
+  'estate_hoa',
+  'property',
+  'seller_authority',
+  'seller_identity_fica',
+  'compliance',
+  'other',
+]
+
+const COMPLIANCE_GROUP_LABELS = {
+  financial: 'Bond & finance',
+  property_finance_existing_bond: 'Bond & finance',
+  tenant_occupancy: 'Tenant occupancy',
+  occupancy: 'Occupancy',
+  property_compliance: 'Property compliance',
+  sectional_title_body_corporate: 'Sectional title',
+  estate_hoa: 'Estate / HOA',
+  property: 'Property',
+  seller_authority: 'Seller authority',
+  seller_identity_fica: 'Seller identity',
+  compliance: 'General compliance',
+  other: 'Other tasks',
+}
 
 const OWNERSHIP_TYPES = [
   { value: 'individual', label: 'Individual', description: 'I own the property in my own name.' },
@@ -107,13 +173,14 @@ const MARITAL_REGIMES = [
   { value: 'unknown', label: 'Unknown' },
 ]
 
-const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[1120px]'
+const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[1184px]'
+const PAGE_STACK_CLASS = 'space-y-5 sm:space-y-6 lg:space-y-8'
 const SECTION_CARD_CLASS =
-  'rounded-[20px] border border-[#dbe5ef] bg-white p-3 shadow-[0_18px_40px_rgba(15,23,42,0.08)] sm:rounded-[24px] sm:p-4 lg:rounded-[28px] lg:p-6 lg:shadow-[0_24px_54px_rgba(15,23,42,0.09)]'
+  'rounded-[24px] border border-[#d8e2ec] bg-white/88 p-4 shadow-[0_20px_44px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:rounded-[28px] sm:p-5 lg:rounded-[32px] lg:p-6 lg:shadow-[0_26px_60px_rgba(15,23,42,0.08)]'
 const INNER_PANEL_CLASS =
-  'rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-4 lg:rounded-[20px] lg:p-5'
+  'rounded-[22px] border border-[#dce6ef] bg-white/90 p-4 shadow-[0_16px_36px_rgba(15,23,42,0.05)] backdrop-blur-xl sm:p-5 lg:rounded-[26px] lg:p-7'
 const DETAIL_INPUT_CLASS =
-  'w-full min-h-[48px] sm:min-h-[52px] rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2.5 sm:px-4 sm:py-3 text-base text-[#162334] outline-none transition duration-150 ease-out placeholder:text-[#8aa0b8] focus:border-[#35546c]/45 focus:ring-2 focus:ring-[#35546c]/12'
+  'w-full min-h-[50px] rounded-[14px] border border-[#d7e2ed] bg-white px-4 py-3 text-base text-[#142334] outline-none transition duration-150 ease-out placeholder:text-[#93a4b8] focus:border-[#35546c]/40 focus:ring-2 focus:ring-[#35546c]/10'
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
 const CANONICAL_SELLER_FACTS_FLAG = 'VITE_CANONICAL_SELLER_FACTS_ENABLED'
 const STEP_META = [
@@ -185,16 +252,16 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
 }
 
 function choiceCardClass(isActive) {
-  return `w-full rounded-[16px] border px-4 py-4 text-left transition duration-150 ease-out ${
+  return `w-full rounded-[20px] border px-4 py-4 text-left transition duration-150 ease-out sm:px-5 sm:py-5 ${
     isActive
-      ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.14)]'
-      : 'border-[#dbe5ef] bg-white hover:border-[#b6c9de] hover:bg-[#fafcff]'
+      ? 'border-[#35546c]/60 bg-[#f5f8fc] shadow-[0_12px_28px_rgba(53,84,108,0.10)]'
+      : 'border-[#d8e2ec] bg-white hover:border-[#bccddd] hover:bg-[#fbfcfe]'
   }`
 }
 
 function chipChoiceClass(isActive) {
-  return `inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition ${
-    isActive ? 'border-[#35546c] bg-[#f3f8ff] text-[#1f3a56]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
+  return `inline-flex items-center gap-2 rounded-full border px-3.5 py-2.5 text-xs font-semibold transition ${
+    isActive ? 'border-[#35546c]/55 bg-[#f5f8fc] text-[#20384f]' : 'border-[#d6e1ee] bg-white text-[#35546c]'
   }`
 }
 
@@ -357,16 +424,123 @@ function buildComplianceDocuments(listing = {}, fallbackRequirements = []) {
       description: row?.requirement_description || row?.description || 'Your agent may request this before mandate completion.',
       status: row?.status || 'required',
       fileName: row?.fileName || row?.document_name || '',
+      group: row?.group || row?.requirement_group || '',
+      groupLabel: row?.groupLabel || row?.requirement_group_label || getComplianceGroupLabel(row?.group || row?.requirement_group || ''),
     }))
   }
 
-  return fallbackRequirements.map((label) => ({
-    key: label,
-    label,
-    description: 'Required for this seller profile.',
-    status: 'required',
-    fileName: '',
+  return fallbackRequirements.map((requirement, index) => {
+    if (typeof requirement === 'string') {
+      return {
+        key: requirement,
+        label: formatValue(requirement, requirement),
+        description: 'Required for this seller profile.',
+        status: 'required',
+        fileName: '',
+        group: '',
+        groupLabel: '',
+      }
+    }
+
+    return {
+      key: requirement?.key || requirement?.requirement_key || requirement?.id || `document-${index}`,
+      label: requirement?.label || requirement?.name || formatValue(requirement?.key || requirement?.requirement_key, 'Document'),
+      description: requirement?.requirement_description || requirement?.description || 'Required for this seller profile.',
+      status: requirement?.status || requirement?.documentStatus || 'required',
+      fileName: requirement?.fileName || requirement?.document_name || '',
+      group: requirement?.group || requirement?.requirement_group || '',
+      groupLabel: requirement?.groupLabel || requirement?.requirement_group_label || getComplianceGroupLabel(requirement?.group || requirement?.requirement_group || ''),
+    }
+  })
+}
+
+function getComplianceGroupLabel(group = '') {
+  const normalized = String(group || '').trim().toLowerCase()
+  if (!normalized) return ''
+  return COMPLIANCE_GROUP_LABELS[normalized] || formatValue(normalized, normalized)
+}
+
+function buildComplianceDocumentSections(documents = []) {
+  const grouped = new Map()
+  for (const document of Array.isArray(documents) ? documents : []) {
+    const key = String(document?.group || 'other').trim().toLowerCase() || 'other'
+    if (!grouped.has(key)) {
+      grouped.set(key, [])
+    }
+    grouped.get(key).push(document)
+  }
+
+  return COMPLIANCE_GROUP_ORDER
+    .filter((group) => grouped.has(group))
+    .map((group) => ({
+      key: group,
+      label: getComplianceGroupLabel(group),
+      documents: grouped.get(group) || [],
+    }))
+    .concat(
+      Array.from(grouped.entries())
+        .filter(([group]) => !COMPLIANCE_GROUP_ORDER.includes(group))
+        .map(([group, documentsList]) => ({
+          key: group,
+          label: getComplianceGroupLabel(group),
+          documents: documentsList,
+        })),
+    )
+}
+
+function buildComplianceSignalStates(form = {}) {
+  return PRIMARY_COMPLIANCE_SIGNALS.map((signal) => ({
+    ...signal,
+    active: signal.key === 'boreholeInstallation'
+      ? Boolean(form.boreholeInstallation || form.borehole)
+      : Boolean(form[signal.key]),
   }))
+}
+
+function buildAdditionalComplianceSignalStates(form = {}) {
+  return SECONDARY_COMPLIANCE_SIGNALS.map((signal) => ({
+    ...signal,
+    active: Boolean(form[signal.key]),
+  }))
+}
+
+function buildBondComplianceSummary(form = {}) {
+  if (!form.existingBond) return null
+
+  const items = [
+    { label: 'Bond bank', value: form.bondBank || 'Not provided' },
+    { label: 'Account reference', value: form.bondAccountReference || 'Not provided' },
+    { label: 'Estimated settlement', value: form.estimatedSettlementAmount ? formatCurrency(form.estimatedSettlementAmount) : 'Not provided' },
+    {
+      label: 'Cancellation attorney',
+      value: form.cancellationAttorneyKnown
+        ? (form.cancellationAttorneyDetails || 'Known, but details not captured yet')
+        : 'Not confirmed',
+    },
+  ]
+  const missing = []
+  if (!form.bondBank) missing.push('Bond bank')
+  if (!form.bondAccountReference) missing.push('Account reference')
+  if (!form.estimatedSettlementAmount) missing.push('Settlement estimate')
+  if (!form.cancellationAttorneyKnown || !form.cancellationAttorneyDetails) missing.push('Cancellation attorney details')
+
+  return { items, missing }
+}
+
+function buildTenantComplianceSummary(form = {}) {
+  if (String(form.occupancyStatus) !== 'tenant_occupied' && !form.leaseExists) return null
+
+  const items = [
+    { label: 'Lease expiry', value: form.leaseExpiryDate || 'Not provided' },
+    { label: 'Tenant name', value: form.tenantName || 'Not provided' },
+    { label: 'Tenant contact', value: form.tenantContactDetails || 'Not provided' },
+  ]
+  const missing = []
+  if (!form.leaseExpiryDate) missing.push('Lease expiry')
+  if (!form.tenantName) missing.push('Tenant name')
+  if (!form.tenantContactDetails) missing.push('Tenant contact details')
+
+  return { items, missing }
 }
 
 function splitName(fullName = '') {
@@ -873,7 +1047,7 @@ function AgencyMark({ brand, tone = 'dark' }) {
 
 function SellerBrandBar({ brand }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-center sm:justify-between sm:pb-5">
+    <div className="flex flex-col gap-3 border-b border-white/8 pb-4 sm:flex-row sm:items-center sm:justify-between sm:pb-5">
       <div className="flex min-w-0 items-center gap-3">
         <AgencyMark brand={brand} />
         <div className="min-w-0">
@@ -881,7 +1055,7 @@ function SellerBrandBar({ brand }) {
           <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55 sm:text-xs sm:tracking-[0.16em]">Seller Onboarding</p>
         </div>
       </div>
-      <div className="flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/75 sm:gap-3 sm:py-2 sm:text-xs">
+      <div className="flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-[11px] font-semibold text-white/75 sm:gap-3 sm:py-2 sm:text-xs">
         <span>Powered by</span>
         <span className="rounded-full bg-white px-2.5 py-1 text-[#101827]">Bridge9</span>
       </div>
@@ -895,22 +1069,22 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
   const agentName = resolveAgentName(listing)
 
   return (
-    <section className="overflow-hidden rounded-[22px] border border-[#18263a] bg-[#101827] p-4 text-white shadow-[0_18px_44px_rgba(15,23,42,0.2)] sm:rounded-[26px] sm:p-5 lg:rounded-[30px] lg:p-7 lg:shadow-[0_28px_70px_rgba(15,23,42,0.24)]">
+    <section className="overflow-hidden rounded-[28px] border border-[#18263a]/90 bg-[linear-gradient(135deg,#0b1626_0%,#12253b_54%,#18354d_100%)] p-5 text-white shadow-[0_24px_60px_rgba(15,23,42,0.18)] sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_32px_80px_rgba(15,23,42,0.22)]">
       <SellerBrandBar brand={brand} />
-      <div className="mt-4 grid gap-4 sm:mt-5 lg:mt-6 lg:grid-cols-[1.25fr_0.75fr] lg:items-end">
+      <div className="mt-5 grid gap-5 sm:mt-6 lg:mt-7 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
         <div>
           <p className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/72 sm:text-xs">
             <ShieldCheck size={14} />
             Secure client portal
           </p>
-          <h1 className="mt-3 max-w-3xl text-2xl font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:mt-4 sm:text-3xl lg:text-5xl lg:tracking-[-0.03em]">
+          <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-[1.05] tracking-[-0.03em] text-white sm:mt-5 sm:text-4xl lg:text-5xl lg:tracking-[-0.04em]">
             Complete your seller onboarding
           </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#c8d4e3] sm:mt-4 lg:text-base">
-            A guided intake for your seller, property, FICA, and mandate preparation details.
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-[#c8d4e3] sm:text-base lg:text-[1.05rem]">
+            A guided intake for your seller, property, compliance, and mandate details. We’ll only ask what matters next.
           </p>
         </div>
-        <div className="rounded-[18px] border border-white/10 bg-white/8 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:rounded-[20px] sm:p-4 lg:rounded-[22px]">
+        <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:rounded-[24px] sm:p-5 lg:rounded-[26px]">
           <div className="grid gap-3">
             <article>
               <p className="text-[11px] uppercase tracking-[0.14em] text-white/45 sm:text-xs">Seller</p>
@@ -931,7 +1105,7 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
           </div>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2 sm:mt-5 lg:mt-6">
+      <div className="mt-5 flex flex-wrap gap-2 sm:mt-6 lg:mt-7">
         {['Guided onboarding', 'Takes 3-5 minutes', 'Bank-grade care'].map((item) => (
           <span key={item} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/8 px-2.5 py-1.5 text-[11px] font-semibold text-white/70 sm:gap-2 sm:px-3 sm:text-xs">
             <BadgeCheck size={13} />
@@ -945,17 +1119,17 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
 
 function SellerStepProgress({ currentStep, progress }) {
   return (
-    <section className="rounded-[18px] border border-[#dbe5ef] bg-white p-3 shadow-[0_14px_32px_rgba(15,23,42,0.06)] sm:rounded-[22px] sm:p-4 lg:rounded-[24px] lg:p-5 lg:shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+    <section className="rounded-[24px] border border-[#dce6ef] bg-white/88 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur-xl sm:rounded-[28px] sm:p-5 lg:rounded-[30px] lg:p-6 lg:shadow-[0_22px_50px_rgba(15,23,42,0.06)]">
       <div className="flex items-start justify-between gap-3 sm:hidden">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6f8298]">Step {currentStep + 1} of {STEPS.length}</p>
           <h2 className="mt-1 break-words text-lg font-semibold tracking-[-0.02em] text-[#142132]">{STEP_META[currentStep]?.label}</h2>
         </div>
-        <span className="shrink-0 rounded-full bg-[#f2f6fb] px-2.5 py-1 text-xs font-semibold text-[#35546c]">{progress}%</span>
+        <span className="shrink-0 rounded-full bg-[#f2f6fb] px-3 py-1.5 text-xs font-semibold text-[#35546c]">{progress}%</span>
       </div>
       <p className="mt-2 text-sm leading-5 text-[#6b7d93] sm:hidden">{STEP_META[currentStep]?.helper}</p>
 
-      <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#eef3f8] sm:hidden">
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef3f8] sm:hidden">
         <span
           className="block h-full rounded-full bg-gradient-to-r from-[#172334] via-[#35546c] to-[#2f8f86] transition-[width] duration-300"
           style={{ width: `${progress}%` }}
@@ -977,7 +1151,7 @@ function SellerStepProgress({ currentStep, progress }) {
         </div>
         <span className="rounded-full bg-[#f2f6fb] px-3 py-1 text-xs font-semibold text-[#35546c]">{progress}% complete</span>
       </div>
-      <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-[#eef3f8]">
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#eef3f8]">
         <span
           className="block h-full rounded-full bg-gradient-to-r from-[#172334] via-[#35546c] to-[#2f8f86] transition-[width] duration-300"
           style={{ width: `${progress}%` }}
@@ -992,12 +1166,12 @@ function SellerStepProgress({ currentStep, progress }) {
             <button
               key={step.label}
               type="button"
-              className={`flex items-center gap-3 rounded-[16px] border px-3 py-3 text-left transition ${
+              className={`flex items-center gap-3 rounded-[18px] border px-3 py-3.5 text-left transition ${
                 isActive
-                  ? 'border-[#35546c] bg-[#f3f8ff] shadow-[0_10px_24px_rgba(53,84,108,0.12)]'
+                  ? 'border-[#35546c]/65 bg-[#f5f8fc] shadow-[0_12px_26px_rgba(53,84,108,0.10)]'
                   : isComplete
-                    ? 'border-[#d8ecdf] bg-[#f4fbf6]'
-                    : 'border-[#e1e9f3] bg-[#fbfdff]'
+                    ? 'border-[#d8ecdf] bg-[#f5fbf7]'
+                    : 'border-[#e1e9f3] bg-white/90'
               }`}
               disabled
             >
@@ -1021,10 +1195,12 @@ function SellerStepProgress({ currentStep, progress }) {
 function StepShell({ eyebrow, title, description, children }) {
   return (
     <section className={INNER_PANEL_CLASS}>
-      <header className="mb-4 sm:mb-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6f8298]">{eyebrow}</p>
-        <h2 className="mt-2 text-xl font-semibold tracking-[-0.02em] text-[#162435] sm:text-2xl sm:tracking-[-0.025em]">{title}</h2>
-        {description ? <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60748b]">{description}</p> : null}
+      <header className="mb-5 sm:mb-6">
+        <p className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f3f7fb] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#637589]">
+          {eyebrow}
+        </p>
+        <h2 className="mt-3 text-[1.45rem] font-semibold tracking-[-0.03em] text-[#162435] sm:text-3xl">{title}</h2>
+        {description ? <p className="mt-3 max-w-3xl text-sm leading-6 text-[#60748b] sm:text-[15px]">{description}</p> : null}
       </header>
       {children}
     </section>
@@ -1034,26 +1210,26 @@ function StepShell({ eyebrow, title, description, children }) {
 function FormSection({ icon, title, description, children }) {
   const SectionIcon = icon || Circle
   return (
-    <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-3 sm:p-4 lg:rounded-[20px] lg:p-5">
+    <section className="rounded-[22px] border border-[#dfe7f1] bg-[#fbfcfe] p-4 sm:p-5 lg:rounded-[24px] lg:p-6">
       <div className="flex items-start gap-3">
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)] sm:h-10 sm:w-10 sm:rounded-[14px]">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-[#dbe5ef] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.05)] sm:h-11 sm:w-11 sm:rounded-[16px]">
           <SectionIcon size={18} />
         </span>
         <div>
-          <h3 className="text-base font-semibold text-[#162435]">{title}</h3>
-          {description ? <p className="mt-1 text-sm leading-5 text-[#6b7d93]">{description}</p> : null}
+          <h3 className="text-[1.05rem] font-semibold text-[#162435] sm:text-[1.1rem]">{title}</h3>
+          {description ? <p className="mt-1.5 text-sm leading-5 text-[#6b7d93]">{description}</p> : null}
         </div>
       </div>
-      <div className="mt-4">{children}</div>
+      <div className="mt-5">{children}</div>
     </section>
   )
 }
 
 function ChoiceCard({ active, title, description, onClick }) {
   return (
-    <button type="button" onClick={onClick} className={`${choiceCardClass(active)} min-h-[58px]`}>
-      <span className={`block text-sm font-semibold ${active ? 'text-[#142132]' : 'text-[#35546c]'}`}>{title}</span>
-      {description ? <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{description}</span> : null}
+    <button type="button" onClick={onClick} className={`${choiceCardClass(active)} min-h-[92px]`}>
+      <span className={`block text-[15px] font-semibold ${active ? 'text-[#132033]' : 'text-[#35546c]'}`}>{title}</span>
+      {description ? <span className="mt-1.5 block text-xs leading-5 text-[#6b7d93]">{description}</span> : null}
     </button>
   )
 }
@@ -1068,24 +1244,25 @@ function DocumentCard({ document }) {
   }[status.tone] || 'border-[#dbe6f2] bg-white text-[#35546c]'
 
   return (
-    <article className="flex flex-col gap-3 rounded-[16px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:flex-row sm:items-start sm:justify-between sm:rounded-[18px] sm:p-4">
+    <article className="flex flex-col gap-3 rounded-[18px] border border-[#dfe8f2] bg-white/96 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:flex-row sm:items-start sm:justify-between sm:rounded-[20px] sm:p-4">
       <div className="flex items-start gap-3">
         <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#f2f6fb] text-[#35546c]">
           <FileCheck2 size={18} />
         </span>
         <div>
+          {document.groupLabel ? <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8a9ab0]">{document.groupLabel}</p> : null}
           <p className="font-semibold text-[#172334]">{document.label}</p>
           <p className="mt-1 text-sm leading-5 text-[#6b7d93]">{document.fileName || document.description}</p>
         </div>
       </div>
-      <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-xs font-semibold ${toneClass}`}>{status.label}</span>
+      <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${toneClass}`}>{status.label}</span>
     </article>
   )
 }
 
 function ReviewCard({ title, items, onEdit, missing = [] }) {
   return (
-    <article className="rounded-[18px] border border-[#dfe8f2] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[20px] sm:p-4">
+    <article className="rounded-[20px] border border-[#dfe8f2] bg-white/96 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[22px] sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">{title}</p>
@@ -1094,14 +1271,14 @@ function ReviewCard({ title, items, onEdit, missing = [] }) {
           ) : null}
         </div>
         {typeof onEdit === 'function' ? (
-          <button type="button" onClick={onEdit} className="min-h-[34px] shrink-0 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">
+          <button type="button" onClick={onEdit} className="min-h-[38px] shrink-0 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1.5 text-xs font-semibold text-[#35546c]">
             Edit
           </button>
         ) : null}
       </div>
       <dl className="mt-4 grid gap-3">
         {items.map((item) => (
-          <div key={item.label} className="grid gap-1 border-t border-[#eef3f8] pt-3 first:border-t-0 first:pt-0">
+          <div key={item.label} className="grid gap-1.5 border-t border-[#eef3f8] pt-3.5 first:border-t-0 first:pt-0">
             <dt className="text-xs font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">{item.label}</dt>
             <dd className="text-sm font-semibold text-[#172334]">{item.value || 'Not provided'}</dd>
           </div>
@@ -1115,9 +1292,9 @@ function SellerCompletedState({ token, listing, form, brand }) {
   const clientSellingPath = `/client/${token}/selling/documents`
 
   return (
-    <section className="rounded-[22px] border border-[#d8ecdf] bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)] sm:rounded-[26px] sm:p-5 lg:rounded-[28px] lg:p-7 lg:shadow-[0_24px_54px_rgba(15,23,42,0.09)]">
+    <section className="rounded-[28px] border border-[#d8e2ec] bg-white/90 p-5 shadow-[0_20px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_28px_60px_rgba(15,23,42,0.09)]">
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr] lg:items-start lg:gap-6">
-        <div className="rounded-[20px] border border-[#d8ecdf] bg-[#eefbf3] p-4 sm:rounded-[24px] sm:p-5">
+        <div className="rounded-[24px] border border-[#d8ecdf] bg-[#eefbf3] p-5 sm:rounded-[28px] sm:p-6">
           <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#1f7d44] text-white shadow-[0_16px_32px_rgba(31,125,68,0.24)] sm:h-14 sm:w-14">
             <CheckCircle2 size={26} />
           </span>
@@ -1125,7 +1302,7 @@ function SellerCompletedState({ token, listing, form, brand }) {
           <p className="mt-3 text-sm leading-6 text-[#25603d]">
             Your agent will review your information. Your next step is to open the client portal selling module and upload the documents needed for FICA, mandate preparation, and listing readiness.
           </p>
-          <div className="mt-4 rounded-[16px] border border-[#cfe8da] bg-white/70 p-3 text-left text-sm leading-6 text-[#25603d]">
+          <div className="mt-4 rounded-[18px] border border-[#cfe8da] bg-white/70 p-4 text-left text-sm leading-6 text-[#25603d]">
             <p className="font-semibold text-[#14532d]">What happens next</p>
             <ul className="mt-2 list-disc space-y-1 pl-5">
               <li>Upload the requested seller documents in the client portal.</li>
@@ -1134,16 +1311,16 @@ function SellerCompletedState({ token, listing, form, brand }) {
             </ul>
           </div>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-            <Link to={clientSellingPath} className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] sm:w-auto">
+            <Link to={clientSellingPath} className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] sm:w-auto">
               Open Client Portal
             </Link>
-            <Link to="/" className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[14px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto">
+            <Link to="/" className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto">
               Return to Bridge
             </Link>
           </div>
         </div>
         <div className="space-y-4">
-          <div className="flex items-center gap-3 rounded-[18px] border border-[#dfe8f2] bg-[#fbfdff] p-3 sm:rounded-[20px] sm:p-4">
+          <div className="flex items-center gap-3 rounded-[20px] border border-[#dfe8f2] bg-[#fbfdff] p-4 sm:rounded-[22px] sm:p-5">
             <AgencyMark brand={brand} tone="light" />
             <div>
               <p className="text-sm font-semibold text-[#172334]">{brand.name}</p>
@@ -1337,47 +1514,27 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     return suggestions.slice(0, 3)
   }, [listing, propertyAddressDetails])
 
-  const ficaRequirements = useMemo(() => {
-    const type = getOwnershipBranch(form?.ownershipType)
-    if (type === 'company') {
-      return [
-        'Company registration documents',
-        'Director ID document(s)',
-        'Director proof of address',
-        'Proof of registered address',
-      ]
-    }
-    if (type === 'trust') {
-      return [
-        'Trust deed',
-        'Trustee ID document(s)',
-        'Trustee proof of address',
-        'Trust address confirmation',
-      ]
-    }
-    if (type === 'multiple_owners') {
-      return [
-        'ID documents for all owners',
-        'Proof of address for each owner',
-        'Ownership share confirmation',
-      ]
-    }
-    if (type === 'married') {
-      return [
-        'Seller ID document',
-        'Spouse ID document',
-        'Seller proof of address',
-        'Spouse proof of address',
-      ]
-    }
-    return ['Seller ID document', 'Proof of address']
-  }, [form?.ownershipType])
-
   const agencyBrand = useMemo(() => resolveAgencyBrand(listing || {}), [listing])
-  const complianceDocuments = useMemo(
-    () => buildComplianceDocuments(listing || {}, ficaRequirements),
-    [ficaRequirements, listing],
+  const complianceRequirementProfile = useMemo(
+    () => buildSellerRequirementProfile(form || {}, listing || {}),
+    [form, listing],
   )
+  const complianceRequirementDocuments = useMemo(
+    () => getRequiredSellerDocuments(complianceRequirementProfile),
+    [complianceRequirementProfile],
+  )
+  const complianceDocuments = useMemo(
+    () => buildComplianceDocuments(listing || {}, complianceRequirementDocuments),
+    [complianceRequirementDocuments, listing],
+  )
+  const complianceDocumentSections = useMemo(
+    () => buildComplianceDocumentSections(complianceDocuments),
+    [complianceDocuments],
+  )
+  const bondComplianceSummary = useMemo(() => buildBondComplianceSummary(form || {}), [form])
+  const tenantComplianceSummary = useMemo(() => buildTenantComplianceSummary(form || {}), [form])
+  const primaryComplianceSignals = useMemo(() => buildComplianceSignalStates(form || {}), [form])
+  const secondaryComplianceSignals = useMemo(() => buildAdditionalComplianceSignalStates(form || {}), [form])
 
   function buildCanonicalPayload(nextForm = form, options = {}) {
     if (!areCanonicalSellerFactsEnabled()) return {}
@@ -1907,7 +2064,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const isPowerOfAttorneyOwnership = ownershipBranch === 'power_of_attorney'
   const isMultipleOwners = ownershipBranch === 'multiple_owners'
   const showSectionalTitleDetails = propertyBranch === 'sectional_title'
-  const showEstateDetails = propertyBranch === 'estate_hoa'
+  const hasEstateSignals = Boolean(form.estateOrHoa || form.estateName || form.estateComplexName)
+  const showEstateDetails = propertyBranch === 'estate_hoa' || hasEstateSignals
   const showCommercialDetails = propertyBranch === 'commercial' || propertyBranch === 'mixed_use'
   const showLandDetails = propertyBranch === 'vacant_land' || propertyBranch === 'agricultural'
   const showResidentialDetails = !showCommercialDetails && !showLandDetails
@@ -1963,9 +2121,29 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !propertyAddressDetails.city && 'City',
     !propertyAddressDetails.province && 'Province',
   ].filter(Boolean)
+  const sectionSummaryValue = [form.schemeName, form.unitNumber, form.sectionNumber].filter(Boolean).join(' / ')
+  const estateSummaryValue = [form.estateName || form.estateComplexName, form.hoaContactName].filter(Boolean).join(' / ')
+  const propertySummaryLabel = showSectionalTitleDetails && showEstateDetails
+    ? 'Scheme / estate'
+    : showSectionalTitleDetails
+      ? 'Scheme / Unit'
+      : showEstateDetails
+        ? 'Estate / HOA'
+        : showCommercialDetails
+          ? 'Use / Floor Size'
+          : 'Erf / Size'
+  const propertySummaryValue = showSectionalTitleDetails && showEstateDetails
+    ? [sectionSummaryValue, estateSummaryValue].filter(Boolean).join(' | ')
+    : showSectionalTitleDetails
+      ? sectionSummaryValue
+      : showEstateDetails
+        ? estateSummaryValue
+        : showCommercialDetails
+          ? [form.commercialUseDescription, form.floorSize ? `${form.floorSize} m2` : ''].filter(Boolean).join(' / ')
+          : `${form.erfSize || 'Not provided'} m2`
 
   const content = (
-    <div className="space-y-4 sm:space-y-5">
+    <div className={PAGE_STACK_CLASS}>
       <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
 
       {isCompleted ? (
@@ -1977,7 +2155,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         {error ? <p className="mt-4 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">{error}</p> : null}
         {success ? <p className="mt-4 whitespace-pre-line rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-3 text-sm text-[#1f7d44]">{success}</p> : null}
 
-        <div className="mt-4 space-y-4 sm:mt-5">
+        <div className="mt-5 space-y-5 sm:mt-6 sm:space-y-6">
           {currentStep === 0 ? (
             <>
               <FormSection icon={Landmark} title="Who owns this property?" description="Choose the ownership structure first. We’ll show the right follow-up fields from here.">
@@ -3101,74 +3279,163 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           {currentStep === 2 ? (
             <StepShell
               eyebrow="FICA & Compliance"
-              title="Your document requirements"
-              description="These requirements are based on the seller and ownership information you provided. Your agent may request additional documents after review."
+              title="Compliance follows the branch you selected"
+              description="We only surface the tasks triggered by your ownership, property, occupancy, and installation choices."
             >
-              <article className="mb-4 rounded-[18px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                <h3 className="text-sm font-semibold text-[#22364a]">Installations & Compliance Signals</h3>
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    ['gasInstallation', 'Gas installation'],
-                    ['electricFence', 'Electric fence'],
-                    ['solarInstallation', 'Solar installation'],
-                    ['swimmingPool', 'Swimming pool'],
-                    ['borehole', 'Borehole'],
-                    ['generatorInstallation', 'Generator'],
-                    ['beetleCertificateRegion', 'Beetle certificate region'],
-                    ['plumbingCertificateRequired', 'Plumbing certificate required'],
-                  ].map(([key, label]) => (
-                    <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                      <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => handleFormUpdate(key, event.target.checked)} />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    ['occupationCertificateAvailable', 'Occupation certificate available'],
-                    ['electricalCocAvailable', 'Electrical COC available'],
-                    ['gasCocAvailable', 'Gas COC available'],
-                    ['electricFenceCertificateAvailable', 'Electric fence certificate available'],
-                    ['plumbingCertificateAvailable', 'Plumbing certificate available'],
-                    ['solarComplianceAvailable', 'Solar compliance available'],
-                  ].map(([key, label]) => (
-                    <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                      <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => handleFormUpdate(key, event.target.checked)} />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              </article>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[0.85fr_1.15fr]">
-                <article className="rounded-[22px] border border-[#dbe6f2] bg-[#f7fbff] p-5">
-                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-[15px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
-                    <ShieldCheck size={20} />
-                  </span>
-                  <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Compliance profile</p>
-                  <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#172334]">
-                    {OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual seller'}
-                  </h3>
-                  <p className="mt-3 text-sm leading-6 text-[#60748b]">
-                    Bridge9 uses this information to help your agency prepare a compliant seller file before mandate and conveyancing steps.
-                  </p>
-                  <button
-                    type="button"
-                    className="mt-4 rounded-full border border-[#dce6f2] bg-white px-3 py-2 text-xs font-semibold text-[#35546c]"
-                    onClick={() => setShowFicaInfo((current) => !current)}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.02fr_0.98fr]">
+                <div className="space-y-4">
+                  <FormSection
+                    icon={ShieldCheck}
+                    title="Installation signals"
+                    description="Switch these on when they exist. Each selection adds the matching certificate task."
                   >
-                    {showFicaInfo ? 'Hide explanation' : 'Why these documents?'}
-                  </button>
-                  {showFicaInfo ? (
-                    <p className="mt-3 text-sm leading-6 text-[#60748b]">
-                      FICA and authority documents help confirm identity, ownership, signing authority, and the right legal party for the sale.
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      {primaryComplianceSignals.map((signal) => (
+                        <ChoiceCard
+                          key={signal.key}
+                          active={signal.active}
+                          title={signal.label}
+                          description={signal.description}
+                          onClick={() => {
+                            const nextValue = !signal.active
+                            if (signal.key === 'boreholeInstallation') {
+                              handleFormUpdate('boreholeInstallation', nextValue)
+                              handleFormUpdate('borehole', nextValue)
+                              return
+                            }
+                            handleFormUpdate(signal.key, nextValue)
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <p className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-[#f8fbff] px-3 py-3 text-sm leading-6 text-[#60748b]">
+                      These switches drive the seller portal. Selecting one adds the right upload task, instead of exposing a long compliance checklist.
                     </p>
-                  ) : null}
-                </article>
 
-                <div className="grid gap-3">
-                  {complianceDocuments.map((document) => (
-                    <DocumentCard key={document.key} document={document} />
-                  ))}
+                    <details className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-white p-3 sm:p-4">
+                      <summary className="cursor-pointer list-none text-sm font-semibold text-[#22364a]">
+                        More signals and available certificates
+                      </summary>
+                      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {secondaryComplianceSignals.map((signal) => (
+                          <label
+                            key={signal.key}
+                            className="flex min-h-[44px] items-start gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 py-2 text-sm font-medium text-[#2a4057]"
+                          >
+                            <input
+                              className="mt-1"
+                              type="checkbox"
+                              checked={Boolean(form[signal.key])}
+                              onChange={(event) => handleFormUpdate(signal.key, event.target.checked)}
+                            />
+                            <span className="grid gap-0.5">
+                              <span>{signal.label}</span>
+                              <span className="text-xs font-normal leading-5 text-[#6b7d93]">{signal.description}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </details>
+                  </FormSection>
+
+                  {bondComplianceSummary ? (
+                    <ReviewCard
+                      title="Existing bond follow-up"
+                      onEdit={() => setCurrentStep(1)}
+                      missing={bondComplianceSummary.missing}
+                      items={bondComplianceSummary.items}
+                    />
+                  ) : null}
+
+                  {tenantComplianceSummary ? (
+                    <ReviewCard
+                      title="Tenant occupancy follow-up"
+                      onEdit={() => setCurrentStep(1)}
+                      missing={tenantComplianceSummary.missing}
+                      items={tenantComplianceSummary.items}
+                    />
+                  ) : null}
+                </div>
+
+                <div className="space-y-4">
+                  <article className="rounded-[22px] border border-[#dbe6f2] bg-[#f7fbff] p-4 sm:p-5">
+                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-[15px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
+                      <ShieldCheck size={20} />
+                    </span>
+                    <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Why this appears</p>
+                    <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#172334]">
+                      {flow.seller_branch_label || 'Seller'} and {flow.property_branch_label || 'property'} branch
+                    </h3>
+                    <p className="mt-3 text-sm leading-6 text-[#60748b]">
+                      Bridge9 now asks for the practical compliance tasks that match the property, occupancy, and ownership path you selected.
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-4 rounded-full border border-[#dce6f2] bg-white px-3 py-2 text-xs font-semibold text-[#35546c]"
+                      onClick={() => setShowFicaInfo((current) => !current)}
+                    >
+                      {showFicaInfo ? 'Hide explanation' : 'What counts as a trigger?'}
+                    </button>
+                    {showFicaInfo ? (
+                      <div className="mt-3 rounded-[16px] border border-[#dbe6f2] bg-white p-3 text-sm leading-6 text-[#60748b]">
+                        <p className="font-semibold text-[#22364a]">Typical triggers</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-5">
+                          {Array.from(
+                            new Set(
+                              (flow.document_triggers || [])
+                                .filter((trigger) => [
+                                  'bond_statement',
+                                  'bond_bank_details',
+                                  'bond_cancellation_attorney_details',
+                                  'settlement_figure',
+                                  'lease_agreement',
+                                  'tenant_details',
+                                  'gas_compliance_certificate',
+                                  'solar_compliance_documents',
+                                  'electric_fence_certificate',
+                                  'borehole_certificate',
+                                ].includes(trigger)),
+                            ),
+                          ).map((trigger) => (
+                            <li key={trigger}>{formatValue(trigger)}</li>
+                          ))}
+                        </ul>
+                        <p className="mt-3">
+                          The seller sees the task, not the legal jargon. The agent and conveyancer still receive the structured branch data behind the scenes.
+                        </p>
+                      </div>
+                    ) : null}
+                  </article>
+
+                  <FormSection
+                    icon={FileCheck2}
+                    title="Document tasks"
+                    description="These uploads and follow-up items are generated from the same branch contract used everywhere else."
+                  >
+                    <div className="space-y-4">
+                      {complianceDocumentSections.length ? (
+                        complianceDocumentSections.map((section) => (
+                          <div key={section.key} className="space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-semibold text-[#22364a]">{section.label}</h4>
+                              <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7890a8]">
+                                {section.documents.length}
+                              </span>
+                            </div>
+                            <div className="grid gap-3">
+                              {section.documents.map((document) => (
+                                <DocumentCard key={document.key} document={document} />
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm leading-6 text-[#60748b]">
+                          No branch-driven document tasks were triggered yet.
+                        </p>
+                      )}
+                    </div>
+                  </FormSection>
                 </div>
               </div>
             </StepShell>
@@ -3202,7 +3469,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Structure', value: getPropertyStructureTypeLabel(form.propertyStructureType) },
                     { label: 'Branch', value: flow.property_branch_label || formatValue(propertyBranch) },
                     { label: 'Address', value: propertyAddressDetails.formatted || [form.propertyAddress, form.suburb, form.city, form.province].filter(Boolean).join(', ') },
-                    { label: showSectionalTitleDetails ? 'Scheme / Unit' : showEstateDetails ? 'Estate / HOA' : showCommercialDetails ? 'Use / Floor Size' : 'Erf / Size', value: showSectionalTitleDetails ? [form.schemeName, form.unitNumber, form.sectionNumber].filter(Boolean).join(' / ') : showEstateDetails ? [form.estateName, form.hoaContactName].filter(Boolean).join(' / ') : showCommercialDetails ? [form.commercialUseDescription, form.floorSize ? `${form.floorSize} m2` : ''].filter(Boolean).join(' / ') : `${form.erfSize || 'Not provided'} m2` },
+                    { label: propertySummaryLabel, value: propertySummaryValue },
                   ]}
                 />
                 <ReviewCard
@@ -3229,7 +3496,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   onEdit={() => setCurrentStep(2)}
                   items={[
                     { label: 'Seller Profile', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
-                    { label: 'Required Documents', value: `${complianceDocuments.length} document${complianceDocuments.length === 1 ? '' : 's'} identified` },
+                    { label: 'Branch Tasks', value: `${complianceDocuments.length} item${complianceDocuments.length === 1 ? '' : 's'} identified` },
                     { label: 'Next Step', value: 'Agent review and mandate preparation' },
                   ]}
                 />
@@ -3246,7 +3513,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ) : null}
         </div>
 
-        <div className="mt-5 flex flex-col gap-3 border-t border-[#e4ebf5] pt-4 sm:mt-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mt-6 hidden flex-col gap-3 border-t border-[#e4ebf5] pt-4 sm:mt-7 lg:flex lg:flex-row lg:items-center lg:justify-between">
           <p className="text-center text-sm text-[#6b7d93] lg:text-left">{saving ? 'Saving your progress...' : success ? 'Saved just now' : 'Secure seller onboarding powered by Bridge9'}</p>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             {currentStep > 0 ? (
@@ -3289,9 +3556,45 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#eef4fb_0%,#e8eef7_45%,#e1e8f2_100%)] px-4 py-4 pb-8 sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10">
+    <main className="relative min-h-screen overflow-x-hidden bg-[#e4ebf3] px-4 py-4 pb-32 font-sans antialiased text-[#132033] sm:px-5 sm:py-5 md:px-6 md:py-6 lg:px-8 lg:py-8 lg:pb-10">
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-24 top-10 h-72 w-72 rounded-full bg-white/40 blur-3xl" />
+        <div className="absolute right-[-7rem] top-28 h-96 w-96 rounded-full bg-[#d7e2ee]/60 blur-3xl" />
+        <div className="absolute bottom-[-9rem] left-1/3 h-[28rem] w-[28rem] rounded-full bg-white/30 blur-3xl" />
+      </div>
       <div className={PAGE_CONTAINER_CLASS}>
         {content}
+      </div>
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/70 bg-white/88 px-4 py-3 shadow-[0_-14px_40px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
+        <div className={PAGE_CONTAINER_CLASS}>
+          <div className="grid gap-2">
+            <div className={`grid gap-2 ${currentStep > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {currentStep > 0 ? (
+                <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[50px] w-full">
+                  <ChevronLeft size={14} />
+                  Back
+                </Button>
+              ) : null}
+              {currentStep < 3 ? (
+                <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[50px] w-full">
+                  {saving ? 'Saving...' : 'Save & Continue'}
+                  <ChevronRight size={14} />
+                </Button>
+              ) : null}
+              {currentStep === 3 && !isCompleted ? (
+                <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[50px] w-full">
+                  {submitting ? 'Submitting...' : 'Submit Seller Information'}
+                  <CheckCircle2 size={14} />
+                </Button>
+              ) : null}
+            </div>
+            {currentStep < 3 ? (
+              <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[44px] w-full">
+                {saving ? 'Saving...' : 'Save Draft'}
+              </Button>
+            ) : null}
+          </div>
+        </div>
       </div>
     </main>
   )

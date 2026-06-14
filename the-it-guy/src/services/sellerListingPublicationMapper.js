@@ -79,24 +79,47 @@ export function buildSellerOnboardingPublicationDraft({
   const form = object(formData)
   const facts = Object.keys(object(canonicalFacts)).length
     ? object(canonicalFacts)
-    : object(form.canonicalSellerFacts || form.canonicalFacts)
+    : object(
+      form.canonicalSellerFacts ||
+        form.canonicalFacts ||
+        form.canonical_seller_facts ||
+        form.canonical_facts ||
+        form.canonicalSellerFactsJson ||
+        form.canonical_facts_json ||
+        listing?.sellerCanonicalFacts ||
+        listing?.canonicalFacts ||
+        listing?.seller_canonical_facts ||
+        listing?.canonical_facts ||
+        listing?.sellerCanonicalFactsJson ||
+        listing?.canonical_facts_json ||
+        {},
+    )
   const flow = resolveSellerOnboardingFlow(form, listing, facts)
-  const propertyFacts = object(facts.property)
-  const transactionFacts = object(facts.transaction)
-  const complianceFacts = object(facts.compliance)
+  const propertyFacts = object(facts.property || facts.propertyFacts || facts.property_facts)
+  const transactionFacts = object(facts.transaction || facts.transactionFacts || facts.transaction_facts)
+  const complianceFacts = object(facts.compliance || facts.complianceFacts || facts.compliance_facts)
   const propertyBranch = flow.property_branch
   const propertyAddressDetails = normalizePropertyAddress(
     {
-      propertyAddressDetails: form.propertyAddressDetails || propertyFacts.address_details || {},
-      propertyAddress: form.propertyAddress || propertyFacts.address || '',
-      propertyAddressLine1: form.propertyAddressLine1 || propertyFacts.address_line_1 || '',
-      propertyAddressLine2: form.propertyAddressLine2 || propertyFacts.address_line_2 || '',
-      suburb: form.suburb || propertyFacts.suburb || '',
-      city: form.city || propertyFacts.city || '',
-      province: form.province || propertyFacts.province || '',
-      postalCode: form.postalCode || propertyFacts.postal_code || '',
-      municipality: form.municipality || propertyFacts.municipality || '',
-      country: form.country || propertyFacts.country || '',
+      propertyAddressDetails:
+        form.propertyAddressDetails ||
+        form.addressDetails ||
+        form.address_details ||
+        form.property_address_details ||
+        propertyFacts.address_details ||
+        propertyFacts.addressDetails ||
+        propertyFacts.propertyAddressDetails ||
+        propertyFacts.property_address_details ||
+        {},
+      propertyAddress: form.propertyAddress || form.property_address || propertyFacts.address || propertyFacts.property_address || propertyFacts.propertyAddress || '',
+      propertyAddressLine1: form.propertyAddressLine1 || form.addressLine1 || form.address_line_1 || form.property_address_line_1 || propertyFacts.address_line_1 || propertyFacts.addressLine1 || propertyFacts.propertyAddressLine1 || '',
+      propertyAddressLine2: form.propertyAddressLine2 || form.addressLine2 || form.address_line_2 || form.property_address_line_2 || propertyFacts.address_line_2 || propertyFacts.addressLine2 || propertyFacts.propertyAddressLine2 || '',
+      suburb: form.suburb || form.property_suburb || propertyFacts.suburb || propertyFacts.property_suburb || propertyFacts.propertySuburb || '',
+      city: form.city || form.property_city || propertyFacts.city || propertyFacts.property_city || propertyFacts.propertyCity || '',
+      province: form.province || form.property_province || propertyFacts.province || propertyFacts.property_province || propertyFacts.propertyProvince || '',
+      postalCode: form.postalCode || form.postal_code || form.property_postal_code || propertyFacts.postal_code || propertyFacts.postalCode || propertyFacts.property_postal_code || propertyFacts.propertyPostalCode || '',
+      municipality: form.municipality || form.property_municipality || propertyFacts.municipality || propertyFacts.property_municipality || propertyFacts.propertyMunicipality || '',
+      country: form.country || form.property_country || propertyFacts.country || propertyFacts.property_country || propertyFacts.propertyCountry || '',
     },
     listing,
     {
@@ -121,7 +144,7 @@ export function buildSellerOnboardingPublicationDraft({
   addFeature(features, 'pool', bool(form.pool) || bool(form.swimmingPool) || bool(complianceFacts.swimming_pool))
   addFeature(features, 'electric_fence', bool(form.electricFence) || bool(complianceFacts.electric_fence))
   addFeature(features, 'solar', bool(form.solarInstallation) || bool(complianceFacts.solar_installation))
-  addFeature(features, 'borehole', bool(form.borehole) || bool(complianceFacts.borehole))
+  addFeature(features, 'borehole', bool(form.borehole) || bool(form.boreholeInstallation) || bool(complianceFacts.borehole) || bool(complianceFacts.borehole_installation))
   addFeature(features, 'gas_installation', bool(form.gasInstallation) || bool(complianceFacts.gas_installation))
   addFeature(features, 'estate_or_hoa', bool(form.estateOrHoa) || bool(propertyFacts.estate_or_hoa) || propertyBranch === 'estate_hoa')
   addFeature(features, 'sectional_title', bool(form.sectionalTitle) || bool(propertyFacts.sectional_title) || propertyBranch === 'sectional_title')

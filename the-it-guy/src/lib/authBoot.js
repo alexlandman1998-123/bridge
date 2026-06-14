@@ -23,8 +23,35 @@ function roundDuration(durationMs) {
   return Math.round(Number(durationMs || 0))
 }
 
+let authBootStepSequence = 0
+const activeAuthBootSteps = new Map()
+
+function beginAuthBootStep(label, metadata = {}) {
+  authBootStepSequence += 1
+  const stepId = authBootStepSequence
+  activeAuthBootSteps.set(stepId, {
+    label,
+    metadata,
+    startedAt: getNowMs(),
+  })
+  return stepId
+}
+
+function endAuthBootStep(stepId) {
+  activeAuthBootSteps.delete(stepId)
+}
+
+export function getActiveAuthBootStepDiagnostics() {
+  return Array.from(activeAuthBootSteps.values()).map((step) => ({
+    label: step.label,
+    metadata: step.metadata,
+    durationMs: roundDuration(getNowMs() - step.startedAt),
+  }))
+}
+
 async function runAuthBootStep(label, task, metadata = {}) {
   const startedAt = getNowMs()
+  const stepId = beginAuthBootStep(label, metadata)
   console.debug('[AUTH][BOOT] step:start', { label, ...metadata })
   try {
     const result = await task()
@@ -42,6 +69,8 @@ async function runAuthBootStep(label, task, metadata = {}) {
       error,
     })
     throw error
+  } finally {
+    endAuthBootStep(stepId)
   }
 }
 

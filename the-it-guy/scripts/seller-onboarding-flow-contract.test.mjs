@@ -228,6 +228,7 @@ test('generates company sectional title document requirements', () => {
 
   assert.equal(profile.sellerBranch, 'company')
   assert.equal(profile.propertyBranch, 'sectional_title')
+  assert.equal(profile.bondStatus, 'bonded')
   assert.ok(keys.includes('signed_mandate'))
   assert.ok(keys.includes('title_deed_copy'))
   assert.ok(keys.includes('company_registration'))
@@ -235,7 +236,14 @@ test('generates company sectional title document requirements', () => {
   assert.ok(keys.includes('levy_statement'))
   assert.ok(keys.includes('body_corporate_details'))
   assert.ok(keys.includes('bond_statement'))
+  assert.ok(keys.includes('bond_bank_details'))
+  assert.ok(keys.includes('bond_cancellation_attorney_details'))
+  assert.ok(keys.includes('settlement_figure'))
   assert.ok(keys.includes('gas_compliance_certificate'))
+  assert.ok(profile.documentTriggers.includes('bond_statement'))
+  assert.ok(profile.documentTriggers.includes('bond_bank_details'))
+  assert.ok(profile.documentTriggers.includes('bond_cancellation_attorney_details'))
+  assert.ok(profile.documentTriggers.includes('settlement_figure'))
 })
 
 test('generates trust estate HOA and tenant documents', () => {

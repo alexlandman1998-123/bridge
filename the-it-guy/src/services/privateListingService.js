@@ -33,7 +33,12 @@ import { syncCanonicalToPrivateListingRequirements } from './documents/canonical
 import { linkUploadedDocumentToRequirement } from './documents/canonicalDocumentLifecycleService'
 import { resolveRequirements } from './documents/canonicalDocumentResolverService'
 import { canAdvanceWorkflowStage } from './documents/canonicalWorkflowGateService'
-import { buildSellerResolverInputFromFacts } from './documents/sellerOnboardingFactTransformer'
+import {
+  calculateSellerFactReadiness,
+  buildCanonicalSellerOnboardingPayload,
+  buildSellerResolverInputFromFacts,
+  validateSellerOnboardingFacts,
+} from './documents/sellerOnboardingFactTransformer'
 import { buildSellerOnboardingPublicationDraft, mergePublicationDraft } from './sellerListingPublicationMapper'
 import { areSellerJourneyDocumentsSubmitted, buildSellerJourneyProgressPatch } from './sellerJourneyService.js'
 
@@ -61,6 +66,17 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function normalizeCompatibilityKey(value) {
+  return normalizeText(value)
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+}
+
 function isTruthyFlag(value) {
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalizeKey(value))
 }
@@ -71,23 +87,176 @@ function isCanonicalOnboardingResolverEnabled(options = {}) {
   return isTruthyFlag(import.meta.env?.[CANONICAL_ONBOARDING_RESOLVER_FLAG])
 }
 
-function getCanonicalSellerPayloadFromFormData(formData = {}) {
-  if (!formData || typeof formData !== 'object') return { facts: null, readiness: null }
-  const facts = formData.canonicalSellerFacts && typeof formData.canonicalSellerFacts === 'object'
-    ? formData.canonicalSellerFacts
-    : formData.canonicalFacts && typeof formData.canonicalFacts === 'object'
-      ? formData.canonicalFacts
-      : null
-  const readiness = formData.canonicalSellerFactReadiness && typeof formData.canonicalSellerFactReadiness === 'object'
-    ? formData.canonicalSellerFactReadiness
-    : formData.canonicalFactReadiness && typeof formData.canonicalFactReadiness === 'object'
-      ? formData.canonicalFactReadiness
-      : null
-  return { facts, readiness }
+const RAW_SELLER_ONBOARDING_KEYS = new Set([
+  'sellerFirstName',
+  'sellerSurname',
+  'email',
+  'phone',
+  'idNumber',
+  'residentialAddress',
+  'sellerTaxNumber',
+  'vatRegistered',
+  'vatNumber',
+  'ownershipType',
+  'sellerLegalType',
+  'maritalStatus',
+  'maritalRegime',
+  'spouseName',
+  'spouseIdNumber',
+  'companyName',
+  'companyRegistrationNumber',
+  'companyDirectors',
+  'companyDirectorName',
+  'companyDirectorEmail',
+  'companyDirectorPhone',
+  'trustName',
+  'trustRegistrationNumber',
+  'trustees',
+  'trustBeneficiaries',
+  'trusteeName',
+  'trusteeEmail',
+  'trusteePhone',
+  'executorName',
+  'executorEmail',
+  'executorPhone',
+  'powerOfAttorneyName',
+  'powerOfAttorneyPrincipalName',
+  'powerOfAttorneyAuthorityDetails',
+  'multipleOwners',
+  'owners',
+  'propertyCategory',
+  'propertyStructureType',
+  'propertyType',
+  'canonicalPropertyType',
+  'propertyAddress',
+  'propertyAddressDetails',
+  'addressDetails',
+  'address',
+  'propertyAddressLine1',
+  'propertyAddressLine2',
+  'suburb',
+  'city',
+  'province',
+  'postalCode',
+  'municipality',
+  'schemeName',
+  'estateName',
+  'estateComplexName',
+  'schemeManagingAgentName',
+  'hoaContactName',
+  'erfSize',
+  'floorSize',
+  'ratesTaxes',
+  'levies',
+  'monthlyWaterSpend',
+  'monthlyElectricitySpend',
+  'askingPrice',
+  'sellingTimeline',
+  'sellingReason',
+  'occupancyStatus',
+  'leaseExists',
+  'leaseExpiryDate',
+  'tenantName',
+  'tenantContactDetails',
+  'existingBond',
+  'bondBank',
+  'bondAccountReference',
+  'gasInstallation',
+  'solarInstallation',
+  'boreholeInstallation',
+  'recentAlterations',
+].map((key) => normalizeCompatibilityKey(key)))
+
+function getCanonicalFactsCandidate(source = {}) {
+  if (!isPlainObject(source)) return null
+  const candidates = [
+    source.canonicalSellerFacts,
+    source.canonicalFacts,
+    source.canonical_seller_facts,
+    source.canonical_facts,
+    source.canonicalSellerFactsJson,
+    source.canonical_facts_json,
+    source.canonicalFactJson,
+    source.canonical_fact_json,
+    source.sellerCanonicalFacts,
+    source.seller_canonical_facts,
+    source.canonical_seller_facts_json,
+    source.sellerCanonicalFactsJson,
+    source.seller_canonical_facts_json,
+  ]
+  return candidates.find((candidate) => isPlainObject(candidate)) || null
 }
 
-async function persistCanonicalSellerFactPayload(client, { listingId = '', onboardingId = '', formData = {} } = {}) {
-  const { facts, readiness } = getCanonicalSellerPayloadFromFormData(formData)
+function getCanonicalReadinessCandidate(source = {}) {
+  if (!isPlainObject(source)) return null
+  const candidates = [
+    source.canonicalSellerFactReadiness,
+    source.canonicalFactReadiness,
+    source.canonical_seller_fact_readiness,
+    source.canonical_fact_readiness,
+    source.canonicalFactReadinessJson,
+    source.canonical_fact_readiness_json,
+    source.sellerCanonicalFactReadiness,
+    source.seller_canonical_fact_readiness,
+    source.canonical_seller_fact_readiness_json,
+    source.sellerCanonicalFactReadinessJson,
+    source.seller_canonical_fact_readiness_json,
+  ]
+  return candidates.find((candidate) => isPlainObject(candidate)) || null
+}
+
+function hasRawSellerOnboardingFields(formData = {}) {
+  if (!isPlainObject(formData)) return false
+  return Object.keys(formData).some((key) => RAW_SELLER_ONBOARDING_KEYS.has(normalizeCompatibilityKey(key)))
+}
+
+function getCanonicalSellerPayloadFromFormData(formData = {}, listing = {}, options = {}) {
+  const form = isPlainObject(formData) ? formData : {}
+  const currentListing = isPlainObject(listing) ? listing : {}
+
+  if (hasRawSellerOnboardingFields(form)) {
+    const built = buildCanonicalSellerOnboardingPayload(form, currentListing, {
+      contextType: options.contextType || 'private_listing',
+      contextId: options.contextId || currentListing.id || null,
+      listingId: options.listingId || currentListing.id || null,
+      source: options.source || 'seller_onboarding',
+      draft: Boolean(options.draft),
+    })
+    return {
+      facts: built.canonicalSellerFacts,
+      readiness: built.canonicalSellerFactReadiness,
+    }
+  }
+
+  const embeddedFacts = getCanonicalFactsCandidate(form) || getCanonicalFactsCandidate(currentListing)
+  if (embeddedFacts) {
+    const embeddedReadiness = getCanonicalReadinessCandidate(form) || getCanonicalReadinessCandidate(currentListing)
+    if (embeddedReadiness) return { facts: embeddedFacts, readiness: embeddedReadiness }
+
+    const validation = validateSellerOnboardingFacts(embeddedFacts, { draft: Boolean(options.draft) })
+    const recalculatedReadiness = calculateSellerFactReadiness(embeddedFacts)
+    return {
+      facts: embeddedFacts,
+      readiness: {
+        ...recalculatedReadiness,
+        validation,
+        factsVersion: embeddedFacts.context?.facts_version || 'seller_onboarding_facts_v1',
+        generatedAt: new Date().toISOString(),
+      },
+    }
+  }
+
+  return { facts: null, readiness: null }
+}
+
+async function persistCanonicalSellerFactPayload(client, { listingId = '', onboardingId = '', formData = {}, listing = {}, draft = false, source = 'seller_onboarding' } = {}) {
+  const { facts, readiness } = getCanonicalSellerPayloadFromFormData(formData, listing, {
+    contextType: 'private_listing',
+    contextId: listingId || listing?.id || null,
+    listingId: listingId || listing?.id || null,
+    source,
+    draft,
+  })
   if (!facts) return { skipped: true, reason: 'canonical_seller_facts_missing' }
 
   const nowIso = new Date().toISOString()
@@ -1770,6 +1939,8 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
       listingId: normalizedId,
       onboardingId: inserted.data?.id,
       formData,
+      listing: { id: normalizedId },
+      draft: normalizeStatus(options.status || 'completed', SELLER_ONBOARDING_STATUSES, 'completed') !== 'completed',
     }).catch((factError) => {
       console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form insert', factError)
       return null
@@ -1801,6 +1972,8 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
     listingId: normalizedId,
     onboardingId: update.data?.id,
     formData: nextFormData,
+    listing: { id: normalizedId },
+    draft: nextStatus !== 'completed',
   }).catch((factError) => {
     console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding form update', factError)
     return null
@@ -1988,7 +2161,12 @@ function mapPublicationDraftToRow(listingId, draft = {}) {
 async function syncSellerOnboardingPublicationDraft(client, { listing = {}, formData = {} } = {}) {
   const listingId = normalizeUuid(listing?.id)
   if (!listingId) return { skipped: true, reason: 'listing_id_missing' }
-  const { facts } = getCanonicalSellerPayloadFromFormData(formData)
+  const { facts } = getCanonicalSellerPayloadFromFormData(formData, listing, {
+    contextType: 'private_listing',
+    contextId: listingId,
+    listingId,
+    source: 'seller_onboarding',
+  })
   const draft = buildSellerOnboardingPublicationDraft({
     listing,
     formData,
@@ -2796,7 +2974,12 @@ async function maybeResolveCanonicalSellerRequirements({ listing, formData, clie
     }
   }
 
-  const { facts } = getCanonicalSellerPayloadFromFormData(formData)
+  const { facts } = getCanonicalSellerPayloadFromFormData(formData, listing, {
+    contextType: 'private_listing',
+    contextId: normalizeText(listing?.id),
+    listingId: normalizeText(listing?.id),
+    source: reason,
+  })
   if (!facts) {
     return { skipped: true, reason: 'canonical_seller_facts_missing' }
   }
@@ -2868,6 +3051,8 @@ export async function submitSellerOnboarding(token, payload = {}) {
       listingId: rpcContext.listing.id,
       onboardingId: rpcContext.onboarding?.id,
       formData: payload.formData,
+      listing: rpcContext.listing,
+      draft: false,
     }).catch((factError) => {
       console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding submit', factError)
       return null
@@ -3034,13 +3219,15 @@ export async function submitSellerOnboarding(token, payload = {}) {
     console.warn('[Private Listings] seller client portal context sync skipped after onboarding fallback submit', contextError)
     return null
   })
-  await persistCanonicalSellerFactPayload(client, {
-    listingId: listingForContext?.id || context.listing.id,
-    onboardingId: updateOnboarding.data?.id,
-    formData: nextFormData,
-  }).catch((factError) => {
-    console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback submit', factError)
-    return null
+    await persistCanonicalSellerFactPayload(client, {
+      listingId: listingForContext?.id || context.listing.id,
+      onboardingId: updateOnboarding.data?.id,
+      formData: nextFormData,
+      listing: listingForContext,
+      draft: false,
+    }).catch((factError) => {
+      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback submit', factError)
+      return null
   })
   await syncSellerOnboardingPublicationDraft(client, {
     listing: listingForContext,
@@ -3092,6 +3279,8 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
       listingId: rpcContext.listing.id,
       onboardingId: rpcContext.onboarding?.id,
       formData: payload.formData,
+      listing: rpcContext.listing,
+      draft: true,
     }).catch((factError) => {
       console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding progress update', factError)
       return null
@@ -3151,6 +3340,8 @@ export async function updateSellerOnboardingProgress(token, payload = {}) {
     listingId: refreshedListing?.id || context.listing.id,
     onboardingId: updateQuery.data?.id,
     formData: nextFormData,
+    listing: refreshedListing || context.listing,
+    draft: true,
   }).catch((factError) => {
     console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback progress update', factError)
     return null

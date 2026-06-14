@@ -137,6 +137,50 @@ test('uses canonical facts when direct onboarding fields are absent', () => {
   assert.deepEqual(new Set(draft.features), new Set(['pool', 'solar', 'estate_or_hoa']))
 })
 
+test('accepts snake_case canonical facts and address aliases', () => {
+  const draft = buildSellerOnboardingPublicationDraft({
+    listing: {
+      id: 'listing-3',
+      address_line_1: 'Fallback Listing Address',
+      suburb: 'Fallback Suburb',
+      province: 'Gauteng',
+    },
+    formData: {
+      canonical_facts: {
+        property: {
+          address: '9 Snake Road, Bryanston, Sandton, Gauteng, 2191',
+          address_details: {
+            line_1: '9 Snake Road',
+            suburb: 'Bryanston',
+            city: 'Sandton',
+            province: 'Gauteng',
+            postal_code: '2191',
+            municipality: 'City of Johannesburg',
+            country: 'South Africa',
+            source: 'manual',
+            formatted: '9 Snake Road, Bryanston, Sandton, Gauteng, 2191',
+          },
+          property_type: 'freehold',
+          property_category: 'residential',
+          property_structure_type: 'freehold',
+        },
+        transaction: {
+          asking_price: 4100000,
+        },
+        compliance: {
+          gas_installation: true,
+          borehole_installation: true,
+        },
+      },
+    },
+  })
+
+  assert.equal(draft.addressLine1, '9 Snake Road')
+  assert.equal(draft.address, '9 Snake Road, Bryanston, Sandton, Gauteng, 2191')
+  assert.equal(draft.askingPrice, 4100000)
+  assert.deepEqual(new Set(draft.features), new Set(['gas_installation', 'borehole']))
+})
+
 test('merge preserves existing agent-edited publication values', () => {
   const merged = mergePublicationDraft(
     {

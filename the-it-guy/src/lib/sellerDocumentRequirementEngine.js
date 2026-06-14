@@ -210,12 +210,27 @@ function appendBondRequirements(docs, generatedFrom) {
       generatedFrom,
     }),
     buildRequirement({
-      key: 'bond_cancellation_details',
-      name: 'Bond Cancellation Details',
-      description: 'Bond account and cancellation attorney details where required.',
+      key: 'bond_bank_details',
+      name: 'Bond Bank Details',
+      description: 'Bond bank and account reference details for the existing bond.',
       group: 'financial',
-      visibility: 'internal',
-      required: false,
+      visibility: 'seller_visible',
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'bond_cancellation_attorney_details',
+      name: 'Bond Cancellation Attorney Details',
+      description: 'Details of the attorney or firm handling bond cancellation.',
+      group: 'financial',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'settlement_figure',
+      name: 'Settlement Figure',
+      description: 'Estimated bond settlement figure for the sale.',
+      group: 'financial',
+      visibility: 'seller_visible',
       generatedFrom,
     }),
   )
@@ -474,7 +489,10 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
   const bodyCorporate = Boolean(onboarding?.bodyCorporate || canonicalFacts?.property?.body_corporate || sectionalTitle || shareBlock)
   const commercialProperty = Boolean(onboarding?.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(propertyBranch))
   const bondStatus = normalizeBondStatus(
-    onboarding?.bondStatus || onboarding?.propertyBondStatus || listing?.bond_status,
+    onboarding?.bondStatus ||
+      onboarding?.propertyBondStatus ||
+      (toBoolean(onboarding?.existingBond) || toBoolean(onboarding?.sellerHasExistingBond) || toBoolean(onboarding?.bondedProperty) || toBoolean(listing?.bondedProperty) ? 'bonded' : '') ||
+      listing?.bond_status,
     toBoolean(onboarding?.bondedProperty || listing?.bondedProperty) ? 'bonded' : 'unknown',
   )
   const occupancyStatus = normalizeOccupancyStatus(

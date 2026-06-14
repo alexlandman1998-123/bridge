@@ -1,6 +1,7 @@
-import { AlertCircle, ArrowLeft, ChevronDown, ChevronRight, FileCheck2, FileText, Link2, Plus, Printer, ShieldCheck, UploadCloud, UsersRound, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Download, Eye, FileCheck2, FileText, Link2, MoreHorizontal, Plus, Printer, ShieldCheck, UploadCloud, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../ui/Button'
+import Drawer from '../ui/Drawer'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { normalizeAppRole } from '../../lib/roles'
 import {
@@ -139,6 +140,129 @@ function formatDateTime(value) {
   const parsed = new Date(text)
   if (Number.isNaN(parsed.getTime())) return '—'
   return parsed.toLocaleString('en-ZA')
+}
+
+function formatRelativeTime(value) {
+  const text = normalizeText(value)
+  if (!text) return 'Not saved yet'
+  const parsed = new Date(text)
+  if (Number.isNaN(parsed.getTime())) return formatDateTime(text)
+  const diffMs = parsed.getTime() - Date.now()
+  const absMs = Math.abs(diffMs)
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+  const units = [
+    { unit: 'day', ms: 24 * 60 * 60 * 1000 },
+    { unit: 'hour', ms: 60 * 60 * 1000 },
+    { unit: 'minute', ms: 60 * 1000 },
+  ]
+  for (const { unit, ms } of units) {
+    if (absMs >= ms || unit === 'minute') {
+      return rtf.format(Math.round(diffMs / ms), unit)
+    }
+  }
+  return 'just now'
+}
+
+function firstNonEmptyText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function buildMergeChecklistRows({ packetType = 'mandate', placeholders = {} } = {}) {
+  const normalized = normalizeMergeFieldPayload(placeholders, {
+    packetType,
+    includeAliasKeys: true,
+  })
+  const normalizedPayload = normalized.payload
+  const requiredFields = getRequiredCanonicalMergeFields(packetType)
+  const requiredSet = new Set(requiredFields.map((row) => row.key))
+  const aliasByCanonical = new Map(
+    (normalized.aliasHits || []).map((row) => [row.canonicalKey, row.alias]),
+  )
+  const preferredFieldKeys = [
+    'buyer_full_name',
+    'buyer_id_number',
+    'buyer_email',
+    'seller_full_name',
+    'seller_id_number',
+    'seller_email',
+    'property_address',
+    'unit_number',
+    'purchase_price',
+    'finance_type',
+    'mandate_type',
+    'asking_price',
+    'agent_full_name',
+    'agent_email',
+    'organisation_name',
+    'organisation_logo_url',
+  ]
+  const canonicalFields = listCanonicalMergeFields({ packetType })
+  const fieldKeys = Array.from(new Set([
+    ...requiredFields.map((field) => field.key),
+    ...preferredFieldKeys,
+    ...Object.keys(normalizedPayload)
+      .map((key) => getCanonicalMergeFieldDefinition(key, { packetType })?.key)
+      .filter(Boolean),
+  ]))
+    .filter((key) => canonicalFields.some((field) => field.key === key))
+    .slice(0, 16)
+
+  const rows = fieldKeys.map((fieldKey) => {
+    const definition = getCanonicalMergeFieldDefinition(fieldKey, { packetType })
+    const value = normalizeText(normalizedPayload[fieldKey])
+    const alias = aliasByCanonical.get(fieldKey)
+    const required = requiredSet.has(fieldKey)
+    return {
+      key: fieldKey,
+      label: definition?.label || fieldKey,
+      source: definition?.dataSource || 'Legal workspace context',
+      value,
+      required,
+      alias,
+      status: value ? (alias ? 'deprecated' : 'complete') : required ? 'missing' : 'warning',
+    }
+  })
+
+  return {
+    rows,
+    unknownKeys: normalized.unknownKeys || [],
+  }
+}
+
+function resolveMergeStatusTone(status = 'warning') {
+  switch (status) {
+    case 'complete':
+      return 'border-[#d8f0e3] bg-[#effaf4] text-[#20b26b]'
+    case 'missing':
+      return 'border-[#fde4de] bg-[#fff5f2] text-[#c46a44]'
+    case 'deprecated':
+      return 'border-[#e1e8ff] bg-[#f4f7ff] text-[#4463d1]'
+    default:
+      return 'border-[#f8e1c1] bg-[#fff8ed] text-[#b57a1d]'
+  }
+}
+
+function resolveMergeStatusLabel(status = 'warning') {
+  switch (status) {
+    case 'complete':
+      return 'Resolved'
+    case 'missing':
+      return 'Missing'
+    case 'deprecated':
+      return 'Alias'
+    default:
+      return 'Optional'
+  }
+}
+
+function compareTimelineDates(a, b) {
+  const aTime = new Date(a || 0).getTime()
+  const bTime = new Date(b || 0).getTime()
+  return bTime - aTime
 }
 
 function resolveDocumentLabel(packetType) {
@@ -1198,11 +1322,16 @@ function getSafeErrorSummary(error = null) {
 
 function DocumentOutlinePanel({
   sections = [],
+  activeSectionKey = '',
+  onSelectSection = null,
   canAddCustomSection = false,
   customSectionLabel = '',
   onCustomSectionLabelChange = null,
   onAddCustomSection = null,
   onRemoveSection = null,
+  validationByKey = {},
+  editorAvailable = false,
+  onSwitchToEditor = null,
 }) {
   const fallbackSections = ['Parties', 'Property Details', 'Purchase Terms', 'Suspensive Conditions', 'Special Conditions', 'Signatures']
   const outlineSections = Array.isArray(sections) && sections.length
@@ -1212,57 +1341,105 @@ function DocumentOutlinePanel({
         label: normalizeText(item?.label || item?.key),
         custom: Boolean(item?.custom),
         required: Boolean(item?.required),
+        content: normalizeText(item?.content),
       }))
       .filter((item) => item.label)
     : fallbackSections
-      .map((label) => ({ key: label, label, custom: false, required: true }))
+      .map((label) => ({ key: label, label, custom: false, required: true, content: '' }))
   return (
-    <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-      <h4 className="text-sm font-semibold text-[#1a2f45]">Document Outline</h4>
-      <ul className="mt-3 space-y-2 text-sm text-[#4f657d]">
-        {outlineSections.map((item) => (
-          <li key={item.key || item.label} className="flex items-center gap-2 rounded-[10px] bg-[#f8fbff] px-3 py-2">
-            <FileText size={14} className="text-[#6f86a0]" />
-            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-            {item.custom ? (
-              <span className="rounded-full border border-[#d9e5f1] bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-[#60758d]">
-                Custom
-              </span>
-            ) : null}
-            {canAddCustomSection && !item.required ? (
+    <section className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="text-[1rem] font-semibold text-[#102033]">Document Outline</h4>
+          <p className="mt-1 text-xs text-[#6b7c93]">Navigate the mandate structure without changing the underlying document flow.</p>
+        </div>
+        {editorAvailable ? (
+          <button
+            type="button"
+            onClick={onSwitchToEditor}
+            className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c7d8eb] hover:bg-white"
+          >
+            Edit
+          </button>
+        ) : null}
+      </div>
+
+      <ul className="mt-5 space-y-1.5">
+        {outlineSections.map((item, index) => {
+          const validation = validationByKey?.[item.key] || { blockers: [], warnings: [] }
+          const hasContent = normalizeText(item.content).length >= 8
+          const isComplete = hasContent && !validation.blockers?.length
+          const hasAttention = !isComplete && (item.required || validation.blockers?.length || validation.warnings?.length)
+          const isActive = activeSectionKey ? activeSectionKey === item.key : index === 0
+          return (
+            <li key={item.key || item.label}>
               <button
                 type="button"
-                onClick={() => onRemoveSection?.(item.key)}
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#e7d4cf] bg-white text-[#9d4437] transition hover:bg-[#fff4f2]"
-                aria-label={`Remove ${item.label}`}
-                title={`Remove ${item.label}`}
+                onClick={() => onSelectSection?.(item.key)}
+                className={`group flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left transition ${
+                  isActive
+                    ? 'border border-[#d7e8ff] bg-[#f4f8ff] shadow-[inset_3px_0_0_#0a66ff]'
+                    : 'border border-transparent hover:bg-[#f8fbff]'
+                }`}
               >
-                <X size={13} />
+                <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                  isActive ? 'bg-white text-[#0a66ff]' : 'bg-[#f4f7fb] text-[#6b7c93]'
+                }`}>
+                  {index + 1}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-[#102033]">{item.label}</span>
+                  {item.custom ? (
+                    <span className="mt-0.5 block text-[0.72rem] text-[#6b7c93]">Custom section</span>
+                  ) : null}
+                </span>
+                {isComplete ? (
+                  <CheckCircle2 size={16} className="shrink-0 text-[#20b26b]" />
+                ) : hasAttention ? (
+                  <span className="inline-flex h-3 w-3 shrink-0 rounded-full bg-[#f5a524]" />
+                ) : (
+                  <Circle size={14} className="shrink-0 text-[#c7d3e3]" />
+                )}
+                {canAddCustomSection && !item.required ? (
+                  <span
+                    role="button"
+                    tabIndex={-1}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onRemoveSection?.(item.key)
+                    }}
+                    className="ml-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#f1d9d2] bg-white text-[#b65b4b] opacity-0 transition group-hover:opacity-100"
+                    aria-label={`Remove ${item.label}`}
+                    title={`Remove ${item.label}`}
+                  >
+                    <X size={12} />
+                  </span>
+                ) : null}
               </button>
-            ) : null}
-          </li>
-        ))}
+            </li>
+          )
+        })}
       </ul>
+
       {canAddCustomSection ? (
-        <div className="mt-4 rounded-[12px] border border-dashed border-[#cfdceb] bg-[#fbfdff] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#61758c]">Add Custom Section</p>
-          <div className="mt-2 flex gap-2">
+        <div className="mt-5 rounded-[20px] border border-dashed border-[#d8e5f4] bg-[#fbfdff] p-4">
+          <button
+            type="button"
+            onClick={onAddCustomSection}
+            disabled={!normalizeText(customSectionLabel)}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-[14px] border border-[#dde7f1] bg-white px-4 py-3 text-sm font-semibold text-[#35546c] transition hover:border-[#c9d8e9] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <Plus size={15} />
+            Add Custom Section
+          </button>
+          <div className="mt-3 flex gap-2">
             <input
               type="text"
               value={customSectionLabel}
               onChange={(event) => onCustomSectionLabelChange?.(event.target.value)}
               placeholder="Section name"
-              className="min-w-0 flex-1 rounded-[10px] border border-[#d7e1ed] bg-white px-3 py-2 text-xs text-[#20344b] outline-none focus:border-[#8ca8c4]"
+              className="min-w-0 flex-1 rounded-[14px] border border-[#d7e1ed] bg-white px-3 py-2.5 text-sm text-[#20344b] outline-none transition focus:border-[#9ec3eb] focus:ring-2 focus:ring-[#9ec3eb]/30"
             />
-            <button
-              type="button"
-              onClick={onAddCustomSection}
-              disabled={!normalizeText(customSectionLabel)}
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-[#d7e1ed] bg-white text-[#35546c] transition hover:bg-[#f2f7fb] disabled:cursor-not-allowed disabled:opacity-45"
-              aria-label="Add custom document section"
-            >
-              <Plus size={15} />
-            </button>
           </div>
         </div>
       ) : null}
@@ -1270,119 +1447,82 @@ function DocumentOutlinePanel({
   )
 }
 
-function MergeChecklistPanel({ packetType = 'mandate', placeholders = {} }) {
-  const normalized = normalizeMergeFieldPayload(placeholders, {
-    packetType,
-    includeAliasKeys: true,
-  })
-  const normalizedPayload = normalized.payload
-  const requiredFields = getRequiredCanonicalMergeFields(packetType)
-  const requiredSet = new Set(requiredFields.map((row) => row.key))
-  const aliasByCanonical = new Map(
-    (normalized.aliasHits || []).map((row) => [row.canonicalKey, row.alias]),
-  )
-  const preferredFieldKeys = [
-    'buyer_full_name',
-    'buyer_id_number',
-    'buyer_email',
-    'seller_full_name',
-    'seller_id_number',
-    'seller_email',
-    'property_address',
-    'unit_number',
-    'purchase_price',
-    'finance_type',
-    'mandate_type',
-    'asking_price',
-    'agent_full_name',
-    'agent_email',
-    'organisation_name',
-    'organisation_logo_url',
-  ]
-  const canonicalFields = listCanonicalMergeFields({ packetType })
-  const fieldKeys = Array.from(new Set([
-    ...requiredFields.map((field) => field.key),
-    ...preferredFieldKeys,
-    ...Object.keys(normalizedPayload)
-      .map((key) => getCanonicalMergeFieldDefinition(key, { packetType })?.key)
-      .filter(Boolean),
-  ]))
-    .filter((key) => canonicalFields.some((field) => field.key === key))
-    .slice(0, 16)
+function MergeChecklistPanel({ packetType = 'mandate', placeholders = {}, compact = false, onOpen = null }) {
+  const { rows, unknownKeys } = buildMergeChecklistRows({ packetType, placeholders })
+  const resolvedCount = rows.filter((row) => row.value).length
+  const unresolvedCount = rows.filter((row) => !row.value).length
 
-  const rows = fieldKeys.map((fieldKey) => {
-    const definition = getCanonicalMergeFieldDefinition(fieldKey, { packetType })
-    const value = normalizeText(normalizedPayload[fieldKey])
-    const alias = aliasByCanonical.get(fieldKey)
-    const required = requiredSet.has(fieldKey)
-    return {
-      key: fieldKey,
-      label: definition?.label || fieldKey,
-      source: definition?.dataSource || 'Legal workspace context',
-      value,
-      required,
-      alias,
-      status: value ? (alias ? 'deprecated' : 'complete') : required ? 'missing' : 'warning',
-    }
-  })
-
-  const badgeByStatus = {
-    complete: 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]',
-    missing: 'border-[#f2d7d2] bg-[#fff4f2] text-[#a03a2a]',
-    warning: 'border-[#f3e0b9] bg-[#fff8ea] text-[#8a5b12]',
-    deprecated: 'border-[#ddd9f6] bg-[#f5f2ff] text-[#5a43a8]',
-  }
-
-  const labelByStatus = {
-    complete: 'Resolved',
-    missing: 'Missing',
-    warning: 'Optional',
-    deprecated: 'Alias',
+  if (compact) {
+    return (
+      <section className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h4 className="text-[1rem] font-semibold text-[#102033]">Merge Fields</h4>
+            <p className="mt-1 text-xs text-[#6b7c93]">Resolved from onboarding, transaction, and packet context.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpen?.()}
+            className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c7d8eb] hover:bg-white"
+          >
+            View details
+          </button>
+        </div>
+        <div className="mt-4 rounded-[18px] border border-[#edf3fa] bg-[#f8fbff] px-4 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[1.2rem] font-semibold text-[#102033]">{resolvedCount}/{rows.length} resolved</p>
+              <p className="mt-1 text-sm text-[#6b7c93]">
+                {unresolvedCount ? `${unresolvedCount} unresolved field${unresolvedCount === 1 ? '' : 's'}` : 'All tracked fields are resolved'}
+              </p>
+            </div>
+            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+              unresolvedCount ? 'border-[#f7debb] bg-[#fff8ed] text-[#b57a1d]' : 'border-[#d8f0e3] bg-[#effaf4] text-[#20b26b]'
+            }`}>
+              {unresolvedCount ? 'Needs review' : 'Ready'}
+            </span>
+          </div>
+          {unknownKeys.length ? (
+            <p className="mt-3 text-xs text-[#6b7c93]">
+              {unknownKeys.length} unmapped field{unknownKeys.length === 1 ? '' : 's'} still need template review.
+            </p>
+          ) : null}
+        </div>
+      </section>
+    )
   }
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col rounded-[18px] border border-[#dce6f2] bg-white p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h4 className="text-sm font-semibold text-[#1a2f45]">Merge Field Checklist</h4>
-          <p className="mt-1 text-xs text-[#7187a0]">Canonical values resolved from onboarding, transaction, and packet context.</p>
-        </div>
-        <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-[#f7fafd] px-2 py-1 text-[0.65rem] font-semibold text-[#60758d]">
-          {rows.filter((row) => row.value).length}/{rows.length}
-        </span>
-      </div>
-      <div className="mt-3 max-h-[520px] min-h-[280px] flex-1 space-y-2 overflow-y-auto pr-1">
-        {rows.map((row) => (
-          <article key={row.key} className="rounded-[12px] border border-[#e5edf5] bg-[#f8fbff] px-3 py-2">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-mono text-[0.72rem] font-semibold text-[#1c334b]">{row.key}</p>
-                <p className="mt-0.5 text-xs text-[#5f748c]">{row.value || 'Missing'}</p>
-              </div>
-              <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${badgeByStatus[row.status]}`}>
-                {labelByStatus[row.status]}
-              </span>
+    <div className="space-y-3">
+      {rows.map((row) => (
+        <article key={row.key} className="rounded-[18px] border border-[#e8eef7] bg-white px-4 py-3 shadow-[0_10px_28px_rgba(16,32,51,0.04)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#102033]">{row.label}</p>
+              <p className="mt-1 font-mono text-[0.73rem] text-[#6b7c93]">{row.key}</p>
             </div>
-            <p className="mt-1 text-[0.66rem] text-[#7b8ea4]">Source: {row.source}</p>
-            {row.alias ? (
-              <p className="mt-1 text-[0.66rem] font-semibold text-[#5a43a8]">
-                Deprecated alias resolved: {row.alias} {'->'} {row.key}
-              </p>
-            ) : null}
-            {!row.value && row.required ? (
-              <p className="mt-1 text-[0.66rem] font-semibold text-[#a03a2a]">
-                Required before generation.
-              </p>
-            ) : null}
-          </article>
-        ))}
-      </div>
-      {normalized.unknownKeys?.length ? (
-        <div className="mt-3 rounded-[12px] border border-[#f3e0b9] bg-[#fff8ea] px-3 py-2 text-xs text-[#7d520d]">
-          {normalized.unknownKeys.length} unmapped field{normalized.unknownKeys.length === 1 ? '' : 's'} detected. Review template placeholders before finalizing.
+            <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${resolveMergeStatusTone(row.status)}`}>
+              {resolveMergeStatusLabel(row.status)}
+            </span>
+          </div>
+          <p className="mt-3 text-sm text-[#102033]">{row.value || 'Not resolved yet'}</p>
+          <p className="mt-1 text-xs text-[#6b7c93]">Source: {row.source}</p>
+          {row.alias ? (
+            <p className="mt-2 text-xs font-semibold text-[#4463d1]">
+              Deprecated alias resolved: {row.alias} {'->'} {row.key}
+            </p>
+          ) : null}
+          {!row.value && row.required ? (
+            <p className="mt-2 text-xs font-semibold text-[#c46a44]">Required before generation.</p>
+          ) : null}
+        </article>
+      ))}
+      {unknownKeys.length ? (
+        <div className="rounded-[18px] border border-[#f7debb] bg-[#fff8ed] px-4 py-3 text-sm text-[#9a6715]">
+          {unknownKeys.length} unmapped field{unknownKeys.length === 1 ? '' : 's'} detected. Review template placeholders before finalizing.
         </div>
       ) : null}
-    </section>
+    </div>
   )
 }
 
@@ -1435,7 +1575,11 @@ function DraftEditorPanel({
           ? collapsedSectionKeys.has(section.key)
           : Array.isArray(collapsedSectionKeys) && collapsedSectionKeys.includes(section.key)
         return (
-          <article key={section.key} className="rounded-[16px] border border-[#dce6f2] bg-white p-3 sm:p-4">
+          <article
+            key={section.key}
+            id={`legal-workspace-section-${slugifySectionKey(section.key)}`}
+            className="scroll-mt-6 rounded-[16px] border border-[#dce6f2] bg-white p-3 sm:p-4"
+          >
             <div className={`${collapsed ? '' : 'mb-2'} flex flex-wrap items-center justify-between gap-2`}>
               <button
                 type="button"
@@ -1685,50 +1829,56 @@ function SigningMethodPanel({
   ]
 
   return (
-    <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
+    <section className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h4 className="text-sm font-semibold text-[#1a2f45]">How would you like to sign this mandate?</h4>
-          <p className="mt-1 text-xs text-[#6f839b]">Choose the signing path before sending or downloading.</p>
+          <h4 className="text-[1rem] font-semibold text-[#102033]">Signing Method</h4>
+          <p className="mt-1 text-sm text-[#6b7c93]">Choose how you&apos;d like to send this mandate.</p>
         </div>
-        <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-2.5 py-0.5 text-[0.68rem] font-semibold text-[#526b84]">
+        <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#526b84]">
           {resolveSigningMethodLabel(method)}
         </span>
       </div>
 
-      <div className="mt-3 grid gap-2">
+      <div className="mt-4 grid gap-3">
         {options.map(({ key, title, description, Icon, next }) => {
           const selected = normalizeSigningMethod(method) === key
           const OptionIcon = Icon
+          const detailLine = key === 'digital' ? 'Fastest · ±2 mins average' : 'Download, print, sign, upload PDF.'
           return (
             <button
               key={key}
               type="button"
               onClick={() => onSelect?.(key)}
               disabled={busy || (!canChange && !selected)}
-              className={`rounded-[14px] border p-3 text-left transition ${
+              className={`rounded-[20px] border p-4 text-left transition ${
                 selected
-                  ? 'border-[#2f5f89] bg-[#f1f7fd] shadow-[0_10px_26px_rgba(32,73,110,0.12)]'
-                  : 'border-[#e0e8f2] bg-[#fbfdff] hover:border-[#b9cce0] hover:bg-white'
+                  ? 'border-[#0a66ff] bg-[#f4f8ff] shadow-[0_18px_44px_rgba(10,102,255,0.08)]'
+                  : 'border-[#e7eef7] bg-[#fbfdff] hover:border-[#c7d8eb] hover:bg-white'
               } ${busy || (!canChange && !selected) ? 'cursor-not-allowed opacity-70' : ''}`}
             >
               <div className="flex items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border ${
-                  selected ? 'border-[#bad1e8] bg-white text-[#264f77]' : 'border-[#dce6f2] bg-white text-[#6d8299]'
+                <span className={`mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border ${
+                  selected ? 'border-[#cfe1ff] bg-white text-[#0a66ff]' : 'border-[#dce6f2] bg-white text-[#6d8299]'
                 }`}>
-                  <OptionIcon size={17} />
+                  <OptionIcon size={18} />
                 </span>
                 <span className="min-w-0">
                   <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-[#20344b]">{title}</span>
+                    <span className="text-[1rem] font-semibold text-[#102033]">{title}</span>
                     {selected ? (
-                      <span className="rounded-full border border-[#b9d3ea] bg-white px-2 py-0.5 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#2f5f89]">
+                      <span className="rounded-full border border-[#cfe1ff] bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-[#0a66ff]">
                         Selected
                       </span>
                     ) : null}
                   </span>
-                  <span className="mt-1 block text-xs leading-5 text-[#667c94]">{description}</span>
-                  {selected ? <span className="mt-2 block text-[0.7rem] font-semibold text-[#2f5f89]">{next}</span> : null}
+                  <span className="mt-1 block text-sm leading-6 text-[#6b7c93]">{description}</span>
+                  <span className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[0.72rem] font-semibold ${
+                    key === 'digital' ? 'bg-[#eef5ff] text-[#0a66ff]' : 'bg-[#f5f7fb] text-[#6b7c93]'
+                  }`}>
+                    {detailLine}
+                  </span>
+                  {selected ? <span className="mt-2 block text-[0.76rem] font-semibold text-[#0a66ff]">{next}</span> : null}
                 </span>
               </div>
             </button>
@@ -1737,11 +1887,11 @@ function SigningMethodPanel({
       </div>
 
       {lockedReason ? (
-        <p className="mt-3 rounded-[10px] border border-[#f4e2bf] bg-[#fff8ec] px-3 py-2 text-xs text-[#8a5b12]">
+        <p className="mt-4 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
           {lockedReason}
         </p>
       ) : !canChange ? (
-        <p className="mt-3 text-[0.7rem] text-[#6f839b]">Generate the mandate before choosing a signing method.</p>
+        <p className="mt-4 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
       ) : null}
     </section>
   )
@@ -1846,6 +1996,124 @@ function PhysicalMandatePanel({
   )
 }
 
+function ActivityPanel({
+  activeTab = 'all',
+  onTabChange = null,
+  versions = [],
+  events = [],
+  templateLabel = '',
+  templateKey = '',
+  templateStoragePath = '',
+}) {
+  const tabs = [
+    { key: 'all', label: 'All' },
+    { key: 'lifecycle', label: 'Lifecycle' },
+    { key: 'audit', label: 'Audit' },
+    { key: 'versions', label: 'Versions' },
+  ]
+
+  const versionItems = (Array.isArray(versions) ? versions : []).map((version) => {
+    const provenance = version?.validation_summary_json?.render_provenance || version?.validation_summary_json?.renderProvenance || {}
+    const frozen = version?.validation_summary_json?.frozen_render_snapshot || {}
+    return {
+      id: `version-${version.id}`,
+      type: 'version',
+      title: `Draft v${version.version_number || '—'}`,
+      subtitle: [
+        normalizeText(version?.validation_summary_json?.review_state) || normalizeText(version?.render_status) || 'draft',
+        normalizeText(version?.generated_by) ? `by ${normalizeText(version.generated_by).slice(0, 8)}…` : '',
+      ].filter(Boolean).join(' • '),
+      detail: normalizeText(provenance.renderMode || frozen.renderMode)
+        ? `${(provenance.renderMode || frozen.renderMode).replace(/_/g, ' ')}${normalizeText(frozen.contentFingerprint || provenance.contentFingerprint) ? ` • ${normalizeText(frozen.contentFingerprint || provenance.contentFingerprint).slice(0, 18)}` : ''}`
+        : 'Version captured for this workspace.',
+      timestamp: version.updated_at || version.created_at,
+      kind: 'version',
+    }
+  })
+
+  const eventItems = (Array.isArray(events) ? events : []).map((event) => ({
+    id: `event-${event.id}`,
+    type: 'event',
+    title: resolveEventMessage(event),
+    subtitle: resolveEventActor(event),
+    detail: humanizeLifecycleEvent(event?.event_type),
+    timestamp: event?.created_at,
+    kind: normalizeText(event?.event_type).includes('audit') ? 'audit' : 'lifecycle',
+  }))
+
+  const visibleItems = (() => {
+    if (activeTab === 'versions') return versionItems
+    if (activeTab === 'lifecycle') return eventItems.filter((item) => item.kind === 'lifecycle')
+    if (activeTab === 'audit') return eventItems
+    return [...versionItems, ...eventItems].sort((left, right) => compareTimelineDates(left.timestamp, right.timestamp))
+  })()
+
+  return (
+    <section className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-[1rem] font-semibold text-[#102033]">Activity</h4>
+          <p className="mt-1 text-sm text-[#6b7c93]">Versions, lifecycle events, and audit history in one place.</p>
+        </div>
+        <span className="rounded-full border border-[#dce6f2] bg-[#f7fbff] px-3 py-1 text-[0.68rem] font-semibold text-[#526b84]">
+          {visibleItems.length}
+        </span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-1.5 rounded-full border border-[#e8eef7] bg-[#f8fbff] p-1">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => onTabChange?.(tab.key)}
+            className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+              activeTab === tab.key ? 'bg-white text-[#0a66ff] shadow-[0_8px_18px_rgba(16,32,51,0.08)]' : 'text-[#6b7c93] hover:text-[#102033]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
+        {visibleItems.length ? (
+          visibleItems.map((item) => {
+            const isVersion = item.type === 'version'
+            return (
+              <article key={item.id} className="rounded-[18px] border border-[#edf3fa] bg-[#fbfdff] px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <span className={`mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                    isVersion ? 'bg-[#eef5ff] text-[#0a66ff]' : 'bg-[#effaf4] text-[#20b26b]'
+                  }`}>
+                    {isVersion ? <FileText size={14} /> : <Check size={14} />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[#102033]">{item.title}</p>
+                    <p className="mt-1 text-xs text-[#6b7c93]">{item.subtitle}</p>
+                    <p className="mt-1 text-xs text-[#8a99ad]">{item.detail}</p>
+                  </div>
+                  <span className="shrink-0 text-[0.72rem] text-[#8a99ad]">{formatDateTime(item.timestamp)}</span>
+                </div>
+              </article>
+            )
+          })
+        ) : (
+          <div className="rounded-[18px] border border-dashed border-[#dbe5f0] bg-[#f9fbff] px-4 py-5 text-sm text-[#6b7c93]">
+            No activity captured yet.
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 rounded-[18px] border border-[#edf3fa] bg-[#f8fbff] px-4 py-3 text-xs text-[#6b7c93]">
+        <p className="font-semibold text-[#102033]">Template</p>
+        <p className="mt-2">Template: {templateLabel || 'Not linked'}</p>
+        <p className="mt-1">Key: {templateKey || '—'}</p>
+        <p className="mt-1 break-all">Storage path: {templateStoragePath || 'Missing'}</p>
+      </div>
+    </section>
+  )
+}
+
 export default function LegalDocumentWorkspace({
   open = true,
   onClose,
@@ -1895,6 +2163,11 @@ export default function LegalDocumentWorkspace({
   const [manualSignedConfirmed, setManualSignedConfirmed] = useState(false)
   const [manualSignedAllPartiesSigned, setManualSignedAllPartiesSigned] = useState(false)
   const [manualUploadBusy, setManualUploadBusy] = useState(false)
+  const [mergeDetailsOpen, setMergeDetailsOpen] = useState(false)
+  const [activityTab, setActivityTab] = useState('all')
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
+  const [bottomActionMenuOpen, setBottomActionMenuOpen] = useState(false)
+  const [activeSectionKey, setActiveSectionKey] = useState('')
   const autoFinalizeGuardRef = useRef(new Set())
   const autoGenerateGuardRef = useRef('')
   const statusStateRef = useRef(initialStatus || null)
@@ -1926,6 +2199,18 @@ export default function LegalDocumentWorkspace({
   useEffect(() => {
     manualUploadBusyRef.current = manualUploadBusy
   }, [manualUploadBusy])
+
+  useEffect(() => {
+    const nextSectionKey = normalizeText(editableSections?.[0]?.key)
+    if (!nextSectionKey) {
+      if (activeSectionKey) setActiveSectionKey('')
+      return
+    }
+    const sectionStillExists = editableSections.some((section) => normalizeText(section?.key) === activeSectionKey)
+    if (!activeSectionKey || !sectionStillExists) {
+      setActiveSectionKey(nextSectionKey)
+    }
+  }, [activeSectionKey, editableSections])
 
   const effectiveMode = useMemo(() => {
     if (normalizeText(mode)) return normalizeKey(mode)
@@ -2125,6 +2410,137 @@ export default function LegalDocumentWorkspace({
   const displayLifecycleState = resolveDisplayLifecycleState(normalizedLifecycleState, signingMethod)
   const lifecycleCopy = resolveLifecycleCopy(normalizedLifecycleState, signingMethod)
   const lifecycleProgress = resolveLifecycleProgress(normalizedLifecycleState, signingMethod)
+
+  const mergeChecklist = useMemo(() => {
+    return buildMergeChecklistRows({
+      packetType,
+      placeholders: latestVersion?.placeholders_resolved_json || {},
+    })
+  }, [latestVersion?.placeholders_resolved_json, packetType])
+
+  const mandatePreviewValidation = useMemo(() => {
+    if (!isMandatePacket) return null
+    return validateMandateGenerationData(mandateDataSnapshot || {}, { action: 'preview' })
+  }, [isMandatePacket, mandateDataSnapshot])
+
+  const mergeResolvedCount = mergeChecklist.rows.filter((row) => row.value).length
+  const mergeUnresolvedCount = mergeChecklist.rows.filter((row) => !row.value).length
+  const documentHealthPercent = mergeChecklist.rows.length
+    ? Math.round((mergeResolvedCount / mergeChecklist.rows.length) * 100)
+    : lifecycleProgress
+  const documentHealthLabel =
+    documentHealthPercent >= 85 ? 'Good' : documentHealthPercent >= 60 ? 'Review' : 'Needs work'
+  const documentHealthItems = useMemo(() => {
+    if (!isMandatePacket) {
+      return [
+        { key: 'lifecycle', label: 'Lifecycle progress', complete: lifecycleProgress >= 50 },
+        { key: 'preview', label: 'Preview available', complete: Boolean(generatedPreviewUrl || signedPreviewUrl || editablePreviewHtml) },
+        { key: 'signers', label: 'Signer readiness', complete: signerValidation.blockers.length === 0 },
+      ]
+    }
+    const groups = mandatePreviewValidation?.fieldGroups && typeof mandatePreviewValidation.fieldGroups === 'object'
+      ? mandatePreviewValidation.fieldGroups
+      : {}
+    const commissionWarnings = Array.isArray(groups.mandate?.warnings)
+      ? groups.mandate.warnings.filter((issue) => ['commission_percentage', 'commission_amount'].includes(normalizeText(issue?.field)))
+      : []
+    return [
+      {
+        key: 'seller',
+        label: 'Seller details',
+        complete: !((groups.seller?.warnings || []).length || (groups.seller?.missingRequiredFields || []).length),
+      },
+      {
+        key: 'property',
+        label: 'Property details',
+        complete: !((groups.property?.warnings || []).length || (groups.property?.missingRequiredFields || []).length),
+      },
+      {
+        key: 'commission',
+        label: 'Commission terms',
+        complete: commissionWarnings.length === 0,
+      },
+    ]
+  }, [
+    editablePreviewHtml,
+    generatedPreviewUrl,
+    isMandatePacket,
+    lifecycleProgress,
+    mandatePreviewValidation?.fieldGroups,
+    signedPreviewUrl,
+    signerValidation.blockers.length,
+  ])
+
+  const workspaceSummary = useMemo(() => {
+    const leadSummary = sourceContext.lead && typeof sourceContext.lead === 'object' ? sourceContext.lead : {}
+    const transactionSummary = sourceContext.transaction && typeof sourceContext.transaction === 'object' ? sourceContext.transaction : {}
+    const privateListingSummary = sourceContext.privateListing && typeof sourceContext.privateListing === 'object' ? sourceContext.privateListing : {}
+    const sellerName = firstNonEmptyText(
+      mandateDataSnapshot?.seller?.fullName,
+      leadSummary.name,
+      [leadSummary.sellerName, leadSummary.sellerSurname].map(normalizeText).filter(Boolean).join(' '),
+    )
+    const propertyLabel = firstNonEmptyText(
+      mandateDataSnapshot?.property?.fullAddress,
+      privateListingSummary.propertyAddress,
+      leadSummary.propertyAddress,
+      leadSummary.listingTitle,
+      transactionSummary.property_address,
+      transactionReference,
+    )
+    const stageLabel = firstNonEmptyText(
+      leadSummary.stage,
+      transactionSummary.stage,
+      transactionSummary.current_main_stage,
+      mandateStatusMeta.label,
+      headerStatusLabel,
+    )
+    const statusLabel = firstNonEmptyText(
+      normalizeText(headerStatusLabel).toLowerCase() === 'no draft' ? mandateStatusMeta.label : headerStatusLabel,
+      normalizeText(headerStatusLabel).toLowerCase() === 'no draft' ? headerStatusLabel : mandateStatusMeta.label,
+      normalizeText(statusState?.packet?.status),
+    )
+    const savedAt = firstNonEmptyText(
+      latestVersion?.updated_at,
+      latestVersion?.created_at,
+      statusState?.packet?.updated_at,
+      statusState?.packet?.created_at,
+    )
+    return {
+      badge: firstNonEmptyText(mandateStatusMeta.label, headerStatusLabel, 'Draft'),
+      seller: sellerName || 'Seller unavailable',
+      property: propertyLabel || 'Property unavailable',
+      transaction: transactionReference || 'Transaction reference unavailable',
+      stage: stageLabel || 'Stage unavailable',
+      status: statusLabel || 'Status unavailable',
+      savedLabel: actionBusy
+        ? 'Saving changes…'
+        : savedAt
+          ? `Saved ${formatRelativeTime(savedAt)}`
+          : 'Draft not saved yet',
+      savedAt,
+    }
+  }, [
+    actionBusy,
+    headerStatusLabel,
+    latestVersion?.created_at,
+    latestVersion?.updated_at,
+    mandateDataSnapshot?.property?.fullAddress,
+    mandateDataSnapshot?.seller?.fullName,
+    mandateStatusMeta.label,
+    sourceContext.lead,
+    sourceContext.privateListing,
+    sourceContext.transaction,
+    statusState?.packet?.created_at,
+    statusState?.packet?.status,
+    statusState?.packet?.updated_at,
+    transactionReference,
+  ])
+
+  const canSendForSignatureAction =
+    legalPermissions.canManageSigners &&
+    signingMethod === 'digital' &&
+    ['draft', 'in_review', 'approved', 'locked'].includes(normalizedLifecycleState)
   const primaryLabel = useMemo(() => {
     if (normalizedLifecycleState === 'approved' || normalizedLifecycleState === 'locked') return 'Send for Signature'
     return resolvePrimaryActionLabel(effectiveMode, statusState?.state, packetType)
@@ -4199,521 +4615,642 @@ export default function LegalDocumentWorkspace({
     void runPrimaryAction()
   }
 
+  const handleSelectOutlineSection = useCallback((sectionKey) => {
+    const normalizedSectionKey = normalizeText(sectionKey)
+    if (!normalizedSectionKey) return
+    setActiveSectionKey(normalizedSectionKey)
+    if (editableAllowed) {
+      setCenterTab('editor')
+    }
+    if (typeof document === 'undefined') return
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById(`legal-workspace-section-${slugifySectionKey(normalizedSectionKey)}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [editableAllowed])
+
+  const handleFocusPreview = useCallback(() => {
+    setCenterTab('preview')
+  }, [])
+
   if (!open) return null
 
+  const documentLabel = resolveDocumentLabel(packetType)
+  const previewDownloadUrl = signedPreviewUrl || generatedPreviewUrl || ''
+  const previewDownloadName = normalizeText(
+    latestVersion?.final_signed_file_name ||
+      latestVersion?.rendered_file_name ||
+      `${slugifySectionKey(documentLabel) || 'document'}.pdf`,
+  )
+  const hasPreviewSurface = Boolean(generatedPreviewUrl || signedPreviewUrl || editablePreviewHtml)
   const shellClassName = isPageMode
-    ? 'legal-document-workspace-page flex min-h-[calc(100vh-132px)] w-full flex-col overflow-hidden rounded-[18px] border border-[#cfdae8] bg-[#f2f6fb]'
-    : 'mx-auto flex h-full w-full max-w-[1720px] flex-col overflow-hidden rounded-[26px] border border-[#cfdae8] bg-[#f2f6fb] shadow-[0_28px_70px_rgba(10,24,42,0.32)]'
+    ? 'legal-document-workspace-page flex min-h-[calc(100vh-132px)] w-full flex-col overflow-hidden rounded-[28px] border border-[#dfe8f3] bg-[#f5f7fb]'
+    : 'mx-auto flex h-full w-full max-w-[1760px] flex-col overflow-hidden rounded-[30px] border border-[#dfe8f3] bg-[#f5f7fb] shadow-[0_28px_70px_rgba(10,24,42,0.24)]'
   const rootClassName = isPageMode
     ? 'w-full'
     : 'fixed inset-0 z-[95] bg-[#0b1422]/55 px-2 py-2 sm:px-4 sm:py-4'
   const contentClassName = isPageMode
-    ? 'min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-4 sm:px-5 sm:pb-6'
-    : 'min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3 sm:px-5 sm:pb-5 sm:pt-4'
-  const mainGridClassName = isPageMode
-    ? 'grid min-h-full items-start gap-4 lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)_360px]'
-    : 'grid min-h-full gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]'
-  const sidePanelClassName = isPageMode
-    ? 'flex min-h-[640px] flex-col gap-4 lg:order-none'
-    : 'space-y-4'
-  const actionAsideClassName = isPageMode
-    ? 'space-y-4 lg:col-span-2 2xl:col-span-1'
-    : 'space-y-4'
+    ? 'min-h-0 flex-1 overflow-y-auto px-4 pb-40 pt-5 sm:px-6 sm:pb-44 sm:pt-6'
+    : 'min-h-0 flex-1 overflow-y-auto px-4 pb-40 pt-4 sm:px-5 sm:pb-44 sm:pt-5'
+  const mainGridClassName = 'grid min-h-full items-start gap-6 xl:grid-cols-[280px_minmax(0,1fr)_360px] 2xl:grid-cols-[300px_minmax(0,1fr)_380px]'
 
   return (
-    <div className={rootClassName}>
-      <div className={shellClassName}>
-        <header className="border-b border-[#d7e1ed] bg-white px-4 py-3 sm:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              {isPageMode ? (
+    <>
+      <div className={rootClassName}>
+        <div className={shellClassName}>
+          <header className="border-b border-[#e5edf7] bg-white/95 px-4 py-4 backdrop-blur sm:px-6 sm:py-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
                 <button
                   type="button"
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d7e1ed] bg-white text-[#51677f] transition hover:bg-[#f7faff]"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] border border-[#d7e4f3] bg-white text-[#51677f] transition hover:bg-[#f7faff]"
                   onClick={onBack || onClose}
                   aria-label={backLabel}
                   title={backLabel}
                 >
-                  <ArrowLeft size={16} />
+                  <ArrowLeft size={18} />
                 </button>
-              ) : null}
-              <div className="min-w-0">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <h2 className="truncate text-[1.08rem] font-semibold text-[#142132] sm:text-[1.2rem]">
-                    {resolveDocumentLabel(packetType)}
-                  </h2>
-                  <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[0.68rem] font-semibold ${resolveWorkspaceStatusTone(statusState?.state || 'unknown')}`}>
-                    {headerStatusLabel}
-                  </span>
-                </div>
-                <p className="mt-0.5 truncate text-xs text-[#6c8198]">
-                  {transactionReference || 'Transaction reference unavailable'}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={handleWorkspacePrimaryAction}
-                disabled={loading || actionBusy}
-              >
-                {actionBusy ? 'Working…' : workspacePrimaryLabel}
-              </Button>
-              {!isPageMode ? (
-                <button
-                  type="button"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#d7e1ed] bg-white text-[#51677f] transition hover:bg-[#f7faff]"
-                  onClick={onClose}
-                  aria-label="Close workspace"
-                >
-                  <X size={16} />
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </header>
-
-        <div className={contentClassName}>
-          {actionProgressMessage ? (
-            <article className="mb-4 rounded-[14px] border border-[#d8e4ef] bg-[#f4f8fc] px-4 py-2 text-xs font-semibold text-[#35546c]">
-              {actionProgressMessage}
-            </article>
-          ) : null}
-          {actionFeedback ? (
-            <article className="mb-4 rounded-[14px] border border-[#cde8d6] bg-[#eef9f2] px-4 py-2 text-xs font-semibold text-[#2e7b4f]">
-              {actionFeedback}
-            </article>
-          ) : null}
-          {loadError ? (
-            <article className="mb-4 rounded-[16px] border border-[#f1d8d0] bg-[#fff5f3] px-4 py-3 text-sm text-[#973824]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-[220px] flex-1">
-                  {loadError.includes('\n') ? (
-                    <>
-                      <p className="font-semibold">{loadError.split('\n')[0]}</p>
-                      <div className="mt-2 space-y-1 text-xs">
-                        {loadError.split('\n').slice(1, -1).map((line) => (
-                          line.startsWith('- ')
-                            ? <p key={line} className="pl-4">• {line.slice(2)}</p>
-                            : <p key={line} className="pt-1 font-semibold">{line}</p>
-                        ))}
-                      </div>
-                      <p className="mt-2 text-xs font-semibold">{loadError.split('\n').at(-1)}</p>
-                    </>
-                  ) : (
-                    <span>{loadError}</span>
-                  )}
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    if (isMandatePacket && typeof onGenerate === 'function') {
-                      void resetFailedMandateAndRegenerate()
-                      return
-                    }
-                    void refreshWorkspaceData()
-                  }}
-                  disabled={loading || actionBusy}
-                >
-                  {isMandatePacket && typeof onGenerate === 'function' ? 'Reset & Regenerate' : 'Retry'}
-                </Button>
-              </div>
-            </article>
-          ) : null}
-          {!legalPermissions.canEditDraft ? (
-            <article className="mb-4 rounded-[14px] border border-[#e4ebf4] bg-[#f8fbff] px-4 py-2 text-xs font-semibold text-[#55708d]">
-              Read-only mode: your role can view lifecycle progress and signer status, but cannot modify legal drafts.
-            </article>
-          ) : null}
-
-          <section className="mb-4 rounded-[16px] border border-[#dbe5f0] bg-white px-4 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#6f839b]">Lifecycle Progress</p>
-                <p className="text-sm font-semibold text-[#1d3248]">Current: {headerStatusLabel}</p>
-                <p className="mt-0.5 text-xs text-[#6c8198]">{lifecycleCopy.current}</p>
-                <p className="mt-0.5 text-xs text-[#6c8198]">{lifecycleCopy.next}</p>
-              </div>
-              <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f5f9fd] px-3 py-1 text-xs font-semibold text-[#35546c]">
-                {lifecycleProgress}% complete
-              </span>
-            </div>
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#e8eff6]">
-              <div className="h-full rounded-full bg-[#35546c] transition-all duration-500" style={{ width: `${Math.max(6, lifecycleProgress)}%` }} />
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-[#7388a1] sm:grid-cols-7">
-              {lifecycleSteps.map((step) => (
-                <span
-                  key={step}
-                  className={`rounded-full border px-1.5 py-0.5 text-center ${
-                    lifecycleSteps.indexOf(step) <= lifecycleSteps.indexOf(displayLifecycleState)
-                      ? 'border-[#d4e2ee] bg-[#f3f8fd] text-[#35546c]'
-                      : 'border-[#e6edf5] bg-[#fafcff] text-[#8aa0b8]'
-                  }`}
-                >
-                  {formatLifecycleStepLabel(step)}
-                </span>
-              ))}
-            </div>
-          </section>
-
-          {isMandatePacket ? (
-            <section className="mb-4 rounded-[16px] border border-[#dbe5f0] bg-white px-4 py-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#6f839b]">Mandate Status</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${mandateStatusMeta.className}`}>
-                      {mandateStatusMeta.label}
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="truncate text-[1.7rem] font-semibold tracking-[-0.02em] text-[#102033]">
+                      {documentLabel}
+                    </h1>
+                    <span className="inline-flex items-center rounded-full border border-[#f6d9b6] bg-[#fff6ea] px-3 py-1 text-xs font-semibold text-[#b8741e]">
+                      {workspaceSummary.badge}
                     </span>
-                    <span className="text-xs text-[#6c8198]">{resolveSigningMethodLabel(signingMethod)}</span>
+                  </div>
+                  <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-6">
+                    <div>
+                      <p className="text-xs font-semibold text-[#7b8ea4]">Seller</p>
+                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.seller}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-[#7b8ea4]">Property</p>
+                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.property}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-[#7b8ea4]">Transaction</p>
+                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.transaction}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-[#7b8ea4]">Stage</p>
+                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.stage}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-[#7b8ea4]">Status</p>
+                      <p className="mt-1 font-medium text-[#102033]">{workspaceSummary.status}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-[#7b8ea4]">Saved</p>
+                      <p className="mt-1 inline-flex items-center gap-2 font-medium text-[#20b26b]">
+                        <Check size={14} />
+                        {workspaceSummary.savedLabel}
+                      </p>
+                    </div>
                   </div>
                 </div>
-                <div className="min-w-[220px] rounded-[12px] border border-[#e1e9f2] bg-[#f8fbff] px-3 py-2 text-xs text-[#536b83]">
-                  <p><span className="font-semibold text-[#243a51]">Seller onboarding:</span> {normalizeText(sourceContext.sellerOnboardingStatus || sourceContext.seller_onboarding_status || mandateDataSnapshot?.sourceContext?.onboardingStatus) || 'Unknown'}</p>
-                  <p><span className="font-semibold text-[#243a51]">Generated PDF:</span> {generatedPreviewPath || generatedPreviewUrl ? 'Available' : 'Not ready'}</p>
-                  <p><span className="font-semibold text-[#243a51]">Signed PDF:</span> {signedPreviewPath || signedPreviewUrl ? 'Stored' : 'Not uploaded yet'}</p>
-                </div>
               </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <article className="rounded-[12px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-2 text-xs text-[#536b83]">
-                  <p className="font-semibold text-[#243a51]">Last Action</p>
-                  <p className="mt-1">{lastMandateEvent ? resolveEventMessage(lastMandateEvent) : 'No mandate activity has been captured yet.'}</p>
-                  <p className="mt-1 text-[#7187a0]">{lastMandateEvent ? formatDateTime(lastMandateEvent.created_at) : '—'}</p>
-                </article>
-                <article className="rounded-[12px] border border-[#e1e9f2] bg-[#fbfdff] px-3 py-2 text-xs text-[#536b83]">
-                  <p className="font-semibold text-[#243a51]">Next Recommended Action</p>
-                  <p className="mt-1">{mandateNextAction}</p>
-                </article>
-              </div>
-            </section>
-          ) : null}
 
-          {isFullySignedLifecycle || hasFinalArtifact ? (
-            <section className="mb-4 rounded-[16px] border border-[#cde8d6] bg-[#eef9f2] px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#2e7b4f]">Finalized Legal Record</p>
-                  <p className="mt-1 text-sm font-semibold text-[#20563b]">
-                    All required signers completed this document.
-                  </p>
-                  <p className="mt-1 text-xs text-[#2c6b4a]">
-                    Editing is permanently disabled. This signed version is immutable and archived.
-                  </p>
-                </div>
-                <div className="rounded-[12px] border border-[#bfe0cb] bg-white px-3 py-2 text-xs text-[#2c6b4a]">
-                  <p>Signer completion: {signerProgressMeta.signedRequired}/{signerProgressMeta.totalRequired || 0}</p>
-                  <p>Finalized: {formatDateTime(statusState?.packet?.completed_at || latestVersion?.finalised_at)}</p>
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {signedPreviewUrl ? (
-                  <a
-                    href={signedPreviewUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center rounded-full border border-[#bfe0cb] bg-white px-3 py-1 text-xs font-semibold text-[#1f5c3f]"
+              <div className="flex items-start gap-2 self-start">
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setHeaderMenuOpen((current) => !current)}
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-[#d7e4f3] bg-white text-[#51677f] transition hover:bg-[#f7faff]"
+                    aria-label="Workspace actions"
                   >
-                    View Final Signed PDF
-                  </a>
-                ) : null}
-                {signedPreviewUrl ? (
-                  <a
-                    href={signedPreviewUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    download={normalizeText(latestVersion?.final_signed_file_name || 'signed-mandate.pdf')}
-                    className="inline-flex items-center rounded-full border border-[#bfe0cb] bg-white px-3 py-1 text-xs font-semibold text-[#1f5c3f]"
-                  >
-                    Download Signed Mandate
-                  </a>
-                ) : null}
-                {!signedPreviewUrl && canFinalizeSignedRecord && legalPermissions.canFinalize ? (
-                  <Button type="button" size="sm" variant="secondary" onClick={() => runReviewAction('finalize_signed')} disabled={actionBusy || finalizeBusy}>
-                    {finalizeBusy ? 'Generating…' : 'Generate Signed PDF'}
-                  </Button>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-
-          <div className={mainGridClassName}>
-            <div className={sidePanelClassName}>
-              <DocumentOutlinePanel
-                sections={editableSections}
-                canAddCustomSection={editableAllowed && legalPermissions.canEditDraft}
-                customSectionLabel={customSectionLabel}
-                onCustomSectionLabelChange={setCustomSectionLabel}
-                onAddCustomSection={handleAddCustomSection}
-                onRemoveSection={handleRemoveSection}
-              />
-              <MergeChecklistPanel
-                packetType={packetType}
-                placeholders={latestVersion?.placeholders_resolved_json || {}}
-              />
-              {(!isMandatePacket || signingMethod === 'digital') ? (
-                <SignerChecklistPanel packetType={packetType} signers={statusState?.signingSummary?.signers} statusState={statusState?.state} mandateSpouseRequired={mandateSpouseRequired} />
-              ) : null}
-            </div>
-
-            <section className="min-h-[640px] rounded-[20px] border border-[#dce6f2] bg-white p-4 sm:p-5">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-base font-semibold text-[#1a2f45]">
-                  {editableAllowed ? 'Document Editing + Preview' : 'Document Preview'}
-                </h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-[#7a8ea5]">Mode: {effectiveMode}</span>
-                  {editableAllowed ? (
-                    <div className="inline-flex items-center rounded-full border border-[#dbe5f0] bg-[#f7faff] p-1">
+                    <MoreHorizontal size={18} />
+                  </button>
+                  {headerMenuOpen ? (
+                    <div className="absolute right-0 top-[calc(100%+10px)] z-20 min-w-[220px] rounded-[20px] border border-[#e6edf7] bg-white p-2 shadow-[0_18px_48px_rgba(16,32,51,0.14)]">
                       <button
                         type="button"
-                        className={`rounded-full px-3 py-1 text-xs font-semibold transition ${centerTab === 'editor' ? 'bg-white text-[#1e3349]' : 'text-[#6f839b]'}`}
-                        onClick={() => setCenterTab('editor')}
+                        onClick={() => {
+                          setHeaderMenuOpen(false)
+                          setMergeDetailsOpen(true)
+                        }}
+                        className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
                       >
-                        Editor
+                        Merge field details
+                        <ChevronRight size={14} className="text-[#8a99ad]" />
                       </button>
+                      {generatedPreviewUrl && typeof onView === 'function' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHeaderMenuOpen(false)
+                            void onView?.()
+                          }}
+                          className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
+                        >
+                          Open draft preview
+                          <ChevronRight size={14} className="text-[#8a99ad]" />
+                        </button>
+                      ) : null}
+                      {signedPreviewUrl && typeof onViewSigned === 'function' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHeaderMenuOpen(false)
+                            void onViewSigned?.()
+                          }}
+                          className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
+                        >
+                          Open signed copy
+                          <ChevronRight size={14} className="text-[#8a99ad]" />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
-                        className={`rounded-full px-3 py-1 text-xs font-semibold transition ${centerTab === 'preview' ? 'bg-white text-[#1e3349]' : 'text-[#6f839b]'}`}
-                        onClick={() => setCenterTab('preview')}
+                        onClick={() => {
+                          setHeaderMenuOpen(false)
+                          void refreshWorkspaceData()
+                        }}
+                        className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
                       >
-                        Preview
+                        Refresh workspace
+                        <ChevronRight size={14} className="text-[#8a99ad]" />
                       </button>
                     </div>
                   ) : null}
                 </div>
+                {!isPageMode ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] border border-[#d7e4f3] bg-white text-[#51677f] transition hover:bg-[#f7faff]"
+                    onClick={onClose}
+                    aria-label="Close workspace"
+                  >
+                    <X size={18} />
+                  </button>
+                ) : null}
               </div>
+            </div>
+          </header>
 
-              {loading ? (
-                <div className="flex min-h-[380px] items-center justify-center rounded-[16px] border border-dashed border-[#d8e2ef] bg-[#f9fbff] text-sm text-[#6f839b]">
-                  Loading packet preview...
-                </div>
-              ) : null}
-
-              {!loading && !statusState?.packet?.id ? (
-                <div className="flex min-h-[380px] flex-col items-center justify-center rounded-[16px] border border-dashed border-[#d8e2ef] bg-[#f9fbff] px-6 text-center">
-                  <FileText size={22} className="text-[#7287a0]" />
-                  <p className="mt-3 text-sm font-semibold text-[#1f3349]">Generate the first draft to preview this document.</p>
-                  <p className="mt-1 text-sm text-[#6a8098]">Bridge will create a packet draft and load the document lifecycle here.</p>
-                </div>
-              ) : null}
-
-              {!loading && editableAllowed && centerTab === 'editor' && statusState?.packet?.id ? (
-                <>
-                  {!editableSections.length ? (
-                    <div className="flex min-h-[380px] flex-col items-center justify-center rounded-[16px] border border-dashed border-[#d8e2ef] bg-[#f9fbff] px-6 text-center">
-                      <AlertCircle size={22} className="text-[#9b6b1c]" />
-                      <p className="mt-3 text-sm font-semibold text-[#1f3349]">No editable draft sections are available yet.</p>
-                      <p className="mt-1 text-sm text-[#6a8098]">Generate a draft first, then reopen this workspace to edit clauses.</p>
-                    </div>
-                  ) : (
-                    <DraftEditorPanel
-                      sections={editableSections}
-                      onChangeSection={handleChangeSection}
-                      onInsertToken={handleInsertToken}
-                      validationByKey={editableSectionsValidation}
-                      collapsedSectionKeys={collapsedSectionKeys}
-                      onToggleSection={handleToggleSection}
-                    />
-                  )}
-                </>
-              ) : null}
-
-              {!loading && (!editableAllowed || centerTab === 'preview') && statusState?.packet?.id && !generatedPreviewUrl && !signedPreviewUrl && !editablePreviewHtml ? (
-                <div className="flex min-h-[380px] flex-col items-center justify-center rounded-[16px] border border-dashed border-[#d8e2ef] bg-[#f9fbff] px-6 text-center">
-                  <AlertCircle size={22} className="text-[#9b6b1c]" />
-                  <p className="mt-3 text-sm font-semibold text-[#1f3349]">
-                    {latestVersion?.id
-                      ? 'Draft exists, but preview is not available yet.'
-                      : 'Bridge could not generate this document. Check missing fields or template setup.'}
-                  </p>
-                  <p className="mt-1 text-sm text-[#6a8098]">Preview and online editing controls will attach to this surface in upcoming phases.</p>
-                </div>
-              ) : null}
-
-              {!loading && (!editableAllowed || centerTab === 'preview') && (generatedPreviewUrl || signedPreviewUrl || editablePreviewHtml) ? (
-                <div className="space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    {generatedPreviewUrl ? (
-                      <a href={generatedPreviewUrl} target="_blank" rel="noreferrer" className="inline-flex items-center rounded-full border border-[#d8e3ef] bg-white px-3 py-1 text-xs font-semibold text-[#264b74]">
-                        Open Draft Preview
-                      </a>
-                    ) : null}
-                    {signedPreviewUrl ? (
-                      <a href={signedPreviewUrl} target="_blank" rel="noreferrer" className="inline-flex items-center rounded-full border border-[#d8e3ef] bg-white px-3 py-1 text-xs font-semibold text-[#264b74]">
-                        Open Signed Copy
-                      </a>
-                    ) : null}
-                    {editablePreviewHtml ? (
-                      <span className="inline-flex items-center rounded-full border border-[#d8e3ef] bg-[#f5f9ff] px-3 py-1 text-xs font-semibold text-[#35546c]">
-                        Live draft preview
-                      </span>
-                    ) : null}
-                  </div>
-                  <iframe
-                    title={`${resolveDocumentLabel(packetType)} preview`}
-                    src={signedPreviewUrl || generatedPreviewUrl || undefined}
-                    srcDoc={!signedPreviewUrl && !generatedPreviewUrl ? editablePreviewHtml : undefined}
-                    className="min-h-[560px] w-full rounded-[14px] border border-[#e0e8f3] bg-white"
-                  />
-                  <div className="rounded-[12px] border border-dashed border-[#dbe5f0] bg-[#f9fbff] px-3 py-2 text-xs text-[#6c8198]">
-                    Preview syncs with saved draft content. Final DOCX/PDF rendering remains controlled by packet generation/signing flow.
-                  </div>
-                </div>
-              ) : null}
-            </section>
-
-            <aside className={actionAsideClassName}>
-              {isMandatePacket ? (
-                <SigningMethodPanel
-                  method={signingMethod}
-                  canChange={canChangeSigningMethod}
-                  lockedReason={signingMethodLockedReason}
-                  onSelect={handleSelectSigningMethod}
-                  busy={actionBusy || loading}
-                />
-              ) : null}
-
-              {isMandatePacket && signingMethod === 'physical' ? (
-                <PhysicalMandatePanel
-                  file={manualSignedFile}
-                  notes={manualSignedNotes}
-                  confirmed={manualSignedConfirmed}
-                  allPartiesSigned={manualSignedAllPartiesSigned}
-                  uploaded={manualSignedUploaded || isFullySignedLifecycle}
-                  uploadedAt={manualSignedUploadedAt || statusState?.packet?.completed_at || latestVersion?.finalised_at}
-                  signedUrl={signedPreviewUrl}
-                  busy={manualUploadBusy || actionBusy || loading}
-                  canFinalize={legalPermissions.canFinalize && ['approved', 'locked'].includes(normalizedLifecycleState)}
-                  onDownload={handlePhysicalDownload}
-                  onFileChange={setManualSignedFile}
-                  onNotesChange={setManualSignedNotes}
-                  onConfirmedChange={setManualSignedConfirmed}
-                  onAllPartiesSignedChange={setManualSignedAllPartiesSigned}
-                  onUpload={handleManualSignedUpload}
-                />
-              ) : null}
-
-              {(!isMandatePacket || signingMethod === 'digital') ? (
-                <SignerPreparationPanel
-                  packetType={packetType}
-                  lifecycleState={normalizedLifecycleState}
-                  signingStatus={statusState?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus}
-                  canManageSigners={legalPermissions.canManageSigners}
-                  roster={signerRoster}
-                  draftByRole={signerDraftByRole}
-                  onDraftChange={handleSignerDraftChange}
-                  validation={signerValidation}
-                  onPrepare={handlePrepareSignerFields}
-                  onSave={handleSaveSignerDetails}
-                  onSend={() => runReviewAction('send_signature')}
-                  onResend={(role) => runReviewAction('resend_signature', { targetSignerRole: role })}
-                  onRefresh={handleRefreshSignerStatus}
-                  busy={actionBusy || signerBusy || loading}
-                />
-              ) : null}
-
-              <section className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-[#1a2f45]">Version History</h4>
-                  <span className="rounded-full border border-[#e1e9f2] bg-[#f8fbff] px-2 py-0.5 text-[0.65rem] font-semibold text-[#6c8198]">
-                    {Array.isArray(statusState?.versions) ? statusState.versions.length : 0}
-                  </span>
-                </div>
-                <div className="mt-2 max-h-[132px] space-y-1.5 overflow-y-auto pr-1">
-                  {Array.isArray(statusState?.versions) && statusState.versions.length ? (
-                    statusState.versions.map((version) => (
-                      <article key={version.id} className="rounded-[9px] border border-[#e4ebf4] bg-[#fbfdff] px-2.5 py-1.5 text-xs">
-                        {(() => {
-                          const provenance = version?.validation_summary_json?.render_provenance || version?.validation_summary_json?.renderProvenance || {}
-                          const frozen = version?.validation_summary_json?.frozen_render_snapshot || {}
-                          return (
-                            <>
-                        <p className="font-semibold text-[#20344b]">Draft v{version.version_number || '—'}</p>
-                        <p className="mt-0.5 text-[#60758d]">
-                          {(normalizeText(version?.validation_summary_json?.review_state) || normalizeText(version.render_status) || 'draft').replace(/_/g, ' ')}
-                          {normalizeText(version?.generated_by) ? ` • ${normalizeText(version.generated_by).slice(0, 8)}…` : ''}
-                        </p>
-                        {normalizeText(provenance.renderMode || frozen.renderMode) ? (
-                          <p className="mt-0.5 text-[#7388a1]">
-                            {(provenance.renderMode || frozen.renderMode).replace(/_/g, ' ')}
-                            {normalizeText(frozen.contentFingerprint || provenance.contentFingerprint)
-                              ? ` • ${normalizeText(frozen.contentFingerprint || provenance.contentFingerprint).slice(0, 18)}`
-                              : ''}
-                          </p>
-                        ) : null}
-                        <p className="mt-0.5 text-[#7388a1]">{formatDateTime(version.updated_at || version.created_at)}</p>
-                            </>
-                          )
-                        })()}
-                      </article>
-                    ))
-                  ) : (
-                    <p className="rounded-[10px] border border-dashed border-[#dbe5f0] bg-[#f9fbff] px-3 py-2 text-xs text-[#6c8198]">
-                      No versions yet.
-                    </p>
-                  )}
-                </div>
-                <div className="mt-2 border-t border-[#e4ebf4] pt-2">
-                  <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7187a0]">Lifecycle Events</p>
-                  <div className="mt-2 max-h-[116px] space-y-1.5 overflow-y-auto pr-1">
-                    {eventHistory.length ? (
-                      eventHistory.map((event) => (
-                        <article key={`vh-${event.id}`} className="rounded-[9px] border border-[#e4ebf4] bg-[#fbfdff] px-2.5 py-1.5 text-xs">
-                          <p className="font-semibold text-[#20344b]">{resolveEventMessage(event)}</p>
-                          <p className="mt-0.5 text-[#60758d]">{resolveEventActor(event)}</p>
-                          <p className="mt-0.5 text-[#7388a1]">{formatDateTime(event?.created_at)}</p>
-                        </article>
-                      ))
+          <div className={contentClassName}>
+            {actionProgressMessage ? (
+              <article className="mb-5 rounded-[18px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm font-semibold text-[#35546c]">
+                {actionProgressMessage}
+              </article>
+            ) : null}
+            {actionFeedback ? (
+              <article className="mb-5 rounded-[18px] border border-[#d8f0e3] bg-[#effaf4] px-4 py-3 text-sm font-semibold text-[#23784d]">
+                {actionFeedback}
+              </article>
+            ) : null}
+            {loadError ? (
+              <article className="mb-5 rounded-[20px] border border-[#f6ddd7] bg-[#fff6f3] px-4 py-4 text-sm text-[#973824]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-[220px] flex-1">
+                    {loadError.includes('\n') ? (
+                      <>
+                        <p className="font-semibold">{loadError.split('\n')[0]}</p>
+                        <div className="mt-2 space-y-1 text-xs">
+                          {loadError.split('\n').slice(1, -1).map((line) => (
+                            line.startsWith('- ')
+                              ? <p key={line} className="pl-4">• {line.slice(2)}</p>
+                              : <p key={line} className="pt-1 font-semibold">{line}</p>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-xs font-semibold">{loadError.split('\n').at(-1)}</p>
+                      </>
                     ) : (
-                      <p className="rounded-[10px] border border-dashed border-[#dbe5f0] bg-[#f9fbff] px-3 py-2 text-xs text-[#6c8198]">
-                        No lifecycle events captured yet.
-                      </p>
+                      <span>{loadError}</span>
                     )}
                   </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      if (isMandatePacket && typeof onGenerate === 'function') {
+                        void resetFailedMandateAndRegenerate()
+                        return
+                      }
+                      void refreshWorkspaceData()
+                    }}
+                    disabled={loading || actionBusy}
+                  >
+                    {isMandatePacket && typeof onGenerate === 'function' ? 'Reset & Regenerate' : 'Retry'}
+                  </Button>
+                </div>
+              </article>
+            ) : null}
+            {!legalPermissions.canEditDraft ? (
+              <article className="mb-5 rounded-[18px] border border-[#e4ebf4] bg-[#f8fbff] px-4 py-3 text-sm font-semibold text-[#55708d]">
+                Read-only mode: your role can view lifecycle progress and signer status, but cannot modify legal drafts.
+              </article>
+            ) : null}
+
+            {isFullySignedLifecycle || hasFinalArtifact ? (
+              <section className="mb-6 rounded-[24px] border border-[#cfe8d9] bg-[#effaf4] px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-[#20b26b]">Finalized Legal Record</p>
+                    <p className="mt-1 text-base font-semibold text-[#1d5b3c]">All required signers completed this document.</p>
+                    <p className="mt-1 text-sm text-[#347554]">Editing is locked. This signed version is immutable and archived.</p>
+                  </div>
+                  <div className="rounded-[18px] border border-[#c8e5d4] bg-white px-4 py-3 text-sm text-[#1d5b3c]">
+                    <p>Signer completion: {signerProgressMeta.signedRequired}/{signerProgressMeta.totalRequired || 0}</p>
+                    <p>Finalized: {formatDateTime(statusState?.packet?.completed_at || latestVersion?.finalised_at)}</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {signedPreviewUrl ? (
+                    <a
+                      href={signedPreviewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center rounded-full border border-[#c8e5d4] bg-white px-4 py-2 text-sm font-semibold text-[#1d5b3c]"
+                    >
+                      View Final Signed PDF
+                    </a>
+                  ) : null}
+                  {signedPreviewUrl ? (
+                    <a
+                      href={signedPreviewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      download={normalizeText(latestVersion?.final_signed_file_name || 'signed-mandate.pdf')}
+                      className="inline-flex items-center rounded-full border border-[#c8e5d4] bg-white px-4 py-2 text-sm font-semibold text-[#1d5b3c]"
+                    >
+                      Download Signed Mandate
+                    </a>
+                  ) : null}
+                  {!signedPreviewUrl && canFinalizeSignedRecord && legalPermissions.canFinalize ? (
+                    <Button type="button" size="sm" variant="secondary" onClick={() => runReviewAction('finalize_signed')} disabled={actionBusy || finalizeBusy}>
+                      {finalizeBusy ? 'Generating…' : 'Generate Signed PDF'}
+                    </Button>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
+            <div className={mainGridClassName}>
+              <div className="space-y-5">
+                <DocumentOutlinePanel
+                  sections={editableSections}
+                  activeSectionKey={activeSectionKey}
+                  onSelectSection={handleSelectOutlineSection}
+                  canAddCustomSection={editableAllowed && legalPermissions.canEditDraft}
+                  customSectionLabel={customSectionLabel}
+                  onCustomSectionLabelChange={setCustomSectionLabel}
+                  onAddCustomSection={handleAddCustomSection}
+                  onRemoveSection={handleRemoveSection}
+                  validationByKey={editableSectionsValidation}
+                  editorAvailable={editableAllowed}
+                  onSwitchToEditor={() => setCenterTab('editor')}
+                />
+                <MergeChecklistPanel
+                  packetType={packetType}
+                  placeholders={latestVersion?.placeholders_resolved_json || {}}
+                  compact
+                  onOpen={() => setMergeDetailsOpen(true)}
+                />
+              </div>
+
+              <section className="min-h-[760px] rounded-[28px] border border-[#e5edf7] bg-white p-5 shadow-[0_18px_48px_rgba(16,32,51,0.06)] sm:p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-[1.15rem] font-semibold text-[#102033]">
+                      {editableAllowed ? 'Document Editor' : 'Document Preview'}
+                    </h3>
+                    <p className="mt-1 text-sm text-[#6b7c93]">Preview stays tied to the existing packet generation and signing pipeline.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {editableAllowed ? (
+                      <div className="inline-flex items-center rounded-full border border-[#dbe5f0] bg-[#f7faff] p-1">
+                        <button
+                          type="button"
+                          className={`rounded-full px-4 py-2 text-xs font-semibold transition ${centerTab === 'editor' ? 'bg-white text-[#102033] shadow-[0_8px_18px_rgba(16,32,51,0.08)]' : 'text-[#6f839b]'}`}
+                          onClick={() => setCenterTab('editor')}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className={`rounded-full px-4 py-2 text-xs font-semibold transition ${centerTab === 'preview' ? 'bg-white text-[#0a66ff] shadow-[0_8px_18px_rgba(16,32,51,0.08)]' : 'text-[#6f839b]'}`}
+                          onClick={handleFocusPreview}
+                        >
+                          Preview
+                        </button>
+                      </div>
+                    ) : null}
+                    {generatedPreviewUrl && typeof onView === 'function' ? (
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void onView?.()}>
+                        Open Draft
+                      </Button>
+                    ) : null}
+                    {signedPreviewUrl && typeof onViewSigned === 'function' ? (
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void onViewSigned?.()}>
+                        Signed Copy
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-[28px] border border-[#edf3fa] bg-[#f5f7fb] p-4 sm:p-6">
+                  {loading ? (
+                    <div className="flex min-h-[620px] items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white text-sm text-[#6f839b]">
+                      Loading packet preview...
+                    </div>
+                  ) : null}
+
+                  {!loading && !statusState?.packet?.id ? (
+                    <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
+                      <FileText size={24} className="text-[#7287a0]" />
+                      <p className="mt-3 text-base font-semibold text-[#102033]">Generate the first draft to preview this document.</p>
+                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Bridge will create a packet draft and load the document lifecycle here without changing your existing data flow.</p>
+                    </div>
+                  ) : null}
+
+                  {!loading && editableAllowed && centerTab === 'editor' && statusState?.packet?.id ? (
+                    !editableSections.length ? (
+                      <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
+                        <AlertCircle size={24} className="text-[#9b6b1c]" />
+                        <p className="mt-3 text-base font-semibold text-[#102033]">No editable draft sections are available yet.</p>
+                        <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Generate a draft first, then reopen this workspace to edit clauses.</p>
+                      </div>
+                    ) : (
+                      <DraftEditorPanel
+                        sections={editableSections}
+                        onChangeSection={handleChangeSection}
+                        onInsertToken={handleInsertToken}
+                        validationByKey={editableSectionsValidation}
+                        collapsedSectionKeys={collapsedSectionKeys}
+                        onToggleSection={handleToggleSection}
+                      />
+                    )
+                  ) : null}
+
+                  {!loading && (!editableAllowed || centerTab === 'preview') && statusState?.packet?.id && !hasPreviewSurface ? (
+                    <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
+                      <AlertCircle size={24} className="text-[#9b6b1c]" />
+                      <p className="mt-3 text-base font-semibold text-[#102033]">
+                        {latestVersion?.id
+                          ? 'Draft exists, but preview is not available yet.'
+                          : 'Bridge could not generate this document. Check missing fields or template setup.'}
+                      </p>
+                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Preview and final render controls still rely on the existing packet generation pipeline.</p>
+                    </div>
+                  ) : null}
+
+                  {!loading && (!editableAllowed || centerTab === 'preview') && hasPreviewSurface ? (
+                    <div className="space-y-4">
+                      <div className="mx-auto max-w-[900px] rounded-[28px] bg-white p-4 shadow-[0_18px_48px_rgba(16,32,51,0.09)] sm:p-6">
+                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold text-[#7b8ea4]">Preview</p>
+                            <p className="mt-1 text-sm font-medium text-[#102033]">
+                              {signedPreviewUrl ? 'Signed document sheet' : generatedPreviewUrl ? 'Generated draft sheet' : 'Live draft preview sheet'}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-[#e2eaf5] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#5d7691]">
+                            {signedPreviewUrl ? 'Signed copy' : generatedPreviewUrl ? 'PDF ready' : 'Live preview'}
+                          </span>
+                        </div>
+                        <iframe
+                          title={`${documentLabel} preview`}
+                          src={signedPreviewUrl || generatedPreviewUrl || undefined}
+                          srcDoc={!signedPreviewUrl && !generatedPreviewUrl ? editablePreviewHtml : undefined}
+                          className="min-h-[720px] w-full rounded-[22px] border border-[#eef3f9] bg-white"
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-[#e5edf7] bg-white px-4 py-3">
+                        <div>
+                          <p className="text-sm font-semibold text-[#102033]">{signedPreviewUrl ? 'Signed copy available' : generatedPreviewUrl ? 'Draft PDF available' : 'Live draft preview'}</p>
+                          <p className="mt-1 text-xs text-[#6b7c93]">Preview syncs with saved draft content while final PDF/DOCX generation stays on the existing workflow.</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {generatedPreviewUrl && typeof onView === 'function' ? (
+                            <Button type="button" size="sm" variant="secondary" onClick={() => void onView?.()}>
+                              <Eye size={14} />
+                              Open Draft
+                            </Button>
+                          ) : null}
+                          {previewDownloadUrl ? (
+                            <a
+                              href={previewDownloadUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              download={previewDownloadName}
+                              className="inline-flex h-10 items-center justify-center gap-2 rounded-control border border-borderDefault bg-surface px-4 text-secondary font-semibold shadow-surface transition-all duration-200 hover:-translate-y-0.5 hover:border-borderStrong hover:bg-mutedBg"
+                            >
+                              <Download size={14} />
+                              Download PDF
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </section>
 
-              <section className="rounded-[14px] border border-[#dce6f2] bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-[#1a2f45]">Audit Events</h4>
-                  <span className="rounded-full border border-[#e1e9f2] bg-[#f8fbff] px-2 py-0.5 text-[0.65rem] font-semibold text-[#6c8198]">
-                    {eventHistory.length}
-                  </span>
+              <aside className="space-y-5">
+                {isMandatePacket ? (
+                  <SigningMethodPanel
+                    method={signingMethod}
+                    canChange={canChangeSigningMethod}
+                    lockedReason={signingMethodLockedReason}
+                    onSelect={handleSelectSigningMethod}
+                    busy={actionBusy || loading}
+                  />
+                ) : null}
+
+                {isMandatePacket && signingMethod === 'physical' ? (
+                  <PhysicalMandatePanel
+                    file={manualSignedFile}
+                    notes={manualSignedNotes}
+                    confirmed={manualSignedConfirmed}
+                    allPartiesSigned={manualSignedAllPartiesSigned}
+                    uploaded={manualSignedUploaded || isFullySignedLifecycle}
+                    uploadedAt={manualSignedUploadedAt || statusState?.packet?.completed_at || latestVersion?.finalised_at}
+                    signedUrl={signedPreviewUrl}
+                    busy={manualUploadBusy || actionBusy || loading}
+                    canFinalize={legalPermissions.canFinalize && ['approved', 'locked'].includes(normalizedLifecycleState)}
+                    onDownload={handlePhysicalDownload}
+                    onFileChange={setManualSignedFile}
+                    onNotesChange={setManualSignedNotes}
+                    onConfirmedChange={setManualSignedConfirmed}
+                    onAllPartiesSignedChange={setManualSignedAllPartiesSigned}
+                    onUpload={handleManualSignedUpload}
+                  />
+                ) : null}
+
+                {(!isMandatePacket || signingMethod === 'digital') ? (
+                  <SignerPreparationPanel
+                    packetType={packetType}
+                    lifecycleState={normalizedLifecycleState}
+                    signingStatus={statusState?.signingStatus || sourceContext.signing_status || sourceContext.signingStatus || sourceContext.mandateStatus}
+                    canManageSigners={legalPermissions.canManageSigners}
+                    roster={signerRoster}
+                    draftByRole={signerDraftByRole}
+                    onDraftChange={handleSignerDraftChange}
+                    validation={signerValidation}
+                    onPrepare={handlePrepareSignerFields}
+                    onSave={handleSaveSignerDetails}
+                    onSend={() => runReviewAction('send_signature')}
+                    onResend={(role) => runReviewAction('resend_signature', { targetSignerRole: role })}
+                    onRefresh={handleRefreshSignerStatus}
+                    busy={actionBusy || signerBusy || loading}
+                  />
+                ) : null}
+
+                <ActivityPanel
+                  activeTab={activityTab}
+                  onTabChange={setActivityTab}
+                  versions={statusState?.versions || []}
+                  events={eventHistory}
+                  templateLabel={normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot)}
+                  templateKey={normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot)}
+                  templateStoragePath={normalizeText(templateDetail?.template_storage_path)}
+                />
+              </aside>
+            </div>
+
+            <div className="sticky bottom-4 z-10 mt-6 rounded-[28px] border border-[#e5edf7] bg-white/95 p-4 shadow-[0_20px_60px_rgba(16,32,51,0.12)] backdrop-blur sm:p-5">
+              <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_auto] xl:items-center">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-[6px] border-[#d9efe4] bg-white text-[1.35rem] font-semibold text-[#20b26b]">
+                    {documentHealthPercent}%
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-[#102033]">Document Health</p>
+                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                        documentHealthPercent >= 85 ? 'border-[#d8f0e3] bg-[#effaf4] text-[#20b26b]' : 'border-[#f7debb] bg-[#fff8ed] text-[#b57a1d]'
+                      }`}>
+                        {documentHealthLabel}
+                      </span>
+                    </div>
+                    <div className="mt-2 space-y-1.5">
+                      {documentHealthItems.map((item) => (
+                        <p key={item.key} className={`flex items-center gap-2 text-sm ${item.complete ? 'text-[#35546c]' : 'text-[#8a6a1d]'}`}>
+                          {item.complete ? <Check size={14} className="text-[#20b26b]" /> : <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#f5a524]" />}
+                          {item.label} {item.complete ? 'complete' : 'needs attention'}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-2 max-h-[148px] space-y-1.5 overflow-y-auto pr-1">
-                  {eventHistory.length ? (
-                    eventHistory.map((event) => (
-                      <article key={event.id} className="rounded-[9px] border border-[#e4ebf4] bg-[#fbfdff] px-2.5 py-1.5 text-xs">
-                        <p className="font-semibold text-[#20344b]">{resolveEventMessage(event)}</p>
-                        <p className="mt-0.5 text-[#60758d]">{resolveEventActor(event)}</p>
-                        <p className="mt-0.5 text-[#7388a1]">{formatDateTime(event?.created_at)}</p>
-                      </article>
-                    ))
-                  ) : (
-                    <p className="rounded-[10px] border border-dashed border-[#dbe5f0] bg-[#f9fbff] px-3 py-2 text-xs text-[#6c8198]">
-                      No audit events recorded yet.
+
+                <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)]">
+                  <div className="rounded-[20px] border border-[#edf3fa] bg-[#f8fbff] px-4 py-3">
+                    <p className="text-xs font-semibold text-[#8a6a1d]">{mergeUnresolvedCount} field{mergeUnresolvedCount === 1 ? '' : 's'} missing</p>
+                    <button
+                      type="button"
+                      onClick={() => setMergeDetailsOpen(true)}
+                      className="mt-2 text-sm font-semibold text-[#0a66ff]"
+                    >
+                      View details
+                    </button>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-[#7b8ea4]">Next step</p>
+                    <p className="mt-1 text-[1.1rem] font-semibold text-[#102033]">{workspacePrimaryLabel}</p>
+                    <p className="mt-1 text-sm text-[#6b7c93]">
+                      {firstNonEmptyText(mandateNextAction, lifecycleCopy.next, lifecycleCopy.current, 'Continue preparing the legal document workspace.')}
                     </p>
-                  )}
+                  </div>
                 </div>
-              </section>
 
-              <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
-                <h4 className="text-sm font-semibold text-[#1a2f45]">Template</h4>
-                <div className="mt-3 space-y-1 text-xs text-[#5f748c]">
-                  <p>Template: {normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot) || 'Not linked'}</p>
-                  <p>Key: {normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot) || '—'}</p>
-                  <p>Storage path: {normalizeText(templateDetail?.template_storage_path) || 'Missing'}</p>
+                <div className="relative flex flex-wrap gap-2 xl:justify-end">
+                  <Button type="button" size="md" onClick={handleWorkspacePrimaryAction} disabled={loading || actionBusy}>
+                    {actionBusy ? 'Working…' : workspacePrimaryLabel}
+                  </Button>
+                  <Button type="button" size="md" variant="secondary" onClick={handleFocusPreview} disabled={loading || !statusState?.packet?.id}>
+                    <Eye size={15} />
+                    Preview
+                  </Button>
+                  <Button
+                    type="button"
+                    size="md"
+                    variant="secondary"
+                    onClick={() => void runReviewAction('send_signature')}
+                    disabled={loading || actionBusy || signerBusy || !canSendForSignatureAction}
+                  >
+                    Send for Signature
+                  </Button>
+                  <div className="relative">
+                    <Button
+                      type="button"
+                      size="md"
+                      variant="secondary"
+                      onClick={() => setBottomActionMenuOpen((current) => !current)}
+                    >
+                      More
+                      <ChevronDown size={15} />
+                    </Button>
+                    {bottomActionMenuOpen ? (
+                      <div className="absolute bottom-[calc(100%+10px)] right-0 z-20 min-w-[220px] rounded-[20px] border border-[#e6edf7] bg-white p-2 shadow-[0_18px_48px_rgba(16,32,51,0.14)]">
+                        {previewDownloadUrl ? (
+                          <a
+                            href={previewDownloadUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            download={previewDownloadName}
+                            className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
+                            onClick={() => setBottomActionMenuOpen(false)}
+                          >
+                            Download PDF
+                            <ChevronRight size={14} className="text-[#8a99ad]" />
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBottomActionMenuOpen(false)
+                            setMergeDetailsOpen(true)
+                          }}
+                          className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
+                        >
+                          Merge field details
+                          <ChevronRight size={14} className="text-[#8a99ad]" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBottomActionMenuOpen(false)
+                            void refreshWorkspaceData()
+                          }}
+                          className="flex w-full items-center justify-between rounded-[14px] px-3 py-2.5 text-left text-sm font-medium text-[#102033] transition hover:bg-[#f8fbff]"
+                        >
+                          Refresh workspace
+                          <ChevronRight size={14} className="text-[#8a99ad]" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-              </section>
-            </aside>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      <Drawer
+        open={mergeDetailsOpen}
+        onClose={() => setMergeDetailsOpen(false)}
+        title="Merge Field Checklist"
+        subtitle="Canonical values resolved from onboarding, transaction, and packet context."
+        widthClassName="max-w-[720px]"
+      >
+        <div className="space-y-4">
+          <div className="rounded-[18px] border border-[#edf3fa] bg-[#f8fbff] px-4 py-3">
+            <p className="text-lg font-semibold text-[#102033]">{mergeResolvedCount}/{mergeChecklist.rows.length} resolved</p>
+            <p className="mt-1 text-sm text-[#6b7c93]">
+              {mergeUnresolvedCount ? `${mergeUnresolvedCount} unresolved field${mergeUnresolvedCount === 1 ? '' : 's'}` : 'All tracked fields are resolved'}
+            </p>
+          </div>
+          <MergeChecklistPanel
+            packetType={packetType}
+            placeholders={latestVersion?.placeholders_resolved_json || {}}
+          />
+        </div>
+      </Drawer>
+    </>
   )
 }

@@ -803,6 +803,9 @@ function collectDynamicTriggers(form = {}, source = {}) {
   ) || normalizeKey(occupancy?.status) === 'tenant_occupied'
 
   if (hasBond) triggers.push('bond_statement')
+  if (hasBond) triggers.push('bond_bank_details')
+  if (hasBond) triggers.push('bond_cancellation_attorney_details')
+  if (hasBond) triggers.push('settlement_figure')
   if (tenantOccupied) {
     triggers.push('lease_agreement', 'tenant_details')
   }
