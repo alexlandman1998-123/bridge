@@ -6,6 +6,7 @@ import {
   normalizePropertyCategory,
   normalizePropertyStructureType,
 } from './propertyTaxonomy.js'
+import { resolveSellerOnboardingFlow } from './sellerOnboardingFlow.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy seller requirement engine is retained as a compatibility fallback.
@@ -98,31 +99,26 @@ function toLifecycleStatus(listing = {}) {
   )
 }
 
-function inferStructureType(listing = {}, onboarding = {}) {
-  const normalized = normalizePropertyStructureType(
-    onboarding?.propertyStructureType ||
-      onboarding?.ownershipStructureType ||
-      listing?.propertyStructureType ||
-      listing?.property_structure_type ||
-      listing?.ownershipType ||
-      listing?.ownership_structure ||
-      listing?.propertyType ||
-      listing?.property_type,
-    { fallback: 'other' },
-  )
-  return normalized
-}
-
 function resolveOwners(formData = {}) {
-  const owners = toArray(formData?.multipleOwners).map((owner, index) => ({
+  const owners = toArray(formData?.multipleOwners || formData?.owners).map((owner, index) => ({
     id: normalizeText(owner?.id) || `owner-${index + 1}`,
     name: normalizeText(owner?.name),
+    firstName: normalizeText(owner?.first_name || owner?.firstName),
     surname: normalizeText(owner?.surname),
     idNumber: normalizeText(owner?.idNumber),
+    id_number: normalizeText(owner?.id_number),
     proofAddress: normalizeText(owner?.residentialAddress || owner?.proofAddress),
     maritalRegime: normalizeMaritalRegime(owner?.maritalRegime || owner?.maritalStatus),
+    ownershipShare: normalizeText(owner?.ownershipShare || owner?.ownership_share),
+    consentToSell: toBoolean(owner?.consentToSell ?? owner?.consent_to_sell),
   }))
-  return owners.filter((owner) => hasValue(owner.name) || hasValue(owner.surname) || hasValue(owner.idNumber))
+  return owners
+    .map((owner) => ({
+      ...owner,
+      name: owner.name || owner.firstName,
+      idNumber: owner.idNumber || owner.id_number,
+    }))
+    .filter((owner) => hasValue(owner.name) || hasValue(owner.surname) || hasValue(owner.idNumber))
 }
 
 function resolveSellerType(formData = {}, listing = {}) {
@@ -153,6 +149,22 @@ function resolveSellerDisplayName(profile = {}) {
   }
   const personName = [formData?.sellerFirstName, formData?.sellerSurname].filter(Boolean).join(' ').trim()
   return personName || normalizeText(profile?.listingData?.seller?.name)
+}
+
+function getCanonicalSellerFacts(listing = {}, onboarding = {}) {
+  if (listing?.sellerOnboarding?.canonicalFacts && typeof listing.sellerOnboarding.canonicalFacts === 'object') {
+    return listing.sellerOnboarding.canonicalFacts
+  }
+  if (listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object') {
+    return listing.sellerCanonicalFacts
+  }
+  if (onboarding?.canonicalFacts && typeof onboarding.canonicalFacts === 'object') {
+    return onboarding.canonicalFacts
+  }
+  if (onboarding?.canonicalSellerFacts && typeof onboarding.canonicalSellerFacts === 'object') {
+    return onboarding.canonicalSellerFacts
+  }
+  return {}
 }
 
 function buildRequirement({
@@ -238,8 +250,8 @@ function appendEstateRequirements(docs, generatedFrom) {
     }),
     buildRequirement({
       key: 'hoa_contact_details',
-      name: 'HOA Contact Details',
-      description: 'Estate / HOA contact information.',
+      name: 'HOA Details',
+      description: 'Estate / HOA contact and rules information.',
       group: 'property',
       visibility: 'seller_visible',
       generatedFrom,
@@ -268,6 +280,140 @@ function appendOccupancyRequirements(docs, generatedFrom) {
   )
 }
 
+function appendPowerOfAttorneyRequirements(docs, generatedFrom) {
+  docs.push(
+    buildRequirement({
+      key: 'power_of_attorney_document',
+      name: 'Power of Attorney / Authority Letter',
+      description: 'Signed power of attorney or authority letter.',
+      group: 'seller_authority',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'principal_identity',
+      name: 'Principal Owner Identity Details',
+      description: 'Principal owner identity details where applicable.',
+      group: 'seller_authority',
+      visibility: 'seller_visible',
+      required: false,
+      generatedFrom,
+    }),
+  )
+}
+
+function appendComplianceTriggerRequirements(docs, generatedFrom, triggers = []) {
+  const triggerSet = new Set(toArray(triggers).map(normalizeKey))
+  if (triggerSet.has('gas_compliance_certificate')) {
+    docs.push(
+      buildRequirement({
+        key: 'gas_compliance_certificate',
+        name: 'Gas Compliance Certificate',
+        description: 'Gas compliance certificate where a gas installation exists.',
+        group: 'property_compliance',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+    )
+  }
+  if (triggerSet.has('solar_compliance_documents')) {
+    docs.push(
+      buildRequirement({
+        key: 'solar_compliance_documents',
+        name: 'Solar Compliance Documents',
+        description: 'Solar / inverter compliance documents where a solar installation exists.',
+        group: 'property_compliance',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+    )
+  }
+  if (triggerSet.has('electric_fence_certificate')) {
+    docs.push(
+      buildRequirement({
+        key: 'electric_fence_certificate',
+        name: 'Electric Fence Certificate',
+        description: 'Electric fence certificate where an electric fence exists.',
+        group: 'property_compliance',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+    )
+  }
+  if (triggerSet.has('borehole_certificate')) {
+    docs.push(
+      buildRequirement({
+        key: 'borehole_certificate',
+        name: 'Borehole / Water Source Certificate',
+        description: 'Borehole or water-source compliance documentation where applicable.',
+        group: 'property_compliance',
+        visibility: 'seller_visible',
+        required: false,
+        generatedFrom,
+      }),
+    )
+  }
+  if (triggerSet.has('alteration_approvals')) {
+    docs.push(
+      buildRequirement({
+        key: 'alteration_approvals',
+        name: 'Alteration Approvals / Consents',
+        description: 'Municipal or body corporate approvals for recent alterations where applicable.',
+        group: 'property_compliance',
+        visibility: 'seller_visible',
+        required: false,
+        generatedFrom,
+      }),
+    )
+  }
+}
+
+function appendLandRequirements(docs, generatedFrom, propertyBranch) {
+  if (propertyBranch === 'vacant_land') {
+    docs.push(
+      buildRequirement({
+        key: 'zoning_certificate',
+        name: 'Zoning / Use Certificate',
+        description: 'Zoning or permitted-use information for vacant land.',
+        group: 'property',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+      buildRequirement({
+        key: 'sg_diagram',
+        name: 'SG Diagram / Survey Diagram',
+        description: 'SG or survey diagram for vacant land.',
+        group: 'property',
+        visibility: 'seller_visible',
+        required: false,
+        generatedFrom,
+      }),
+    )
+  }
+  if (propertyBranch === 'agricultural') {
+    docs.push(
+      buildRequirement({
+        key: 'zoning_certificate',
+        name: 'Zoning / Agricultural Use Certificate',
+        description: 'Zoning or agricultural use information for agricultural property.',
+        group: 'property',
+        visibility: 'seller_visible',
+        required: false,
+        generatedFrom,
+      }),
+      buildRequirement({
+        key: 'water_source_details',
+        name: 'Water Source / Borehole Details',
+        description: 'Water source or borehole details for agricultural property.',
+        group: 'property',
+        visibility: 'seller_visible',
+        required: false,
+        generatedFrom,
+      }),
+    )
+  }
+}
+
 export function buildSellerRequirementProfile(onboardingData = {}, listingData = {}) {
   const isListingEnvelope = !listingData || Object.keys(listingData || {}).length === 0
   const listing = isListingEnvelope ? onboardingData || {} : listingData || {}
@@ -275,6 +421,8 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     isListingEnvelope
       ? listing?.sellerOnboarding?.formData || listing?.sellerOnboarding?.form_data || {}
       : onboardingData || {}
+  const canonicalFacts = getCanonicalSellerFacts(listing, onboarding)
+  const flow = resolveSellerOnboardingFlow(onboarding, listing, canonicalFacts)
   const onboardingStatusRaw = normalizeKey(
     listing?.sellerOnboardingStatus ||
       listing?.seller_onboarding_status ||
@@ -283,10 +431,44 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
       '',
   )
   const lifecycleStatus = toLifecycleStatus(listing)
-  const sellerType = resolveSellerType(onboarding, listing)
-  const ownershipType = normalizeKey(onboarding?.ownershipType || onboarding?.ownershipStructure || listing?.ownership_structure || sellerType)
-  const maritalRegime = normalizeMaritalRegime(onboarding?.maritalRegime || onboarding?.maritalStatus, ownershipType)
-  const propertyStructureType = inferStructureType(listing, onboarding)
+  const sellerBranch = flow.seller_branch || 'individual'
+  const propertyBranch = flow.property_branch || 'residential'
+  const sellerType = flow.seller_legacy_type || resolveSellerType(onboarding, listing)
+  const ownershipTypeRaw = normalizeKey(onboarding?.ownershipType || onboarding?.ownershipStructure || listing?.ownership_structure || sellerType)
+  const maritalRegime = normalizeMaritalRegime(
+    onboarding?.maritalRegime ||
+      onboarding?.maritalStatus ||
+      canonicalFacts?.seller?.marital_regime ||
+      canonicalFacts?.seller?.marital_status,
+    ownershipTypeRaw || sellerType,
+  )
+  const ownershipType =
+    ownershipTypeRaw && ownershipTypeRaw !== 'individual'
+      ? ownershipTypeRaw
+      : sellerBranch === 'married'
+        ? (maritalRegime === 'in_community' || maritalRegime === 'married_in_community' ? 'married_cop' : 'married_anc')
+        : ownershipTypeRaw || sellerType
+  const propertyStructureType =
+    flow.property_structure_type ||
+    normalizePropertyStructureType(
+      onboarding?.propertyStructureType ||
+        canonicalFacts?.property?.property_structure_type ||
+        listing?.propertyStructureType ||
+        listing?.property_structure_type ||
+        listing?.propertyType ||
+        listing?.property_type,
+      { fallback: 'other' },
+    )
+  const sectionalTitle = Boolean(onboarding?.sectionalTitle || canonicalFacts?.property?.sectional_title || propertyBranch === 'sectional_title')
+  const shareBlock = Boolean(onboarding?.shareBlock || canonicalFacts?.property?.share_block)
+  const estateOrHoa = Boolean(
+    onboarding?.estateOrHoa ||
+      canonicalFacts?.property?.estate_or_hoa ||
+      propertyBranch === 'estate_hoa' ||
+      normalizeText(onboarding?.estateName || onboarding?.estateComplexName || canonicalFacts?.property?.estate_name),
+  )
+  const bodyCorporate = Boolean(onboarding?.bodyCorporate || canonicalFacts?.property?.body_corporate || sectionalTitle || shareBlock)
+  const commercialProperty = Boolean(onboarding?.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(propertyBranch))
   const bondStatus = normalizeBondStatus(
     onboarding?.bondStatus || onboarding?.propertyBondStatus || listing?.bond_status,
     toBoolean(onboarding?.bondedProperty || listing?.bondedProperty) ? 'bonded' : 'unknown',
@@ -295,21 +477,48 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     onboarding?.occupancyStatus || onboarding?.propertyOccupancyStatus || listing?.occupancy_status,
     toBoolean(onboarding?.tenantOccupied) ? 'tenant_occupied' : 'unknown',
   )
-  const propertyCategory = normalizePropertyCategory(
-    onboarding?.propertyCategory || listing?.propertyCategory || listing?.property_category || listing?.propertyType || listing?.property_type,
-    { fallback: 'residential' },
-  )
+  const propertyCategory =
+    flow.property_category ||
+    normalizePropertyCategory(
+      onboarding?.propertyCategory ||
+        canonicalFacts?.property?.property_category ||
+        listing?.propertyCategory ||
+        listing?.property_category ||
+        listing?.propertyType ||
+        listing?.property_type,
+      { fallback: 'residential' },
+    )
   const propertyAddress = normalizeText(
-    onboarding?.propertyAddress || listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress,
+    onboarding?.propertyAddress ||
+      canonicalFacts?.property?.address ||
+      listing?.addressLine1 ||
+      listing?.address_line_1 ||
+      listing?.propertyAddress,
   )
   const askingPrice = Number(onboarding?.askingPrice || listing?.askingPrice || listing?.asking_price || 0) || 0
-  const owners = resolveOwners(onboarding)
-  const ownerCount = sellerType === 'multiple_individuals' ? Math.max(owners.length, 2) : 1
+  const owners = resolveOwners({
+    ...onboarding,
+    multipleOwners: onboarding?.multipleOwners || canonicalFacts?.seller?.owners || [],
+    owners: onboarding?.owners || canonicalFacts?.seller?.owners || [],
+  })
+  const companyDirectors = toArray(canonicalFacts?.seller?.company?.directors || onboarding?.companyDirectors)
+  const trustTrustees = toArray(canonicalFacts?.seller?.trust?.trustees || onboarding?.trustees)
+  const estateExecutors = toArray(canonicalFacts?.seller?.deceased_estate?.executors || onboarding?.executors)
+  const poaRepresentatives = toArray(canonicalFacts?.seller?.power_of_attorney?.representatives || onboarding?.powerOfAttorneyRepresentatives)
+  const ownerCount = sellerBranch === 'multiple_owners' ? Math.max(owners.length, 2) : 1
   const authorisedSignatory = normalizeText(
     onboarding?.authorisedSignatoryName ||
-      onboarding?.authorizedSignatoryName ||
-      onboarding?.companyDirectorName ||
-      onboarding?.trusteeName ||
+    onboarding?.authorizedSignatoryName ||
+    canonicalFacts?.seller?.company?.authorised_signatory?.name ||
+    companyDirectors[0]?.full_name ||
+    companyDirectors[0]?.name ||
+    onboarding?.companyDirectorName ||
+    canonicalFacts?.seller?.trust?.authorised_trustee?.name ||
+    trustTrustees[0]?.full_name ||
+    trustTrustees[0]?.name ||
+    onboarding?.trusteeName ||
+    estateExecutors[0]?.full_name ||
+      estateExecutors[0]?.name ||
       onboarding?.executorName,
   )
   const mandateType = normalizeText(onboarding?.mandateType || listing?.mandateType || listing?.mandate_type)
@@ -324,7 +533,12 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     hasValue(listing?.commission?.commission_amount)
   const sellerName = resolveSellerDisplayName({
     sellerType,
-    formData: onboarding,
+    formData: {
+      ...onboarding,
+      companyName: onboarding?.companyName || canonicalFacts?.seller?.company?.name,
+      trustName: onboarding?.trustName || canonicalFacts?.seller?.trust?.name,
+      estateName: onboarding?.estateName || canonicalFacts?.seller?.deceased_estate?.estate_reference || canonicalFacts?.seller?.deceased_estate?.executor_name,
+    },
     owners,
     listingData: listing,
   })
@@ -336,6 +550,7 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     lifecycleStatus,
     lifecycleLabel: getPrivateListingStatusLabel(lifecycleStatus),
     sellerType,
+    sellerBranch,
     ownershipType,
     maritalRegime,
     ownerCount,
@@ -343,6 +558,12 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     propertyCategory,
     propertyStructureType,
     propertyType: normalizeText(onboarding?.propertyType || listing?.propertyType || listing?.property_type),
+    propertyBranch,
+    sectionalTitle,
+    shareBlock,
+    estateOrHoa,
+    bodyCorporate,
+    commercialProperty,
     propertyAddress,
     bondStatus,
     occupancyStatus,
@@ -357,6 +578,12 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     authorisedSignatory,
     sellerContactEmail: normalizeText(onboarding?.email || listing?.seller?.email),
     sellerContactPhone: normalizeText(onboarding?.phone || listing?.seller?.phone),
+    companyDirectors,
+    trustTrustees,
+    estateExecutors,
+    poaRepresentatives,
+    flow,
+    documentTriggers: flow.document_triggers || [],
     organisationId: normalizeText(listing?.organisationId || listing?.organisation_id),
     assignedAgentId: normalizeText(listing?.assignedAgentId || listing?.assigned_agent_id || listing?.agentId),
     listingData: listing,
@@ -365,11 +592,12 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
 }
 
 export function getRequiredMandateInputs(requirementProfile = {}) {
+  const sellerBranch = normalizeKey(requirementProfile?.sellerBranch || requirementProfile?.sellerType)
   const checks = [
     {
       key: 'seller_type',
       label: 'Seller type',
-      satisfied: hasValue(requirementProfile?.sellerType),
+      satisfied: hasValue(requirementProfile?.sellerBranch || requirementProfile?.sellerType),
       blocker: 'Seller type missing',
     },
     {
@@ -382,7 +610,7 @@ export function getRequiredMandateInputs(requirementProfile = {}) {
       key: 'authorised_signatory',
       label: 'Authorised signatory',
       satisfied:
-        !['company', 'trust', 'deceased_estate', 'other_legal_entity'].includes(normalizeKey(requirementProfile?.sellerType)) ||
+        !['company', 'trust', 'deceased_estate', 'power_of_attorney', 'other_legal_entity'].includes(sellerBranch) ||
         hasValue(requirementProfile?.authorisedSignatory),
       blocker: 'Authorised signatory missing',
     },
@@ -452,16 +680,28 @@ export function getRequiredSellerActions(requirementProfile = {}) {
 
 export function getRequiredSellerDocuments(requirementProfile = {}) {
   const profile = requirementProfile || {}
-  const lifecycleStatus = normalizeKey(profile.lifecycleStatus || 'seller_lead')
+  const flow = profile.flow && typeof profile.flow === 'object' ? profile.flow : {}
+  const lifecycleStatus = normalizeKey(profile.lifecycleStatus || flow.lifecycle_status || 'seller_lead')
+  const sellerBranch = normalizeKey(profile.sellerBranch || flow.seller_branch || profile.sellerType || 'individual')
+  const propertyBranch = normalizeKey(profile.propertyBranch || flow.property_branch || profile.propertyStructureType || profile.propertyCategory || 'residential')
+  const maritalRegime = normalizeKey(profile.maritalRegime || flow.marital_regime || '')
+  const propertyCategory = normalizeKey(profile.propertyCategory || flow.property_category || 'residential')
+  const propertyStructureType = normalizeKey(profile.propertyStructureType || flow.property_structure_type || 'other')
+  const documentTriggers = new Set(
+    [...toArray(profile.documentTriggers), ...toArray(flow.document_triggers)].map(normalizeKey),
+  )
   const generatedFrom = {
-    sellerType: profile.sellerType || 'individual',
+    sellerType: profile.sellerType || flow.seller_legacy_type || sellerBranch || 'individual',
+    sellerBranch,
+    propertyBranch,
     lifecycleStatus,
-    maritalRegime: profile.maritalRegime || 'single',
-    propertyCategory: profile.propertyCategory || 'residential',
-    propertyStructureType: profile.propertyStructureType || 'other',
+    maritalRegime: maritalRegime || 'single',
+    propertyCategory: propertyCategory || 'residential',
+    propertyStructureType: propertyStructureType || 'other',
     bondStatus: profile.bondStatus || 'unknown',
     occupancyStatus: profile.occupancyStatus || 'unknown',
     ownerCount: profile.ownerCount || 1,
+    documentTriggers: Array.from(documentTriggers),
   }
 
   if (lifecycleStatus === 'seller_lead') {
@@ -492,6 +732,22 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
 
   const docs = [
     buildRequirement({
+      key: 'signed_mandate',
+      name: 'Signed Mandate',
+      description: 'Signed mandate is required before listing activation.',
+      group: 'mandate',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }),
+    buildRequirement({
+      key: 'title_deed_copy',
+      name: 'Title Deed Copy',
+      description: 'Title deed copy for ownership verification.',
+      group: 'property',
+      visibility: 'seller_visible',
+      generatedFrom,
+    }),
+    buildRequirement({
       key: 'rates_account',
       name: 'Rates Account',
       description: 'Latest municipal rates account.',
@@ -500,17 +756,25 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
       generatedFrom,
     }),
     buildRequirement({
-      key: 'mandate_signature',
-      name: 'Signed Mandate',
-      description: 'Signed mandate is required before listing activation.',
-      group: 'mandate',
+      key: 'property_condition_disclosure',
+      name: 'Property Condition Disclosure',
+      description: 'Property condition disclosure and known defects.',
+      group: 'property_compliance',
       visibility: 'seller_visible',
       generatedFrom,
     }),
   ]
 
-  const sellerType = normalizeKey(profile.sellerType || 'individual')
-  if (sellerType === 'individual') {
+  const isMarriedBranch =
+    sellerBranch === 'married' ||
+    maritalRegime === 'in_community' ||
+    maritalRegime === 'anc' ||
+    maritalRegime === 'out_of_community' ||
+    maritalRegime === 'foreign_marriage' ||
+    maritalRegime === 'married_in_community' ||
+    maritalRegime === 'married_out_of_community'
+
+  const appendPersonalIdentityDocs = () => {
     docs.push(
       buildRequirement({
         key: 'id_document',
@@ -538,8 +802,12 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
     )
+  }
 
-    if (profile.maritalRegime === 'married_in_community') {
+  if (sellerBranch === 'individual' || sellerBranch === 'married' || isMarriedBranch) {
+    appendPersonalIdentityDocs()
+
+    if (maritalRegime === 'in_community' || maritalRegime === 'married_in_community') {
       docs.push(
         buildRequirement({
           key: 'marriage_certificate',
@@ -575,7 +843,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
           generatedFrom,
         }),
       )
-    } else if (profile.maritalRegime === 'married_out_of_community' || profile.maritalRegime === 'antenuptial_contract') {
+    } else if (maritalRegime === 'out_of_community' || maritalRegime === 'married_out_of_community' || maritalRegime === 'anc' || maritalRegime === 'antenuptial_contract') {
       docs.push(
         buildRequirement({
           key: 'marriage_certificate',
@@ -603,7 +871,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
           generatedFrom,
         }),
       )
-    } else if (profile.maritalRegime === 'divorced') {
+    } else if (maritalRegime === 'divorced') {
       docs.push(
         buildRequirement({
           key: 'divorce_order',
@@ -614,7 +882,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
           generatedFrom,
         }),
       )
-    } else if (profile.maritalRegime === 'widowed') {
+    } else if (maritalRegime === 'widowed') {
       docs.push(
         buildRequirement({
           key: 'spouse_death_certificate',
@@ -635,7 +903,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         }),
       )
     }
-  } else if (sellerType === 'multiple_individuals') {
+  } else if (sellerBranch === 'multiple_owners') {
     const owners = Array.from({ length: Math.max(profile.ownerCount || 2, 2) }, (_, index) => profile.owners?.[index] || { id: `owner-${index + 1}`, maritalRegime: 'single' })
     owners.forEach((owner, index) => {
       const seq = index + 1
@@ -665,7 +933,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
           generatedFrom: { ...generatedFrom, ownerId: owner.id },
         }),
       )
-      if (owner.maritalRegime === 'married_in_community') {
+      if (owner.maritalRegime === 'in_community' || owner.maritalRegime === 'married_in_community') {
         docs.push(
           buildRequirement({
             key: `owner_${seq}_marriage_certificate`,
@@ -696,10 +964,10 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
     )
-  } else if (sellerType === 'company') {
+  } else if (sellerBranch === 'company') {
     docs.push(
       buildRequirement({
-        key: 'company_registration_documents',
+        key: 'company_registration',
         name: 'Company Registration Documents',
         description: 'CIPC / CK registration documents.',
         group: 'company',
@@ -715,7 +983,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
       buildRequirement({
-        key: 'company_resolution',
+        key: 'company_resolution_to_sell',
         name: 'Company Resolution',
         description: 'Resolution authorising the sale.',
         group: 'company',
@@ -765,10 +1033,10 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
     )
-  } else if (sellerType === 'trust') {
+  } else if (sellerBranch === 'trust') {
     docs.push(
       buildRequirement({
-        key: 'trust_deed',
+        key: 'seller_trust_deed',
         name: 'Trust Deed',
         description: 'Signed trust deed document.',
         group: 'trust',
@@ -776,7 +1044,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
       buildRequirement({
-        key: 'letters_of_authority',
+        key: 'seller_letters_of_authority',
         name: 'Letters of Authority',
         description: 'Master’s appointment / letters of authority.',
         group: 'trust',
@@ -792,7 +1060,7 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
       buildRequirement({
-        key: 'trustee_resolution',
+        key: 'trust_resolution_to_sell',
         name: 'Trustee Resolution',
         description: 'Resolution authorising sale.',
         group: 'trust',
@@ -826,10 +1094,10 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
     )
-  } else if (sellerType === 'deceased_estate') {
+  } else if (sellerBranch === 'deceased_estate') {
     docs.push(
       buildRequirement({
-        key: 'letter_of_executorship',
+        key: 'seller_executor_authority',
         name: 'Letter of Executorship / Authority',
         description: 'Executor authority documentation.',
         group: 'deceased_estate',
@@ -879,6 +1147,8 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
         generatedFrom,
       }),
     )
+  } else if (sellerBranch === 'power_of_attorney') {
+    appendPowerOfAttorneyRequirements(docs, generatedFrom)
   } else {
     docs.push(
       buildRequirement({
@@ -903,15 +1173,40 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
   if (profile.bondStatus === 'bonded') {
     appendBondRequirements(docs, generatedFrom)
   }
-  if (['sectional_title', 'share_block'].includes(profile.propertyStructureType)) {
+  if (['sectional_title', 'share_block'].includes(propertyBranch) || ['sectional_title', 'share_block'].includes(propertyStructureType)) {
     appendSectionalRequirements(docs, generatedFrom)
   }
-  if (profile.propertyStructureType === 'estate' || hasValue(profile.estateComplexName)) {
+  if (propertyBranch === 'estate_hoa' || profile.propertyStructureType === 'estate' || hasValue(profile.estateComplexName)) {
     appendEstateRequirements(docs, generatedFrom)
+  }
+  if (['commercial', 'mixed_use'].includes(propertyBranch)) {
+    docs.push(
+      buildRequirement({
+        key: 'zoning_certificate',
+        name: 'Zoning Certificate',
+        description: 'Zoning or permitted-use certificate for commercial or mixed-use property.',
+        group: 'property',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
+      buildRequirement({
+        key: 'occupation_certificate',
+        name: 'Occupation Certificate',
+        description: 'Occupation certificate for commercial or mixed-use property.',
+        group: 'property',
+        visibility: 'seller_visible',
+        required: false,
+        generatedFrom,
+      }),
+    )
+  }
+  if (['vacant_land', 'agricultural'].includes(propertyBranch)) {
+    appendLandRequirements(docs, generatedFrom, propertyBranch)
   }
   if (profile.occupancyStatus === 'tenant_occupied') {
     appendOccupancyRequirements(docs, generatedFrom)
   }
+  appendComplianceTriggerRequirements(docs, generatedFrom, Array.from(documentTriggers))
 
   return docs
 }

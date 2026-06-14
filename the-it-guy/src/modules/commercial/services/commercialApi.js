@@ -1,6 +1,7 @@
-import { fetchOrganisationSettings, listOrganisationUsers } from '../../../lib/settingsApi'
+import { fetchOrganisationSettings, listOrganisationUsers, updateWorkflowSettings } from '../../../lib/settingsApi'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
 import { recordSecurityAuditEvent } from '../../../services/auditLogService'
+import { createBranch, getBranches } from '../../../services/agencyBranchService'
 import { normalizeCommercialLifecycleStage } from '../commercialWorkflow'
 
 const TABLES = {
@@ -148,6 +149,10 @@ function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function normalizeEmail(value) {
+  return normalizeText(value).toLowerCase()
+}
+
 function parseJsonObject(value) {
   if (!value) return {}
   if (typeof value === 'object' && !Array.isArray(value)) return value
@@ -158,6 +163,207 @@ function parseJsonObject(value) {
   } catch {
     return {}
   }
+}
+
+function uniqueValues(values = []) {
+  return [...new Set((values || []).map((value) => normalizeText(value)).filter(Boolean))]
+}
+
+function normalizeCommercialBusinessModel(value = '', fallback = 'sales_leasing') {
+  const normalized = normalizeLower(value)
+  if (['sales', 'leasing', 'sales_leasing'].includes(normalized)) return normalized
+  return fallback
+}
+
+function normalizeCommercialBranchMode(value = '', fallback = 'existing') {
+  const normalized = normalizeLower(value)
+  if (['existing', 'dedicated'].includes(normalized)) return normalized
+  return fallback
+}
+
+function normalizeCommercialWorkspaceFeatureSelections(input = {}) {
+  const source = input && typeof input === 'object' ? input : {}
+  return {
+    commercialListings: true,
+    commercialPipeline: true,
+    brokerageReporting: true,
+    commercialLeasing: source.commercialLeasing !== false,
+    headsOfTerms: source.headsOfTerms !== false,
+    tenantManagement: Boolean(source.tenantManagement),
+    commercialDocumentCentre: source.commercialDocumentCentre !== false,
+  }
+}
+
+function resolveCommercialWorkspaceEnabledFeatureKeys(featureSelections = {}) {
+  return Object.entries(normalizeCommercialWorkspaceFeatureSelections(featureSelections))
+    .filter(([, enabled]) => Boolean(enabled))
+    .map(([key]) => key)
+}
+
+function buildCommercialWorkspaceTeamAccessEntry(input = {}) {
+  const email = normalizeEmail(input.email)
+  const fullName = normalizeText(input.fullName || input.name || [input.firstName, input.lastName].filter(Boolean).join(' '))
+  return {
+    organisationUserId: normalizeText(input.organisationUserId || input.id),
+    userId: normalizeText(input.userId),
+    email,
+    fullName,
+    role: normalizeLower(input.role || input.workspaceRole || input.organisationRole),
+    status: normalizeLower(input.status || (email ? 'pending' : 'selected')) || 'selected',
+    source: normalizeText(input.source) || 'commercial_workspace_enablement',
+    grantedAt: input.grantedAt || input.activatedAt || new Date().toISOString(),
+  }
+}
+
+function getCommercialWorkspaceTeamAccessEntryKey(entry = {}) {
+  return normalizeText(entry.organisationUserId || entry.id) ||
+    normalizeText(entry.userId) ||
+    normalizeEmail(entry.email)
+}
+
+function normalizeCommercialWorkspaceTeamAccessEntries(entries = []) {
+  const map = new Map()
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const normalizedEntry = buildCommercialWorkspaceTeamAccessEntry(entry)
+    const key = getCommercialWorkspaceTeamAccessEntryKey(normalizedEntry)
+    if (!key) continue
+    map.set(key, normalizedEntry)
+  }
+  return [...map.values()]
+}
+
+function mergeCommercialWorkspaceTeamAccessEntries(existingEntries = [], incomingEntries = []) {
+  const map = new Map()
+  for (const entry of normalizeCommercialWorkspaceTeamAccessEntries(existingEntries)) {
+    map.set(getCommercialWorkspaceTeamAccessEntryKey(entry), entry)
+  }
+  for (const entry of normalizeCommercialWorkspaceTeamAccessEntries(incomingEntries)) {
+    map.set(getCommercialWorkspaceTeamAccessEntryKey(entry), entry)
+  }
+  return [...map.values()]
+}
+
+function removeCommercialWorkspaceTeamAccessEntries(existingEntries = [], matcher = {}) {
+  const safeOrganisationUserId = normalizeText(matcher.organisationUserId || matcher.id)
+  const safeUserId = normalizeText(matcher.userId)
+  const safeEmail = normalizeEmail(matcher.email)
+
+  return normalizeCommercialWorkspaceTeamAccessEntries(existingEntries).filter((entry) => {
+    if (safeOrganisationUserId && normalizeText(entry.organisationUserId) === safeOrganisationUserId) return false
+    if (safeUserId && normalizeText(entry.userId) === safeUserId) return false
+    if (safeEmail && normalizeEmail(entry.email) === safeEmail) return false
+    return true
+  })
+}
+
+function getCommercialWorkspaceTeamAccessEntries(settings = {}) {
+  const commercialWorkspace = parseJsonObject(parseJsonObject(settings).commercialWorkspace)
+  return normalizeCommercialWorkspaceTeamAccessEntries(
+    commercialWorkspace.teamAccess ||
+      commercialWorkspace.userAccess ||
+      commercialWorkspace.selectedUsers,
+  )
+}
+
+function hasCommercialWorkspacePlannedAccess(settings = {}, identifiers = {}) {
+  const safeOrganisationUserId = normalizeText(identifiers.organisationUserId || identifiers.id)
+  const safeUserId = normalizeText(identifiers.userId)
+  const safeEmail = normalizeEmail(identifiers.email)
+
+  return getCommercialWorkspaceTeamAccessEntries(settings).some((entry) => {
+    if (safeOrganisationUserId && normalizeText(entry.organisationUserId) === safeOrganisationUserId) return true
+    if (safeUserId && normalizeText(entry.userId) === safeUserId) return true
+    if (safeEmail && normalizeEmail(entry.email) === safeEmail) return true
+    return false
+  })
+}
+
+function resolveCommercialAgencyTypeForWorkspace(settings = {}) {
+  const normalizedSettings = parseJsonObject(settings)
+  const currentAgencyType = normalizeLower(
+    normalizedSettings.agencyType ||
+      parseJsonObject(normalizedSettings.agencyOnboarding).agencyInformation?.agencyType,
+  )
+  if (['commercial', 'mixed'].includes(currentAgencyType)) return currentAgencyType
+  return 'mixed'
+}
+
+function resolveCommercialWorkspaceModeForAgencyType(agencyType = '') {
+  const normalizedAgencyType = normalizeLower(agencyType)
+  if (normalizedAgencyType === 'commercial') return 'commercial_only'
+  if (normalizedAgencyType === 'mixed') return 'mixed_residential_commercial'
+  return 'residential_only'
+}
+
+function normalizeCommercialWorkspaceBranchDraft(branch = {}) {
+  return {
+    ...parseJsonObject(branch),
+    id: normalizeText(branch.id),
+    branchName: normalizeText(branch.branchName || branch.name),
+    officeLocation: normalizeText(branch.officeLocation || branch.location),
+    branchManager: normalizeText(branch.branchManager || branch.managerName || branch.manager_name),
+    numberOfAgents: normalizeText(branch.numberOfAgents),
+  }
+}
+
+function getCommercialWorkspaceBranchDraftKey(branch = {}) {
+  return normalizeText(branch.id) || normalizeLower(branch.branchName || branch.name)
+}
+
+function normalizeCommercialWorkspaceBranchDrafts(branches = []) {
+  const map = new Map()
+  for (const branch of Array.isArray(branches) ? branches : []) {
+    const normalizedBranch = normalizeCommercialWorkspaceBranchDraft(branch)
+    const key = getCommercialWorkspaceBranchDraftKey(normalizedBranch)
+    if (!key || !normalizedBranch.branchName) continue
+    map.set(key, normalizedBranch)
+  }
+  return [...map.values()]
+}
+
+function mergeCommercialWorkspaceBranchDrafts(existingBranches = [], incomingBranches = []) {
+  const map = new Map()
+  for (const branch of normalizeCommercialWorkspaceBranchDrafts(existingBranches)) {
+    map.set(getCommercialWorkspaceBranchDraftKey(branch), branch)
+  }
+  for (const branch of normalizeCommercialWorkspaceBranchDrafts(incomingBranches)) {
+    const key = getCommercialWorkspaceBranchDraftKey(branch)
+    const existing = map.get(key) || {}
+    map.set(key, {
+      ...existing,
+      ...branch,
+      id: normalizeText(branch.id) || normalizeText(existing.id),
+      branchName: normalizeText(branch.branchName) || normalizeText(existing.branchName),
+      officeLocation: normalizeText(branch.officeLocation) || normalizeText(existing.officeLocation),
+      branchManager: normalizeText(branch.branchManager) || normalizeText(existing.branchManager),
+      numberOfAgents: normalizeText(branch.numberOfAgents) || normalizeText(existing.numberOfAgents),
+    })
+  }
+  return [...map.values()]
+}
+
+async function syncCommercialWorkspaceTeamAccessEntries({ context = null, addEntries = [], removeEntry = null } = {}) {
+  const resolvedContext = context || await resolveCommercialOrganisationContext()
+  if (!resolvedContext.organisationId) return []
+
+  const currentSettings = parseJsonObject(resolvedContext.organisationSettings)
+  const commercialWorkspace = parseJsonObject(currentSettings.commercialWorkspace)
+  const mergedEntries = removeEntry
+    ? removeCommercialWorkspaceTeamAccessEntries(getCommercialWorkspaceTeamAccessEntries(currentSettings), removeEntry)
+    : mergeCommercialWorkspaceTeamAccessEntries(getCommercialWorkspaceTeamAccessEntries(currentSettings), addEntries)
+
+  await updateWorkflowSettings({
+    enabledModules: {
+      ...(parseJsonObject(currentSettings.enabledModules)),
+      commercial: parseJsonObject(currentSettings.enabledModules).commercial !== false,
+    },
+    commercialWorkspace: {
+      ...commercialWorkspace,
+      teamAccess: mergedEntries,
+    },
+  })
+
+  return mergedEntries
 }
 
 function isCommercialEnabledInOrganisationSettings(settings = {}) {
@@ -1157,6 +1363,20 @@ export async function reviewCommercialAccessRequest(requestId, { decision = 'app
     },
   })
   commercialScopeCache = null
+  if (normalizedDecision === 'approved') {
+    await syncCommercialWorkspaceTeamAccessEntries({
+      context,
+      addEntries: [{
+        organisationUserId: membership?.id || request.requesterMembershipId,
+        userId: request.requesterUserId,
+        email: request.requesterEmail,
+        fullName: request.requesterName,
+        role: membership?.workspace_role || membership?.organisation_role || membership?.role,
+        source: 'commercial_access_request',
+        status: 'active',
+      }],
+    }).catch(() => {})
+  }
   return {
     request: reviewedRequest,
     membership,
@@ -1235,7 +1455,260 @@ export async function listCommercialAccessAuditEvents({ limit = 20 } = {}) {
   return (result.data || []).map(normalizeCommercialAccessAuditEvent)
 }
 
-export async function setCommercialOrganisationModuleEnabled(enabled = true) {
+export async function enableCommercialWorkspaceForCurrentUser(input = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Commercial setup requires Supabase to be configured.')
+  }
+
+  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  const context = await resolveCommercialOrganisationContext()
+  assertCommercialAccessReviewer(context)
+
+  const userId = context.userId || await getCurrentUserId()
+  const actorEmail = normalizeEmail(context.profile?.email)
+  if (!context.organisationId || !userId) {
+    throw new Error('An active principal membership is required before Commercial can be enabled.')
+  }
+
+  const nowIso = new Date().toISOString()
+  const existingSettings = parseJsonObject(context.organisationSettings)
+  const existingCommercialWorkspace = parseJsonObject(existingSettings.commercialWorkspace)
+  const existingAgencyOnboarding = parseJsonObject(existingSettings.agencyOnboarding)
+  const existingAgencyInformation = parseJsonObject(existingAgencyOnboarding.agencyInformation)
+  const existingBranchStructure = parseJsonObject(existingAgencyOnboarding.branchStructure)
+  const businessModel = normalizeCommercialBusinessModel(input.businessModel)
+  const branchMode = normalizeCommercialBranchMode(input.branchMode)
+  const featureSelections = normalizeCommercialWorkspaceFeatureSelections(input.featureSelections)
+  const enabledFeatureKeys = resolveCommercialWorkspaceEnabledFeatureKeys(featureSelections)
+
+  const [allUsers, allBranches] = await Promise.all([
+    listOrganisationUsers().catch(() => []),
+    getBranches().catch(() => []),
+  ])
+
+  const currentUserRow = (allUsers || []).find((row) =>
+    normalizeText(row?.userId) === userId || normalizeEmail(row?.email) === actorEmail,
+  )
+  const selectedOrganisationUserIds = uniqueValues([
+    ...(Array.isArray(input.selectedOrganisationUserIds) ? input.selectedOrganisationUserIds : []),
+    currentUserRow?.id,
+  ])
+
+  const usersById = new Map((allUsers || []).map((row) => [normalizeText(row?.id), row]))
+  const selectedUsers = selectedOrganisationUserIds
+    .map((userRowId) => usersById.get(userRowId))
+    .filter((row) => row && normalizeLower(row.status) !== 'deactivated')
+
+  if (!selectedUsers.length && currentUserRow) {
+    selectedUsers.push(currentUserRow)
+  }
+
+  if (!selectedUsers.length) {
+    const fallbackCurrentMembership = await findCurrentOrganisationMembership(context.organisationId, userId).catch(() => null)
+    if (fallbackCurrentMembership?.id) {
+      selectedUsers.push({
+        id: fallbackCurrentMembership.id,
+        userId: normalizeText(fallbackCurrentMembership.user_id),
+        email: normalizeText(fallbackCurrentMembership.email || context.profile?.email),
+        fullName: normalizeText(context.profile?.fullName || context.profile?.email),
+        role: normalizeText(fallbackCurrentMembership.workspace_role || fallbackCurrentMembership.organisation_role || fallbackCurrentMembership.role || context.membershipRole),
+        status: normalizeText(fallbackCurrentMembership.status) || 'active',
+      })
+    }
+  }
+
+  if (!selectedUsers.length) {
+    throw new Error('Choose at least one existing user before enabling Commercial.')
+  }
+
+  const normalizedExistingBranches = (allBranches || []).map((branch) => ({
+    id: normalizeText(branch?.id),
+    name: normalizeText(branch?.name),
+    location: normalizeText(branch?.location || [branch?.city, branch?.province].filter(Boolean).join(', ')),
+    managerName: normalizeText(branch?.principalName || branch?.manager_name || branch?.managerName),
+  }))
+
+  const normalizedDedicatedBranches = (Array.isArray(input.dedicatedBranches) ? input.dedicatedBranches : [])
+    .map((branch) => ({
+      id: normalizeText(branch?.id),
+      name: normalizeText(branch?.name || branch?.branchName),
+      location: normalizeText(branch?.location || branch?.officeLocation),
+      managerName: normalizeText(branch?.managerName || branch?.branchManager),
+    }))
+    .filter((branch) => branch.name)
+
+  if (branchMode === 'dedicated' && !normalizedDedicatedBranches.length) {
+    throw new Error('Add at least one dedicated Commercial branch to continue.')
+  }
+
+  const existingBranchesByName = new Map(
+    normalizedExistingBranches
+      .filter((branch) => branch.name)
+      .map((branch) => [normalizeLower(branch.name), branch]),
+  )
+
+  const resolvedBranchRows = branchMode === 'existing'
+    ? normalizedExistingBranches
+    : await Promise.all(
+      normalizedDedicatedBranches.map(async (branch) => {
+        const existingBranch = existingBranchesByName.get(normalizeLower(branch.name))
+        if (existingBranch) return existingBranch
+        const createdBranch = await createBranch({
+          name: branch.name,
+          location: branch.location,
+          managerName: branch.managerName,
+          metadata: {
+            commercial_workspace: true,
+            source: 'commercial_workspace_enablement',
+            created_at: nowIso,
+          },
+        })
+        return {
+          id: normalizeText(createdBranch?.id),
+          name: normalizeText(createdBranch?.name || branch.name),
+          location: normalizeText(createdBranch?.location || branch.location),
+          managerName: normalizeText(createdBranch?.principalName || createdBranch?.manager_name || branch.managerName),
+        }
+      }),
+    )
+
+  const branchDrafts = (resolvedBranchRows || []).map((branch) => ({
+    id: branch.id || `commercial-branch-${normalizeLower(branch.name).replace(/[^a-z0-9]+/g, '-')}`,
+    branchName: branch.name,
+    officeLocation: branch.location,
+    branchManager: branch.managerName,
+    numberOfAgents: '',
+  }))
+  const existingOrganisationBranchDrafts = normalizeCommercialWorkspaceBranchDrafts(
+    Array.isArray(existingBranchStructure.branches) && existingBranchStructure.branches.length
+      ? existingBranchStructure.branches
+      : existingSettings.organisationBranches,
+  )
+  const nextOrganisationBranchDrafts = branchMode === 'dedicated'
+    ? mergeCommercialWorkspaceBranchDrafts(existingOrganisationBranchDrafts, branchDrafts)
+    : existingOrganisationBranchDrafts.length
+      ? existingOrganisationBranchDrafts
+      : branchDrafts
+
+  const invitedUsers = normalizeCommercialWorkspaceTeamAccessEntries(
+    (Array.isArray(input.invitedUsers) ? input.invitedUsers : []).map((invite) => ({
+      email: invite?.email,
+      fullName: invite?.fullName || invite?.name,
+      source: 'commercial_workspace_invite',
+      status: 'pending',
+      grantedAt: nowIso,
+    })),
+  )
+
+  const selectedUserEntries = normalizeCommercialWorkspaceTeamAccessEntries(
+    selectedUsers.map((row) => ({
+      organisationUserId: row.id,
+      userId: row.userId,
+      email: row.email,
+      fullName: row.fullName,
+      role: row.role,
+      status: normalizeLower(row.status) === 'active' ? 'active' : 'selected',
+      source: 'commercial_workspace_enablement',
+      grantedAt: nowIso,
+    })),
+  )
+
+  const nextAgencyType = resolveCommercialAgencyTypeForWorkspace(existingSettings)
+  const nextCommercialWorkspace = {
+    ...existingCommercialWorkspace,
+    status: 'active',
+    source: 'self_service_enablement',
+    mode: resolveCommercialWorkspaceModeForAgencyType(nextAgencyType),
+    enabledAt: existingCommercialWorkspace.enabledAt || nowIso,
+    enabledBy: userId,
+    businessModel,
+    branchMode,
+    branchIds: uniqueValues((resolvedBranchRows || []).map((branch) => branch.id)),
+    branchNames: uniqueValues((resolvedBranchRows || []).map((branch) => branch.name)),
+    teamAccess: mergeCommercialWorkspaceTeamAccessEntries(
+      getCommercialWorkspaceTeamAccessEntries(existingSettings),
+      [...selectedUserEntries, ...invitedUsers],
+    ),
+    selectedOrganisationUserIds,
+    pendingInviteEmails: uniqueValues(invitedUsers.map((invite) => invite.email)),
+    salesEnabled: businessModel !== 'leasing',
+    leasingEnabled: featureSelections.commercialLeasing,
+    headsOfTermsEnabled: featureSelections.headsOfTerms,
+    tenantManagementEnabled: featureSelections.tenantManagement,
+    documentCentreEnabled: featureSelections.commercialDocumentCentre,
+    listingsEnabled: featureSelections.commercialListings,
+    pipelineEnabled: featureSelections.commercialPipeline,
+    brokerageReportingEnabled: featureSelections.brokerageReporting,
+    enabledFeatures: enabledFeatureKeys,
+    setup: {
+      wizardVersion: 1,
+      completedAt: nowIso,
+      completedBy: userId,
+      businessModel,
+      branchMode,
+      selectedOrganisationUserIds,
+      branchIds: uniqueValues((resolvedBranchRows || []).map((branch) => branch.id)),
+      enabledFeatures: enabledFeatureKeys,
+    },
+  }
+
+  const nextSettings = {
+    ...existingSettings,
+    agencyType: nextAgencyType,
+    agencyOnboarding: {
+      ...existingAgencyOnboarding,
+      agencyInformation: {
+        ...existingAgencyInformation,
+        agencyType: nextAgencyType,
+      },
+      branchStructure: {
+        ...existingBranchStructure,
+        branches: nextOrganisationBranchDrafts.length
+          ? nextOrganisationBranchDrafts
+          : Array.isArray(existingBranchStructure.branches)
+            ? existingBranchStructure.branches
+            : [],
+      },
+    },
+    enabledModules: {
+      ...(parseJsonObject(existingSettings.enabledModules)),
+      residential: nextAgencyType !== 'commercial',
+      commercial: true,
+    },
+    organisationBranches: nextOrganisationBranchDrafts,
+    commercialWorkspace: nextCommercialWorkspace,
+  }
+
+  await updateWorkflowSettings(nextSettings)
+  const commercialModuleStatus = await setCommercialOrganisationModuleEnabled(true, {
+    source: 'self_service_enablement',
+    metadata: {
+      source: 'commercial_workspace_enablement',
+      actor_email: actorEmail || null,
+      business_model: businessModel,
+      branch_mode: branchMode,
+      enabled_features: enabledFeatureKeys,
+      selected_organisation_user_ids: selectedOrganisationUserIds,
+      branch_ids: uniqueValues((resolvedBranchRows || []).map((branch) => branch.id)),
+    },
+  })
+
+  for (const userRow of selectedUsers) {
+    await setCommercialUserAccess(userRow.id, true)
+  }
+
+  const scope = await resolveCommercialAccessContext({ forceRefresh: true })
+  return {
+    scope,
+    commercialModuleStatus,
+    selectedUsers,
+    invitedUsers,
+    branches: resolvedBranchRows,
+    settings: nextCommercialWorkspace,
+  }
+}
+
+export async function setCommercialOrganisationModuleEnabled(enabled = true, options = {}) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Commercial setup requires Supabase to be configured.')
   }
@@ -1249,15 +1722,20 @@ export async function setCommercialOrganisationModuleEnabled(enabled = true) {
   }
 
   const nowIso = new Date().toISOString()
+  const source = normalizeText(options.source) || 'manual'
+  const metadata = options.metadata && typeof options.metadata === 'object'
+    ? options.metadata
+    : {}
   const payload = {
     organisation_id: context.organisationId,
     module_key: COMMERCIAL_MODULE_KEY,
     status: enabled ? 'active' : 'disabled',
-    source: 'manual',
+    source,
     metadata: {
-      source: enabled ? 'manual_enable' : 'manual_disable',
+      source: metadata.source || (enabled ? `${source}_enable` : `${source}_disable`),
       actor_user_id: userId,
       changed_at: nowIso,
+      ...metadata,
     },
   }
 
@@ -1286,7 +1764,7 @@ export async function setCommercialOrganisationModuleEnabled(enabled = true) {
     targetId: result.data?.id || context.organisationId,
     metadata: {
       status: enabled ? 'active' : 'disabled',
-      source: 'manual',
+      source,
     },
   })
   commercialScopeCache = null
@@ -1367,6 +1845,29 @@ export async function setCommercialUserAccess(organisationUserId, enabled = true
       source: enabled ? 'manual_grant' : 'manual_revoke',
     },
   })
+  if (enabled) {
+    await syncCommercialWorkspaceTeamAccessEntries({
+      context,
+      addEntries: [{
+        organisationUserId: safeOrganisationUserId,
+        userId: normalizeText(existing.data?.user_id),
+        email: normalizeText(existing.data?.email),
+        fullName: [normalizeText(existing.data?.first_name), normalizeText(existing.data?.last_name)].filter(Boolean).join(' '),
+        role: existing.data?.workspace_role || existing.data?.organisation_role || existing.data?.role,
+        source: 'manual_grant',
+        status: 'active',
+      }],
+    }).catch(() => {})
+  } else {
+    await syncCommercialWorkspaceTeamAccessEntries({
+      context,
+      removeEntry: {
+        organisationUserId: safeOrganisationUserId,
+        userId: normalizeText(existing.data?.user_id),
+        email: normalizeText(existing.data?.email),
+      },
+    }).catch(() => {})
+  }
   commercialScopeCache = null
   return normalizeCommercialAccessAssignment(result.data)
 }
@@ -1451,13 +1952,28 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
     const membership = organisationCommercialEnabled
       ? await findCurrentCommercialMembership(context.organisationId, userId).catch(() => null)
       : null
+    const currentMembership = await findCurrentOrganisationMembership(context.organisationId, userId).catch(() => null)
     const role = normalizeLower(membership?.workspace_role || membership?.organisation_role || membership?.role || context.membershipRole || 'viewer')
     const memberHasCommercialAccess = Boolean(membership?.id && isCommercialMembershipRow(membership))
     const hasCommercialAccess = isPlatformAdmin || (organisationCommercialEnabled && memberHasCommercialAccess)
+    const eligibleForCommercialSelfActivation = Boolean(
+      !hasCommercialAccess &&
+        organisationCommercialEnabled &&
+        (
+          isPlatformAdmin ||
+          canReviewCommercialAccess ||
+          hasCommercialWorkspacePlannedAccess(context.organisationSettings, {
+            organisationUserId: currentMembership?.id,
+            userId,
+            email: normalizeEmail(currentMembership?.email || context.profile?.email),
+          })
+        )
+    )
     const scope = {
       ...context,
       userId,
       membership,
+      currentMembership,
       commercialModuleStatus,
       organisationCommercialEnabled,
       organisationSettingsCommercialEnabled,
@@ -1467,6 +1983,7 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
       teamId: normalizeText(membership?.team_id),
       scopeLevel: isPlatformAdmin ? 'organisation' : hasCommercialAccess ? resolveScopeLevel(role) : 'none',
       hasCommercialAccess,
+      eligibleForCommercialSelfActivation,
       canReviewCommercialAccess,
       canManageBrokerage: isPlatformAdmin || (hasCommercialAccess && resolveScopeLevel(role) !== 'broker'),
     }
@@ -1537,6 +2054,11 @@ export async function activateCommercialWorkspaceForCurrentUser() {
     throw new Error('An active organisation membership is required before Commercial can be activated.')
   }
 
+  const member = await findCurrentOrganisationMembership(context.organisationId, userId)
+  if (!member?.id) {
+    throw new Error('We could not find an active membership to activate for Commercial.')
+  }
+
   let commercialModuleStatus = await getCommercialOrganisationModuleStatus({
     organisationId: context.organisationId,
     forceRefresh: true,
@@ -1549,15 +2071,24 @@ export async function activateCommercialWorkspaceForCurrentUser() {
     }
   }
 
+  const canSelfActivate = Boolean(
+    normalizeLower(context.profile?.role) === 'platform_admin' ||
+      COMMERCIAL_ACCESS_REVIEWER_ROLES.has(context.membershipRole) ||
+      hasCommercialWorkspacePlannedAccess(context.organisationSettings, {
+        organisationUserId: member.id,
+        userId,
+        email: normalizeEmail(member.email || context.profile?.email),
+      }),
+  )
+
+  if (!canSelfActivate) {
+    throw new Error('Commercial access is not assigned to your account yet. Ask your principal to add you to the Commercial workspace.')
+  }
+
   const existingCommercialMembership = await findCurrentCommercialMembership(context.organisationId, userId).catch(() => null)
   if (existingCommercialMembership?.id && isCommercialMembershipRow(existingCommercialMembership)) {
     commercialScopeCache = null
     return resolveCommercialAccessContext({ forceRefresh: true })
-  }
-
-  const member = await findCurrentOrganisationMembership(context.organisationId, userId)
-  if (!member?.id) {
-    throw new Error('We could not find an active membership to activate for Commercial.')
   }
 
   const fullPayload = {

@@ -38,6 +38,7 @@ import {
   buildCanonicalSellerOnboardingPayload,
   validateSellerOnboardingFacts,
 } from '../services/documents/sellerOnboardingFactTransformer'
+import { resolveSellerOnboardingFlow } from '../lib/sellerOnboardingFlow'
 import {
   getPropertyCategoryLabel,
   getPropertyStructureTypeLabel,
@@ -70,15 +71,15 @@ const PROPERTY_FEATURES = [
 ]
 
 const OWNERSHIP_TYPES = [
-  { value: 'individual', label: 'Individual' },
-  { value: 'married_cop', label: 'Married (COP)' },
-  { value: 'married_anc', label: 'Married (ANC)' },
-  { value: 'company', label: 'Company' },
-  { value: 'trust', label: 'Trust' },
-  { value: 'deceased_estate', label: 'Deceased estate' },
-  { value: 'power_of_attorney', label: 'Power of attorney' },
-  { value: 'multiple_owners', label: 'Multiple owners' },
-  { value: 'other', label: 'Other' },
+  { value: 'individual', label: 'Individual', description: 'I own the property in my own name.' },
+  { value: 'married_cop', label: 'Married (COP)', description: 'Married in community of property.' },
+  { value: 'married_anc', label: 'Married (ANC)', description: 'Married out of community of property.' },
+  { value: 'company', label: 'Company', description: 'A company owns the property.' },
+  { value: 'trust', label: 'Trust', description: 'A trust owns the property.' },
+  { value: 'deceased_estate', label: 'Deceased estate', description: 'The property forms part of a deceased estate.' },
+  { value: 'power_of_attorney', label: 'Power of attorney', description: 'Someone is acting under authority.' },
+  { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more individuals own the property.' },
+  { value: 'other', label: 'Other', description: 'Another ownership structure applies.' },
 ]
 
 const CANONICAL_PROPERTY_TYPES = [
@@ -338,123 +339,367 @@ function splitName(fullName = '') {
   return { firstName: parts.slice(0, -1).join(' '), surname: parts.slice(-1).join(' ') }
 }
 
-function normalizeOwnershipType(existing = {}) {
-  if (existing.ownershipType) {
-    const explicit = String(existing.ownershipType).toLowerCase()
+function getCanonicalSellerFacts(listing = {}) {
+  return listing?.sellerOnboarding?.canonicalFacts && typeof listing.sellerOnboarding.canonicalFacts === 'object'
+    ? listing.sellerOnboarding.canonicalFacts
+    : listing?.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
+      ? listing.sellerCanonicalFacts
+      : listing?.sellerOnboarding?.formData?.canonicalSellerFacts && typeof listing.sellerOnboarding.formData.canonicalSellerFacts === 'object'
+        ? listing.sellerOnboarding.formData.canonicalSellerFacts
+        : {}
+}
+
+function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null) {
+  const explicit = String(existing.ownershipType || existing.sellerLegalType || existing.legalType || existing.sellerType || '').toLowerCase()
+  const flowBranch = String(flow?.seller_branch || canonicalFacts?.flow?.seller_branch || '').toLowerCase()
+
+  if (explicit && !['individual', 'other', 'legal_entity'].includes(explicit)) {
     if (explicit === 'married') {
-      return String(existing.marriageRegime || '').toLowerCase().includes('cop') ? 'married_cop' : 'married_anc'
+      return String(existing.marriageRegime || existing.maritalRegime || canonicalFacts?.seller?.marital_regime || '').toLowerCase().includes('cop') ? 'married_cop' : 'married_anc'
     }
     return explicit
   }
-  if (String(existing.maritalStatus || '').toLowerCase() === 'married') {
-    return String(existing.marriageRegime || '').toLowerCase().includes('cop') ? 'married_cop' : 'married_anc'
+
+  if (flowBranch === 'married') {
+    const regime = String(existing.maritalRegime || existing.marriageRegime || canonicalFacts?.seller?.marital_regime || '').toLowerCase()
+    return regime.includes('in_community') || regime.includes('cop') || regime === 'community_of_property' ? 'married_cop' : 'married_anc'
   }
-  return 'individual'
+  if (flowBranch === 'company') return 'company'
+  if (flowBranch === 'trust') return 'trust'
+  if (flowBranch === 'deceased_estate') return 'deceased_estate'
+  if (flowBranch === 'power_of_attorney') return 'power_of_attorney'
+  if (flowBranch === 'multiple_owners') return 'multiple_owners'
+
+  if (String(existing.maritalStatus || '').toLowerCase() === 'married') {
+    const regime = String(existing.marriageRegime || existing.maritalRegime || canonicalFacts?.seller?.marital_regime || '').toLowerCase()
+    return regime.includes('in_community') || regime.includes('cop') || regime === 'community_of_property' ? 'married_cop' : 'married_anc'
+  }
+
+  return explicit || 'individual'
+}
+
+function getOwnershipBranch(value = '') {
+  const normalized = String(value || '').toLowerCase()
+  if (['married_cop', 'married_anc', 'married'].includes(normalized)) return 'married'
+  return normalized || 'individual'
+}
+
+function normalizePersonRecordForForm(entry = {}, index = 0, roleTitle = 'Person') {
+  const fullName = String(entry.fullName || entry.full_name || entry.name || entry.contact_name || '').trim()
+  const split = splitName(fullName)
+  const normalizedRole = String(roleTitle || 'Person').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  return {
+    id: String(entry.id || `${normalizedRole || 'person'}-${index + 1}`),
+    name: String(entry.name || entry.first_name || split.firstName || '').trim(),
+    surname: String(entry.surname || entry.last_name || split.surname || '').trim(),
+    email: String(entry.email || '').trim(),
+    phone: String(entry.phone || '').trim(),
+    residentialAddress: String(entry.residentialAddress || entry.residential_address || entry.address || '').trim(),
+    idNumber: String(entry.idNumber || entry.id_number || entry.identityNumber || entry.identity_number || '').trim(),
+    ownershipShare: String(entry.ownershipShare || entry.ownership_share || '').trim(),
+    consentToSell: Boolean(entry.consentToSell ?? entry.consent_to_sell),
+    signingAuthority: Boolean(entry.signingAuthority ?? entry.signing_authority),
+    roleTitle: String(entry.roleTitle || entry.role_title || roleTitle || '').trim(),
+  }
+}
+
+function normalizePersonCollectionForForm(entries = [], fallback = null, roleTitle = 'Person') {
+  const source = Array.isArray(entries) ? entries : []
+  const mapped = source
+    .map((entry, index) => normalizePersonRecordForForm(entry, index, roleTitle))
+    .filter((entry) => Boolean(entry.name || entry.surname || entry.email || entry.phone || entry.idNumber))
+
+  if (mapped.length) return mapped
+
+  if (fallback && typeof fallback === 'object') {
+    const record = normalizePersonRecordForForm(fallback, 0, roleTitle)
+    if (record.name || record.surname || record.email || record.phone || record.idNumber) {
+      return [record]
+    }
+  }
+
+  return []
+}
+
+function createBlankPersonRecord(roleTitle = 'Person', index = 0) {
+  const normalizedRole = String(roleTitle || 'person').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  return {
+    id: `${normalizedRole || 'person'}-${Date.now()}-${index + 1}`,
+    name: '',
+    surname: '',
+    email: '',
+    phone: '',
+    residentialAddress: '',
+    idNumber: '',
+    ownershipShare: '',
+    consentToSell: false,
+    signingAuthority: false,
+    roleTitle,
+  }
+}
+
+function getOwnershipBranchLabel(value = '') {
+  const normalized = getOwnershipBranch(value)
+  if (normalized === 'married') return 'Married'
+  return OWNERSHIP_TYPES.find((item) => item.value === value)?.label || formatValue(normalized || 'individual')
+}
+
+function getOwnershipFieldLabels(value = '') {
+  const branch = getOwnershipBranch(value)
+  const isEntityBranch = ['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(branch)
+  return {
+    firstName: isEntityBranch ? 'Primary contact first name' : 'First name',
+    surname: isEntityBranch ? 'Primary contact surname' : 'Surname',
+    idNumber:
+      branch === 'company'
+        ? 'Company registration number'
+        : branch === 'trust'
+          ? 'Trust registration number'
+          : branch === 'deceased_estate'
+            ? 'Estate reference'
+            : branch === 'power_of_attorney'
+              ? 'Authority reference'
+              : branch === 'multiple_owners'
+                ? 'Primary owner ID number'
+                : 'ID number',
+    address:
+      branch === 'company'
+        ? 'Registered address'
+        : branch === 'trust'
+          ? 'Trust address'
+          : branch === 'deceased_estate'
+            ? 'Estate contact address'
+            : branch === 'power_of_attorney'
+              ? 'Representative address'
+              : branch === 'multiple_owners'
+                ? 'Primary owner address'
+                : 'Residential address',
+  }
+}
+
+function getFlowContract(existing = {}, listing = {}, canonicalFacts = {}) {
+  return resolveSellerOnboardingFlow(existing, listing, canonicalFacts)
 }
 
 function normalizeFormData(listing) {
   const seller = listing?.seller || {}
   const existing = listing?.sellerOnboarding?.formData || {}
+  const canonicalFacts = getCanonicalSellerFacts(listing)
+  const flow = getFlowContract(existing, listing, canonicalFacts)
   const split = splitName(existing.fullName || seller.name || '')
+  const sellerBranch = String(flow?.seller_branch || '').toLowerCase()
+  const companyDirectors = normalizePersonCollectionForForm(
+    existing.companyDirectors || canonicalFacts?.seller?.company?.directors || existing.directors || [],
+    {
+      id: 'director-1',
+      name: existing.companyDirectorName || canonicalFacts?.seller?.company?.director_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || '',
+      email: existing.companyDirectorEmail || canonicalFacts?.seller?.company?.director_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || '',
+      phone: existing.companyDirectorPhone || canonicalFacts?.seller?.company?.director_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || '',
+      residentialAddress: existing.companyDirectorAddress || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || existing.companyRegisteredAddress || existing.residentialAddress || '',
+      signingAuthority: Boolean(canonicalFacts?.seller?.company?.authorised_signatory?.name),
+      roleTitle: 'Director',
+    },
+    'Director',
+  )
+  const trustTrustees = normalizePersonCollectionForForm(
+    existing.trustees || canonicalFacts?.seller?.trust?.trustees || [],
+    {
+      id: 'trustee-1',
+      name: existing.trusteeName || canonicalFacts?.seller?.trust?.trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || '',
+      email: existing.trusteeEmail || canonicalFacts?.seller?.trust?.trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || '',
+      phone: existing.trusteePhone || canonicalFacts?.seller?.trust?.trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
+      residentialAddress: existing.trusteeAddress || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || existing.trustRegisteredAddress || existing.residentialAddress || '',
+      signingAuthority: Boolean(canonicalFacts?.seller?.trust?.authorised_trustee?.name),
+      roleTitle: 'Trustee',
+    },
+    'Trustee',
+  )
+  const estateExecutors = normalizePersonCollectionForForm(
+    existing.executors || canonicalFacts?.seller?.deceased_estate?.executors || [],
+    {
+      id: 'executor-1',
+      name: existing.executorName || canonicalFacts?.seller?.deceased_estate?.executor_name || '',
+      email: existing.executorEmail || canonicalFacts?.seller?.deceased_estate?.executor_email || '',
+      phone: existing.executorPhone || canonicalFacts?.seller?.deceased_estate?.executor_phone || '',
+      residentialAddress: existing.executorAddress || existing.residentialAddress || '',
+      signingAuthority: true,
+      roleTitle: 'Executor',
+    },
+    'Executor',
+  )
+  const poaRepresentatives = normalizePersonCollectionForForm(
+    existing.powerOfAttorneyRepresentatives || canonicalFacts?.seller?.power_of_attorney?.representatives || [],
+    {
+      id: 'poa-1',
+      name: existing.powerOfAttorneyName || canonicalFacts?.seller?.power_of_attorney?.representative_name || '',
+      email: existing.powerOfAttorneyEmail || canonicalFacts?.seller?.power_of_attorney?.representative_email || '',
+      phone: existing.powerOfAttorneyPhone || canonicalFacts?.seller?.power_of_attorney?.representative_phone || '',
+      residentialAddress: existing.powerOfAttorneyAddress || existing.residentialAddress || '',
+      signingAuthority: true,
+      roleTitle: 'Representative',
+    },
+    'Representative',
+  )
+  const ownerRecords = normalizePersonCollectionForForm(
+    existing.multipleOwners || canonicalFacts?.seller?.owners || [],
+    {
+      id: 'owner-1',
+      name: '',
+      surname: '',
+      idNumber: '',
+      email: '',
+      phone: '',
+      ownershipShare: '',
+      consentToSell: false,
+      roleTitle: 'Owner',
+    },
+    'Owner',
+  )
+  const multipleOwnerRecords =
+    sellerBranch === 'multiple_owners' && ownerRecords.length < 2
+      ? [...ownerRecords, createBlankPersonRecord('Owner', ownerRecords.length)]
+      : ownerRecords
+  const resolveIdNumber = () => {
+    if (sellerBranch === 'company') return canonicalFacts?.seller?.company?.registration_number || existing.idNumber || ''
+    if (sellerBranch === 'trust') return canonicalFacts?.seller?.trust?.registration_number || existing.idNumber || ''
+    if (sellerBranch === 'deceased_estate') return canonicalFacts?.seller?.deceased_estate?.estate_reference || existing.idNumber || ''
+    if (sellerBranch === 'power_of_attorney') return canonicalFacts?.seller?.power_of_attorney?.reference || existing.idNumber || ''
+    if (sellerBranch === 'multiple_owners') return existing.idNumber || ''
+    return existing.idNumber || canonicalFacts?.seller?.id_number || ''
+  }
+  const resolveAddress = () => {
+    if (sellerBranch === 'company') return canonicalFacts?.seller?.company?.registered_address || canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
+    if (sellerBranch === 'trust') return canonicalFacts?.seller?.trust?.registered_address || canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
+    return canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
+  }
+  const ownershipFieldLabels = getOwnershipFieldLabels(flow?.seller_branch || existing.ownershipType || '')
 
   return {
-    sellerFirstName: existing.sellerFirstName || split.firstName,
-    sellerSurname: existing.sellerSurname || split.surname,
-    idNumber: existing.idNumber || '',
-    email: existing.email || seller.email || '',
-    phone: existing.phone || seller.phone || '',
-    residentialAddress: existing.residentialAddress || '',
+    sellerFirstName: existing.sellerFirstName || canonicalFacts?.seller?.first_name || split.firstName,
+    sellerSurname: existing.sellerSurname || canonicalFacts?.seller?.surname || split.surname,
+    idNumber: resolveIdNumber(),
+    email: existing.email || canonicalFacts?.seller?.email || seller.email || '',
+    phone: existing.phone || canonicalFacts?.seller?.phone || seller.phone || '',
+    residentialAddress: resolveAddress(),
 
-    ownershipType: normalizeOwnershipType(existing),
-    sellerLegalType: existing.sellerLegalType || existing.legalType || normalizeOwnershipType(existing),
-    sellerTaxNumber: existing.sellerTaxNumber || existing.taxNumber || '',
+    ownershipType: normalizeOwnershipType(existing, canonicalFacts, flow),
+    sellerLegalType: existing.sellerLegalType || existing.legalType || canonicalFacts?.seller?.legal_type || normalizeOwnershipType(existing, canonicalFacts, flow),
+    sellerTaxNumber: existing.sellerTaxNumber || canonicalFacts?.seller?.tax_number || existing.taxNumber || '',
     vatRegistered: Boolean(existing.vatRegistered),
     vatNumber: existing.vatNumber || '',
-    maritalStatus: existing.maritalStatus || (String(normalizeOwnershipType(existing)).includes('married') ? 'married' : 'not_married'),
-    maritalRegime: existing.maritalRegime || (normalizeOwnershipType(existing) === 'married_cop' ? 'in_community' : normalizeOwnershipType(existing) === 'married_anc' ? 'anc' : 'not_applicable'),
-    authorisedRepresentative: existing.authorisedRepresentative || '',
-    spouseName: existing.spouseName || '',
-    spouseIdNumber: existing.spouseIdNumber || '',
-    spouseEmail: existing.spouseEmail || '',
-    spousePhone: existing.spousePhone || '',
+    maritalStatus: existing.maritalStatus || canonicalFacts?.seller?.marital_status || (String(normalizeOwnershipType(existing, canonicalFacts, flow)).includes('married') ? 'married' : 'not_married'),
+    maritalRegime: existing.maritalRegime || canonicalFacts?.seller?.marital_regime || (normalizeOwnershipType(existing, canonicalFacts, flow) === 'married_cop' ? 'in_community' : normalizeOwnershipType(existing, canonicalFacts, flow) === 'married_anc' ? 'anc' : 'not_applicable'),
+    authorisedRepresentative: existing.authorisedRepresentative || canonicalFacts?.seller?.authorised_representative || '',
+    spouseName: existing.spouseName || canonicalFacts?.seller?.spouse?.name || '',
+    spouseIdNumber: existing.spouseIdNumber || canonicalFacts?.seller?.spouse?.id_number || '',
+    spouseEmail: existing.spouseEmail || canonicalFacts?.seller?.spouse?.email || '',
+    spousePhone: existing.spousePhone || canonicalFacts?.seller?.spouse?.phone || '',
 
-    companyName: existing.companyName || existing.entityName || '',
-    companyRegistrationNumber: existing.companyRegistrationNumber || existing.entityRegistrationNumber || '',
-    companyDirectorName: existing.companyDirectorName || existing.entityRepresentative || '',
-    companyDirectorEmail: existing.companyDirectorEmail || '',
-    companyDirectorPhone: existing.companyDirectorPhone || '',
+    companyName: existing.companyName || canonicalFacts?.seller?.company?.name || existing.entityName || '',
+    companyRegistrationNumber: existing.companyRegistrationNumber || canonicalFacts?.seller?.company?.registration_number || existing.entityRegistrationNumber || '',
+    companyDirectors,
+    companyDirectorName: existing.companyDirectorName || companyDirectors[0]?.name || canonicalFacts?.seller?.company?.director_name || canonicalFacts?.seller?.company?.authorised_signatory?.name || existing.entityRepresentative || '',
+    companyDirectorEmail: existing.companyDirectorEmail || companyDirectors[0]?.email || canonicalFacts?.seller?.company?.director_email || canonicalFacts?.seller?.company?.authorised_signatory?.email || '',
+    companyDirectorPhone: existing.companyDirectorPhone || companyDirectors[0]?.phone || canonicalFacts?.seller?.company?.director_phone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || '',
+    companyRegisteredAddress: existing.companyRegisteredAddress || canonicalFacts?.seller?.company?.registered_address || existing.residentialAddress || '',
+    authorisedSignatoryName: existing.authorisedSignatoryName || canonicalFacts?.seller?.company?.authorised_signatory?.name || '',
+    authorisedSignatoryEmail: existing.authorisedSignatoryEmail || canonicalFacts?.seller?.company?.authorised_signatory?.email || '',
+    authorisedSignatoryPhone: existing.authorisedSignatoryPhone || canonicalFacts?.seller?.company?.authorised_signatory?.phone || '',
+    authorisedSignatoryAddress: existing.authorisedSignatoryAddress || canonicalFacts?.seller?.company?.authorised_signatory?.residential_address || '',
 
-    trustName: existing.trustName || existing.entityName || '',
-    trustRegistrationNumber: existing.trustRegistrationNumber || existing.entityRegistrationNumber || '',
-    trusteeName: existing.trusteeName || existing.entityRepresentative || '',
-    trusteeEmail: existing.trusteeEmail || '',
-    trusteePhone: existing.trusteePhone || '',
+    trustName: existing.trustName || canonicalFacts?.seller?.trust?.name || existing.entityName || '',
+    trustRegistrationNumber: existing.trustRegistrationNumber || canonicalFacts?.seller?.trust?.registration_number || existing.entityRegistrationNumber || '',
+    trustees: trustTrustees,
+    trusteeName: existing.trusteeName || trustTrustees[0]?.name || canonicalFacts?.seller?.trust?.trustee_name || canonicalFacts?.seller?.trust?.authorised_trustee?.name || existing.entityRepresentative || '',
+    trusteeEmail: existing.trusteeEmail || trustTrustees[0]?.email || canonicalFacts?.seller?.trust?.trustee_email || canonicalFacts?.seller?.trust?.authorised_trustee?.email || '',
+    trusteePhone: existing.trusteePhone || trustTrustees[0]?.phone || canonicalFacts?.seller?.trust?.trustee_phone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
+    trustRegisteredAddress: existing.trustRegisteredAddress || canonicalFacts?.seller?.trust?.registered_address || existing.residentialAddress || '',
+    authorisedTrusteeName: existing.authorisedTrusteeName || canonicalFacts?.seller?.trust?.authorised_trustee?.name || '',
+    authorisedTrusteeEmail: existing.authorisedTrusteeEmail || canonicalFacts?.seller?.trust?.authorised_trustee?.email || '',
+    authorisedTrusteePhone: existing.authorisedTrusteePhone || canonicalFacts?.seller?.trust?.authorised_trustee?.phone || '',
+    authorisedTrusteeAddress: existing.authorisedTrusteeAddress || canonicalFacts?.seller?.trust?.authorised_trustee?.residential_address || '',
 
-    executorName: existing.executorName || '',
-    executorEmail: existing.executorEmail || '',
-    executorPhone: existing.executorPhone || '',
-    estateReference: existing.estateReference || '',
+    executors: estateExecutors,
+    executorName: existing.executorName || estateExecutors[0]?.name || canonicalFacts?.seller?.deceased_estate?.executor_name || '',
+    executorEmail: existing.executorEmail || estateExecutors[0]?.email || canonicalFacts?.seller?.deceased_estate?.executor_email || '',
+    executorPhone: existing.executorPhone || estateExecutors[0]?.phone || canonicalFacts?.seller?.deceased_estate?.executor_phone || '',
+    estateReference: existing.estateReference || canonicalFacts?.seller?.deceased_estate?.estate_reference || '',
+    executorAuthorityDetails: existing.executorAuthorityDetails || canonicalFacts?.seller?.deceased_estate?.authority_details || '',
 
-    powerOfAttorneyName: existing.powerOfAttorneyName || existing.authorisedRepresentative || '',
-    powerOfAttorneyEmail: existing.powerOfAttorneyEmail || '',
-    powerOfAttorneyPhone: existing.powerOfAttorneyPhone || '',
+    powerOfAttorneyRepresentatives: poaRepresentatives,
+    powerOfAttorneyName: existing.powerOfAttorneyName || poaRepresentatives[0]?.name || canonicalFacts?.seller?.power_of_attorney?.representative_name || existing.authorisedRepresentative || '',
+    powerOfAttorneyEmail: existing.powerOfAttorneyEmail || poaRepresentatives[0]?.email || canonicalFacts?.seller?.power_of_attorney?.representative_email || '',
+    powerOfAttorneyPhone: existing.powerOfAttorneyPhone || poaRepresentatives[0]?.phone || canonicalFacts?.seller?.power_of_attorney?.representative_phone || '',
+    powerOfAttorneyPrincipalName: existing.powerOfAttorneyPrincipalName || canonicalFacts?.seller?.power_of_attorney?.principal?.name || '',
+    powerOfAttorneyPrincipalIdNumber: existing.powerOfAttorneyPrincipalIdNumber || canonicalFacts?.seller?.power_of_attorney?.principal?.id_number || '',
+    powerOfAttorneyReference: existing.powerOfAttorneyReference || canonicalFacts?.seller?.power_of_attorney?.reference || '',
+    powerOfAttorneyAuthorityDetails: existing.powerOfAttorneyAuthorityDetails || canonicalFacts?.seller?.power_of_attorney?.authority_details || '',
 
-    multipleOwners: Array.isArray(existing.multipleOwners) && existing.multipleOwners.length
-      ? existing.multipleOwners
-      : [
-          {
-            id: 'owner-1',
-            name: '',
-            surname: '',
-            idNumber: '',
-            email: '',
-            phone: '',
-            ownershipShare: '',
-          },
-        ],
+    multipleOwners: multipleOwnerRecords.map((owner, index) => ({
+      id: owner.id || `owner-${index + 1}`,
+      name: owner.name || owner.first_name || '',
+      surname: owner.surname || '',
+      idNumber: owner.idNumber || owner.id_number || '',
+      email: owner.email || '',
+      phone: owner.phone || '',
+      ownershipShare: owner.ownershipShare || owner.ownership_share || '',
+      consentToSell: Boolean(owner.consentToSell ?? owner.consent_to_sell),
+    })),
+    ownershipFieldLabels,
 
     askingPrice: existing.askingPrice || String(listing?.askingPrice || ''),
     sellingTimeline: existing.sellingTimeline || '1_3_months',
     sellingReason: existing.sellingReason || '',
 
-    propertyCategory: normalizePropertyCategory(existing.propertyCategory || listing?.propertyCategory || listing?.property_category, { fallback: 'residential' }),
-    propertyStructureType: normalizePropertyStructureType(existing.propertyStructureType || listing?.propertyStructureType || listing?.property_structure_type || existing.propertyType, { fallback: 'other' }),
-    canonicalPropertyType: existing.canonicalPropertyType || existing.propertyClassification || '',
-    sectionalTitle: Boolean(existing.sectionalTitle),
-    shareBlock: Boolean(existing.shareBlock),
-    estateOrHoa: Boolean(existing.estateOrHoa),
-    bodyCorporate: Boolean(existing.bodyCorporate),
-    commercialProperty: Boolean(existing.commercialProperty),
-    propertyType: existing.propertyType || listing?.propertyType || 'house',
-    propertyAddress: existing.propertyAddress || [listing?.listingTitle, listing?.suburb, listing?.city].filter(Boolean).join(', '),
-    suburb: existing.suburb || listing?.suburb || '',
-    city: existing.city || listing?.city || '',
-    province: existing.province || '',
-    municipality: existing.municipality || existing.city || listing?.city || '',
-    estateComplexName: existing.estateComplexName || '',
-    estateName: existing.estateName || existing.estateComplexName || '',
-    unitNumber: existing.unitNumber || '',
-    sectionNumber: existing.sectionNumber || '',
-    schemeName: existing.schemeName || '',
-    erfNumber: existing.erfNumber || '',
-    titleDeedAvailable: Boolean(existing.titleDeedAvailable),
-    sgDiagramAvailable: Boolean(existing.sgDiagramAvailable),
-    erfDiagramAvailable: Boolean(existing.erfDiagramAvailable),
-    approvedBuildingPlansAvailable: Boolean(existing.approvedBuildingPlansAvailable),
-    floorPlanAvailable: Boolean(existing.floorPlanAvailable),
+    propertyCategory: normalizePropertyCategory(existing.propertyCategory || canonicalFacts?.property?.property_category || listing?.propertyCategory || listing?.property_category, { fallback: 'residential' }),
+    propertyStructureType: normalizePropertyStructureType(existing.propertyStructureType || canonicalFacts?.property?.property_structure_type || listing?.propertyStructureType || listing?.property_structure_type || existing.propertyType, { fallback: 'other' }),
+    canonicalPropertyType: existing.canonicalPropertyType || canonicalFacts?.property?.property_type || existing.propertyClassification || '',
+    sectionalTitle: Boolean(existing.sectionalTitle || canonicalFacts?.property?.sectional_title || flow.property_branch === 'sectional_title'),
+    shareBlock: Boolean(existing.shareBlock || canonicalFacts?.property?.share_block),
+    estateOrHoa: Boolean(existing.estateOrHoa || canonicalFacts?.property?.estate_or_hoa || flow.property_branch === 'estate_hoa'),
+    bodyCorporate: Boolean(existing.bodyCorporate || canonicalFacts?.property?.body_corporate),
+    commercialProperty: Boolean(existing.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(flow.property_branch)),
+    propertyType: existing.propertyType || canonicalFacts?.property?.property_type || listing?.propertyType || 'house',
+    propertyAddress: existing.propertyAddress || canonicalFacts?.property?.address || [listing?.listingTitle, listing?.suburb, listing?.city].filter(Boolean).join(', '),
+    suburb: existing.suburb || canonicalFacts?.property?.suburb || listing?.suburb || '',
+    city: existing.city || canonicalFacts?.property?.city || listing?.city || '',
+    province: existing.province || canonicalFacts?.property?.province || '',
+    municipality: existing.municipality || canonicalFacts?.property?.municipality || existing.city || listing?.city || '',
+    estateComplexName: existing.estateComplexName || canonicalFacts?.property?.estate_name || '',
+    estateName: existing.estateName || canonicalFacts?.property?.estate_name || existing.estateComplexName || '',
+    unitNumber: existing.unitNumber || canonicalFacts?.property?.unit_number || '',
+    sectionNumber: existing.sectionNumber || canonicalFacts?.property?.section_number || '',
+    schemeName: existing.schemeName || canonicalFacts?.property?.scheme_name || '',
+    erfNumber: existing.erfNumber || canonicalFacts?.property?.erf_number || '',
+    titleDeedAvailable: Boolean(existing.titleDeedAvailable || canonicalFacts?.property?.title_deed_available),
+    sgDiagramAvailable: Boolean(existing.sgDiagramAvailable || canonicalFacts?.property?.sg_diagram_available),
+    erfDiagramAvailable: Boolean(existing.erfDiagramAvailable || canonicalFacts?.property?.erf_diagram_available),
+    approvedBuildingPlansAvailable: Boolean(existing.approvedBuildingPlansAvailable || canonicalFacts?.property?.approved_building_plans_available),
+    floorPlanAvailable: Boolean(existing.floorPlanAvailable || canonicalFacts?.property?.floor_plan_available),
 
-    erfSize: existing.erfSize || '',
-    floorSize: existing.floorSize || '',
-    bedrooms: existing.bedrooms || '',
-    bathrooms: existing.bathrooms || '',
-    livingArea: existing.livingArea || '',
-    kitchens: existing.kitchens || '',
-    garages: existing.garages || '',
-    parkingCovered: existing.parkingCovered || '',
-    parkingOpen: existing.parkingOpen || '',
-    pool: Boolean(existing.pool),
-    levies: existing.levies || '',
-    ratesTaxes: existing.ratesTaxes || '',
+    erfSize: existing.erfSize || canonicalFacts?.property?.erf_size || '',
+    floorSize: existing.floorSize || canonicalFacts?.property?.floor_size || '',
+    bedrooms: existing.bedrooms || canonicalFacts?.property?.bedrooms || '',
+    bathrooms: existing.bathrooms || canonicalFacts?.property?.bathrooms || '',
+    livingArea: existing.livingArea || canonicalFacts?.property?.living_area || '',
+    kitchens: existing.kitchens || canonicalFacts?.property?.kitchens || '',
+    garages: existing.garages || canonicalFacts?.property?.garages || '',
+    parkingCovered: existing.parkingCovered || canonicalFacts?.property?.parking_covered || '',
+    parkingOpen: existing.parkingOpen || canonicalFacts?.property?.parking_open || '',
+    pool: Boolean(existing.pool || canonicalFacts?.property?.pool),
+    levies: existing.levies || canonicalFacts?.property?.levies || '',
+    ratesTaxes: existing.ratesTaxes || canonicalFacts?.property?.rates_taxes || '',
+    monthlyWaterSpend: existing.monthlyWaterSpend || canonicalFacts?.property?.utilities?.monthly_water_spend || '',
+    monthlyElectricitySpend: existing.monthlyElectricitySpend || canonicalFacts?.property?.utilities?.monthly_electricity_spend || '',
+    recentAlterations: Boolean(existing.recentAlterations || canonicalFacts?.property?.alterations?.recent),
+    alterationDetails: existing.alterationDetails || canonicalFacts?.property?.alterations?.details || '',
+
+    flowVersion: flow.version || canonicalFacts?.flow?.version || '',
+    sellerBranch: flow.seller_branch || '',
+    propertyBranch: flow.property_branch || '',
+    flowVisibleFields: Array.isArray(flow.visible_fields) ? flow.visible_fields : [],
+    flowRequiredFields: Array.isArray(flow.required_fields) ? flow.required_fields : [],
+    flowDocumentTriggers: Array.isArray(flow.document_triggers) ? flow.document_triggers : [],
 
     features: Array.isArray(existing.features) ? existing.features : [],
     propertyCondition: existing.propertyCondition || 'good',
@@ -484,20 +729,21 @@ function normalizeFormData(listing) {
     cancellationAttorneyKnown: Boolean(existing.cancellationAttorneyKnown),
     cancellationAttorneyDetails: existing.cancellationAttorneyDetails || '',
 
-    gasInstallation: Boolean(existing.gasInstallation),
-    electricFence: Boolean(existing.electricFence),
-    solarInstallation: Boolean(existing.solarInstallation),
-    swimmingPool: Boolean(existing.swimmingPool || existing.pool),
-    borehole: Boolean(existing.borehole),
-    generatorInstallation: Boolean(existing.generatorInstallation),
-    beetleCertificateRegion: Boolean(existing.beetleCertificateRegion),
-    plumbingCertificateRequired: Boolean(existing.plumbingCertificateRequired),
-    occupationCertificateAvailable: Boolean(existing.occupationCertificateAvailable),
-    electricalCocAvailable: Boolean(existing.electricalCocAvailable),
-    gasCocAvailable: Boolean(existing.gasCocAvailable),
-    electricFenceCertificateAvailable: Boolean(existing.electricFenceCertificateAvailable),
-    plumbingCertificateAvailable: Boolean(existing.plumbingCertificateAvailable),
-    solarComplianceAvailable: Boolean(existing.solarComplianceAvailable),
+    gasInstallation: Boolean(existing.gasInstallation || canonicalFacts?.compliance?.gas_installation),
+    electricFence: Boolean(existing.electricFence || canonicalFacts?.compliance?.electric_fence),
+    solarInstallation: Boolean(existing.solarInstallation || canonicalFacts?.compliance?.solar_installation),
+    swimmingPool: Boolean(existing.swimmingPool || existing.pool || canonicalFacts?.compliance?.swimming_pool),
+    boreholeInstallation: Boolean(existing.boreholeInstallation || existing.borehole || canonicalFacts?.compliance?.borehole_installation || canonicalFacts?.compliance?.borehole),
+    borehole: Boolean(existing.borehole || existing.boreholeInstallation || canonicalFacts?.compliance?.borehole_installation || canonicalFacts?.compliance?.borehole),
+    generatorInstallation: Boolean(existing.generatorInstallation || canonicalFacts?.compliance?.generator_installation),
+    beetleCertificateRegion: Boolean(existing.beetleCertificateRegion || canonicalFacts?.compliance?.beetle_certificate_region),
+    plumbingCertificateRequired: Boolean(existing.plumbingCertificateRequired || canonicalFacts?.compliance?.plumbing_certificate_required),
+    occupationCertificateAvailable: Boolean(existing.occupationCertificateAvailable || canonicalFacts?.compliance?.occupation_certificate_available),
+    electricalCocAvailable: Boolean(existing.electricalCocAvailable || canonicalFacts?.compliance?.electrical_coc_available),
+    gasCocAvailable: Boolean(existing.gasCocAvailable || canonicalFacts?.compliance?.gas_coc_available),
+    electricFenceCertificateAvailable: Boolean(existing.electricFenceCertificateAvailable || canonicalFacts?.compliance?.electric_fence_certificate_available),
+    plumbingCertificateAvailable: Boolean(existing.plumbingCertificateAvailable || canonicalFacts?.compliance?.plumbing_certificate_available),
+    solarComplianceAvailable: Boolean(existing.solarComplianceAvailable || canonicalFacts?.compliance?.solar_compliance_available),
   }
 }
 
@@ -931,7 +1177,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const isCompleted = String(listing?.sellerOnboarding?.status || '').trim().toLowerCase() === SELLER_ONBOARDING_STATUS.COMPLETED
 
   const ficaRequirements = useMemo(() => {
-    const type = String(form?.ownershipType || '').toLowerCase()
+    const type = getOwnershipBranch(form?.ownershipType)
     if (type === 'company') {
       return [
         'Company registration documents',
@@ -955,7 +1201,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         'Ownership share confirmation',
       ]
     }
-    if (type === 'married_cop' || type === 'married_anc') {
+    if (type === 'married') {
       return [
         'Seller ID document',
         'Spouse ID document',
@@ -1022,17 +1268,26 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   function handleOwnershipTypeChange(value) {
     setForm((previous) => {
       const next = { ...(previous || {}), ownershipType: value, sellerLegalType: value }
-      if (value === 'married_cop') {
-        next.maritalStatus = 'married'
-        next.maritalRegime = 'in_community'
-      } else if (value === 'married_anc') {
-        next.maritalStatus = 'married'
-        next.maritalRegime = 'anc'
-      } else if (next.maritalStatus === 'married' && !next.maritalRegime) {
-        next.maritalRegime = 'unknown'
-      } else if (!String(value || '').startsWith('married') && !next.maritalStatus) {
-        next.maritalStatus = 'not_married'
-        next.maritalRegime = 'not_applicable'
+      const branch = getOwnershipBranch(value)
+      next.maritalStatus = branch === 'married' ? 'married' : 'not_married'
+      next.maritalRegime = value === 'married_cop' ? 'in_community' : value === 'married_anc' ? 'anc' : branch === 'married' ? (next.maritalRegime || 'unknown') : 'not_applicable'
+      if (branch === 'company' && !(next.companyDirectors || []).length) {
+        next.companyDirectors = [createBlankPersonRecord('Director')]
+      }
+      if (branch === 'trust' && !(next.trustees || []).length) {
+        next.trustees = [createBlankPersonRecord('Trustee')]
+      }
+      if (branch === 'deceased_estate' && !(next.executors || []).length) {
+        next.executors = [createBlankPersonRecord('Executor')]
+      }
+      if (branch === 'power_of_attorney' && !(next.powerOfAttorneyRepresentatives || []).length) {
+        next.powerOfAttorneyRepresentatives = [createBlankPersonRecord('Representative')]
+      }
+      if (branch === 'multiple_owners' && (next.multipleOwners || []).length < 2) {
+        const currentOwners = Array.isArray(next.multipleOwners) ? next.multipleOwners : []
+        next.multipleOwners = currentOwners.length
+          ? [...currentOwners, createBlankPersonRecord('Owner', currentOwners.length)]
+          : [createBlankPersonRecord('Owner'), createBlankPersonRecord('Owner', 1)]
       }
       return next
     })
@@ -1047,42 +1302,70 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     })
   }
 
-  function updateMultipleOwner(ownerId, key, value) {
+  function updateCollectionItem(collectionKey, itemId, key, value) {
     setForm((previous) => ({
       ...(previous || {}),
-      multipleOwners: (previous?.multipleOwners || []).map((owner) =>
-        owner.id === ownerId ? { ...owner, [key]: value } : owner,
+      [collectionKey]: (previous?.[collectionKey] || []).map((item) =>
+        item.id === itemId ? { ...item, [key]: value } : item,
       ),
     }))
   }
 
+  function addCollectionItem(collectionKey, roleTitle) {
+    setForm((previous) => {
+      const current = previous?.[collectionKey] || []
+      return {
+        ...(previous || {}),
+        [collectionKey]: [...current, createBlankPersonRecord(roleTitle, current.length)],
+      }
+    })
+  }
+
+  function removeCollectionItem(collectionKey, itemId, minCount = 1) {
+    setForm((previous) => {
+      const current = previous?.[collectionKey] || []
+      if (current.length <= minCount) return previous
+      return {
+        ...(previous || {}),
+        [collectionKey]: current.filter((item) => item.id !== itemId),
+      }
+    })
+  }
+
+  function updateMultipleOwner(ownerId, key, value) {
+    updateCollectionItem('multipleOwners', ownerId, key, value)
+  }
+
   function addMultipleOwner() {
-    setForm((previous) => ({
-      ...(previous || {}),
-      multipleOwners: [
-        ...(previous?.multipleOwners || []),
-        {
-          id: `owner-${Date.now()}`,
-          name: '',
-          surname: '',
-          idNumber: '',
-          email: '',
-          phone: '',
-          ownershipShare: '',
-        },
-      ],
-    }))
+    addCollectionItem('multipleOwners', 'Owner')
   }
 
   function removeMultipleOwner(ownerId) {
-    setForm((previous) => {
-      const current = previous?.multipleOwners || []
-      if (current.length <= 1) return previous
-      return {
-        ...(previous || {}),
-        multipleOwners: current.filter((owner) => owner.id !== ownerId),
-      }
-    })
+    removeCollectionItem('multipleOwners', ownerId, 2)
+  }
+
+  function updateCompanyDirector(directorId, key, value) {
+    updateCollectionItem('companyDirectors', directorId, key, value)
+  }
+
+  function addCompanyDirector() {
+    addCollectionItem('companyDirectors', 'Director')
+  }
+
+  function removeCompanyDirector(directorId) {
+    removeCollectionItem('companyDirectors', directorId)
+  }
+
+  function updateTrustee(trusteeId, key, value) {
+    updateCollectionItem('trustees', trusteeId, key, value)
+  }
+
+  function addTrustee() {
+    addCollectionItem('trustees', 'Trustee')
+  }
+
+  function removeTrustee(trusteeId) {
+    removeCollectionItem('trustees', trusteeId)
   }
 
   async function saveDraft(nextStep = currentStep) {
@@ -1122,36 +1405,76 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       const ownershipType = String(form.ownershipType || '')
       if (!ownershipType) return 'Please select ownership structure.'
+      const ownershipBranch = getOwnershipBranch(ownershipType)
+      const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
+      const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
+      const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
 
-      if (['individual', 'married_cop', 'married_anc'].includes(ownershipType) && !form.idNumber) {
-        return 'Please provide ID number / passport details.'
+      if (ownershipBranch === 'individual' || ownershipBranch === 'married') {
+        if (!form.idNumber) {
+          return 'Please provide ID number / passport details.'
+        }
       }
 
-      if ((ownershipType === 'married_cop' || ownershipType === 'married_anc') && (!form.spouseName || !form.spouseIdNumber)) {
+      if (ownershipBranch === 'married' && (!form.spouseName || !form.spouseIdNumber)) {
         return 'Spouse name and spouse ID number are required for married ownership.'
       }
 
-      if (ownershipType === 'company' && (!form.companyName || !form.companyRegistrationNumber || !form.companyDirectorName)) {
-        return 'Company name, registration number, and director details are required.'
+      if (ownershipBranch === 'company') {
+        if (!form.companyName || !form.companyRegistrationNumber || !form.companyRegisteredAddress) {
+          return 'Company name, registration number, and registered address are required.'
+        }
+        if (!companyDirectors.length || companyDirectors.some((director) => !director.name || !director.surname)) {
+          return 'Please add at least one company director with a name and surname.'
+        }
+        if (!form.authorisedSignatoryName) {
+          return 'Primary authorised signatory details are required for a company seller.'
+        }
       }
 
-      if (ownershipType === 'trust' && (!form.trustName || !form.trustRegistrationNumber || !form.trusteeName)) {
-        return 'Trust name, registration number, and trustee details are required.'
+      if (ownershipBranch === 'trust') {
+        if (!form.trustName || !form.trustRegistrationNumber || !form.trustRegisteredAddress) {
+          return 'Trust name, registration number, and registered address are required.'
+        }
+        if (!trustTrustees.length || trustTrustees.some((trustee) => !trustee.name || !trustee.surname)) {
+          return 'Please add at least one trustee with a name and surname.'
+        }
+        if (!form.authorisedTrusteeName) {
+          return 'Primary trustee details are required for a trust seller.'
+        }
       }
 
-      if (ownershipType === 'deceased_estate' && !form.executorName) {
-        return 'Executor details are required for a deceased estate seller.'
+      if (ownershipBranch === 'deceased_estate') {
+        if (!form.executorName) {
+          return 'Executor details are required for a deceased estate seller.'
+        }
+        if (!form.estateReference) {
+          return 'Estate reference is required for a deceased estate seller.'
+        }
+        if (!form.executorAuthorityDetails) {
+          return 'Authority details are required for a deceased estate seller.'
+        }
       }
 
-      if (ownershipType === 'power_of_attorney' && !form.powerOfAttorneyName) {
-        return 'Representative details are required for a power of attorney seller.'
+      if (ownershipBranch === 'power_of_attorney') {
+        if (!form.powerOfAttorneyName) {
+          return 'Representative details are required for a power of attorney seller.'
+        }
+        if (!form.powerOfAttorneyPrincipalName || !form.powerOfAttorneyPrincipalIdNumber) {
+          return 'Principal name and ID number are required for a power of attorney seller.'
+        }
+        if (!form.powerOfAttorneyAuthorityDetails) {
+          return 'Authority details are required for a power of attorney seller.'
+        }
       }
 
-      if (ownershipType === 'multiple_owners') {
-        const owners = form.multipleOwners || []
-        const hasInvalid = owners.some((owner) => !owner.name || !owner.surname || !owner.idNumber)
-        if (!owners.length || hasInvalid) {
-          return 'Each owner must include name, surname, and ID number.'
+      if (ownershipBranch === 'multiple_owners') {
+        if (multipleOwners.length < 2) {
+          return 'Please add at least two owners.'
+        }
+        const incompleteOwner = multipleOwners.find((owner) => !owner.name || !owner.surname || !owner.idNumber || !owner.consentToSell)
+        if (incompleteOwner) {
+          return 'Each owner needs a name, surname, ID number, and consent to sell.'
         }
       }
     }
@@ -1270,6 +1593,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             },
           }),
         )
+        window.dispatchEvent(new Event('itg:listings-updated'))
+        window.dispatchEvent(new Event('itg:pipeline-updated'))
       }
       if (typeof onSubmitted === 'function') {
         try {
@@ -1323,6 +1648,55 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const showUnitDetails = isCompactPropertyType(form) || Boolean(form.sectionalTitle || form.shareBlock || form.bodyCorporate)
   const showLandDetails = isLandOrAgricultural(form)
   const showCommercialDetails = isCommercialProperty(form) || Boolean(form.commercialProperty)
+  const ownershipBranch = getOwnershipBranch(form.ownershipType)
+  const ownershipFieldLabels = getOwnershipFieldLabels(form.ownershipType)
+  const selectedOwnership = OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType) || OWNERSHIP_TYPES[0]
+  const isMarriedOwnership = ownershipBranch === 'married'
+  const isCompanyOwnership = ownershipBranch === 'company'
+  const isTrustOwnership = ownershipBranch === 'trust'
+  const isDeceasedEstateOwnership = ownershipBranch === 'deceased_estate'
+  const isPowerOfAttorneyOwnership = ownershipBranch === 'power_of_attorney'
+  const isMultipleOwners = ownershipBranch === 'multiple_owners'
+  const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
+  const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
+  const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
+  const sellerIdentityCopy = {
+    individual: {
+      title: 'Personal details',
+      description: 'Capture the seller details that will be used for the mandate and sale file.',
+    },
+    married: {
+      title: 'Personal details',
+      description: 'Capture the seller details and spouse information needed for a married seller.',
+    },
+    company: {
+      title: 'Contact and company authority',
+      description: 'Capture the primary contact, the company, and the people who can sign.',
+    },
+    trust: {
+      title: 'Contact and trust authority',
+      description: 'Capture the primary contact, the trust, and the trustees who can act.',
+    },
+    deceased_estate: {
+      title: 'Estate authority',
+      description: 'Capture the executor and the estate authority details.',
+    },
+    power_of_attorney: {
+      title: 'Authority details',
+      description: 'Capture the acting representative, principal, and authority reference.',
+    },
+    multiple_owners: {
+      title: 'Owner details',
+      description: 'Capture every owner, their share, and their consent to sell.',
+    },
+    other: {
+      title: 'Seller details',
+      description: 'Capture the details needed for this ownership structure.',
+    },
+  }[ownershipBranch] || {
+    title: 'Seller details',
+    description: 'Capture the details needed for this ownership structure.',
+  }
   const sellerMissing = [
     !form.sellerFirstName && 'Seller name',
     !form.sellerSurname && 'Seller surname',
@@ -1351,14 +1725,48 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         <div className="mt-4 space-y-4 sm:mt-5">
           {currentStep === 0 ? (
             <>
-              <FormSection icon={UserRound} title="Personal & Contact Details" description="Confirm the seller details your agency will use for mandate and transaction communication.">
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <FormSection icon={Landmark} title="Who owns this property?" description="Choose the ownership structure first. We’ll show the right follow-up fields from here.">
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {OWNERSHIP_TYPES.map((item) => {
+                    const active = form.ownershipType === item.value
+                    return (
+                      <ChoiceCard
+                        key={item.value}
+                        onClick={() => handleOwnershipTypeChange(item.value)}
+                        active={active}
+                        title={item.label}
+                        description={item.description}
+                      />
+                    )
+                  })}
+                </div>
+
+                <div className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#4f6378]">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex shrink-0 items-center rounded-full border border-[#d6e1ee] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">
+                      {getOwnershipBranchLabel(form.ownershipType)}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#22364a]">{selectedOwnership.label}</p>
+                      <p className="mt-1 text-sm leading-5 text-[#60748b]">{selectedOwnership.description}</p>
+                      <p className="mt-2 text-xs font-medium text-[#35546c]">
+                        {isMarriedOwnership
+                          ? 'Marital regime is derived from your ownership choice and kept internal. We’ll only ask for the spouse details that are actually needed.'
+                          : 'We’ll only show the next questions that fit this ownership structure.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </FormSection>
+
+              <FormSection icon={UserRound} title={sellerIdentityCopy.title} description={sellerIdentityCopy.description}>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    Name
+                    {ownershipFieldLabels.firstName}
                     <input className={DETAIL_INPUT_CLASS} value={form.sellerFirstName} onChange={(event) => handleFormUpdate('sellerFirstName', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    Surname
+                    {ownershipFieldLabels.surname}
                     <input className={DETAIL_INPUT_CLASS} value={form.sellerSurname} onChange={(event) => handleFormUpdate('sellerSurname', event.target.value)} />
                   </label>
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -1369,37 +1777,24 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     Phone
                     <input className={DETAIL_INPUT_CLASS} value={form.phone} onChange={(event) => handleFormUpdate('phone', event.target.value)} />
                   </label>
-                  <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    ID Number / Registration Number (where applicable)
-                    <input className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
-                  </label>
-                  <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                    Residential Address
-                    <input className={DETAIL_INPUT_CLASS} value={form.residentialAddress} onChange={(event) => handleFormUpdate('residentialAddress', event.target.value)} />
-                  </label>
+
+                  {!['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch) ? (
+                    <>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        {ownershipFieldLabels.idNumber}
+                        <input className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                        {ownershipFieldLabels.address}
+                        <input className={DETAIL_INPUT_CLASS} value={form.residentialAddress} onChange={(event) => handleFormUpdate('residentialAddress', event.target.value)} />
+                      </label>
+                    </>
+                  ) : null}
+
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Tax Number (optional)
                     <input className={DETAIL_INPUT_CLASS} value={form.sellerTaxNumber} onChange={(event) => handleFormUpdate('sellerTaxNumber', event.target.value)} />
                   </label>
-                  <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                    Marital Status
-                    <select className={DETAIL_INPUT_CLASS} value={form.maritalStatus} onChange={(event) => handleFormUpdate('maritalStatus', event.target.value)}>
-                      <option value="not_married">Not married</option>
-                      <option value="married">Married</option>
-                      <option value="divorced">Divorced</option>
-                      <option value="widowed">Widowed</option>
-                    </select>
-                  </label>
-                  {form.maritalStatus === 'married' ? (
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Marital Regime
-                      <select className={DETAIL_INPUT_CLASS} value={form.maritalRegime} onChange={(event) => handleFormUpdate('maritalRegime', event.target.value)}>
-                        {MARITAL_REGIMES.filter((item) => item.value !== 'not_applicable').map((item) => (
-                          <option key={item.value} value={item.value}>{item.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
                   <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
                     <input type="checkbox" checked={form.vatRegistered} onChange={(event) => handleFormUpdate('vatRegistered', event.target.checked)} />
                     VAT registered
@@ -1411,161 +1806,382 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     </label>
                   ) : null}
                 </div>
-              </FormSection>
 
-              <FormSection icon={Landmark} title="Ownership Structure" description="Tell us who owns the property so the correct legal and FICA sections can appear.">
-                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {OWNERSHIP_TYPES.map((item) => {
-                    const active = form.ownershipType === item.value
-                    return (
-                      <ChoiceCard
-                        key={item.value}
-                        onClick={() => handleOwnershipTypeChange(item.value)}
-                        active={active}
-                        title={item.label}
-                        description={active ? 'Selected for this seller profile.' : ''}
-                      />
-                    )
-                  })}
-                </div>
-
-                {(form.ownershipType === 'married_cop' || form.ownershipType === 'married_anc') ? (
-                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Spouse Name
-                      <input className={DETAIL_INPUT_CLASS} value={form.spouseName} onChange={(event) => handleFormUpdate('spouseName', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Spouse ID Number
-                      <input className={DETAIL_INPUT_CLASS} value={form.spouseIdNumber} onChange={(event) => handleFormUpdate('spouseIdNumber', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Spouse Email (optional)
-                      <input className={DETAIL_INPUT_CLASS} value={form.spouseEmail} onChange={(event) => handleFormUpdate('spouseEmail', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Spouse Phone (optional)
-                      <input className={DETAIL_INPUT_CLASS} value={form.spousePhone} onChange={(event) => handleFormUpdate('spousePhone', event.target.value)} />
-                    </label>
+                {isMarriedOwnership ? (
+                  <div className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
+                    <div className="flex items-start gap-3">
+                      <ShieldCheck size={18} className="mt-0.5 text-[#35546c]" />
+                      <div>
+                        <h3 className="text-sm font-semibold text-[#22364a]">Spouse details</h3>
+                        <p className="mt-1 text-sm leading-5 text-[#60748b]">
+                          We’ll use this to confirm the correct legal signatures for a married seller.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Spouse Name
+                        <input className={DETAIL_INPUT_CLASS} value={form.spouseName} onChange={(event) => handleFormUpdate('spouseName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Spouse ID Number
+                        <input className={DETAIL_INPUT_CLASS} value={form.spouseIdNumber} onChange={(event) => handleFormUpdate('spouseIdNumber', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Spouse Email (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.spouseEmail} onChange={(event) => handleFormUpdate('spouseEmail', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Spouse Phone (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.spousePhone} onChange={(event) => handleFormUpdate('spousePhone', event.target.value)} />
+                      </label>
+                    </div>
                   </div>
                 ) : null}
 
-                {form.ownershipType === 'company' ? (
-                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Company Name
-                      <input className={DETAIL_INPUT_CLASS} value={form.companyName} onChange={(event) => handleFormUpdate('companyName', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Registration Number
-                      <input className={DETAIL_INPUT_CLASS} value={form.companyRegistrationNumber} onChange={(event) => handleFormUpdate('companyRegistrationNumber', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Director Name
-                      <input className={DETAIL_INPUT_CLASS} value={form.companyDirectorName} onChange={(event) => handleFormUpdate('companyDirectorName', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Director Email / Phone (optional)
-                      <input className={DETAIL_INPUT_CLASS} value={form.companyDirectorEmail} onChange={(event) => handleFormUpdate('companyDirectorEmail', event.target.value)} placeholder="Email" />
-                    </label>
-                  </div>
-                ) : null}
+                {isCompanyOwnership ? (
+                  <div className="mt-4 space-y-4">
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <h3 className="text-sm font-semibold text-[#22364a]">Company details</h3>
+                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Company Name
+                          <input className={DETAIL_INPUT_CLASS} value={form.companyName} onChange={(event) => handleFormUpdate('companyName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Registration Number
+                          <input className={DETAIL_INPUT_CLASS} value={form.companyRegistrationNumber} onChange={(event) => handleFormUpdate('companyRegistrationNumber', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                          Registered Address
+                          <input className={DETAIL_INPUT_CLASS} value={form.companyRegisteredAddress} onChange={(event) => handleFormUpdate('companyRegisteredAddress', event.target.value)} />
+                        </label>
+                      </div>
+                    </article>
 
-                {form.ownershipType === 'trust' ? (
-                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Trust Name
-                      <input className={DETAIL_INPUT_CLASS} value={form.trustName} onChange={(event) => handleFormUpdate('trustName', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Registration Number
-                      <input className={DETAIL_INPUT_CLASS} value={form.trustRegistrationNumber} onChange={(event) => handleFormUpdate('trustRegistrationNumber', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Trustee Name
-                      <input className={DETAIL_INPUT_CLASS} value={form.trusteeName} onChange={(event) => handleFormUpdate('trusteeName', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Trustee Email / Phone (optional)
-                      <input className={DETAIL_INPUT_CLASS} value={form.trusteeEmail} onChange={(event) => handleFormUpdate('trusteeEmail', event.target.value)} placeholder="Email" />
-                    </label>
-                  </div>
-                ) : null}
-
-                {form.ownershipType === 'deceased_estate' ? (
-                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Executor Name
-                      <input className={DETAIL_INPUT_CLASS} value={form.executorName} onChange={(event) => handleFormUpdate('executorName', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Estate Reference (optional)
-                      <input className={DETAIL_INPUT_CLASS} value={form.estateReference} onChange={(event) => handleFormUpdate('estateReference', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Executor Email (optional)
-                      <input className={DETAIL_INPUT_CLASS} value={form.executorEmail} onChange={(event) => handleFormUpdate('executorEmail', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Executor Phone (optional)
-                      <input className={DETAIL_INPUT_CLASS} value={form.executorPhone} onChange={(event) => handleFormUpdate('executorPhone', event.target.value)} />
-                    </label>
-                  </div>
-                ) : null}
-
-                {form.ownershipType === 'power_of_attorney' ? (
-                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Representative Name
-                      <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyName} onChange={(event) => handleFormUpdate('powerOfAttorneyName', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Representative Email (optional)
-                      <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyEmail} onChange={(event) => handleFormUpdate('powerOfAttorneyEmail', event.target.value)} />
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Representative Phone (optional)
-                      <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyPhone} onChange={(event) => handleFormUpdate('powerOfAttorneyPhone', event.target.value)} />
-                    </label>
-                  </div>
-                ) : null}
-
-                {form.ownershipType === 'multiple_owners' ? (
-                  <div className="mt-4 space-y-3">
-                    {(form.multipleOwners || []).map((owner, index) => (
-                      <article key={owner.id} className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                        <div className="mb-3 flex items-center justify-between">
-                          <p className="text-sm font-semibold text-[#22364a]">Owner {index + 1}</p>
-                          {(form.multipleOwners || []).length > 1 ? (
-                            <button type="button" className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#ffd2d2] bg-white text-[#9f1239]" onClick={() => removeMultipleOwner(owner.id)}>
-                              <Trash2 size={14} />
-                            </button>
-                          ) : null}
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#22364a]">Directors</h3>
+                          <p className="mt-1 text-sm leading-5 text-[#60748b]">Add every director who should appear on the file.</p>
                         </div>
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                            Name
-                            <input className={DETAIL_INPUT_CLASS} value={owner.name} onChange={(event) => updateMultipleOwner(owner.id, 'name', event.target.value)} />
-                          </label>
-                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                            Surname
-                            <input className={DETAIL_INPUT_CLASS} value={owner.surname} onChange={(event) => updateMultipleOwner(owner.id, 'surname', event.target.value)} />
-                          </label>
-                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                            ID Number
-                            <input className={DETAIL_INPUT_CLASS} value={owner.idNumber} onChange={(event) => updateMultipleOwner(owner.id, 'idNumber', event.target.value)} />
-                          </label>
-                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                            Ownership Share % (optional)
-                            <input className={DETAIL_INPUT_CLASS} value={owner.ownershipShare} onChange={(event) => updateMultipleOwner(owner.id, 'ownershipShare', event.target.value)} />
-                          </label>
+                        <Button type="button" variant="secondary" size="sm" onClick={addCompanyDirector}>
+                          <Plus size={14} />
+                          Add Director
+                        </Button>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {companyDirectors.map((director, index) => (
+                          <article key={director.id} className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-[#22364a]">Director {index + 1}</p>
+                                <p className="text-xs text-[#6b7d93]">Repeatable director record</p>
+                              </div>
+                              {companyDirectors.length > 1 ? (
+                                <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#ffd2d2] bg-white text-[#9f1239]" onClick={() => removeCompanyDirector(director.id)}>
+                                  <Trash2 size={14} />
+                                </button>
+                              ) : null}
+                            </div>
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                First name
+                                <input className={DETAIL_INPUT_CLASS} value={director.name} onChange={(event) => updateCompanyDirector(director.id, 'name', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Surname
+                                <input className={DETAIL_INPUT_CLASS} value={director.surname} onChange={(event) => updateCompanyDirector(director.id, 'surname', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Email (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={director.email} onChange={(event) => updateCompanyDirector(director.id, 'email', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Phone (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={director.phone} onChange={(event) => updateCompanyDirector(director.id, 'phone', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                                Address (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={director.residentialAddress} onChange={(event) => updateCompanyDirector(director.id, 'residentialAddress', event.target.value)} />
+                              </label>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <h3 className="text-sm font-semibold text-[#22364a]">Primary authorised signatory</h3>
+                      <p className="mt-1 text-sm leading-5 text-[#60748b]">This is the person who can sign the mandate on behalf of the company.</p>
+                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Full name
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedSignatoryName} onChange={(event) => handleFormUpdate('authorisedSignatoryName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Email
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedSignatoryEmail} onChange={(event) => handleFormUpdate('authorisedSignatoryEmail', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Phone
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedSignatoryPhone} onChange={(event) => handleFormUpdate('authorisedSignatoryPhone', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Address (optional)
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedSignatoryAddress} onChange={(event) => handleFormUpdate('authorisedSignatoryAddress', event.target.value)} />
+                        </label>
+                      </div>
+                    </article>
+                  </div>
+                ) : null}
+
+                {isTrustOwnership ? (
+                  <div className="mt-4 space-y-4">
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <h3 className="text-sm font-semibold text-[#22364a]">Trust details</h3>
+                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Trust Name
+                          <input className={DETAIL_INPUT_CLASS} value={form.trustName} onChange={(event) => handleFormUpdate('trustName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Registration Number
+                          <input className={DETAIL_INPUT_CLASS} value={form.trustRegistrationNumber} onChange={(event) => handleFormUpdate('trustRegistrationNumber', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                          Registered Address
+                          <input className={DETAIL_INPUT_CLASS} value={form.trustRegisteredAddress} onChange={(event) => handleFormUpdate('trustRegisteredAddress', event.target.value)} />
+                        </label>
+                      </div>
+                    </article>
+
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#22364a]">Trustees</h3>
+                          <p className="mt-1 text-sm leading-5 text-[#60748b]">Add every trustee who should appear on the file.</p>
                         </div>
-                      </article>
-                    ))}
-                    <Button type="button" variant="secondary" size="sm" onClick={addMultipleOwner}>
-                      <Plus size={14} />
-                      Add Owner
-                    </Button>
+                        <Button type="button" variant="secondary" size="sm" onClick={addTrustee}>
+                          <Plus size={14} />
+                          Add Trustee
+                        </Button>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {trustTrustees.map((trustee, index) => (
+                          <article key={trustee.id} className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-[#22364a]">Trustee {index + 1}</p>
+                                <p className="text-xs text-[#6b7d93]">Repeatable trustee record</p>
+                              </div>
+                              {trustTrustees.length > 1 ? (
+                                <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#ffd2d2] bg-white text-[#9f1239]" onClick={() => removeTrustee(trustee.id)}>
+                                  <Trash2 size={14} />
+                                </button>
+                              ) : null}
+                            </div>
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                First name
+                                <input className={DETAIL_INPUT_CLASS} value={trustee.name} onChange={(event) => updateTrustee(trustee.id, 'name', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Surname
+                                <input className={DETAIL_INPUT_CLASS} value={trustee.surname} onChange={(event) => updateTrustee(trustee.id, 'surname', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Email (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={trustee.email} onChange={(event) => updateTrustee(trustee.id, 'email', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Phone (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={trustee.phone} onChange={(event) => updateTrustee(trustee.id, 'phone', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                                Address (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={trustee.residentialAddress} onChange={(event) => updateTrustee(trustee.id, 'residentialAddress', event.target.value)} />
+                              </label>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <h3 className="text-sm font-semibold text-[#22364a]">Primary trustee</h3>
+                      <p className="mt-1 text-sm leading-5 text-[#60748b]">This trustee will act as the main signatory for the trust file.</p>
+                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Full name
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedTrusteeName} onChange={(event) => handleFormUpdate('authorisedTrusteeName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Email
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedTrusteeEmail} onChange={(event) => handleFormUpdate('authorisedTrusteeEmail', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Phone
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedTrusteePhone} onChange={(event) => handleFormUpdate('authorisedTrusteePhone', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Address (optional)
+                          <input className={DETAIL_INPUT_CLASS} value={form.authorisedTrusteeAddress} onChange={(event) => handleFormUpdate('authorisedTrusteeAddress', event.target.value)} />
+                        </label>
+                      </div>
+                    </article>
+                  </div>
+                ) : null}
+
+                {isDeceasedEstateOwnership ? (
+                  <div className="mt-4 space-y-4">
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <h3 className="text-sm font-semibold text-[#22364a]">Executor details</h3>
+                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Full name
+                          <input className={DETAIL_INPUT_CLASS} value={form.executorName} onChange={(event) => handleFormUpdate('executorName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Estate Reference
+                          <input className={DETAIL_INPUT_CLASS} value={form.estateReference} onChange={(event) => handleFormUpdate('estateReference', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Executor Email (optional)
+                          <input className={DETAIL_INPUT_CLASS} value={form.executorEmail} onChange={(event) => handleFormUpdate('executorEmail', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Executor Phone (optional)
+                          <input className={DETAIL_INPUT_CLASS} value={form.executorPhone} onChange={(event) => handleFormUpdate('executorPhone', event.target.value)} />
+                        </label>
+                      </div>
+                    </article>
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <h3 className="text-sm font-semibold text-[#22364a]">Authority details</h3>
+                      <p className="mt-1 text-sm leading-5 text-[#60748b]">Add the letters of executorship or the master’s office reference for this estate file.</p>
+                      <div className="mt-3 grid grid-cols-1 gap-3">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Authority Details
+                          <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.executorAuthorityDetails} onChange={(event) => handleFormUpdate('executorAuthorityDetails', event.target.value)} placeholder="Letters of executorship, master's office reference, or other authority detail" />
+                        </label>
+                      </div>
+                    </article>
+                  </div>
+                ) : null}
+
+                {isPowerOfAttorneyOwnership ? (
+                  <div className="mt-4 space-y-4">
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <h3 className="text-sm font-semibold text-[#22364a]">Acting representative</h3>
+                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Full name
+                          <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyName} onChange={(event) => handleFormUpdate('powerOfAttorneyName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Representative Email (optional)
+                          <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyEmail} onChange={(event) => handleFormUpdate('powerOfAttorneyEmail', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Representative Phone (optional)
+                          <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyPhone} onChange={(event) => handleFormUpdate('powerOfAttorneyPhone', event.target.value)} />
+                        </label>
+                      </div>
+                    </article>
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <h3 className="text-sm font-semibold text-[#22364a]">Principal details</h3>
+                      <p className="mt-1 text-sm leading-5 text-[#60748b]">Tell us who the representative is acting for.</p>
+                      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Principal full name
+                          <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyPrincipalName} onChange={(event) => handleFormUpdate('powerOfAttorneyPrincipalName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Principal ID Number
+                          <input className={DETAIL_INPUT_CLASS} value={form.powerOfAttorneyPrincipalIdNumber} onChange={(event) => handleFormUpdate('powerOfAttorneyPrincipalIdNumber', event.target.value)} />
+                        </label>
+                      </div>
+                    </article>
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <h3 className="text-sm font-semibold text-[#22364a]">Authority details</h3>
+                      <p className="mt-1 text-sm leading-5 text-[#60748b]">Add the power of attorney reference or authority note for the file.</p>
+                      <div className="mt-3 grid grid-cols-1 gap-3">
+                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                          Authority Details
+                          <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.powerOfAttorneyAuthorityDetails} onChange={(event) => handleFormUpdate('powerOfAttorneyAuthorityDetails', event.target.value)} placeholder="Reference number, scope of authority, or signing instruction" />
+                        </label>
+                      </div>
+                    </article>
+                  </div>
+                ) : null}
+
+                {isMultipleOwners ? (
+                  <div className="mt-4 space-y-4">
+                    <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#22364a]">Owner cards</h3>
+                          <p className="mt-1 text-sm leading-5 text-[#60748b]">Capture each owner, their share, and their consent to sell. At least two owners are required.</p>
+                        </div>
+                        <Button type="button" variant="secondary" size="sm" onClick={addMultipleOwner}>
+                          <Plus size={14} />
+                          Add Owner
+                        </Button>
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        {multipleOwners.map((owner, index) => (
+                          <article key={owner.id} className="rounded-[14px] border border-[#dbe6f2] bg-white p-4">
+                            <div className="mb-3 flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-semibold text-[#22364a]">Owner {index + 1}</p>
+                                <p className="text-xs text-[#6b7d93]">Repeatable owner record</p>
+                              </div>
+                              {multipleOwners.length > 2 ? (
+                                <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#ffd2d2] bg-white text-[#9f1239]" onClick={() => removeMultipleOwner(owner.id)}>
+                                  <Trash2 size={14} />
+                                </button>
+                              ) : null}
+                            </div>
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                First name
+                                <input className={DETAIL_INPUT_CLASS} value={owner.name} onChange={(event) => updateMultipleOwner(owner.id, 'name', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Surname
+                                <input className={DETAIL_INPUT_CLASS} value={owner.surname} onChange={(event) => updateMultipleOwner(owner.id, 'surname', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                ID Number
+                                <input className={DETAIL_INPUT_CLASS} value={owner.idNumber} onChange={(event) => updateMultipleOwner(owner.id, 'idNumber', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Ownership Share % (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={owner.ownershipShare} onChange={(event) => updateMultipleOwner(owner.id, 'ownershipShare', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Email (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={owner.email} onChange={(event) => updateMultipleOwner(owner.id, 'email', event.target.value)} />
+                              </label>
+                              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                                Phone (optional)
+                                <input className={DETAIL_INPUT_CLASS} value={owner.phone} onChange={(event) => updateMultipleOwner(owner.id, 'phone', event.target.value)} />
+                              </label>
+                              <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                                <input type="checkbox" checked={Boolean(owner.consentToSell)} onChange={(event) => updateMultipleOwner(owner.id, 'consentToSell', event.target.checked)} />
+                                Consent to sell
+                              </label>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </article>
+                  </div>
+                ) : null}
+
+                {isCompanyOwnership || isTrustOwnership ? (
+                  <div className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#4f6378]">
+                    {isCompanyOwnership ? 'Add every director now. The primary authorised signatory stays separate so the signing authority stays clear.' : 'Add every trustee now. The primary trustee stays separate so the signing authority stays clear.'}
                   </div>
                 ) : null}
               </FormSection>

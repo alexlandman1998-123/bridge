@@ -231,6 +231,75 @@ const MOCK_PARTNER_PEOPLE_BY_ORGANISATION_ID = Object.freeze({
   ],
 })
 
+const MOCK_PARTNER_LISTINGS = Object.freeze([
+  {
+    listingId: 'demo-listing-001',
+    listingReference: 'DL-001',
+    title: '3 Bedroom Family Home',
+    propertyType: 'Residential',
+    status: 'active',
+    price: 2150000,
+    suburb: 'Bryanston',
+    city: 'Johannesburg',
+    branchName: 'Table View Branch',
+    agentName: 'John Smith',
+    bedrooms: 3,
+    bathrooms: 2,
+    parking: 2,
+    createdAt: '2026-06-01T10:30:00.000Z',
+    publicationStatuses: normalizePublicationStatuses({
+      bridge: 'published',
+      property24: 'published',
+      privateProperty: 'published',
+      website: 'published',
+    }),
+  },
+  {
+    listingId: 'demo-listing-002',
+    listingReference: 'DL-002',
+    title: 'Modern Apartment with Study',
+    propertyType: 'Apartment',
+    status: 'active',
+    price: 1595000,
+    suburb: 'Sandton',
+    city: 'Johannesburg',
+    branchName: 'Table View Branch',
+    agentName: 'John Smith',
+    bedrooms: 2,
+    bathrooms: 2,
+    parking: 1,
+    createdAt: '2026-06-08T09:15:00.000Z',
+    publicationStatuses: normalizePublicationStatuses({
+      bridge: 'published',
+      property24: 'published',
+      privateProperty: 'published',
+      website: 'published',
+    }),
+  },
+  {
+    listingId: 'demo-listing-003',
+    listingReference: 'DL-003',
+    title: 'Luxury Duplex',
+    propertyType: 'Townhouse',
+    status: 'active',
+    price: 3725000,
+    suburb: 'Century City',
+    city: 'Cape Town',
+    branchName: 'Table View Branch',
+    agentName: 'John Smith',
+    bedrooms: 4,
+    bathrooms: 3,
+    parking: 2,
+    createdAt: '2026-06-11T14:45:00.000Z',
+    publicationStatuses: normalizePublicationStatuses({
+      bridge: 'published',
+      property24: 'published',
+      privateProperty: 'published',
+      website: 'published',
+    }),
+  },
+])
+
 function normalizeText(value = '') {
   return String(value || '').trim()
 }
@@ -258,6 +327,24 @@ function getMockOperationalPeoplePayload(partnerOrganisationId = '') {
       : 'No operational people are visible for this organisation connection yet. Set visibility permissions to expose specific people to this partner relationship.',
     source: people.length ? 'mock_directory' : 'empty',
     blockedByRls: false,
+  }
+}
+
+function getMockListingsPayload(relationshipId = '') {
+  return {
+    relationshipId: normalizeText(relationshipId),
+    partnerOrganisationId: 'demo-daagency',
+    permissions: {
+      canViewListings: true,
+    },
+    listings: MOCK_PARTNER_LISTINGS.map((listing) => ({ ...listing })),
+    summary: {
+      sharedListings: MOCK_PARTNER_LISTINGS.length,
+      activeListings: MOCK_PARTNER_LISTINGS.length,
+      newThisMonth: MOCK_PARTNER_LISTINGS.length,
+      averagePrice:
+        MOCK_PARTNER_LISTINGS.reduce((total, listing) => total + Number(listing.price || 0), 0) / MOCK_PARTNER_LISTINGS.length,
+    },
   }
 }
 
@@ -1271,8 +1358,8 @@ export async function fetchPartnerOperationalPeople(partnerOrganisationId = '', 
 }
 
 export async function getBondPartnerListings(relationshipId = '') {
-  if (!isSupabaseConfigured || !supabase) {
-    throw createProfileError(PARTNER_PROFILE_ACCESS_DENIED_MESSAGE, 'not_configured')
+  if (PARTNER_PROFILE_DEMO_MODE || !isSupabaseConfigured || !supabase) {
+    return normalizeListingsPayload(getMockListingsPayload(relationshipId))
   }
 
   const currentUser = await getCurrentUser()

@@ -85,9 +85,14 @@ test('validation distinguishes draft from final requirements', () => {
     sellerSurname: 'Seller',
     email: 'sam@example.com',
     phone: '0830000000',
+    idNumber: '9001015009083',
+    residentialAddress: '1 Road',
+    maritalStatus: 'single',
     propertyAddress: '1 Road',
     suburb: 'Town',
     province: 'Gauteng',
+    propertyCategory: 'residential',
+    propertyStructureType: 'freehold',
     existingBond: true,
   }, listing)
 
@@ -107,11 +112,15 @@ test('builds canonical payload with readiness and resolver input', () => {
     phone: '0840000000',
     ownershipType: 'trust',
     trustRegistrationNumber: 'IT1234/2024',
+    trustName: 'Taylor Family Trust',
     trusteeName: 'Taylor Trustee',
+    trustRegisteredAddress: '22 Road',
     propertyAddress: '22 Road',
     suburb: 'Sandton',
     province: 'GP',
     municipality: 'City of Johannesburg',
+    propertyCategory: 'residential',
+    propertyStructureType: 'estate',
     canonicalPropertyType: 'estate',
     estateOrHoa: true,
     occupancyStatus: 'vacant',
@@ -134,3 +143,66 @@ test('builds canonical payload with readiness and resolver input', () => {
   assert.equal(resolverInput.facts.property.estate_or_hoa, true)
 })
 
+test('persists authority details and owner consent in canonical facts', () => {
+  const estateFacts = transformSellerOnboardingToFacts({
+    sellerFirstName: 'Pat',
+    sellerSurname: 'Executor',
+    email: 'pat@example.com',
+    phone: '0850000000',
+    ownershipType: 'deceased_estate',
+    executorName: 'Pat Executor',
+    estateReference: 'EST-2026-01',
+    executorAuthorityDetails: 'Letters of executorship issued by the Master of the High Court.',
+    propertyType: 'house',
+    propertyAddress: '1 Main Road',
+    suburb: 'Cape Town',
+    province: 'Western Cape',
+    propertyCategory: 'residential',
+    propertyStructureType: 'freehold',
+  }, listing)
+
+  assert.equal(estateFacts.seller.deceased_estate.authority_details, 'Letters of executorship issued by the Master of the High Court.')
+
+  const poaFacts = transformSellerOnboardingToFacts({
+    sellerFirstName: 'Sam',
+    sellerSurname: 'Agent',
+    email: 'sam@example.com',
+    phone: '0830000000',
+    ownershipType: 'power_of_attorney',
+    powerOfAttorneyName: 'Sam Agent',
+    powerOfAttorneyPrincipalName: 'Pat Principal',
+    powerOfAttorneyPrincipalIdNumber: '8001015009080',
+    powerOfAttorneyAuthorityDetails: 'POA-2026-01 / authority note',
+    propertyType: 'vacant_land',
+    propertyAddress: 'Farm 12',
+    suburb: 'Bela-Bela',
+    province: 'Limpopo',
+    propertyCategory: 'residential',
+    propertyStructureType: 'vacant_land',
+  }, listing)
+
+  assert.equal(poaFacts.seller.power_of_attorney.reference, 'POA-2026-01 / authority note')
+  assert.equal(poaFacts.seller.power_of_attorney.authority_details, 'POA-2026-01 / authority note')
+
+  const ownersFacts = transformSellerOnboardingToFacts({
+    sellerFirstName: 'Alex',
+    sellerSurname: 'Owner',
+    email: 'alex@example.com',
+    phone: '0820000000',
+    ownershipType: 'multiple_owners',
+    multipleOwners: [
+      { name: 'Alex', surname: 'Owner', idNumber: '9001015009083', consentToSell: true, ownershipShare: '50' },
+      { name: 'Kim', surname: 'Owner', idNumber: '9001015009084', consentToSell: true, ownershipShare: '50' },
+    ],
+    propertyType: 'house',
+    propertyAddress: '1 Main Road',
+    suburb: 'Cape Town',
+    province: 'Western Cape',
+    propertyCategory: 'residential',
+    propertyStructureType: 'freehold',
+  }, listing)
+
+  assert.equal(ownersFacts.seller.owners.length, 2)
+  assert.equal(ownersFacts.seller.owners[0].consent_to_sell, true)
+  assert.equal(ownersFacts.seller.owners[1].ownership_share, 50)
+})

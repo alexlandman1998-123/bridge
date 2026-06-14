@@ -127,6 +127,12 @@ function makeSnapshot(overrides = {}) {
     operationalRisk: [
       { key: 'waiting', metric: 'Waiting >7 Days', value: '2 cases', description: 'Applications without movement.', severity: 'watch' },
     ],
+    priorityActions: [
+      { key: 'missing_documents', count: 32 },
+      { key: 'bank_feedback', count: 18 },
+      { key: 'submission_readiness', count: 14 },
+      { key: 'overdue_applications', count: 9 },
+    ],
     recentBankActivity: [
       {
         transactionId: 'tx-1',
@@ -153,10 +159,37 @@ function makeSnapshot(overrides = {}) {
     ],
     performanceSnapshot: [
       {
+        key: 'commission_pipeline',
+        label: 'Revenue Forecast',
+        value: 'R22.96m',
+        trend: '↑ R7.65m',
+        comparison: 'vs last month',
+        sparkline: [58, 60, 63, 66, 70, 73, 75, 78, 82, 86, 89, 92],
+      },
+      {
+        key: 'active_applications',
+        label: 'Applications',
+        value: '90',
+        trend: '↑ 5.9%',
+        comparison: 'vs last month',
+        helper: '90 active applications',
+        sparkline: [40, 44, 48, 52, 56, 60, 64, 67, 71, 76, 82, 90],
+      },
+      {
         key: 'approval_rate',
         label: 'Approval Rate',
-        value: '67%',
-        comparison: '+5% vs last month',
+        value: '3%',
+        trend: 'Needs attention',
+        helper: '3 approved • 87 pending',
+        sparkline: [18, 18, 17, 16, 15, 14, 12, 11, 10, 8, 6, 5],
+      },
+      {
+        key: 'average_approval_time',
+        label: 'Avg Approval Time',
+        value: '46 days',
+        trend: '38d over target',
+        helper: 'Needs operational focus',
+        sparkline: [18, 20, 22, 25, 28, 31, 35, 38, 40, 42, 44, 46],
       },
     ],
     teamPerformance: [
@@ -312,10 +345,10 @@ function makeSnapshot(overrides = {}) {
               { key: 'developers', sourceType: 'Developers', partner: 'Bridge Developments', applicationsReferred: 12, submittedApplications: 7, approvalRate: 76, conversionRate: 58, pipelineValueLabel: 'R 12 000 000', projectedCommissionLabel: 'R 144 000', href: '/bond/developments' },
             ],
             revenue: {
-              revenueThisMonthLabel: 'R 180 000',
-              projectedCommissionLabel: 'R 504 000',
-              commissionConfirmedLabel: 'R 96 000',
-              forecast90Day: 'R 1 120 000',
+              revenueThisMonthLabel: 'R 7.65m',
+              projectedCommissionLabel: 'R22.96m',
+              commissionConfirmedLabel: 'R96k',
+              forecast90Day: 'R61.23m',
               revenueByRegion: [{ label: 'Gauteng', valueLabel: 'R 252 000' }],
               revenueByBranch: [{ label: 'Sandton HQ', valueLabel: 'R 144 000' }],
               revenueByPartnerSource: [{ label: 'Agencies', valueLabel: 'R 192 000' }],
@@ -357,49 +390,39 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /All Regions/)
     assert.doesNotMatch(hqMarkup, /Export report/)
     assert.doesNotMatch(hqMarkup, /National Command Centre/)
+    assert.match(hqMarkup, /Executive Summary/)
+    assert.match(hqMarkup, /Revenue forecast leads the book/)
+    assert.match(hqMarkup, /Revenue Forecast/)
+    assert.match(hqMarkup, /R22\.96m/)
+    assert.match(hqMarkup, /R7\.65m vs last month/)
     assert.match(hqMarkup, /Applications/)
     assert.match(hqMarkup, /90 active applications/)
     assert.match(hqMarkup, /3 approved • 87 pending/)
-    assert.match(hqMarkup, /R199\.8k/)
-    assert.match(hqMarkup, /Revenue Forecast/)
-    assert.match(hqMarkup, /R22\.96m/)
     assert.match(hqMarkup, /Avg Approval Time/)
     assert.match(hqMarkup, /46 days/)
+    assert.match(hqMarkup, /What Needs Attention/)
+    assert.match(hqMarkup, /Clear action cues for the desk/)
+    assert.match(hqMarkup, /Missing Documents/)
+    assert.match(hqMarkup, /Bank Feedback/)
+    assert.match(hqMarkup, /Awaiting Client/)
+    assert.match(hqMarkup, /Valuation Outstanding/)
     assert.match(hqMarkup, /Regional Performance/)
     assert.match(hqMarkup, /Live performance across your national network/)
     assert.match(hqMarkup, /View all regions/)
     assert.match(hqMarkup, /Gauteng/)
-    assert.match(hqMarkup, /SLA/)
-    assert.doesNotMatch(hqMarkup, /Operational Health/)
-    assert.doesNotMatch(hqMarkup, /\/ 100/)
-    assert.match(hqMarkup, /pressure signals/)
-    assert.doesNotMatch(hqMarkup, /Network Intelligence/)
-    assert.doesNotMatch(hqMarkup, /Real-time operational momentum, trend signals and performance intelligence across the bond network/)
-    assert.doesNotMatch(hqMarkup, /Operational Alerts/)
-    assert.doesNotMatch(hqMarkup, /Applications waiting for OTP/)
-    assert.doesNotMatch(hqMarkup, /Missing documents/)
-    assert.doesNotMatch(hqMarkup, /Applications exceeded SLA/)
-    assert.doesNotMatch(hqMarkup, /Bank response delays/)
-    assert.doesNotMatch(hqMarkup, /High Risk Branches/)
-    assert.doesNotMatch(hqMarkup, /Pipeline Snapshot/)
-    assert.doesNotMatch(hqMarkup, /Bank Review/)
-    assert.doesNotMatch(hqMarkup, /Instruction/)
-    assert.doesNotMatch(hqMarkup, /Application Prep/)
-    assert.doesNotMatch(hqMarkup, /Review &amp; Submit/)
-    assert.doesNotMatch(hqMarkup, /Bank Decision/)
-    assert.doesNotMatch(hqMarkup, /Registration/)
-    assert.doesNotMatch(hqMarkup, /OTP Ready/)
-    assert.doesNotMatch(hqMarkup, /Biggest Bottleneck/)
     assert.match(hqMarkup, /Bank Relationship Breakdown/)
-    assert.match(hqMarkup, /Four-bank performance view/)
     assert.match(hqMarkup, /Manage banks/)
     assert.match(hqMarkup, /ABSA/)
     assert.match(hqMarkup, /Standard Bank/)
     assert.match(hqMarkup, /South Africa Regional Heatmap/)
-    assert.match(hqMarkup, /Heatmap Key/)
+    assert.match(hqMarkup, /Regional health overview/)
+    assert.match(hqMarkup, /Collapsed view/)
+    assert.match(hqMarkup, /View Heatmap/)
+    assert.doesNotMatch(hqMarkup, /Heatmap Key/)
     assert.match(hqMarkup, /Buyer Finance Mix/)
     assert.match(hqMarkup, /Buyer Profile Mix/)
-    assert.match(hqMarkup, /Buyer Readiness Quality/)
+    assert.match(hqMarkup, /Application Bottlenecks/)
+    assert.match(hqMarkup, /Missing Documents/)
     assert.doesNotMatch(hqMarkup, /Top Regions/)
     assert.doesNotMatch(hqMarkup, /Top Consultants/)
     assert.doesNotMatch(hqMarkup, /Top Banks/)
@@ -419,8 +442,6 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Bond Originator HQ/)
     assert.doesNotMatch(hqMarkup, /Company-wide view of applications, revenue, approvals, partner performance, and operational risk/)
     assert.doesNotMatch(hqMarkup, /National Pipeline Funnel/)
-    assert.doesNotMatch(hqMarkup, /Bank Performance Overview/)
-    assert.doesNotMatch(hqMarkup, /Executive Actions/)
     assert.doesNotMatch(hqMarkup, /Live operational movement across active bond applications/)
     assert.doesNotMatch(hqMarkup, /Client One/)
     assert.doesNotMatch(hqMarkup, /Open Application/)
@@ -432,11 +453,14 @@ function makeSnapshot(overrides = {}) {
     assert.doesNotMatch(hqMarkup, /Applications Needing Attention/)
 
     const hqOrder = [
-      'Applications',
+      'Executive Summary',
+      'Revenue Forecast',
+      'What Needs Attention',
       'Regional Performance',
       'Bank Relationship Breakdown',
       'South Africa Regional Heatmap',
       'Buyer Finance Mix',
+      'Application Bottlenecks',
       'Data freshness',
     ]
     let previousHqIndex = -1

@@ -117,6 +117,24 @@ const DEFAULT_ORGANISATION_SETTINGS = {
   commissionStructures: [],
   commissionProfiles: [],
   emailTemplates: getDefaultEmailTemplateSettings(),
+  partnerProfileContent: {
+    agency: {
+      aboutCompany: '',
+      serviceDelivery: '',
+    },
+    bond_originator: {
+      aboutCompany: '',
+      serviceDelivery: '',
+    },
+    attorney_firm: {
+      aboutCompany: '',
+      serviceDelivery: '',
+    },
+    developer_company: {
+      aboutCompany: '',
+      serviceDelivery: '',
+    },
+  },
 }
 
 function readMockPartnerRoutingRules() {
@@ -1218,6 +1236,7 @@ function buildDefaultOrganisation(profile = null) {
     supportEmail: profile?.email || '',
     supportPhone: profile?.phoneNumber || '',
     primaryContactPerson: profile?.fullName || '',
+    settingsJson: {},
   }
 }
 
@@ -1260,6 +1279,7 @@ function normalizeOrganisationRow(row, profile = null) {
     supportEmail: normalizeText(row?.support_email) || fallback.supportEmail,
     supportPhone: normalizeText(row?.support_phone) || fallback.supportPhone,
     primaryContactPerson: normalizeText(row?.primary_contact_person) || fallback.primaryContactPerson,
+    settingsJson: safeJson(row?.settings_json, {}),
   }
 }
 
@@ -2110,6 +2130,7 @@ async function ensureOrganisationContext(client) {
           type,
           workspace_kind,
           logo_url,
+          settings_json,
           company_email,
           company_phone,
           website,
@@ -2209,6 +2230,7 @@ async function ensureOrganisationContext(client) {
           type,
           workspace_kind,
           logo_url,
+          settings_json,
           company_email,
           company_phone,
           website,
@@ -3093,6 +3115,25 @@ export async function updateOrganisationSettings(input = {}) {
     name: normalizeText(input.name) || context.organisation.name,
     display_name: normalizeNullableText(input.displayName) || normalizeText(input.name) || context.organisation.displayName,
     logo_url: normalizeNullableText(input.logoUrl),
+    settings_json: (() => {
+      const existingSettingsJson = safeJson(context.organisation?.settingsJson, {})
+      const inputSettingsJson = input.settingsJson && typeof input.settingsJson === 'object' ? input.settingsJson : {}
+      const existingProfileContent = existingSettingsJson.partnerProfileContent && typeof existingSettingsJson.partnerProfileContent === 'object'
+        ? existingSettingsJson.partnerProfileContent
+        : DEFAULT_ORGANISATION_SETTINGS.partnerProfileContent
+      const inputProfileContent = inputSettingsJson.partnerProfileContent && typeof inputSettingsJson.partnerProfileContent === 'object'
+        ? inputSettingsJson.partnerProfileContent
+        : existingProfileContent
+      return {
+        ...existingSettingsJson,
+        ...inputSettingsJson,
+        partnerProfileContent: {
+          ...DEFAULT_ORGANISATION_SETTINGS.partnerProfileContent,
+          ...existingProfileContent,
+          ...inputProfileContent,
+        },
+      }
+    })(),
     company_email: normalizeNullableText(input.companyEmail),
     company_phone: normalizeNullableText(input.companyPhone),
     website: normalizeNullableText(input.website),
@@ -3117,6 +3158,7 @@ export async function updateOrganisationSettings(input = {}) {
       type,
       workspace_kind,
       logo_url,
+      settings_json,
       company_email,
       company_phone,
       website,

@@ -869,6 +869,7 @@ function mapOrganisation(row = {}) {
     province: normalizeText(row.province || settings.province),
     specialties: normalizeArray(row.specialties || settings.specialties),
     activeAreas: normalizeArray(row.active_areas || row.activeAreas || settings.activeAreas),
+    settingsJson: settings,
     verificationStatus: normalizeText(row.verification_status || row.verificationStatus) || 'unverified',
     discoveryVisibility: normalizeText(row.discovery_visibility || row.discoveryVisibility) || 'public',
     partnerRating: Number(row.partner_rating ?? row.partnerRating ?? 0) || null,

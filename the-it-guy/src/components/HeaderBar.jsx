@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, Plus, Search, Users } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCircle2, ChevronDown, FileText, Plus, RefreshCw, Search, UserRoundCheck, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -109,25 +109,267 @@ function getUserAvatarUrl(user) {
   ).trim()
 }
 
-function formatNotificationTimestamp(value) {
+const NOTIFICATION_TONE_STYLES = {
+  blue: {
+    badge: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-100',
+    icon: RefreshCw,
+  },
+  green: {
+    badge: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100',
+    icon: CheckCircle2,
+  },
+  amber: {
+    badge: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-100',
+    icon: AlertTriangle,
+  },
+  rose: {
+    badge: 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-100',
+    icon: XCircle,
+  },
+  slate: {
+    badge: 'bg-slate-50 text-slate-700 ring-1 ring-inset ring-slate-100',
+    icon: FileText,
+  },
+  indigo: {
+    badge: 'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-100',
+    icon: UserRoundCheck,
+  },
+}
+
+const NOTIFICATION_TYPE_STYLES = {
+  participant_assigned: { tone: 'indigo', icon: UserRoundCheck },
+  document_uploaded: { tone: 'slate', icon: FileText },
+  readiness_updated: { tone: 'blue', icon: RefreshCw },
+  workflow_updated: { tone: 'blue', icon: RefreshCw },
+  lane_handoff: { tone: 'indigo', icon: UserRoundCheck },
+  registration_completed: { tone: 'green', icon: CheckCircle2 },
+  overdue_missing_docs: { tone: 'amber', icon: AlertTriangle },
+  additional_document_requested: { tone: 'amber', icon: AlertTriangle },
+  commercial_access_request: { tone: 'amber', icon: AlertTriangle },
+  commercial_access_decision: { tone: 'green', icon: CheckCircle2 },
+}
+
+function getNotificationTone(notification = {}) {
+  const type = String(notification.type || notification.notificationType || '').trim().toLowerCase()
+  if (type && NOTIFICATION_TYPE_STYLES[type]) {
+    return NOTIFICATION_TYPE_STYLES[type].tone
+  }
+
+  const haystack = `${notification.title || ''} ${notification.message || ''}`.toLowerCase()
+  if (haystack.includes('failed') || haystack.includes('error') || haystack.includes('rejected') || haystack.includes('declin')) {
+    return 'rose'
+  }
+  if (haystack.includes('attention') || haystack.includes('warning') || haystack.includes('overdue') || haystack.includes('missing') || haystack.includes('pending')) {
+    return 'amber'
+  }
+  if (haystack.includes('assigned') || haystack.includes('handoff')) {
+    return 'indigo'
+  }
+  if (haystack.includes('complete') || haystack.includes('approved') || haystack.includes('confirm') || haystack.includes('signed') || haystack.includes('uploaded')) {
+    return 'green'
+  }
+  if (haystack.includes('document') || haystack.includes('draft') || haystack.includes('generated')) {
+    return 'slate'
+  }
+
+  return 'blue'
+}
+
+function getNotificationPresentation(notification = {}) {
+  const type = String(notification.type || notification.notificationType || '').trim().toLowerCase()
+  const typeConfig = type && NOTIFICATION_TYPE_STYLES[type] ? NOTIFICATION_TYPE_STYLES[type] : null
+  const tone = typeConfig?.tone || getNotificationTone(notification)
+  const base = NOTIFICATION_TONE_STYLES[tone] || NOTIFICATION_TONE_STYLES.blue
+  return {
+    ...base,
+    icon: typeConfig?.icon || base.icon,
+  }
+}
+
+function formatNotificationDate(value) {
   if (!value) {
-    return 'Just now'
+    return ''
   }
 
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
-    return 'Just now'
+    return ''
   }
 
-  const deltaMs = Date.now() - date.getTime()
-  const deltaMinutes = Math.max(Math.floor(deltaMs / 60000), 0)
+  return new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+}
 
-  if (deltaMinutes < 1) return 'Just now'
-  if (deltaMinutes < 60) return `${deltaMinutes}m ago`
-  if (deltaMinutes < 1440) return `${Math.floor(deltaMinutes / 60)}h ago`
-  if (deltaMinutes < 10080) return `${Math.floor(deltaMinutes / 1440)}d ago`
+function formatNotificationSectionDate(value) {
+  if (!value) {
+    return 'Earlier'
+  }
 
-  return date.toLocaleDateString()
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return 'Earlier'
+  }
+
+  const today = new Date()
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const startOfYesterday = new Date(startOfToday)
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1)
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+
+  if (day.getTime() === startOfToday.getTime()) {
+    return 'Today'
+  }
+
+  if (day.getTime() === startOfYesterday.getTime()) {
+    return 'Yesterday'
+  }
+
+  return new Intl.DateTimeFormat('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(date)
+}
+
+function getNotificationDateKey(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return 'unknown'
+  }
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function groupNotificationsByDate(notifications = []) {
+  const sortedNotifications = [...(Array.isArray(notifications) ? notifications : [])].sort((left, right) => {
+    const leftTime = new Date(left?.createdAt || left?.created_at || 0).getTime()
+    const rightTime = new Date(right?.createdAt || right?.created_at || 0).getTime()
+    return rightTime - leftTime
+  })
+
+  const sections = []
+  const sectionIndex = new Map()
+
+  for (const notification of sortedNotifications) {
+    const createdAt = notification?.createdAt || notification?.created_at || null
+    const key = getNotificationDateKey(createdAt)
+    const label = formatNotificationSectionDate(createdAt)
+    let section = sectionIndex.get(key)
+
+    if (!section) {
+      section = { key, label, items: [] }
+      sectionIndex.set(key, section)
+      sections.push(section)
+    }
+
+    section.items.push(notification)
+  }
+
+  return sections
+}
+
+function getNotificationEntityLabel(notification = {}) {
+  const eventData = notification?.eventData || {}
+  const candidates = [
+    notification.entityLabel,
+    notification.relatedEntityLabel,
+    eventData.entityLabel,
+    eventData.relatedEntityLabel,
+    eventData.transactionReference,
+    eventData.transaction_reference,
+    eventData.applicationReference,
+    eventData.application_reference,
+    eventData.unitLabel,
+    eventData.unit_label,
+    eventData.unitName,
+    eventData.unit_name,
+    eventData.propertyAddress,
+    eventData.property_address,
+    eventData.propertyName,
+    eventData.property_name,
+    eventData.listingTitle,
+    eventData.listing_title,
+    eventData.developmentName,
+    eventData.development_name,
+  ]
+
+  return candidates.find((candidate) => String(candidate || '').trim()) || ''
+}
+
+function NotificationItem({ notification, onSelect }) {
+  const presentation = getNotificationPresentation(notification)
+  const Icon = presentation.icon || RefreshCw
+  const entityLabel = getNotificationEntityLabel(notification)
+  const isUnread = !notification.isRead
+
+  return (
+    <button
+      type="button"
+      className={`group relative w-full rounded-[20px] px-4 py-4 text-left ring-1 transition duration-200 ease-out ${
+        isUnread
+          ? 'bg-[#f7fbff] ring-blue-100 hover:bg-white hover:ring-blue-200'
+          : 'bg-white ring-slate-200/80 hover:bg-slate-50 hover:ring-slate-300/80'
+      }`}
+      onClick={() => onSelect(notification)}
+    >
+      <div className="flex items-start gap-3">
+        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-2xl ${presentation.badge}`}>
+          <Icon size={16} />
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className={`truncate text-sm ${isUnread ? 'font-semibold text-[#101828]' : 'font-medium text-[#344054]'}`}>
+                {notification.title || 'Notification'}
+              </p>
+              <p className="mt-1 line-clamp-2 text-sm leading-5 text-[#667085]">
+                {notification.message || 'Workflow activity update.'}
+              </p>
+              {entityLabel ? (
+                <p className="mt-2 truncate text-xs font-medium text-[#52657a]">
+                  {entityLabel}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2 pt-0.5">
+              {isUnread ? <span className="h-2 w-2 rounded-full bg-[#1769d1]" aria-hidden="true" /> : null}
+              <time className="text-xs font-medium text-[#8a9aac]">
+                {formatNotificationDate(notification.createdAt || notification.created_at)}
+              </time>
+            </div>
+          </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function NotificationSection({ label, items, onSelect }) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#8a9aac]">
+          {label}
+        </p>
+        <span className="text-[0.72rem] font-semibold text-[#c0ccd9]">
+          {items.length}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {items.map((notification) => (
+          <NotificationItem key={notification.id} notification={notification} onSelect={onSelect} />
+        ))}
+      </div>
+    </section>
+  )
 }
 
 const ATTORNEY_DASHBOARD_ROLE_VIEWS = [
@@ -352,6 +594,7 @@ function HeaderBar({ onLogout, user }) {
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
   const isClientsWorkspaceRoute = location.pathname === '/clients' || location.pathname === '/bond/clients'
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
+  const notificationSections = groupNotificationsByDate(notificationState.notifications)
   const notificationsControl = (
     <div className="relative flex-none" ref={notificationsRef}>
       <button
@@ -375,9 +618,12 @@ function HeaderBar({ onLogout, user }) {
       </button>
 
       {notificationsOpen ? (
-        <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 w-[360px] p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <strong>Notifications</strong>
+        <div
+          className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 flex flex-col overflow-hidden p-3"
+          style={{ width: 'calc(100vw - 32px)', maxWidth: '360px', maxHeight: 'min(520px, calc(100vh - 120px))' }}
+        >
+          <div className="flex items-center justify-between gap-3 px-1 pt-0.5">
+            <strong className="text-[0.92rem] font-semibold text-[#101828]">Notifications</strong>
             {notificationState.unreadCount > 0 ? (
               <button
                 type="button"
@@ -387,31 +633,33 @@ function HeaderBar({ onLogout, user }) {
                   await loadNotifications()
                 }}
               >
-                Mark all read
+                Mark all as read
               </button>
             ) : null}
           </div>
 
-          {notificationState.loading ? <p className="rounded-control bg-surfaceAlt px-4 py-3 text-sm text-textMuted">Loading notifications…</p> : null}
-          {notificationState.error ? <p className="rounded-control bg-dangerSoft px-4 py-3 text-sm text-danger">{notificationState.error}</p> : null}
-          {!notificationState.loading &&
-          !notificationState.error &&
-          (!notificationState.notifications || !notificationState.notifications.length) ? (
-            <p className="rounded-control bg-surfaceAlt px-4 py-3 text-sm text-textMuted">No notifications yet.</p>
+          {notificationState.loading && !notificationSections.length ? <p className="mt-3 rounded-2xl bg-[#f8fafc] px-4 py-3 text-sm text-[#667085]">Loading notifications…</p> : null}
+          {notificationState.error ? <p className="mt-3 rounded-2xl bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">{notificationState.error}</p> : null}
+          {!notificationState.error &&
+          !notificationSections.length &&
+          !notificationState.loading ? (
+            <div className="mt-3 rounded-[20px] border border-dashed border-[#d8e0ea] bg-[#fbfdff] px-4 py-6 text-center">
+              <p className="text-sm font-semibold text-[#101828]">No notifications yet</p>
+              <p className="mt-1 text-sm text-[#667085]">Important workflow updates, document activity, and transaction alerts will appear here.</p>
+            </div>
           ) : null}
 
-          {!notificationState.loading && !notificationState.error ? (
-            <div className="flex max-h-[360px] flex-col gap-2 overflow-y-auto">
-              {notificationState.notifications.map((notification) => (
-                <button
-                  key={notification.id}
-                  type="button"
-                  className={`rounded-control border px-4 py-3 text-left transition duration-150 ease-out ${
-                    notification.isRead
-                      ? 'border-borderSoft bg-surface hover:border-borderDefault hover:bg-surfaceAlt'
-                      : 'border-info bg-infoSoft hover:border-primary'
-                  }`}
-                  onClick={async () => {
+          {notificationSections.length ? (
+            <div
+              className="mt-3 flex-1 space-y-4 overflow-y-auto pr-1"
+              style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(132, 146, 166, 0.34) transparent' }}
+            >
+              {notificationSections.map((section) => (
+                <NotificationSection
+                  key={section.key}
+                  label={section.label}
+                  items={section.items}
+                  onSelect={async (notification) => {
                     if (!notification.isRead) {
                       await markNotificationRead(notification.id)
                     }
@@ -432,13 +680,7 @@ function HeaderBar({ onLogout, user }) {
                       setNotificationsOpen(false)
                     }
                   }}
-                >
-                  <div className="mb-2 flex items-start justify-between gap-3">
-                    <span>{notification.title}</span>
-                    <time className="shrink-0 text-helper text-textMuted">{formatNotificationTimestamp(notification.createdAt)}</time>
-                  </div>
-                  <p className="text-secondary text-textBody">{notification.message}</p>
-                </button>
+                />
               ))}
             </div>
           ) : null}

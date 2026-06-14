@@ -515,9 +515,10 @@ export function filterAgentLeadRows(rows = [], filters = {}) {
   const stage = normalizeLower(filters.stage)
   const source = normalizeLower(filters.source)
   const agent = normalizeLower(filters.agent)
-  const dateAdded = filters.dateAdded ? normalizeText(filters.dateAdded) : ''
-  const dateFrom = dateAdded ? new Date(`${dateAdded}T00:00:00`).getTime() : null
-  const dateTo = dateAdded ? new Date(`${dateAdded}T23:59:59.999`).getTime() : null
+  const createdFrom = normalizeText(filters.createdFrom || filters.dateFrom || filters.dateAdded || '')
+  const createdTo = normalizeText(filters.createdTo || filters.dateTo || filters.dateAdded || '')
+  const dateFrom = createdFrom ? new Date(`${createdFrom}T00:00:00`).getTime() : null
+  const dateTo = createdTo ? new Date(`${createdTo}T23:59:59.999`).getTime() : null
 
   return rows.filter((row) => {
     if (search) {
@@ -528,7 +529,7 @@ export function filterAgentLeadRows(rows = [], filters = {}) {
     if (source && source !== 'all' && normalizeLower(row.source) !== source) return false
     if (agent && agent !== 'all' && normalizeLower(row.assignedAgent) !== agent) return false
     const createdMs = row.createdAt ? new Date(row.createdAt).getTime() : null
-    if (dateFrom && dateTo && (!createdMs || createdMs < dateFrom || createdMs > dateTo)) return false
+    if ((dateFrom || dateTo) && (!createdMs || (dateFrom && createdMs < dateFrom) || (dateTo && createdMs > dateTo))) return false
     return true
   })
 }

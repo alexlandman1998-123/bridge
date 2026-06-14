@@ -2990,7 +2990,7 @@
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 250, 253, 0.94)),
     radial-gradient(circle at 26% 0%, rgba(45, 104, 179, 0.08), transparent 32%) !important;
   backdrop-filter: blur(22px);
-  padding-top: 16px !important;
+  padding-top: 18px !important;
 }
 
 .ui-sidebar::after {
@@ -3004,10 +3004,38 @@
   pointer-events: none;
 }
 
+.ui-sidebar .ui-sidebar-brand {
+  margin-bottom: 0.4rem !important;
+  padding-bottom: 0.35rem !important;
+  border-bottom-width: 0 !important;
+}
+
+.ui-sidebar .ui-sidebar-brand-org {
+  gap: 0.35rem !important;
+}
+
+.ui-sidebar .ui-sidebar-brand-logo-wrap {
+  min-height: 108px !important;
+}
+
+.ui-sidebar .ui-sidebar-brand-logo {
+  max-height: 124px !important;
+}
+
+.ui-sidebar .ui-sidebar-brand-powered {
+  color: #7c8ea4 !important;
+  letter-spacing: 0.03em !important;
+}
+
+.ui-sidebar .ui-sidebar-section-label {
+  margin-bottom: 0.55rem !important;
+  color: #98a7b8 !important;
+}
+
 .ui-sidebar .ui-nav-stack .ui-sidebar-link {
-  border-radius: 14px !important;
-  min-height: 44px !important;
-  padding: 0.64rem 0.82rem !important;
+  border-radius: 16px !important;
+  min-height: 46px !important;
+  padding: 0.72rem 0.88rem !important;
   transition:
     background 160ms ease,
     border-color 160ms ease,
@@ -3021,6 +3049,10 @@
   height: 16px !important;
 }
 
+.ui-sidebar .ui-nav-stack {
+  gap: 0.42rem !important;
+}
+
 .ui-sidebar .ui-nav-stack .ui-sidebar-link:hover {
   background: rgba(240, 246, 252, 0.9) !important;
   border-color: rgba(210, 222, 235, 0.72) !important;
@@ -3032,6 +3064,23 @@
   background: linear-gradient(135deg, rgba(235, 243, 255, 0.96), rgba(244, 248, 252, 0.94)) !important;
   border-color: rgba(194, 211, 231, 0.76) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 12px 24px rgba(23, 69, 128, 0.095) !important;
+}
+
+.ui-sidebar .ui-sidebar-link-active::before {
+  display: none !important;
+}
+
+.ui-sidebar-bond .ui-sidebar-bond-section + .ui-sidebar-bond-section {
+  border-top: 0 !important;
+  padding-top: 0.45rem !important;
+}
+
+.ui-sidebar-bond .ui-sidebar-divider {
+  display: none !important;
+}
+
+.ui-sidebar-bond .ui-sidebar-secondary {
+  margin-top: 1rem !important;
 }
 
 .ui-sidebar .ui-sidebar-brand-mark {

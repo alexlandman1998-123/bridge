@@ -4,7 +4,6 @@ import {
   ArrowRight,
   ArrowUpRight,
   Banknote,
-  Bell,
   Building2,
   CheckCircle2,
   ChevronDown,
@@ -15,11 +14,9 @@ import {
   Gavel,
   Landmark,
   LineChart,
-  Plus,
   ShieldCheck,
   Sparkles,
   TrendingUp,
-  UserRound,
   Users,
 } from 'lucide-react'
 import { motion as Motion } from 'motion/react'
@@ -715,27 +712,10 @@ function BridgeCommandCenterDashboard({
                 {rolePreviewActive ? <em className="text-[0.72rem] not-italic text-[#1769e8]">Preview</em> : null}
               </label>
             ) : null}
-            <button type="button" onClick={() => goTo('/bond/pipeline?view=new')} className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] bg-[#102448] px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(16,36,72,0.24)] transition hover:-translate-y-0.5 hover:bg-[#17315c]">
-              <Plus size={16} />
-              Create Application
-            </button>
             <button type="button" className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-4 text-sm font-semibold text-[#17324b] shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#c9d8e8]">
               <Download size={16} />
               Export Report
             </button>
-            <button type="button" className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#dce6f2] bg-white text-[#17324b] shadow-[0_8px_18px_rgba(15,23,42,0.04)]" aria-label="Notifications">
-              <Bell size={17} />
-              <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#ef233c]" />
-            </button>
-            <div className="inline-flex h-11 items-center gap-3 rounded-full border border-[#dce6f2] bg-white pl-1.5 pr-3 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#eaf2ff] text-[#1b63c8]">
-                <UserRound size={16} />
-              </span>
-              <span className="hidden min-w-0 sm:block">
-                <span className="block max-w-[150px] truncate text-sm font-semibold leading-tight text-[#152338]">{model.profileName}</span>
-                <span className="block max-w-[150px] truncate text-[0.72rem] font-medium leading-tight text-[#66758b]">{model.organisationName}</span>
-              </span>
-            </div>
           </div>
         </div>
       </section>

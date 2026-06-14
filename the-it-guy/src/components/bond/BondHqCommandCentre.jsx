@@ -20,7 +20,7 @@ import {
   UserRound,
   UsersRound,
 } from 'lucide-react'
-import { createElement } from 'react'
+import { createElement, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   SOUTH_AFRICA_DISTRICT_PATHS,
@@ -183,10 +183,10 @@ function getRegionalTone(score = 0) {
       ring: '#16a34a',
       track: '#dcfce7',
       soft: 'bg-[#ecfdf3] text-[#027a48] ring-[#bbf7d0]',
-      border: 'border-[#bbf7d0] hover:border-[#86efac]',
-      surface: 'bg-[linear-gradient(180deg,#ffffff_0%,#f0fdf4_100%)]',
-      metric: 'bg-white/80 ring-[#d9fbe5]',
-      glow: 'shadow-[0_14px_34px_rgba(22,163,74,0.1)]',
+      border: 'border-[#e7edf3] hover:border-[#cfe8d7]',
+      surface: 'bg-white',
+      metric: 'bg-[#f9fffb] ring-[#e1f4e8]',
+      glow: 'shadow-[0_12px_30px_rgba(22,163,74,0.06)]',
       trend: 'text-[#027a48]',
     }
   }
@@ -196,10 +196,10 @@ function getRegionalTone(score = 0) {
       ring: '#f59e0b',
       track: '#fef3c7',
       soft: 'bg-[#fffaeb] text-[#b54708] ring-[#fedf89]',
-      border: 'border-[#fde68a] hover:border-[#fbbf24]',
-      surface: 'bg-[linear-gradient(180deg,#ffffff_0%,#fffbeb_100%)]',
-      metric: 'bg-white/80 ring-[#fdecc8]',
-      glow: 'shadow-[0_14px_34px_rgba(245,158,11,0.1)]',
+      border: 'border-[#ece4cf] hover:border-[#f3ca76]',
+      surface: 'bg-white',
+      metric: 'bg-[#fffdf7] ring-[#f4ead0]',
+      glow: 'shadow-[0_12px_30px_rgba(245,158,11,0.06)]',
       trend: 'text-[#b54708]',
     }
   }
@@ -208,12 +208,142 @@ function getRegionalTone(score = 0) {
     ring: '#dc2626',
     track: '#fee2e2',
     soft: 'bg-[#fef3f2] text-[#b42318] ring-[#fecaca]',
-    border: 'border-[#fecaca] hover:border-[#fca5a5]',
-    surface: 'bg-[linear-gradient(180deg,#ffffff_0%,#fff5f5_100%)]',
-    metric: 'bg-white/80 ring-[#fee2e2]',
-    glow: 'shadow-[0_14px_34px_rgba(220,38,38,0.1)]',
+    border: 'border-[#f3d4d1] hover:border-[#eaa8a1]',
+    surface: 'bg-white',
+    metric: 'bg-[#fffafa] ring-[#fde5e1]',
+    glow: 'shadow-[0_12px_30px_rgba(220,38,38,0.06)]',
     trend: 'text-[#b42318]',
   }
+}
+
+function getTrendDirection(value = '') {
+  const trend = String(value || '').trim()
+  if (trend.includes('▼') || trend.startsWith('-')) return 'down'
+  if (trend.includes('▲') || trend.startsWith('+')) return 'up'
+  return 'flat'
+}
+
+function getTrendLabel(value = '') {
+  const trend = String(value || '').trim()
+  if (!trend) return 'Tracking'
+  if (trend.toLowerCase().includes('vs last month')) return trend
+  return `${trend} vs last month`
+}
+
+function getBadgeTone(level = 'neutral') {
+  if (level === 'positive') {
+    return 'bg-[#ecfdf3] text-[#027a48] ring-[#bdeccb]'
+  }
+  if (level === 'warning') {
+    return 'bg-[#fffaeb] text-[#b54708] ring-[#fde68a]'
+  }
+  if (level === 'critical') {
+    return 'bg-[#fef3f2] text-[#b42318] ring-[#fecaca]'
+  }
+  return 'bg-[#f1f5f9] text-[#5f7287] ring-[#dbe5ef]'
+}
+
+function getBankHealthLabel({ approvalRate = 0, averageResponseTime = 0 } = {}) {
+  const rate = clampScore(approvalRate)
+  const response = normalizeNumber(averageResponseTime)
+  if (rate >= 60 && response <= 24) return 'Strong'
+  if (rate >= 40 && response <= 48) return 'Watch'
+  return 'Needs Attention'
+}
+
+function getBankHealthTone(label = '') {
+  if (label === 'Strong') return 'bg-[#ecfdf3] text-[#027a48] ring-[#bdeccb]'
+  if (label === 'Watch') return 'bg-[#fffaeb] text-[#b54708] ring-[#fde68a]'
+  return 'bg-[#fef3f2] text-[#b42318] ring-[#fecaca]'
+}
+
+function getAlertMetricValue(alerts = [], keys = []) {
+  const alert = getAlert(alerts, keys)
+  return normalizeNumber(alert?.value)
+}
+
+function getRiskyText(item = {}) {
+  return [
+    item.label,
+    item.metric,
+    item.description,
+    item.reason,
+    item.bottleneck,
+    item.predictedDelay,
+    item.statusLabel,
+    item.nextAction,
+    item.financeStage,
+  ]
+    .map(normalizeText)
+    .join(' ')
+    .toLowerCase()
+}
+
+function countRowsMatching(rows = [], needles = []) {
+  const safeNeedles = (Array.isArray(needles) ? needles : [needles]).map((value) => String(value || '').toLowerCase())
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const haystack = getRiskyText(row)
+    return safeNeedles.some((needle) => needle && haystack.includes(needle))
+  }).length
+}
+
+function buildAttentionItems({ alerts = [], priorityActions = [], operationalRiskMatrix = [], atRiskApplications = [] } = {}) {
+  const missingDocuments = Math.max(
+    getAlertMetricValue(alerts, ['missing_docs', 'missing_documents']),
+    normalizeNumber(findMetric(priorityActions, 'missing_documents')?.count),
+    countRowsMatching(operationalRiskMatrix, ['missing documents', 'document pack', 'documents missing', 'documents']),
+  )
+  const bankFeedback = Math.max(
+    getAlertMetricValue(alerts, ['sla', 'sla_breaches']),
+    normalizeNumber(findMetric(priorityActions, 'bank_feedback')?.count),
+    countRowsMatching(operationalRiskMatrix, ['bank feedback', 'lender query', 'bank review']),
+  )
+  const awaitingClient = Math.max(
+    getAlertMetricValue(alerts, ['awaiting_otp']),
+    normalizeNumber(findMetric(priorityActions, 'submission_readiness')?.count),
+    countRowsMatching(operationalRiskMatrix, ['buyer response', 'client response', 'stale', 'waiting']),
+  )
+  const valuationOutstanding = Math.max(
+    normalizeNumber(findMetric(priorityActions, 'overdue_applications')?.count),
+    countRowsMatching(operationalRiskMatrix, ['valuation', 'valuer', 'valuation request']),
+    countRowsMatching(atRiskApplications, ['valuation', 'valuer', 'valuation request']),
+  )
+
+  return [
+    {
+      key: 'missing_documents',
+      label: 'Missing Documents',
+      value: missingDocuments,
+      detail: 'Applications still waiting on document packs',
+      tone: missingDocuments ? 'critical' : 'neutral',
+      href: '/bond/pipeline?view=awaiting-docs',
+    },
+    {
+      key: 'bank_feedback',
+      label: 'Bank Feedback',
+      value: bankFeedback,
+      detail: 'Lender responses and queries needing action',
+      tone: bankFeedback ? 'warning' : 'neutral',
+      href: '/bond/pipeline?view=submitted',
+    },
+    {
+      key: 'awaiting_client',
+      label: 'Awaiting Client',
+      value: awaitingClient,
+      detail: 'Files paused while the client responds',
+      tone: awaitingClient ? 'warning' : 'neutral',
+      href: '/bond/pipeline?view=all',
+    },
+    {
+      key: 'valuation_outstanding',
+      label: 'Valuation Outstanding',
+      value: valuationOutstanding,
+      detail: 'Deals still waiting on valuation movement',
+      tone: valuationOutstanding ? 'critical' : 'neutral',
+      href: '/bond/pipeline?view=stalled',
+    },
+  ]
+    .sort((left, right) => right.value - left.value)
 }
 
 const DEMO_REGIONAL_ROWS = [
@@ -289,43 +419,43 @@ function MicroTrend({ values = [], color = '#2563eb' }) {
 const KPI_TONES = {
   green: {
     accent: '#18a058',
-    icon: 'bg-[#edfdf4] text-[#149650] ring-[#d8f5e3]',
-    status: 'text-[#149650]',
+    icon: 'bg-[#eef9f1] text-[#177245] ring-[#d8eedf]',
+    status: 'text-[#177245]',
     dot: '#2ebd69',
-    panel: 'bg-[linear-gradient(180deg,rgba(232,250,240,0.78)_0%,rgba(247,253,250,0.96)_100%)] ring-[#d6f2e1]',
-    wash: 'bg-[radial-gradient(circle_at_12%_18%,rgba(34,197,94,0.12),transparent_36%),linear-gradient(180deg,#ffffff_0%,#f8fffb_100%)]',
+    panel: 'bg-white ring-[#e4f0e8]',
+    wash: 'bg-white',
     line: '#78d89a',
-    fill: 'rgba(34,197,94,0.14)',
+    fill: 'rgba(34,197,94,0.1)',
   },
   blue: {
     accent: '#3b8edb',
-    icon: 'bg-[#eef7ff] text-[#2b76b9] ring-[#d9eafa]',
-    status: 'text-[#f79009]',
+    icon: 'bg-[#eef6ff] text-[#2b76b9] ring-[#d7e7fb]',
+    status: 'text-[#2b76b9]',
     dot: '#3b8edb',
-    panel: 'bg-[linear-gradient(180deg,rgba(239,247,255,0.72)_0%,rgba(250,253,255,0.96)_100%)] ring-[#dbe9f7]',
-    wash: 'bg-[radial-gradient(circle_at_12%_18%,rgba(59,142,219,0.09),transparent_34%),linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)]',
+    panel: 'bg-white ring-[#e2ecf8]',
+    wash: 'bg-white',
     line: '#80b9f2',
-    fill: 'rgba(59,142,219,0.13)',
+    fill: 'rgba(59,142,219,0.1)',
   },
   purple: {
     accent: '#8257e6',
-    icon: 'bg-[#f3efff] text-[#7654dc] ring-[#e4dbff]',
+    icon: 'bg-[#f4efff] text-[#7654dc] ring-[#e4dbff]',
     status: 'text-[#7c3aed]',
     dot: '#8257e6',
-    panel: 'bg-[linear-gradient(180deg,rgba(245,240,255,0.72)_0%,rgba(253,251,255,0.96)_100%)] ring-[#e7ddff]',
-    wash: 'bg-[radial-gradient(circle_at_12%_18%,rgba(130,87,230,0.1),transparent_34%),linear-gradient(180deg,#ffffff_0%,#fdfbff_100%)]',
+    panel: 'bg-white ring-[#ece3ff]',
+    wash: 'bg-white',
     line: '#aa92f3',
-    fill: 'rgba(130,87,230,0.14)',
+    fill: 'rgba(130,87,230,0.1)',
   },
   orange: {
     accent: '#f97316',
-    icon: 'bg-[#fff5ed] text-[#f97316] ring-[#fde3cf]',
+    icon: 'bg-[#fff4ec] text-[#f97316] ring-[#fde1cc]',
     status: 'text-[#f97316]',
-    dot: '#3b8edb',
-    panel: 'bg-[linear-gradient(180deg,rgba(239,247,255,0.72)_0%,rgba(250,253,255,0.96)_100%)] ring-[#dbe9f7]',
-    wash: 'bg-[radial-gradient(circle_at_12%_18%,rgba(249,115,22,0.08),transparent_34%),linear-gradient(180deg,#ffffff_0%,#fffdfb_100%)]',
-    line: '#80b9f2',
-    fill: 'rgba(59,142,219,0.13)',
+    dot: '#f97316',
+    panel: 'bg-white ring-[#f5e4d3]',
+    wash: 'bg-white',
+    line: '#f7a46a',
+    fill: 'rgba(249,115,22,0.1)',
   },
 }
 
@@ -420,7 +550,7 @@ function Donut({ segments = [], sizeClass = 'h-40 w-40', center = null }) {
 
 function HqCard({ children, className = '' }) {
   return (
-    <section className={`rounded-[16px] bg-white p-6 shadow-[0_10px_28px_rgba(15,23,42,0.035)] ring-1 ring-[#dfe7ef] ${className}`}>
+    <section className={`rounded-[24px] bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.045)] ring-1 ring-[#e5ebf2] ${className}`}>
       {children}
     </section>
   )
@@ -481,15 +611,25 @@ function DataTable({ columns = [], rows = [], emptyLabel = 'Not enough data.' })
 export default function BondHqCommandCentre({ snapshot = {} }) {
   const hq = snapshot.hqCommandCentre || {}
   const health = buildOperationalHealthModel(hq)
+  const performanceSnapshot = Array.isArray(snapshot.performanceSnapshot) ? snapshot.performanceSnapshot : []
+  const priorityActions = Array.isArray(snapshot.priorityActions) ? snapshot.priorityActions : []
+  const operationalRiskMatrix = Array.isArray(snapshot.operationalRiskMatrix) ? snapshot.operationalRiskMatrix : []
+  const atRiskApplications = Array.isArray(snapshot.atRiskApplications) ? snapshot.atRiskApplications : []
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-8 px-0 pb-8">
+    <div className="space-y-10 pb-8">
       <ExecutiveHeader />
-      <ExecutiveKpiStrip />
+      <ExecutiveKpiStrip snapshot={snapshot} hq={hq} performanceSnapshot={performanceSnapshot} />
+      <WhatNeedsAttentionSection
+        hq={hq}
+        priorityActions={priorityActions}
+        operationalRiskMatrix={operationalRiskMatrix}
+        atRiskApplications={atRiskApplications}
+      />
       <RegionalPerformanceStrip rows={hq.regionalPerformance || hq.regionComparison || []} loading={snapshot.loading || hq.loading} />
       <BankRelationshipBreakdown bankPerformance={hq.bankPerformance || {}} bankDistribution={snapshot.buyerDemographics?.bankDistribution || []} />
       <RegionalHeatmapOverview rows={hq.regionalPerformance || hq.regionComparison || []} />
-      <BuyerStatsVisualRow demographics={snapshot.buyerDemographics || {}} qualityDistribution={snapshot.buyerQualityDistribution || {}} />
+      <BuyerStatsVisualRow demographics={snapshot.buyerDemographics || {}} bottleneckRows={operationalRiskMatrix} />
       <SystemFooter hq={hq} health={health} />
     </div>
   )
@@ -536,14 +676,14 @@ function BankRelationshipBreakdown({ bankPerformance = {}, bankDistribution = []
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-[20px] font-bold tracking-[-0.01em] text-[#142132]">Bank Relationship Breakdown</h2>
-          <p className="mt-1 text-sm font-medium text-[#64748b]">Four-bank performance view across submissions, approvals, revenue and response speed.</p>
+          <p className="mt-1 text-sm font-medium text-[#64748b]">Approval rate, response speed and lender health across the active bank set.</p>
         </div>
         <Link to="/bond/banks" className="inline-flex items-center gap-2 text-sm font-semibold text-[#204b84] transition hover:text-[#0f2f5f]">
           Manage banks <ArrowRight size={15} />
         </Link>
       </div>
 
-      <div className="grid w-full gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid w-full gap-6 md:grid-cols-2 xl:grid-cols-4">
         {rows.map((row, index) => (
           <BankBreakdownCard key={row.bank} row={row} color={BANK_BREAKDOWN_COLORS[index % BANK_BREAKDOWN_COLORS.length]} />
         ))}
@@ -554,52 +694,39 @@ function BankRelationshipBreakdown({ bankPerformance = {}, bankDistribution = []
 
 function BankBreakdownCard({ row = {}, color = '#24518a' }) {
   const submitted = normalizeNumber(row.submitted || row.total)
-  const approved = row.approved || Math.round((submitted * normalizeNumber(row.approvalRate)) / 100)
-  const declined = normalizeNumber(row.declined)
-  const pending = Math.max(0, submitted - approved - declined)
   const responseLabel = row.averageResponseTime ? `${formatNumber(row.averageResponseTime)}h avg` : 'Pending'
   const approvalRate = clampScore(row.approvalRate)
-  const revenueValue = row.revenue || row.revenueGenerated || row.projectedCommission
+  const healthLabel = getBankHealthLabel({ approvalRate, averageResponseTime: row.averageResponseTime })
 
   return (
-    <Link to="/bond/banks" className="group min-w-0 rounded-[18px] border border-[#dfe7ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)] transition hover:-translate-y-0.5 hover:border-[#bfd0e1] hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)]">
+    <Link to="/bond/banks" className="group min-w-0 rounded-[24px] border border-[#e7edf4] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_22px_42px_rgba(15,23,42,0.07)]">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <CardLabel>Bank Partner</CardLabel>
-          <p className="mt-1 truncate text-lg font-bold text-[#142132]">{row.bank || 'Configured Bank'}</p>
+          <p className="mt-1 truncate text-[17px] font-semibold tracking-[-0.02em] text-[#142132]">{row.bank || 'Configured Bank'}</p>
         </div>
-        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#f8fafc] ring-1 ring-[#e2e8f0]">
+        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-[#f8fafc] ring-1 ring-[#e5edf4]">
           <Landmark size={18} color={color} />
         </span>
       </div>
 
-      <div className="mt-5 flex items-center justify-center">
-        <Donut
-          segments={[
-            { label: 'Approved', value: approved, color },
-            { label: 'Pending', value: pending, color: '#dbe6f0' },
-            { label: 'Declined', value: declined, color: '#f3b2a8' },
-          ]}
-          sizeClass="h-36 w-36"
-          center={(
-            <>
-              <strong className="text-[25px] font-bold leading-none text-[#142132]">{formatPercent(approvalRate)}</strong>
-              <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">approval</span>
-            </>
-          )}
-        />
+      <div className="mt-6">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#71869d]">Approval Rate</p>
+        <p className="mt-2 text-[clamp(2rem,3.4vw,3rem)] font-semibold leading-none tracking-[-0.04em] text-[#07142b]">
+          {formatPercent(approvalRate)}
+        </p>
       </div>
 
-      <div className="mt-5 grid grid-cols-3 gap-2">
-        <BankMiniStat label="Apps" value={formatNumber(submitted)} />
-        <BankMiniStat label="Rev." value={row.revenueLabel || formatCompactMoney(revenueValue, 'R0')} />
-        <BankMiniStat label="Resp." value={responseLabel} />
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <BankMiniStat label="Applications" value={formatNumber(submitted)} />
+        <BankMiniStat label="Avg Response" value={responseLabel} />
       </div>
 
-      <div className="mt-5 space-y-2">
-        <BankStatusBar label="Approved" value={approved} total={Math.max(submitted, 1)} color={color} />
-        <BankStatusBar label="Pending" value={pending} total={Math.max(submitted, 1)} color="#8aa0b7" />
-        <BankStatusBar label="Declined" value={declined} total={Math.max(submitted, 1)} color="#d92d20" />
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#eef3f8] pt-3">
+        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${getBankHealthTone(healthLabel)}`}>
+          Health: {healthLabel}
+        </span>
+        <ArrowRight size={14} className="shrink-0 text-[#8aa0b7] transition group-hover:translate-x-0.5 group-hover:text-[#204b84]" />
       </div>
     </Link>
   )
@@ -607,24 +734,9 @@ function BankBreakdownCard({ row = {}, color = '#24518a' }) {
 
 function BankMiniStat({ label, value }) {
   return (
-    <div className="min-w-0 rounded-[12px] bg-[#f8fafc] px-3 py-2.5 text-center ring-1 ring-[#edf2f7]">
+    <div className="min-w-0 rounded-[16px] bg-[#f8fbfd] px-3 py-2.5 text-center ring-1 ring-[#e5edf4]">
       <p className="text-[0.68rem] font-bold uppercase tracking-[0.08em] text-[#71869d]">{label}</p>
       <p className="mt-1 text-sm font-bold leading-5 text-[#17324d]">{value}</p>
-    </div>
-  )
-}
-
-function BankStatusBar({ label, value, total, color }) {
-  const width = Math.max(4, Math.min(100, (normalizeNumber(value) / Math.max(normalizeNumber(total), 1)) * 100))
-  return (
-    <div>
-      <div className="mb-1.5 flex items-center justify-between gap-2 text-xs font-bold text-[#64748b]">
-        <span>{label}</span>
-        <span>{formatNumber(value)}</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-[#e7eef6]">
-        <span className="block h-full rounded-full" style={{ width: `${width}%`, backgroundColor: color }} />
-      </div>
     </div>
   )
 }
@@ -689,89 +801,136 @@ function getHeatColor(score = 0) {
 }
 
 function RegionalHeatmapOverview({ rows = [] }) {
+  const [expanded, setExpanded] = useState(false)
   const provinceRows = buildProvinceHeatRows(rows)
   const activeRows = provinceRows.filter((row) => row.applications > 0)
   const nationalApplications = provinceRows.reduce((sum, row) => sum + row.applications, 0)
   const averageHealth = activeRows.length ? Math.round(activeRows.reduce((sum, row) => sum + row.health, 0) / activeRows.length) : 0
   const topRegions = [...provinceRows].sort((left, right) => right.health - left.health || right.applications - left.applications).slice(0, 5)
+  const topRegion = topRegions[0]
 
   return (
-    <section className="rounded-[18px] border border-[#dfe7ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.04)]">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <section className="rounded-[28px] border border-[#e7edf4] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <CardLabel>South Africa Regional Heatmap</CardLabel>
-          <h2 className="mt-1 text-[20px] font-bold tracking-[-0.01em] text-[#142132]">Regional application concentration and health</h2>
+          <h2 className="mt-1 text-[20px] font-semibold tracking-[-0.02em] text-[#142132]">Regional health overview</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-2 rounded-full bg-[#f8fafc] px-3 py-1.5 text-xs font-bold text-[#17324d] ring-1 ring-[#e2e8f0]">
-            <MapPinned size={14} /> {formatNumber(nationalApplications)} applications
-          </span>
-          <span className="inline-flex items-center gap-2 rounded-full bg-[#eff6f2] px-3 py-1.5 text-xs font-bold text-[#11653f] ring-1 ring-[#cfe7d9]">
-            {averageHealth ? formatPercent(averageHealth) : 'Pending'} avg health
-          </span>
+          <button
+            type="button"
+            onClick={() => setExpanded((current) => !current)}
+            className="inline-flex items-center gap-2 rounded-full bg-[#143250] px-3 py-1.5 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(20,50,80,0.16)] transition hover:bg-[#173a5e]"
+            aria-expanded={expanded}
+          >
+            {expanded ? 'Collapse heatmap' : 'View Heatmap'}
+            <ArrowRight size={13} className={`transition ${expanded ? 'rotate-180' : ''}`} />
+          </button>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[18px] bg-[#f6f9fc] px-4 py-5 ring-1 ring-[#e6eef6] sm:px-6 xl:px-8">
-        <svg className="mx-auto h-[min(560px,58vw)] min-h-[360px] w-full max-w-[1180px]" viewBox={SOUTH_AFRICA_MAP_VIEWBOX} preserveAspectRatio="xMidYMid meet" role="img" aria-label="South Africa regional heatmap">
-          <rect x="0" y="0" width="760" height="520" rx="18" fill="#f6f9fc" />
-          {SOUTH_AFRICA_DISTRICT_PATHS.map((district) => {
-            const province = provinceRows.find((row) => row.label === district.province)
-            const fill = getHeatColor(province?.health || 0)
-            return (
-              <path
-                key={district.name}
-                d={district.path}
-                fill={fill}
-                stroke="#ffffff"
-                strokeWidth="1.15"
-                strokeLinejoin="round"
-                opacity={province?.applications ? 0.92 : 0.7}
-              >
-                <title>{`${district.name} · ${district.province}`}</title>
-              </path>
-            )
-          })}
-          {provinceRows.map((province) => (
-            <g key={province.key}>
-              <text x={province.x} y={province.y} textAnchor="middle" className="fill-white text-[14px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
-                {province.shortLabel || province.label}
-              </text>
-              <text x={province.x} y={province.y + 20} textAnchor="middle" className="fill-white text-[15px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
-                {formatNumber(province.applications)}
-              </text>
-            </g>
-          ))}
-        </svg>
-      </div>
-
-      <div className="mt-4 rounded-[16px] bg-[#f8fafc] p-4 ring-1 ring-[#e6eef6]">
-        <div className="grid gap-3 xl:grid-cols-[minmax(220px,0.24fr)_minmax(0,0.76fr)] xl:items-stretch">
-          <div>
-            <CardLabel>Heatmap Key</CardLabel>
-            <p className="mt-1 text-sm font-semibold text-[#64748b]">{averageHealth ? formatPercent(averageHealth) : 'Pending'} average active region health</p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <HeatKey color="#15935f" label="Strong" description="80%+" />
-            <HeatKey color="#e59f24" label="Watch" description="72-79%" />
-            <HeatKey color="#d85b46" label="Needs attention" description="Below 72%" />
-            <HeatKey color="#d7e1ec" label="Unassigned" description="No data" />
+      <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]">
+        <div className="rounded-[22px] bg-[#f8fbfd] p-4 ring-1 ring-[#e5edf4]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#71869d]">Regional Health Overview</p>
+          <p className="mt-3 text-[clamp(2rem,3vw,3.25rem)] font-semibold leading-none tracking-[-0.04em] text-[#07142b]">
+            {averageHealth ? formatPercent(averageHealth) : 'Pending'}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-[#516074]">{activeRows.length ? `${formatNumber(activeRows.length)} regions active` : 'No active regions yet'}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="inline-flex items-center rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#17324d] ring-1 ring-[#e5edf4]">
+              {formatNumber(nationalApplications)} applications
+            </span>
+            <span className="inline-flex items-center rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#17324d] ring-1 ring-[#e5edf4]">
+              {topRegion ? topRegion.label : 'No top region'}
+            </span>
           </div>
         </div>
 
-        <div className="mt-4 flex gap-3 overflow-x-auto pb-1 [scrollbar-width:thin]">
-          {topRegions.map((row) => (
-            <div key={row.key} className="min-w-[220px] rounded-[13px] bg-white p-3 ring-1 ring-[#edf2f7]">
-              <div className="flex items-center justify-between gap-3">
-                <span className="truncate text-sm font-bold text-[#17324d]">{row.label}</span>
-                <span className="shrink-0 text-sm font-bold text-[#142132]">{row.health ? formatPercent(row.health) : '0%'}</span>
+        <div className="rounded-[22px] bg-white p-4 ring-1 ring-[#e5edf4]">
+          {expanded ? (
+            <>
+              <div className="overflow-hidden rounded-[18px] bg-[#f6f9fc] px-4 py-5 ring-1 ring-[#e6eef6] sm:px-6 xl:px-8">
+                <svg className="mx-auto h-[min(560px,58vw)] min-h-[360px] w-full max-w-[1180px]" viewBox={SOUTH_AFRICA_MAP_VIEWBOX} preserveAspectRatio="xMidYMid meet" role="img" aria-label="South Africa regional heatmap">
+                  <rect x="0" y="0" width="760" height="520" rx="18" fill="#f6f9fc" />
+                  {SOUTH_AFRICA_DISTRICT_PATHS.map((district) => {
+                    const province = provinceRows.find((row) => row.label === district.province)
+                    const fill = getHeatColor(province?.health || 0)
+                    return (
+                      <path
+                        key={district.name}
+                        d={district.path}
+                        fill={fill}
+                        stroke="#ffffff"
+                        strokeWidth="1.15"
+                        strokeLinejoin="round"
+                        opacity={province?.applications ? 0.92 : 0.7}
+                      >
+                        <title>{`${district.name} · ${district.province}`}</title>
+                      </path>
+                    )
+                  })}
+                  {provinceRows.map((province) => (
+                    <g key={province.key}>
+                      <text x={province.x} y={province.y} textAnchor="middle" className="fill-white text-[14px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
+                        {province.shortLabel || province.label}
+                      </text>
+                      <text x={province.x} y={province.y + 20} textAnchor="middle" className="fill-white text-[15px] font-bold" style={{ paintOrder: 'stroke', stroke: 'rgba(15,23,42,0.34)', strokeWidth: 5 }}>
+                        {formatNumber(province.applications)}
+                      </text>
+                    </g>
+                  ))}
+                </svg>
               </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e2e8f0]">
-                <span className="block h-full rounded-full" style={{ width: `${Math.max(4, row.health)}%`, backgroundColor: getHeatColor(row.health) }} />
+
+              <div className="mt-4 rounded-[16px] bg-[#f8fafc] p-4 ring-1 ring-[#e6eef6]">
+                <div className="grid gap-3 xl:grid-cols-[minmax(220px,0.24fr)_minmax(0,0.76fr)] xl:items-stretch">
+                  <div>
+                    <CardLabel>Heatmap Key</CardLabel>
+                    <p className="mt-1 text-sm font-semibold text-[#64748b]">{averageHealth ? formatPercent(averageHealth) : 'Pending'} average active region health</p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <HeatKey color="#15935f" label="Strong" description="80%+" />
+                    <HeatKey color="#e59f24" label="Watch" description="72-79%" />
+                    <HeatKey color="#d85b46" label="Needs attention" description="Below 72%" />
+                    <HeatKey color="#d7e1ec" label="Unassigned" description="No data" />
+                  </div>
+                </div>
+
+                <div className="mt-4 flex gap-3 overflow-x-auto pb-1 [scrollbar-width:thin]">
+                  {topRegions.map((row) => (
+                    <div key={row.key} className="min-w-[220px] rounded-[13px] bg-white p-3 ring-1 ring-[#edf2f7]">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-bold text-[#17324d]">{row.label}</span>
+                        <span className="shrink-0 text-sm font-bold text-[#142132]">{row.health ? formatPercent(row.health) : '0%'}</span>
+                      </div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e2e8f0]">
+                        <span className="block h-full rounded-full" style={{ width: `${Math.max(4, row.health)}%`, backgroundColor: getHeatColor(row.health) }} />
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-[#64748b]">{formatNumber(row.applications)} applications · {formatCompactMoney(row.revenueValue, 'R0')}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <p className="mt-2 text-xs font-semibold text-[#64748b]">{formatNumber(row.applications)} applications · {formatCompactMoney(row.revenueValue, 'R0')}</p>
+            </>
+          ) : (
+            <div className="flex min-h-[280px] flex-col justify-between rounded-[18px] bg-[#f8fbfd] p-4 ring-1 ring-[#e6eef6]">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#71869d]">Collapsed view</p>
+                  <p className="mt-3 text-sm leading-6 text-[#516074]">
+                    The full map stays hidden until requested, keeping the page calmer on first scan.
+                  </p>
+                </div>
+                <MapPinned size={18} className="text-[#2b76b9]" />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <HeatKey color="#15935f" label={`${averageHealth ? formatPercent(averageHealth) : '—'}`} description="Average health" />
+                <HeatKey color="#e59f24" label={formatNumber(activeRows.length)} description="Regions active" />
+                <HeatKey color="#3b8edb" label={topRegion ? topRegion.label : '—'} description="Top region" />
+              </div>
             </div>
-          ))}
+          )}
         </div>
       </div>
     </section>
@@ -798,16 +957,15 @@ function objectEntriesWithValues(items = {}) {
   return Object.entries(items || {}).filter(([, value]) => normalizeNumber(value) > 0)
 }
 
-function BuyerStatsVisualRow({ demographics = {}, qualityDistribution = {} }) {
+function BuyerStatsVisualRow({ demographics = {}, bottleneckRows = [] }) {
   const financeMix = objectEntriesWithValues(demographics.bondVsCash || {}).length ? demographics.bondVsCash : DEMO_BUYER_FINANCE_MIX
   const clientType = objectEntriesWithValues(demographics.clientType || {}).length ? demographics.clientType : DEMO_BUYER_PROFILE_MIX
-  const readiness = qualityDistribution.readiness || qualityDistribution || {}
 
   return (
-    <section className="grid gap-5 xl:grid-cols-3">
+    <section className="grid gap-6 xl:grid-cols-3">
       <BuyerDonutPanel title="Buyer Finance Mix" icon={Banknote} items={financeMix} colors={['#24518a', '#17946b', '#b7791f']} />
       <BuyerBarsPanel title="Buyer Profile Mix" icon={UserRound} items={clientType} colors={['#17946b', '#24518a', '#b7791f', '#7c3aed']} />
-      <BuyerReadinessPanel title="Buyer Readiness Quality" items={readiness} />
+      <ApplicationBottlenecksPanel title="Application Bottlenecks" bottleneckRows={bottleneckRows} />
     </section>
   )
 }
@@ -818,25 +976,25 @@ function BuyerDonutPanel({ title, icon: Icon, items = {}, colors = [] }) {
   const segments = entries.map(([key, value], index) => ({ label: key, value, color: colors[index % colors.length] || '#24518a' }))
 
   return (
-    <HqCard className="min-h-[360px]">
+    <HqCard className="min-h-[390px]">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <CardLabel>Buyer Stats</CardLabel>
-          <p className="mt-1 text-lg font-bold text-[#142132]">{title}</p>
+          <p className="mt-1 text-lg font-semibold text-[#142132]">{title}</p>
         </div>
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#f8fafc] ring-1 ring-[#e2e8f0]">
+        <span className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#f8fafc] ring-1 ring-[#e5edf4]">
           {createElement(Icon, { size: 18, className: 'text-[#24518a]' })}
         </span>
       </div>
 
-      <div className="grid gap-5">
+      <div className="grid gap-6">
         <div className="flex justify-center">
           <Donut
             segments={segments}
-            sizeClass="h-40 w-40"
+            sizeClass="h-48 w-48"
             center={(
               <>
-                <strong className="text-[28px] font-bold leading-none text-[#142132]">{formatNumber(total)}</strong>
+                <strong className="text-[32px] font-semibold leading-none tracking-[-0.04em] text-[#142132]">{formatNumber(total)}</strong>
                 <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748b]">buyers</span>
               </>
             )}
@@ -857,13 +1015,13 @@ function BuyerBarsPanel({ title, icon: Icon, items = {}, colors = [] }) {
   const total = entries.reduce((sum, [, value]) => sum + normalizeNumber(value), 0)
 
   return (
-    <HqCard className="min-h-[360px]">
+    <HqCard className="min-h-[390px]">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <CardLabel>Buyer Stats</CardLabel>
-          <p className="mt-1 text-lg font-bold text-[#142132]">{title}</p>
+          <p className="mt-1 text-lg font-semibold text-[#142132]">{title}</p>
         </div>
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#f8fafc] ring-1 ring-[#e2e8f0]">
+        <span className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#f8fafc] ring-1 ring-[#e5edf4]">
           {createElement(Icon, { size: 18, className: 'text-[#17946b]' })}
         </span>
       </div>
@@ -877,38 +1035,41 @@ function BuyerBarsPanel({ title, icon: Icon, items = {}, colors = [] }) {
   )
 }
 
-function BuyerReadinessPanel({ title, items = {} }) {
-  const entries = objectEntriesWithValues(items)
-  const fallbackEntries = entries.length ? entries : [['strong', 7], ['watch', 4], ['at_risk', 2]]
-  const total = fallbackEntries.reduce((sum, [, value]) => sum + normalizeNumber(value), 0)
-  const colors = ['#17946b', '#e59f24', '#d85b46', '#24518a']
-  const max = Math.max(...fallbackEntries.map(([, value]) => normalizeNumber(value)), 1)
+function ApplicationBottlenecksPanel({ title, bottleneckRows = [] }) {
+  const bottlenecks = [
+    { key: 'missing_documents', label: 'Missing Documents', needles: ['missing documents', 'document pack', 'docs'] },
+    { key: 'bank_feedback', label: 'Bank Feedback', needles: ['bank feedback', 'lender query', 'bank review', 'feedback'] },
+    { key: 'awaiting_client', label: 'Awaiting Client', needles: ['buyer response', 'client response', 'waiting', 'stale'] },
+    { key: 'valuation_outstanding', label: 'Valuation Outstanding', needles: ['valuation', 'valuer', 'valuation request'] },
+  ].map((item) => ({
+    ...item,
+    value: countRowsMatching(bottleneckRows, item.needles),
+  }))
 
   return (
-    <HqCard className="min-h-[360px]">
+    <HqCard className="min-h-[390px]">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <CardLabel>Buyer Stats</CardLabel>
-          <p className="mt-1 text-lg font-bold text-[#142132]">{title}</p>
+          <p className="mt-1 text-lg font-semibold text-[#142132]">{title}</p>
         </div>
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#f8fafc] ring-1 ring-[#e2e8f0]">
-          <Gauge size={18} className="text-[#b7791f]" />
+        <span className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#f8fafc] ring-1 ring-[#e5edf4]">
+          <AlertTriangle size={18} className="text-[#b7791f]" />
         </span>
       </div>
 
-      <div className="flex h-[210px] items-end gap-4 rounded-[16px] bg-[#f8fafc] px-4 pb-4 pt-6 ring-1 ring-[#e6eef6]">
-        {fallbackEntries.map(([key, value], index) => {
-          const height = Math.max(14, (normalizeNumber(value) / max) * 100)
-          return (
-            <div key={key} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
-              <span className="text-sm font-bold text-[#142132]">{formatNumber(value)}</span>
-              <span className="w-full rounded-t-[10px]" style={{ height: `${height}%`, backgroundColor: colors[index % colors.length] }} />
-              <span className="max-w-full truncate text-[10px] font-bold uppercase tracking-[0.06em] text-[#64748b]">{formatBuyerLabel(key)}</span>
+      <div className="space-y-3">
+        {bottlenecks.map((item) => (
+          <div key={item.key} className="flex items-center justify-between gap-4 rounded-[18px] bg-[#f8fbfd] px-4 py-3 ring-1 ring-[#e5edf4]">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-[#17324d]">{item.label}</p>
             </div>
-          )
-        })}
+            <span className="shrink-0 rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-[#142132] ring-1 ring-[#e5edf4]">
+              {formatNumber(item.value)}
+            </span>
+          </div>
+        ))}
       </div>
-      <p className="mt-4 text-sm font-semibold text-[#64748b]">{formatNumber(total)} buyers represented across readiness bands</p>
     </HqCard>
   )
 }
@@ -916,18 +1077,18 @@ function BuyerReadinessPanel({ title, items = {} }) {
 function BuyerLegendBar({ label, value, total, color, size = 'default' }) {
   const pct = Math.round((normalizeNumber(value) / Math.max(normalizeNumber(total), 1)) * 100)
   return (
-    <div className={size === 'large' ? 'rounded-[14px] bg-[#f8fafc] p-3 ring-1 ring-[#edf2f7]' : ''}>
+    <div className={size === 'large' ? 'rounded-[16px] bg-[#f8fbfd] p-3.5 ring-1 ring-[#e5edf4]' : ''}>
       <div className="flex items-center justify-between gap-3">
-        <span className="inline-flex min-w-0 items-center gap-2 text-sm font-bold text-[#17324d]">
+        <span className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-[#17324d]">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
           <span className="min-w-0 break-words">{label}</span>
         </span>
-        <span className="shrink-0 text-sm font-bold text-[#142132]">{pct}%</span>
+        <span className="shrink-0 text-sm font-semibold text-[#142132]">{pct}%</span>
       </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
+      <div className="mt-2.5 h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
         <span className="block h-full rounded-full" style={{ width: `${Math.max(4, pct)}%`, backgroundColor: color }} />
       </div>
-      <p className="mt-1 text-xs font-semibold text-[#64748b]">{formatNumber(value)} buyers</p>
+      <p className="mt-1.5 text-xs font-medium text-[#64748b]">{formatNumber(value)} buyers</p>
     </div>
   )
 }
@@ -997,49 +1158,260 @@ function buildOperationalHealthModel(hq = {}) {
   }
 }
 
-function ExecutiveKpiStrip() {
+function formatMetricTrend(item = {}) {
+  const trend = normalizeText(item.trend)
+  const label = normalizeText(item.trendLabel || item.comparison)
+  if (!trend && !label) return 'Tracking'
+  if (!label) return trend
+  if (!trend) return label
+  return `${trend} ${label}`.replace(/\s+/g, ' ').trim()
+}
+
+function getMetricSource(snapshot = {}, performanceSnapshot = [], key = '', fallbackIndex = 0) {
+  const fromPerformance = findMetric(performanceSnapshot, key, fallbackIndex)
+  if (fromPerformance && Object.keys(fromPerformance).length) return fromPerformance
+  return findMetric(snapshot.hqCommandCentre?.nationalSnapshot || [], key, fallbackIndex)
+}
+
+function ExecutiveKpiStrip({ snapshot = {}, hq = {}, performanceSnapshot = [] }) {
+  const revenueMetric = getMetricSource(snapshot, performanceSnapshot, ['commission_pipeline', 'pipeline_value'], 4)
+  const applicationsMetric = getMetricSource(snapshot, performanceSnapshot, ['applications', 'active_applications'], 0)
+  const approvalMetric = getMetricSource(snapshot, performanceSnapshot, ['approval_rate'], 2)
+  const timeMetric = getMetricSource(snapshot, performanceSnapshot, ['avg_turnaround', 'average_approval_time', 'avg_approval_time'], 3)
+  const revenue = hq.revenue || {}
+  const supportCards = [
+    {
+      key: 'applications',
+      label: 'Applications',
+      value: applicationsMetric.value || '0',
+      tone: KPI_TONES.green,
+      icon: Layers3,
+      trend: formatMetricTrend(applicationsMetric),
+      sparkline: applicationsMetric.sparkline || [],
+      helper: applicationsMetric.helper || 'Active national book',
+      statusTone: 'positive',
+    },
+    {
+      key: 'approval_rate',
+      label: 'Approval Rate',
+      value: approvalMetric.value || '0%',
+      tone: KPI_TONES.blue,
+      icon: Gauge,
+      trend: formatMetricTrend(approvalMetric),
+      sparkline: approvalMetric.sparkline || [],
+      helper: approvalMetric.helper || 'Close the gap to target',
+      statusTone: 'warning',
+    },
+    {
+      key: 'avg_turnaround',
+      label: 'Avg Approval Time',
+      value: timeMetric.value || '0 days',
+      tone: KPI_TONES.orange,
+      icon: Clock3,
+      trend: formatMetricTrend(timeMetric),
+      sparkline: timeMetric.sparkline || [],
+      helper: timeMetric.helper || 'Submission to approval movement',
+      inverseTrend: true,
+      statusTone: 'warning',
+    },
+  ]
+
   return (
-    <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:gap-5">
-      {hqKpis.map((item) => {
-        const tone = KPI_TONES[item.tone] || KPI_TONES.blue
-        const Icon = item.icon
-        const StatusIcon = item.statusIcon
-        return (
-          <article
-            key={item.label}
-            className={`flex min-h-[316px] min-w-0 flex-col overflow-hidden rounded-[20px] border p-6 shadow-[0_18px_42px_rgba(15,23,42,0.07)] ring-1 transition xl:min-h-[328px] ${tone.wash} ${
-              item.featured
-                ? 'border-[#24b86f] shadow-[0_22px_48px_rgba(22,163,74,0.16)] ring-[#bdeccd]'
-                : 'border-[rgba(15,23,42,0.08)] ring-[#e4ebf2]'
-            }`}
-          >
-            <div className="flex min-w-0 items-start justify-between gap-4">
-              <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[15px] ring-1 ${tone.icon}`}>
-                <Icon size={19} strokeWidth={2.4} />
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7a8799]">Executive Summary</p>
+          <h2 className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-[#142132] sm:text-[28px]">
+            Revenue forecast leads the book
+          </h2>
+        </div>
+        <p className="max-w-2xl text-sm leading-6 text-[#64748b]">
+          The national forecast card anchors the page, while the supporting KPIs stay lighter and easier to scan at a glance.
+        </p>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-12">
+        <RevenueHeroCard
+          className="xl:col-span-6"
+          tone={KPI_TONES.green}
+          title="Revenue Forecast"
+          value={revenue.projectedCommissionLabel || revenueMetric.value || 'Pending'}
+          trend={formatMetricTrend(revenueMetric)}
+          detail={revenue.revenueThisMonthLabel ? `This month: ${revenue.revenueThisMonthLabel}` : revenueMetric.helper || '30-day trend'}
+          subdetail={revenue.forecast90Day ? `90-day forecast: ${revenue.forecast90Day}` : 'Forward view based on active pipeline'}
+          sparkline={revenueMetric.sparkline || []}
+        />
+
+        {supportCards.map((item) => (
+          <SupportKpiCard
+            key={item.key}
+            className="xl:col-span-2"
+            tone={item.tone}
+            icon={item.icon}
+            label={item.label}
+            value={item.value}
+            trend={item.trend}
+            helper={item.helper}
+            sparkline={item.sparkline}
+            inverseTrend={item.inverseTrend}
+            statusTone={item.statusTone}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function RevenueHeroCard({ className = '', tone = KPI_TONES.green, title = '', value = '', trend = '', detail = '', subdetail = '', sparkline = [] }) {
+  return (
+    <article className={`group relative overflow-hidden rounded-[28px] border border-[#e7edf4] bg-white p-6 shadow-[0_18px_38px_rgba(15,23,42,0.05)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_24px_48px_rgba(15,23,42,0.075)] ${className}`}>
+      <div className="flex items-start justify-between gap-4">
+        <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] ring-1 ${tone.icon}`}>
+          <LineChart size={20} strokeWidth={2.25} />
+        </span>
+        <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold ring-1 ${getBadgeTone('positive')}`}>
+          <TrendingUp size={13} />
+          30-day trend
+        </span>
+      </div>
+
+      <div className="mt-8 max-w-[92%]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#71869d]">{title}</p>
+        <p className="mt-3 text-[clamp(2.55rem,4.3vw,4.8rem)] font-semibold leading-none tracking-[-0.045em] text-[#07142b]">
+          {value}
+        </p>
+        <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#177245]">
+          <TrendingUp size={15} className="shrink-0" />
+          <span>{trend || 'Tracking'}</span>
+        </p>
+        <p className="mt-3 text-sm leading-6 text-[#516074]">{detail}</p>
+        <p className="mt-1 text-sm leading-6 text-[#6c7f92]">{subdetail}</p>
+      </div>
+
+      <div className="relative mt-8 rounded-[22px] bg-[#f8fbfd] p-4 ring-1 ring-[#e5edf4]">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#71869d]">Trend</p>
+        <ExecutiveMiniTrend values={sparkline} tone={tone} />
+      </div>
+    </article>
+  )
+}
+
+function SupportKpiCard({ className = '', tone = KPI_TONES.blue, icon: Icon = Gauge, label = '', value = '', trend = '', helper = '', sparkline = [], inverseTrend = false, statusTone = '' }) {
+  const trendDirection = getTrendDirection(trend)
+  const trendTone = statusTone || (!trend || trendDirection === 'flat'
+    ? 'neutral'
+    : inverseTrend
+      ? trendDirection === 'down'
+        ? 'positive'
+        : 'critical'
+      : trendDirection === 'down'
+        ? 'critical'
+        : 'positive')
+
+  return (
+    <article className={`group flex min-h-[240px] flex-col overflow-hidden rounded-[24px] border border-[#e7edf4] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_22px_42px_rgba(15,23,42,0.07)] ${className}`}>
+      <div className="flex items-start justify-between gap-4">
+        <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] ring-1 ${tone.icon}`}>
+          <Icon size={18} strokeWidth={2.25} />
+        </span>
+        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${getBadgeTone(trendTone)}`}>
+          {trend || 'Tracking'}
+        </span>
+      </div>
+
+      <div className="mt-6 min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#728295]">{label}</p>
+        <p className="mt-3 text-[clamp(1.9rem,3vw,2.7rem)] font-semibold leading-none tracking-[-0.04em] text-[#07142b]">
+          {value}
+        </p>
+        <p className="mt-3 text-sm leading-6 text-[#556578]">{helper}</p>
+      </div>
+
+      <div className="mt-auto rounded-[18px] bg-[#f8fbfd] px-3 py-3 ring-1 ring-[#e5edf4]">
+        <ExecutiveMiniTrend values={sparkline} tone={tone} />
+      </div>
+    </article>
+  )
+}
+
+function WhatNeedsAttentionSection({ hq = {}, priorityActions = [], operationalRiskMatrix = [], atRiskApplications = [] }) {
+  const health = buildOperationalHealthModel(hq)
+  const attentionItems = buildAttentionItems({
+    alerts: hq.alerts || [],
+    priorityActions,
+    operationalRiskMatrix,
+    atRiskApplications,
+  })
+  const actionableItems = attentionItems.filter((item) => item.value > 0)
+  const itemsToShow = actionableItems.length ? actionableItems : [{
+    key: 'all_clear',
+    label: 'All Clear',
+    value: 0,
+    detail: 'No urgent bottlenecks surfaced in the current window',
+    tone: 'positive',
+    href: '/bond/pipeline',
+  }]
+
+  return (
+    <section className="rounded-[28px] border border-[#e7edf4] bg-white p-5 shadow-[0_16px_34px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7a8799]">What Needs Attention</p>
+          <h2 className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-[#142132] sm:text-[22px]">Clear action cues for the desk</h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ${getBadgeTone(health.status === 'Critical' ? 'critical' : health.status === 'Needs Attention' ? 'warning' : health.status === 'Baseline Pending' ? 'neutral' : 'positive')}`}>
+            <ShieldAlert size={14} />
+            {health.status || 'Tracking'}
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-full bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#5f7287] ring-1 ring-[#e5edf4]">
+            {formatNumber(health.pressureSignals || 0)} pressure signals
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+        <div className="rounded-[22px] bg-[#f8fbfd] p-4 ring-1 ring-[#e5edf4]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#71869d]">Operational pressure</p>
+          <p className="mt-3 text-[clamp(2rem,3vw,3rem)] font-semibold leading-none tracking-[-0.04em] text-[#07142b]">
+            {health.score === null ? '—' : `${formatPercent(health.score)}`}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-[#516074]">
+            {health.status === 'Baseline Pending'
+              ? 'The desk is still warming up. Alerts will populate as workflow data deepens.'
+              : 'The strongest signals are surfaced first so the team can move quickly on the right work.'}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="inline-flex items-center rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#17324d] ring-1 ring-[#e5edf4]">
+              {formatNumber(health.metrics?.missingDocs || 0)} docs missing
+            </span>
+            <span className="inline-flex items-center rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#17324d] ring-1 ring-[#e5edf4]">
+              {formatNumber(health.metrics?.slaBreaches || 0)} SLA breaches
+            </span>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {itemsToShow.map((item) => (
+            <Link
+              key={item.key}
+              to={item.href}
+              className="group flex min-w-0 items-start justify-between gap-4 rounded-[20px] bg-[#f8fbfd] p-4 ring-1 ring-[#e5edf4] transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_16px_30px_rgba(15,23,42,0.06)]"
+            >
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#728295]">{item.label}</p>
+                <p className="mt-2 text-[clamp(1.7rem,2.8vw,2.5rem)] font-semibold leading-none tracking-[-0.04em] text-[#07142b]">
+                  {formatNumber(item.value)}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[#556578]">{item.detail}</p>
+              </div>
+              <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${getBadgeTone(item.tone)}`}>
+                {item.value ? 'Watch' : 'Clear'}
               </span>
-            </div>
-
-            <div className="mt-6 min-w-0">
-              <p className="whitespace-nowrap text-[clamp(0.58rem,0.62vw,0.7rem)] font-bold uppercase leading-4 tracking-[0.13em] text-[#526178] 2xl:tracking-[0.2em]">{item.label}</p>
-              <p className="mt-4 max-w-full whitespace-nowrap text-[clamp(2rem,2.65vw,3.5rem)] font-bold leading-none tracking-normal text-[#07142b]">
-                {item.value}
-              </p>
-              <p className={`mt-3 flex min-w-0 items-center gap-1.5 text-[clamp(0.68rem,0.72vw,0.86rem)] font-bold leading-5 ${tone.status}`}>
-                {StatusIcon ? <StatusIcon size={14} className="shrink-0" strokeWidth={2.5} /> : null}
-                <span className="min-w-0 break-words">{item.status}</span>
-              </p>
-            </div>
-
-            <div className={`relative mt-auto h-[112px] overflow-hidden rounded-[15px] px-4 pt-5 ring-1 ${tone.panel}`}>
-              <p className="relative z-10 flex min-w-0 items-start gap-2 text-[clamp(0.68rem,0.7vw,0.84rem)] font-bold leading-5 text-[#0f1f36]">
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tone.dot }} />
-                <span className="min-w-0 break-words">{item.detail}</span>
-              </p>
-              <ExecutiveMiniTrend values={item.sparkline} tone={tone} />
-            </div>
-          </article>
-        )
-      })}
+            </Link>
+          ))}
+        </div>
+      </div>
     </section>
   )
 }
@@ -1060,27 +1432,28 @@ function RegionalPerformanceStrip({ rows = [], loading = false }) {
       </div>
 
       {loading ? (
-        <div className="flex snap-x gap-4 overflow-x-auto pb-3 pr-2 [scrollbar-width:thin]">
+        <div className="flex snap-x gap-6 overflow-x-auto pb-4 pr-2 [scrollbar-width:thin]">
           {[0, 1, 2, 3, 4, 5].map((item) => (
-            <div key={item} className="min-h-[218px] w-[330px] min-w-[330px] snap-start animate-pulse rounded-[18px] border border-[#e2e8f0] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
+            <div key={item} className="min-h-[228px] w-[372px] min-w-[372px] snap-start animate-pulse rounded-[24px] border border-[#e7edf4] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)]">
               <div className="h-4 w-28 rounded-full bg-[#e2e8f0]" />
-              <div className="mt-4 h-12 w-12 rounded-full bg-[#e2e8f0]" />
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <div className="h-3 rounded-full bg-[#e2e8f0]" />
-                <div className="h-3 rounded-full bg-[#e2e8f0]" />
-                <div className="h-3 rounded-full bg-[#e2e8f0]" />
-                <div className="h-3 rounded-full bg-[#e2e8f0]" />
+              <div className="mt-4 flex items-start justify-between gap-4">
+                <div className="h-10 w-24 rounded-full bg-[#e2e8f0]" />
+                <div className="h-14 w-14 rounded-full bg-[#e2e8f0]" />
+              </div>
+              <div className="mt-5 flex gap-2">
+                <div className="h-10 flex-1 rounded-[14px] bg-[#e2e8f0]" />
+                <div className="h-10 flex-1 rounded-[14px] bg-[#e2e8f0]" />
               </div>
             </div>
           ))}
         </div>
       ) : !regionalRows.length ? (
-        <div className="rounded-[16px] border border-dashed border-[#cbd5e1] bg-white px-5 py-6 text-sm font-medium text-[#64748b] shadow-[0_10px_28px_rgba(15,23,42,0.025)]">
+        <div className="rounded-[20px] border border-dashed border-[#cbd5e1] bg-white px-5 py-6 text-sm font-medium text-[#64748b] shadow-[0_10px_28px_rgba(15,23,42,0.025)]">
           <p className="font-semibold text-[#17324d]">No regions available yet.</p>
           <p className="mt-1">Create your first region to begin tracking performance.</p>
         </div>
       ) : (
-        <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-3 pr-2 [scrollbar-width:thin]">
+        <div className="flex snap-x snap-mandatory gap-6 overflow-x-auto pb-4 pr-2 [scrollbar-width:thin]">
           {regionalRows.map((row) => (
             <RegionalPerformanceCard key={row.key} row={row} />
           ))}
@@ -1099,43 +1472,44 @@ function RegionalPerformanceCard({ row = {} }) {
     <Link
       to={row.href}
       aria-label={`Open ${row.name} regional performance`}
-      className={`group flex min-h-[226px] w-[340px] min-w-[340px] snap-start flex-col rounded-[18px] border p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)] ring-1 ring-[#e9eff5] transition hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(15,23,42,0.08)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#24518a] sm:w-[360px] sm:min-w-[360px] ${tone.surface} ${tone.border} ${tone.glow}`}
+      className={`group flex min-h-[238px] w-[372px] min-w-[372px] snap-start flex-col rounded-[24px] border bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.04)] ring-1 ring-[#e9eff5] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_22px_44px_rgba(15,23,42,0.08)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#24518a] ${tone.border} ${tone.glow}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[16px] font-bold leading-5 tracking-[-0.01em] text-[#142132]">{row.name}</p>
-            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${tone.soft}`}>#{row.rank}</span>
-          </div>
-          <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#71869d]">{tone.label}</p>
+          <p className="text-[16px] font-semibold leading-5 tracking-[-0.02em] text-[#142132]">{row.name}</p>
+          <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#71869d]">{tone.label}</p>
+          <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${tone.soft}`}>
+            Health score
+          </span>
         </div>
-        <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#f8fafc] shadow-[inset_0_0_0_1px_rgba(15,23,42,0.04)]" style={{ background: `conic-gradient(${tone.ring} ${row.healthScore * 3.6}deg, ${tone.track} 0deg)` }}>
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[15px] font-bold text-[#142132]">
+        <div
+          className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#f8fafc] shadow-[inset_0_0_0_1px_rgba(15,23,42,0.04)]"
+          style={{ background: `conic-gradient(${tone.ring} ${row.healthScore * 3.6}deg, ${tone.track} 0deg)` }}
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-[16px] font-semibold text-[#142132]">
             {row.healthScore}
           </div>
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2.5">
-        <RegionalMiniMetric tone={tone} label="Applications" value={formatNumber(row.applications)} />
-        <RegionalMiniMetric tone={tone} label="Revenue" value={row.revenue} />
-        <RegionalMiniMetric tone={tone} label="Approval" value={formatPercent(row.approval)} />
-        <RegionalMiniMetric tone={tone} label="SLA" value={formatPercent(row.sla)} />
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <RegionalMiniMetric label="Applications" value={formatNumber(row.applications)} />
+        <RegionalMiniMetric label="Revenue" value={row.revenue} />
       </div>
 
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-[#eef3f8] pt-3">
-        <p className={`min-w-0 text-xs font-bold leading-4 ${trendClass}`}>{trendArrow} {row.trend.label}</p>
+      <div className="mt-5 flex items-center justify-between gap-3 border-t border-[#eef3f8] pt-3">
+        <p className={`min-w-0 text-xs font-semibold leading-4 ${trendClass}`}>{trendArrow} {row.trend.label}</p>
         <ArrowRight size={14} className="shrink-0 text-[#8aa0b7] transition group-hover:translate-x-0.5 group-hover:text-[#204b84]" />
       </div>
     </Link>
   )
 }
 
-function RegionalMiniMetric({ tone = {}, label, value }) {
+function RegionalMiniMetric({ label, value }) {
   return (
-    <div className={`min-w-0 rounded-[12px] px-3 py-2 ring-1 ${tone.metric || 'bg-[#f8fafc] ring-[#edf2f7]'}`}>
+    <div className="min-w-0 rounded-[16px] bg-[#f8fbfd] px-3 py-2.5 ring-1 ring-[#e5edf4]">
       <p className="truncate text-[9px] font-bold uppercase tracking-[0.08em] text-[#71869d]">{label}</p>
-      <p className="mt-1 truncate text-[13px] font-bold leading-4 text-[#17324d]">{value}</p>
+      <p className="mt-1 truncate text-[14px] font-semibold leading-4 text-[#17324d]">{value}</p>
     </div>
   )
 }

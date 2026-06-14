@@ -25,8 +25,18 @@ for (const marker of [
   'isCommercialEnabledInOrganisationSettings',
   'organisationSettingsCommercialEnabled',
   'canReviewCommercialAccess',
-  'setCommercialOrganisationModuleEnabled(true)',
+  'eligibleForCommercialSelfActivation',
+  'hasCommercialWorkspacePlannedAccess',
+  'syncCommercialWorkspaceTeamAccessEntries',
+  'mergeCommercialWorkspaceBranchDrafts',
+  'export async function enableCommercialWorkspaceForCurrentUser',
+  "source: 'commercial_workspace_enablement'",
+  'teamAccess',
+  'selectedOrganisationUserIds',
+  'nextOrganisationBranchDrafts',
+  'setCommercialOrganisationModuleEnabled(true, {',
   'export async function activateCommercialWorkspaceForCurrentUser',
+  'COMMERCIAL_ACCESS_REVIEWER_ROLES.has(context.membershipRole)',
   "module_context: 'commercial'",
   "module: 'commercial'",
   "source: 'commercial_access_setup_prompt'",
@@ -53,18 +63,45 @@ excludes(
 
 const commercialLayout = await read('../src/modules/commercial/components/CommercialLayout.jsx')
 for (const marker of [
-  'isCommercialPlatformInstallError',
-  'Commercial needs platform setup',
-  'platform administrator needs to install the Commercial database setup',
-  'Set up Commercial workspace',
-  'organisation_module_ready_to_activate',
-  'Commercial is selected in organisation settings',
-  'Activate Commercial',
-  'activateCommercialWorkspaceForCurrentUser',
-  'Back to Residential',
+  'CommercialEnablementExperience',
+  'onAccessGranted',
+  'scope: scope || null',
 ]) {
-  includes(commercialLayout, marker, `Commercial no-access state should be actionable without weakening the gate: ${marker}`)
+  includes(commercialLayout, marker, `Commercial layout should hand no-access journeys to the new enablement experience: ${marker}`)
 }
+
+const enablementExperience = await read('../src/modules/commercial/components/CommercialEnablementExperience.jsx')
+for (const marker of [
+  'Commercial Workspace',
+  'Enable Commercial',
+  'How does your commercial business operate?',
+  'Who should have access to Commercial?',
+  'Invite Commercial User',
+  'How would you like to structure Commercial?',
+  'Select Commercial Features',
+  'Enable Commercial Workspace',
+  'Commercial Workspace Ready',
+  'Go To Commercial',
+  'Commercial Listings',
+  'Commercial Leasing',
+  'Heads of Terms',
+  'Commercial Pipeline',
+  'Commercial Reporting',
+  'Brokerage Management',
+]) {
+  includes(enablementExperience, marker, `Commercial enablement experience should expose the new self-service flow: ${marker}`)
+}
+
+excludes(
+  enablementExperience,
+  'Commercial needs platform setup',
+  'The new Commercial entry experience should not expose the old platform setup blocker.',
+)
+excludes(
+  enablementExperience,
+  'platform administrator needs to install the Commercial database setup',
+  'The new Commercial entry experience should not instruct users to ask platform admins to install Commercial.',
+)
 
 const settingsApi = await read('../src/lib/settingsApi.js')
 for (const marker of [

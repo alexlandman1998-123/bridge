@@ -94,6 +94,7 @@
     "test:canonical-document-resolver": "node scripts/canonical-document-resolver.test.mjs",
     "test:canonical-document-adapters": "node scripts/canonical-document-adapters.test.mjs",
     "test:seller-onboarding-facts": "node scripts/seller-onboarding-facts.test.mjs",
+    "test:seller-onboarding-flow-contract": "node scripts/seller-onboarding-flow-contract.test.mjs",
     "test:seller-listing-conversion-idempotency": "node scripts/seller-listing-conversion-idempotency.test.mjs",
     "test:seller-listing-publication-mapper": "node scripts/seller-listing-publication-mapper.test.mjs",
     "test:seller-listing-relationship-integrity": "node scripts/seller-listing-relationship-integrity.test.mjs",

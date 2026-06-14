@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   ArrowRight,
-  Bell,
   BriefcaseBusiness,
   CalendarDays,
   Check,
@@ -16,10 +15,8 @@ import {
   Landmark,
   LayoutGrid,
   LineChart,
-  LogOut,
   Loader2,
   MoreHorizontal,
-  Settings,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -46,8 +43,6 @@ import {
   TransactionHealthCard,
   UpcomingRegistrationsCard,
 } from '../components/dashboard/PremiumDashboard'
-import QuickCreateDropdown from '../components/QuickCreateDropdown'
-import { useAuthSession } from '../context/AuthSessionContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
@@ -119,6 +114,16 @@ function formatTimestamp(value) {
   const diffHours = Math.round(diffMinutes / 60)
   if (diffHours < 24) return `${diffHours}h ago`
   return `${Math.round(diffHours / 24)}d ago`
+}
+
+function getGreetingName(profile = {}) {
+  const value = String(profile?.fullName || profile?.name || '').trim()
+  if (!value) return 'Alex'
+
+  const firstToken = value.split(/\s+/)[0]
+  if (!firstToken) return 'Alex'
+
+  return firstToken.charAt(0).toUpperCase() + firstToken.slice(1)
 }
 
 function TrendBadge({ value, inverse = false, label = 'vs last month' }) {
@@ -293,115 +298,33 @@ function PrincipalDashboardHeader({
   workspaceOptions,
   profile,
 }) {
-  const navigate = useNavigate()
-  const { logout } = useAuthSession()
-  const accountMenuRef = useRef(null)
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
-  const initials = String(profile?.fullName || profile?.name || profile?.email || 'AL')
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
-  const avatarUrl = String(
-    profile?.avatarUrl ||
-      profile?.avatar_url ||
-      profile?.profilePhotoUrl ||
-      profile?.profile_photo_url ||
-      profile?.photoUrl ||
-      profile?.photo_url ||
-      '',
-  ).trim()
-
-  useEffect(() => {
-    function handlePointerDown(event) {
-      if (!accountMenuRef.current || accountMenuRef.current.contains(event.target)) return
-      setAccountMenuOpen(false)
-    }
-
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [])
-
-  async function handleLogout() {
-    setAccountMenuOpen(false)
-    await logout()
-    navigate('/auth', { replace: true })
-  }
-
   return (
-    <header className="flex justify-end">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <QuickCreateDropdown />
-        <FilterDropdown
-          icon={LayoutGrid}
-          value={selectedWorkspaceId}
-          options={workspaceOptions}
-          onChange={onWorkspaceChange}
-          ariaLabel="Filter dashboard by workspace"
-        />
-        <FilterDropdown
-          icon={CalendarDays}
-          value={dateRange}
-          options={PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label }))}
-          onChange={onDateRangeChange}
-          ariaLabel="Filter dashboard by date range"
-        />
-        <button type="button" disabled title="Coming soon" className="relative inline-flex h-11 w-11 cursor-not-allowed items-center justify-center rounded-xl border border-[#d9e3ef] bg-white text-[#8a9aac] opacity-70 shadow-sm">
-          <Bell size={17} />
-        </button>
-        <div className="relative" ref={accountMenuRef}>
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={accountMenuOpen}
-            className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-2.5 shadow-sm transition hover:border-[#bfd0e4] hover:bg-[#f8fbff]"
-            onClick={() => setAccountMenuOpen((open) => !open)}
-          >
-            <span className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-[#0f172a] text-xs font-semibold text-white">
-              {avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : initials}
-            </span>
-            <ChevronDown size={14} className="text-[#526981]" />
-          </button>
+    <header className="rounded-[24px] border border-[#dfe8f2] bg-white/90 px-5 py-4 shadow-[0_16px_38px_rgba(15,23,42,0.065)]">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-[#667085]">
+            Good morning, {getGreetingName(profile)}
+          </p>
+          <h1 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#101828]">
+            Here&apos;s what&apos;s happening across your agency.
+          </h1>
+        </div>
 
-          {accountMenuOpen ? (
-            <div className="absolute right-0 top-[calc(100%+10px)] z-50 w-56 rounded-2xl border border-[#dce6f0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.15)]" role="menu">
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
-                role="menuitem"
-                onClick={() => {
-                  setAccountMenuOpen(false)
-                  navigate('/settings/account')
-                }}
-              >
-                <UserRound size={16} />
-                Profile
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
-                role="menuitem"
-                onClick={() => {
-                  setAccountMenuOpen(false)
-                  navigate('/settings')
-                }}
-              >
-                <Settings size={16} />
-                Settings
-              </button>
-              <div className="my-1 border-t border-[#edf2f7]" />
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]"
-                role="menuitem"
-                onClick={() => void handleLogout()}
-              >
-                <LogOut size={16} />
-                Log out
-              </button>
-            </div>
-          ) : null}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <FilterDropdown
+            icon={LayoutGrid}
+            value={selectedWorkspaceId}
+            options={workspaceOptions}
+            onChange={onWorkspaceChange}
+            ariaLabel="Filter dashboard by workspace"
+          />
+          <FilterDropdown
+            icon={CalendarDays}
+            value={dateRange}
+            options={PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label }))}
+            onChange={onDateRangeChange}
+            ariaLabel="Filter dashboard by date range"
+          />
         </div>
       </div>
     </header>
@@ -1659,6 +1582,25 @@ const TRANSACTION_HEALTH_STYLES = {
   waiting: 'border-[#d8e0ea] bg-[#f8fafc] text-[#667085]',
 }
 
+const ACTIVE_TRANSACTION_STATUS_STYLES = {
+  on_track: {
+    badge: 'border-[#cde8d6] bg-[#eef9f2] text-[#237345]',
+    progress: 'bg-[#16894f]',
+  },
+  attention: {
+    badge: 'border-[#f4d7ab] bg-[#fff7ea] text-[#9a5b13]',
+    progress: 'bg-[#d97706]',
+  },
+  blocked: {
+    badge: 'border-[#f2c9c3] bg-[#fff2f0] text-[#a33a2d]',
+    progress: 'bg-[#dc2626]',
+  },
+  waiting: {
+    badge: 'border-[#d8e0ea] bg-[#f8fafc] text-[#667085]',
+    progress: 'bg-[#64748b]',
+  },
+}
+
 function ActiveTransactionsSlider({ rows = [] }) {
   const navigate = useNavigate()
   const [filter, setFilter] = useState('all')
@@ -1775,6 +1717,113 @@ function ActiveTransactionsSlider({ rows = [] }) {
           )}
         </div>
       </div>
+    </section>
+  )
+}
+
+function ActiveTransactionCard({ row, onNavigate = () => {} }) {
+  const statusStyle = ACTIVE_TRANSACTION_STATUS_STYLES[row.health?.key] || ACTIVE_TRANSACTION_STATUS_STYLES.waiting
+  const daysInStage = row.daysInStage ?? row.daysActive ?? null
+  const progressWidth = Math.max(4, Math.min(100, Number(row.progressPercent || 0) || 0))
+
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate(row)}
+      className="flex min-w-[280px] max-w-[320px] shrink-0 snap-start flex-col rounded-[24px] border border-[#dfe8f2] bg-white p-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#cdd9e6] hover:shadow-[0_18px_40px_rgba(15,23,42,0.08)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[#101828]" title={row.propertyName}>
+            {row.propertyName}
+          </p>
+          <p className="mt-1 truncate text-xs text-[#667085]" title={row.developmentName}>
+            {row.developmentName}
+          </p>
+        </div>
+
+        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${statusStyle.badge}`}>
+          {row.health?.label || 'Waiting'}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-1.5">
+        <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#8a9aac]">Agent</p>
+        <p className="truncate text-sm font-semibold text-[#101828]">
+          {row.assignedAgent}
+        </p>
+      </div>
+
+      <div className="mt-4 rounded-[18px] bg-[#f8fafc] p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#8a9aac]">Current stage</p>
+            <p className="mt-1 truncate text-sm font-semibold text-[#101828]">
+              {row.stage}
+            </p>
+          </div>
+
+          <div className="min-w-0 text-right">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#8a9aac]">Status</p>
+            <p className="mt-1 truncate text-sm font-semibold text-[#1769d1]">
+              {row.nextAction || 'In progress'}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <div className="flex items-center justify-between gap-3 text-xs font-medium text-[#667085]">
+            <span>{daysInStage === null ? 'Days in stage unavailable' : `${formatCount(daysInStage)} days in stage`}</span>
+            <span>{formatPercent(row.progressPercent)} complete</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e5edf6]">
+            <span className={`block h-full rounded-full ${statusStyle.progress}`} style={{ width: `${progressWidth}%` }} />
+          </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function ActiveTransactionsRow({ rows = [], onNavigate = () => {} }) {
+  const activeRows = Array.isArray(rows) ? rows : []
+
+  return (
+    <section className={`${dashboardCardClass} ${dashboardCardPadding} space-y-4`}>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h2 className="text-[1.08rem] font-semibold text-[#101828]">Active Transactions</h2>
+          <p className="mt-1 text-sm text-[#667085]">Live deals in the current scope.</p>
+        </div>
+        {activeRows.length ? (
+          <span className="rounded-full bg-[#edf5ff] px-3 py-1 text-xs font-semibold text-[#1769d1]">
+            {formatCount(activeRows.length)} live
+          </span>
+        ) : null}
+      </div>
+
+      {activeRows.length ? (
+        <div
+          className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 pr-1 [scrollbar-width:thin]"
+          style={{ scrollbarColor: 'rgba(132, 146, 166, 0.34) transparent' }}
+        >
+          {activeRows.map((row) => (
+            <ActiveTransactionCard
+              key={row.id}
+              row={row}
+              onNavigate={(transaction) => {
+                if (transaction?.id) {
+                  onNavigate(`/transactions/${transaction.id}`)
+                }
+              }}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex min-h-[180px] items-center justify-center rounded-[22px] border border-dashed border-[#d8e0ea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">
+          No active transactions. New transactions will appear here once they are created.
+        </div>
+      )}
     </section>
   )
 }
@@ -2220,6 +2269,7 @@ function PrincipalPremiumCommandCenter({ data, onNavigate }) {
         stages={model.flowStages}
         onViewPipeline={() => onNavigate('/pipeline')}
       />
+      <ActiveTransactionsRow rows={data.activeTransactions || []} onNavigate={onNavigate} />
       <div className="grid gap-4 xl:grid-cols-3">
         <PremiumAttentionRequiredCard
           rows={model.attentionRows.map((row) => ({ ...row, onClick: () => onNavigate('/transactions') }))}
@@ -2360,7 +2410,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   const workspaceOptions = useMemo(() => {
     const options = data?.filters?.availableWorkspaces
     if (Array.isArray(options) && options.length) return options.map((item) => ({ value: item.id, label: item.label || item.name || 'Workspace' }))
-    return [{ value: 'all', label: 'All Workspaces' }]
+    return [{ value: 'all', label: 'All Branches' }]
   }, [data?.filters?.availableWorkspaces])
   const lastUpdated = useMemo(() => formatTimestamp(data?.meta?.lastUpdatedAt), [data?.meta?.lastUpdatedAt])
   const isInitialLoading = loading && !data

@@ -1116,6 +1116,38 @@ export default function LegalDocumentWorkspacePage() {
     void loadRouteContext()
   }, [loadRouteContext])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    let cancelled = false
+
+    const refreshRouteContext = () => {
+      if (cancelled) return
+      void loadRouteContext()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshRouteContext()
+      }
+    }
+
+    window.addEventListener('itg:seller-onboarding-submitted', refreshRouteContext)
+    window.addEventListener('itg:listings-updated', refreshRouteContext)
+    window.addEventListener('itg:pipeline-updated', refreshRouteContext)
+    window.addEventListener('focus', refreshRouteContext)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      cancelled = true
+      window.removeEventListener('itg:seller-onboarding-submitted', refreshRouteContext)
+      window.removeEventListener('itg:listings-updated', refreshRouteContext)
+      window.removeEventListener('itg:pipeline-updated', refreshRouteContext)
+      window.removeEventListener('focus', refreshRouteContext)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [loadRouteContext])
+
   const transaction = transactionDetail?.transaction || null
   const transactionId = normalizeText(transaction?.id || routeTransactionId || leadContext.linkedTransaction?.transactionId || leadContext.linkedTransaction?.dealId)
   const transactionReference = resolveTransactionReference(

@@ -429,6 +429,26 @@ function LegacyPipeline() {
   }, [loadOptions])
 
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+
+    const refreshOptions = () => {
+      void loadOptions()
+    }
+
+    window.addEventListener('itg:listings-updated', refreshOptions)
+    window.addEventListener('itg:pipeline-updated', refreshOptions)
+    window.addEventListener('itg:seller-onboarding-submitted', refreshOptions)
+    window.addEventListener('focus', refreshOptions)
+
+    return () => {
+      window.removeEventListener('itg:listings-updated', refreshOptions)
+      window.removeEventListener('itg:pipeline-updated', refreshOptions)
+      window.removeEventListener('itg:seller-onboarding-submitted', refreshOptions)
+      window.removeEventListener('focus', refreshOptions)
+    }
+  }, [loadOptions])
+
+  useEffect(() => {
     setFilters((previous) => ({
       ...previous,
       developmentId: workspace.id === 'all' ? previous.developmentId : workspace.id,

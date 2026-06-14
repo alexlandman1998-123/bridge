@@ -62,8 +62,8 @@ async function main() {
     })
 
     assert.match(markup, /Welcome back, John Smith/)
-    assert.match(markup, /Create Application/)
     assert.match(markup, /Export Report/)
+    assert.doesNotMatch(markup, /Create Application/)
 
     const kpiOrder = [
       'Active Transactions',

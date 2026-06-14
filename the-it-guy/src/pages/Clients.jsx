@@ -690,14 +690,14 @@ function Clients() {
     <section className="space-y-5">
       <section className="grid gap-4 xl:grid-cols-4">
         {[
-          { label: 'Total Clients', value: summaryStats.total, icon: Users, tint: 'from-[#f4f8ff] to-white', iconClass: 'bg-[#eaf3ff] text-[#0f64b8]', helper: filteredClients.length === summaryStats.total ? 'Complete CRM view' : `${filteredClients.length} currently shown` },
-          { label: 'Buyers', value: summaryStats.buyers, icon: UserRoundSearch, tint: 'from-[#eff7ff] to-white', iconClass: 'bg-[#e4f1ff] text-[#116fc8]', helper: 'Buyer leads and active buyers' },
-          { label: 'Sellers', value: summaryStats.sellers, icon: Home, tint: 'from-[#effbf4] to-white', iconClass: 'bg-[#def8e9] text-[#0b8548]', helper: 'Seller leads and mandates' },
-          { label: 'Active Transactions', value: summaryStats.activeTransactions, icon: Handshake, tint: 'from-[#f7f1ff] to-white', iconClass: 'bg-[#efe2ff] text-[#7438bf]', helper: 'Linked active deal records' },
+          { label: 'Total Clients', value: summaryStats.total, icon: Users, tint: 'from-[#fbfdff] via-white to-[#f7faff]', iconClass: 'bg-[#eaf3ff] text-[#0f64b8]', helper: filteredClients.length === summaryStats.total ? 'Complete CRM view' : `${filteredClients.length} currently shown` },
+          { label: 'Buyers', value: summaryStats.buyers, icon: UserRoundSearch, tint: 'from-[#f9fbff] via-white to-[#f6f9ff]', iconClass: 'bg-[#e4f1ff] text-[#116fc8]', helper: 'Buyer leads and active buyers' },
+          { label: 'Sellers', value: summaryStats.sellers, icon: Home, tint: 'from-[#f8fcf8] via-white to-[#f5fbf7]', iconClass: 'bg-[#def8e9] text-[#0b8548]', helper: 'Seller leads and mandates' },
+          { label: 'Active Transactions', value: summaryStats.activeTransactions, icon: Handshake, tint: 'from-[#fbf9ff] via-white to-[#f7f4ff]', iconClass: 'bg-[#efe2ff] text-[#7438bf]', helper: 'Linked active deal records' },
         ].map((item) => {
           const Icon = item.icon
           return (
-            <article key={item.label} className={`rounded-[22px] border border-[#dfe8f2] bg-gradient-to-br ${item.tint} p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]`}>
+            <article key={item.label} className={`rounded-[24px] border border-[#dbe5ef] bg-gradient-to-br ${item.tint} p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] backdrop-blur-[2px]`}>
               <div className="flex items-center gap-4">
                 <span className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${item.iconClass}`}>
                   <Icon size={22} />
@@ -713,32 +713,35 @@ function Clients() {
         })}
       </section>
 
-      <section className="overflow-hidden rounded-[26px] border border-[#dde6f0] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
-        <div className="flex overflow-x-auto border-b border-[#e6edf5] bg-[#fbfdff] px-3">
-          {CLIENT_SEGMENTS.map((segment) => {
-            const Icon = segment.icon
-            const active = activeFilter === segment.key
-            return (
-              <button
-                key={segment.key}
-                type="button"
-                className={`relative inline-flex min-h-[62px] shrink-0 items-center gap-2.5 px-4 text-sm font-semibold transition ${
-                  active ? 'text-[#0f63c7]' : 'text-[#4f647d] hover:text-[#10243a]'
-                }`}
-                onClick={() => handleSegmentChange(segment.key)}
-              >
-                <Icon size={17} />
-                <span>{segment.label}</span>
-                <span className={`rounded-full px-2 py-0.5 text-[0.68rem] ${active ? 'bg-[#e8f2ff] text-[#0f63c7]' : 'bg-[#eef3f8] text-[#6b7d93]'}`}>
-                  {segmentCounts[segment.key] || 0}
-                </span>
-                {active ? <span className="absolute inset-x-3 bottom-0 h-[3px] rounded-full bg-[#1673df]" /> : null}
-              </button>
-            )
-          })}
+      <section className="overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-white/92 shadow-[0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-xl">
+        <div className="flex items-stretch gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-3 py-3">
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
+            {CLIENT_SEGMENTS.map((segment) => {
+              const Icon = segment.icon
+              const active = activeFilter === segment.key
+              return (
+                <button
+                  key={segment.key}
+                  type="button"
+                  className={`flex min-h-[54px] w-full items-center justify-center gap-2 rounded-[18px] px-3 text-sm font-semibold transition ${
+                    active
+                      ? 'bg-white text-[#0f63c7] shadow-[0_8px_18px_rgba(15,23,42,0.08)] ring-1 ring-[#dbe7f3]'
+                      : 'text-[#51657c] hover:bg-white/70 hover:text-[#10243a]'
+                  }`}
+                  onClick={() => handleSegmentChange(segment.key)}
+                >
+                  <Icon size={16} />
+                  <span className="whitespace-nowrap">{segment.label}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[0.68rem] ${active ? 'bg-[#e8f2ff] text-[#0f63c7]' : 'bg-[#eef3f8] text-[#6b7d93]'}`}>
+                    {segmentCounts[segment.key] || 0}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
           <button
             type="button"
-            className="ml-auto hidden min-h-[62px] shrink-0 items-center gap-2 px-4 text-sm font-semibold text-[#4f647d] lg:inline-flex"
+            className="ml-auto hidden min-h-[54px] shrink-0 items-center justify-center gap-2 rounded-[18px] border border-[#dbe5ef] bg-white/80 px-4 text-sm font-semibold text-[#4f647d] shadow-[0_8px_18px_rgba(15,23,42,0.05)] transition hover:bg-white hover:text-[#10243a] lg:inline-flex"
           >
             <SlidersHorizontal size={16} />
             Custom View
@@ -834,7 +837,7 @@ function Clients() {
               return (
                 <article
                   key={client.id}
-                  className={`group relative flex min-h-[290px] cursor-pointer flex-col overflow-visible rounded-[18px] border border-[#dfe7f1] border-l-4 ${meta.cardAccent} bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.055)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(15,23,42,0.09)]`}
+                  className={`group relative flex min-h-[290px] cursor-pointer flex-col overflow-visible rounded-[22px] border border-[#dfe7f1] border-l-4 ${meta.cardAccent} bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)] transition duration-200 ease-out hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]`}
                   onClick={() => handleOpenClient(client)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
@@ -863,7 +866,7 @@ function Clients() {
                         <MoreVertical size={17} />
                       </button>
                       {openActionMenuId === client.id ? (
-                        <div className="absolute right-0 top-10 z-30 grid min-w-[170px] gap-1 rounded-[16px] border border-[#dbe4ef] bg-white p-2 text-sm shadow-[0_18px_44px_rgba(15,23,42,0.14)]">
+                        <div className="absolute right-0 top-10 z-30 grid min-w-[170px] gap-1 rounded-[16px] border border-[#dbe4ef] bg-white p-2 text-sm shadow-[0_16px_36px_rgba(15,23,42,0.12)]">
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc]" onClick={(event) => handleQuickAction(event, client, 'open')}>Open profile</button>
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')}>Call</button>
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')}>Email</button>
@@ -990,7 +993,7 @@ function Clients() {
                             <MoreVertical size={16} />
                           </button>
                           {openActionMenuId === client.id ? (
-                            <div className="absolute right-0 top-10 z-20 grid min-w-[160px] gap-1 rounded-[16px] border border-[#dbe4ef] bg-white p-2 text-sm shadow-[0_18px_44px_rgba(15,23,42,0.12)]">
+                        <div className="absolute right-0 top-10 z-20 grid min-w-[160px] gap-1 rounded-[16px] border border-[#dbe4ef] bg-white p-2 text-sm shadow-[0_16px_36px_rgba(15,23,42,0.1)]">
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc]" onClick={(event) => handleQuickAction(event, client, 'open')}>Open profile</button>
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')}>Call</button>
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')}>Email</button>

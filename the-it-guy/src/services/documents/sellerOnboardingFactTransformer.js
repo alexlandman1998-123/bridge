@@ -1,4 +1,5 @@
 import { getPropertyCategoryLabel, normalizePropertyCategory, normalizePropertyStructureType } from '../../lib/propertyTaxonomy.js'
+import { resolveSellerOnboardingFlow } from '../../lib/sellerOnboardingFlow.js'
 
 export const CANONICAL_SELLER_FACTS_VERSION = 'seller_onboarding_facts_v1'
 
@@ -107,6 +108,63 @@ function normalizeDate(value) {
   return date.toISOString().slice(0, 10)
 }
 
+function hasValue(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value) && value !== 0
+  if (Array.isArray(value)) return value.length > 0
+  return normalizeText(value).length > 0
+}
+
+function splitFullName(fullName = '') {
+  const parts = normalizeText(fullName).split(/\s+/).filter(Boolean)
+  if (!parts.length) return { first_name: '', surname: '' }
+  if (parts.length === 1) return { first_name: parts[0], surname: '' }
+  return { first_name: parts.slice(0, -1).join(' '), surname: parts.slice(-1).join(' ') }
+}
+
+function normalizePersonRecord(entry = {}, index = 0, { defaultRoleTitle = '' } = {}) {
+  const fullName = normalizeText(entry.full_name || entry.fullName || entry.name || entry.contact_name || '')
+  const split = splitFullName(fullName)
+  const firstName = normalizeText(entry.first_name || entry.firstName || split.first_name)
+  const surname = normalizeText(entry.surname || entry.last_name || entry.lastName || split.surname)
+  const record = {
+    index: index + 1,
+    full_name: normalizeText([firstName, surname].filter(Boolean).join(' ') || fullName),
+    first_name: firstName,
+    surname,
+    id_number: normalizeText(entry.id_number || entry.idNumber || entry.identity_number || entry.identityNumber),
+    email: normalizeText(entry.email),
+    phone: normalizeText(entry.phone),
+    residential_address: normalizeText(entry.residential_address || entry.residentialAddress || entry.address),
+    role_title: normalizeText(entry.role_title || entry.roleTitle || defaultRoleTitle),
+    signing_authority: normalizeBoolean(entry.signing_authority ?? entry.signingAuthority, false),
+    ownership_share: normalizeNumber(entry.ownership_share || entry.ownershipShare),
+    consent_to_sell: normalizeBoolean(entry.consent_to_sell ?? entry.consentToSell, false),
+    authority_details: normalizeText(entry.authority_details || entry.authorityDetails),
+  }
+  if (!record.role_title) delete record.role_title
+  return record
+}
+
+function normalizePeopleCollection(entries = [], fallback = null, options = {}) {
+  const source = Array.isArray(entries) ? entries : []
+  const mapped = source
+    .map((entry, index) => normalizePersonRecord(entry, index, options))
+    .filter((entry) => Boolean(entry.first_name || entry.surname || entry.id_number || entry.email || entry.phone))
+
+  if (mapped.length) return mapped
+
+  if (fallback && typeof fallback === 'object') {
+    const record = normalizePersonRecord(fallback, 0, options)
+    if (record.first_name || record.surname || record.id_number || record.email || record.phone) {
+      return [record]
+    }
+  }
+
+  return []
+}
+
 export function normalizeProvince(value = '') {
   const normalized = normalizeKey(value)
   return PROVINCE_ALIASES[normalized] || normalizeText(value)
@@ -163,21 +221,11 @@ export function normalizeOccupancyStatus(form = {}) {
 }
 
 function buildOwnerFacts(form = {}) {
-  if (Array.isArray(form.multipleOwners) && form.multipleOwners.length) {
-    return form.multipleOwners.map((owner, index) => ({
-      index: index + 1,
-      first_name: normalizeText(owner.name),
-      surname: normalizeText(owner.surname),
-      id_number: normalizeText(owner.idNumber),
-      email: normalizeText(owner.email),
-      phone: normalizeText(owner.phone),
-      ownership_share: normalizeNumber(owner.ownershipShare),
-    }))
-  }
-  return []
+  return normalizePeopleCollection(form.multipleOwners || form.owners || [], null, { defaultRoleTitle: 'Owner' })
 }
 
 export function transformSellerOnboardingToFacts(form = {}, listing = {}, options = {}) {
+  const flow = resolveSellerOnboardingFlow(form, listing)
   const sellerLegalType = normalizeSellerLegalType(form)
   const maritalRegime = normalizeMaritalRegime(form)
   const propertyType = normalizeCanonicalPropertyType(form)
@@ -193,13 +241,65 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const electricFence = normalizeBoolean(form.electricFence, false) || features.includes('security')
   const solarInstallation = normalizeBoolean(form.solarInstallation, false) || features.includes('solar')
   const swimmingPool = normalizeBoolean(form.swimmingPool ?? form.pool, false)
-  const borehole = normalizeBoolean(form.borehole, false) || features.includes('water')
+  const boreholeInstallation = normalizeBoolean(form.boreholeInstallation ?? form.borehole, false) || features.includes('water')
+  const recentAlterations = normalizeBoolean(form.recentAlterations, false)
+  const companyDirectors = normalizePeopleCollection(
+    form.companyDirectors || form.directors || [],
+    {
+      name: form.companyDirectorName,
+      email: form.companyDirectorEmail,
+      phone: form.companyDirectorPhone,
+      residentialAddress: form.companyDirectorAddress || form.residentialAddress,
+      signingAuthority: true,
+      roleTitle: 'Director',
+    },
+    { defaultRoleTitle: 'Director' },
+  )
+  const trustTrustees = normalizePeopleCollection(
+    form.trustees || [],
+    {
+      name: form.trusteeName,
+      email: form.trusteeEmail,
+      phone: form.trusteePhone,
+      residentialAddress: form.trusteeAddress || form.residentialAddress,
+      signingAuthority: true,
+      roleTitle: 'Trustee',
+    },
+    { defaultRoleTitle: 'Trustee' },
+  )
+  const trustBeneficiaries = normalizePeopleCollection(form.trustBeneficiaries || form.beneficiaries || [], null, { defaultRoleTitle: 'Beneficiary' })
+  const executors = normalizePeopleCollection(
+    form.executors || [],
+    {
+      name: form.executorName,
+      email: form.executorEmail,
+      phone: form.executorPhone,
+      residentialAddress: form.executorAddress || form.residentialAddress,
+      signingAuthority: true,
+      roleTitle: 'Executor',
+    },
+    { defaultRoleTitle: 'Executor' },
+  )
+  const powerOfAttorneyRepresentatives = normalizePeopleCollection(
+    form.powerOfAttorneyRepresentatives || [],
+    {
+      name: form.powerOfAttorneyName || form.authorisedRepresentative,
+      email: form.powerOfAttorneyEmail,
+      phone: form.powerOfAttorneyPhone,
+      residentialAddress: form.powerOfAttorneyAddress || form.residentialAddress,
+      signingAuthority: true,
+      roleTitle: 'Representative',
+    },
+    { defaultRoleTitle: 'Representative' },
+  )
 
   return {
+    flow,
     seller: {
+      branch: flow.seller_branch,
       legal_type: sellerLegalType,
       ownership_type: normalizeKey(form.ownershipType),
-      number_of_owners: sellerLegalType === 'multiple_owners' ? Math.max(buildOwnerFacts(form).length, 1) : normalizeNumber(form.numberOfOwners) || 1,
+      number_of_owners: flow.seller_branch === 'multiple_owners' ? Math.max(buildOwnerFacts(form).length, 1) : normalizeNumber(form.numberOfOwners) || 1,
       first_name: normalizeText(form.sellerFirstName),
       surname: normalizeText(form.sellerSurname),
       email: normalizeText(form.email),
@@ -226,6 +326,22 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
         director_name: normalizeText(form.companyDirectorName),
         director_email: normalizeText(form.companyDirectorEmail),
         director_phone: normalizeText(form.companyDirectorPhone),
+        registered_address: normalizeText(form.companyRegisteredAddress || form.residentialAddress),
+        directors: companyDirectors,
+        director_count: companyDirectors.length,
+        authorised_signatory: normalizePersonRecord(
+          {
+            name: form.authorisedSignatoryName || form.companyDirectorName || companyDirectors[0]?.full_name,
+            email: form.authorisedSignatoryEmail || form.companyDirectorEmail || companyDirectors[0]?.email,
+            phone: form.authorisedSignatoryPhone || form.companyDirectorPhone || companyDirectors[0]?.phone,
+            residentialAddress: form.authorisedSignatoryAddress || form.companyRegisteredAddress || form.residentialAddress,
+            signingAuthority: true,
+            roleTitle: 'Authorised Signatory',
+          },
+          0,
+          { defaultRoleTitle: 'Authorised Signatory' },
+        ),
+        beneficial_owners: normalizePeopleCollection(form.companyBeneficialOwners || [], null, { defaultRoleTitle: 'Beneficial Owner' }),
       },
       trust: {
         name: normalizeText(form.trustName),
@@ -233,21 +349,47 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
         trustee_name: normalizeText(form.trusteeName),
         trustee_email: normalizeText(form.trusteeEmail),
         trustee_phone: normalizeText(form.trusteePhone),
+        registered_address: normalizeText(form.trustRegisteredAddress || form.residentialAddress),
+        trustees: trustTrustees,
+        trustee_count: trustTrustees.length,
+        authorised_trustee: normalizePersonRecord(
+          {
+            name: form.authorisedTrusteeName || form.trusteeName || trustTrustees[0]?.full_name,
+            email: form.authorisedTrusteeEmail || form.trusteeEmail || trustTrustees[0]?.email,
+            phone: form.authorisedTrusteePhone || form.trusteePhone || trustTrustees[0]?.phone,
+            residentialAddress: form.authorisedTrusteeAddress || form.trustRegisteredAddress || form.residentialAddress,
+            signingAuthority: true,
+            roleTitle: 'Authorised Trustee',
+          },
+          0,
+          { defaultRoleTitle: 'Authorised Trustee' },
+        ),
+        beneficiaries: trustBeneficiaries,
       },
       deceased_estate: {
         executor_name: normalizeText(form.executorName),
         executor_email: normalizeText(form.executorEmail),
         executor_phone: normalizeText(form.executorPhone),
         estate_reference: normalizeText(form.estateReference),
+        authority_details: normalizeText(form.executorAuthorityDetails),
+        executors,
       },
       power_of_attorney: {
         representative_name: normalizeText(form.powerOfAttorneyName || form.authorisedRepresentative),
         representative_email: normalizeText(form.powerOfAttorneyEmail),
         representative_phone: normalizeText(form.powerOfAttorneyPhone),
+        reference: normalizeText(form.powerOfAttorneyReference || form.powerOfAttorneyAuthorityDetails),
+        authority_details: normalizeText(form.powerOfAttorneyAuthorityDetails || form.powerOfAttorneyReference),
+        principal: {
+          name: normalizeText(form.powerOfAttorneyPrincipalName || form.principalName),
+          id_number: normalizeText(form.powerOfAttorneyPrincipalIdNumber || form.principalIdNumber),
+        },
+        representatives: powerOfAttorneyRepresentatives,
       },
       owners: buildOwnerFacts(form),
     },
     property: {
+      branch: flow.property_branch,
       property_type: propertyType,
       property_category: normalizePropertyCategory(form.propertyCategory || listing.propertyCategory || listing.property_category, { fallback: 'residential' }),
       property_category_label: getPropertyCategoryLabel(form.propertyCategory || listing.propertyCategory || listing.property_category),
@@ -277,6 +419,14 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       floor_size: normalizeNumber(form.floorSize),
       rates_taxes: normalizeNumber(form.ratesTaxes),
       levies: normalizeNumber(form.levies),
+      utilities: {
+        monthly_water_spend: normalizeNumber(form.monthlyWaterSpend),
+        monthly_electricity_spend: normalizeNumber(form.monthlyElectricitySpend),
+      },
+      alterations: {
+        recent: recentAlterations,
+        details: normalizeText(form.alterationDetails),
+      },
     },
     occupancy: {
       status: occupancyStatus,
@@ -306,7 +456,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       electric_fence: electricFence,
       solar_installation: solarInstallation,
       swimming_pool: swimmingPool,
-      borehole,
+      borehole: boreholeInstallation,
+      borehole_installation: boreholeInstallation,
       generator_installation: normalizeBoolean(form.generatorInstallation, false),
       beetle_certificate_region: normalizeBoolean(form.beetleCertificateRegion, false),
       plumbing_certificate_required: normalizeBoolean(form.plumbingCertificateRequired, false),
@@ -316,6 +467,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       electric_fence_certificate_available: normalizeBoolean(form.electricFenceCertificateAvailable, false),
       plumbing_certificate_available: normalizeBoolean(form.plumbingCertificateAvailable, false),
       solar_compliance_available: normalizeBoolean(form.solarComplianceAvailable, false),
+      recent_alterations: recentAlterations,
     },
     transaction: {
       asking_price: normalizeNumber(form.askingPrice || listing.askingPrice),
@@ -347,17 +499,54 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
     }
   }
 
+  const sellerBranch = normalizeKey(facts.flow?.seller_branch || facts.seller?.branch || facts.seller?.legal_type)
+  const propertyBranch = normalizeKey(facts.flow?.property_branch || facts.property?.branch || facts.property?.property_type)
+
   push(missingIf(!facts.seller?.first_name, 'seller_first_name_missing', 'Seller name is required.'))
   push(missingIf(!facts.seller?.surname, 'seller_surname_missing', 'Seller surname is required.'))
   push(missingIf(!facts.seller?.email, 'seller_email_missing', 'Seller email is required.'))
   push(missingIf(!facts.seller?.phone, 'seller_phone_missing', 'Seller phone is required.'))
-  push(missingIf(facts.seller?.legal_type === 'company' && !facts.seller?.company?.registration_number, 'company_registration_missing', 'Company registration number is required for company sellers.'))
-  push(missingIf(facts.seller?.legal_type === 'trust' && !facts.seller?.trust?.registration_number, 'trust_registration_missing', 'Trust registration number is required for trust sellers.'))
-  push(missingIf(facts.seller?.legal_type === 'deceased_estate' && !facts.seller?.deceased_estate?.executor_name, 'executor_details_missing', 'Executor details are required for deceased estate sellers.'))
+  push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.id_number, 'seller_id_number_missing', 'ID number is required for individual and married sellers.'))
+  push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.residential_address, 'seller_residential_address_missing', 'Residential address is required for individual and married sellers.'))
+  push(missingIf((sellerBranch === 'individual' || sellerBranch === 'married') && !facts.seller?.marital_status, 'marital_status_missing', 'Marital status is required for individual and married sellers.'))
+  push(missingIf(sellerBranch === 'married' && !facts.seller?.marital_regime, 'marital_regime_missing', 'Marital regime is required for married sellers.'))
+  push(missingIf(sellerBranch === 'married' && !facts.seller?.spouse?.name, 'spouse_name_missing', 'Spouse name is required for married sellers.'))
+  push(missingIf(sellerBranch === 'married' && !facts.seller?.spouse?.id_number, 'spouse_id_missing', 'Spouse ID number is required for married sellers.'))
+  push(missingIf(sellerBranch === 'company' && !facts.seller?.company?.name, 'company_name_missing', 'Company name is required for company sellers.'))
+  push(missingIf(sellerBranch === 'company' && !facts.seller?.company?.registration_number, 'company_registration_missing', 'Company registration number is required for company sellers.'))
+  push(missingIf(sellerBranch === 'company' && !facts.seller?.company?.registered_address, 'company_registered_address_missing', 'Company registered address is required for company sellers.'))
+  push(missingIf(sellerBranch === 'company' && !(Array.isArray(facts.seller?.company?.directors) && facts.seller.company.directors.length), 'company_director_missing', 'At least one company director is required for company sellers.'))
+  push(missingIf(sellerBranch === 'company' && !hasValue(facts.seller?.company?.authorised_signatory?.name || facts.seller?.company?.director_name), 'company_signatory_missing', 'Primary authorised signatory details are required for company sellers.'))
+  push(missingIf(sellerBranch === 'trust' && !facts.seller?.trust?.name, 'trust_name_missing', 'Trust name is required for trust sellers.'))
+  push(missingIf(sellerBranch === 'trust' && !facts.seller?.trust?.registration_number, 'trust_registration_missing', 'Trust registration number is required for trust sellers.'))
+  push(missingIf(sellerBranch === 'trust' && !facts.seller?.trust?.registered_address, 'trust_registered_address_missing', 'Trust registered address is required for trust sellers.'))
+  push(missingIf(sellerBranch === 'trust' && !(Array.isArray(facts.seller?.trust?.trustees) && facts.seller.trust.trustees.length), 'trustee_details_missing', 'At least one trustee is required for trust sellers.'))
+  push(missingIf(sellerBranch === 'trust' && !hasValue(facts.seller?.trust?.authorised_trustee?.name || facts.seller?.trust?.trustee_name), 'trust_authority_missing', 'Primary trustee details are required for trust sellers.'))
+  push(missingIf(sellerBranch === 'deceased_estate' && !facts.seller?.deceased_estate?.executor_name, 'executor_details_missing', 'Executor details are required for deceased estate sellers.'))
+  push(missingIf(sellerBranch === 'deceased_estate' && !facts.seller?.deceased_estate?.authority_details, 'deceased_estate_authority_missing', 'Authority details are required for deceased estate sellers.'))
+  push(missingIf(sellerBranch === 'power_of_attorney' && !facts.seller?.power_of_attorney?.representative_name, 'power_of_attorney_missing', 'Representative details are required for power of attorney sellers.'))
+  push(missingIf(sellerBranch === 'power_of_attorney' && !(facts.seller?.power_of_attorney?.authority_details || facts.seller?.power_of_attorney?.reference), 'power_of_attorney_authority_missing', 'Authority details are required for power of attorney sellers.'))
+  push(missingIf(sellerBranch === 'multiple_owners' && !(Array.isArray(facts.seller?.owners) && facts.seller.owners.length >= 2), 'multiple_owners_missing', 'At least two owners must be captured for multiple-owner sellers.'))
+  push(missingIf(
+    sellerBranch === 'multiple_owners' &&
+      Array.isArray(facts.seller?.owners) &&
+      facts.seller.owners.some((owner) => !owner.consent_to_sell),
+    'owner_consent_missing',
+    'Each owner must consent to sell.',
+  ))
   push(missingIf(facts.finance?.existing_bond && !facts.finance?.bond_bank, 'bond_bank_missing', 'Bond bank is required when there is an existing bond.', draft ? 'recommended' : 'required'))
   push(missingIf(facts.occupancy?.lease_exists && !facts.occupancy?.lease_expiry_date, 'lease_expiry_missing', 'Lease expiry date is required when a lease exists.', draft ? 'recommended' : 'required'))
+  push(missingIf(!facts.property?.address, 'property_address_missing', 'Property address is required.'))
+  push(missingIf(!facts.property?.suburb, 'property_suburb_missing', 'Property suburb is required.'))
   push(missingIf(!facts.property?.municipality, 'municipality_missing', 'Municipality helps determine readiness and compliance.', 'recommended'))
   push(missingIf(!facts.property?.province, 'province_missing', 'Province is required for property classification.'))
+  push(missingIf(!facts.property?.property_category, 'property_category_missing', 'Property category is required.'))
+  push(missingIf(!facts.property?.property_structure_type, 'property_structure_type_missing', 'Property structure type is required.'))
+  push(missingIf(propertyBranch === 'sectional_title' && !facts.property?.scheme_name, 'sectional_scheme_missing', 'Scheme name should be captured for sectional title properties.', 'recommended'))
+  push(missingIf(propertyBranch === 'sectional_title' && !facts.property?.section_number && !facts.property?.unit_number, 'sectional_unit_missing', 'Section or unit number should be captured for sectional title properties.', 'recommended'))
+  push(missingIf(propertyBranch === 'estate_hoa' && !facts.property?.estate_name, 'estate_name_missing', 'Estate / HOA name should be captured for estate properties.', 'recommended'))
+  push(missingIf((propertyBranch === 'commercial' || propertyBranch === 'mixed_use') && !facts.property?.floor_size, 'commercial_floor_size_missing', 'Floor size should be captured for commercial and mixed-use properties.', 'recommended'))
+  push(missingIf((propertyBranch === 'vacant_land' || propertyBranch === 'agricultural') && !facts.property?.erf_size, 'land_size_missing', 'Land size should be captured for vacant land and agricultural properties.'))
 
   return {
     ok: draft ? true : required.length === 0,
@@ -380,25 +569,55 @@ function sectionScore(items = []) {
 export function calculateSellerFactReadiness(facts = {}) {
   const sections = {
     seller_identity: sectionScore([
-      facts.seller?.legal_type,
+      facts.flow?.seller_branch,
       facts.seller?.first_name,
       facts.seller?.surname,
       facts.seller?.email,
       facts.seller?.phone,
+      facts.flow?.seller_branch === 'individual' || facts.flow?.seller_branch === 'married' ? facts.seller?.id_number : true,
+      facts.flow?.seller_branch === 'individual' || facts.flow?.seller_branch === 'married' ? facts.seller?.residential_address : true,
+      facts.flow?.seller_branch === 'company' ? facts.seller?.company?.name : true,
+      facts.flow?.seller_branch === 'company' ? facts.seller?.company?.registration_number : true,
+      facts.flow?.seller_branch === 'company' ? facts.seller?.company?.registered_address : true,
+      facts.flow?.seller_branch === 'company' ? Boolean(facts.seller?.company?.directors?.length) : true,
+      facts.flow?.seller_branch === 'trust' ? facts.seller?.trust?.name : true,
+      facts.flow?.seller_branch === 'trust' ? facts.seller?.trust?.registration_number : true,
+      facts.flow?.seller_branch === 'trust' ? facts.seller?.trust?.registered_address : true,
+      facts.flow?.seller_branch === 'trust' ? Boolean(facts.seller?.trust?.trustees?.length) : true,
+      facts.flow?.seller_branch === 'deceased_estate' ? facts.seller?.deceased_estate?.executor_name : true,
+      facts.flow?.seller_branch === 'deceased_estate' ? facts.seller?.deceased_estate?.authority_details : true,
+      facts.flow?.seller_branch === 'power_of_attorney' ? facts.seller?.power_of_attorney?.representative_name : true,
+      facts.flow?.seller_branch === 'power_of_attorney' ? facts.seller?.power_of_attorney?.principal?.name : true,
+      facts.flow?.seller_branch === 'power_of_attorney' ? (facts.seller?.power_of_attorney?.authority_details || facts.seller?.power_of_attorney?.reference) : true,
+      facts.flow?.seller_branch === 'multiple_owners' ? (facts.seller?.owners?.length >= 2) : true,
     ]),
     seller_authority: sectionScore([
-      facts.seller?.legal_type,
+      facts.flow?.seller_branch,
       facts.seller?.marital_regime,
-      facts.seller?.legal_type === 'company' ? facts.seller?.company?.registration_number : true,
-      facts.seller?.legal_type === 'trust' ? facts.seller?.trust?.registration_number : true,
-      facts.seller?.legal_type === 'deceased_estate' ? facts.seller?.deceased_estate?.executor_name : true,
+      facts.flow?.seller_branch === 'married' ? facts.seller?.spouse?.name : true,
+      facts.flow?.seller_branch === 'married' ? facts.seller?.spouse?.id_number : true,
+      facts.flow?.seller_branch === 'company' ? facts.seller?.company?.authorised_signatory?.name || facts.seller?.company?.director_name : true,
+      facts.flow?.seller_branch === 'company' ? Boolean(facts.seller?.company?.directors?.length) : true,
+      facts.flow?.seller_branch === 'trust' ? facts.seller?.trust?.authorised_trustee?.name || facts.seller?.trust?.trustee_name : true,
+      facts.flow?.seller_branch === 'trust' ? Boolean(facts.seller?.trust?.trustees?.length) : true,
+      facts.flow?.seller_branch === 'deceased_estate' ? facts.seller?.deceased_estate?.executor_name : true,
+      facts.flow?.seller_branch === 'deceased_estate' ? facts.seller?.deceased_estate?.authority_details : true,
+      facts.flow?.seller_branch === 'power_of_attorney' ? facts.seller?.power_of_attorney?.representative_name : true,
+      facts.flow?.seller_branch === 'power_of_attorney' ? facts.seller?.power_of_attorney?.principal?.id_number : true,
+      facts.flow?.seller_branch === 'power_of_attorney' ? (facts.seller?.power_of_attorney?.authority_details || facts.seller?.power_of_attorney?.reference) : true,
+      facts.flow?.seller_branch === 'multiple_owners'
+        ? Boolean(Array.isArray(facts.seller?.owners) && facts.seller.owners.length >= 2 && facts.seller.owners.every((owner) => owner.consent_to_sell))
+        : true,
     ]),
     property_classification: sectionScore([
-      facts.property?.property_type,
+      facts.flow?.property_branch,
+      facts.property?.property_category,
+      facts.property?.property_structure_type,
       facts.property?.address,
       facts.property?.suburb,
       facts.property?.municipality,
       facts.property?.province,
+      facts.property?.erf_size,
     ]),
     finance_details: sectionScore([
       typeof facts.finance?.existing_bond === 'boolean',
@@ -412,9 +631,11 @@ export function calculateSellerFactReadiness(facts = {}) {
     ]),
     compliance_details: sectionScore([
       typeof facts.compliance?.gas_installation === 'boolean',
-      typeof facts.compliance?.electric_fence === 'boolean',
       typeof facts.compliance?.solar_installation === 'boolean',
+      typeof facts.compliance?.borehole_installation === 'boolean' || typeof facts.compliance?.borehole === 'boolean',
+      typeof facts.compliance?.electric_fence === 'boolean',
       typeof facts.compliance?.swimming_pool === 'boolean',
+      typeof facts.compliance?.recent_alterations === 'boolean',
     ]),
   }
   const sectionValues = Object.values(sections)

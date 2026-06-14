@@ -545,12 +545,12 @@ export function getHqApplicationKpis(rows = [], now = Date.now()) {
 
 function HqFilterSelect({ label, value, onChange, options = [] }) {
   return (
-    <label className="min-w-[160px] flex-1">
+    <label className="w-full min-w-0">
       <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-[#72869b]">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-12 w-full rounded-[14px] border border-[#dbe5f0] bg-[#f9fbff] px-3 text-sm font-medium text-[#17324d] outline-none transition focus:border-[#9fb8d2]"
+        className="h-[clamp(2.625rem,2.8vw,3rem)] w-full rounded-[14px] border border-[#dbe5f0] bg-[#f9fbff] px-3 text-sm font-medium text-[#17324d] outline-none transition focus:border-[#9fb8d2]"
       >
         {options.map((option) => (
           <option key={option.key} value={option.key}>
@@ -649,24 +649,24 @@ function OverflowMenuButton() {
 
 export function HqApplicationsTable({ rows = [], onOpen }) {
   if (!rows.length) return null
-  const registerGridClass = 'md:grid-cols-[minmax(230px,1fr)_minmax(220px,0.9fr)] xl:grid-cols-[minmax(250px,1.05fr)_minmax(190px,0.78fr)_minmax(360px,1.45fr)_minmax(260px,0.92fr)]'
+  const registerGridClass = 'md:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)] xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.86fr)_minmax(0,1.45fr)_minmax(0,0.95fr)]'
   return (
-    <section className="space-y-3">
-      <div className={`hidden gap-5 px-6 text-xs font-semibold uppercase tracking-[0.12em] text-[#75889e] xl:grid ${registerGridClass}`}>
+    <section className="space-y-[clamp(0.75rem,1vw,1rem)]">
+      <div className={`hidden gap-[clamp(1rem,1.2vw,1.35rem)] px-[clamp(1rem,1.3vw,1.5rem)] text-xs font-semibold uppercase tracking-[0.12em] text-[#75889e] xl:grid ${registerGridClass}`}>
         <span>Application</span>
         <span>Consultant</span>
         <span>Stage & Progress</span>
         <span className="text-right">Value & Next Action</span>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-[clamp(0.75rem,1vw,1rem)]">
         {rows.map((row) => (
           <article
             key={row.key || row.transactionId || row.bondApplicationId}
-            className="relative overflow-hidden rounded-[16px] border border-[#dbe5f0] bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#bfd0e0] hover:shadow-[0_18px_36px_rgba(15,23,42,0.07)] sm:px-6"
+            className="relative overflow-hidden rounded-[16px] border border-[#dbe5f0] bg-white px-[clamp(1rem,1.35vw,1.5rem)] py-[clamp(1rem,1.3vw,1.4rem)] shadow-[0_12px_28px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#bfd0e0] hover:shadow-[0_18px_36px_rgba(15,23,42,0.07)]"
           >
             <span className="absolute inset-y-0 left-0 w-1.5" style={{ backgroundColor: getRiskAccent(row) }} />
-            <div className={`grid min-w-0 gap-5 xl:items-center ${registerGridClass}`}>
+            <div className={`grid min-w-0 gap-[clamp(1rem,1.2vw,1.35rem)] xl:items-center ${registerGridClass}`}>
               <div className="flex min-w-0 items-start gap-3">
                 <span className="mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#dce8f2] bg-[#f4f8fd] text-[#23518a]">
                   <UserRound size={18} />
@@ -742,7 +742,7 @@ function HqApplicationsPagination({
   })
 
   return (
-    <section className="flex flex-col gap-4 px-1 py-2 text-sm text-[#536b83] md:flex-row md:items-center md:justify-between">
+    <section className="flex flex-col gap-[clamp(0.75rem,1vw,1rem)] px-1 py-2 text-sm text-[#536b83] md:flex-row md:items-center md:justify-between">
       <p>
         Showing <span className="font-semibold text-[#102448]">{firstRow}</span> to <span className="font-semibold text-[#102448]">{lastRow}</span> of <span className="font-semibold text-[#102448]">{totalRows}</span> applications
       </p>
@@ -752,7 +752,7 @@ function HqApplicationsPagination({
           <select
             value={rowsPerPage}
             onChange={(event) => onRowsPerPageChange(Number(event.target.value))}
-            className="h-10 rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#102448] outline-none"
+            className="h-[clamp(2.5rem,2.7vw,2.75rem)] rounded-[12px] border border-[#dbe5f0] bg-white px-3 text-sm font-semibold text-[#102448] outline-none"
           >
             {[10, 25, 50].map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
@@ -972,11 +972,11 @@ export default function BondTransactionsPage({
     const showFilteredEmpty = !state.loading && hqRegisterRows.length > 0 && hqFilteredRows.length === 0
 
     return (
-      <BondPageShell className="space-y-5">
-        <section className="rounded-[22px] border border-[#dce6f2] bg-white p-2 shadow-[0_16px_38px_rgba(15,23,42,0.055)]">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <BondPageShell className="space-y-[clamp(1.1rem,1.6vw,1.75rem)]">
+        <section className="rounded-[22px] border border-[#dce6f2] bg-white p-[clamp(0.5rem,0.75vw,0.75rem)] shadow-[0_16px_38px_rgba(15,23,42,0.055)]">
+          <div className="grid gap-[clamp(0.5rem,0.8vw,0.9rem)] [grid-template-columns:repeat(auto-fit,minmax(min(100%,13.25rem),1fr))]">
             {hqKpis.map((item) => (
-              <div key={item.key} className="flex min-h-[104px] items-center gap-4 rounded-[18px] px-4 py-4 transition hover:bg-[#f7faff]">
+              <div key={item.key} className="flex min-h-[clamp(6.5rem,7.4vw,7.8rem)] items-center gap-[clamp(0.9rem,1vw,1.1rem)] rounded-[18px] px-[clamp(0.95rem,1.2vw,1.3rem)] py-[clamp(0.9rem,1.05vw,1.15rem)] transition hover:bg-[#f7faff]">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eef5ff] text-[#24518a] ring-1 ring-[#dce8f6]">
                   <item.icon size={21} />
                 </span>
@@ -990,7 +990,7 @@ export default function BondTransactionsPage({
           </div>
         </section>
 
-        <section className="rounded-[18px] border border-[#dce6f2] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <section className="rounded-[18px] border border-[#dce6f2] bg-white px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.25vw,1.4rem)] shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-[#17324d]">
               <SlidersHorizontal size={16} />
@@ -1006,7 +1006,7 @@ export default function BondTransactionsPage({
               Clear filters
             </button>
           </div>
-          <div className="flex flex-wrap gap-4">
+          <div className="grid gap-[clamp(0.75rem,1vw,1rem)] [grid-template-columns:repeat(auto-fit,minmax(min(100%,12.25rem),1fr))]">
             <HqFilterSelect label="Region" value={hqFilters.region} onChange={(value) => handleHqFilterChange('region', value)} options={hqFilterOptions.regions} />
             <HqFilterSelect label="Branch" value={hqFilters.branch} onChange={(value) => handleHqFilterChange('branch', value)} options={hqFilterOptions.branches} />
             <HqFilterSelect label="Consultant" value={hqFilters.consultant} onChange={(value) => handleHqFilterChange('consultant', value)} options={hqFilterOptions.consultants} />
@@ -1041,8 +1041,8 @@ export default function BondTransactionsPage({
 
   return (
     <BondPageShell>
-      <div className="rounded-[18px] border border-[#dce6f2] bg-white px-4 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+      <div className="rounded-[18px] border border-[#dce6f2] bg-white px-[clamp(1rem,1.25vw,1.5rem)] py-[clamp(1rem,1.25vw,1.4rem)] shadow-[0_12px_28px_rgba(15,23,42,0.045)]">
+        <div className="grid grid-cols-1 gap-[clamp(0.75rem,1vw,1rem)] md:grid-cols-2 lg:grid-cols-4">
           <label className="relative">
             <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#89a0b5]" />
             <input

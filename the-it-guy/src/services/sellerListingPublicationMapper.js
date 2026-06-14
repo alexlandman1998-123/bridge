@@ -1,3 +1,5 @@
+import { resolveSellerOnboardingFlow } from '../lib/sellerOnboardingFlow.js'
+
 function text(value) {
   return String(value || '').trim()
 }
@@ -70,9 +72,11 @@ export function buildSellerOnboardingPublicationDraft({
   const facts = Object.keys(object(canonicalFacts)).length
     ? object(canonicalFacts)
     : object(form.canonicalSellerFacts || form.canonicalFacts)
+  const flow = resolveSellerOnboardingFlow(form, listing, facts)
   const propertyFacts = object(facts.property)
   const transactionFacts = object(facts.transaction)
   const complianceFacts = object(facts.compliance)
+  const propertyBranch = flow.property_branch
 
   const features = new Set(
     Array.isArray(form.features)
@@ -84,8 +88,8 @@ export function buildSellerOnboardingPublicationDraft({
   addFeature(features, 'solar', bool(form.solarInstallation) || bool(complianceFacts.solar_installation))
   addFeature(features, 'borehole', bool(form.borehole) || bool(complianceFacts.borehole))
   addFeature(features, 'gas_installation', bool(form.gasInstallation) || bool(complianceFacts.gas_installation))
-  addFeature(features, 'estate_or_hoa', bool(form.estateOrHoa) || bool(propertyFacts.estate_or_hoa))
-  addFeature(features, 'sectional_title', bool(form.sectionalTitle) || bool(propertyFacts.sectional_title))
+  addFeature(features, 'estate_or_hoa', bool(form.estateOrHoa) || bool(propertyFacts.estate_or_hoa) || propertyBranch === 'estate_hoa')
+  addFeature(features, 'sectional_title', bool(form.sectionalTitle) || bool(propertyFacts.sectional_title) || propertyBranch === 'sectional_title')
 
   return {
     title: firstText(

@@ -1219,6 +1219,14 @@ function CommercialDashboard() {
   const scrollerItems = buildWorkflowScrollerItems(data || {}, brokerMap)
   const qualityMap = new Map((intelligence.listingQualityScores || []).map((row) => [row.listingId, row.score]))
   const recentListings = buildRecentListingItems(data || {}, brokerMap, qualityMap)
+  const isFreshCommercialWorkspace = !loading && !error &&
+    !toNumber(summary.activeListings) &&
+    !toNumber(summary.activeRequirements) &&
+    !toNumber(summary.activeCompanies) &&
+    !(data?.deals || []).length &&
+    !(data?.leases || []).length &&
+    !(data?.vacancies || []).length &&
+    !(data?.commercialTransactions || []).length
 
   const kpis = [
     {
@@ -1322,6 +1330,15 @@ function CommercialDashboard() {
         <CommercialEmptyState
           title="Commercial dashboard data could not be loaded"
           description={error}
+        />
+      ) : null}
+
+      {isFreshCommercialWorkspace ? (
+        <CommercialEmptyState
+          title="No Commercial Listings Yet"
+          description="Create your first commercial listing or mandate to get started."
+          primaryActionLabel="Create Listing"
+          onPrimaryAction={() => navigate('/commercial/listings')}
         />
       ) : null}
 

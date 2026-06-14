@@ -397,6 +397,15 @@ function buildActiveTransactionCard(row = {}, usersByKey = new Map()) {
   const developmentName = normalizeText(row.development_name || row.suburb || row.city || row.transaction_type) || 'Listing'
   const financeKey = getFinanceBucket(row)
   const nextAction = normalizeText(row.next_action || row.waiting_on_role || row.operational_state || row.attorney_stage || stage)
+  const stageStartedAt =
+    row.current_stage_entered_at ||
+    row.stage_entered_at ||
+    row.entered_stage_at ||
+    row.stage_changed_at ||
+    row.last_stage_changed_at ||
+    row.updated_at ||
+    row.created_at ||
+    null
   const stepIndex = progressPercent >= 95 ? 4 : progressPercent >= 75 ? 3 : progressPercent >= 55 ? 2 : progressPercent >= 32 ? 1 : 0
   return {
     id: normalizeText(row.id),
@@ -408,6 +417,7 @@ function buildActiveTransactionCard(row = {}, usersByKey = new Map()) {
     stage,
     financeType: financeKey === 'bond' ? 'Bond' : financeKey === 'cash' ? 'Cash' : 'Finance TBC',
     daysActive: daysBetween(row.created_at),
+    daysInStage: daysBetween(stageStartedAt),
     progressPercent,
     category: classifyActiveTransactionCategory(row),
     health: getTransactionHealth(row),

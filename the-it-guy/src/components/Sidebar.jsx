@@ -172,13 +172,14 @@ const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
 const ATTORNEY_SECONDARY_KEYS = new Set(['financials', 'team_departments', 'reports'])
 const BOND_NAV_SECTIONS = [
   {
-    key: 'main',
+    key: 'workspace',
     label: 'Workspace',
+    itemKeys: ['dashboard', 'bond_applications', 'bond_developments'],
+  },
+  {
+    key: 'organisation',
+    label: 'Organisation',
     itemKeys: [
-      'dashboard',
-      'bond_applications',
-      'applications',
-      'bond_developments',
       'bond_organisation',
       'consultant_performance',
       'partners',

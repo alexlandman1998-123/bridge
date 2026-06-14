@@ -30,6 +30,13 @@ const CRM_VISIBILITY_OPTIONS = [
   { value: 'organisation', label: 'Visible to Organisation' },
 ]
 
+const PARTNER_PROFILE_CONTENT_ROLES = [
+  { key: 'agency', label: 'Agency', hint: 'Displayed when the organisation is used as an agency partner.' },
+  { key: 'bond_originator', label: 'Bond Originator', hint: 'Displayed when the organisation is used as a bond partner.' },
+  { key: 'attorney_firm', label: 'Attorney Firm', hint: 'Displayed when the organisation is used as a legal partner.' },
+  { key: 'developer_company', label: 'Developer', hint: 'Displayed when the organisation is used as a development partner.' },
+]
+
 const BOND_ORIGINATOR_TYPE_OPTIONS = [
   { value: 'independent', label: 'Independent originator' },
   { value: 'regional', label: 'Regional bond originator' },
@@ -110,6 +117,18 @@ function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
   return decodeURIComponent(lastSegment)
 }
 
+function normalizePartnerProfileContent(content = {}) {
+  const source = content && typeof content === 'object' ? content : {}
+  return PARTNER_PROFILE_CONTENT_ROLES.reduce((accumulator, role) => {
+    const roleContent = source[role.key] && typeof source[role.key] === 'object' ? source[role.key] : {}
+    accumulator[role.key] = {
+      aboutCompany: roleContent.aboutCompany || roleContent.about_company || '',
+      serviceDelivery: roleContent.serviceDelivery || roleContent.service_delivery || '',
+    }
+    return accumulator
+  }, {})
+}
+
 export default function SettingsOrganisationPage() {
   const { role } = useWorkspace()
   const isBondOriginator = role === 'bond_originator'
@@ -169,6 +188,11 @@ export default function SettingsOrganisationPage() {
 
   const form = useMemo(() => state?.organisation || null, [state])
   const onboarding = useMemo(() => state?.onboarding || null, [state])
+  const organisationSettingsJson = useMemo(() => form?.settingsJson || {}, [form?.settingsJson])
+  const partnerProfileContent = useMemo(
+    () => normalizePartnerProfileContent(organisationSettingsJson.partnerProfileContent),
+    [organisationSettingsJson.partnerProfileContent],
+  )
   const membershipRole = normalizeOrganisationMembershipRole(state?.membershipRole)
   const canEdit = canManageOrganisationSettings({
     appRole: role,
@@ -219,6 +243,25 @@ export default function SettingsOrganisationPage() {
         permissions: {
           ...(previous.onboarding?.permissions || {}),
           [key]: value,
+        },
+      },
+    }))
+  }
+
+  function updatePartnerProfileContentField(roleKey, fieldKey, value) {
+    setState((previous) => ({
+      ...previous,
+      organisation: {
+        ...(previous.organisation || {}),
+        settingsJson: {
+          ...((previous.organisation && previous.organisation.settingsJson) || {}),
+          partnerProfileContent: {
+            ...normalizePartnerProfileContent(previous.organisation?.settingsJson?.partnerProfileContent),
+            [roleKey]: {
+              ...normalizePartnerProfileContent(previous.organisation?.settingsJson?.partnerProfileContent)[roleKey],
+              [fieldKey]: value,
+            },
+          },
         },
       },
     }))
@@ -629,6 +672,47 @@ export default function SettingsOrganisationPage() {
                 </div>
               </article>
             ))}
+          </div>
+        </SettingsSectionCard>
+
+        <SettingsSectionCard
+          title="Partner Profile Content"
+          description="Write the public-facing company overview and service delivery copy that appears on Bridge partner profiles. Each role can be edited separately."
+        >
+          <div className="grid gap-4 xl:grid-cols-2">
+            {PARTNER_PROFILE_CONTENT_ROLES.map((roleOption) => {
+              const roleContent = partnerProfileContent[roleOption.key] || {}
+              return (
+                <article key={roleOption.key} className="rounded-[18px] border border-[#e4ebf2] bg-[#fbfdff] p-5">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#2e4259]">{roleOption.label}</h4>
+                    <p className="text-sm leading-6 text-[#6b7d93]">{roleOption.hint}</p>
+                  </div>
+                  <div className="mt-4 grid gap-4">
+                    <label className={settingsFieldClass}>
+                      <span className="text-sm font-medium text-[#51657b]">About the company</span>
+                      <Field
+                        as="textarea"
+                        value={roleContent.aboutCompany || ''}
+                        disabled={!canEdit}
+                        onChange={(event) => updatePartnerProfileContentField(roleOption.key, 'aboutCompany', event.target.value)}
+                        placeholder={`Describe how this ${roleOption.label.toLowerCase()} presents itself to Bridge partners.`}
+                      />
+                    </label>
+                    <label className={settingsFieldClass}>
+                      <span className="text-sm font-medium text-[#51657b]">Service delivery</span>
+                      <Field
+                        as="textarea"
+                        value={roleContent.serviceDelivery || ''}
+                        disabled={!canEdit}
+                        onChange={(event) => updatePartnerProfileContentField(roleOption.key, 'serviceDelivery', event.target.value)}
+                        placeholder={`Describe the service delivery style for this ${roleOption.label.toLowerCase()} profile.`}
+                      />
+                    </label>
+                  </div>
+                </article>
+              )
+            })}
           </div>
         </SettingsSectionCard>
 

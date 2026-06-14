@@ -41,7 +41,7 @@ import {
   upsertPartnerRoutingRule,
 } from '../lib/settingsApi'
 import { recordWorkspaceAuditEvent } from '../services/auditLogService'
-import { fetchPartnerOperationalPeople } from '../services/bondPartnerProfileService'
+import { fetchPartnerOperationalPeople, getBondPartnerListings } from '../services/bondPartnerProfileService'
 import { PARTNER_ROUTING_MODES, PARTNER_ROUTING_ROLE_TYPES, PARTNER_ROUTING_TARGET_TYPES } from '../constants/bondRoutingContract'
 import OrganisationAvatar from '../components/organisation/OrganisationAvatar'
 
@@ -158,6 +158,31 @@ function getPartnerProfileKind(value = '') {
   return 'general'
 }
 
+function getPartnerProfileContent(partner = {}) {
+  const settings = partner?.settingsJson && typeof partner.settingsJson === 'object'
+    ? partner.settingsJson
+    : partner?.settings_json && typeof partner.settings_json === 'object'
+      ? partner.settings_json
+      : {}
+  const profileContent = settings.partnerProfileContent && typeof settings.partnerProfileContent === 'object'
+    ? settings.partnerProfileContent
+    : settings.partner_profile_content && typeof settings.partner_profile_content === 'object'
+      ? settings.partner_profile_content
+      : {}
+  const kind = getPartnerProfileKind(partner?.type)
+  const roleContent =
+    profileContent[kind] ||
+    profileContent[partner?.type] ||
+    profileContent.agency ||
+    profileContent.general ||
+    {}
+
+  return {
+    aboutCompany: normalizeText(roleContent.aboutCompany || roleContent.about_company),
+    serviceDelivery: normalizeText(roleContent.serviceDelivery || roleContent.service_delivery),
+  }
+}
+
 function collectPartnerActiveAreas(partner = {}) {
   const items = [
     ...(Array.isArray(partner?.activeAreas) ? partner.activeAreas : []),
@@ -251,6 +276,9 @@ function getAttorneyCapabilityBadges(partner = {}) {
 }
 
 function buildPartnerOverviewCopy(partner = {}) {
+  const customCopy = getPartnerProfileContent(partner)
+  if (customCopy.aboutCompany) return customCopy.aboutCompany
+
   const kind = getPartnerProfileKind(partner?.type)
   const location = [partner?.city, partner?.province].filter(Boolean).join(', ') || 'selected markets'
   if (kind === 'bond_originator') {
@@ -263,6 +291,19 @@ function buildPartnerOverviewCopy(partner = {}) {
     return `Agency organisation operating in ${location}, available for transaction collaboration and agent-level coordination through this relationship.`
   }
   return `Verified Bridge organisation operating in ${location}, available through this partner connection for operational collaboration.`
+}
+
+function buildPartnerServiceDeliveryCopy(partner = {}) {
+  const customCopy = getPartnerProfileContent(partner)
+  if (customCopy.serviceDelivery) return customCopy.serviceDelivery
+
+  const tags = [...new Set([...(Array.isArray(partner?.specialties) ? partner.specialties : []), ...(Array.isArray(partner?.activeAreas) ? partner.activeAreas : [])])]
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+  if (tags.length) {
+    return `Service delivery currently spans ${tags.join(' · ')}.`
+  }
+  return 'Service delivery has not been published yet.'
 }
 
 function formatDaysOrHours(value = '') {
@@ -279,7 +320,10 @@ function getProfileMetricValue(metric = {}) {
 
 const ProfileBand = forwardRef(function ProfileBand({ children, className = '' }, ref) {
   return (
-    <section ref={ref} className={`rounded-[28px] border border-[#dbe6f1] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)] ${className}`}>
+    <section
+      ref={ref}
+      className={`rounded-[18px] border border-[#dbe6f1] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:rounded-[24px] lg:rounded-[28px] xl:rounded-[30px] ${className}`}
+    >
       {children}
     </section>
   )
@@ -287,7 +331,7 @@ const ProfileBand = forwardRef(function ProfileBand({ children, className = '' }
 
 function ProfileSectionHeader({ eyebrow, title, description, action }) {
   return (
-    <div className="flex flex-col gap-3 border-b border-[#e8eff6] px-5 py-5 sm:px-6">
+    <div className="flex flex-col gap-3 border-b border-[#e8eff6] px-5 py-5 sm:px-6 lg:px-8 lg:py-6">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-[0.74rem] font-semibold uppercase tracking-[0.18em] text-[#7a8ba3]">{eyebrow}</p>
         {action ? <span className="text-xs text-[#8b9bb0]">{action}</span> : null}
@@ -315,7 +359,7 @@ function ProfileTag({ children, muted = false, className = '' }) {
 function HeroStat({ label, value, subtext, icon }) {
   const Icon = icon || BadgeCheck
   return (
-    <div className="rounded-[24px] border border-[#e4ebf4] bg-white/85 p-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)] backdrop-blur">
+    <div className="rounded-[18px] border border-[#e4ebf4] bg-white/85 p-4 shadow-[0_14px_30px_rgba(15,23,42,0.05)] backdrop-blur sm:rounded-[22px] sm:p-5 lg:rounded-[24px] lg:p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">{label}</p>
@@ -333,7 +377,7 @@ function HeroStat({ label, value, subtext, icon }) {
 function PremiumEmptyState({ title, description, icon }) {
   const Icon = icon || Sparkles
   return (
-    <div className="rounded-[24px] border border-dashed border-[#d7e2ee] bg-[#fbfdff] p-8 text-center">
+    <div className="rounded-[18px] border border-dashed border-[#d7e2ee] bg-[#fbfdff] p-5 text-center sm:rounded-[22px] sm:p-7 lg:rounded-[24px] lg:p-8">
       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[18px] bg-white text-[#7a8ba3] shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
         <Icon size={24} />
       </div>
@@ -343,12 +387,19 @@ function PremiumEmptyState({ title, description, icon }) {
   )
 }
 
-function VisiblePersonCard({ person = {}, preferred = false }) {
+function VisiblePersonCard({ person = {}, preferred = false, selected = false, onClick }) {
   const displayName = normalizeText(person.label || person.fullName || person.name || person.email) || 'Partner user'
   const roleLabel = normalizeText(person.title || person.role || person.organisationRole || person.department) || 'Operational user'
   const locationBits = [person.branchName, person.regionName, person.teamName].map(normalizeText).filter(Boolean)
   return (
-    <article className="rounded-[24px] border border-[#e4ebf4] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={`w-full rounded-[18px] border p-4 text-left shadow-[0_12px_26px_rgba(15,23,42,0.05)] transition sm:rounded-[20px] lg:rounded-[22px] ${
+        selected ? 'border-[#a9c6e4] bg-[#f7fbff] shadow-[0_16px_32px_rgba(31,79,120,0.12)]' : 'border-[#e4ebf4] bg-white hover:border-[#cddbeb] hover:bg-[#fbfdff]'
+      }`}
+    >
       <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[#f3f7fb] text-sm font-bold text-[#2f5573]">
           {displayName
@@ -370,6 +421,35 @@ function VisiblePersonCard({ person = {}, preferred = false }) {
             {person.phone ? <ProfileTag muted>{person.phone}</ProfileTag> : null}
             {person.email ? <ProfileTag muted>{person.email}</ProfileTag> : null}
           </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function ListingCard({ listing = {} }) {
+  const priceLabel = Number(listing.price || 0) > 0
+    ? new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(Number(listing.price || 0))
+    : 'Price not published'
+  const location = [listing.suburb, listing.city].map(normalizeText).filter(Boolean).join(', ') || 'Location not published'
+
+  return (
+    <article className="min-w-[260px] max-w-[260px] snap-start rounded-[22px] border border-[#e4ebf4] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+      <div className="space-y-3">
+        <div>
+          <p className="text-sm font-semibold tracking-[-0.01em] text-[#10243a]">{normalizeText(listing.title) || 'Shared listing'}</p>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">{normalizeText(listing.propertyType) || 'Property'}</p>
+        </div>
+        <div className="space-y-1 text-sm text-[#60758d]">
+          <p className="font-semibold text-[#10243a]">{priceLabel}</p>
+          <p>{location}</p>
+          {listing.branchName ? <p>{listing.branchName}</p> : null}
+          {listing.agentName ? <p>{listing.agentName}</p> : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ProfileTag muted>{normalizeText(listing.status) || 'Active'}</ProfileTag>
+          {listing.bedrooms ? <ProfileTag muted>{`${listing.bedrooms} bed`}</ProfileTag> : null}
+          {listing.bathrooms ? <ProfileTag muted>{`${listing.bathrooms} bath`}</ProfileTag> : null}
         </div>
       </div>
     </article>
@@ -418,6 +498,8 @@ function PartnerOrganisationProfilePage({
   workspace,
   selectedPartner,
   selectedRelationship,
+  partnerAboutCompany = '',
+  partnerServiceDelivery = '',
   partnerPeople = [],
   partnerPeopleMessage = '',
   partnerPeopleLoading = false,
@@ -425,6 +507,11 @@ function PartnerOrganisationProfilePage({
   routingSelectionValues = {},
   routingSavingRoleKeys = new Set(),
   onSelectRoutingPreference,
+  selectedVisiblePerson = null,
+  selectedVisiblePersonListings = [],
+  selectedPartnerListingsMeta = null,
+  shouldShowCurrentListings = false,
+  onSelectVisiblePerson,
   snapshot = null,
   message = '',
   error = '',
@@ -446,6 +533,9 @@ function PartnerOrganisationProfilePage({
   const visibleBranches = collectVisibleBranchNames(partnerPeople)
   const visibleConsultants = Array.isArray(partnerPeople) ? partnerPeople : []
   const routingControls = getOperationalRoutingControlsForPartnerType(selectedPartner?.type)
+  const partnerProfileContent = getPartnerProfileContent(selectedPartner)
+  const selectedPartnerAboutCompany = partnerAboutCompany || partnerProfileContent.aboutCompany || buildPartnerOverviewCopy(selectedPartner)
+  const selectedPartnerServiceDelivery = partnerServiceDelivery || partnerProfileContent.serviceDelivery || buildPartnerServiceDeliveryCopy(selectedPartner)
   const transactionStats = selectedPartner?.transactionStats || {}
   const bridgeMetrics = useMemo(
     () => [
@@ -497,7 +587,6 @@ function PartnerOrganisationProfilePage({
       }))
   }, [selectedPartner?.id, snapshot?.relationships])
 
-  const overviewCopy = buildPartnerOverviewCopy(selectedPartner)
   const connectedHasData = relatedOrganisations.length > 0
 
   if (loading) {
@@ -657,16 +746,16 @@ function PartnerOrganisationProfilePage({
             <ProfileSectionHeader
               eyebrow="Company Overview"
               title={`About ${partnerName}`}
-              description={overviewCopy}
+              description={selectedPartnerAboutCompany}
               action={`Relationship view for ${organisation?.name || workspace?.name || 'your organisation'}`}
             />
             <div className="space-y-6 px-5 py-5 sm:px-6">
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-                <div className="rounded-[24px] border border-[#e4ebf4] bg-[#fbfdff] p-5">
+                <div className="rounded-[20px] border border-[#e4ebf4] bg-[#fbfdff] p-4 sm:rounded-[22px] sm:p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">About {partnerName}</p>
                   <p className="mt-4 max-w-3xl text-sm leading-7 text-[#40556c]">
                     {selectedPartner?.legalName ? `${selectedPartner.legalName}. ` : ''}
-                    {overviewCopy}
+                    {selectedPartnerAboutCompany}
                   </p>
                   <div className="mt-5 flex flex-wrap gap-2">
                     {(selectedPartner?.specialties || []).slice(0, 6).map((item) => (
@@ -674,7 +763,7 @@ function PartnerOrganisationProfilePage({
                     ))}
                   </div>
                 </div>
-                <div className="rounded-[24px] border border-[#e4ebf4] bg-white p-5">
+                <div className="rounded-[20px] border border-[#e4ebf4] bg-white p-4 sm:rounded-[22px] sm:p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Relationship Controls</p>
                   <div className="mt-4 grid gap-3 text-sm leading-6 text-[#40556c]">
                     <p className="inline-flex items-start gap-2"><LockKeyhole size={15} className="mt-0.5 text-[#52677f]" /> Organisation data stays permission-gated.</p>
@@ -685,8 +774,9 @@ function PartnerOrganisationProfilePage({
                 </div>
               </div>
 
-              <div className="rounded-[24px] border border-[#e4ebf4] bg-white p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Services</p>
+              <div className="rounded-[20px] border border-[#e4ebf4] bg-white p-4 sm:rounded-[22px] sm:p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Service delivery</p>
+                <p className="mt-3 max-w-3xl text-sm leading-7 text-[#40556c]">{selectedPartnerServiceDelivery}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {(serviceTags.length ? serviceTags : ['Service details not published']).map((item) => (
                     <ProfileTag key={item} muted={!serviceTags.length}>
@@ -695,7 +785,7 @@ function PartnerOrganisationProfilePage({
                   ))}
                 </div>
                 <p className="mt-4 text-sm leading-6 text-[#60758d]">
-                  Operating areas:
+                  Service areas:
                   <span className="font-semibold text-[#40556c]">
                     {' '}
                     {activeAreas.length ? activeAreas.join(' · ') : 'No operating areas published yet'}
@@ -739,19 +829,73 @@ function PartnerOrganisationProfilePage({
                 ))}
               </div>
             ) : visibleConsultants.length ? (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {visibleConsultants.slice(0, 12).map((person) => {
-                  const personId = normalizeText(person.userId || person.id)
-                  const personName = normalizeText(person.label || person.fullName || person.name)
-                  const isPreferred = routingControls.some((control) => {
-                    const rule = routingRulesByRole?.[control.roleType] || null
+              <div className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {visibleConsultants.slice(0, 12).map((person) => {
+                    const personId = normalizeText(person.userId || person.id)
+                    const personName = normalizeText(person.label || person.fullName || person.name)
+                    const isPreferred = routingControls.some((control) => {
+                      const rule = routingRulesByRole?.[control.roleType] || null
+                      return (
+                        normalizeText(rule?.targetConsultantUserId || rule?.targetUserId || rule?.target_user_id) === personId ||
+                        normalizeText(rule?.targetScopeName || rule?.target_scope_name) === personName
+                      )
+                    })
+                    const personKey = normalizeText(person.userId || person.id || person.email || person.fullName)
+                    const isSelectedPerson = normalizeText(selectedVisiblePerson?.userId || selectedVisiblePerson?.id) === personId
                     return (
-                      normalizeText(rule?.targetConsultantUserId || rule?.targetUserId || rule?.target_user_id) === personId ||
-                      normalizeText(rule?.targetScopeName || rule?.target_scope_name) === personName
-                    )
-                  })
-                  return <VisiblePersonCard key={person.userId || person.id || person.email || person.fullName} person={person} preferred={isPreferred} />
+                    <VisiblePersonCard
+                      key={personKey}
+                      person={person}
+                      preferred={isPreferred}
+                      selected={isSelectedPerson}
+                      onClick={() => onSelectVisiblePerson?.(personId)}
+                    />
+                  )
                 })}
+              </div>
+              {shouldShowCurrentListings ? (
+                  <div className="rounded-[20px] border border-[#e4ebf4] bg-[#fbfdff] p-4 sm:rounded-[22px] sm:p-5">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7a8ba3]">Current listings</p>
+                        <h3 className="mt-2 text-lg font-semibold tracking-[-0.02em] text-[#10243a]">
+                          {selectedVisiblePerson
+                            ? `Listings for ${selectedVisiblePerson.label || selectedVisiblePerson.fullName || selectedVisiblePerson.name}`
+                            : 'Select a visible person to see current listings'}
+                        </h3>
+                        <p className="mt-1 text-sm leading-6 text-[#60758d]">
+                          {selectedVisiblePerson
+                            ? 'Bridge can surface the current work attached to this visible partner contact.'
+                            : 'Choose a visible person to review current listings associated with this partner relationship.'}
+                        </p>
+                      </div>
+                      <ProfileTag muted>
+                        {selectedVisiblePersonListings.length ? `${selectedVisiblePersonListings.length} listings` : 'No listings visible'}
+                      </ProfileTag>
+                    </div>
+                    {selectedPartnerListingsMeta?.loading ? (
+                      <div className="mt-4 flex gap-4 overflow-x-auto pb-2">
+                        {[0, 1, 2].map((index) => (
+                          <div key={index} className="h-44 min-w-[260px] animate-pulse rounded-[22px] bg-[#f7fafc]" />
+                        ))}
+                      </div>
+                    ) : selectedVisiblePersonListings.length ? (
+                      <div className="mt-4 flex gap-4 overflow-x-auto pb-2 pr-1">
+                        {selectedVisiblePersonListings.slice(0, 12).map((listing) => (
+                          <ListingCard key={listing.listingId || listing.listingReference || `${listing.title}-${listing.agentName}`} listing={listing} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-4">
+                        <PremiumEmptyState
+                          title="No listings visible yet."
+                          description="This partner contact does not currently have visible listings attached to the partner relationship."
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <PremiumEmptyState
@@ -785,7 +929,7 @@ function PartnerOrganisationProfilePage({
                     const roleKey = createPartnerRoleKey(selectedPartner?.id, control.roleType)
                     const saving = routingSavingRoleKeys?.has?.(roleKey)
                     return (
-                      <div key={control.roleType} className="rounded-[24px] border border-[#e4ebf4] bg-[#fbfdff] p-5">
+                      <div key={control.roleType} className="rounded-[20px] border border-[#e4ebf4] bg-[#fbfdff] p-4 sm:rounded-[22px] sm:p-5">
                         <RoutingPreferenceField
                           roleType={control.roleType}
                           selectedPartnerId={selectedPartner?.id}
@@ -800,43 +944,24 @@ function PartnerOrganisationProfilePage({
                   })}
                 </div>
               )}
-              <div className="rounded-[24px] border border-[#d8e7f4] bg-[#f8fbff] px-5 py-4 text-sm leading-6 text-[#40556c]">
+              <div className="rounded-[20px] border border-[#d8e7f4] bg-[#f8fbff] px-4 py-4 text-sm leading-6 text-[#40556c] sm:rounded-[22px] sm:px-5">
                 These preferences are saved against your user profile and used later during transaction creation. They do not change the underlying organisation connection.
               </div>
             </div>
           </ProfileBand>
         ) : null}
 
-        <ProfileBand>
-          <ProfileSectionHeader
-            eyebrow="Areas of Expertise"
-            title="What this organisation is known for"
-            description="Bridge keeps this lightweight now, but the structure can expand into deeper partner intelligence later."
-          />
-          <div className="px-5 py-5 sm:px-6">
-            <div className="flex flex-wrap gap-2">
-              {(selectedPartner?.specialties || activeAreas || []).length ? (
-                [...new Set([...(selectedPartner?.specialties || []), ...activeAreas])].slice(0, 12).map((item) => (
-                  <ProfileTag key={item}>{item}</ProfileTag>
-                ))
-              ) : (
-                <ProfileTag muted>Expertise not published yet</ProfileTag>
-              )}
-            </div>
-          </div>
-        </ProfileBand>
-
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
           <ProfileBand ref={updatesRef}>
             <ProfileSectionHeader
-              eyebrow="Partner Updates"
-              title="Future-ready organisation updates"
-              description="No updates are published yet. This space is reserved for announcements, service updates, and organisation news."
+              eyebrow="Client Reviews"
+              title="Coming soon"
+              description="This section will later hold client reviews, testimonials, and partner feedback."
             />
             <div className="px-5 py-5 sm:px-6">
               <PremiumEmptyState
-                title="No updates published yet."
-                description="Future announcements, service updates, market insights and organisation news will appear here."
+                title="Client reviews are coming soon."
+                description="We’ll use this space later for testimonials, service feedback, and trusted relationship signals."
               />
             </div>
           </ProfileBand>
@@ -850,7 +975,7 @@ function PartnerOrganisationProfilePage({
               />
               <div className="space-y-3 px-5 py-5 sm:px-6">
                 {relatedOrganisations.map((item) => (
-                  <div key={item.id} className="rounded-[24px] border border-[#e4ebf4] bg-white p-4">
+                  <div key={item.id} className="rounded-[20px] border border-[#e4ebf4] bg-white p-4 sm:rounded-[22px]">
                     <div className="flex items-start gap-3">
                       <OrganisationAvatar organisation={item.partner || { name: item.label }} size="md" />
                       <div className="min-w-0 flex-1">
@@ -889,7 +1014,7 @@ function PartnerCard({
 
   return (
     <article
-      className={`rounded-[8px] border p-4 transition ${
+      className={`rounded-[18px] border p-4 transition sm:rounded-[20px] sm:p-5 lg:rounded-[22px] ${
         selected
           ? 'border-[#9ebcda] bg-[#f7fbff] shadow-[0_14px_30px_rgba(31,79,120,0.12)]'
           : 'border-[#dbe5f0] bg-white'
@@ -957,7 +1082,7 @@ function ProfilePanel({
 }) {
   if (!isOpen) {
     return (
-      <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+      <aside className="rounded-[18px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)] sm:rounded-[20px] lg:rounded-[22px]">
         <p className="text-sm font-semibold text-[#10243a]">Select an organisation</p>
         <p className="mt-2 text-sm leading-6 text-[#60758d]">Choose a partner to open the profile panel. This view shows the relationship, visible operational people, and preferred partner placeholders without leaving the page.</p>
       </aside>
@@ -966,7 +1091,7 @@ function ProfilePanel({
 
   if (!partner) {
     return (
-      <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+      <aside className="rounded-[18px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)] sm:rounded-[20px] lg:rounded-[22px]">
         <p className="text-sm font-semibold text-[#10243a]">Partner unavailable</p>
         <p className="mt-2 text-sm leading-6 text-[#60758d]">This organisation is no longer available in the current partner snapshot.</p>
       </aside>
@@ -990,7 +1115,7 @@ function ProfilePanel({
     .filter(Boolean)
 
   return (
-    <aside className="rounded-[8px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)] xl:sticky xl:top-4">
+    <aside className="rounded-[18px] border border-[#dbe5f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.05)] sm:rounded-[20px] lg:rounded-[22px] xl:sticky xl:top-4">
       <div className="flex items-start gap-3">
         <PartnerLogo partner={partner} />
         <div>
@@ -1415,6 +1540,9 @@ export default function PartnersPage() {
   const [savingRoutingRoleKeys, setSavingRoutingRoleKeys] = useState(() => new Set())
   const [partnerPeopleByRelationshipId, setPartnerPeopleByRelationshipId] = useState({})
   const [partnerPeopleMetaByRelationshipId, setPartnerPeopleMetaByRelationshipId] = useState({})
+  const [partnerListingsByRelationshipId, setPartnerListingsByRelationshipId] = useState({})
+  const [partnerListingsMetaByRelationshipId, setPartnerListingsMetaByRelationshipId] = useState({})
+  const [selectedVisiblePersonId, setSelectedVisiblePersonId] = useState('')
   const connectingPartnerIdsRef = useRef(new Set())
   const profilePanelRef = useRef(null)
 
@@ -1791,6 +1919,41 @@ export default function PartnersPage() {
     () => partnerPeopleMetaByRelationshipId[normalizeText(selectedRelationship?.id || selectedPartner?.id || '')] || null,
     [partnerPeopleMetaByRelationshipId, selectedPartner?.id, selectedRelationship?.id],
   )
+  const selectedPartnerProfileContent = useMemo(() => getPartnerProfileContent(selectedPartner), [selectedPartner])
+  const selectedPartnerAboutCompany = selectedPartnerProfileContent.aboutCompany || buildPartnerOverviewCopy(selectedPartner)
+  const selectedPartnerServiceDelivery = selectedPartnerProfileContent.serviceDelivery || buildPartnerServiceDeliveryCopy(selectedPartner)
+  const selectedVisiblePerson = useMemo(() => {
+    if (!selectedVisiblePersonId) {
+      return selectedPartnerPeople[0] || null
+    }
+    return selectedPartnerPeople.find((person) => normalizeText(person.userId || person.id) === normalizeText(selectedVisiblePersonId)) || selectedPartnerPeople[0] || null
+  }, [selectedPartnerPeople, selectedVisiblePersonId])
+  const relationshipListingsCacheKey = normalizeText(selectedRelationship?.id || selectedPartner?.id || '')
+  const selectedPartnerListings = useMemo(
+    () => partnerListingsByRelationshipId[relationshipListingsCacheKey] || [],
+    [partnerListingsByRelationshipId, relationshipListingsCacheKey],
+  )
+  const selectedPartnerListingsMeta = useMemo(
+    () => partnerListingsMetaByRelationshipId[relationshipListingsCacheKey] || null,
+    [partnerListingsMetaByRelationshipId, relationshipListingsCacheKey],
+  )
+  const selectedVisiblePersonRole = normalizeLower(selectedVisiblePerson?.role || selectedVisiblePerson?.organisationRole || selectedVisiblePerson?.title)
+  const selectedVisiblePersonListings = useMemo(() => {
+    const activePersonName = normalizeLower(selectedVisiblePerson?.label || selectedVisiblePerson?.fullName || selectedVisiblePerson?.name)
+    if (!activePersonName) return selectedPartnerListings
+    const filtered = selectedPartnerListings.filter((listing) => {
+      const listingAgentName = normalizeLower(listing.agentName)
+      if (!listingAgentName) return false
+      return listingAgentName.includes(activePersonName) || activePersonName.includes(listingAgentName)
+    })
+    return filtered.length ? filtered : selectedPartnerListings
+  }, [selectedPartnerListings, selectedVisiblePerson?.fullName, selectedVisiblePerson?.label, selectedVisiblePerson?.name])
+  const shouldShowCurrentListings = Boolean(selectedVisiblePerson) && (
+    getPartnerProfileKind(selectedPartner?.type) === 'agency' ||
+    selectedVisiblePersonRole.includes('agent') ||
+    Boolean(selectedPartnerListingsMeta?.loading) ||
+    selectedPartnerListings.length > 0
+  )
   const isPartnerProfilePage = Boolean(normalizeText(partnerId)) && !isBondPartnersRoute
 
   async function handleInvite(event) {
@@ -2121,6 +2284,53 @@ export default function PartnersPage() {
     }
   }, [partnerPeopleByRelationshipId])
 
+  const ensurePartnerListings = useCallback(async (relationshipId = '') => {
+    const safeRelationshipId = normalizeText(relationshipId)
+    if (!safeRelationshipId) return []
+    const existing = partnerListingsByRelationshipId[safeRelationshipId]
+    if (Array.isArray(existing)) return existing
+
+    try {
+      setPartnerListingsMetaByRelationshipId((previous) => ({
+        ...previous,
+        [safeRelationshipId]: {
+          ...(previous[safeRelationshipId] || {}),
+          loading: true,
+          message: '',
+        },
+      }))
+      const payload = await getBondPartnerListings(safeRelationshipId)
+      const listings = Array.isArray(payload?.listings) ? payload.listings : []
+      setPartnerListingsByRelationshipId((previous) => ({
+        ...previous,
+        [safeRelationshipId]: listings,
+      }))
+      setPartnerListingsMetaByRelationshipId((previous) => ({
+        ...previous,
+        [safeRelationshipId]: {
+          loading: false,
+          message: '',
+          source: 'current_listings',
+        },
+      }))
+      return listings
+    } catch (listingsError) {
+      setPartnerListingsByRelationshipId((previous) => ({
+        ...previous,
+        [safeRelationshipId]: [],
+      }))
+      setPartnerListingsMetaByRelationshipId((previous) => ({
+        ...previous,
+        [safeRelationshipId]: {
+          loading: false,
+          message: normalizeText(listingsError?.message) || 'No current listings are visible for this connection yet.',
+          source: 'empty',
+        },
+      }))
+      return []
+    }
+  }, [partnerListingsByRelationshipId])
+
   useEffect(() => {
     if (!profilePanelOpen) return
     const relationshipId = normalizeText(selectedRelationship?.id || '')
@@ -2130,6 +2340,25 @@ export default function PartnersPage() {
     void ensurePartnerPeople(organisationTargetId, relationshipId)
   }, [ensurePartnerPeople, partnerPeopleByRelationshipId, partnerPeopleMetaByRelationshipId, profilePanelOpen, selectedPartner?.id, selectedRelationship?.id])
 
+  useEffect(() => {
+    if (!profilePanelOpen) return
+    const relationshipId = normalizeText(selectedRelationship?.id || '')
+    if (!relationshipId || partnerListingsMetaByRelationshipId[relationshipId]?.loading || Array.isArray(partnerListingsByRelationshipId[relationshipId])) return
+    void ensurePartnerListings(relationshipId)
+  }, [ensurePartnerListings, partnerListingsByRelationshipId, partnerListingsMetaByRelationshipId, profilePanelOpen, selectedRelationship?.id])
+
+  useEffect(() => {
+    if (!selectedPartnerPeople.length) {
+      setSelectedVisiblePersonId('')
+      return
+    }
+    const currentId = normalizeText(selectedVisiblePersonId)
+    const currentExists = selectedPartnerPeople.some((person) => normalizeText(person.userId || person.id) === currentId)
+    if (currentExists) return
+    const defaultPerson = selectedPartnerPeople.find((person) => normalizeLower(person.role || person.organisationRole || person.title).includes('agent')) || selectedPartnerPeople[0]
+    setSelectedVisiblePersonId(normalizeText(defaultPerson?.userId || defaultPerson?.id))
+  }, [selectedPartnerPeople, selectedVisiblePersonId])
+
   if (isPartnerProfilePage) {
     return (
       <PartnerOrganisationProfilePage
@@ -2137,6 +2366,8 @@ export default function PartnersPage() {
         workspace={workspace}
         selectedPartner={selectedPartner}
         selectedRelationship={selectedRelationship}
+        partnerAboutCompany={selectedPartnerAboutCompany}
+        partnerServiceDelivery={selectedPartnerServiceDelivery}
         partnerPeople={selectedPartnerPeople}
         partnerPeopleMessage={selectedPartnerPeopleMeta?.message || ''}
         partnerPeopleLoading={Boolean(selectedPartnerPeopleMeta?.loading || (!selectedPartnerPeopleMeta && !selectedPartnerPeople.length && !loading && !error))}
@@ -2144,6 +2375,11 @@ export default function PartnersPage() {
         routingSelectionValues={routingSelectionValues}
         routingSavingRoleKeys={savingRoutingRoleKeys}
         onSelectRoutingPreference={(roleType, targetUserId) => saveOperationalRoutingPreference(selectedRelationship, roleType, targetUserId)}
+        selectedVisiblePerson={selectedVisiblePerson}
+        selectedVisiblePersonListings={selectedVisiblePersonListings}
+        selectedPartnerListingsMeta={selectedPartnerListingsMeta}
+        shouldShowCurrentListings={shouldShowCurrentListings}
+        onSelectVisiblePerson={setSelectedVisiblePersonId}
         snapshot={snapshot}
         message={message}
         error={error}
