@@ -60,7 +60,11 @@ test('resolves natural person purchase mode separately from legal branch', () =>
   assert.equal(flow.purchaser_branch, 'individual')
   assert.equal(flow.purchase_mode, 'co_purchasing')
   assert.equal(flow.finance_branch, 'cash')
-  assertIncludes(asSet(flow.required_fields), ['buyer.person.first_name', 'buyer.person.last_name', 'buyer.co_purchasers[].first_name'], 'co-purchasing required fields')
+  assertIncludes(
+    asSet(flow.required_fields),
+    ['buyer.person.first_name', 'buyer.person.last_name', 'buyer.co_purchasers[].first_name', 'buyer.co_purchasers[].ownership_share'],
+    'co-purchasing required fields',
+  )
   assertIncludes(asSet(flow.document_triggers), ['co_purchaser_id_document', 'co_purchaser_proof_of_address', 'proof_of_funds'], 'co-purchasing document triggers')
   assertNoDuplicates(flow.visible_fields, 'co-purchasing visible fields')
   assert.equal(flow.branch_summary.purchase_mode.key, 'co_purchasing')

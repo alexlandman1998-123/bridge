@@ -1306,6 +1306,7 @@ function DocumentOutlinePanel({
   validationByKey = {},
   editorAvailable = false,
   onSwitchToEditor = null,
+  mergeSummary = null,
 }) {
   const fallbackSections = ['Parties', 'Property Details', 'Purchase Terms', 'Suspensive Conditions', 'Special Conditions', 'Signatures']
   const outlineSections = Array.isArray(sections) && sections.length
@@ -1321,7 +1322,7 @@ function DocumentOutlinePanel({
     : fallbackSections
       .map((label) => ({ key: label, label, custom: false, required: true, content: '' }))
   return (
-    <section className="rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+    <section className="flex h-full min-h-[760px] flex-col rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h4 className="text-[1rem] font-semibold text-[#102033]">Document Outline</h4>
@@ -1338,7 +1339,7 @@ function DocumentOutlinePanel({
         ) : null}
       </div>
 
-      <ul className="mt-5 space-y-1.5">
+      <ul className="mt-5 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
         {outlineSections.map((item, index) => {
           const validation = validationByKey?.[item.key] || { blockers: [], warnings: [] }
           const hasContent = normalizeText(item.content).length >= 8
@@ -1417,7 +1418,57 @@ function DocumentOutlinePanel({
           </div>
         </div>
       ) : null}
+
+      {mergeSummary ? (
+        <div className="mt-5 border-t border-[#edf3fa] pt-5">
+          {mergeSummary}
+        </div>
+      ) : null}
     </section>
+  )
+}
+
+function MergeChecklistSummary({ packetType = 'mandate', placeholders = {}, onOpen = null }) {
+  const { rows, unknownKeys } = buildMergeChecklistRows({ packetType, placeholders })
+  const resolvedCount = rows.filter((row) => row.value).length
+  const unresolvedCount = rows.filter((row) => !row.value).length
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-[0.95rem] font-semibold text-[#102033]">Merge Fields</h4>
+          <p className="mt-1 text-xs text-[#6b7c93]">Resolved from onboarding, transaction, and packet context.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onOpen?.()}
+          className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c7d8eb] hover:bg-white"
+        >
+          View details
+        </button>
+      </div>
+      <div className="mt-4 rounded-[18px] border border-[#edf3fa] bg-[#f8fbff] px-4 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[1.1rem] font-semibold text-[#102033]">{resolvedCount}/{rows.length} resolved</p>
+            <p className="mt-1 text-sm text-[#6b7c93]">
+              {unresolvedCount ? `${unresolvedCount} unresolved field${unresolvedCount === 1 ? '' : 's'}` : 'All tracked fields are resolved'}
+            </p>
+          </div>
+          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+            unresolvedCount ? 'border-[#f7debb] bg-[#fff8ed] text-[#b57a1d]' : 'border-[#d8f0e3] bg-[#effaf4] text-[#20b26b]'
+          }`}>
+            {unresolvedCount ? 'Needs review' : 'Ready'}
+          </span>
+        </div>
+        {unknownKeys.length ? (
+          <p className="mt-3 text-xs text-[#6b7c93]">
+            {unknownKeys.length} unmapped field{unknownKeys.length === 1 ? '' : 's'} still need template review.
+          </p>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
@@ -4620,9 +4671,9 @@ export default function LegalDocumentWorkspace({
   const contentClassName = isPageMode
     ? 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-5 sm:px-6 sm:pb-24 sm:pt-6'
     : 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-4 sm:px-5 sm:pb-24 sm:pt-5'
-  const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(640px,calc(100vh-22rem),880px)]'
-  const mainGridClassName = `grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[320px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
-  const secondaryGridClassName = 'mt-6 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]'
+  const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(720px,calc(100vh-20rem),900px)]'
+  const mainGridClassName = `grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[340px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
+  const secondaryGridClassName = 'mt-5 grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]'
 
   return (
     <>
@@ -4859,7 +4910,7 @@ export default function LegalDocumentWorkspace({
 
             <div className={mainGridClassName}>
               <div className="xl:flex xl:h-full xl:min-h-0 xl:flex-col">
-                <div className="space-y-5 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-1">
+                <div className="xl:min-h-0 xl:flex-1">
                   <DocumentOutlinePanel
                     sections={editableSections}
                     activeSectionKey={activeSectionKey}
@@ -4872,17 +4923,18 @@ export default function LegalDocumentWorkspace({
                     validationByKey={editableSectionsValidation}
                     editorAvailable={editableAllowed}
                     onSwitchToEditor={() => setCenterTab('editor')}
-                  />
-                  <MergeChecklistPanel
-                    packetType={packetType}
-                    placeholders={latestVersion?.placeholders_resolved_json || {}}
-                    compact
-                    onOpen={() => setMergeDetailsOpen(true)}
+                    mergeSummary={(
+                      <MergeChecklistSummary
+                        packetType={packetType}
+                        placeholders={latestVersion?.placeholders_resolved_json || {}}
+                        onOpen={() => setMergeDetailsOpen(true)}
+                      />
+                    )}
                   />
                 </div>
               </div>
 
-              <section className="min-h-[760px] rounded-[28px] border border-[#e5edf7] bg-white p-5 shadow-[0_18px_48px_rgba(16,32,51,0.06)] sm:p-6 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
+              <section className="min-h-[760px] rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_18px_48px_rgba(16,32,51,0.06)] sm:p-6 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="text-[1.15rem] font-semibold text-[#102033]">

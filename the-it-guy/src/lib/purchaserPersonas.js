@@ -185,6 +185,8 @@ const STRUCTURED_PURCHASER_KEYS = [
   'spouse_email',
   'spouse_phone',
   'spouse_is_co_purchaser',
+  'ownership_share',
+  'consent_to_purchase',
   'employment_type',
   'employer_name',
   'job_title',
@@ -272,6 +274,58 @@ function getLegacyPurchaserEntry(formData = {}, prefix = '') {
   legacy.spouse_id_number = formData[`${prefix}spouse_id_number`]
   legacy.residential_address = formData[`${prefix}residential_address`]
   return normalizePurchaserEntry(legacy)
+}
+
+function readStructuredPath(source, path) {
+  const parts = String(path || '').split('.').filter(Boolean)
+  let current = source
+  for (const part of parts) {
+    if (current === null || current === undefined) {
+      return undefined
+    }
+    current = current[part]
+  }
+  return current
+}
+
+function getStructuredCollectionEntries(formData = {}, collectionKey = '') {
+  const nested = readStructuredPath(formData, collectionKey)
+  if (Array.isArray(nested)) {
+    return nested
+  }
+  const rootLevel = formData?.[collectionKey]
+  if (Array.isArray(rootLevel)) {
+    return rootLevel
+  }
+  return []
+}
+
+function normalizeAssociatedPersonEntry(entry = {}, defaultRole = 'Director') {
+  return {
+    full_name: entry?.full_name ?? '',
+    id_number: entry?.id_number ?? entry?.identity_number ?? entry?.passport_number ?? '',
+    phone: entry?.phone ?? '',
+    email: entry?.email ?? '',
+    residential_address: entry?.residential_address ?? '',
+    role_title: entry?.role_title ?? defaultRole,
+    signing_authority: normalizeYesNoChoice(entry?.signing_authority),
+  }
+}
+
+function normalizeAssociatedPeopleCollection(entries = [], defaultRole = 'Director') {
+  if (!Array.isArray(entries)) {
+    return []
+  }
+
+  return entries.map((entry) => normalizeAssociatedPersonEntry(entry, defaultRole))
+}
+
+function hasAssociatedPersonEntryData(entry = {}, defaultRole = 'Director') {
+  return (
+    ['full_name', 'id_number', 'phone', 'email', 'residential_address'].some((key) => isFilledValue(entry?.[key])) ||
+    (isFilledValue(entry?.role_title) && String(entry?.role_title).trim().toLowerCase() !== String(defaultRole).trim().toLowerCase()) ||
+    normalizeYesNoChoice(entry?.signing_authority) !== ''
+  )
 }
 
 function resolveStructuredPurchasers(formData = {}, purchaserType = 'individual') {
@@ -1065,7 +1119,8 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
         },
       ]
     case 'trust': {
-      const trusteeCount = Math.max((values.trustees || []).length, 1)
+      const trustees = getStructuredCollectionEntries(values, 'trust.trustees')
+      const trusteeCount = Math.max(trustees.length, 1)
       return [
         {
           key: 'trust_deed',
@@ -1100,7 +1155,8 @@ function getPurchaserDocumentDefinitions(purchaserType, values = {}) {
       ]
     }
     case 'company': {
-      const directorCount = Math.max((values.directors || []).length, 1)
+      const directors = getStructuredCollectionEntries(values, 'company.directors')
+      const directorCount = Math.max(directors.length, 1)
       return [
         {
           key: 'cipc_registration',
@@ -1555,8 +1611,21 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const bondAmount = normalizeNumber(formData.bond_amount ?? transaction?.bond_amount)
   const depositAmount = normalizeNumber(formData.deposit_amount ?? transaction?.deposit_amount)
   const reservationRequired = isYes(formData.reservation_required) || formData.reservation_required === true || Boolean(transaction?.reservation_required)
-  const trustees = Array.isArray(formData.trustees) ? formData.trustees.filter((item) => isFilledValue(item)) : []
-  const directors = Array.isArray(formData.directors) ? formData.directors.filter((item) => isFilledValue(item)) : []
+  const rawTrustees = getStructuredCollectionEntries(formData, 'trust.trustees').length
+    ? getStructuredCollectionEntries(formData, 'trust.trustees')
+    : formData.trustees || []
+  const rawDirectors = getStructuredCollectionEntries(formData, 'company.directors').length
+    ? getStructuredCollectionEntries(formData, 'company.directors')
+    : formData.directors || []
+  const purchaserSnapshot = resolveStructuredPurchasers(formData, purchaserType)
+  const trustees = normalizeAssociatedPeopleCollection(
+    rawTrustees.filter((item) => hasAssociatedPersonEntryData(item, 'Trustee')),
+    'Trustee',
+  )
+  const directors = normalizeAssociatedPeopleCollection(
+    rawDirectors.filter((item) => hasAssociatedPersonEntryData(item, 'Director')),
+    'Director',
+  )
   const fundingSources = Array.isArray(formData.funding_sources) ? formData.funding_sources.filter((item) => isFilledValue(item)) : []
   const employmentType = normalizeEmploymentType(formData.employment_type)
   const parties = []
@@ -1598,13 +1667,24 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
 
   if (purchaserType === 'trust' && formData.trust_name) {
     parties.push(buildParty({ role: 'trust_entity', name: formData.trust_name, type: 'entity', purchaser: true }))
+    if (formData.authorised_trustee_name) {
+      parties.push(
+        buildParty({
+          role: 'authorised_trustee',
+          name: formData.authorised_trustee_name,
+          purchaser: false,
+          signatory: true,
+          relationship: 'trustee',
+        }),
+      )
+    }
     trustees.forEach((item) => {
       parties.push(
         buildParty({
-          role: item.signing_authority ? 'authorised_trustee' : 'trustee',
+          role: isYes(item.signing_authority) ? 'authorised_trustee' : 'trustee',
           name: item.full_name,
           purchaser: false,
-          signatory: Boolean(item.signing_authority),
+          signatory: isYes(item.signing_authority),
           relationship: 'trustee',
         }),
       )
@@ -1613,13 +1693,24 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
 
   if (purchaserType === 'company' && formData.company_name) {
     parties.push(buildParty({ role: 'company_entity', name: formData.company_name, type: 'entity', purchaser: true }))
+    if (formData.authorised_signatory_name) {
+      parties.push(
+        buildParty({
+          role: 'authorised_signatory',
+          name: formData.authorised_signatory_name,
+          purchaser: false,
+          signatory: true,
+          relationship: 'company_signatory',
+        }),
+      )
+    }
     directors.forEach((item) => {
       parties.push(
         buildParty({
-          role: item.signing_authority ? 'authorised_director' : 'director',
+          role: isYes(item.signing_authority) ? 'authorised_director' : 'director',
           name: item.full_name,
           purchaser: false,
-          signatory: Boolean(item.signing_authority),
+          signatory: isYes(item.signing_authority),
           relationship: 'director',
         }),
       )
@@ -1631,10 +1722,12 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const naturalPersonPurchase = isNaturalPersonPurchaserType(purchaserType)
   const employmentComplexityScore = EMPLOYMENT_COMPLEXITY_SCORE[employmentType] || null
   const bondOriginatorRequired = hasBondComponent && (isYes(formData.ooba_assist_requested) || isYes(formData.bond_process_started))
+  const companySignatoryCount = purchaserType === 'company' ? (isFilledValue(formData.authorised_signatory_name) ? 1 : 0) + directors.filter((item) => isYes(item.signing_authority)).length : 0
+  const trustSignatoryCount = purchaserType === 'trust' ? (isFilledValue(formData.authorised_trustee_name) ? 1 : 0) + trustees.filter((item) => isYes(item.signing_authority)).length : 0
   const multipleSignatories =
     purchaserType === 'married_coc' ||
-    (purchaserType === 'trust' && trustees.filter((item) => item.signing_authority).length > 1) ||
-    (purchaserType === 'company' && directors.filter((item) => item.signing_authority).length > 1)
+    (purchaserType === 'trust' && trustSignatoryCount > 1) ||
+    (purchaserType === 'company' && companySignatoryCount > 1)
 
   const flags = uniqueByKey(
     [
@@ -1701,6 +1794,16 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
       : []),
     ...(purchaserType === 'trust' ? [`Trustees captured: ${trustees.length || 0}`] : []),
     ...(purchaserType === 'company' ? [`Directors captured: ${directors.length || 0}`] : []),
+    ...(isNaturalPersonPurchaserType(purchaserType) && flow.purchase_mode === 'co_purchasing'
+      ? [
+          `Ownership split: ${
+            purchaserSnapshot.purchasers
+              .map((item) => String(item.ownership_share ?? '').trim())
+              .filter(Boolean)
+              .join(' / ') || 'Pending'
+          }`,
+        ]
+      : []),
     ...(isYes(formData.ooba_assist_requested) ? ['OOBA assistance requested: Yes'] : []),
     `Required document sets: ${[...new Set(requiredDocuments.map((item) => item.groupLabel))].join(', ')}`,
     `Finance workflow: ${workflows.finance.enabled ? 'Enabled' : 'Skipped'}`,
@@ -1830,7 +1933,7 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     validatePhone(value, label)
   }
 
-  function validateNaturalPurchaser(purchaser, index) {
+  function validateNaturalPurchaser(purchaser, index, purchaseMode = 'individual') {
     const buyerLabel = index === 0 ? 'Purchaser 1' : 'Purchaser 2'
     requireField(purchaser.first_name, `${buyerLabel} First Name`)
     requireField(purchaser.last_name, `${buyerLabel} Surname`)
@@ -1853,7 +1956,9 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     requireField(purchaser.city, `${buyerLabel} City`)
     requireField(purchaser.postal_code, `${buyerLabel} Postal Code`)
     requireField(purchaser.marital_status, `${buyerLabel} Marital Status`)
-    requireField(purchaser.marital_regime, `${buyerLabel} Marital Regime`)
+    if (String(purchaser.marital_status || '').trim().toLowerCase() === 'married') {
+      requireField(purchaser.marital_regime, `${buyerLabel} Marital Regime`)
+    }
 
     if (String(purchaser.marital_status || '').trim().toLowerCase() === 'married') {
       requireField(purchaser.spouse_full_name, `${buyerLabel} Spouse Full Name`)
@@ -1901,6 +2006,18 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     requireYesNo(purchaser.under_administration, `${buyerLabel} Administration Declaration`)
     requireYesNo(purchaser.ever_declared_insolvent, `${buyerLabel} Insolvency Declaration`)
     requireYesNo(purchaser.surety_obligations, `${buyerLabel} Surety Obligations Declaration`)
+
+    if (purchaseMode === 'co_purchasing') {
+      requireField(purchaser.ownership_share, `${buyerLabel} Ownership Share`)
+      const ownershipShare = normalizeNumber(purchaser.ownership_share)
+      if (!Number.isFinite(ownershipShare)) {
+        throw new Error(`${buyerLabel} Ownership Share must be a valid number.`)
+      }
+      if (ownershipShare <= 0 || ownershipShare > 100) {
+        throw new Error(`${buyerLabel} Ownership Share must be between 1 and 100.`)
+      }
+      requireYesNo(purchaser.consent_to_purchase, `${buyerLabel} Consent to Purchase`)
+    }
   }
 
   if (isNaturalPersonPurchaserType(purchaserType)) {
@@ -1913,12 +2030,23 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
       throw new Error('Purchaser details are required.')
     }
 
-    validateNaturalPurchaser(purchaserSnapshot.purchasers[0], 0)
+    validateNaturalPurchaser(purchaserSnapshot.purchasers[0], 0, resolvedPurchaseMode)
     if (resolvedPurchaseMode === 'co_purchasing') {
       if (purchaserSnapshot.purchasers.length < 2) {
         throw new Error('Purchaser 2 details are required for co-purchasing.')
       }
-      validateNaturalPurchaser(purchaserSnapshot.purchasers[1], 1)
+      validateNaturalPurchaser(purchaserSnapshot.purchasers[1], 1, resolvedPurchaseMode)
+      const ownershipShares = purchaserSnapshot.purchasers.map((purchaser, purchaserIndex) => {
+        const parsedShare = normalizeNumber(purchaser.ownership_share)
+        if (!Number.isFinite(parsedShare)) {
+          throw new Error(`Purchaser ${purchaserIndex + 1} Ownership Share must be a valid number.`)
+        }
+        return parsedShare
+      })
+      const ownershipShareTotal = ownershipShares.reduce((total, share) => total + share, 0)
+      if (Math.abs(ownershipShareTotal - 100) > 0.5) {
+        throw new Error('Ownership shares must add up to 100%.')
+      }
     }
   } else if (purchaserType === 'company') {
     const company = {}
@@ -1932,6 +2060,21 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     validateEmailIfPresent(company.authorised_signatory_email, 'Authorised Signatory Email')
     validatePhoneIfPresent(company.authorised_signatory_phone, 'Authorised Signatory Phone')
     validateIdLike(company.authorised_signatory_identity_number, 'Authorised Signatory ID Number')
+    const companyDirectors = getStructuredCollectionEntries(formData, 'company.directors').length
+      ? getStructuredCollectionEntries(formData, 'company.directors')
+      : formData.directors || []
+    companyDirectors.forEach((director, directorIndex) => {
+      if (!hasAssociatedPersonEntryData(director, 'Director')) {
+        return
+      }
+      requireField(director.full_name, `Director ${directorIndex + 1} Full Name`)
+      requireField(director.id_number, `Director ${directorIndex + 1} ID Number`)
+      validateIdLike(director.id_number, `Director ${directorIndex + 1} ID Number`)
+      requireField(director.phone, `Director ${directorIndex + 1} Phone`)
+      validatePhoneIfPresent(director.phone, `Director ${directorIndex + 1} Phone`)
+      validateEmailIfPresent(director.email, `Director ${directorIndex + 1} Email`)
+      requireField(director.residential_address, `Director ${directorIndex + 1} Residential Address`)
+    })
   } else if (purchaserType === 'trust') {
     const trust = {}
     TRUST_VALIDATION_KEYS.forEach((key) => {
@@ -1945,6 +2088,21 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     validatePhoneIfPresent(trust.authorised_trustee_phone, 'Authorised Trustee Phone')
     validateIdLike(trust.authorised_trustee_identity_number, 'Authorised Trustee ID Number')
     requireYesNo(trust.trust_resolution_available, 'Trust Resolution Available')
+    const trustTrustees = getStructuredCollectionEntries(formData, 'trust.trustees').length
+      ? getStructuredCollectionEntries(formData, 'trust.trustees')
+      : formData.trustees || []
+    trustTrustees.forEach((trustee, trusteeIndex) => {
+      if (!hasAssociatedPersonEntryData(trustee, 'Trustee')) {
+        return
+      }
+      requireField(trustee.full_name, `Trustee ${trusteeIndex + 1} Full Name`)
+      requireField(trustee.id_number, `Trustee ${trusteeIndex + 1} ID Number`)
+      validateIdLike(trustee.id_number, `Trustee ${trusteeIndex + 1} ID Number`)
+      requireField(trustee.phone, `Trustee ${trusteeIndex + 1} Phone`)
+      validatePhoneIfPresent(trustee.phone, `Trustee ${trusteeIndex + 1} Phone`)
+      validateEmailIfPresent(trustee.email, `Trustee ${trusteeIndex + 1} Email`)
+      requireField(trustee.residential_address, `Trustee ${trusteeIndex + 1} Residential Address`)
+    })
   }
 
   const purchasePrice = normalizeNumber(finance.purchase_price)

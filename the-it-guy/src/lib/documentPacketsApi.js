@@ -1790,7 +1790,7 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
   if (organisationBrandingTableAvailable) {
     const brandingResult = await client
       .from('organisation_branding')
-      .select('organisation_id, logo_light_url, logo_dark_url, logo_high_contrast_url')
+      .select('organisation_id, logo_light_url, logo_dark_url')
       .eq('organisation_id', context.organisationId)
       .maybeSingle()
 

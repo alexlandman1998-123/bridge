@@ -37,7 +37,6 @@ const NATURAL_PERSON_BASE_RULES = Object.freeze({
     'buyer.person.postal_address.city',
     'buyer.person.postal_address.postal_code',
     'buyer.person.marital_status',
-    'buyer.person.marital_regime',
     'buyer.person.occupation',
     'buyer.person.income_source',
     'buyer.person.number_of_dependants',
@@ -61,7 +60,6 @@ const NATURAL_PERSON_BASE_RULES = Object.freeze({
     'buyer.person.residential_address.city',
     'buyer.person.residential_address.postal_code',
     'buyer.person.marital_status',
-    'buyer.person.marital_regime',
     'buyer.person.number_of_dependants',
     'buyer.person.monthly_credit_commitments',
     'buyer.person.first_time_buyer',
@@ -125,12 +123,12 @@ const PURCHASE_MODE_RULES = Object.freeze({
       'buyer.co_purchasers[].identity_number_or_passport_number',
       'buyer.co_purchasers[].email',
       'buyer.co_purchasers[].phone',
+      'buyer.co_purchasers[].ownership_share',
       'buyer.co_purchasers[].consent_to_purchase',
     ]),
     optionalFields: Object.freeze([
       'buyer.co_purchasers[].residential_address',
       'buyer.co_purchasers[].passport_number',
-      'buyer.co_purchasers[].ownership_share',
     ]),
     internalDerivedFacts: Object.freeze([
       'buyer.purchase_mode',
@@ -180,6 +178,7 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
     requiredFields: Object.freeze([
       'buyer.person.spouse_full_name',
       'buyer.person.spouse_identity_number',
+      'buyer.person.marital_regime',
       'buyer.person.spouse_email',
       'buyer.person.spouse_phone',
     ]),
@@ -217,6 +216,7 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
     requiredFields: Object.freeze([
       'buyer.person.spouse_full_name',
       'buyer.person.spouse_identity_number',
+      'buyer.person.marital_regime',
       'buyer.person.spouse_is_co_purchaser',
       'buyer.person.anc_available',
     ]),
@@ -255,6 +255,7 @@ const PURCHASER_BRANCH_RULES = Object.freeze({
     requiredFields: Object.freeze([
       'buyer.person.spouse_full_name',
       'buyer.person.spouse_identity_number',
+      'buyer.person.marital_regime',
       'buyer.person.spouse_is_co_purchaser',
       'buyer.person.anc_available',
     ]),

@@ -2,6 +2,8 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Plus,
+  Trash2,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
@@ -130,6 +132,8 @@ const PURCHASER_STRUCTURED_KEYS = [
   'spouse_email',
   'spouse_phone',
   'spouse_is_co_purchaser',
+  'ownership_share',
+  'consent_to_purchase',
   'employment_type',
   'employer_name',
   'job_title',
@@ -241,10 +245,18 @@ const NATURAL_PURCHASER_SECTIONS = [
   },
   {
     key: 'marital_legal_status',
-    title: 'Marital / Legal Status',
+    title: 'Marital Status',
+    description: 'If you are married, we will only ask for the regime and spouse details that matter.',
     fields: [
       { key: 'marital_status', label: 'Marital Status', type: 'select', required: true, options: MARITAL_STATUS_OPTIONS },
-      { key: 'marital_regime', label: 'Marital Regime', type: 'select', required: true, options: MARITAL_REGIME_OPTIONS },
+      {
+        key: 'marital_regime',
+        label: 'Marital Regime',
+        type: 'select',
+        required: true,
+        options: MARITAL_REGIME_OPTIONS,
+        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+      },
       {
         key: 'spouse_full_name',
         label: 'Spouse Full Name',
@@ -284,6 +296,29 @@ const NATURAL_PURCHASER_SECTIONS = [
         required: true,
         options: YES_NO_OPTIONS,
         visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+      },
+    ],
+  },
+  {
+    key: 'ownership_split',
+    title: 'Ownership Split',
+    description: 'If you are buying with someone else, tell us how the ownership should be split.',
+    fields: [
+      {
+        key: 'ownership_share',
+        label: 'Ownership Share (%)',
+        type: 'number',
+        required: true,
+        placeholder: 'e.g. 50',
+        visibleWhen: ({ purchaseMode }) => purchaseMode === 'co_purchasing',
+      },
+      {
+        key: 'consent_to_purchase',
+        label: 'Consent to Purchase',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+        visibleWhen: ({ purchaseMode }) => purchaseMode === 'co_purchasing',
       },
     ],
   },
@@ -461,6 +496,16 @@ const TRUST_DETAIL_FIELDS = [
   { key: 'authorised_trustee_email', label: 'Authorised Trustee Email', type: 'email', required: true },
   { key: 'authorised_trustee_phone', label: 'Authorised Trustee Phone', type: 'tel', required: true },
   { key: 'trust_resolution_available', label: 'Trust Resolution Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
+]
+
+const ASSOCIATED_PERSON_FIELDS = [
+  { key: 'full_name', label: 'Full Name', type: 'text', required: true, placeholder: 'e.g. Alex Principal' },
+  { key: 'id_number', label: 'ID Number / Passport', type: 'text', required: true, placeholder: 'e.g. 9001015009083' },
+  { key: 'phone', label: 'Contact Number', type: 'tel', required: true, placeholder: '+27 82 000 0000' },
+  { key: 'email', label: 'Email Address', type: 'email', required: false, placeholder: 'name@email.com' },
+  { key: 'residential_address', label: 'Residential Address', type: 'textarea', required: true, fullWidth: true },
+  { key: 'role_title', label: 'Role / Title', type: 'text', required: false, placeholder: 'e.g. Director' },
+  { key: 'signing_authority', label: 'Signing Authority', type: 'select', required: false, options: YES_NO_OPTIONS },
 ]
 
 const FINANCE_DETAIL_FIELDS = [
@@ -718,6 +763,8 @@ function createEmptyPurchaser() {
     spouse_email: '',
     spouse_phone: '',
     spouse_is_co_purchaser: '',
+    ownership_share: '',
+    consent_to_purchase: '',
     employment_type: '',
     employer_name: '',
     job_title: '',
@@ -781,8 +828,42 @@ function createEmptyTrust() {
   }
 }
 
+function createEmptyAssociatedPerson(roleTitle) {
+  return {
+    full_name: '',
+    id_number: '',
+    phone: '',
+    email: '',
+    residential_address: '',
+    role_title: roleTitle,
+    signing_authority: '',
+  }
+}
+
+function normalizeRepeatablePeople(list = [], roleTitle = 'Director') {
+  if (!Array.isArray(list)) {
+    return []
+  }
+
+  return list.map((item) => ({
+    ...createEmptyAssociatedPerson(roleTitle),
+    ...(item || {}),
+    id_number: item?.id_number ?? item?.identity_number ?? item?.passport_number ?? '',
+    signing_authority: normalizeYesNoChoice(item?.signing_authority),
+  }))
+}
+
 function hasPurchaserData(entry = {}) {
   return PURCHASER_STRUCTURED_KEYS.some((key) => normalizeInputValue(entry?.[key]).length > 0)
+}
+
+function hasAssociatedPersonData(entry = {}, defaultRole = 'Director') {
+  return (
+    ['full_name', 'id_number', 'phone', 'email', 'residential_address'].some((key) => normalizeInputValue(entry?.[key]).length > 0) ||
+    (normalizeInputValue(entry?.role_title).length > 0 &&
+      normalizeInputValue(entry?.role_title).toLowerCase() !== String(defaultRole).trim().toLowerCase()) ||
+    normalizeYesNoChoice(entry?.signing_authority) !== ''
+  )
 }
 
 function normalizePurchaserRecord(record = {}) {
@@ -790,6 +871,7 @@ function normalizePurchaserRecord(record = {}) {
   PURCHASER_STRUCTURED_KEYS.forEach((key) => {
     if (
       key === 'spouse_is_co_purchaser' ||
+      key === 'consent_to_purchase' ||
       key === 'first_time_buyer' ||
       key === 'primary_residence' ||
       key === 'investment_purchase' ||
@@ -799,6 +881,10 @@ function normalizePurchaserRecord(record = {}) {
       key === 'surety_obligations'
     ) {
       normalized[key] = normalizeYesNoChoice(record?.[key])
+      return
+    }
+    if (key === 'ownership_share') {
+      normalized[key] = record?.[key] ?? ''
       return
     }
     normalized[key] = record?.[key] ?? ''
@@ -811,6 +897,15 @@ function normalizePurchaserRecord(record = {}) {
 
   if (!normalizeInputValue(normalized.street_address) && normalizeInputValue(record?.residential_address)) {
     normalized.street_address = record.residential_address
+  }
+
+  if (String(normalized.marital_status || '').trim().toLowerCase() !== 'married') {
+    normalized.marital_regime = ''
+    normalized.spouse_full_name = ''
+    normalized.spouse_identity_number = ''
+    normalized.spouse_email = ''
+    normalized.spouse_phone = ''
+    normalized.spouse_is_co_purchaser = ''
   }
 
   return normalized
@@ -870,6 +965,12 @@ function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType
       company[key] = formData[key]
     }
   })
+  const companyDirectors = Array.isArray(company.directors)
+    ? company.directors
+    : Array.isArray(formData.directors)
+      ? formData.directors
+      : []
+  company.directors = normalizeRepeatablePeople(companyDirectors, 'Director')
 
   const trust = {
     ...createEmptyTrust(),
@@ -882,6 +983,12 @@ function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType
     }
   })
   trust.trust_resolution_available = normalizeYesNoChoice(trust.trust_resolution_available)
+  const trustTrustees = Array.isArray(trust.trustees)
+    ? trust.trustees
+    : Array.isArray(formData.trustees)
+      ? formData.trustees
+      : []
+  trust.trustees = normalizeRepeatablePeople(trustTrustees, 'Trustee')
 
   const normalizedFinanceType = normalizeFinanceType(formData.purchase_finance_type || financeType || 'cash')
   const activePurchasers = isNaturalPersonEntityType(purchaserEntityType)
@@ -958,6 +1065,8 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   delete cleaned.purchasers
   delete cleaned.company
   delete cleaned.trust
+  delete cleaned.directors
+  delete cleaned.trustees
 
   if (isNaturalPersonEntityType(purchaserEntityType)) {
     const purchaserCount = naturalMode === 'co_purchasing' ? 2 : 1
@@ -975,6 +1084,8 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
     }
   } else if (purchaserEntityType === 'company') {
     cleaned.company = { ...createEmptyCompany(), ...normalized.company }
+    cleaned.company.directors = Array.isArray(normalized.company.directors) ? normalized.company.directors : []
+    cleaned.directors = cleaned.company.directors
     COMPANY_DETAIL_KEYS.forEach((key) => {
       cleaned[key] = cleaned.company[key] ?? ''
     })
@@ -983,6 +1094,8 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
     })
   } else if (purchaserEntityType === 'trust') {
     cleaned.trust = { ...createEmptyTrust(), ...normalized.trust }
+    cleaned.trust.trustees = Array.isArray(normalized.trust.trustees) ? normalized.trust.trustees : []
+    cleaned.trustees = cleaned.trust.trustees
     TRUST_DETAIL_KEYS.forEach((key) => {
       cleaned[key] = cleaned.trust[key] ?? ''
     })
@@ -1098,6 +1211,8 @@ function ClientOnboarding() {
         },
         company: normalizedDetails.company,
         trust: normalizedDetails.trust,
+        directors: normalizedDetails.company.directors || [],
+        trustees: normalizedDetails.trust.trustees || [],
         purchase_price: transactionPurchasePriceValue,
         purchase_finance_type: initialFinanceType,
         funding_sources: normalizeFundingSources(data.formData?.funding_sources || data.fundingSources || []),
@@ -1209,6 +1324,8 @@ function ClientOnboarding() {
         finance: normalized.finance,
         company: normalized.company,
         trust: normalized.trust,
+        directors: normalized.company.directors || [],
+        trustees: normalized.trust.trustees || [],
       }
     })
   }
@@ -1247,6 +1364,10 @@ function ClientOnboarding() {
     return `${group}.${fieldKey}`
   }
 
+  function collectionFieldPath(group, index, fieldKey) {
+    return `${group}.${index}.${fieldKey}`
+  }
+
   function getVisibleNaturalFieldsForPurchaser(purchaser, purchaserIndex, purchaseMode, financeType, entityType) {
     if (purchaserIndex > 0 && purchaseMode !== 'co_purchasing') {
       return []
@@ -1263,6 +1384,19 @@ function ClientOnboarding() {
           }),
         )
         .map((fieldConfig) => detailFieldPath('purchasers', purchaserIndex, fieldConfig.key)),
+    )
+  }
+
+  function getVisibleRepeatablePeopleFields(items = [], groupKey = '') {
+    return items.flatMap((item, itemIndex) =>
+      ASSOCIATED_PERSON_FIELDS.filter((fieldConfig) =>
+        isDetailFieldVisible(fieldConfig, {
+          item,
+          itemIndex,
+          groupKey,
+          purchaserEntityType,
+        }),
+      ).map((fieldConfig) => collectionFieldPath(groupKey, itemIndex, fieldConfig.key)),
     )
   }
 
@@ -1292,12 +1426,14 @@ function ClientOnboarding() {
       COMPANY_DETAIL_FIELDS.forEach((fieldConfig) => {
         keys.push(detailFieldPath('company', 0, fieldConfig.key))
       })
+      keys.push(...getVisibleRepeatablePeopleFields(details.company.directors || [], 'company.directors'))
     }
 
     if (purchaserEntityType === 'trust') {
       TRUST_DETAIL_FIELDS.forEach((fieldConfig) => {
         keys.push(detailFieldPath('trust', 0, fieldConfig.key))
       })
+      keys.push(...getVisibleRepeatablePeopleFields(details.trust.trustees || [], 'trust.trustees'))
     }
 
     visibleFinanceFields.forEach((fieldConfig) => {
@@ -1386,6 +1522,37 @@ function ClientOnboarding() {
           })
         })
       })
+
+      if (details.naturalPersonPurchaseMode === 'co_purchasing') {
+        let ownershipShareTotal = 0
+        let ownershipShareCount = 0
+
+        details.purchasers.forEach((purchaser, purchaserIndex) => {
+          const sharePath = detailFieldPath('purchasers', purchaserIndex, 'ownership_share')
+          const consentPath = detailFieldPath('purchasers', purchaserIndex, 'consent_to_purchase')
+          requireField(sharePath, `Purchaser ${purchaserIndex + 1} Ownership Share`, purchaser.ownership_share, {
+            type: 'number',
+            required: true,
+          })
+          const numericShare = Number(String(purchaser.ownership_share || '').replace(/[^\d.-]/g, ''))
+          if (!Number.isFinite(numericShare)) {
+            nextErrors[sharePath] = 'Ownership Share must be a valid number.'
+          } else if (numericShare <= 0 || numericShare > 100) {
+            nextErrors[sharePath] = 'Ownership Share must be between 1 and 100.'
+          } else {
+            ownershipShareTotal += numericShare
+            ownershipShareCount += 1
+          }
+          requireField(consentPath, `Purchaser ${purchaserIndex + 1} Consent to Purchase`, purchaser.consent_to_purchase, {
+            type: 'select',
+            required: true,
+          })
+        })
+
+        if (ownershipShareCount === details.purchasers.length && Math.abs(ownershipShareTotal - 100) > 0.5) {
+          nextErrors['purchasers.ownership_share_total'] = 'Ownership shares must add up to 100%.'
+        }
+      }
     } else if (purchaserEntityType === 'company') {
       COMPANY_DETAIL_FIELDS.forEach((fieldConfig) => {
         const pathKey = detailFieldPath('company', 0, fieldConfig.key)
@@ -1394,12 +1561,56 @@ function ClientOnboarding() {
           required: fieldConfig.required,
         })
       })
+      ;(details.company.directors || []).forEach((director, directorIndex) => {
+        if (!hasAssociatedPersonData(director, 'Director')) {
+          return
+        }
+        ASSOCIATED_PERSON_FIELDS.forEach((fieldConfig) => {
+          const isVisible = isDetailFieldVisible(fieldConfig, {
+            item: director,
+            itemIndex: directorIndex,
+            groupKey: 'company.directors',
+            purchaserEntityType,
+          })
+          if (!isVisible) {
+            return
+          }
+          const pathKey = collectionFieldPath('company.directors', directorIndex, fieldConfig.key)
+          const shouldRequire = fieldConfig.required !== false
+          requireField(pathKey, `Director ${directorIndex + 1} ${fieldConfig.label}`, director[fieldConfig.key], {
+            type: fieldConfig.type,
+            required: shouldRequire,
+          })
+        })
+      })
     } else if (purchaserEntityType === 'trust') {
       TRUST_DETAIL_FIELDS.forEach((fieldConfig) => {
         const pathKey = detailFieldPath('trust', 0, fieldConfig.key)
         requireField(pathKey, fieldConfig.label, details.trust[fieldConfig.key], {
           type: fieldConfig.type,
           required: fieldConfig.required,
+        })
+      })
+      ;(details.trust.trustees || []).forEach((trustee, trusteeIndex) => {
+        if (!hasAssociatedPersonData(trustee, 'Trustee')) {
+          return
+        }
+        ASSOCIATED_PERSON_FIELDS.forEach((fieldConfig) => {
+          const isVisible = isDetailFieldVisible(fieldConfig, {
+            item: trustee,
+            itemIndex: trusteeIndex,
+            groupKey: 'trust.trustees',
+            purchaserEntityType,
+          })
+          if (!isVisible) {
+            return
+          }
+          const pathKey = collectionFieldPath('trust.trustees', trusteeIndex, fieldConfig.key)
+          const shouldRequire = fieldConfig.required !== false
+          requireField(pathKey, `Trustee ${trusteeIndex + 1} ${fieldConfig.label}`, trustee[fieldConfig.key], {
+            type: fieldConfig.type,
+            required: shouldRequire,
+          })
         })
       })
     }
@@ -1466,6 +1677,7 @@ function ClientOnboarding() {
       current[fieldKey] = value
 
       if (fieldKey === 'marital_status' && String(value || '').trim().toLowerCase() !== 'married') {
+        current.marital_regime = ''
         current.spouse_full_name = ''
         current.spouse_identity_number = ''
         current.spouse_email = ''
@@ -1524,6 +1736,63 @@ function ClientOnboarding() {
     }))
   }
 
+  function updateCompanyDirectorField(index, fieldKey, value) {
+    setFormData((previous) => {
+      const details = normalizeDetailsState(previous, {
+        purchaserEntityType,
+        financeType: normalizedFinanceType,
+      })
+      const directors = [...(details.company.directors || [])]
+      const current = { ...(directors[index] || createEmptyAssociatedPerson('Director')) }
+      current[fieldKey] = value
+      directors[index] = current
+      return {
+        ...previous,
+        company: {
+          ...(previous.company || createEmptyCompany()),
+          directors,
+        },
+        directors,
+      }
+    })
+  }
+
+  function addCompanyDirector() {
+    setFormData((previous) => {
+      const details = normalizeDetailsState(previous, {
+        purchaserEntityType,
+        financeType: normalizedFinanceType,
+      })
+      const directors = [...(details.company.directors || []), createEmptyAssociatedPerson('Director')]
+      return {
+        ...previous,
+        company: {
+          ...(previous.company || createEmptyCompany()),
+          directors,
+        },
+        directors,
+      }
+    })
+  }
+
+  function removeCompanyDirector(index) {
+    setFormData((previous) => {
+      const details = normalizeDetailsState(previous, {
+        purchaserEntityType,
+        financeType: normalizedFinanceType,
+      })
+      const directors = (details.company.directors || []).filter((_, itemIndex) => itemIndex !== index)
+      return {
+        ...previous,
+        company: {
+          ...(previous.company || createEmptyCompany()),
+          directors,
+        },
+        directors,
+      }
+    })
+  }
+
   function updateTrustField(fieldKey, value) {
     setFormData((previous) => ({
       ...previous,
@@ -1532,6 +1801,63 @@ function ClientOnboarding() {
         [fieldKey]: value,
       },
     }))
+  }
+
+  function updateTrusteeField(index, fieldKey, value) {
+    setFormData((previous) => {
+      const details = normalizeDetailsState(previous, {
+        purchaserEntityType,
+        financeType: normalizedFinanceType,
+      })
+      const trustees = [...(details.trust.trustees || [])]
+      const current = { ...(trustees[index] || createEmptyAssociatedPerson('Trustee')) }
+      current[fieldKey] = value
+      trustees[index] = current
+      return {
+        ...previous,
+        trust: {
+          ...(previous.trust || createEmptyTrust()),
+          trustees,
+        },
+        trustees,
+      }
+    })
+  }
+
+  function addTrustee() {
+    setFormData((previous) => {
+      const details = normalizeDetailsState(previous, {
+        purchaserEntityType,
+        financeType: normalizedFinanceType,
+      })
+      const trustees = [...(details.trust.trustees || []), createEmptyAssociatedPerson('Trustee')]
+      return {
+        ...previous,
+        trust: {
+          ...(previous.trust || createEmptyTrust()),
+          trustees,
+        },
+        trustees,
+      }
+    })
+  }
+
+  function removeTrustee(index) {
+    setFormData((previous) => {
+      const details = normalizeDetailsState(previous, {
+        purchaserEntityType,
+        financeType: normalizedFinanceType,
+      })
+      const trustees = (details.trust.trustees || []).filter((_, itemIndex) => itemIndex !== index)
+      return {
+        ...previous,
+        trust: {
+          ...(previous.trust || createEmptyTrust()),
+          trustees,
+        },
+        trustees,
+      }
+    })
   }
 
   function markFieldTouched(fieldKey) {
@@ -2026,8 +2352,84 @@ function ClientOnboarding() {
           <span className="inline-flex items-center gap-1 text-xs font-medium text-[#1f9d61]">
             <CheckCircle2 size={12} /> Looks good
           </span>
-        ) : null}
-      </label>
+      ) : null}
+    </label>
+  )
+  }
+
+  function renderRepeatablePeopleCard({
+    title,
+    description,
+    items,
+    itemLabel,
+    addLabel,
+    collectionKey,
+    onAdd,
+    onRemove,
+    onChange,
+  }) {
+    const people = Array.isArray(items) ? items : []
+
+    return (
+      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+        <header className="mb-5 border-b border-[#edf2f7] pb-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
+              <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{description}</p>
+            </div>
+            <Button type="button" variant="ghost" onClick={onAdd} className="min-h-[42px] shrink-0">
+              <Plus size={14} /> {addLabel}
+            </Button>
+          </div>
+        </header>
+
+        {people.length ? (
+          <div className="space-y-4">
+            {people.map((person, index) => (
+              <section key={`${collectionKey}-${index}`} className="rounded-[18px] border border-[#e3ebf5] bg-[#fbfdff] p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h5 className="text-base font-semibold text-[#142132]">
+                      {itemLabel} {index + 1}
+                    </h5>
+                    <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                      Capture the details of this {itemLabel.toLowerCase()} if they are involved in the transaction.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => onRemove(index)}
+                    className="min-h-[40px] text-[#8b3a36]"
+                  >
+                    <Trash2 size={14} /> Remove
+                  </Button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  {ASSOCIATED_PERSON_FIELDS.map((fieldConfig) => {
+                    const fieldPath = collectionFieldPath(collectionKey, index, fieldConfig.key)
+                    const value = person[fieldConfig.key] ?? ''
+                    return renderDetailField({
+                      fieldConfig,
+                      value,
+                      fieldPath,
+                      className: fieldConfig.type === 'textarea' ? 'md:col-span-2' : '',
+                      onChange: (nextValue) => onChange(index, fieldConfig.key, nextValue),
+                      onBlur: () => markFieldTouched(fieldPath),
+                    })
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[18px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-4 py-5 text-sm leading-6 text-[#6b7d93]">
+            No {itemLabel.toLowerCase()}s added yet. Use the button above if you need to capture additional people.
+          </div>
+        )}
+      </article>
     )
   }
 
@@ -2084,25 +2486,56 @@ function ClientOnboarding() {
     const title = purchaserEntityType === 'company' ? 'Company Details' : 'Trust Details'
 
     return (
-      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-        <header className="mb-5 border-b border-[#edf2f7] pb-4">
-          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
-        </header>
-        <div className="grid gap-3 md:grid-cols-2">
-          {fields.map((fieldConfig) => {
-            const fieldPath = detailFieldPath(entityKey, 0, fieldConfig.key)
-            const value = entityState[fieldConfig.key] ?? ''
-            return renderDetailField({
-              fieldConfig,
-              value,
-              fieldPath,
-              className: fieldConfig.type === 'textarea' ? 'md:col-span-2' : '',
-              onChange: (nextValue) => updateEntityField(fieldConfig.key, nextValue),
-              onBlur: () => markFieldTouched(fieldPath),
+      <div className="space-y-4">
+        <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+          <header className="mb-5 border-b border-[#edf2f7] pb-4">
+            <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{title}</h4>
+            <p className="mt-2 text-sm leading-6 text-[#6b7d93]">
+              Capture the entity details and the primary authority first. Additional directors or trustees can be added below.
+            </p>
+          </header>
+          <div className="grid gap-3 md:grid-cols-2">
+            {fields.map((fieldConfig) => {
+              const fieldPath = detailFieldPath(entityKey, 0, fieldConfig.key)
+              const value = entityState[fieldConfig.key] ?? ''
+              return renderDetailField({
+                fieldConfig,
+                value,
+                fieldPath,
+                className: fieldConfig.type === 'textarea' ? 'md:col-span-2' : '',
+                onChange: (nextValue) => updateEntityField(fieldConfig.key, nextValue),
+                onBlur: () => markFieldTouched(fieldPath),
+              })
+            })}
+          </div>
+        </article>
+
+        {purchaserEntityType === 'company'
+          ? renderRepeatablePeopleCard({
+              title: 'Additional Directors',
+              description:
+                'Add any other directors involved in the company. If the signatory is also a director, you can capture them here as well.',
+              items: structuredCompany.directors || [],
+              itemLabel: 'Director',
+              addLabel: 'Add Director',
+              collectionKey: 'company.directors',
+              onAdd: addCompanyDirector,
+              onRemove: removeCompanyDirector,
+              onChange: updateCompanyDirectorField,
             })
-          })}
-        </div>
-      </article>
+          : renderRepeatablePeopleCard({
+              title: 'Additional Trustees',
+              description:
+                'Add any other trustees involved in the trust. The primary trustee details are captured above.',
+              items: structuredTrust.trustees || [],
+              itemLabel: 'Trustee',
+              addLabel: 'Add Trustee',
+              collectionKey: 'trust.trustees',
+              onAdd: addTrustee,
+              onRemove: removeTrustee,
+              onChange: updateTrusteeField,
+            })}
+      </div>
     )
   }
 

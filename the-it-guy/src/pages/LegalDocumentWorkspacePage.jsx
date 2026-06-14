@@ -25,7 +25,7 @@ import {
   listDocumentPackets,
   resolveDocumentPacketBranding,
 } from '../lib/documentPacketsApi'
-import { updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
+import { createAgencyCrmLeadActivity, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -1173,9 +1173,37 @@ export default function LegalDocumentWorkspacePage() {
       return await updateAgencyCrmLeadRecord(organisationId, scopedLeadId, patch)
     } catch (error) {
       console.warn(`[LegalDocumentWorkspacePage] unable to ${reason} in the remote CRM record; keeping local lead state in sync.`, error)
-      return updateAgencyLead(organisationId, scopedLeadId, patch)
+      try {
+        return updateAgencyLead(organisationId, scopedLeadId, patch)
+      } catch (fallbackError) {
+        console.warn('[LegalDocumentWorkspacePage] local lead fallback is unavailable; continuing without blocking mandate generation.', fallbackError)
+        return null
+      }
     }
   }, [leadContext?.lead?.leadId, organisationId])
+
+  const recordLeadMandateActivity = useCallback(async (payload = {}) => {
+    const scopedLeadId = normalizeText(leadContext?.lead?.leadId)
+    if (!scopedLeadId) return null
+
+    try {
+      return await createAgencyCrmLeadActivity(organisationId, scopedLeadId, payload, {
+        actor: {
+          id: actor.id,
+          name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name),
+          email: actor.email,
+        },
+      })
+    } catch (error) {
+      console.warn('[LegalDocumentWorkspacePage] mandate activity could not be recorded remotely; attempting local fallback.', error)
+      try {
+        return addLeadActivity(organisationId, scopedLeadId, payload)
+      } catch (fallbackError) {
+        console.warn('[LegalDocumentWorkspacePage] local activity fallback is unavailable; continuing without blocking mandate generation.', fallbackError)
+        return null
+      }
+    }
+  }, [actor, leadContext?.lead?.leadId, organisationId, profile])
 
   const resolveCurrentStatus = useCallback(async () => {
     const currentPacketId = normalizeText(validatedRoutePacketId || initialStatus?.packet?.id || '')
@@ -1405,8 +1433,8 @@ export default function LegalDocumentWorkspacePage() {
       }
     }
 
-    const packet = await ensurePacket({ template, allowRuntime: !persistForSend && !resetMandatePacket, forceNew: resetMandatePacket })
-    onProgress?.('Merging transaction details...')
+    onProgress?.('Preparing mandate packet...')
+    const packet = await ensurePacket({ template, allowRuntime: false, forceNew: resetMandatePacket })
 
     if (isRuntimePacketId(packet?.id)) {
       const runtimeDraft = buildRuntimeMandateDraft({
@@ -1421,7 +1449,7 @@ export default function LegalDocumentWorkspacePage() {
           mandateStatus: 'generated',
           mandateGeneratedAt: new Date().toISOString(),
         }, { reason: 'persist the runtime mandate draft state' })
-        addLeadActivity(organisationId, leadContext.lead.leadId, {
+        void recordLeadMandateActivity({
           agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
           activityType: 'Mandate Generated',
           activityNote: 'Mandate was generated successfully.',
@@ -1453,7 +1481,7 @@ export default function LegalDocumentWorkspacePage() {
         mandateStatus: 'generated',
         mandateGeneratedAt: new Date().toISOString(),
       }, { reason: 'persist the generated mandate packet state' })
-      addLeadActivity(organisationId, leadContext.lead.leadId, {
+      void recordLeadMandateActivity({
         agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
         activityType: 'Mandate Generated',
         activityNote: 'Mandate was generated successfully.',
@@ -1503,6 +1531,7 @@ export default function LegalDocumentWorkspacePage() {
     organisationId,
     packetType,
     profile,
+    recordLeadMandateActivity,
     resolveCurrentStatus,
     role,
     routeLeadId,
@@ -1580,7 +1609,7 @@ export default function LegalDocumentWorkspacePage() {
         mandateSentAt: new Date().toISOString(),
         mandateSigningLink: signingLink,
       }, { reason: 'persist the mandate send state' })
-      addLeadActivity(organisationId, leadContext.lead.leadId, {
+      void recordLeadMandateActivity({
         agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
         activityType: 'Mandate Sent',
         activityNote: resend
@@ -1590,7 +1619,7 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
     window.dispatchEvent(new Event('itg:transaction-updated'))
-  }, [actor, leadContext, organisationId, packetType, profile, resolveCurrentStatus, syncLeadMandateState, transactionReference])
+  }, [actor, leadContext, organisationId, packetType, profile, recordLeadMandateActivity, resolveCurrentStatus, syncLeadMandateState, transactionReference])
 
   const openLatestDocument = useCallback(async ({ signed = false } = {}) => {
     const status = await resolveCurrentStatus()
