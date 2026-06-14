@@ -29,6 +29,7 @@ import {
   resolvePurchaserTypeFromFormData,
   validateOnboardingSubmission,
 } from './purchaserPersonas'
+import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
 import {
   canProgressTransactionStage as canProgressTransactionStageForBuyerRequirements,
   getBuyerFicaReadiness as getBuyerFicaReadinessFromProfile,
@@ -31776,10 +31777,14 @@ export async function fetchClientOnboardingByToken(token) {
     transaction.purchaser_type || onboarding.purchaserType,
   )
   const existingFormData = formDataRow?.formData || {}
-  const purchaserType = normalizePurchaserType(
-    existingFormData.purchaser_type || transaction.purchaser_type || onboarding.purchaserType,
-  )
   const financeSnapshot = getOnboardingFinanceSnapshot({ formData: existingFormData, transaction })
+  const onboardingFlow = resolveBuyerOnboardingFlow(existingFormData, transaction, {
+    purchaserType: existingFormData.purchaser_type || transaction.purchaser_type || onboarding.purchaserType,
+    financeType: financeSnapshot.financeType,
+  })
+  const purchaserType = normalizePurchaserType(
+    onboardingFlow.purchaser_branch || existingFormData.purchaser_type || transaction.purchaser_type || onboarding.purchaserType,
+  )
   const formConfig = getPersonaFormConfig(purchaserType, { financeType: financeSnapshot.financeType, formData: existingFormData })
   const fundingSources = await fetchTransactionFundingSources(client, transaction.id)
 
@@ -31892,6 +31897,7 @@ export async function fetchClientOnboardingByToken(token) {
     summary: checklistResult.summary,
     uploadedDocuments,
     fundingSources,
+    onboardingFlow,
     clientPortalLink,
     clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
   }

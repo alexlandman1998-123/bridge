@@ -940,17 +940,6 @@ function renderEditablePreviewHtml({
   `
 }
 
-function resolveWorkspaceStatusTone(state) {
-  const normalized = normalizeKey(state)
-  if (normalized === 'signed') return 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-  if (['sent', 'partially_signed'].includes(normalized)) return 'border-[#d6e2ef] bg-[#f4f8fc] text-[#35546c]'
-  if (normalized === 'in_review') return 'border-[#f0e2c2] bg-[#fff9ed] text-[#8a5b12]'
-  if (normalized === 'approved') return 'border-[#dbe8fa] bg-[#edf4ff] text-[#215fba]'
-  if (normalized === 'draft') return 'border-[#f0e2c2] bg-[#fff9ed] text-[#8a5b12]'
-  if (normalized === 'no_packet') return 'border-[#e5e9f0] bg-[#f7f9fc] text-[#5e7289]'
-  return 'border-[#f2d7d2] bg-[#fff4f2] text-[#a03a2a]'
-}
-
 function resolveWorkspaceStatusLabel(state) {
   const normalized = normalizeKey(state)
   if (normalized === 'no_packet') return 'No Draft'
@@ -1089,21 +1078,6 @@ function resolveLifecycleSteps(signingMethod = 'digital') {
   return normalizeSigningMethod(signingMethod) === 'physical'
     ? PHYSICAL_MANDATE_LIFECYCLE_STEPS
     : NORMALIZED_LIFECYCLE_STEPS
-}
-
-function formatLifecycleStepLabel(step = '') {
-  const labels = {
-    draft: 'Draft',
-    approved: 'Approved',
-    locked: 'Locked',
-    sent: 'Sent',
-    partially_signed: 'Partially Signed',
-    printed: 'Printed',
-    uploaded: 'Uploaded',
-    signed: 'Signed',
-    archived: 'Archived',
-  }
-  return labels[normalizeKey(step)] || normalizeText(step).replace(/_/g, ' ')
 }
 
 const MANDATE_STATUS_BADGES = {
@@ -2321,7 +2295,6 @@ export default function LegalDocumentWorkspace({
   const generatedPreviewUrl = normalizeText(
     latestVersion?.rendered_file_access_url || latestVersion?.rendered_file_url || '',
   )
-  const generatedPreviewPath = normalizeText(latestVersion?.rendered_file_path || '')
   const signedPreviewUrl = normalizeText(
     latestVersion?.final_signed_file_access_url || latestVersion?.final_signed_file_url || '',
   )
@@ -2349,10 +2322,6 @@ export default function LegalDocumentWorkspace({
   const signingMethod = isMandatePacket ? normalizeSigningMethod(sourceContext.signing_method || sourceContext.signingMethod) : 'digital'
   const mandateStatus = isMandatePacket ? normalizeMandateStatus(statusState, sourceContext, latestVersion) : ''
   const mandateStatusMeta = MANDATE_STATUS_BADGES[mandateStatus] || MANDATE_STATUS_BADGES.draft
-  const lastMandateEvent = useMemo(() => {
-    const rows = Array.isArray(packetDetail?.events) ? packetDetail.events : []
-    return rows.find((event) => normalizeText(event?.event_payload_json?.activity_type || event?.event_type).toLowerCase().includes('mandate') || normalizeText(event?.event_type).toLowerCase().includes('generation') || normalizeText(event?.event_type).toLowerCase().includes('sign')) || rows[0] || null
-  }, [packetDetail?.events])
   const mandateNextAction = getMandateNextAction(
     mandateStatus,
     signingMethod,
@@ -2406,8 +2375,6 @@ export default function LegalDocumentWorkspace({
   }, [packetDetail?.events])
 
   const headerStatusLabel = resolveWorkspaceStatusLabel(statusState?.state || 'NO_PACKET')
-  const lifecycleSteps = resolveLifecycleSteps(signingMethod)
-  const displayLifecycleState = resolveDisplayLifecycleState(normalizedLifecycleState, signingMethod)
   const lifecycleCopy = resolveLifecycleCopy(normalizedLifecycleState, signingMethod)
   const lifecycleProgress = resolveLifecycleProgress(normalizedLifecycleState, signingMethod)
 
@@ -4651,9 +4618,11 @@ export default function LegalDocumentWorkspace({
     ? 'w-full'
     : 'fixed inset-0 z-[95] bg-[#0b1422]/55 px-2 py-2 sm:px-4 sm:py-4'
   const contentClassName = isPageMode
-    ? 'min-h-0 flex-1 overflow-y-auto px-4 pb-40 pt-5 sm:px-6 sm:pb-44 sm:pt-6'
-    : 'min-h-0 flex-1 overflow-y-auto px-4 pb-40 pt-4 sm:px-5 sm:pb-44 sm:pt-5'
-  const mainGridClassName = 'grid min-h-full items-start gap-6 xl:grid-cols-[280px_minmax(0,1fr)_360px] 2xl:grid-cols-[300px_minmax(0,1fr)_380px]'
+    ? 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-5 sm:px-6 sm:pb-24 sm:pt-6'
+    : 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-4 sm:px-5 sm:pb-24 sm:pt-5'
+  const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(640px,calc(100vh-22rem),880px)]'
+  const mainGridClassName = `grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[320px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
+  const secondaryGridClassName = 'mt-6 grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]'
 
   return (
     <>
@@ -4889,29 +4858,31 @@ export default function LegalDocumentWorkspace({
             ) : null}
 
             <div className={mainGridClassName}>
-              <div className="space-y-5">
-                <DocumentOutlinePanel
-                  sections={editableSections}
-                  activeSectionKey={activeSectionKey}
-                  onSelectSection={handleSelectOutlineSection}
-                  canAddCustomSection={editableAllowed && legalPermissions.canEditDraft}
-                  customSectionLabel={customSectionLabel}
-                  onCustomSectionLabelChange={setCustomSectionLabel}
-                  onAddCustomSection={handleAddCustomSection}
-                  onRemoveSection={handleRemoveSection}
-                  validationByKey={editableSectionsValidation}
-                  editorAvailable={editableAllowed}
-                  onSwitchToEditor={() => setCenterTab('editor')}
-                />
-                <MergeChecklistPanel
-                  packetType={packetType}
-                  placeholders={latestVersion?.placeholders_resolved_json || {}}
-                  compact
-                  onOpen={() => setMergeDetailsOpen(true)}
-                />
+              <div className="xl:flex xl:h-full xl:min-h-0 xl:flex-col">
+                <div className="space-y-5 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-1">
+                  <DocumentOutlinePanel
+                    sections={editableSections}
+                    activeSectionKey={activeSectionKey}
+                    onSelectSection={handleSelectOutlineSection}
+                    canAddCustomSection={editableAllowed && legalPermissions.canEditDraft}
+                    customSectionLabel={customSectionLabel}
+                    onCustomSectionLabelChange={setCustomSectionLabel}
+                    onAddCustomSection={handleAddCustomSection}
+                    onRemoveSection={handleRemoveSection}
+                    validationByKey={editableSectionsValidation}
+                    editorAvailable={editableAllowed}
+                    onSwitchToEditor={() => setCenterTab('editor')}
+                  />
+                  <MergeChecklistPanel
+                    packetType={packetType}
+                    placeholders={latestVersion?.placeholders_resolved_json || {}}
+                    compact
+                    onOpen={() => setMergeDetailsOpen(true)}
+                  />
+                </div>
               </div>
 
-              <section className="min-h-[760px] rounded-[28px] border border-[#e5edf7] bg-white p-5 shadow-[0_18px_48px_rgba(16,32,51,0.06)] sm:p-6">
+              <section className="min-h-[760px] rounded-[28px] border border-[#e5edf7] bg-white p-5 shadow-[0_18px_48px_rgba(16,32,51,0.06)] sm:p-6 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="text-[1.15rem] font-semibold text-[#102033]">
@@ -4951,7 +4922,7 @@ export default function LegalDocumentWorkspace({
                   </div>
                 </div>
 
-                <div className="mt-6 rounded-[28px] border border-[#edf3fa] bg-[#f5f7fb] p-4 sm:p-6">
+                <div className="mt-6 rounded-[28px] border border-[#edf3fa] bg-[#f5f7fb] p-4 sm:p-6 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
                   {loading ? (
                     <div className="flex min-h-[620px] items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white text-sm text-[#6f839b]">
                       Loading packet preview...
@@ -5048,7 +5019,9 @@ export default function LegalDocumentWorkspace({
                   ) : null}
                 </div>
               </section>
+            </div>
 
+            <div className={secondaryGridClassName}>
               <aside className="space-y-5">
                 {isMandatePacket ? (
                   <SigningMethodPanel
@@ -5098,7 +5071,9 @@ export default function LegalDocumentWorkspace({
                     busy={actionBusy || signerBusy || loading}
                   />
                 ) : null}
+              </aside>
 
+              <aside className="space-y-5">
                 <ActivityPanel
                   activeTab={activityTab}
                   onTabChange={setActivityTab}

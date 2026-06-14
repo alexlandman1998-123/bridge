@@ -88,6 +88,7 @@
     "test:role-resolution": "node scripts/role-resolution.test.mjs",
     "test:attorney-onboarding-fk-safety": "node scripts/attorney-onboarding-fk-safety.test.mjs",
     "test:document-request-scenario-matrix": "node scripts/document-request-scenario-matrix.test.mjs",
+    "test:buyer-onboarding-flow-contract": "node scripts/buyer-onboarding-flow-contract.test.mjs",
     "test:client-portal-virtual-subprocess-ids": "node scripts/client-portal-virtual-subprocess-ids.test.mjs",
     "test:finance-tab-launch-readiness": "node scripts/finance-tab-launch-readiness.test.mjs",
     "test:document-request-stale-finance-rows": "node scripts/document-request-stale-finance-rows.test.mjs",

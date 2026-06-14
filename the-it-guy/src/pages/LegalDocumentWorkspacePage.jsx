@@ -25,6 +25,7 @@ import {
   listDocumentPackets,
   resolveDocumentPacketBranding,
 } from '../lib/documentPacketsApi'
+import { updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
@@ -1041,7 +1042,27 @@ export default function LegalDocumentWorkspacePage() {
       let status = leadRuntimeMandate && isRuntimePacketId(initialStatusRef.current?.packet?.id)
         ? initialStatusRef.current
         : initialStatusValueRef.current || buildFallbackPacketStatus(resolvedPacketType)
-      if (leadRuntimeMandate && hasGeneratedRuntimeMandate(nextLeadContext.lead) && !isRuntimePacketId(status?.packet?.id)) {
+      const canResolveStatus = Boolean(
+        effectiveRoutePacketId ||
+        resolvedTransactionId ||
+        (resolvedOrganisationId && normalizeLeadUuid(routeLeadId))
+      )
+      if (canResolveStatus) {
+        status = await withLegalWorkspaceTimeout(
+          resolveDocumentPacketStatus({
+            packetType: resolvedPacketType,
+            packetId: effectiveRoutePacketId,
+            transactionId: resolvedTransactionId,
+            leadId: routeLeadId,
+            organisationId: resolvedOrganisationId,
+          }),
+          'Packet status lookup is taking too long.',
+        ).catch((statusError) => {
+          console.warn('[LegalDocumentWorkspacePage] packet status unavailable; opening workspace in draft mode.', statusError)
+          return buildFallbackPacketStatus(resolvedPacketType, 'Packet status lookup timed out. You can still prepare this draft manually.')
+        })
+      }
+      if (leadRuntimeMandate && hasGeneratedRuntimeMandate(nextLeadContext.lead) && !isUuidLike(status?.packet?.id)) {
         status = buildRuntimeMandateStatusForLead({
           organisationId: resolvedOrganisationId,
           transaction: detail?.transaction || null,
@@ -1060,22 +1081,6 @@ export default function LegalDocumentWorkspacePage() {
           role,
           branding: packetBranding || brandingFromSettings,
           settings,
-        })
-      }
-      const canResolveStatus = Boolean(effectiveRoutePacketId || resolvedTransactionId || resolvedOrganisationId) && !leadRuntimeMandate
-      if (canResolveStatus) {
-        status = await withLegalWorkspaceTimeout(
-          resolveDocumentPacketStatus({
-            packetType: resolvedPacketType,
-            packetId: effectiveRoutePacketId,
-            transactionId: resolvedTransactionId,
-            leadId: routeLeadId,
-            organisationId: resolvedOrganisationId,
-          }),
-          'Packet status lookup is taking too long.',
-        ).catch((statusError) => {
-          console.warn('[LegalDocumentWorkspacePage] packet status unavailable; opening workspace in draft mode.', statusError)
-          return buildFallbackPacketStatus(resolvedPacketType, 'Packet status lookup timed out. You can still prepare this draft manually.')
         })
       }
       if (packetOwnershipWarnings.length) {
@@ -1099,7 +1104,7 @@ export default function LegalDocumentWorkspacePage() {
       setWorkspaceSettings(settings)
       setLeadContext(nextLeadContext)
       setInitialStatus(status)
-      setValidatedRoutePacketId(effectiveRoutePacketId)
+      setValidatedRoutePacketId(normalizeText(status?.packet?.id || effectiveRoutePacketId))
       setContextHydrated(true)
     } catch (error) {
       if (renderedFallback) {
@@ -1135,6 +1140,7 @@ export default function LegalDocumentWorkspacePage() {
     window.addEventListener('itg:seller-onboarding-submitted', refreshRouteContext)
     window.addEventListener('itg:listings-updated', refreshRouteContext)
     window.addEventListener('itg:pipeline-updated', refreshRouteContext)
+    window.addEventListener('itg:transaction-updated', refreshRouteContext)
     window.addEventListener('focus', refreshRouteContext)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
@@ -1143,6 +1149,7 @@ export default function LegalDocumentWorkspacePage() {
       window.removeEventListener('itg:seller-onboarding-submitted', refreshRouteContext)
       window.removeEventListener('itg:listings-updated', refreshRouteContext)
       window.removeEventListener('itg:pipeline-updated', refreshRouteContext)
+      window.removeEventListener('itg:transaction-updated', refreshRouteContext)
       window.removeEventListener('focus', refreshRouteContext)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
@@ -1157,6 +1164,18 @@ export default function LegalDocumentWorkspacePage() {
       normalizeText(leadContext.lead?.leadCategory),
     ].filter(Boolean).join(' · '),
   )
+
+  const syncLeadMandateState = useCallback(async (patch = {}, { reason = 'update mandate state' } = {}) => {
+    const scopedLeadId = normalizeText(leadContext?.lead?.leadId)
+    if (!scopedLeadId) return null
+
+    try {
+      return await updateAgencyCrmLeadRecord(organisationId, scopedLeadId, patch)
+    } catch (error) {
+      console.warn(`[LegalDocumentWorkspacePage] unable to ${reason} in the remote CRM record; keeping local lead state in sync.`, error)
+      return updateAgencyLead(organisationId, scopedLeadId, patch)
+    }
+  }, [leadContext?.lead?.leadId, organisationId])
 
   const resolveCurrentStatus = useCallback(async () => {
     const currentPacketId = normalizeText(validatedRoutePacketId || initialStatus?.packet?.id || '')
@@ -1173,6 +1192,10 @@ export default function LegalDocumentWorkspacePage() {
       }),
       'Packet status is taking too long.',
     )
+    const resolvedPacketId = normalizeText(status?.packet?.id || currentPacketId)
+    if (isUuidLike(resolvedPacketId)) {
+      setValidatedRoutePacketId(resolvedPacketId)
+    }
     setInitialStatus(status)
     return status
   }, [initialStatus, organisationId, packetType, routeLeadId, transactionId, validatedRoutePacketId])
@@ -1258,13 +1281,14 @@ export default function LegalDocumentWorkspacePage() {
     )
 
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
-      updateAgencyLead(organisationId, leadContext.lead.leadId, {
+      void syncLeadMandateState({
         mandatePacketId: normalizeText(packet?.id),
-      })
+      }, { reason: 'persist the generated mandate packet reference' })
     }
+    setValidatedRoutePacketId(normalizeText(packet?.id))
 
     return packet
-  }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, transactionId, transactionReference, validatedRoutePacketId])
+  }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, syncLeadMandateState, transactionId, transactionReference, validatedRoutePacketId])
 
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false } = {}) => {
     onProgress?.('Preparing draft...')
@@ -1296,14 +1320,15 @@ export default function LegalDocumentWorkspacePage() {
         })
       }
       if (leadContext.lead?.leadId) {
-        await Promise.resolve(updateAgencyLead(organisationId, leadContext.lead.leadId, {
+        await Promise.resolve(syncLeadMandateState({
           mandatePacketId: '',
           mandateStatus: '',
           mandateGeneratedAt: '',
-        })).catch((leadResetError) => {
+        }, { reason: 'clear the failed mandate packet reference' })).catch((leadResetError) => {
           console.warn('[LegalDocumentWorkspacePage] lead mandate status could not be cleared before regeneration; continuing with fresh packet generation.', leadResetError)
         })
       }
+      setValidatedRoutePacketId('')
       setInitialStatus(buildFallbackPacketStatus(packetType))
     }
 
@@ -1391,11 +1416,11 @@ export default function LegalDocumentWorkspacePage() {
       })
       setInitialStatus(runtimeDraft.status)
       if (packetType === 'mandate' && leadContext.lead?.leadId) {
-        updateAgencyLead(organisationId, leadContext.lead.leadId, {
+        void syncLeadMandateState({
           mandateRuntimeDraftId: normalizeText(packet?.id),
           mandateStatus: 'generated',
           mandateGeneratedAt: new Date().toISOString(),
-        })
+        }, { reason: 'persist the runtime mandate draft state' })
         addLeadActivity(organisationId, leadContext.lead.leadId, {
           agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
           activityType: 'Mandate Generated',
@@ -1422,10 +1447,12 @@ export default function LegalDocumentWorkspacePage() {
     )
 
     if (packetType === 'mandate' && leadContext.lead?.leadId) {
-      updateAgencyLead(organisationId, leadContext.lead.leadId, {
+      void syncLeadMandateState({
         mandatePacketId: normalizeText(packet?.id),
+        mandateRuntimeDraftId: '',
         mandateStatus: 'generated',
-      })
+        mandateGeneratedAt: new Date().toISOString(),
+      }, { reason: 'persist the generated mandate packet state' })
       addLeadActivity(organisationId, leadContext.lead.leadId, {
         agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
         activityType: 'Mandate Generated',
@@ -1433,6 +1460,7 @@ export default function LegalDocumentWorkspacePage() {
         outcome: 'Generated',
       })
     }
+    setValidatedRoutePacketId(normalizeText(packet?.id))
 
     let refreshedStatus = null
     try {
@@ -1478,6 +1506,7 @@ export default function LegalDocumentWorkspacePage() {
     resolveCurrentStatus,
     role,
     routeLeadId,
+    syncLeadMandateState,
     transaction,
     transactionDetail,
     transactionId,
@@ -1546,11 +1575,11 @@ export default function LegalDocumentWorkspacePage() {
         assertEdgeFunctionSuccess(emailResponse, `The mandate signing email could not be sent to the ${recipientRole}.`)
       }
       const nextMandateStatus = normalizeText(signingStatus) || (recipientRole === 'seller' ? 'sent_to_seller' : 'sent_to_agent')
-      updateAgencyLead(organisationId, leadContext.lead.leadId, {
+      void syncLeadMandateState({
         mandateStatus: nextMandateStatus,
         mandateSentAt: new Date().toISOString(),
         mandateSigningLink: signingLink,
-      })
+      }, { reason: 'persist the mandate send state' })
       addLeadActivity(organisationId, leadContext.lead.leadId, {
         agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
         activityType: 'Mandate Sent',
@@ -1561,7 +1590,7 @@ export default function LegalDocumentWorkspacePage() {
       })
     }
     window.dispatchEvent(new Event('itg:transaction-updated'))
-  }, [actor, leadContext, organisationId, packetType, profile, resolveCurrentStatus, transactionReference])
+  }, [actor, leadContext, organisationId, packetType, profile, resolveCurrentStatus, syncLeadMandateState, transactionReference])
 
   const openLatestDocument = useCallback(async ({ signed = false } = {}) => {
     const status = await resolveCurrentStatus()

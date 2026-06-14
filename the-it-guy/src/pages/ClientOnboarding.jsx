@@ -8,13 +8,13 @@ import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom'
 import { normalizeFinanceType } from '../core/transactions/financeType'
 import Button from '../components/ui/Button'
 import { parseEdgeFunctionError } from '../lib/edgeFunctions'
+import { resolveBuyerOnboardingFlow } from '../lib/buyerOnboardingFlow.js'
 import {
   EMPLOYMENT_TYPE_OPTIONS,
   PURCHASER_ENTITY_OPTIONS,
   getOnboardingStepDefinitions,
   getPurchaserEntityType,
   normalizePurchaserType,
-  resolvePurchaserTypeFromFormData,
   validateOnboardingSubmission,
 } from '../lib/purchaserPersonas'
 import {
@@ -1065,18 +1065,27 @@ function ClientOnboarding() {
       const data = await fetchClientOnboardingByToken(token)
       setSubmittedClientPortalPath('')
       const transactionPurchasePriceValue = normalizeInputValue(data?.transaction?.purchase_price)
-      const initialPurchaserType = normalizePurchaserType(data.formData?.purchaser_type || data.purchaserType)
+      const initialFlow =
+        data?.onboardingFlow ||
+        resolveBuyerOnboardingFlow(data.formData || {}, data.transaction || {}, {
+          purchaserType: data.formData?.purchaser_type || data.purchaserType,
+          financeType: data.formData?.purchase_finance_type || data.transaction?.finance_type || 'cash',
+        })
+      const initialPurchaserType = normalizePurchaserType(initialFlow.purchaser_branch || data.formData?.purchaser_type || data.purchaserType)
       const initialPurchaserEntityType = String(
         data.formData?.purchaser_entity_type || getPurchaserEntityType(initialPurchaserType),
       )
         .trim()
         .toLowerCase()
-      const initialFinanceType = normalizeFinanceType(data.formData?.purchase_finance_type || data.transaction?.finance_type || 'cash')
+      const initialFinanceType = normalizeFinanceType(initialFlow.finance_type || data.formData?.purchase_finance_type || data.transaction?.finance_type || 'cash')
       const normalizedDetails = normalizeDetailsState(data.formData || {}, {
         purchaserEntityType: initialPurchaserEntityType,
         financeType: initialFinanceType,
       })
-      setPayload(data)
+      setPayload({
+        ...data,
+        onboardingFlow: initialFlow,
+      })
       setFormData({
         ...(data.formData || {}),
         purchaser_type: initialPurchaserType,
@@ -1107,14 +1116,22 @@ function ClientOnboarding() {
     void loadData()
   }, [loadData])
 
-  const purchaserType = resolvePurchaserTypeFromFormData(formData, {
-    purchaserType: payload?.purchaserType || payload?.transaction?.purchaser_type || 'individual',
-    transaction: payload?.transaction,
-  })
+  const buyerFlow = useMemo(
+    () =>
+      payload?.onboardingFlow ||
+      resolveBuyerOnboardingFlow(formData, payload?.transaction || {}, {
+        purchaserType: formData.purchaser_type || payload?.purchaserType || payload?.transaction?.purchaser_type || 'individual',
+        financeType: formData.purchase_finance_type || payload?.transaction?.finance_type || 'cash',
+      }),
+    [formData, payload?.onboardingFlow, payload?.purchaserType, payload?.transaction],
+  )
+  const purchaserType = normalizePurchaserType(
+    buyerFlow.purchaser_branch || formData.purchaser_type || payload?.purchaserType || 'individual',
+  )
   const purchaserEntityType = String(formData.purchaser_entity_type || getPurchaserEntityType(purchaserType)).trim().toLowerCase()
   const isNaturalPersonPurchase = isNaturalPersonEntityType(purchaserEntityType)
   const normalizedFinanceType = normalizeFinanceType(
-    formData.purchase_finance_type || payload?.transaction?.finance_type || 'cash',
+    buyerFlow.finance_type || formData.purchase_finance_type || payload?.transaction?.finance_type || 'cash',
   )
   const detailsState = useMemo(
     () =>
@@ -1124,7 +1141,7 @@ function ClientOnboarding() {
       }),
     [formData, purchaserEntityType, normalizedFinanceType],
   )
-  const naturalPersonPurchaseMode = detailsState.naturalPersonPurchaseMode
+  const naturalPersonPurchaseMode = buyerFlow.purchase_mode === 'co_purchasing' ? 'co_purchasing' : detailsState.naturalPersonPurchaseMode
   const structuredPurchasers = detailsState.purchasers
   const structuredFinance = detailsState.finance
   const structuredCompany = detailsState.company

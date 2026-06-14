@@ -2,9 +2,9 @@ import {
   deriveOnboardingConfiguration,
   getPurchaserTypeLabel,
   getVisibleOnboardingSections,
-  resolvePurchaserTypeFromFormData,
-} from './purchaserPersonas'
-import { normalizeFinanceType } from '../core/transactions/financeType'
+} from './purchaserPersonas.js'
+import { normalizeFinanceType } from '../core/transactions/financeType.js'
+import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy buyer requirement engine is retained as a compatibility fallback.
@@ -75,12 +75,18 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
     transactionOrOnboardingData?.formData ||
     {}
 
-  const purchaserType = resolvePurchaserTypeFromFormData(formData, {
+  const flow = resolveBuyerOnboardingFlow(formData, transaction, {
     purchaserType: transaction?.purchaser_type || transactionOrOnboardingData?.purchaserType,
-    transaction,
+    financeType:
+      formData?.purchase_finance_type ||
+      transaction?.finance_type ||
+      transactionOrOnboardingData?.financeType ||
+      'cash',
   })
+  const purchaserType = flow.purchaser_branch
   const financeType = normalizeFinanceType(
-    formData?.purchase_finance_type ||
+    flow.finance_type ||
+      formData?.purchase_finance_type ||
       transaction?.finance_type ||
       transactionOrOnboardingData?.financeType ||
       'cash',
@@ -132,6 +138,11 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
             : 'individual',
     financeType,
     financeTypeLabel: financeTypeLabel(financeType),
+    purchaseMode: String(flow.purchase_mode || (derived?.derivedFields?.buyer_party_count > 1 ? 'co_purchasing' : 'individual')).trim().toLowerCase(),
+    buyerBranch: String(flow.purchaser_branch || purchaserType).trim().toLowerCase(),
+    financeBranch: String(flow.finance_branch || (financeType === 'combination' ? 'hybrid' : financeType)).trim().toLowerCase(),
+    flow: flow || derived.flow || null,
+    branchSummary: flow.branch_summary || derived?.flow?.branch_summary || null,
     buyerCount: Number(derived?.derivedFields?.buyer_party_count || 1),
     signatoryCount: Number(derived?.derivedFields?.signatory_count || 1),
     maritalStructure: String(derived?.derivedFields?.marital_structure || '').trim().toLowerCase(),

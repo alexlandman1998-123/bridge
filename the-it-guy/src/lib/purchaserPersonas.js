@@ -1,5 +1,10 @@
-import { normalizeFinanceType } from '../core/transactions/financeType'
-import { buildDocumentTemplate } from '../core/documents/documentVaultArchitecture'
+import { normalizeFinanceType } from '../core/transactions/financeType.js'
+import { buildDocumentTemplate } from '../core/documents/documentVaultArchitecture.js'
+import {
+  resolveBuyerBranch,
+  resolveBuyerPurchaseMode,
+  resolveBuyerOnboardingFlow,
+} from './buyerOnboardingFlow.js'
 
 export const PURCHASER_TYPES = [
   'individual',
@@ -143,9 +148,7 @@ function isYes(value) {
 }
 
 function isCoPurchasing(values = {}) {
-  return String(values.natural_person_purchase_mode || '')
-    .trim()
-    .toLowerCase() === 'co_purchasing'
+  return resolveBuyerPurchaseMode(values) === 'co_purchasing'
 }
 
 function normalizeYesNoChoice(value) {
@@ -276,10 +279,11 @@ function resolveStructuredPurchasers(formData = {}, purchaserType = 'individual'
   const primary = normalizePurchaserEntry(structured[0] || getLegacyPurchaserEntry(formData, ''))
   const secondary = normalizePurchaserEntry(structured[1] || getLegacyPurchaserEntry(formData, 'co_'))
 
-  const modeCandidate = String(formData?.purchaser?.natural_person_purchase_mode || formData.natural_person_purchase_mode || '')
-    .trim()
-    .toLowerCase()
-  const coPurchasing = modeCandidate === 'co_purchasing' || STRUCTURED_PURCHASER_KEYS.some((key) => String(secondary[key] || '').trim().length > 0)
+  const purchaseMode = resolveBuyerPurchaseMode(formData, { purchaserType })
+  const coPurchasing =
+    isNaturalPersonPurchaserType(purchaserType) &&
+    (purchaseMode === 'co_purchasing' ||
+      STRUCTURED_PURCHASER_KEYS.some((key) => String(secondary[key] || '').trim().length > 0))
   const purchaserCount = isNaturalPersonPurchaserType(purchaserType) ? (coPurchasing ? 2 : 1) : 0
 
   return {
@@ -1486,114 +1490,8 @@ export function getIndividualMaritalStructureValue(value) {
   return 'not_applicable'
 }
 
-function normalizeEntityType(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_')
-}
-
-function isYesLike(value) {
-  return String(value || '').trim().toLowerCase() === 'yes'
-}
-
-function isForeignResidencyStatus(value) {
-  const normalized = String(value || '').trim().toLowerCase()
-  return (
-    normalized === 'foreign_national' ||
-    normalized === 'non_resident' ||
-    normalized === 'non-resident' ||
-    normalized === 'foreign' ||
-    normalized === 'foreign_resident'
-  )
-}
-
-function isSouthAfricanNationality(value) {
-  const normalized = String(value || '').trim().toLowerCase()
-  return (
-    normalized === 'south african' ||
-    normalized === 'south-african' ||
-    normalized === 'za' ||
-    normalized === 'rsa'
-  )
-}
-
-function resolveMarriedPurchaserType(maritalRegime, fallbackType = 'individual') {
-  const regime = String(maritalRegime || '').trim().toLowerCase()
-  if (regime.includes('in_community')) {
-    return 'married_coc'
-  }
-  if (regime.includes('with_accrual') || regime.includes('accrual')) {
-    return 'married_anc_accrual'
-  }
-  if (regime.includes('out_of_community') || regime.includes('out_of_community_of_property')) {
-    return 'married_anc'
-  }
-  if (fallbackType === 'married_anc' || fallbackType === 'married_anc_accrual' || fallbackType === 'married_coc') {
-    return fallbackType
-  }
-  return 'married_coc'
-}
-
 export function resolvePurchaserTypeFromFormData(formData = {}, options = {}) {
-  const fallbackType = normalizePurchaserType(formData.purchaser_type || options.purchaserType || options.transaction?.purchaser_type)
-  const explicitEntityType = normalizeEntityType(
-    formData.purchaser_entity_type ||
-      formData?.purchaser?.purchaser_entity_type ||
-      formData.entity_type ||
-      formData.buyer_type,
-  )
-  const fallbackEntityType = normalizeEntityType(getPurchaserEntityType(fallbackType))
-  const entityType = explicitEntityType || fallbackEntityType
-
-  if (entityType === 'trust') {
-    return 'trust'
-  }
-
-  if (entityType === 'company' || entityType === 'other_legal_entity' || entityType === 'other_entity') {
-    return 'company'
-  }
-
-  if (
-    entityType === 'foreign_purchaser' ||
-    entityType === 'foreign_individual' ||
-    entityType === 'foreign_buyer'
-  ) {
-    return 'foreign_purchaser'
-  }
-
-  const primaryPurchaser = {
-    ...(formData?.purchaser || {}),
-    ...(Array.isArray(formData?.purchasers) ? formData.purchasers[0] || {} : {}),
-    nationality: formData.nationality ?? formData?.purchaser?.nationality ?? '',
-    residency_status: formData.residency_status ?? formData?.purchaser?.residency_status ?? '',
-    marital_status: formData.marital_status ?? formData?.purchaser?.marital_status ?? '',
-    marital_regime: formData.marital_regime ?? formData?.purchaser?.marital_regime ?? '',
-    passport_number: formData.passport_number ?? formData?.purchaser?.passport_number ?? '',
-    identity_number: formData.identity_number ?? formData?.purchaser?.identity_number ?? '',
-  }
-
-  const hasForeignIndicators =
-    isYesLike(formData.non_resident_exchange_control) ||
-    isForeignResidencyStatus(primaryPurchaser.residency_status) ||
-    (String(primaryPurchaser.nationality || '').trim().length > 0 && !isSouthAfricanNationality(primaryPurchaser.nationality)) ||
-    (String(primaryPurchaser.passport_number || '').trim().length > 0 &&
-      String(primaryPurchaser.identity_number || '').trim().length === 0)
-
-  if (hasForeignIndicators) {
-    return 'foreign_purchaser'
-  }
-
-  const maritalStatus = String(primaryPurchaser.marital_status || '').trim().toLowerCase()
-  if (maritalStatus === 'married') {
-    return resolveMarriedPurchaserType(primaryPurchaser.marital_regime, fallbackType)
-  }
-
-  if (fallbackType === 'married_coc' || fallbackType === 'married_anc' || fallbackType === 'married_anc_accrual') {
-    return fallbackType
-  }
-
-  return 'individual'
+  return resolveBuyerBranch(formData, options.transaction || {}, options)
 }
 
 export function getTransactionPurchaserTypeValue(value) {
@@ -1615,11 +1513,12 @@ export function getPurchaserTypeOptions({ includeOptional = false } = {}) {
 }
 
 export function getPersonaFormConfig(value, options = {}) {
-  const purchaserType = resolvePurchaserTypeFromFormData(options.formData || {}, {
+  const flow = resolveBuyerOnboardingFlow(options.formData || {}, options.transaction || {}, {
     purchaserType: value,
-    transaction: options.transaction,
+    financeType: options.financeType || options.formData?.purchase_finance_type,
   })
-  const financeType = normalizeFinanceType(options.financeType || options.formData?.purchase_finance_type || 'cash')
+  const purchaserType = flow.purchaser_branch
+  const financeType = normalizeFinanceType(flow.finance_type || options.financeType || options.formData?.purchase_finance_type || 'cash')
   const sections = [
     PERSONAL_SECTION,
     ...(isNaturalPersonPurchaserType(purchaserType) ? [CO_PURCHASER_SECTION] : []),
@@ -1644,12 +1543,13 @@ export function getVisibleOnboardingSections({ purchaserType, financeType, value
 
 export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const transaction = options.transaction || null
-  const purchaserType = resolvePurchaserTypeFromFormData(formData, {
+  const flow = resolveBuyerOnboardingFlow(formData, transaction || {}, {
     purchaserType: options.purchaserType,
-    transaction,
+    financeType: options.financeType || formData.purchase_finance_type || transaction?.finance_type,
   })
+  const purchaserType = flow.purchaser_branch
   const transactionPurchaserType = getTransactionPurchaserTypeValue(purchaserType)
-  const financeType = normalizeFinanceType(formData.purchase_finance_type || options.financeType || transaction?.finance_type || 'cash')
+  const financeType = normalizeFinanceType(flow.finance_type || formData.purchase_finance_type || options.financeType || transaction?.finance_type || 'cash')
   const purchasePrice = normalizeNumber(formData.purchase_price ?? transaction?.purchase_price ?? transaction?.sales_price)
   const cashAmount = normalizeNumber(formData.cash_amount ?? transaction?.cash_amount)
   const bondAmount = normalizeNumber(formData.bond_amount ?? transaction?.bond_amount)
@@ -1659,7 +1559,6 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const directors = Array.isArray(formData.directors) ? formData.directors.filter((item) => isFilledValue(item)) : []
   const fundingSources = Array.isArray(formData.funding_sources) ? formData.funding_sources.filter((item) => isFilledValue(item)) : []
   const employmentType = normalizeEmploymentType(formData.employment_type)
-
   const parties = []
   const primaryName = [formData.first_name, formData.last_name].filter(Boolean).join(' ').trim()
   if (primaryName) {
@@ -1814,6 +1713,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
     purchaserTypeLabel: getPurchaserTypeLabel(purchaserType),
     transactionPurchaserType,
     financeType,
+    flow,
     purchasePrice,
     cashAmount,
     bondAmount,
@@ -1850,6 +1750,9 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
       finance_type: financeType,
       employment_type: employmentType || null,
       employment_complexity_score: employmentComplexityScore,
+      purchase_mode: flow.purchase_mode,
+      buyer_branch: flow.purchaser_branch,
+      finance_branch: flow.finance_branch,
       has_bond_component: hasBondComponent,
       has_cash_component: hasCashComponent,
       needs_bond_originator: bondOriginatorRequired,
@@ -1889,11 +1792,12 @@ function validateIdLike(value, label) {
 }
 
 export function validateOnboardingSubmission(formData = {}, options = {}) {
-  const purchaserType = resolvePurchaserTypeFromFormData(formData, {
+  const flow = resolveBuyerOnboardingFlow(formData, options.transaction || {}, {
     purchaserType: options.purchaserType,
-    transaction: options.transaction,
+    financeType: options.financeType || formData.purchase_finance_type,
   })
-  const financeType = normalizeFinanceType(formData.purchase_finance_type || options.financeType || 'cash')
+  const purchaserType = flow.purchaser_branch
+  const financeType = normalizeFinanceType(flow.finance_type || formData.purchase_finance_type || options.financeType || 'cash')
   const purchaserEntityType = String(formData.purchaser_entity_type || getPurchaserEntityType(purchaserType))
     .trim()
     .toLowerCase()
@@ -2000,7 +1904,9 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
   }
 
   if (isNaturalPersonPurchaserType(purchaserType)) {
-    if (!['individual', 'co_purchasing'].includes(purchaserSnapshot.mode)) {
+    const resolvedPurchaseMode = flow.purchase_mode || purchaserSnapshot.mode
+
+    if (!['individual', 'co_purchasing'].includes(resolvedPurchaseMode)) {
       throw new Error('Select whether you are purchasing alone or with a co-purchaser.')
     }
     if (!purchaserSnapshot.purchasers.length) {
@@ -2008,7 +1914,7 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     }
 
     validateNaturalPurchaser(purchaserSnapshot.purchasers[0], 0)
-    if (purchaserSnapshot.mode === 'co_purchasing') {
+    if (resolvedPurchaseMode === 'co_purchasing') {
       if (purchaserSnapshot.purchasers.length < 2) {
         throw new Error('Purchaser 2 details are required for co-purchasing.')
       }
