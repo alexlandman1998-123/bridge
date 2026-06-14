@@ -137,7 +137,7 @@ import {
   rejectSuggestion,
 } from '../services/leadSuggestionService'
 
-const pageShell = 'mx-auto flex w-full max-w-[1480px] flex-col gap-5'
+const pageShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5 px-3 sm:px-4 lg:px-6 xl:px-8 2xl:px-10'
 const leadListShell = 'flex w-full min-w-0 flex-col gap-5 px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 const buyerWorkspaceCardClass = `${panelClass} card`
@@ -6842,7 +6842,7 @@ function SellerDocumentsPanel({ journey = null }) {
   )
 }
 
-function getSellerOnboardingStatus(row = {}, listing = null) {
+function getSellerOnboardingStatus(row = {}, listing = null, journey = null) {
   const statuses = [
     row?.sellerOnboardingStatus,
     row?.seller_onboarding_status,
@@ -6850,12 +6850,23 @@ function getSellerOnboardingStatus(row = {}, listing = null) {
     listing?.sellerOnboarding?.status,
     listing?.sellerOnboardingStatus,
     listing?.seller_onboarding_status,
+    row?.stage,
+    row?.status,
+    row?.currentStage,
+    row?.current_stage,
+    listing?.listingStatus,
+    listing?.listing_status,
+    listing?.status,
+    listing?.lifecycleStatus,
+    listing?.lifecycle_status,
   ]
     .map((value) => normalizeText(value).toLowerCase())
     .filter(Boolean)
 
   const submittedStatus = statuses.find((status) => sellerOnboardingIsSubmitted(status))
   if (submittedStatus) return submittedStatus
+
+  if (journey?.onboardingSubmitted) return 'completed'
 
   const hasCompletionTimestamp = Boolean(
     row?.sellerOnboarding?.submittedAt ||
@@ -6872,6 +6883,13 @@ function getSellerOnboardingStatus(row = {}, listing = null) {
       listing?.seller_onboarding_completed_at,
   )
   if (hasCompletionTimestamp) return 'completed'
+
+  if (journey?.onboardingSent) return 'sent'
+
+  const sentStatus = statuses.find((status) => sellerOnboardingHasStarted(status))
+  if (sentStatus) return sentStatus
+
+  if (getSellerOnboardingToken(row, listing)) return 'sent'
 
   return statuses[0] || ''
 }
@@ -6909,7 +6927,12 @@ function getSellerPortalLink(row = {}, listing = null) {
 
 function sellerOnboardingIsSubmitted(status = '') {
   const normalized = normalizeText(status).toLowerCase()
-  return ['submitted', 'completed', 'complete', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'].includes(normalized)
+  return ['submitted', 'completed', 'complete', 'under_review', 'onboarding_completed', 'seller_onboarding_completed', 'seller_onboarding_submitted'].includes(normalized)
+}
+
+function sellerOnboardingHasStarted(status = '') {
+  const normalized = normalizeText(status).toLowerCase()
+  return sellerOnboardingIsSubmitted(normalized) || ['sent', 'in_progress', 'started', 'opened', 'active', 'available', 'onboarding_sent', 'seller_onboarding_sent'].includes(normalized)
 }
 
 function sellerOnboardingActionLabel(status = '') {
@@ -6919,7 +6942,7 @@ function sellerOnboardingActionLabel(status = '') {
   return 'Send Seller Onboarding'
 }
 
-function getSellerOnboardingActionMeta(status = '', row = {}, listing = null) {
+function getSellerOnboardingActionMeta(status = '', row = {}, listing = null, journey = null) {
   const normalized = normalizeText(status).toLowerCase()
   const hasToken = Boolean(getSellerOnboardingToken(row, listing))
   if (sellerOnboardingIsSubmitted(normalized)) {
@@ -6931,13 +6954,13 @@ function getSellerOnboardingActionMeta(status = '', row = {}, listing = null) {
       help: 'Seller details have been submitted.',
     }
   }
-  if (hasToken || ['sent', 'in_progress', 'started'].includes(normalized)) {
+  if (hasToken || sellerOnboardingHasStarted(normalized) || journey?.onboardingSent) {
     return {
-      label: 'Onboarding Link Sent',
+      label: hasToken ? 'Resend Onboarding Link' : 'Refresh Onboarding Link',
       tone: 'sent',
-      disabled: true,
+      disabled: false,
       icon: Mail,
-      help: 'Use resend if the seller needs the portal link again.',
+      help: hasToken ? 'Send the current seller portal link again.' : 'Refresh the seller onboarding link for this lead.',
     }
   }
   return {
@@ -7186,7 +7209,7 @@ function dedupeSellerActivityEvents(events = []) {
 
 function getSellerMilestones({ row = {}, listing = null, journey = null } = {}) {
   const mandateStatus = getSellerMandateStatus(row, listing, journey)
-  const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, listing))
+  const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, listing, journey))
   const hasMandate = sellerMandateHasRecord(row, listing, journey)
   return [
     {
@@ -7231,7 +7254,7 @@ function getSellerMilestones({ row = {}, listing = null, journey = null } = {}) 
 function buildSellerTimelineSummary({ row = {}, listing = null, journey = null, readiness = null } = {}) {
   const documents = journey?.documents || []
   const incompleteDocuments = documents.filter((document) => getSellerDocumentCompletion([document]).percent < 100)
-  const onboardingStatus = getSellerOnboardingStatus(row, listing)
+  const onboardingStatus = getSellerOnboardingStatus(row, listing, journey)
   const mandateMeta = getSellerMandateMeta(row, listing, journey)
   const leadStatus = journey?.listingLive
     ? 'Listing is live.'
@@ -7243,7 +7266,7 @@ function buildSellerTimelineSummary({ row = {}, listing = null, journey = null, 
           ? 'Mandate has been generated.'
           : sellerOnboardingIsSubmitted(onboardingStatus)
             ? 'Seller onboarding completed.'
-            : getSellerOnboardingToken(row, listing)
+            : sellerOnboardingHasStarted(onboardingStatus) || getSellerOnboardingToken(row, listing)
               ? 'Seller onboarding has been sent.'
               : 'Seller lead is active.'
   const next = incompleteDocuments.length
@@ -7275,7 +7298,8 @@ function getSellerActivityInsights(events = [], readiness = null) {
 function getSellerNextBestActionMeta({ row = {}, listing = null, journey = null, readiness = null, onboardingStatus = '' } = {}) {
   const blocker = readiness?.blockers?.find((item) => item.severity === 'blocked') || readiness?.blockers?.[0] || readiness?.nextAction?.blocker || null
   const nextAction = readiness?.nextAction || journey?.nextRecommendedAction || null
-  if (!sellerOnboardingIsSubmitted(onboardingStatus) && !getSellerOnboardingToken(row, listing)) {
+  const onboardingSent = Boolean(journey?.onboardingSent) || sellerOnboardingHasStarted(onboardingStatus) || Boolean(getSellerOnboardingToken(row, listing))
+  if (!sellerOnboardingIsSubmitted(onboardingStatus) && !onboardingSent) {
     return {
       title: 'Seller onboarding pending',
       copy: 'The seller still needs their portal intake link before the listing pack can move forward.',
@@ -7588,7 +7612,7 @@ function SellerLeadActions({
 }) {
   const listingMeta = getSellerListingMeta(row, listing, journey)
   const mandateMeta = getSellerMandateMeta(row, listing, journey)
-  const onboardingMeta = getSellerOnboardingActionMeta(onboardingStatus, row, listing)
+  const onboardingMeta = getSellerOnboardingActionMeta(onboardingStatus, row, listing, journey)
   const OnboardingIcon = onboardingMeta.icon || Mail
   const mandateRequiresOnboarding = !mandateMeta.hasRecord && !sellerOnboardingIsSubmitted(onboardingStatus)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -9108,7 +9132,7 @@ function AgentLeadWorkspace() {
       journey: sellerJourney,
     })
   }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney])
-  const sellerOnboardingStatus = row ? getSellerOnboardingStatus(row, linkedSellerListing) : ''
+  const sellerOnboardingStatus = row ? getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney) : ''
   const workspaceName = normalizeText(workspaceContext.currentWorkspace?.name || workspaceContext.workspace?.name)
   const tabs = useMemo(() => isSellerLeadWorkspace
     ? [
@@ -9321,7 +9345,7 @@ function AgentLeadWorkspace() {
 
       const formPatch = buildSellerCommissionFormPatch(draft, actor)
       const existingFormData = readSellerOnboardingFormData(linkedSellerListing)
-      const currentStatus = getSellerOnboardingStatus(row, linkedSellerListing)
+      const currentStatus = getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney)
       await updatePrivateListingOnboardingFormData(listingId, {
         ...existingFormData,
         ...formPatch,
@@ -9342,11 +9366,11 @@ function AgentLeadWorkspace() {
     } finally {
       setSavingSellerCommission(false)
     }
-  }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, savingSellerCommission])
+  }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, savingSellerCommission, sellerJourney])
 
   const openMandateWorkspace = useCallback(() => {
     if (!row) return
-    const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, linkedSellerListing))
+    const onboardingSubmitted = sellerOnboardingIsSubmitted(getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney))
     const mandateMeta = getSellerMandateMeta(row, linkedSellerListing, sellerJourney)
     if (!mandateMeta.hasRecord && !onboardingSubmitted) {
       setSellerActionError('Send seller onboarding and wait for the seller to submit their details before generating the mandate.')

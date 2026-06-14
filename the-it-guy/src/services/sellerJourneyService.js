@@ -173,6 +173,28 @@ export function resolveSellerJourneyStageFromToken(value = '') {
 const SELLER_ONBOARDING_SUBMITTED_STATUSES = new Set(['submitted', 'completed', 'complete', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'])
 const SELLER_ONBOARDING_SENT_STATUSES = new Set(['sent', 'in_progress', ...SELLER_ONBOARDING_SUBMITTED_STATUSES])
 const LISTING_CREATED_STATUS_KEYS = new Set(['mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'])
+const SELLER_ONBOARDING_SENT_STAGE_SIGNALS = new Set([
+  'seller_onboarding_sent',
+  'onboarding_sent',
+])
+const SELLER_ONBOARDING_SUBMITTED_STAGE_SIGNALS = new Set([
+  'seller_onboarding_submitted',
+  'seller_onboarding_completed',
+  'onboarding_submitted',
+  'onboarding_completed',
+  'listing_review',
+  'mandate_ready',
+  'mandate_sent',
+  'mandate_signed',
+  'listing_created',
+  'listing_live',
+  'all_documents_submitted',
+  'documents_submitted',
+  'active',
+  'under_offer',
+  'transaction_created',
+  'sold',
+])
 
 function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
@@ -231,6 +253,12 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
       listing?.sellerOnboarding?.status ||
       listing?.seller_onboarding_status,
   )
+  const leadJourneySignals = [
+    lead?.stage,
+    lead?.status,
+    lead?.currentStage,
+    lead?.current_stage,
+  ].map(normalizeKey).filter(Boolean)
   const token = firstPresent(
     lead?.sellerOnboardingToken,
     lead?.seller_onboarding_token,
@@ -247,10 +275,13 @@ function getSellerOnboardingSignals({ lead = {}, listing = {} } = {}) {
   const sent = Boolean(
     token ||
       SELLER_ONBOARDING_SENT_STATUSES.has(status) ||
+      leadJourneySignals.some((signal) => SELLER_ONBOARDING_SENT_STAGE_SIGNALS.has(signal) || signal === 'sent' || signal === 'in_progress') ||
+      leadJourneySignals.some((signal) => SELLER_ONBOARDING_SUBMITTED_STAGE_SIGNALS.has(signal)) ||
       ['onboarding_sent', 'onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'].includes(listingLifecycle),
   )
   const submitted = Boolean(
     SELLER_ONBOARDING_SUBMITTED_STATUSES.has(status) ||
+      leadJourneySignals.some((signal) => SELLER_ONBOARDING_SUBMITTED_STAGE_SIGNALS.has(signal) || signal === 'submitted' || signal === 'completed') ||
       ['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'].includes(listingLifecycle),
   )
   return {

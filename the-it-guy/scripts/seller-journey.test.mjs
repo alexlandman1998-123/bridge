@@ -111,6 +111,32 @@ const baseLead = {
   const journey = buildSellerJourney({
     lead: {
       ...baseLead,
+      stage: 'Seller Onboarding Sent',
+      status: 'Sent',
+    },
+  })
+  assert.equal(journey.onboardingSent, true)
+  assert.equal(journey.onboardingSubmitted, false)
+  assert.equal(journey.stage.key, 'seller_onboarding_sent')
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
+      stage: 'Seller Onboarding Submitted',
+      status: 'Submitted',
+    },
+  })
+  assert.equal(journey.onboardingSent, true)
+  assert.equal(journey.onboardingSubmitted, true)
+  assert.equal(journey.stage.key, 'seller_onboarding_submitted')
+}
+
+{
+  const journey = buildSellerJourney({
+    lead: {
+      ...baseLead,
       listingId: 'listing-onboarding-sent-polluted',
       stage: 'Onboarding Sent',
       status: 'Onboarding Sent',

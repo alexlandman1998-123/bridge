@@ -7,6 +7,10 @@ import {
   normalizePropertyStructureType,
 } from './propertyTaxonomy.js'
 import { resolveSellerOnboardingFlow } from './sellerOnboardingFlow.js'
+import {
+  formatPropertyAddress,
+  normalizePropertyAddress,
+} from './sellerPropertyAddress.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy seller requirement engine is retained as a compatibility fallback.
@@ -488,13 +492,32 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
         listing?.property_type,
       { fallback: 'residential' },
     )
-  const propertyAddress = normalizeText(
-    onboarding?.propertyAddress ||
-      canonicalFacts?.property?.address ||
-      listing?.addressLine1 ||
-      listing?.address_line_1 ||
-      listing?.propertyAddress,
+  const propertyAddressDetails = normalizePropertyAddress(
+    {
+      propertyAddressDetails: onboarding?.propertyAddressDetails || canonicalFacts?.property?.address_details || {},
+      propertyAddress: onboarding?.propertyAddress || canonicalFacts?.property?.address || '',
+      propertyAddressLine1: onboarding?.propertyAddressLine1 || canonicalFacts?.property?.address_line_1 || '',
+      propertyAddressLine2: onboarding?.propertyAddressLine2 || canonicalFacts?.property?.address_line_2 || '',
+      suburb: onboarding?.suburb || canonicalFacts?.property?.suburb || '',
+      city: onboarding?.city || canonicalFacts?.property?.city || '',
+      province: onboarding?.province || canonicalFacts?.property?.province || '',
+      postalCode: onboarding?.postalCode || canonicalFacts?.property?.postal_code || '',
+      municipality: onboarding?.municipality || canonicalFacts?.property?.municipality || '',
+    },
+    listing,
+    {
+      line1: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress || '',
+      line2: listing?.addressLine2 || listing?.address_line_2 || '',
+      suburb: listing?.suburb || '',
+      city: listing?.city || '',
+      province: listing?.province || '',
+      postalCode: listing?.postalCode || listing?.postal_code || '',
+      municipality: listing?.municipality || listing?.city || '',
+      country: listing?.country || 'South Africa',
+      source: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress ? 'listing' : 'manual',
+    },
   )
+  const propertyAddress = normalizeText(formatPropertyAddress(propertyAddressDetails))
   const askingPrice = Number(onboarding?.askingPrice || listing?.askingPrice || listing?.asking_price || 0) || 0
   const owners = resolveOwners({
     ...onboarding,
@@ -565,6 +588,7 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     bodyCorporate,
     commercialProperty,
     propertyAddress,
+    propertyAddressDetails,
     bondStatus,
     occupancyStatus,
     askingPrice,

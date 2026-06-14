@@ -36,9 +36,17 @@ test('maps seller onboarding fields into publication draft data', () => {
   const draft = buildSellerOnboardingPublicationDraft({
     listing,
     formData: {
-      propertyAddress: '22 Seller Street',
-      suburb: 'Green Point',
-      province: 'WC',
+      propertyAddressDetails: {
+        query: '22 Seller Street, Green Point, Cape Town, Western Cape, 8001',
+        line1: '22 Seller Street',
+        suburb: 'Green Point',
+        city: 'Cape Town',
+        province: 'Western Cape',
+        postalCode: '8001',
+        municipality: 'City of Cape Town',
+        country: 'South Africa',
+        source: 'manual',
+      },
       propertyType: 'apartment',
       askingPrice: '2800000',
       bedrooms: '3',
@@ -58,7 +66,11 @@ test('maps seller onboarding fields into publication draft data', () => {
   })
 
   assert.equal(draft.title, '22 Seller Street')
-  assert.equal(draft.address, '22 Seller Street')
+  assert.equal(draft.address, '22 Seller Street, Green Point, Cape Town, Western Cape, 8001')
+  assert.equal(draft.addressLine1, '22 Seller Street')
+  assert.equal(draft.city, 'Cape Town')
+  assert.equal(draft.postalCode, '8001')
+  assert.equal(draft.municipality, 'City of Cape Town')
   assert.equal(draft.suburb, 'Green Point')
   assert.equal(draft.propertyType, 'apartment')
   assert.equal(draft.askingPrice, 2800000)
@@ -81,7 +93,18 @@ test('uses canonical facts when direct onboarding fields are absent', () => {
     formData: {
       canonicalSellerFacts: {
         property: {
-          address: '4 Canonical Lane',
+          address: '4 Canonical Lane, Sandton, Johannesburg, Gauteng, 2196',
+          address_details: {
+            line_1: '4 Canonical Lane',
+            suburb: 'Sandton',
+            city: 'Johannesburg',
+            province: 'Gauteng',
+            postal_code: '2196',
+            municipality: 'City of Johannesburg',
+            country: 'South Africa',
+            source: 'manual',
+            formatted: '4 Canonical Lane, Sandton, Johannesburg, Gauteng, 2196',
+          },
           suburb: 'Sandton',
           province: 'Gauteng',
           property_type: 'estate',
@@ -102,7 +125,8 @@ test('uses canonical facts when direct onboarding fields are absent', () => {
     },
   })
 
-  assert.equal(draft.address, '4 Canonical Lane')
+  assert.equal(draft.address, '4 Canonical Lane, Sandton, Johannesburg, Gauteng, 2196')
+  assert.equal(draft.addressLine1, '4 Canonical Lane')
   assert.equal(draft.suburb, 'Sandton')
   assert.equal(draft.propertyType, 'estate')
   assert.equal(draft.askingPrice, 3100000)

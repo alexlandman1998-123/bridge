@@ -1,4 +1,8 @@
 import { resolveSellerOnboardingFlow } from '../lib/sellerOnboardingFlow.js'
+import {
+  formatPropertyAddress,
+  normalizePropertyAddress,
+} from '../lib/sellerPropertyAddress.js'
 
 function text(value) {
   return String(value || '').trim()
@@ -6,6 +10,10 @@ function text(value) {
 
 function object(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }
 
 function number(value) {
@@ -77,6 +85,33 @@ export function buildSellerOnboardingPublicationDraft({
   const transactionFacts = object(facts.transaction)
   const complianceFacts = object(facts.compliance)
   const propertyBranch = flow.property_branch
+  const propertyAddressDetails = normalizePropertyAddress(
+    {
+      propertyAddressDetails: form.propertyAddressDetails || propertyFacts.address_details || {},
+      propertyAddress: form.propertyAddress || propertyFacts.address || '',
+      propertyAddressLine1: form.propertyAddressLine1 || propertyFacts.address_line_1 || '',
+      propertyAddressLine2: form.propertyAddressLine2 || propertyFacts.address_line_2 || '',
+      suburb: form.suburb || propertyFacts.suburb || '',
+      city: form.city || propertyFacts.city || '',
+      province: form.province || propertyFacts.province || '',
+      postalCode: form.postalCode || propertyFacts.postal_code || '',
+      municipality: form.municipality || propertyFacts.municipality || '',
+      country: form.country || propertyFacts.country || '',
+    },
+    listing,
+    {
+      line1: listing.addressLine1 || listing.address_line_1 || listing.propertyAddress || '',
+      line2: listing.addressLine2 || listing.address_line_2 || '',
+      suburb: listing.suburb || '',
+      city: listing.city || '',
+      province: listing.province || '',
+      postalCode: listing.postalCode || listing.postal_code || '',
+      municipality: listing.municipality || listing.city || '',
+      country: listing.country || 'South Africa',
+      source: listing.addressLine1 || listing.address_line_1 || listing.propertyAddress ? 'listing' : 'manual',
+    },
+  )
+  const propertyAddress = formatPropertyAddress(propertyAddressDetails)
 
   const features = new Set(
     Array.isArray(form.features)
@@ -94,15 +129,24 @@ export function buildSellerOnboardingPublicationDraft({
   return {
     title: firstText(
       form.listingTitle,
-      form.propertyAddress,
+      propertyAddressDetails.line1,
+      propertyAddress,
       propertyFacts.address,
       listing.title,
       listing.listingTitle,
       listing.addressLine1,
     ),
-    address: firstText(form.propertyAddress, propertyFacts.address, listing.addressLine1, listing.propertyAddress, listing.title),
-    suburb: firstText(form.suburb, propertyFacts.suburb, listing.suburb),
-    province: firstText(form.province, propertyFacts.province, listing.province),
+    address: propertyAddress,
+    addressLine1: propertyAddressDetails.line1,
+    addressLine2: propertyAddressDetails.line2,
+    suburb: firstText(propertyAddressDetails.suburb, form.suburb, propertyFacts.suburb, listing.suburb),
+    city: firstText(propertyAddressDetails.city, form.city, propertyFacts.city, listing.city),
+    province: firstText(propertyAddressDetails.province, form.province, propertyFacts.province, listing.province),
+    postalCode: firstText(propertyAddressDetails.postalCode, form.postalCode, propertyFacts.postal_code, listing.postalCode, listing.postal_code),
+    municipality: firstText(propertyAddressDetails.municipality, form.municipality, propertyFacts.municipality, listing.municipality, listing.city),
+    country: propertyAddressDetails.country || 'South Africa',
+    addressSource: propertyAddressDetails.source,
+    addressFormatted: propertyAddressDetails.formatted,
     propertyType: firstText(form.propertyType, propertyFacts.property_type, listing.propertyType),
     listingType: 'Sale',
     askingPrice: firstNumber(form.askingPrice, transactionFacts.asking_price, listing.askingPrice, listing.estimatedValue),
@@ -117,6 +161,20 @@ export function buildSellerOnboardingPublicationDraft({
     description: descriptionFromForm(form),
     features: Array.from(features),
     amenities: [],
+    addressDetails: {
+      query: propertyAddressDetails.query,
+      line1: propertyAddressDetails.line1,
+      line2: propertyAddressDetails.line2,
+      suburb: propertyAddressDetails.suburb,
+      city: propertyAddressDetails.city,
+      province: propertyAddressDetails.province,
+      postalCode: propertyAddressDetails.postalCode,
+      municipality: propertyAddressDetails.municipality,
+      country: propertyAddressDetails.country,
+      placeId: propertyAddressDetails.placeId,
+      source: propertyAddressDetails.source,
+      formatted: propertyAddressDetails.formatted,
+    },
     status: 'Draft',
   }
 }
@@ -127,6 +185,8 @@ export function mergePublicationDraft(existing = {}, draft = {}) {
     const current = existing?.[key]
     if (Array.isArray(value)) {
       next[key] = Array.isArray(current) && current.length ? current : value
+    } else if (isPlainObject(value)) {
+      next[key] = isPlainObject(current) && Object.keys(current).length ? current : value
     } else if (typeof value === 'number') {
       next[key] = number(current) === null ? value : number(current)
     } else {

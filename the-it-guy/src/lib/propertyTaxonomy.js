@@ -35,6 +35,33 @@ export const PROPERTY_TYPES_BY_CATEGORY = {
   vacant_land: ['vacant_land', 'vacant_stand'],
 }
 
+const PROPERTY_TYPE_LABELS = {
+  house: 'House',
+  apartment: 'Apartment',
+  townhouse: 'Townhouse',
+  cluster: 'Cluster',
+  duplex: 'Duplex',
+  penthouse: 'Penthouse',
+  vacant_stand: 'Vacant Stand',
+  office_building: 'Office Building',
+  medical_suite: 'Medical Suite',
+  business_park: 'Business Park',
+  commercial_building: 'Commercial Building',
+  warehouse: 'Warehouse',
+  factory: 'Factory',
+  distribution_centre: 'Distribution Centre',
+  industrial_park: 'Industrial Park',
+  retail_store: 'Retail Store',
+  showroom: 'Showroom',
+  shopping_centre: 'Shopping Centre',
+  farm: 'Farm',
+  smallholding: 'Smallholding',
+  agricultural_land: 'Agricultural Land',
+  mixed_use_building: 'Mixed Use Building',
+  mixed_use_estate: 'Mixed Use Estate',
+  vacant_land: 'Vacant Land',
+}
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -80,6 +107,20 @@ export function getPropertyStructureTypeLabel(type) {
     other: 'Other',
   }
   return labels[key] || 'Other'
+}
+
+export function getPropertyTypeLabel(type) {
+  const key = normalizeKey(type)
+  return PROPERTY_TYPE_LABELS[key] || (normalizeText(type) ? normalizeText(type) : 'House')
+}
+
+export function getPropertyTypeOptionsByCategory(category) {
+  const key = normalizePropertyCategory(category, { fallback: 'residential' })
+  const values = PROPERTY_TYPES_BY_CATEGORY[key] || PROPERTY_TYPES_BY_CATEGORY.residential
+  return values.map((value) => ({
+    value,
+    label: getPropertyTypeLabel(value),
+  }))
 }
 
 export function mapLegacyPropertyTypeToCategory(value, { fallback = null } = {}) {
@@ -160,4 +201,3 @@ export function normalizePropertyStructureType(value, { fallback = null } = {}) 
   if (PROPERTY_STRUCTURE_TYPES.includes(normalized)) return normalized
   return mapLegacyValueToStructureType(normalized, { fallback })
 }
-

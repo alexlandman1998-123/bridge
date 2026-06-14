@@ -48,11 +48,18 @@ test('transforms seller onboarding into canonical resolver facts', () => {
     companyRegistrationNumber: '2024/123456/07',
     companyDirectorName: 'Alex Principal',
     propertyType: 'apartment',
-    propertyAddress: '123 Main Street',
-    suburb: 'Green Point',
-    city: 'Cape Town',
-    province: 'WC',
-    municipality: 'City of Cape Town',
+    propertyAddressDetails: {
+      query: '123 Main Street, Green Point, Cape Town, Western Cape, 8001',
+      line1: '123 Main Street',
+      line2: '',
+      suburb: 'Green Point',
+      city: 'Cape Town',
+      province: 'WC',
+      postalCode: '8001',
+      municipality: 'City of Cape Town',
+      country: 'South Africa',
+      source: 'manual',
+    },
     occupancyStatus: 'tenant_occupied',
     leaseExists: true,
     leaseExpiryDate: '2026-11-30',
@@ -70,6 +77,10 @@ test('transforms seller onboarding into canonical resolver facts', () => {
   assert.equal(facts.property.property_type, 'sectional_title')
   assert.equal(facts.property.sectional_title, true)
   assert.equal(facts.property.province, 'Western Cape')
+  assert.equal(facts.property.address_details.line_1, '123 Main Street')
+  assert.equal(facts.property.address_details.province, 'Western Cape')
+  assert.equal(facts.property.address_details.formatted, '123 Main Street, Green Point, Cape Town, Western Cape, 8001')
+  assert.equal(facts.property.address, '123 Main Street, Green Point, Cape Town, Western Cape, 8001')
   assert.equal(facts.occupancy.status, 'tenant_occupied')
   assert.equal(facts.occupancy.lease_expiry_date, '2026-11-30')
   assert.equal(facts.finance.existing_bond, true)
@@ -77,6 +88,40 @@ test('transforms seller onboarding into canonical resolver facts', () => {
   assert.equal(facts.compliance.gas_installation, true)
   assert.equal(facts.compliance.solar_installation, true)
   assert.equal(facts.context.id, listing.id)
+})
+
+test('captures land-specific details in canonical facts', () => {
+  const facts = transformSellerOnboardingToFacts({
+    sellerFirstName: 'Casey',
+    sellerSurname: 'Farm',
+    email: 'casey@example.com',
+    phone: '0821111111',
+    ownershipType: 'individual',
+    propertyCategory: 'agricultural',
+    propertyStructureType: 'agricultural_holding',
+    propertyType: 'farm',
+    propertyAddressDetails: {
+      query: 'Farm 12, Bela-Bela, Limpopo',
+      line1: 'Farm 12',
+      suburb: 'Bela-Bela',
+      city: 'Bela-Bela',
+      province: 'Limpopo',
+      postalCode: '0480',
+      municipality: 'Waterberg',
+      country: 'South Africa',
+      source: 'manual',
+    },
+    erfSize: '120000',
+    landZoning: 'Agricultural',
+    landServicesAvailable: 'Borehole water, electricity, gravel access road',
+    landWaterSource: 'Borehole',
+  }, listing)
+
+  assert.equal(facts.flow.property_branch, 'agricultural')
+  assert.equal(facts.property.land.zoning, 'Agricultural')
+  assert.equal(facts.property.land.services_available, 'Borehole water, electricity, gravel access road')
+  assert.equal(facts.property.land.water_source, 'Borehole')
+  assert.equal(facts.property.address_details.line_1, 'Farm 12')
 })
 
 test('validation distinguishes draft from final requirements', () => {
@@ -117,6 +162,7 @@ test('builds canonical payload with readiness and resolver input', () => {
     trustRegisteredAddress: '22 Road',
     propertyAddress: '22 Road',
     suburb: 'Sandton',
+    city: 'Johannesburg',
     province: 'GP',
     municipality: 'City of Johannesburg',
     propertyCategory: 'residential',

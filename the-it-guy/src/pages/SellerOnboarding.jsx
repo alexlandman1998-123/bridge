@@ -41,12 +41,20 @@ import {
 import { resolveSellerOnboardingFlow } from '../lib/sellerOnboardingFlow'
 import {
   getPropertyCategoryLabel,
+  getPropertyTypeLabel,
+  getPropertyTypeOptionsByCategory,
   getPropertyStructureTypeLabel,
+  normalizeCanonicalPropertyType,
   normalizePropertyCategory,
   normalizePropertyStructureType,
   PROPERTY_CATEGORIES,
   PROPERTY_STRUCTURE_TYPES,
 } from '../lib/propertyTaxonomy'
+import {
+  createBlankPropertyAddress,
+  formatPropertyAddress,
+  normalizePropertyAddress,
+} from '../lib/sellerPropertyAddress'
 
 const STEPS = ['Seller Information', 'Property Details', 'FICA & Compliance', 'Review & Submit']
 
@@ -80,19 +88,6 @@ const OWNERSHIP_TYPES = [
   { value: 'power_of_attorney', label: 'Power of attorney', description: 'Someone is acting under authority.' },
   { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more individuals own the property.' },
   { value: 'other', label: 'Other', description: 'Another ownership structure applies.' },
-]
-
-const CANONICAL_PROPERTY_TYPES = [
-  { value: 'freehold', label: 'Freehold' },
-  { value: 'sectional_title', label: 'Sectional Title' },
-  { value: 'share_block', label: 'Share Block' },
-  { value: 'estate', label: 'Estate / HOA' },
-  { value: 'commercial', label: 'Commercial' },
-  { value: 'farm', label: 'Farm' },
-  { value: 'industrial', label: 'Industrial' },
-  { value: 'mixed_use', label: 'Mixed Use' },
-  { value: 'vacant_land', label: 'Vacant Land' },
-  { value: 'other', label: 'Other' },
 ]
 
 const OCCUPANCY_STATUSES = [
@@ -164,7 +159,7 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
 
   const assignedAgentName = String(updated?.assignedAgentName || updated?.assignedAgent || 'Agent').trim()
   const sellerName = [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || 'Seller'
-  const propertyTitle = String(updated?.listingTitle || form.propertyAddress || 'property').trim()
+  const propertyTitle = String(updated?.listingTitle || getPropertyDisplayAddress(updated || {}, form || {}) || 'property').trim()
 
   let timeoutId = null
   try {
@@ -271,32 +266,74 @@ function getSellerDisplayName(listing = {}, form = {}) {
     String(listing?.seller?.name || listing?.sellerName || 'Seller').trim()
 }
 
+function getPropertyAddressDetails(listing = {}, form = {}) {
+  return normalizePropertyAddress(
+    {
+      propertyAddressDetails: form?.propertyAddressDetails || {},
+      propertyAddress: form?.propertyAddress || '',
+      propertyAddressSearch: form?.propertyAddressSearch || '',
+      propertyAddressLine1: form?.propertyAddressLine1 || '',
+      propertyAddressLine2: form?.propertyAddressLine2 || '',
+      addressQuery: form?.addressQuery || '',
+      suburb: form?.suburb || '',
+      city: form?.city || '',
+      province: form?.province || '',
+      postalCode: form?.postalCode || '',
+      municipality: form?.municipality || '',
+      country: form?.country || '',
+    },
+    listing,
+    {
+      line1: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress || '',
+      line2: listing?.addressLine2 || listing?.address_line_2 || '',
+      suburb: listing?.suburb || '',
+      city: listing?.city || '',
+      province: listing?.province || '',
+      postalCode: listing?.postalCode || listing?.postal_code || '',
+      municipality: listing?.municipality || listing?.city || '',
+      country: listing?.country || 'South Africa',
+      source: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress ? 'listing' : 'manual',
+    },
+  )
+}
+
 function getPropertyDisplayAddress(listing = {}, form = {}) {
-  return String(
-    form?.propertyAddress ||
-    listing?.propertyAddress ||
+  const address = getPropertyAddressDetails(listing, form)
+  const formatted = formatPropertyAddress(address)
+  return formatted || String(
     listing?.listingTitle ||
     listing?.title ||
     'Property details pending',
   ).trim()
 }
 
-function isCompactPropertyType(form = {}) {
-  const type = String(form?.propertyType || '').toLowerCase()
-  const structure = String(form?.propertyStructureType || '').toLowerCase()
-  return ['apartment', 'townhouse', 'cluster', 'duplex'].includes(type) || structure.includes('sectional')
-}
+function parsePropertyAddressQuery(query = '', fallback = {}) {
+  const text = String(query || '').trim()
+  if (!text) return null
 
-function isLandOrAgricultural(form = {}) {
-  const type = String(form?.propertyType || '').toLowerCase()
-  const category = String(form?.propertyCategory || '').toLowerCase()
-  return ['farm', 'vacant_land'].includes(type) || category === 'agricultural'
-}
+  const parts = text.split(',').map((part) => part.trim()).filter(Boolean)
+  const postalCode = parts.find((part) => /^\d{4}$/.test(part)) || String(fallback.postalCode || '').trim()
+  const line1 = parts[0] || String(fallback.line1 || '').trim()
+  const line2 = parts[1] && parts[1] !== postalCode ? parts[1] : String(fallback.line2 || '').trim()
+  const suburb = parts[2] || String(fallback.suburb || '').trim()
+  const city = parts[3] || String(fallback.city || '').trim()
+  const province = parts[4] || String(fallback.province || '').trim()
+  const municipality = parts[5] || city || suburb || String(fallback.municipality || '').trim()
 
-function isCommercialProperty(form = {}) {
-  const type = String(form?.propertyType || '').toLowerCase()
-  const category = String(form?.propertyCategory || '').toLowerCase()
-  return category === 'commercial' || ['office_building', 'warehouse', 'retail_store'].includes(type)
+  return {
+    query: text,
+    line1,
+    line2,
+    suburb,
+    city,
+    province,
+    postalCode,
+    municipality,
+    country: String(fallback.country || 'South Africa').trim() || 'South Africa',
+    placeId: String(fallback.placeId || '').trim(),
+    source: 'manual',
+    formatted: formatPropertyAddress({ line1, line2, suburb, city, province, postalCode }),
+  }
 }
 
 function getRequirementStatus(requirement = {}) {
@@ -573,6 +610,50 @@ function normalizeFormData(listing) {
     return canonicalFacts?.seller?.residential_address || existing.residentialAddress || ''
   }
   const ownershipFieldLabels = getOwnershipFieldLabels(flow?.seller_branch || existing.ownershipType || '')
+  const resolvedPropertyCategory = normalizePropertyCategory(
+    existing.propertyCategory || canonicalFacts?.property?.property_category || listing?.propertyCategory || listing?.property_category,
+    { fallback: 'residential' },
+  )
+  const propertyTypeOptions = getPropertyTypeOptionsByCategory(resolvedPropertyCategory)
+  const candidatePropertyType = existing.propertyType || listing?.propertyType || canonicalFacts?.property?.property_type || ''
+  const resolvedPropertyType = propertyTypeOptions.some((item) => item.value === candidatePropertyType)
+    ? candidatePropertyType
+    : propertyTypeOptions[0]?.value || candidatePropertyType || 'house'
+  const propertyAddressDetails = normalizePropertyAddress(
+    {
+      propertyAddressDetails: existing.propertyAddressDetails || canonicalFacts?.property?.address_details || {},
+      propertyAddress: existing.propertyAddress || canonicalFacts?.property?.address || '',
+      propertyAddressSearch: existing.propertyAddressSearch || canonicalFacts?.property?.address_details?.query || '',
+      propertyAddressLine1: existing.propertyAddressLine1 || canonicalFacts?.property?.address_line_1 || '',
+      propertyAddressLine2: existing.propertyAddressLine2 || canonicalFacts?.property?.address_line_2 || '',
+      suburb: existing.suburb || canonicalFacts?.property?.suburb || '',
+      city: existing.city || canonicalFacts?.property?.city || '',
+      province: existing.province || canonicalFacts?.property?.province || '',
+      postalCode: existing.postalCode || canonicalFacts?.property?.postal_code || '',
+      municipality: existing.municipality || canonicalFacts?.property?.municipality || '',
+      country: existing.country || canonicalFacts?.property?.country || '',
+    },
+    listing,
+    {
+      line1: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress || '',
+      line2: listing?.addressLine2 || listing?.address_line_2 || '',
+      suburb: listing?.suburb || '',
+      city: listing?.city || '',
+      province: listing?.province || '',
+      postalCode: listing?.postalCode || listing?.postal_code || '',
+      municipality: listing?.municipality || listing?.city || '',
+      country: listing?.country || 'South Africa',
+      source: listing?.addressLine1 || listing?.address_line_1 || listing?.propertyAddress ? 'listing' : 'manual',
+    },
+  )
+  const propertyBranch = String(flow?.property_branch || '').trim()
+  const canonicalPropertyType = normalizeCanonicalPropertyType({
+    propertyCategory: resolvedPropertyCategory,
+    propertyStructureType: existing.propertyStructureType || canonicalFacts?.property?.property_structure_type || listing?.propertyStructureType || listing?.property_structure_type || existing.propertyType,
+    propertyType: resolvedPropertyType,
+    estateName: existing.estateName || canonicalFacts?.property?.estate_name || existing.estateComplexName,
+    estateComplexName: existing.estateComplexName || canonicalFacts?.property?.estate_name,
+  })
 
   return {
     sellerFirstName: existing.sellerFirstName || canonicalFacts?.seller?.first_name || split.firstName,
@@ -651,25 +732,48 @@ function normalizeFormData(listing) {
     sellingTimeline: existing.sellingTimeline || '1_3_months',
     sellingReason: existing.sellingReason || '',
 
-    propertyCategory: normalizePropertyCategory(existing.propertyCategory || canonicalFacts?.property?.property_category || listing?.propertyCategory || listing?.property_category, { fallback: 'residential' }),
+    propertyCategory: resolvedPropertyCategory,
     propertyStructureType: normalizePropertyStructureType(existing.propertyStructureType || canonicalFacts?.property?.property_structure_type || listing?.propertyStructureType || listing?.property_structure_type || existing.propertyType, { fallback: 'other' }),
-    canonicalPropertyType: existing.canonicalPropertyType || canonicalFacts?.property?.property_type || existing.propertyClassification || '',
-    sectionalTitle: Boolean(existing.sectionalTitle || canonicalFacts?.property?.sectional_title || flow.property_branch === 'sectional_title'),
-    shareBlock: Boolean(existing.shareBlock || canonicalFacts?.property?.share_block),
-    estateOrHoa: Boolean(existing.estateOrHoa || canonicalFacts?.property?.estate_or_hoa || flow.property_branch === 'estate_hoa'),
-    bodyCorporate: Boolean(existing.bodyCorporate || canonicalFacts?.property?.body_corporate),
-    commercialProperty: Boolean(existing.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(flow.property_branch)),
-    propertyType: existing.propertyType || canonicalFacts?.property?.property_type || listing?.propertyType || 'house',
-    propertyAddress: existing.propertyAddress || canonicalFacts?.property?.address || [listing?.listingTitle, listing?.suburb, listing?.city].filter(Boolean).join(', '),
-    suburb: existing.suburb || canonicalFacts?.property?.suburb || listing?.suburb || '',
-    city: existing.city || canonicalFacts?.property?.city || listing?.city || '',
-    province: existing.province || canonicalFacts?.property?.province || '',
-    municipality: existing.municipality || canonicalFacts?.property?.municipality || existing.city || listing?.city || '',
+    canonicalPropertyType: existing.canonicalPropertyType || canonicalPropertyType || canonicalFacts?.property?.property_type || existing.propertyClassification || '',
+    sectionalTitle: Boolean(existing.sectionalTitle || canonicalFacts?.property?.sectional_title || propertyBranch === 'sectional_title'),
+    shareBlock: Boolean(existing.shareBlock || canonicalFacts?.property?.share_block || propertyBranch === 'sectional_title'),
+    estateOrHoa: Boolean(existing.estateOrHoa || canonicalFacts?.property?.estate_or_hoa || propertyBranch === 'estate_hoa'),
+    bodyCorporate: Boolean(existing.bodyCorporate || canonicalFacts?.property?.body_corporate || propertyBranch === 'sectional_title'),
+    commercialProperty: Boolean(existing.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(propertyBranch)),
+    propertyType: resolvedPropertyType,
+    propertyAddressDetails,
+    propertyAddressSearch: propertyAddressDetails.query || existing.propertyAddressSearch || '',
+    propertyAddress: propertyAddressDetails.formatted || existing.propertyAddress || canonicalFacts?.property?.address || [listing?.listingTitle, listing?.suburb, listing?.city].filter(Boolean).join(', '),
+    propertyAddressLine1: propertyAddressDetails.line1,
+    propertyAddressLine2: propertyAddressDetails.line2,
+    suburb: propertyAddressDetails.suburb || existing.suburb || canonicalFacts?.property?.suburb || listing?.suburb || '',
+    city: propertyAddressDetails.city || existing.city || canonicalFacts?.property?.city || listing?.city || '',
+    province: propertyAddressDetails.province || existing.province || canonicalFacts?.property?.province || '',
+    postalCode: propertyAddressDetails.postalCode || existing.postalCode || canonicalFacts?.property?.postal_code || '',
+    municipality: propertyAddressDetails.municipality || existing.municipality || canonicalFacts?.property?.municipality || existing.city || listing?.city || '',
+    country: propertyAddressDetails.country || existing.country || canonicalFacts?.property?.country || 'South Africa',
     estateComplexName: existing.estateComplexName || canonicalFacts?.property?.estate_name || '',
     estateName: existing.estateName || canonicalFacts?.property?.estate_name || existing.estateComplexName || '',
+    schemeBodyCorporateName: existing.schemeBodyCorporateName || canonicalFacts?.property?.scheme?.body_corporate_name || '',
+    schemeManagingAgentName: existing.schemeManagingAgentName || canonicalFacts?.property?.scheme?.managing_agent?.name || '',
+    schemeManagingAgentEmail: existing.schemeManagingAgentEmail || canonicalFacts?.property?.scheme?.managing_agent?.email || '',
+    schemeManagingAgentPhone: existing.schemeManagingAgentPhone || canonicalFacts?.property?.scheme?.managing_agent?.phone || '',
+    schemeLevies: existing.schemeLevies || canonicalFacts?.property?.scheme?.levies || '',
+    schemeRulesAvailable: Boolean(existing.schemeRulesAvailable || canonicalFacts?.property?.scheme?.rules),
     unitNumber: existing.unitNumber || canonicalFacts?.property?.unit_number || '',
     sectionNumber: existing.sectionNumber || canonicalFacts?.property?.section_number || '',
     schemeName: existing.schemeName || canonicalFacts?.property?.scheme_name || '',
+    hoaContactName: existing.hoaContactName || canonicalFacts?.property?.estate?.hoa_contact?.name || '',
+    hoaContactEmail: existing.hoaContactEmail || canonicalFacts?.property?.estate?.hoa_contact?.email || '',
+    hoaContactPhone: existing.hoaContactPhone || canonicalFacts?.property?.estate?.hoa_contact?.phone || '',
+    hoaManagementCompany: existing.hoaManagementCompany || canonicalFacts?.property?.estate?.management_company || '',
+    hoaRulesAvailable: Boolean(existing.hoaRulesAvailable || canonicalFacts?.property?.estate?.rules),
+    commercialUseDescription: existing.commercialUseDescription || canonicalFacts?.property?.use?.description || '',
+    mixedUseSplit: existing.mixedUseSplit || canonicalFacts?.property?.use?.mixed_use_split || '',
+    tenantScheduleAvailable: Boolean(existing.tenantScheduleAvailable || canonicalFacts?.property?.tenant_schedule),
+    landZoning: existing.landZoning || canonicalFacts?.property?.land?.zoning || canonicalFacts?.property?.land_zoning || '',
+    landServicesAvailable: existing.landServicesAvailable || canonicalFacts?.property?.land?.services_available || canonicalFacts?.property?.land_services_available || '',
+    landWaterSource: existing.landWaterSource || canonicalFacts?.property?.land?.water_source || canonicalFacts?.property?.land_water_source || '',
     erfNumber: existing.erfNumber || canonicalFacts?.property?.erf_number || '',
     titleDeedAvailable: Boolean(existing.titleDeedAvailable || canonicalFacts?.property?.title_deed_available),
     sgDiagramAvailable: Boolean(existing.sgDiagramAvailable || canonicalFacts?.property?.sg_diagram_available),
@@ -1175,6 +1279,63 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }, [listing?.sellerOnboarding?.status])
 
   const isCompleted = String(listing?.sellerOnboarding?.status || '').trim().toLowerCase() === SELLER_ONBOARDING_STATUS.COMPLETED
+  const flow = useMemo(() => getFlowContract(form || {}, listing || {}, getCanonicalSellerFacts(listing || {})), [form, listing])
+  const propertyBranch = String(flow?.property_branch || form?.propertyBranch || '').trim() || 'residential'
+  const propertyAddressDetails = useMemo(() => getPropertyAddressDetails(listing || {}, form || {}), [listing, form])
+  const propertyTypeOptions = useMemo(
+    () => getPropertyTypeOptionsByCategory(form?.propertyCategory || 'residential'),
+    [form?.propertyCategory],
+  )
+  const propertyTypeLabel = useMemo(() => getPropertyTypeLabel(form?.propertyType || propertyTypeOptions[0]?.value || ''), [form?.propertyType, propertyTypeOptions])
+  const addressSuggestions = useMemo(() => {
+    const suggestions = []
+    const current = propertyAddressDetails
+    const listingAddress = getPropertyAddressDetails(listing || {}, {})
+
+    if (listingAddress.formatted && listingAddress.formatted !== current.formatted) {
+      suggestions.push({
+        key: 'listing',
+        label: 'Use listing address',
+        description: listingAddress.formatted,
+        value: listingAddress,
+      })
+    }
+
+    if (current.query) {
+      const parsed = parsePropertyAddressQuery(current.query, current)
+      if (parsed?.formatted && parsed.formatted !== current.formatted) {
+        suggestions.push({
+          key: 'parsed',
+          label: 'Use typed address',
+          description: parsed.formatted,
+          value: parsed,
+        })
+      }
+      if (current.query !== current.line1) {
+        suggestions.push({
+          key: 'query',
+          label: 'Use search as line 1',
+          description: current.query,
+          value: {
+            ...current,
+            line1: current.query,
+            formatted: formatPropertyAddress({ ...current, line1: current.query }),
+          },
+        })
+      }
+    }
+
+    if (current.formatted) {
+      suggestions.push({
+        key: 'current',
+        label: 'Current structured address',
+        description: current.formatted,
+        value: current,
+      })
+    }
+
+    return suggestions.slice(0, 3)
+  }, [listing, propertyAddressDetails])
 
   const ficaRequirements = useMemo(() => {
     const type = getOwnershipBranch(form?.ownershipType)
@@ -1262,7 +1423,78 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function handleFormUpdate(key, value) {
-    setForm((previous) => ({ ...(previous || {}), [key]: value }))
+    setForm((previous) => {
+      const next = { ...(previous || {}), [key]: value }
+      if (key === 'propertyCategory') {
+        const propertyOptions = getPropertyTypeOptionsByCategory(value)
+        if (!propertyOptions.some((option) => option.value === next.propertyType)) {
+          next.propertyType = propertyOptions[0]?.value || next.propertyType || ''
+        }
+      }
+      if (
+        key === 'propertyCategory' ||
+        key === 'propertyType' ||
+        key === 'propertyStructureType' ||
+        key === 'estateName' ||
+        key === 'estateComplexName' ||
+        key === 'sectionalTitle' ||
+        key === 'shareBlock' ||
+        key === 'estateOrHoa' ||
+        key === 'commercialProperty'
+      ) {
+        next.canonicalPropertyType = normalizeCanonicalPropertyType(next)
+      }
+      return next
+    })
+  }
+
+  function handlePropertyAddressUpdate(partial = {}) {
+    setForm((previous) => {
+      const current = getPropertyAddressDetails(listing || {}, previous || {})
+      const nextAddress = {
+        ...createBlankPropertyAddress(),
+        ...current,
+        ...partial,
+      }
+      nextAddress.formatted = formatPropertyAddress(nextAddress)
+      return {
+        ...(previous || {}),
+        propertyAddressDetails: nextAddress,
+        propertyAddressSearch: nextAddress.query || '',
+        propertyAddress: nextAddress.formatted || nextAddress.line1 || '',
+        propertyAddressLine1: nextAddress.line1 || '',
+        propertyAddressLine2: nextAddress.line2 || '',
+        suburb: nextAddress.suburb || '',
+        city: nextAddress.city || '',
+        province: nextAddress.province || '',
+        postalCode: nextAddress.postalCode || '',
+        municipality: nextAddress.municipality || '',
+        country: nextAddress.country || 'South Africa',
+      }
+    })
+  }
+
+  function handlePropertyAddressQueryChange(value) {
+    handlePropertyAddressUpdate({ query: value })
+  }
+
+  function handlePropertyAddressSuggestionSelect(suggestion = {}) {
+    handlePropertyAddressUpdate({
+      ...suggestion,
+      query: suggestion.query || suggestion.formatted || suggestion.line1 || '',
+    })
+  }
+
+  function handlePropertyCategoryChange(value) {
+    setForm((previous) => {
+      const next = { ...(previous || {}), propertyCategory: value }
+      const propertyOptions = getPropertyTypeOptionsByCategory(value)
+      if (!propertyOptions.some((option) => option.value === next.propertyType)) {
+        next.propertyType = propertyOptions[0]?.value || next.propertyType || ''
+      }
+      next.canonicalPropertyType = normalizeCanonicalPropertyType(next)
+      return next
+    })
   }
 
   function handleOwnershipTypeChange(value) {
@@ -1480,8 +1712,28 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
 
     if (currentStep === 1) {
-      if (!form.propertyCategory || !form.propertyType || !form.propertyAddress || !form.suburb || !form.province) {
-        return 'Property category, property type, address, suburb, and province are required.'
+      const address = getPropertyAddressDetails(listing || {}, form || {})
+
+      if (!form.propertyCategory || !form.propertyType || !form.propertyStructureType) {
+        return 'Property category, property type, and structure type are required.'
+      }
+      if (!address.line1 || !address.suburb || !address.city || !address.province) {
+        return 'Please complete the property address, suburb, city, and province.'
+      }
+      if ((propertyBranch === 'sectional_title') && (!form.schemeName || !form.unitNumber || !form.sectionNumber || !form.schemeManagingAgentName)) {
+        return 'Scheme name, unit number, section number, and managing agent details are required for sectional title properties.'
+      }
+      if (propertyBranch === 'estate_hoa' && (!form.estateName || !form.hoaContactName)) {
+        return 'Estate / HOA name and HOA contact details are required for estate properties.'
+      }
+      if ((propertyBranch === 'commercial' || propertyBranch === 'mixed_use') && !form.commercialUseDescription) {
+        return 'Please describe the commercial or mixed-use operating context.'
+      }
+      if ((propertyBranch === 'commercial' || propertyBranch === 'mixed_use') && !form.floorSize) {
+        return 'Floor size is required for commercial and mixed-use properties.'
+      }
+      if ((propertyBranch === 'agricultural' || propertyBranch === 'vacant_land') && !form.erfSize) {
+        return 'Land size is required for vacant land and agricultural properties.'
       }
       if (form.existingBond && !form.bondBank) {
         return 'Bond bank is required when there is an existing bond.'
@@ -1645,9 +1897,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     )
   }
 
-  const showUnitDetails = isCompactPropertyType(form) || Boolean(form.sectionalTitle || form.shareBlock || form.bodyCorporate)
-  const showLandDetails = isLandOrAgricultural(form)
-  const showCommercialDetails = isCommercialProperty(form) || Boolean(form.commercialProperty)
   const ownershipBranch = getOwnershipBranch(form.ownershipType)
   const ownershipFieldLabels = getOwnershipFieldLabels(form.ownershipType)
   const selectedOwnership = OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType) || OWNERSHIP_TYPES[0]
@@ -1657,6 +1906,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const isDeceasedEstateOwnership = ownershipBranch === 'deceased_estate'
   const isPowerOfAttorneyOwnership = ownershipBranch === 'power_of_attorney'
   const isMultipleOwners = ownershipBranch === 'multiple_owners'
+  const showSectionalTitleDetails = propertyBranch === 'sectional_title'
+  const showEstateDetails = propertyBranch === 'estate_hoa'
+  const showCommercialDetails = propertyBranch === 'commercial' || propertyBranch === 'mixed_use'
+  const showLandDetails = propertyBranch === 'vacant_land' || propertyBranch === 'agricultural'
+  const showResidentialDetails = !showCommercialDetails && !showLandDetails
   const companyDirectors = Array.isArray(form.companyDirectors) ? form.companyDirectors : []
   const trustTrustees = Array.isArray(form.trustees) ? form.trustees : []
   const multipleOwners = Array.isArray(form.multipleOwners) ? form.multipleOwners : []
@@ -1704,9 +1958,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !form.phone && 'Phone',
   ].filter(Boolean)
   const propertyMissing = [
-    !form.propertyAddress && 'Property address',
-    !form.suburb && 'Suburb',
-    !form.province && 'Province',
+    !propertyAddressDetails.line1 && 'Property address',
+    !propertyAddressDetails.suburb && 'Suburb',
+    !propertyAddressDetails.city && 'City',
+    !propertyAddressDetails.province && 'Province',
   ].filter(Boolean)
 
   const content = (
@@ -2218,149 +2473,288 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ) : null}
 
           {currentStep === 1 ? (
-            <>
-              <section className="rounded-[18px] border border-[#e0e9f3] bg-[#fbfdff] p-3 sm:p-4 lg:p-5">
-                <h2 className="text-lg font-semibold text-[#162435]">Property Details</h2>
+            <StepShell
+              eyebrow="Property details"
+              title="Tell us about the property"
+              description="We start with category, then branch into the right property, address, and document questions."
+            >
+              <div className="space-y-4">
+                <FormSection
+                  icon={Building2}
+                  title="Property category"
+                  description="Choose the broad category first. It controls the type options and the rest of the flow."
+                >
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {PROPERTY_CATEGORIES.map((category) => (
+                      <ChoiceCard
+                        key={category}
+                        active={form.propertyCategory === category}
+                        title={getPropertyCategoryLabel(category)}
+                        description={
+                          category === 'residential'
+                            ? 'Homes, apartments, townhouses'
+                            : category === 'commercial'
+                              ? 'Offices, retail, business'
+                              : category === 'industrial'
+                                ? 'Warehouses, factories, parks'
+                                : category === 'agricultural'
+                                  ? 'Farms and holdings'
+                                  : category === 'mixed_use'
+                                    ? 'Residential and non-residential mix'
+                                    : category === 'vacant_land'
+                                      ? 'Vacant stands and land'
+                                      : 'Other property types'
+                        }
+                        onClick={() => handlePropertyCategoryChange(category)}
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#4f6378]">
+                    The selected branch is <strong className="text-[#22364a]">{flow.property_branch_label || formatValue(propertyBranch)}</strong>. Commercial and mixed-use hide residential-only questions. Sectional title and estate / HOA open their own follow-up fields.
+                  </div>
+                </FormSection>
 
-                <div className="mt-4 grid gap-4">
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                    <h3 className="text-sm font-semibold text-[#22364a]">Basics</h3>
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Property Category
-                        <select className={DETAIL_INPUT_CLASS} value={form.propertyCategory} onChange={(event) => handleFormUpdate('propertyCategory', event.target.value)}>
-                          {PROPERTY_CATEGORIES.map((category) => (
-                            <option key={category} value={category}>
-                              {getPropertyCategoryLabel(category)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Ownership / Structure Type
-                        <select className={DETAIL_INPUT_CLASS} value={form.propertyStructureType} onChange={(event) => handleFormUpdate('propertyStructureType', event.target.value)}>
-                          {PROPERTY_STRUCTURE_TYPES.map((structureType) => (
-                            <option key={structureType} value={structureType}>
-                              {getPropertyStructureTypeLabel(structureType)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Property Type
-                        <select className={DETAIL_INPUT_CLASS} value={form.propertyType} onChange={(event) => handleFormUpdate('propertyType', event.target.value)}>
-                          <option value="house">House</option>
-                          <option value="apartment">Apartment</option>
-                          <option value="townhouse">Townhouse</option>
-                          <option value="cluster">Cluster</option>
-                          <option value="duplex">Duplex</option>
-                          <option value="office_building">Office Building</option>
-                          <option value="warehouse">Warehouse</option>
-                          <option value="retail_store">Retail Store</option>
-                          <option value="farm">Farm</option>
-                          <option value="vacant_land">Vacant Land</option>
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Legal Property Classification
-                        <select className={DETAIL_INPUT_CLASS} value={form.canonicalPropertyType} onChange={(event) => handleFormUpdate('canonicalPropertyType', event.target.value)}>
-                          <option value="">Infer from property type</option>
-                          {CANONICAL_PROPERTY_TYPES.map((item) => (
-                            <option key={item.value} value={item.value}>{item.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="grid grid-cols-1 gap-2 md:col-span-2 sm:grid-cols-2 lg:grid-cols-5">
-                        {[
-                          ['sectionalTitle', 'Sectional title'],
-                          ['shareBlock', 'Share block'],
-                          ['estateOrHoa', 'Estate / HOA'],
-                          ['bodyCorporate', 'Body corporate'],
-                          ['commercialProperty', 'Commercial'],
-                        ].map(([key, label]) => (
-                          <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                            <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => handleFormUpdate(key, event.target.checked)} />
-                            {label}
-                          </label>
+                <FormSection
+                  icon={Home}
+                  title="Property type & structure"
+                  description="Choose the specific property type and the legal structure."
+                >
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Property Type
+                      <select
+                        className={DETAIL_INPUT_CLASS}
+                        value={form.propertyType}
+                        onChange={(event) => handleFormUpdate('propertyType', event.target.value)}
+                      >
+                        {propertyTypeOptions.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
                         ))}
-                      </div>
-                      {(showUnitDetails || showLandDetails || showCommercialDetails) ? (
-                        <div className="rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm leading-6 text-[#60748b] md:col-span-2">
-                          {showUnitDetails ? 'Because this appears to be a sectional title or complex property, unit and complex details are shown.' : null}
-                          {showLandDetails ? 'Because this appears to be land or agricultural property, land size and notes matter more than room counts.' : null}
-                          {showCommercialDetails ? 'Because this appears to be a commercial property, valuation and condition notes should reflect the operating context.' : null}
-                        </div>
-                      ) : null}
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Structure Type
+                      <select
+                        className={DETAIL_INPUT_CLASS}
+                        value={form.propertyStructureType}
+                        onChange={(event) => handleFormUpdate('propertyStructureType', event.target.value)}
+                      >
+                        {PROPERTY_STRUCTURE_TYPES.map((structureType) => (
+                          <option key={structureType} value={structureType}>
+                            {getPropertyStructureTypeLabel(structureType)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm leading-6 text-[#60748b]">
+                    Selected: {getPropertyCategoryLabel(form.propertyCategory)} / {propertyTypeLabel} / {getPropertyStructureTypeLabel(form.propertyStructureType)}.
+                  </div>
+                </FormSection>
+
+                <FormSection
+                  icon={Landmark}
+                  title="Canonical address"
+                  description="This becomes the source of truth for the listing, mandate, and documents."
+                >
+                  <div className="grid gap-3">
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Search address
+                      <input
+                        className={DETAIL_INPUT_CLASS}
+                        value={propertyAddressDetails.query}
+                        onChange={(event) => handlePropertyAddressQueryChange(event.target.value)}
+                        placeholder="Start with the street, complex, suburb, or estate name"
+                      />
+                    </label>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {addressSuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion.key}
+                          type="button"
+                          onClick={() => handlePropertyAddressSuggestionSelect(suggestion.value)}
+                          className="rounded-[14px] border border-[#dbe6f2] bg-white p-3 text-left transition hover:border-[#b6c9de] hover:bg-[#fafcff]"
+                        >
+                          <span className="block text-sm font-semibold text-[#22364a]">{suggestion.label}</span>
+                          <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">{suggestion.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                        Address (start typing)
-                        <input className={DETAIL_INPUT_CLASS} value={form.propertyAddress} onChange={(event) => handleFormUpdate('propertyAddress', event.target.value)} placeholder="Street address" />
+                        Address line 1
+                        <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.line1} onChange={(event) => handlePropertyAddressUpdate({ line1: event.target.value })} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                        Address line 2 (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.line2} onChange={(event) => handlePropertyAddressUpdate({ line2: event.target.value })} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Suburb
-                        <input className={DETAIL_INPUT_CLASS} value={form.suburb} onChange={(event) => handleFormUpdate('suburb', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.suburb} onChange={(event) => handlePropertyAddressUpdate({ suburb: event.target.value })} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         City
-                        <input className={DETAIL_INPUT_CLASS} value={form.city} onChange={(event) => handleFormUpdate('city', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.city} onChange={(event) => handlePropertyAddressUpdate({ city: event.target.value })} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Province
-                        <input className={DETAIL_INPUT_CLASS} value={form.province} onChange={(event) => handleFormUpdate('province', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.province} onChange={(event) => handlePropertyAddressUpdate({ province: event.target.value })} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Postal Code
+                        <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.postalCode} onChange={(event) => handlePropertyAddressUpdate({ postalCode: event.target.value })} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Municipality
-                        <input className={DETAIL_INPUT_CLASS} value={form.municipality} onChange={(event) => handleFormUpdate('municipality', event.target.value)} />
+                        <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.municipality} onChange={(event) => handlePropertyAddressUpdate({ municipality: event.target.value })} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Country
+                        <input className={DETAIL_INPUT_CLASS} value={propertyAddressDetails.country} onChange={(event) => handlePropertyAddressUpdate({ country: event.target.value })} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Erf Number (optional)
                         <input className={DETAIL_INPUT_CLASS} value={form.erfNumber} onChange={(event) => handleFormUpdate('erfNumber', event.target.value)} />
                       </label>
-                      {showUnitDetails ? (
-                        <>
-                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                            Estate / Complex Name (optional)
-                            <input className={DETAIL_INPUT_CLASS} value={form.estateComplexName} onChange={(event) => handleFormUpdate('estateComplexName', event.target.value)} />
-                          </label>
-                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                            Unit Number (optional)
-                            <input className={DETAIL_INPUT_CLASS} value={form.unitNumber} onChange={(event) => handleFormUpdate('unitNumber', event.target.value)} />
-                          </label>
-                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                            Section Number (optional)
-                            <input className={DETAIL_INPUT_CLASS} value={form.sectionNumber} onChange={(event) => handleFormUpdate('sectionNumber', event.target.value)} />
-                          </label>
-                          <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                            Scheme Name (optional)
-                            <input className={DETAIL_INPUT_CLASS} value={form.schemeName} onChange={(event) => handleFormUpdate('schemeName', event.target.value)} />
-                          </label>
-                        </>
-                      ) : null}
-                      {form.estateOrHoa ? (
-                        <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                          Estate / HOA Name
-                          <input className={DETAIL_INPUT_CLASS} value={form.estateName} onChange={(event) => handleFormUpdate('estateName', event.target.value)} />
-                        </label>
-                      ) : null}
-                      <div className="grid grid-cols-1 gap-2 md:col-span-2 sm:grid-cols-2 lg:grid-cols-5">
-                        {[
-                          ['titleDeedAvailable', 'Title deed copy'],
-                          ['sgDiagramAvailable', 'SG diagram'],
-                          ['erfDiagramAvailable', 'Erf diagram'],
-                          ['approvedBuildingPlansAvailable', 'Building plans'],
-                          ['floorPlanAvailable', 'Floor plan'],
-                        ].map(([key, label]) => (
-                          <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                            <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => handleFormUpdate(key, event.target.checked)} />
-                            {label}
-                          </label>
-                        ))}
-                      </div>
                     </div>
-                  </article>
+                    <div className="rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#4f6378]">
+                      Canonical address: <strong className="text-[#22364a]">{formatPropertyAddress(propertyAddressDetails) || 'Enter the address above to build the canonical property address.'}</strong>
+                    </div>
+                  </div>
+                </FormSection>
 
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                    <h3 className="text-sm font-semibold text-[#22364a]">Size</h3>
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {showSectionalTitleDetails ? (
+                  <FormSection
+                    icon={ClipboardCheck}
+                    title="Sectional title / scheme details"
+                    description="Sectional title properties need scheme and body corporate details."
+                  >
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Scheme name
+                        <input className={DETAIL_INPUT_CLASS} value={form.schemeName} onChange={(event) => handleFormUpdate('schemeName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Unit number
+                        <input className={DETAIL_INPUT_CLASS} value={form.unitNumber} onChange={(event) => handleFormUpdate('unitNumber', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Section number
+                        <input className={DETAIL_INPUT_CLASS} value={form.sectionNumber} onChange={(event) => handleFormUpdate('sectionNumber', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Body corporate name
+                        <input className={DETAIL_INPUT_CLASS} value={form.schemeBodyCorporateName} onChange={(event) => handleFormUpdate('schemeBodyCorporateName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Managing agent name
+                        <input className={DETAIL_INPUT_CLASS} value={form.schemeManagingAgentName} onChange={(event) => handleFormUpdate('schemeManagingAgentName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Managing agent email (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.schemeManagingAgentEmail} onChange={(event) => handleFormUpdate('schemeManagingAgentEmail', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Managing agent phone (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.schemeManagingAgentPhone} onChange={(event) => handleFormUpdate('schemeManagingAgentPhone', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Levies (optional)
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.schemeLevies} onChange={(event) => handleFormUpdate('schemeLevies', event.target.value)} />
+                      </label>
+                      <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                        <input type="checkbox" checked={Boolean(form.schemeRulesAvailable)} onChange={(event) => handleFormUpdate('schemeRulesAvailable', event.target.checked)} />
+                        Scheme rules available
+                      </label>
+                    </div>
+                  </FormSection>
+                ) : null}
+
+                {showEstateDetails ? (
+                  <FormSection
+                    icon={ShieldCheck}
+                    title="Estate / HOA details"
+                    description="Estate and HOA branches need the contact details for the body managing the scheme."
+                  >
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Estate / HOA name
+                        <input className={DETAIL_INPUT_CLASS} value={form.estateName} onChange={(event) => handleFormUpdate('estateName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Management company (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.hoaManagementCompany} onChange={(event) => handleFormUpdate('hoaManagementCompany', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        HOA contact name
+                        <input className={DETAIL_INPUT_CLASS} value={form.hoaContactName} onChange={(event) => handleFormUpdate('hoaContactName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        HOA contact email (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.hoaContactEmail} onChange={(event) => handleFormUpdate('hoaContactEmail', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        HOA contact phone (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.hoaContactPhone} onChange={(event) => handleFormUpdate('hoaContactPhone', event.target.value)} />
+                      </label>
+                      <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                        <input type="checkbox" checked={Boolean(form.hoaRulesAvailable)} onChange={(event) => handleFormUpdate('hoaRulesAvailable', event.target.checked)} />
+                        HOA rules available
+                      </label>
+                    </div>
+                  </FormSection>
+                ) : null}
+
+                {showCommercialDetails ? (
+                  <FormSection
+                    icon={Building2}
+                    title="Commercial / mixed-use details"
+                    description="Commercial and mixed-use listings should reflect how the property is actually used."
+                  >
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                        Operating context
+                        <textarea
+                          className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`}
+                          value={form.commercialUseDescription}
+                          onChange={(event) => handleFormUpdate('commercialUseDescription', event.target.value)}
+                          placeholder="Offices, retail, tenant mix, storage, services, trading, etc."
+                        />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                        Mixed-use split (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.mixedUseSplit} onChange={(event) => handleFormUpdate('mixedUseSplit', event.target.value)} placeholder="Residential 60% / retail 40%" />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Floor Size (m2)
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.floorSize} onChange={(event) => handleFormUpdate('floorSize', event.target.value)} />
+                      </label>
+                      <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                        <input type="checkbox" checked={Boolean(form.tenantScheduleAvailable)} onChange={(event) => handleFormUpdate('tenantScheduleAvailable', event.target.checked)} />
+                        Tenant schedule available
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Monthly water spend (optional)
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.monthlyWaterSpend} onChange={(event) => handleFormUpdate('monthlyWaterSpend', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Monthly electricity spend (optional)
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.monthlyElectricitySpend} onChange={(event) => handleFormUpdate('monthlyElectricitySpend', event.target.value)} />
+                      </label>
+                    </div>
+                  </FormSection>
+                ) : null}
+
+                {showResidentialDetails ? (
+                  <FormSection
+                    icon={Home}
+                    title="Residential details"
+                    description="These questions help with pricing and publication for residential property."
+                  >
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Erf Size (m2)
                         <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.erfSize} onChange={(event) => handleFormUpdate('erfSize', event.target.value)} />
@@ -2398,15 +2792,152 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.parkingOpen} onChange={(event) => handleFormUpdate('parkingOpen', event.target.value)} />
                       </label>
                       <label className="flex items-center gap-2 rounded-[10px] border border-[#d6e1ee] px-3 py-2 text-sm font-medium text-[#2a4057]">
-                        <input type="checkbox" checked={form.pool} onChange={(event) => handleFormUpdate('pool', event.target.checked)} />
+                        <input type="checkbox" checked={Boolean(form.pool)} onChange={(event) => handleFormUpdate('pool', event.target.checked)} />
                         Pool
                       </label>
                     </div>
-                  </article>
+                  </FormSection>
+                ) : null}
 
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                    <h3 className="text-sm font-semibold text-[#22364a]">Occupancy</h3>
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {showLandDetails ? (
+                  <FormSection
+                    icon={Landmark}
+                    title="Land / agricultural details"
+                    description="Land-only properties need size and a few practical notes."
+                  >
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Erf size (m2)
+                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.erfSize} onChange={(event) => handleFormUpdate('erfSize', event.target.value)} />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Zoning / usage (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.landZoning} onChange={(event) => handleFormUpdate('landZoning', event.target.value)} placeholder="Residential, agricultural, mixed, etc." />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Services available (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.landServicesAvailable} onChange={(event) => handleFormUpdate('landServicesAvailable', event.target.value)} placeholder="Water, electricity, sewer, access road..." />
+                      </label>
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Water source (optional)
+                        <input className={DETAIL_INPUT_CLASS} value={form.landWaterSource} onChange={(event) => handleFormUpdate('landWaterSource', event.target.value)} placeholder="Borehole, municipal, rainwater..." />
+                      </label>
+                    </div>
+                  </FormSection>
+                ) : null}
+
+                <FormSection
+                  icon={ClipboardCheck}
+                  title="Alterations & changes"
+                  description="Tell us about any alterations, additions, or unapproved changes."
+                >
+                  <div className="grid grid-cols-1 gap-3">
+                    <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                      <input type="checkbox" checked={Boolean(form.recentAlterations)} onChange={(event) => handleFormUpdate('recentAlterations', event.target.checked)} />
+                      There have been alterations, additions, or changes
+                    </label>
+                    {form.recentAlterations ? (
+                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                        Tell us what changed
+                        <textarea
+                          className={`${DETAIL_INPUT_CLASS} min-h-[120px] resize-y`}
+                          value={form.alterationDetails}
+                          onChange={(event) => handleFormUpdate('alterationDetails', event.target.value)}
+                          placeholder="Extensions, renovations, patios, pool, unapproved works, etc."
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                </FormSection>
+
+                <FormSection
+                  icon={Sparkles}
+                  title="Valuation factors"
+                  description="These numbers help the agent price the property realistically."
+                >
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Property Condition
+                      <select className={DETAIL_INPUT_CLASS} value={form.propertyCondition} onChange={(event) => handleFormUpdate('propertyCondition', event.target.value)}>
+                        <option value="needs_renovation">Needs renovation</option>
+                        <option value="average">Average</option>
+                        <option value="good">Good</option>
+                        <option value="recently_renovated">Recently renovated</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Kitchen Condition
+                      <select className={DETAIL_INPUT_CLASS} value={form.kitchenCondition} onChange={(event) => handleFormUpdate('kitchenCondition', event.target.value)}>
+                        <option value="needs_renovation">Needs renovation</option>
+                        <option value="average">Average</option>
+                        <option value="good">Good</option>
+                        <option value="recently_renovated">Recently renovated</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Bathroom Condition
+                      <select className={DETAIL_INPUT_CLASS} value={form.bathroomCondition} onChange={(event) => handleFormUpdate('bathroomCondition', event.target.value)}>
+                        <option value="needs_renovation">Needs renovation</option>
+                        <option value="average">Average</option>
+                        <option value="good">Good</option>
+                        <option value="recently_renovated">Recently renovated</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Rates & Taxes (optional)
+                      <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.ratesTaxes} onChange={(event) => handleFormUpdate('ratesTaxes', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Levies (optional)
+                      <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.levies} onChange={(event) => handleFormUpdate('levies', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Monthly water spend (optional)
+                      <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.monthlyWaterSpend} onChange={(event) => handleFormUpdate('monthlyWaterSpend', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Monthly electricity spend (optional)
+                      <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.monthlyElectricitySpend} onChange={(event) => handleFormUpdate('monthlyElectricitySpend', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Views (optional)
+                      <input className={DETAIL_INPUT_CLASS} value={form.views} onChange={(event) => handleFormUpdate('views', event.target.value)} placeholder="Mountain, sea, park, city..." />
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                      Notes (optional)
+                      <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about condition, upgrades, or pricing" />
+                    </label>
+                  </div>
+                </FormSection>
+
+                <FormSection
+                  icon={FileCheck2}
+                  title="Documents already available"
+                  description="Let us know what documents you already have on hand."
+                >
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                    {[
+                      ['titleDeedAvailable', 'Title deed copy'],
+                      ['sgDiagramAvailable', 'SG diagram'],
+                      ['erfDiagramAvailable', 'Erf diagram'],
+                      ['approvedBuildingPlansAvailable', 'Building plans'],
+                      ['floorPlanAvailable', 'Floor plan'],
+                    ].map(([key, label]) => (
+                      <label key={key} className="flex min-h-[44px] items-center gap-2 rounded-[10px] border border-[#d6e1ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                        <input type="checkbox" checked={Boolean(form[key])} onChange={(event) => handleFormUpdate(key, event.target.checked)} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </FormSection>
+
+                <FormSection
+                  icon={Building2}
+                  title="Occupancy & finance"
+                  description="A few practical questions help prepare the next step."
+                >
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                         Occupancy Status
                         <select className={DETAIL_INPUT_CLASS} value={form.occupancyStatus} onChange={(event) => handleFormUpdate('occupancyStatus', event.target.value)}>
@@ -2418,7 +2949,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       {form.occupancyStatus === 'tenant_occupied' || form.occupancyStatus === 'partially_occupied' ? (
                         <>
                           <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                            <input type="checkbox" checked={form.leaseExists} onChange={(event) => handleFormUpdate('leaseExists', event.target.checked)} />
+                            <input type="checkbox" checked={Boolean(form.leaseExists)} onChange={(event) => handleFormUpdate('leaseExists', event.target.checked)} />
                             Lease exists
                           </label>
                           <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
@@ -2448,19 +2979,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                             <input className={DETAIL_INPUT_CLASS} value={form.noticePeriodDetails} onChange={(event) => handleFormUpdate('noticePeriodDetails', event.target.value)} />
                           </label>
                           <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                            <input type="checkbox" checked={form.rentalScheduleAvailable} onChange={(event) => handleFormUpdate('rentalScheduleAvailable', event.target.checked)} />
+                            <input type="checkbox" checked={Boolean(form.rentalScheduleAvailable)} onChange={(event) => handleFormUpdate('rentalScheduleAvailable', event.target.checked)} />
                             Rental schedule available
                           </label>
                         </>
                       ) : null}
                     </div>
-                  </article>
 
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                    <h3 className="text-sm font-semibold text-[#22364a]">Existing Bond</h3>
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                        <input type="checkbox" checked={form.existingBond} onChange={(event) => handleFormUpdate('existingBond', event.target.checked)} />
+                        <input type="checkbox" checked={Boolean(form.existingBond)} onChange={(event) => handleFormUpdate('existingBond', event.target.checked)} />
                         Existing bond on the property
                       </label>
                       {form.existingBond ? (
@@ -2478,19 +3006,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                             <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.estimatedSettlementAmount} onChange={(event) => handleFormUpdate('estimatedSettlementAmount', event.target.value)} />
                           </label>
                           <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                            <input type="checkbox" checked={form.multipleBonds} onChange={(event) => handleFormUpdate('multipleBonds', event.target.checked)} />
+                            <input type="checkbox" checked={Boolean(form.multipleBonds)} onChange={(event) => handleFormUpdate('multipleBonds', event.target.checked)} />
                             Multiple bonds
                           </label>
                           <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                            <input type="checkbox" checked={form.accessBond} onChange={(event) => handleFormUpdate('accessBond', event.target.checked)} />
+                            <input type="checkbox" checked={Boolean(form.accessBond)} onChange={(event) => handleFormUpdate('accessBond', event.target.checked)} />
                             Access bond
                           </label>
                           <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                            <input type="checkbox" checked={form.cancellationRequired} onChange={(event) => handleFormUpdate('cancellationRequired', event.target.checked)} />
+                            <input type="checkbox" checked={Boolean(form.cancellationRequired)} onChange={(event) => handleFormUpdate('cancellationRequired', event.target.checked)} />
                             Bond cancellation required
                           </label>
                           <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                            <input type="checkbox" checked={form.cancellationAttorneyKnown} onChange={(event) => handleFormUpdate('cancellationAttorneyKnown', event.target.checked)} />
+                            <input type="checkbox" checked={Boolean(form.cancellationAttorneyKnown)} onChange={(event) => handleFormUpdate('cancellationAttorneyKnown', event.target.checked)} />
                             Cancellation attorney known
                           </label>
                           {form.cancellationAttorneyKnown ? (
@@ -2502,88 +3030,72 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         </>
                       ) : null}
                     </div>
-                  </article>
+                  </div>
+                </FormSection>
 
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                    <h3 className="text-sm font-semibold text-[#22364a]">Features</h3>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {PROPERTY_FEATURES.map((feature) => {
-                        const active = (form.features || []).includes(feature.key)
-                        return (
-                          <button
-                            key={feature.key}
-                            type="button"
-                            onClick={() => handleFeatureToggle(feature.key)}
-                            className={chipChoiceClass(active)}
-                          >
-                            {feature.label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </article>
+                <FormSection
+                  icon={Sparkles}
+                  title="Features"
+                  description="Optional features help with publication and valuation."
+                >
+                  <div className="flex flex-wrap gap-2">
+                    {PROPERTY_FEATURES.map((feature) => {
+                      const active = (form.features || []).includes(feature.key)
+                      return (
+                        <button
+                          key={feature.key}
+                          type="button"
+                          onClick={() => handleFeatureToggle(feature.key)}
+                          className={chipChoiceClass(active)}
+                        >
+                          {feature.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </FormSection>
 
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                    <h3 className="text-sm font-semibold text-[#22364a]">Condition</h3>
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Property Condition
-                        <select className={DETAIL_INPUT_CLASS} value={form.propertyCondition} onChange={(event) => handleFormUpdate('propertyCondition', event.target.value)}>
-                          <option value="needs_renovation">Needs renovation</option>
-                          <option value="average">Average</option>
-                          <option value="good">Good</option>
-                          <option value="recently_renovated">Recently renovated</option>
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                        Notes (optional)
-                        <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about condition or upgrades" />
-                      </label>
-                    </div>
-                  </article>
-
-                  <article className="rounded-[14px] border border-[#dce6f2] bg-[#f8fbff] p-4">
-                    <h3 className="text-sm font-semibold text-[#22364a]">Value / Valuation Factors</h3>
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Kitchen Condition
-                        <select className={DETAIL_INPUT_CLASS} value={form.kitchenCondition} onChange={(event) => handleFormUpdate('kitchenCondition', event.target.value)}>
-                          <option value="needs_renovation">Needs renovation</option>
-                          <option value="average">Average</option>
-                          <option value="good">Good</option>
-                          <option value="recently_renovated">Recently renovated</option>
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Bathroom Condition
-                        <select className={DETAIL_INPUT_CLASS} value={form.bathroomCondition} onChange={(event) => handleFormUpdate('bathroomCondition', event.target.value)}>
-                          <option value="needs_renovation">Needs renovation</option>
-                          <option value="average">Average</option>
-                          <option value="good">Good</option>
-                          <option value="recently_renovated">Recently renovated</option>
-                        </select>
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Levies (optional)
-                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.levies} onChange={(event) => handleFormUpdate('levies', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Rates & Taxes (optional)
-                        <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.ratesTaxes} onChange={(event) => handleFormUpdate('ratesTaxes', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Views (optional)
-                        <input className={DETAIL_INPUT_CLASS} value={form.views} onChange={(event) => handleFormUpdate('views', event.target.value)} placeholder="Mountain, sea, park, city..." />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Recent Renovations (optional)
-                        <input className={DETAIL_INPUT_CLASS} value={form.recentRenovations} onChange={(event) => handleFormUpdate('recentRenovations', event.target.value)} placeholder="Kitchen updated in 2024, repaint, etc." />
-                      </label>
-                    </div>
-                  </article>
-                </div>
-              </section>
-            </>
+                <FormSection
+                  icon={Circle}
+                  title="Condition notes"
+                  description="Share anything else your agent should know."
+                >
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Property Condition
+                      <select className={DETAIL_INPUT_CLASS} value={form.propertyCondition} onChange={(event) => handleFormUpdate('propertyCondition', event.target.value)}>
+                        <option value="needs_renovation">Needs renovation</option>
+                        <option value="average">Average</option>
+                        <option value="good">Good</option>
+                        <option value="recently_renovated">Recently renovated</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Kitchen Condition
+                      <select className={DETAIL_INPUT_CLASS} value={form.kitchenCondition} onChange={(event) => handleFormUpdate('kitchenCondition', event.target.value)}>
+                        <option value="needs_renovation">Needs renovation</option>
+                        <option value="average">Average</option>
+                        <option value="good">Good</option>
+                        <option value="recently_renovated">Recently renovated</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                      Bathroom Condition
+                      <select className={DETAIL_INPUT_CLASS} value={form.bathroomCondition} onChange={(event) => handleFormUpdate('bathroomCondition', event.target.value)}>
+                        <option value="needs_renovation">Needs renovation</option>
+                        <option value="average">Average</option>
+                        <option value="good">Good</option>
+                        <option value="recently_renovated">Recently renovated</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                      Notes (optional)
+                      <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about condition, upgrades, or pricing" />
+                    </label>
+                  </div>
+                </FormSection>
+              </div>
+            </StepShell>
           ) : null}
 
           {currentStep === 2 ? (
@@ -2685,11 +3197,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   missing={propertyMissing}
                   onEdit={() => setCurrentStep(1)}
                   items={[
-                    { label: 'Property Type', value: `${getPropertyCategoryLabel(form.propertyCategory)} / ${formatValue(form.propertyType)}` },
-                    { label: 'Title / Structure', value: getPropertyStructureTypeLabel(form.propertyStructureType) },
-                    { label: 'Legal Classification', value: formatValue(form.canonicalPropertyType || 'inferred') },
-                    { label: 'Address', value: [form.propertyAddress, form.suburb, form.city, form.province].filter(Boolean).join(', ') },
-                    { label: showUnitDetails ? 'Unit / Complex' : 'Erf / Size', value: showUnitDetails ? [form.unitNumber, form.estateComplexName].filter(Boolean).join(' / ') : `${form.erfSize || 'Not provided'} m2` },
+                    { label: 'Category', value: getPropertyCategoryLabel(form.propertyCategory) },
+                    { label: 'Property Type', value: propertyTypeLabel },
+                    { label: 'Structure', value: getPropertyStructureTypeLabel(form.propertyStructureType) },
+                    { label: 'Branch', value: flow.property_branch_label || formatValue(propertyBranch) },
+                    { label: 'Address', value: propertyAddressDetails.formatted || [form.propertyAddress, form.suburb, form.city, form.province].filter(Boolean).join(', ') },
+                    { label: showSectionalTitleDetails ? 'Scheme / Unit' : showEstateDetails ? 'Estate / HOA' : showCommercialDetails ? 'Use / Floor Size' : 'Erf / Size', value: showSectionalTitleDetails ? [form.schemeName, form.unitNumber, form.sectionNumber].filter(Boolean).join(' / ') : showEstateDetails ? [form.estateName, form.hoaContactName].filter(Boolean).join(' / ') : showCommercialDetails ? [form.commercialUseDescription, form.floorSize ? `${form.floorSize} m2` : ''].filter(Boolean).join(' / ') : `${form.erfSize || 'Not provided'} m2` },
                   ]}
                 />
                 <ReviewCard

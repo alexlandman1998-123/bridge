@@ -1,4 +1,5 @@
 import { getPropertyCategoryLabel, normalizePropertyCategory, normalizePropertyStructureType } from '../../lib/propertyTaxonomy.js'
+import { formatPropertyAddress, normalizePropertyAddress } from '../../lib/sellerPropertyAddress.js'
 import { resolveSellerOnboardingFlow } from '../../lib/sellerOnboardingFlow.js'
 
 export const CANONICAL_SELLER_FACTS_VERSION = 'seller_onboarding_facts_v1'
@@ -224,6 +225,22 @@ function buildOwnerFacts(form = {}) {
   return normalizePeopleCollection(form.multipleOwners || form.owners || [], null, { defaultRoleTitle: 'Owner' })
 }
 
+function buildPropertyAddressFacts(form = {}, listing = {}) {
+  const normalized = normalizePropertyAddress(form, listing, {
+    line1: listing.addressLine1 || listing.address_line_1 || '',
+    line2: listing.addressLine2 || listing.address_line_2 || '',
+    suburb: listing.suburb || '',
+    city: listing.city || '',
+    province: listing.province || '',
+    postalCode: listing.postalCode || listing.postal_code || '',
+    municipality: listing.municipality || listing.city || '',
+    country: listing.country || 'South Africa',
+    source: listing.addressLine1 || listing.address_line_1 ? 'listing' : 'manual',
+  })
+
+  return normalized
+}
+
 export function transformSellerOnboardingToFacts(form = {}, listing = {}, options = {}) {
   const flow = resolveSellerOnboardingFlow(form, listing)
   const sellerLegalType = normalizeSellerLegalType(form)
@@ -292,6 +309,21 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
     },
     { defaultRoleTitle: 'Representative' },
   )
+  const propertyAddress = buildPropertyAddressFacts(form, listing)
+  const propertyAddressDisplay = formatPropertyAddress(propertyAddress)
+  const schemeManagingAgent = {
+    name: normalizeText(form.schemeManagingAgentName || form.schemeManagementContact),
+    email: normalizeText(form.schemeManagingAgentEmail),
+    phone: normalizeText(form.schemeManagingAgentPhone),
+  }
+  const hoaContact = {
+    name: normalizeText(form.hoaContactName || form.estateHoaContactName),
+    email: normalizeText(form.hoaContactEmail || form.estateHoaContactEmail),
+    phone: normalizeText(form.hoaContactPhone || form.estateHoaContactPhone),
+  }
+  const commercialUseDescription = normalizeText(form.commercialUseDescription)
+  const mixedUseSplit = normalizeText(form.mixedUseSplit)
+  const tenantScheduleAvailable = normalizeBoolean(form.tenantScheduleAvailable, false)
 
   return {
     flow,
@@ -403,13 +435,58 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       erf_number: normalizeText(form.erfNumber),
       unit_number: normalizeText(form.unitNumber),
       section_number: normalizeText(form.sectionNumber),
-      scheme_name: normalizeText(form.schemeName),
+      scheme_name: normalizeText(form.schemeName || form.estateComplexName),
+      scheme: {
+        name: normalizeText(form.schemeName || form.estateComplexName),
+        unit_number: normalizeText(form.unitNumber),
+        section_number: normalizeText(form.sectionNumber),
+        body_corporate_name: normalizeText(form.schemeBodyCorporateName),
+        managing_agent: schemeManagingAgent,
+        levies: normalizeNumber(form.schemeLevies || form.levies),
+        rules: normalizeBoolean(form.schemeRulesAvailable, false),
+      },
       estate_name: normalizeText(form.estateName || form.estateComplexName),
-      municipality: normalizeText(form.municipality || form.city),
-      province: normalizeProvince(form.province),
-      address: normalizeText(form.propertyAddress),
-      suburb: normalizeText(form.suburb),
-      city: normalizeText(form.city),
+      estate: {
+        name: normalizeText(form.estateName || form.estateComplexName),
+        hoa_contact: hoaContact,
+        management_company: normalizeText(form.hoaManagementCompany || form.estateManagementCompany),
+        rules: normalizeBoolean(form.hoaRulesAvailable, false),
+      },
+      use: {
+        description: commercialUseDescription,
+        mixed_use_split: mixedUseSplit,
+      },
+      tenant_schedule: tenantScheduleAvailable,
+      land: {
+        zoning: normalizeText(form.landZoning),
+        services_available: normalizeText(form.landServicesAvailable),
+        water_source: normalizeText(form.landWaterSource),
+      },
+      land_zoning: normalizeText(form.landZoning),
+      land_services_available: normalizeText(form.landServicesAvailable),
+      land_water_source: normalizeText(form.landWaterSource),
+      municipality: normalizeText(form.municipality || propertyAddress.municipality || form.city || propertyAddress.city),
+      province: normalizeProvince(form.province || propertyAddress.province),
+      postal_code: normalizeText(form.postalCode || propertyAddress.postalCode),
+      address: propertyAddressDisplay,
+      address_details: {
+        query: propertyAddress.query,
+        line_1: propertyAddress.line1,
+        line_2: propertyAddress.line2,
+        suburb: propertyAddress.suburb,
+        city: propertyAddress.city,
+        province: propertyAddress.province,
+        postal_code: propertyAddress.postalCode,
+        municipality: propertyAddress.municipality,
+        country: propertyAddress.country,
+        place_id: propertyAddress.placeId,
+        source: propertyAddress.source,
+        formatted: propertyAddress.formatted,
+      },
+      address_line_1: propertyAddress.line1,
+      address_line_2: propertyAddress.line2,
+      suburb: propertyAddress.suburb,
+      city: propertyAddress.city,
       title_deed_available: normalizeBoolean(form.titleDeedAvailable, false),
       sg_diagram_available: normalizeBoolean(form.sgDiagramAvailable, false),
       erf_diagram_available: normalizeBoolean(form.erfDiagramAvailable, false),
@@ -536,15 +613,20 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   ))
   push(missingIf(facts.finance?.existing_bond && !facts.finance?.bond_bank, 'bond_bank_missing', 'Bond bank is required when there is an existing bond.', draft ? 'recommended' : 'required'))
   push(missingIf(facts.occupancy?.lease_exists && !facts.occupancy?.lease_expiry_date, 'lease_expiry_missing', 'Lease expiry date is required when a lease exists.', draft ? 'recommended' : 'required'))
-  push(missingIf(!facts.property?.address, 'property_address_missing', 'Property address is required.'))
-  push(missingIf(!facts.property?.suburb, 'property_suburb_missing', 'Property suburb is required.'))
-  push(missingIf(!facts.property?.municipality, 'municipality_missing', 'Municipality helps determine readiness and compliance.', 'recommended'))
-  push(missingIf(!facts.property?.province, 'province_missing', 'Province is required for property classification.'))
-  push(missingIf(!facts.property?.property_category, 'property_category_missing', 'Property category is required.'))
-  push(missingIf(!facts.property?.property_structure_type, 'property_structure_type_missing', 'Property structure type is required.'))
-  push(missingIf(propertyBranch === 'sectional_title' && !facts.property?.scheme_name, 'sectional_scheme_missing', 'Scheme name should be captured for sectional title properties.', 'recommended'))
-  push(missingIf(propertyBranch === 'sectional_title' && !facts.property?.section_number && !facts.property?.unit_number, 'sectional_unit_missing', 'Section or unit number should be captured for sectional title properties.', 'recommended'))
-  push(missingIf(propertyBranch === 'estate_hoa' && !facts.property?.estate_name, 'estate_name_missing', 'Estate / HOA name should be captured for estate properties.', 'recommended'))
+  push(missingIf(!hasValue(facts.property?.address_details?.line_1 || facts.property?.address_line_1 || facts.property?.address), 'property_address_missing', 'Property address is required.'))
+  push(missingIf(!hasValue(facts.property?.address_details?.suburb || facts.property?.suburb), 'property_suburb_missing', 'Property suburb is required.'))
+  push(missingIf(!hasValue(facts.property?.address_details?.city || facts.property?.city), 'property_city_missing', 'Property city is required.'))
+  push(missingIf(!hasValue(facts.property?.address_details?.province || facts.property?.province), 'province_missing', 'Province is required for property classification.'))
+  push(missingIf(!hasValue(facts.property?.property_category), 'property_category_missing', 'Property category is required.'))
+  push(missingIf(!hasValue(facts.property?.property_structure_type), 'property_structure_type_missing', 'Property structure type is required.'))
+  push(missingIf(!hasValue(facts.property?.address_details?.municipality || facts.property?.municipality), 'municipality_missing', 'Municipality helps determine readiness and compliance.', 'recommended'))
+  push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.name || facts.property?.scheme_name), 'sectional_scheme_missing', 'Scheme name should be captured for sectional title properties.', 'recommended'))
+  push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.unit_number || facts.property?.unit_number), 'sectional_unit_missing', 'Section or unit number should be captured for sectional title properties.', 'recommended'))
+  push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.section_number || facts.property?.section_number), 'sectional_section_missing', 'Section number should be captured for sectional title properties.', 'recommended'))
+  push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.managing_agent?.name), 'sectional_managing_agent_missing', 'Managing agent details should be captured for sectional title properties.', 'recommended'))
+  push(missingIf(propertyBranch === 'estate_hoa' && !hasValue(facts.property?.estate?.name || facts.property?.estate_name), 'estate_name_missing', 'Estate / HOA name should be captured for estate properties.', 'recommended'))
+  push(missingIf(propertyBranch === 'estate_hoa' && !hasValue(facts.property?.estate?.hoa_contact?.name), 'estate_hoa_contact_missing', 'HOA contact details should be captured for estate properties.', 'recommended'))
+  push(missingIf((propertyBranch === 'commercial' || propertyBranch === 'mixed_use') && !hasValue(facts.property?.use?.description), 'commercial_use_description_missing', 'Commercial and mixed-use properties should capture the operating context.', 'recommended'))
   push(missingIf((propertyBranch === 'commercial' || propertyBranch === 'mixed_use') && !facts.property?.floor_size, 'commercial_floor_size_missing', 'Floor size should be captured for commercial and mixed-use properties.', 'recommended'))
   push(missingIf((propertyBranch === 'vacant_land' || propertyBranch === 'agricultural') && !facts.property?.erf_size, 'land_size_missing', 'Land size should be captured for vacant land and agricultural properties.'))
 
@@ -613,11 +695,15 @@ export function calculateSellerFactReadiness(facts = {}) {
       facts.flow?.property_branch,
       facts.property?.property_category,
       facts.property?.property_structure_type,
-      facts.property?.address,
-      facts.property?.suburb,
-      facts.property?.municipality,
-      facts.property?.province,
+      facts.property?.address_details?.line_1 || facts.property?.address_line_1 || facts.property?.address,
+      facts.property?.address_details?.suburb || facts.property?.suburb,
+      facts.property?.address_details?.city || facts.property?.city,
+      facts.property?.address_details?.province || facts.property?.province,
+      facts.property?.address_details?.municipality || facts.property?.municipality,
       facts.property?.erf_size,
+      facts.property?.scheme?.name || facts.property?.scheme_name,
+      facts.property?.estate?.name || facts.property?.estate_name,
+      facts.property?.use?.description,
     ]),
     finance_details: sectionScore([
       typeof facts.finance?.existing_bond === 'boolean',
