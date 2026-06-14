@@ -40,6 +40,7 @@ function buildBranchSummary(flow = {}) {
   const purchaserBranch = normalizeText(flow.buyer_branch || flow.purchaser_branch || flow.purchaser_type)
   const purchaseMode = normalizeText(flow.buyer_purchase_mode || flow.purchase_mode)
   const financeBranch = normalizeText(flow.buyer_finance_branch || flow.finance_branch)
+  const financeSupportMode = normalizeText(flow.buyer_finance_support_mode || flow.finance_support_mode)
 
   return {
     purchaser: {
@@ -54,6 +55,14 @@ function buildBranchSummary(flow = {}) {
     finance: {
       key: financeBranch,
       label: normalizeText(flow.buyer_finance_branch_label || flow.finance_branch_label || flow.finance?.label || financeBranch),
+      support_mode: {
+        key: financeSupportMode,
+        label: normalizeText(
+          flow.buyer_finance_support_mode_label ||
+            flow.finance_support_mode_label ||
+            (financeSupportMode === 'originator_led' ? 'Originator Assisted' : 'Self Managed'),
+        ),
+      },
     },
   }
 }
@@ -69,6 +78,14 @@ function normalizeResolvedFlow(flow = {}) {
     buyer_purchase_mode_label: normalizeText(flow.buyer_purchase_mode_label || flow.purchase_mode_label || flow.purchase_mode_definition?.label),
     buyer_finance_branch: normalizeText(flow.buyer_finance_branch || flow.finance_branch),
     buyer_finance_branch_label: normalizeText(flow.buyer_finance_branch_label || flow.finance_branch_label || flow.finance?.label),
+    buyer_finance_support_mode: normalizeText(flow.buyer_finance_support_mode || flow.finance_support_mode),
+    buyer_finance_support_mode_label: normalizeText(
+      flow.buyer_finance_support_mode_label ||
+        flow.finance_support_mode_label ||
+        (flow.buyer_finance_support_mode === 'originator_led' || flow.finance_support_mode === 'originator_led'
+          ? 'Originator Assisted'
+          : 'Self Managed'),
+    ),
     buyer_legal_type: normalizeText(flow.buyer_legal_type || flow.branch_summary?.purchaser?.legal_type || flow.purchaser?.legal_type),
     visible_fields: visibleFields,
     buyer_facing_questions: mergeUnique(flow.buyer_facing_questions),

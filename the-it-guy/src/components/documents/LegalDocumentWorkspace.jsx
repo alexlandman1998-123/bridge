@@ -1322,7 +1322,7 @@ function DocumentOutlinePanel({
     : fallbackSections
       .map((label) => ({ key: label, label, custom: false, required: true, content: '' }))
   return (
-    <section className="flex h-full min-h-[760px] flex-col rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
+    <section className="flex h-full min-h-[560px] flex-col rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)]">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h4 className="text-[1rem] font-semibold text-[#102033]">Document Outline</h4>
@@ -1339,7 +1339,7 @@ function DocumentOutlinePanel({
         ) : null}
       </div>
 
-      <ul className="mt-5 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+      <ul className="mt-5 max-h-[300px] space-y-1.5 overflow-y-auto pr-1">
         {outlineSections.map((item, index) => {
           const validation = validationByKey?.[item.key] || { blockers: [], warnings: [] }
           const hasContent = normalizeText(item.content).length >= 8
@@ -2195,6 +2195,7 @@ export default function LegalDocumentWorkspace({
   const [activeSectionKey, setActiveSectionKey] = useState('')
   const autoFinalizeGuardRef = useRef(new Set())
   const autoGenerateGuardRef = useRef('')
+  const autoGenerateRunRef = useRef(0)
   const statusStateRef = useRef(initialStatus || null)
   const actionBusyRef = useRef(false)
   const signerBusyRef = useRef(false)
@@ -4120,7 +4121,10 @@ export default function LegalDocumentWorkspace({
     if (autoGenerateGuardRef.current === autoGenerateKey) return
     autoGenerateGuardRef.current = autoGenerateKey
 
-    let active = true
+    const runId = autoGenerateRunRef.current + 1
+    autoGenerateRunRef.current = runId
+    const isCurrentAutoGenerateRun = () => autoGenerateRunRef.current === runId
+
     const generateInitialDraft = async () => {
       if (actionBusyRef.current) return
       actionBusyRef.current = true
@@ -4132,7 +4136,7 @@ export default function LegalDocumentWorkspace({
         const generationResult = await onGenerate({
           onProgress: (message) => setActionProgressMessage(normalizeText(message)),
         })
-        if (!active) return
+        if (!isCurrentAutoGenerateRun()) return
         if (generationResult?.status) {
           statusStateRef.current = generationResult.status
           setStatusState(generationResult.status)
@@ -4140,7 +4144,7 @@ export default function LegalDocumentWorkspace({
         const hasGeneratedVersion = Boolean(getGeneratedPacketVersionForSigning(generationResult?.status?.versions || []))
         if (hasGeneratedVersion) {
           void refreshWorkspaceData().then((refreshed) => {
-            if (!active) return
+            if (!isCurrentAutoGenerateRun()) return
             if (refreshed?.resolved) {
               statusStateRef.current = refreshed.resolved
               setStatusState(refreshed.resolved)
@@ -4151,7 +4155,7 @@ export default function LegalDocumentWorkspace({
         } else {
           setActionProgressMessage('Refreshing draft status…')
           const refreshed = await refreshWorkspaceData()
-          if (!active) return
+          if (!isCurrentAutoGenerateRun()) return
           if (refreshed?.resolved) {
             statusStateRef.current = refreshed.resolved
             setStatusState(refreshed.resolved)
@@ -4160,9 +4164,9 @@ export default function LegalDocumentWorkspace({
         setActionFeedback('Draft generated successfully.')
       } catch (error) {
         await logMandateFailure('auto_generate', error)
-        if (active) setLoadError(toFriendlyWorkspaceError(error, 'Unable to generate this mandate draft right now.'))
+        if (isCurrentAutoGenerateRun()) setLoadError(toFriendlyWorkspaceError(error, 'Unable to generate this mandate draft right now.'))
       } finally {
-        if (active) {
+        if (isCurrentAutoGenerateRun()) {
           setActionProgressMessage('')
           actionBusyRef.current = false
           setActionBusy(false)
@@ -4171,9 +4175,6 @@ export default function LegalDocumentWorkspace({
     }
 
     void generateInitialDraft()
-    return () => {
-      active = false
-    }
   }, [
     actionBusy,
     effectiveMode,
@@ -4671,7 +4672,7 @@ export default function LegalDocumentWorkspace({
   const contentClassName = isPageMode
     ? 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-5 sm:px-6 sm:pb-24 sm:pt-6'
     : 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-4 sm:px-5 sm:pb-24 sm:pt-5'
-  const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(720px,calc(100vh-20rem),900px)]'
+  const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(560px,calc(100vh-25rem),700px)]'
   const mainGridClassName = `grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[340px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
   const secondaryGridClassName = 'mt-5 grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[380px_minmax(0,1fr)]'
 
@@ -4934,7 +4935,7 @@ export default function LegalDocumentWorkspace({
                 </div>
               </div>
 
-              <section className="min-h-[760px] rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_18px_48px_rgba(16,32,51,0.06)] sm:p-6 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
+              <section className="min-h-[560px] rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_18px_48px_rgba(16,32,51,0.06)] sm:p-6 xl:flex xl:h-full xl:min-h-0 xl:flex-col">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="text-[1.15rem] font-semibold text-[#102033]">
@@ -4976,13 +4977,13 @@ export default function LegalDocumentWorkspace({
 
                 <div className="mt-6 rounded-[28px] border border-[#edf3fa] bg-[#f5f7fb] p-4 sm:p-6 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
                   {loading ? (
-                    <div className="flex min-h-[620px] items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white text-sm text-[#6f839b]">
+                    <div className="flex min-h-[420px] items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white text-sm text-[#6f839b]">
                       Loading packet preview...
                     </div>
                   ) : null}
 
                   {!loading && !statusState?.packet?.id ? (
-                    <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
+                    <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <FileText size={24} className="text-[#7287a0]" />
                       <p className="mt-3 text-base font-semibold text-[#102033]">Generate the first draft to preview this document.</p>
                       <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Bridge will create a packet draft and load the document lifecycle here without changing your existing data flow.</p>
@@ -4991,7 +4992,7 @@ export default function LegalDocumentWorkspace({
 
                   {!loading && editableAllowed && centerTab === 'editor' && statusState?.packet?.id ? (
                     !editableSections.length ? (
-                      <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
+                      <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                         <AlertCircle size={24} className="text-[#9b6b1c]" />
                         <p className="mt-3 text-base font-semibold text-[#102033]">No editable draft sections are available yet.</p>
                         <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Generate a draft first, then reopen this workspace to edit clauses.</p>
@@ -5009,7 +5010,7 @@ export default function LegalDocumentWorkspace({
                   ) : null}
 
                   {!loading && (!editableAllowed || centerTab === 'preview') && statusState?.packet?.id && !hasPreviewSurface ? (
-                    <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
+                    <div className="flex min-h-[420px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <AlertCircle size={24} className="text-[#9b6b1c]" />
                       <p className="mt-3 text-base font-semibold text-[#102033]">
                         {latestVersion?.id
@@ -5038,7 +5039,7 @@ export default function LegalDocumentWorkspace({
                           title={`${documentLabel} preview`}
                           src={signedPreviewUrl || generatedPreviewUrl || undefined}
                           srcDoc={!signedPreviewUrl && !generatedPreviewUrl ? editablePreviewHtml : undefined}
-                          className="min-h-[720px] w-full rounded-[22px] border border-[#eef3f9] bg-white"
+                          className="min-h-[560px] w-full rounded-[22px] border border-[#eef3f9] bg-white"
                         />
                       </div>
                       <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-[#e5edf7] bg-white px-4 py-3">

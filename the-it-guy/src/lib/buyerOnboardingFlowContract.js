@@ -453,19 +453,24 @@ const FINANCE_BRANCH_RULES = Object.freeze({
       'finance.cash_amount',
       'finance.proof_of_funds_available',
       'finance.source_of_funds',
+      'finance.cash_funds_confirmed',
     ]),
     requiredFields: Object.freeze([
       'finance.cash_amount',
       'finance.proof_of_funds_available',
       'finance.source_of_funds',
+      'finance.cash_funds_confirmed',
     ]),
     optionalFields: Object.freeze([
       'finance.bank_statements_available',
+      'finance.cash_contribution_available',
+      'finance.deposit_source',
       'finance.cash_contribution_source',
     ]),
     internalDerivedFacts: Object.freeze([
       'finance.has_cash_component',
       'finance.requires_proof_of_funds',
+      'finance.support_mode',
     ]),
     documentTriggers: Object.freeze([
       'proof_of_funds',
@@ -476,6 +481,9 @@ const FINANCE_BRANCH_RULES = Object.freeze({
     aliases: Object.freeze(['bond', 'bonded', 'bond_finance', 'mortgage', 'home_loan']),
     buyerFacingQuestions: Object.freeze([
       'finance.bond_amount',
+      'finance.bond_bank_name',
+      'finance.bond_process_started',
+      'finance.bond_current_status',
       'finance.employment_type',
       'finance.employer_name',
       'finance.job_title',
@@ -488,18 +496,26 @@ const FINANCE_BRANCH_RULES = Object.freeze({
       'finance.monthly_living_expenses',
       'finance.number_of_dependants',
       'finance.bank_statements_available',
-      'finance.bond_current_status',
       'finance.bond_readiness_consent',
+      'finance.affordability_confirmed',
+      'finance.bond_help_requested',
       'finance.ooba_assist_requested',
       'finance.joint_bond_application',
+      'finance.cash_contribution_available',
+      'finance.deposit_source',
+      'finance.cash_contribution_source',
     ]),
     requiredFields: Object.freeze([
       'finance.bond_amount',
+      'finance.bond_process_started',
+      'finance.bond_current_status',
       'finance.employment_type',
       'finance.gross_monthly_income',
       'finance.monthly_living_expenses',
       'finance.bank_statements_available',
       'finance.bond_readiness_consent',
+      'finance.affordability_confirmed',
+      'finance.bond_help_requested',
     ]),
     optionalFields: Object.freeze([
       'finance.employer_name',
@@ -511,13 +527,16 @@ const FINANCE_BRANCH_RULES = Object.freeze({
       'finance.income_frequency',
       'finance.ooba_assist_requested',
       'finance.joint_bond_application',
-      'finance.bond_current_status',
       'finance.number_of_dependants',
+      'finance.cash_contribution_available',
+      'finance.deposit_source',
+      'finance.cash_contribution_source',
     ]),
     internalDerivedFacts: Object.freeze([
       'finance.has_bond_component',
       'finance.requires_bond_documents',
       'finance.needs_bond_originator',
+      'finance.support_mode',
     ]),
     documentTriggers: Object.freeze([
       'bond_approval',
@@ -530,42 +549,57 @@ const FINANCE_BRANCH_RULES = Object.freeze({
     buyerFacingQuestions: Object.freeze([
       'finance.cash_amount',
       'finance.bond_amount',
-      'finance.cash_contribution_available',
-      'finance.cash_contribution_source',
       'finance.proof_of_funds_available',
       'finance.source_of_funds',
+      'finance.cash_funds_confirmed',
+      'finance.bond_bank_name',
+      'finance.bond_process_started',
+      'finance.bond_current_status',
       'finance.employment_type',
       'finance.gross_monthly_income',
       'finance.monthly_living_expenses',
       'finance.bank_statements_available',
       'finance.bond_readiness_consent',
+      'finance.affordability_confirmed',
+      'finance.bond_help_requested',
+      'finance.ooba_assist_requested',
+      'finance.joint_bond_application',
+      'finance.cash_contribution_available',
+      'finance.deposit_source',
+      'finance.cash_contribution_source',
     ]),
     requiredFields: Object.freeze([
       'finance.cash_amount',
       'finance.bond_amount',
-      'finance.cash_contribution_available',
-      'finance.cash_contribution_source',
       'finance.proof_of_funds_available',
       'finance.source_of_funds',
+      'finance.cash_funds_confirmed',
+      'finance.bond_process_started',
+      'finance.bond_current_status',
       'finance.employment_type',
       'finance.gross_monthly_income',
       'finance.monthly_living_expenses',
       'finance.bank_statements_available',
       'finance.bond_readiness_consent',
+      'finance.affordability_confirmed',
+      'finance.bond_help_requested',
     ]),
     optionalFields: Object.freeze([
       'finance.net_monthly_income',
       'finance.income_frequency',
-      'finance.bond_current_status',
       'finance.ooba_assist_requested',
       'finance.joint_bond_application',
       'finance.number_of_dependants',
+      'finance.cash_contribution_available',
+      'finance.deposit_source',
+      'finance.cash_contribution_source',
     ]),
     internalDerivedFacts: Object.freeze([
       'finance.has_cash_component',
       'finance.has_bond_component',
       'finance.requires_bond_documents',
       'finance.requires_proof_of_funds',
+      'finance.support_mode',
     ]),
     documentTriggers: Object.freeze([
       'proof_of_funds',
@@ -800,6 +834,52 @@ export function resolveBuyerFinanceBranch(form = {}, transaction = {}, facts = {
   return 'cash'
 }
 
+function normalizeYesNoChoice(value) {
+  const normalized = normalizeKey(value)
+  if (['yes', 'true', '1', 'y', 'confirmed', 'required'].includes(normalized)) {
+    return 'yes'
+  }
+  if (['no', 'false', '0', 'n'].includes(normalized)) {
+    return 'no'
+  }
+  return ''
+}
+
+function resolveBuyerFinanceSupportMode(form = {}, transaction = {}, facts = {}) {
+  const source = facts && typeof facts === 'object' && Object.keys(facts).length ? facts : {}
+  const directCandidates = [
+    readPath(source, 'finance_support_mode'),
+    readPath(source, 'buyer.finance_support_mode'),
+    readPath(source, 'finance.support_mode'),
+    readPath(form, 'finance_support_mode'),
+    readPath(form, 'finance.bond_help_requested'),
+    readPath(form, 'bond_help_requested'),
+    readPath(form, 'ooba_assist_requested'),
+    readPath(form, 'finance.ooba_assist_requested'),
+    readPath(transaction, 'bond_help_requested'),
+    readPath(transaction, 'ooba_assist_requested'),
+  ]
+
+  for (const candidate of directCandidates) {
+    const yesNo = normalizeYesNoChoice(candidate)
+    if (yesNo === 'yes') {
+      return 'originator_led'
+    }
+    if (yesNo === 'no') {
+      return 'self_managed'
+    }
+    const normalized = normalizeKey(candidate)
+    if (['originator_led', 'originator-led', 'assisted', 'assisted_originator'].includes(normalized)) {
+      return 'originator_led'
+    }
+    if (['self_managed', 'self-managed', 'self_service'].includes(normalized)) {
+      return 'self_managed'
+    }
+  }
+
+  return 'self_managed'
+}
+
 function resolveBranchContract(rules, branchKey, baseRules) {
   const branchDefinition = rules[branchKey] || rules.individual || {}
   return {
@@ -814,7 +894,15 @@ function resolveBranchContract(rules, branchKey, baseRules) {
   }
 }
 
-function buildBranchSummary({ purchaserDefinition, purchaseModeDefinition, financeDefinition, purchaserBranch, purchaseMode, financeBranch }) {
+function buildBranchSummary({
+  purchaserDefinition,
+  purchaseModeDefinition,
+  financeDefinition,
+  purchaserBranch,
+  purchaseMode,
+  financeBranch,
+  financeSupportMode,
+}) {
   return {
     purchaser: {
       key: purchaserBranch,
@@ -828,6 +916,10 @@ function buildBranchSummary({ purchaserDefinition, purchaseModeDefinition, finan
     finance: {
       key: financeBranch,
       label: financeDefinition.label || financeBranch,
+      support_mode: {
+        key: financeSupportMode,
+        label: financeSupportMode === 'originator_led' ? 'Originator Assisted' : 'Self Managed',
+      },
     },
   }
 }
@@ -838,6 +930,7 @@ export function resolveBuyerOnboardingFlowContract(form = {}, transaction = {}, 
   const isEntityBranch = purchaserBranch === 'company' || purchaserBranch === 'trust'
   const purchaseMode = isEntityBranch ? 'individual' : resolveBuyerPurchaseMode(form, transaction, source)
   const financeBranch = resolveBuyerFinanceBranch(form, transaction, source)
+  const financeSupportMode = financeBranch === 'cash' ? 'self_managed' : resolveBuyerFinanceSupportMode(form, transaction, source)
 
   const purchaserDefinition = resolveBranchContract(
     PURCHASER_BRANCH_RULES,
@@ -851,16 +944,19 @@ export function resolveBuyerOnboardingFlowContract(form = {}, transaction = {}, 
     purchaserDefinition.buyerFacingQuestions,
     purchaseModeDefinition.buyerFacingQuestions,
     financeDefinition.buyerFacingQuestions,
+    financeSupportMode === 'originator_led' ? ['finance.bond_originator_name'] : [],
   )
   const requiredFields = mergeUnique(
     purchaserDefinition.requiredFields,
     purchaseModeDefinition.requiredFields,
     financeDefinition.requiredFields,
+    financeSupportMode === 'originator_led' ? ['finance.bond_originator_name'] : [],
   )
   const optionalFields = mergeUnique(
     purchaserDefinition.optionalFields,
     purchaseModeDefinition.optionalFields,
     financeDefinition.optionalFields,
+    financeSupportMode === 'originator_led' ? ['finance.bond_originator_contact'] : [],
   )
   const internalDerivedFacts = mergeUnique(
     purchaserDefinition.internalDerivedFacts,
@@ -870,6 +966,7 @@ export function resolveBuyerOnboardingFlowContract(form = {}, transaction = {}, 
     'flow.purchaser_branch',
     'flow.purchase_mode',
     'flow.finance_branch',
+    'flow.finance_support_mode',
   )
   const documentTriggers = mergeUnique(
     purchaserDefinition.documentTriggers,
@@ -891,8 +988,12 @@ export function resolveBuyerOnboardingFlowContract(form = {}, transaction = {}, 
     purchase_mode_label: purchaseModeDefinition.label,
     buyer_finance_branch: financeBranch,
     buyer_finance_branch_label: financeDefinition.label,
+    buyer_finance_support_mode: financeSupportMode,
+    buyer_finance_support_mode_label: financeSupportMode === 'originator_led' ? 'Originator Assisted' : 'Self Managed',
     finance_branch: financeBranch,
     finance_branch_label: financeDefinition.label,
+    finance_support_mode: financeSupportMode,
+    finance_support_mode_label: financeSupportMode === 'originator_led' ? 'Originator Assisted' : 'Self Managed',
     finance_type: financeBranch === 'hybrid' ? 'combination' : financeBranch,
     visible_fields: mergeUnique(buyerFacingQuestions, requiredFields, optionalFields),
     buyer_facing_questions: buyerFacingQuestions,
@@ -907,6 +1008,7 @@ export function resolveBuyerOnboardingFlowContract(form = {}, transaction = {}, 
       purchaserBranch,
       purchaseMode,
       financeBranch,
+      financeSupportMode,
     }),
     purchaser: purchaserDefinition,
     purchase_mode_definition: purchaseModeDefinition,

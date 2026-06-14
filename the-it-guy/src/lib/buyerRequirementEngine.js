@@ -138,6 +138,7 @@ export function getBuyerRequirementProfile(transactionOrOnboardingData = {}) {
             : 'individual',
     financeType,
     financeTypeLabel: financeTypeLabel(financeType),
+    financeSupportMode: String(flow.finance_support_mode || flow.buyer_finance_support_mode || 'self_managed').trim().toLowerCase(),
     purchaseMode: String(flow.purchase_mode || (derived?.derivedFields?.buyer_party_count > 1 ? 'co_purchasing' : 'individual')).trim().toLowerCase(),
     buyerBranch: String(flow.purchaser_branch || purchaserType).trim().toLowerCase(),
     financeBranch: String(flow.finance_branch || (financeType === 'combination' ? 'hybrid' : financeType)).trim().toLowerCase(),

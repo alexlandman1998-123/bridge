@@ -62,7 +62,7 @@ test('resolves natural person purchase mode separately from legal branch', () =>
   assert.equal(flow.finance_branch, 'cash')
   assertIncludes(
     asSet(flow.required_fields),
-    ['buyer.person.first_name', 'buyer.person.last_name', 'buyer.co_purchasers[].first_name', 'buyer.co_purchasers[].ownership_share'],
+    ['buyer.person.first_name', 'buyer.person.last_name', 'buyer.co_purchasers[].first_name', 'buyer.co_purchasers[].ownership_share', 'finance.cash_funds_confirmed'],
     'co-purchasing required fields',
   )
   assertIncludes(asSet(flow.document_triggers), ['co_purchaser_id_document', 'co_purchaser_proof_of_address', 'proof_of_funds'], 'co-purchasing document triggers')
@@ -111,6 +111,9 @@ test('captures company and trust authority data in the contract', () => {
       'buyer.company.authorised_signatory.identity_number_or_passport_number',
       'buyer.company.authorised_signatory.email',
       'buyer.company.authorised_signatory.phone',
+      'finance.bond_process_started',
+      'finance.bond_help_requested',
+      'finance.affordability_confirmed',
     ],
     'company required fields',
   )
@@ -145,6 +148,9 @@ test('captures company and trust authority data in the contract', () => {
       'buyer.trust.authorised_trustee.email',
       'buyer.trust.authorised_trustee.phone',
       'buyer.trust.resolution_available',
+      'finance.bond_process_started',
+      'finance.bond_help_requested',
+      'finance.affordability_confirmed',
     ],
     'trust required fields',
   )
@@ -179,10 +185,20 @@ test('normalizes the shared buyer flow wrapper', () => {
   assert.equal(flow.buyer_branch, 'company')
   assert.equal(flow.purchase_mode, 'individual')
   assert.equal(flow.finance_branch, 'hybrid')
-  assertIncludes(asSet(getBuyerOnboardingRequiredFields(flow)), ['buyer.company.name', 'finance.purchase_price'], 'shared required fields')
-  assertIncludes(asSet(getBuyerOnboardingVisibleFields(flow)), ['buyer.company.directors', 'finance.cash_amount', 'finance.bond_amount'], 'shared visible fields')
+  assert.equal(flow.finance_support_mode, 'self_managed')
+  assertIncludes(
+    asSet(getBuyerOnboardingRequiredFields(flow)),
+    ['buyer.company.name', 'finance.purchase_price', 'finance.cash_funds_confirmed', 'finance.bond_process_started'],
+    'shared required fields',
+  )
+  assertIncludes(
+    asSet(getBuyerOnboardingVisibleFields(flow)),
+    ['buyer.company.directors', 'finance.cash_amount', 'finance.bond_amount', 'finance.proof_of_funds_available', 'finance.bond_process_started', 'finance.bond_bank_name'],
+    'shared visible fields',
+  )
   assertIncludes(asSet(getBuyerOnboardingDocumentTriggers(flow)), ['cipc_registration', 'company_resolution', 'bond_approval'], 'shared document triggers')
   assert.equal(getBuyerOnboardingBranchSummary(flow).purchaser.key, 'company')
+  assert.equal(getBuyerOnboardingBranchSummary(flow).finance.support_mode.key, 'self_managed')
 })
 
 test('hydrates the same flow contract through derived buyer profiles', () => {
@@ -214,12 +230,46 @@ test('hydrates the same flow contract through derived buyer profiles', () => {
   assert.equal(derived.flow.purchase_mode, 'individual')
   assert.equal(derived.flow.finance_branch, 'hybrid')
   assert.equal(derived.flow.branch_summary.purchaser.legal_type, 'company')
+  assert.equal(derived.flow.finance_support_mode, 'self_managed')
 
   assert.equal(profile.flow.version, BUYER_ONBOARDING_FLOW_VERSION)
   assert.equal(profile.purchaseMode, 'individual')
   assert.equal(profile.buyerBranch, 'company')
   assert.equal(profile.financeBranch, 'hybrid')
+  assert.equal(profile.financeSupportMode, 'self_managed')
   assert.equal(profile.branchSummary.purchaser.key, 'company')
+})
+
+test('tracks originator-assisted bond support mode separately from bond progress', () => {
+  const flow = resolveBuyerOnboardingFlowContract({
+    purchaser_type: 'individual',
+    purchaser_entity_type: 'individual',
+    natural_person_purchase_mode: 'individual',
+    purchase_finance_type: 'bond',
+    bond_process_started: 'yes',
+    bond_current_status: 'application_in_progress',
+    bond_bank_name: 'Standard Bank',
+    bond_help_requested: 'yes',
+    bond_originator_name: 'OOBA Finance',
+    bond_originator_contact: 'help@ooba.co.za',
+    bank_statements_available: 'yes',
+    bond_readiness_consent: 'yes',
+    affordability_confirmed: 'yes',
+  })
+
+  assert.equal(flow.finance_branch, 'bond')
+  assert.equal(flow.finance_support_mode, 'originator_led')
+  assert.equal(flow.branch_summary.finance.support_mode.key, 'originator_led')
+  assertIncludes(
+    asSet(flow.required_fields),
+    ['finance.bond_originator_name', 'finance.bond_help_requested'],
+    'originator-assisted required fields',
+  )
+  assertIncludes(
+    asSet(flow.visible_fields),
+    ['finance.bond_bank_name', 'finance.bond_originator_name', 'finance.bond_help_requested'],
+    'originator-assisted visible fields',
+  )
 })
 
 console.log('buyer onboarding flow contract tests passed')

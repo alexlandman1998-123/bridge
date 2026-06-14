@@ -159,15 +159,23 @@ const FINANCE_DETAIL_KEYS = [
   'purchase_price',
   'cash_amount',
   'bond_amount',
+  'proof_of_funds_available',
+  'source_of_funds',
+  'cash_funds_confirmed',
   'cash_contribution_available',
+  'deposit_source',
   'cash_contribution_source',
   'bank_statements_available',
   'bond_readiness_consent',
+  'affordability_confirmed',
   'bond_current_status',
+  'bond_process_started',
+  'bond_bank_name',
   'bond_help_requested',
   'ooba_assist_requested',
   'joint_bond_application',
-  'source_of_funds',
+  'bond_originator_name',
+  'bond_originator_contact',
 ]
 
 const COMPANY_DETAIL_KEYS = [
@@ -508,87 +516,6 @@ const ASSOCIATED_PERSON_FIELDS = [
   { key: 'signing_authority', label: 'Signing Authority', type: 'select', required: false, options: YES_NO_OPTIONS },
 ]
 
-const FINANCE_DETAIL_FIELDS = [
-  { key: 'purchase_price', label: 'Purchase Price', type: 'number', required: true },
-  {
-    key: 'cash_amount',
-    label: 'Cash Amount',
-    type: 'number',
-    required: true,
-    visibleWhen: ({ financeType }) => ['cash', 'combination'].includes(financeType),
-  },
-  {
-    key: 'bond_amount',
-    label: 'Bond Amount',
-    type: 'number',
-    required: true,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
-    key: 'cash_contribution_available',
-    label: 'Available Deposit / Cash Contribution',
-    type: 'number',
-    required: true,
-    allowZero: true,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
-    key: 'cash_contribution_source',
-    label: 'Source of Deposit / Cash Contribution',
-    type: 'text',
-    required: true,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
-    key: 'bank_statements_available',
-    label: 'Recent Bank Statements Available?',
-    type: 'select',
-    required: true,
-    options: YES_NO_OPTIONS,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
-    key: 'bond_readiness_consent',
-    label: 'Consent to share this finance snapshot with the bond originator?',
-    type: 'select',
-    required: true,
-    options: YES_NO_OPTIONS,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
-    key: 'bond_current_status',
-    label: 'Bond Current Status',
-    type: 'select',
-    required: true,
-    options: BOND_STATUS_OPTIONS,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
-    key: 'bond_help_requested',
-    label: 'Need bond help / OOBA assist?',
-    type: 'select',
-    required: true,
-    options: YES_NO_OPTIONS,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
-    key: 'joint_bond_application',
-    label: 'Joint Bond Application?',
-    type: 'select',
-    required: true,
-    options: YES_NO_OPTIONS,
-    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
-  },
-  {
-    key: 'source_of_funds',
-    label: 'Source of Funds',
-    type: 'text',
-    required: true,
-    visibleWhen: ({ purchaserEntityType, financeType }) =>
-      purchaserEntityType === 'foreign_purchaser' && ['cash', 'combination'].includes(financeType),
-  },
-]
-
 const CLIENT_CONTROLLED_REMOVED_KEYS = new Set([
   'deposit_required',
   'deposit_amount',
@@ -614,14 +541,6 @@ function choiceCardClass(active) {
     active
       ? 'border-[#35546c] bg-[#f4f8fd] text-[#142132] shadow-[0_14px_30px_rgba(53,84,108,0.12)]'
       : 'border-[#dde4ee] bg-white text-[#142132] shadow-[0_12px_28px_rgba(15,23,42,0.04)] hover:border-[#c8d6e5] hover:bg-[#fbfdff]'
-  }`
-}
-
-function chipChoiceClass(active) {
-  return `inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition duration-150 ease-out ${
-    active
-      ? 'border-[#35546c] bg-[#35546c] text-white'
-      : 'border-[#d8e3ef] bg-white text-[#516277] hover:border-[#c4d4e5] hover:bg-[#f8fbff]'
   }`
 }
 
@@ -651,6 +570,22 @@ function isNaturalPersonEntityType(entityType) {
 
 function normalizeInputValue(value) {
   return String(value || '').trim()
+}
+
+function isFilledValue(value) {
+  if (value === 0 || value === '0') {
+    return true
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value)
+  }
+
+  if (typeof value === 'boolean') {
+    return true
+  }
+
+  return normalizeInputValue(value).length > 0
 }
 
 function normalizeWhatsappLabel(value, fallback = '') {
@@ -792,15 +727,23 @@ function createEmptyFinance() {
     purchase_price: '',
     cash_amount: '',
     bond_amount: '',
+    proof_of_funds_available: '',
+    source_of_funds: '',
+    cash_funds_confirmed: '',
     cash_contribution_available: '',
+    deposit_source: '',
     cash_contribution_source: '',
     bank_statements_available: '',
     bond_readiness_consent: '',
+    affordability_confirmed: '',
     bond_current_status: '',
+    bond_process_started: '',
+    bond_bank_name: '',
     bond_help_requested: '',
     ooba_assist_requested: '',
     joint_bond_application: '',
-    source_of_funds: '',
+    bond_originator_name: '',
+    bond_originator_contact: '',
   }
 }
 
@@ -865,6 +808,173 @@ function hasAssociatedPersonData(entry = {}, defaultRole = 'Director') {
     normalizeYesNoChoice(entry?.signing_authority) !== ''
   )
 }
+
+function isOriginatorAssistedFinance(finance = {}) {
+  return normalizeYesNoChoice(finance.bond_help_requested || finance.ooba_assist_requested) === 'yes'
+}
+
+const FINANCE_DETAIL_SECTIONS = [
+  {
+    key: 'finance_totals',
+    title: 'Finance Structure',
+    description: 'Confirm how the purchase is being funded.',
+    fields: [
+      { key: 'purchase_price', label: 'Purchase Price', type: 'number', required: true },
+      {
+        key: 'cash_amount',
+        label: 'Cash Amount',
+        type: 'number',
+        required: true,
+        visibleWhen: ({ financeType }) => ['cash', 'combination'].includes(financeType),
+      },
+      {
+        key: 'bond_amount',
+        label: 'Bond Amount',
+        type: 'number',
+        required: true,
+        visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+      },
+    ],
+  },
+  {
+    key: 'cash_funding',
+    title: 'Cash Funding',
+    description: 'Capture cash support, proof of funds, and the source of the cash component.',
+    visibleWhen: ({ financeType }) => ['cash', 'combination'].includes(financeType),
+    fields: [
+      {
+        key: 'proof_of_funds_available',
+        label: 'Is proof of funds available?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+      },
+      {
+        key: 'source_of_funds',
+        label: 'Source of Funds',
+        type: 'select',
+        required: true,
+        options: [
+          { value: '', label: 'Select source' },
+          { value: 'savings', label: 'Savings' },
+          { value: 'investment', label: 'Investment' },
+          { value: 'sale_of_property', label: 'Sale of property' },
+          { value: 'business_funds', label: 'Business funds' },
+          { value: 'inheritance', label: 'Inheritance' },
+          { value: 'other', label: 'Other' },
+        ],
+      },
+      {
+        key: 'cash_funds_confirmed',
+        label: 'Confirm the cash funds are available?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+      },
+    ],
+  },
+  {
+    key: 'bond_progress',
+    title: 'Bond Progress',
+    description: 'Capture the current bond state and the cash contribution, if any.',
+    visibleWhen: ({ financeType }) => ['bond', 'combination'].includes(financeType),
+    fields: [
+      {
+        key: 'bond_process_started',
+        label: 'Have you already started the bond process?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+      },
+      {
+        key: 'bond_current_status',
+        label: 'Current Bond Status',
+        type: 'select',
+        required: true,
+        options: BOND_STATUS_OPTIONS,
+      },
+      {
+        key: 'bond_bank_name',
+        label: 'Bank / Bond Provider',
+        type: 'text',
+        required: true,
+        visibleWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_process_started) === 'yes',
+        requiredWhen: ({ finance }) => normalizeYesNoChoice(finance?.bond_process_started) === 'yes',
+      },
+      {
+        key: 'bond_help_requested',
+        label: 'Would you like bond originator help?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+      },
+      {
+        key: 'joint_bond_application',
+        label: 'Is this a joint bond application?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+      },
+      {
+        key: 'cash_contribution_available',
+        label: 'Deposit / Cash Contribution Amount',
+        type: 'number',
+        required: false,
+        allowZero: true,
+      },
+      {
+        key: 'deposit_source',
+        label: 'Deposit / Cash Contribution Source',
+        type: 'text',
+        required: false,
+        visibleWhen: ({ finance }) => isFilledValue(finance?.cash_contribution_available),
+        requiredWhen: ({ finance }) => isFilledValue(finance?.cash_contribution_available),
+      },
+      {
+        key: 'bank_statements_available',
+        label: 'Recent Bank Statements Available?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+      },
+      {
+        key: 'bond_readiness_consent',
+        label: 'Consent to share this finance snapshot with the bond originator?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+      },
+      {
+        key: 'affordability_confirmed',
+        label: 'Affordability ready / confirmed?',
+        type: 'select',
+        required: true,
+        options: YES_NO_OPTIONS,
+      },
+    ],
+  },
+  {
+    key: 'bond_originator_support',
+    title: 'Originator Support',
+    description: 'Show the person or team helping with the bond when originator support is requested.',
+    visibleWhen: ({ finance }) => isOriginatorAssistedFinance(finance),
+    fields: [
+      {
+        key: 'bond_originator_name',
+        label: 'Bond Originator / Consultant Name',
+        type: 'text',
+        required: false,
+        requiredWhen: ({ finance }) => isOriginatorAssistedFinance(finance),
+      },
+      {
+        key: 'bond_originator_contact',
+        label: 'Bond Originator Contact Details',
+        type: 'text',
+        required: false,
+      },
+    ],
+  },
+]
 
 function normalizePurchaserRecord(record = {}) {
   const normalized = createEmptyPurchaser()
@@ -950,10 +1060,22 @@ function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType
       finance[key] = fallbackValue
     }
   })
-  if (!normalizeInputValue(finance.bond_help_requested)) {
-    finance.bond_help_requested = normalizeYesNoChoice(formData.bond_help_requested || formData.ooba_assist_requested || finance.ooba_assist_requested)
+  if (!normalizeInputValue(finance.deposit_source) && normalizeInputValue(finance.cash_contribution_source)) {
+    finance.deposit_source = finance.cash_contribution_source
   }
+  if (!normalizeInputValue(finance.cash_contribution_source) && normalizeInputValue(finance.deposit_source)) {
+    finance.cash_contribution_source = finance.deposit_source
+  }
+  finance.proof_of_funds_available = normalizeYesNoChoice(finance.proof_of_funds_available)
+  finance.cash_funds_confirmed = normalizeYesNoChoice(finance.cash_funds_confirmed)
+  finance.bond_process_started = normalizeYesNoChoice(finance.bond_process_started)
+  finance.bond_help_requested = normalizeYesNoChoice(
+    finance.bond_help_requested || formData.bond_help_requested || formData.ooba_assist_requested || finance.ooba_assist_requested,
+  )
   finance.ooba_assist_requested = normalizeYesNoChoice(finance.ooba_assist_requested || finance.bond_help_requested)
+  finance.bank_statements_available = normalizeYesNoChoice(finance.bank_statements_available)
+  finance.bond_readiness_consent = normalizeYesNoChoice(finance.bond_readiness_consent)
+  finance.affordability_confirmed = normalizeYesNoChoice(finance.affordability_confirmed)
 
   const company = {
     ...createEmptyCompany(),
@@ -1058,6 +1180,8 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   FINANCE_DETAIL_KEYS.forEach((key) => {
     cleaned[key] = cleaned.finance[key] ?? ''
   })
+  cleaned.deposit_source = cleaned.finance.deposit_source ?? cleaned.cash_contribution_source ?? ''
+  cleaned.cash_contribution_source = cleaned.finance.cash_contribution_source ?? cleaned.deposit_source ?? ''
   cleaned.bond_help_requested = normalizeYesNoChoice(cleaned.finance.bond_help_requested)
   cleaned.ooba_assist_requested = normalizeYesNoChoice(cleaned.bond_help_requested || cleaned.finance.ooba_assist_requested)
 
@@ -1107,22 +1231,40 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
   if (financeType === 'cash') {
     cleaned.bond_amount = ''
     cleaned.cash_contribution_available = ''
+    cleaned.deposit_source = ''
     cleaned.cash_contribution_source = ''
+    cleaned.proof_of_funds_available = cleaned.proof_of_funds_available || ''
+    cleaned.source_of_funds = cleaned.source_of_funds || ''
+    cleaned.cash_funds_confirmed = cleaned.cash_funds_confirmed || ''
+    cleaned.bond_process_started = ''
+    cleaned.bond_bank_name = ''
     cleaned.bank_statements_available = ''
     cleaned.bond_readiness_consent = ''
+    cleaned.affordability_confirmed = ''
     cleaned.bond_current_status = ''
     cleaned.bond_help_requested = ''
     cleaned.ooba_assist_requested = ''
     cleaned.joint_bond_application = ''
+    cleaned.bond_originator_name = ''
+    cleaned.bond_originator_contact = ''
     cleaned.finance.bond_amount = ''
     cleaned.finance.cash_contribution_available = ''
+    cleaned.finance.deposit_source = ''
     cleaned.finance.cash_contribution_source = ''
+    cleaned.finance.proof_of_funds_available = cleaned.proof_of_funds_available || ''
+    cleaned.finance.source_of_funds = cleaned.source_of_funds || ''
+    cleaned.finance.cash_funds_confirmed = cleaned.cash_funds_confirmed || ''
+    cleaned.finance.bond_process_started = ''
+    cleaned.finance.bond_bank_name = ''
     cleaned.finance.bank_statements_available = ''
     cleaned.finance.bond_readiness_consent = ''
+    cleaned.finance.affordability_confirmed = ''
     cleaned.finance.bond_current_status = ''
     cleaned.finance.bond_help_requested = ''
     cleaned.finance.ooba_assist_requested = ''
     cleaned.finance.joint_bond_application = ''
+    cleaned.finance.bond_originator_name = ''
+    cleaned.finance.bond_originator_contact = ''
     if (Array.isArray(cleaned.purchasers)) {
       cleaned.purchasers = cleaned.purchasers.map((purchaser) => {
         const nextPurchaser = { ...purchaser }
@@ -1145,6 +1287,34 @@ function sanitizeClientFormData(formData = {}, { purchaserType, financeType, fun
       cleaned[key] = ''
       delete cleaned[`co_${key}`]
     })
+  } else if (financeType === 'bond') {
+    cleaned.cash_amount = ''
+    cleaned.proof_of_funds_available = ''
+    cleaned.source_of_funds = ''
+    cleaned.cash_funds_confirmed = ''
+    cleaned.finance.cash_amount = ''
+    cleaned.finance.proof_of_funds_available = ''
+    cleaned.finance.source_of_funds = ''
+    cleaned.finance.cash_funds_confirmed = ''
+  }
+
+  if (normalizeYesNoChoice(cleaned.bond_help_requested) !== 'yes') {
+    cleaned.bond_originator_name = ''
+    cleaned.bond_originator_contact = ''
+    cleaned.finance.bond_originator_name = ''
+    cleaned.finance.bond_originator_contact = ''
+  }
+
+  if (normalizeYesNoChoice(cleaned.bond_process_started) !== 'yes') {
+    cleaned.bond_bank_name = ''
+    cleaned.finance.bond_bank_name = ''
+  }
+
+  if (!normalizeInputValue(cleaned.cash_contribution_available)) {
+    cleaned.deposit_source = ''
+    cleaned.cash_contribution_source = ''
+    cleaned.finance.deposit_source = ''
+    cleaned.finance.cash_contribution_source = ''
   }
 
   return cleaned
@@ -1261,16 +1431,8 @@ function ClientOnboarding() {
   const structuredFinance = detailsState.finance
   const structuredCompany = detailsState.company
   const structuredTrust = detailsState.trust
-  const visibleFinanceFields = useMemo(
-    () =>
-      FINANCE_DETAIL_FIELDS.filter((fieldConfig) =>
-        isDetailFieldVisible(fieldConfig, {
-          financeType: normalizedFinanceType,
-          purchaserEntityType,
-        }),
-      ),
-    [normalizedFinanceType, purchaserEntityType],
-  )
+  const visibleFinanceSections = getVisibleFinanceSections(formData)
+  const visibleFinanceFields = visibleFinanceSections.flatMap((section) => section.fields || [])
   const propertyAddressLine = String(
     payload?.unit?.address ||
       payload?.transaction?.property_address ||
@@ -1357,6 +1519,10 @@ function ClientOnboarding() {
     return true
   }
 
+  function getVisibleFields(fields = [], context = {}) {
+    return (Array.isArray(fields) ? fields : []).filter((fieldConfig) => isDetailFieldVisible(fieldConfig, context))
+  }
+
   function detailFieldPath(group, index, fieldKey) {
     if (group === 'purchasers') {
       return `purchasers.${index}.${fieldKey}`
@@ -1400,6 +1566,27 @@ function ClientOnboarding() {
     )
   }
 
+  function getVisibleFinanceSections(values = formData) {
+    const details = normalizeDetailsState(values, {
+      purchaserEntityType,
+      financeType: normalizedFinanceType,
+    })
+    const context = {
+      financeType: details.financeType,
+      purchaserEntityType,
+      finance: details.finance,
+    }
+
+    return FINANCE_DETAIL_SECTIONS.filter((sectionConfig) => isDetailFieldVisible(sectionConfig, context)).map((sectionConfig) => ({
+      ...sectionConfig,
+      fields: getVisibleFields(sectionConfig.fields || [], context),
+    }))
+  }
+
+  function getVisibleFinanceFields(values = formData) {
+    return getVisibleFinanceSections(values).flatMap((section) => section.fields || [])
+  }
+
   function getVisibleDetailFieldKeys(values = formData) {
     const details = normalizeDetailsState(values, {
       purchaserEntityType,
@@ -1436,7 +1623,7 @@ function ClientOnboarding() {
       keys.push(...getVisibleRepeatablePeopleFields(details.trust.trustees || [], 'trust.trustees'))
     }
 
-    visibleFinanceFields.forEach((fieldConfig) => {
+    getVisibleFinanceFields(values).forEach((fieldConfig) => {
       keys.push(detailFieldPath('finance', 0, fieldConfig.key))
     })
 
@@ -1619,14 +1806,14 @@ function ClientOnboarding() {
       const pathKey = detailFieldPath('finance', 0, fieldConfig.key)
       const shouldRequire =
         (typeof fieldConfig.requiredWhen === 'function'
-          ? fieldConfig.requiredWhen({ financeType: normalizedFinanceType, purchaserEntityType })
+          ? fieldConfig.requiredWhen({ financeType: normalizedFinanceType, purchaserEntityType, finance: details.finance })
           : fieldConfig.required) !== false
       const value = details.finance[fieldConfig.key]
       requireField(pathKey, fieldConfig.label, value, {
         type: fieldConfig.type,
         required: shouldRequire,
       })
-      if (fieldConfig.type === 'number' && shouldRequire) {
+      if (fieldConfig.type === 'number' && normalizeInputValue(value)) {
         if (fieldConfig.allowZero) {
           requireNonNegativeFinanceAmount(pathKey, fieldConfig.label, value)
         } else {
@@ -1718,6 +1905,30 @@ function ClientOnboarding() {
       }
       if (fieldKey === 'bond_help_requested') {
         nextFinance.ooba_assist_requested = normalizeYesNoChoice(value)
+        if (normalizeYesNoChoice(value) !== 'yes') {
+          nextFinance.bond_originator_name = ''
+          nextFinance.bond_originator_contact = ''
+        }
+      }
+      if (fieldKey === 'ooba_assist_requested') {
+        nextFinance.bond_help_requested = normalizeYesNoChoice(value)
+        if (normalizeYesNoChoice(value) !== 'yes') {
+          nextFinance.bond_originator_name = ''
+          nextFinance.bond_originator_contact = ''
+        }
+      }
+      if (fieldKey === 'bond_process_started' && normalizeYesNoChoice(value) !== 'yes') {
+        nextFinance.bond_bank_name = ''
+      }
+      if (fieldKey === 'deposit_source') {
+        nextFinance.cash_contribution_source = value
+      }
+      if (fieldKey === 'cash_contribution_source') {
+        nextFinance.deposit_source = value
+      }
+      if (fieldKey === 'cash_contribution_available' && !normalizeInputValue(value)) {
+        nextFinance.deposit_source = ''
+        nextFinance.cash_contribution_source = ''
       }
       return {
         ...previous,
@@ -2540,30 +2751,35 @@ function ClientOnboarding() {
   }
 
   function renderFinanceDetailsCard() {
-    if (!visibleFinanceFields.length) {
+    if (!visibleFinanceSections.length) {
       return null
     }
 
     return (
-      <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
-        <header className="mb-5 border-b border-[#edf2f7] pb-4">
-          <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Finance</h4>
-        </header>
-        <div className="grid gap-3 md:grid-cols-2">
-          {visibleFinanceFields.map((fieldConfig) => {
-            const fieldPath = detailFieldPath('finance', 0, fieldConfig.key)
-            const value = structuredFinance[fieldConfig.key] ?? ''
-            return renderDetailField({
-              fieldConfig,
-              value,
-              fieldPath,
-              className: fieldConfig.type === 'textarea' ? 'md:col-span-2' : '',
-              onChange: (nextValue) => updateFinanceField(fieldConfig.key, nextValue),
-              onBlur: () => markFieldTouched(fieldPath),
-            })
-          })}
-        </div>
-      </article>
+      <div className="space-y-4">
+        {visibleFinanceSections.map((sectionConfig) => (
+          <article key={sectionConfig.key} className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
+            <header className="mb-5 border-b border-[#edf2f7] pb-4">
+              <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{sectionConfig.title}</h4>
+              {sectionConfig.description ? <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{sectionConfig.description}</p> : null}
+            </header>
+            <div className="grid gap-3 md:grid-cols-2">
+              {(sectionConfig.fields || []).map((fieldConfig) => {
+                const fieldPath = detailFieldPath('finance', 0, fieldConfig.key)
+                const value = structuredFinance[fieldConfig.key] ?? ''
+                return renderDetailField({
+                  fieldConfig,
+                  value,
+                  fieldPath,
+                  className: fieldConfig.type === 'textarea' ? 'md:col-span-2' : '',
+                  onChange: (nextValue) => updateFinanceField(fieldConfig.key, nextValue),
+                  onBlur: () => markFieldTouched(fieldPath),
+                })
+              })}
+            </div>
+          </article>
+        ))}
+      </div>
     )
   }
 
@@ -2684,25 +2900,10 @@ function ClientOnboarding() {
 
           {['bond', 'combination'].includes(normalizedFinanceType) ? (
             <div className="mt-5 rounded-[20px] border border-[#dde4ee] bg-[#f8fbff] p-5">
-              <h5 className="text-base font-semibold text-[#142132]">Do you need help sorting your bond?</h5>
-              <p className={`mt-2 ${MUTED_TEXT_CLASS}`}>OOBA can assist you at no cost and help move the finance process forward faster.</p>
-              <div className="mt-4 flex flex-wrap gap-2.5">
-                {[
-                  { value: 'yes', label: 'Yes, please' },
-                  { value: 'no', label: 'No, I have this covered' },
-                ].map((option) => (
-                  <label key={option.value} className={chipChoiceClass(String(structuredFinance.bond_help_requested || '') === option.value)}>
-                    <input
-                      type="radio"
-                      name="bond_help_requested"
-                      checked={String(structuredFinance.bond_help_requested || '') === option.value}
-                      onChange={() => updateFinanceField('bond_help_requested', option.value)}
-                      className="sr-only"
-                    />
-                    <span>{option.label}</span>
-                  </label>
-                ))}
-              </div>
+              <h5 className="text-base font-semibold text-[#142132]">What happens next</h5>
+              <p className={`mt-2 ${MUTED_TEXT_CLASS}`}>
+                In the next step we’ll ask for the bond bank, affordability confirmation, and originator assistance details if needed.
+              </p>
             </div>
           ) : null}
         </section>

@@ -212,17 +212,24 @@ const STRUCTURED_FINANCE_KEYS = [
   'purchase_price',
   'cash_amount',
   'bond_amount',
+  'cash_funds_confirmed',
+  'proof_of_funds_available',
+  'source_of_funds',
+  'bond_bank_name',
+  'bond_process_started',
+  'bond_current_status',
+  'bond_help_requested',
+  'ooba_assist_requested',
+  'bond_originator_name',
+  'bond_originator_contact',
   'cash_contribution_available',
+  'deposit_source',
   'cash_contribution_source',
   'bank_statements_available',
   'bond_readiness_consent',
-  'bond_bank_name',
-  'bond_current_status',
-  'bond_process_started',
-  'bond_help_requested',
-  'ooba_assist_requested',
   'joint_bond_application',
-  'source_of_funds',
+  'affordability_confirmed',
+  'deposit_required',
 ]
 
 const COMPANY_VALIDATION_KEYS = [
@@ -355,8 +362,26 @@ function resolveStructuredFinance(formData = {}, financeType = 'cash') {
       base[key] = formData[key]
     }
   })
+  if (!isFilledValue(base.deposit_source) && isFilledValue(base.cash_contribution_source)) {
+    base.deposit_source = base.cash_contribution_source
+  }
+  if (!isFilledValue(base.cash_contribution_source) && isFilledValue(base.deposit_source)) {
+    base.cash_contribution_source = base.deposit_source
+  }
   base.bond_help_requested = normalizeYesNoChoice(base.bond_help_requested || base.ooba_assist_requested || formData.bond_help_requested || formData.ooba_assist_requested)
   base.ooba_assist_requested = normalizeYesNoChoice(base.ooba_assist_requested || base.bond_help_requested)
+  if (!isFilledValue(base.bond_originator_name) && isFilledValue(formData.bond_originator_name)) {
+    base.bond_originator_name = formData.bond_originator_name
+  }
+  if (!isFilledValue(base.bond_originator_contact) && isFilledValue(formData.bond_originator_contact)) {
+    base.bond_originator_contact = formData.bond_originator_contact
+  }
+  if (!isFilledValue(base.cash_funds_confirmed) && isFilledValue(formData.cash_funds_confirmed)) {
+    base.cash_funds_confirmed = normalizeYesNoChoice(formData.cash_funds_confirmed)
+  }
+  if (!isFilledValue(base.affordability_confirmed) && isFilledValue(formData.affordability_confirmed)) {
+    base.affordability_confirmed = normalizeYesNoChoice(formData.affordability_confirmed)
+  }
   return {
     purchase_finance_type: financeType,
     ...base,
@@ -712,6 +737,7 @@ export function getEmploymentTypeHelper(value) {
 function getFinanceSections(financeType, purchaserType = 'individual') {
   const normalized = normalizeFinanceType(financeType || 'cash')
   const naturalPersonPurchase = isNaturalPersonPurchaserType(purchaserType)
+
   const shared = [
     section(
       'finance_totals',
@@ -726,13 +752,41 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           : []),
       ],
       {
-        description: 'This tells Bridge how the purchase will actually be funded and which workflows must be activated.',
+        description: 'This tells Bridge how the purchase will be funded and which finance path should activate.',
       },
     ),
   ]
 
-  const bondLike = normalized === 'bond' || normalized === 'combination'
-  if (bondLike) {
+  if (normalized === 'cash' || normalized === 'combination') {
+    shared.push(
+      section(
+        'cash_funding',
+        'Cash Funding',
+        [
+          yesNoField('proof_of_funds_available', 'Is proof of funds available?', { required: true }),
+          selectField(
+            'source_of_funds',
+            'Source of Funds',
+            [
+              { value: 'savings', label: 'Savings' },
+              { value: 'investment', label: 'Investment' },
+              { value: 'sale_of_property', label: 'Sale of property' },
+              { value: 'business_funds', label: 'Business funds' },
+              { value: 'inheritance', label: 'Inheritance' },
+              { value: 'other', label: 'Other' },
+            ],
+            { required: true },
+          ),
+          yesNoField('cash_funds_confirmed', 'Confirm the cash funds are available?', { required: true }),
+        ],
+        {
+          description: 'Cash and hybrid deals need source-of-funds clarity early so the transfer team is not blocked later.',
+        },
+      ),
+    )
+  }
+
+  if (normalized === 'bond' || normalized === 'combination') {
     if (naturalPersonPurchase) {
       shared.push(
         section(
@@ -748,9 +802,7 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           },
         ),
       )
-    }
 
-    if (naturalPersonPurchase) {
       shared.push(
         section(
           'affordability_snapshot',
@@ -761,6 +813,7 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
             currencyField('net_monthly_income', 'Net Monthly Income'),
             currencyField('monthly_credit_commitments', 'Monthly Credit Commitments'),
             currencyField('monthly_living_expenses', 'Monthly Living Expenses', { required: true }),
+            yesNoField('affordability_confirmed', 'Affordability ready / confirmed?', { required: true }),
           ],
           {
             description: 'These figures help the bond originator assess affordability and identify the correct supporting documents upfront.',
@@ -859,68 +912,118 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           },
         ),
       )
+
+      shared.push(
+        section(
+          'bond_progress',
+          'Bond Progress',
+          [
+            yesNoField('bond_process_started', 'Have you already started the bond process?', { required: true }),
+            selectField(
+              'bond_current_status',
+              'Current Bond Status',
+              [
+                { value: 'not_started', label: 'Not started' },
+                { value: 'pre_approval_only', label: 'Pre-approval only' },
+                { value: 'application_in_progress', label: 'Application in progress' },
+                { value: 'submitted_to_banks', label: 'Submitted to banks' },
+                { value: 'bond_approved', label: 'Bond approved' },
+              ],
+              { required: true },
+            ),
+            textField('bond_bank_name', 'Bank / Bond Provider', {
+              requiredWhen: (values) => normalizeYesNoChoice(values.bond_process_started) === 'yes',
+            }),
+            yesNoField('bond_help_requested', 'Would you like bond originator help?', { required: true }),
+            yesNoField('joint_bond_application', 'Is this a joint bond application?', { required: true }),
+            currencyField('cash_contribution_available', 'Deposit / Cash Contribution Amount', { required: false, allowZero: true }),
+            textField('deposit_source', 'Deposit / Cash Contribution Source', {
+              requiredWhen: (values) => isFilledValue(values.cash_contribution_available),
+            }),
+            yesNoField('bank_statements_available', 'Recent Bank Statements Available?', { required: true }),
+            yesNoField('bond_readiness_consent', 'Consent to share this finance snapshot with the bond originator?', { required: true }),
+          ],
+          {
+            description: 'These answers determine whether the finance lane and bond-originator support should be activated.',
+          },
+        ),
+      )
+
+      shared.push(
+        section(
+          'bond_originator_support',
+          'Originator Support',
+          [
+            textField('bond_originator_name', 'Bond Originator / Consultant Name', {
+              requiredWhen: (values) => normalizeYesNoChoice(values.bond_help_requested) === 'yes' || normalizeYesNoChoice(values.ooba_assist_requested) === 'yes',
+            }),
+            textField('bond_originator_contact', 'Bond Originator Contact Details', {
+              required: false,
+            }),
+          ],
+          {
+            description: 'Shown when you want an originator-led bond path. Capture the person or team helping with finance.',
+            visibleWhen: (values) => normalizeYesNoChoice(values.bond_help_requested) === 'yes' || normalizeYesNoChoice(values.ooba_assist_requested) === 'yes',
+          },
+        ),
+      )
+    } else {
+      shared.push(
+        section(
+          'bond_progress',
+          'Bond Progress',
+          [
+            yesNoField('bond_process_started', 'Have you already started the bond process?', { required: true }),
+            selectField(
+              'bond_current_status',
+              'Current Bond Status',
+              [
+                { value: 'not_started', label: 'Not started' },
+                { value: 'pre_approval_only', label: 'Pre-approval only' },
+                { value: 'application_in_progress', label: 'Application in progress' },
+                { value: 'submitted_to_banks', label: 'Submitted to banks' },
+                { value: 'bond_approved', label: 'Bond approved' },
+              ],
+              { required: true },
+            ),
+            textField('bond_bank_name', 'Bank / Bond Provider', {
+              requiredWhen: (values) => normalizeYesNoChoice(values.bond_process_started) === 'yes',
+            }),
+            yesNoField('bond_help_requested', 'Would you like bond originator help?', { required: true }),
+            yesNoField('joint_bond_application', 'Is this a joint bond application?', { required: true }),
+            currencyField('cash_contribution_available', 'Deposit / Cash Contribution Amount', { required: false, allowZero: true }),
+            textField('deposit_source', 'Deposit / Cash Contribution Source', {
+              requiredWhen: (values) => isFilledValue(values.cash_contribution_available),
+            }),
+            yesNoField('bank_statements_available', 'Recent Bank Statements Available?', { required: true }),
+            yesNoField('bond_readiness_consent', 'Consent to share this finance snapshot with the bond originator?', { required: true }),
+            yesNoField('affordability_confirmed', 'Affordability ready / confirmed?', { required: true }),
+          ],
+          {
+            description: 'These answers determine whether the finance lane and bond-originator support should be activated.',
+          },
+        ),
+      )
+
+      shared.push(
+        section(
+          'bond_originator_support',
+          'Originator Support',
+          [
+            textField('bond_originator_name', 'Bond Originator / Consultant Name', {
+              requiredWhen: (values) => normalizeYesNoChoice(values.bond_help_requested) === 'yes' || normalizeYesNoChoice(values.ooba_assist_requested) === 'yes',
+            }),
+            textField('bond_originator_contact', 'Bond Originator Contact Details', {
+              required: false,
+            }),
+          ],
+          {
+            description: 'Shown when you want an originator-led bond path. Capture the person or team helping with finance.',
+            visibleWhen: (values) => normalizeYesNoChoice(values.bond_help_requested) === 'yes' || normalizeYesNoChoice(values.ooba_assist_requested) === 'yes',
+          },
+        ),
+      )
     }
-
-    shared.push(
-      section(
-        'bond_progress',
-        'Bond Progress',
-        [
-          yesNoField('bond_process_started', 'Have you already started the bond process?', { required: true }),
-          selectField(
-            'bond_current_status',
-            'Current Bond Status',
-            [
-              { value: 'not_started', label: 'Not started' },
-              { value: 'pre_approval_only', label: 'Pre-approval only' },
-              { value: 'application_in_progress', label: 'Application in progress' },
-              { value: 'submitted_to_banks', label: 'Submitted to banks' },
-              { value: 'bond_approved', label: 'Bond approved' },
-            ],
-            { required: true },
-          ),
-          textField('bond_bank_name', 'Bank / Bond Provider'),
-          yesNoField('ooba_assist_requested', 'Would you like OOBA to assist with the bond?', { required: true }),
-          yesNoField('joint_bond_application', 'Is this a joint bond application?', { required: true }),
-          currencyField('cash_contribution_available', 'Available Deposit / Cash Contribution', { required: true }),
-          textField('cash_contribution_source', 'Source of Deposit / Cash Contribution', { required: true }),
-          yesNoField('bank_statements_available', 'Recent Bank Statements Available?', { required: true }),
-          yesNoField('bond_readiness_consent', 'Consent to share this finance snapshot with the bond originator?', { required: true }),
-          textField('monthly_income_range', 'Monthly Income Range'),
-        ],
-        {
-          description: 'These answers determine whether the finance lane and bond-originator support should be activated.',
-        },
-      ),
-    )
-  }
-
-  if (normalized === 'cash' || normalized === 'combination') {
-    shared.push(
-      section(
-        'cash_funding',
-        'Cash Funding',
-        [
-          yesNoField('proof_of_funds_available', 'Is proof of funds available?', { required: true }),
-          selectField(
-            'source_of_funds',
-            'Source of Funds',
-            [
-              { value: 'savings', label: 'Savings' },
-              { value: 'investment', label: 'Investment' },
-              { value: 'sale_of_property', label: 'Sale of property' },
-              { value: 'business_funds', label: 'Business funds' },
-              { value: 'inheritance', label: 'Inheritance' },
-              { value: 'other', label: 'Other' },
-            ],
-            { required: true },
-          ),
-        ],
-        {
-          description: 'Cash and hybrid deals need source-of-funds clarity early so the transfer team is not blocked later.',
-        },
-      ),
-    )
   }
 
   if (normalized === 'cash' || normalized === 'combination') {
@@ -1610,6 +1713,9 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const cashAmount = normalizeNumber(formData.cash_amount ?? transaction?.cash_amount)
   const bondAmount = normalizeNumber(formData.bond_amount ?? transaction?.bond_amount)
   const depositAmount = normalizeNumber(formData.deposit_amount ?? transaction?.deposit_amount)
+  const financeSupportMode = String(flow.finance_support_mode || formData.finance_support_mode || transaction?.finance_support_mode || '')
+    .trim()
+    .toLowerCase()
   const reservationRequired = isYes(formData.reservation_required) || formData.reservation_required === true || Boolean(transaction?.reservation_required)
   const rawTrustees = getStructuredCollectionEntries(formData, 'trust.trustees').length
     ? getStructuredCollectionEntries(formData, 'trust.trustees')
@@ -1721,7 +1827,9 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
   const hasCashComponent = financeType === 'cash' || financeType === 'combination'
   const naturalPersonPurchase = isNaturalPersonPurchaserType(purchaserType)
   const employmentComplexityScore = EMPLOYMENT_COMPLEXITY_SCORE[employmentType] || null
-  const bondOriginatorRequired = hasBondComponent && (isYes(formData.ooba_assist_requested) || isYes(formData.bond_process_started))
+  const bondOriginatorRequired =
+    hasBondComponent &&
+    (financeSupportMode === 'originator_led' || isYes(formData.ooba_assist_requested) || isYes(formData.bond_help_requested))
   const companySignatoryCount = purchaserType === 'company' ? (isFilledValue(formData.authorised_signatory_name) ? 1 : 0) + directors.filter((item) => isYes(item.signing_authority)).length : 0
   const trustSignatoryCount = purchaserType === 'trust' ? (isFilledValue(formData.authorised_trustee_name) ? 1 : 0) + trustees.filter((item) => isYes(item.signing_authority)).length : 0
   const multipleSignatories =
@@ -1741,6 +1849,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
       hasBondComponent ? { key: 'bond_component', label: 'Bond component' } : null,
       hasCashComponent ? { key: 'cash_component', label: 'Cash component' } : null,
       financeType === 'combination' ? { key: 'hybrid_funding', label: 'Hybrid funding' } : null,
+      hasBondComponent && financeSupportMode === 'originator_led' ? { key: 'originator_led', label: 'Originator assisted' } : null,
       naturalPersonPurchase && hasBondComponent && employmentType
         ? { key: `employment_${employmentType}`, label: `Employment type: ${getEmploymentTypeLabel(employmentType)}` }
         : null,
@@ -1764,7 +1873,11 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
     },
     bondOriginator: {
       enabled: bondOriginatorRequired,
-      reason: bondOriginatorRequired ? 'Bond originator support requested or already active.' : 'No bond-originator assistance selected.',
+      reason: bondOriginatorRequired
+        ? financeSupportMode === 'originator_led'
+          ? 'Bond originator support requested or already active.'
+          : 'Bond process is active and originator support may be needed.'
+        : 'No bond-originator assistance selected.',
     },
   }
 
@@ -1805,6 +1918,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
         ]
       : []),
     ...(isYes(formData.ooba_assist_requested) ? ['OOBA assistance requested: Yes'] : []),
+    ...(hasBondComponent ? [`Bond support: ${financeSupportMode === 'originator_led' ? 'Originator assisted' : 'Self managed'}`] : []),
     `Required document sets: ${[...new Set(requiredDocuments.map((item) => item.groupLabel))].join(', ')}`,
     `Finance workflow: ${workflows.finance.enabled ? 'Enabled' : 'Skipped'}`,
     `Transfer workflow: Enabled`,
@@ -1851,6 +1965,7 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
               ? 'out_of_community'
               : purchaserType,
       finance_type: financeType,
+      finance_support_mode: financeSupportMode || (hasBondComponent ? 'self_managed' : null),
       employment_type: employmentType || null,
       employment_complexity_score: employmentComplexityScore,
       purchase_mode: flow.purchase_mode,
@@ -2121,15 +2236,25 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     throw new Error('Bond Amount is required.')
   }
 
+  if (financeType === 'cash' || financeType === 'combination') {
+    requireYesNo(finance.proof_of_funds_available, 'Proof of Funds Availability')
+    requireField(finance.source_of_funds, 'Source of Funds')
+    requireYesNo(finance.cash_funds_confirmed, 'Cash Funds Confirmation')
+  }
+
   if (financeType === 'bond' || financeType === 'combination') {
-    const cashContributionAvailable = normalizeNumber(finance.cash_contribution_available)
-    requireField(finance.cash_contribution_available, 'Available Deposit / Cash Contribution')
-    if (!Number.isFinite(cashContributionAvailable) || cashContributionAvailable < 0) {
-      throw new Error('Available Deposit / Cash Contribution must be zero or greater.')
+    requireYesNo(finance.bond_process_started, 'Bond Process Started')
+    requireField(finance.bond_current_status, 'Current Bond Status')
+    if (normalizeYesNoChoice(finance.bond_process_started) === 'yes') {
+      requireField(finance.bond_bank_name, 'Bank / Bond Provider')
     }
-    requireField(finance.cash_contribution_source, 'Source of Deposit / Cash Contribution')
+    requireYesNo(finance.bond_help_requested, 'Bond Originator Help')
+    if (normalizeYesNoChoice(finance.bond_help_requested) === 'yes') {
+      requireField(finance.bond_originator_name, 'Bond Originator / Consultant Name')
+    }
     requireYesNo(finance.bank_statements_available, 'Recent Bank Statements Available')
     requireYesNo(finance.bond_readiness_consent, 'Bond Readiness Consent')
+    requireYesNo(finance.affordability_confirmed, 'Affordability Confirmation')
   }
 
   if (financeType === 'combination') {
@@ -2144,6 +2269,17 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     ) {
       throw new Error('For a hybrid purchase, cash amount plus bond amount must equal the purchase price.')
     }
+  }
+
+  if (isFilledValue(finance.cash_contribution_available)) {
+    const cashContributionAvailable = normalizeNumber(finance.cash_contribution_available)
+    if (!Number.isFinite(cashContributionAvailable)) {
+      throw new Error('Deposit / Cash Contribution Amount must be a valid number.')
+    }
+    if (cashContributionAvailable < 0) {
+      throw new Error('Deposit / Cash Contribution Amount must be zero or greater.')
+    }
+    requireField(finance.deposit_source || finance.cash_contribution_source, 'Deposit / Cash Contribution Source')
   }
 }
 
