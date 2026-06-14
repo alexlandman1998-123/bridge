@@ -36,6 +36,7 @@ import {
 } from '../services/privateListingService'
 import {
   buildCanonicalSellerOnboardingPayload,
+  normalizeCanonicalPropertyType,
   validateSellerOnboardingFacts,
 } from '../services/documents/sellerOnboardingFactTransformer'
 import { resolveSellerOnboardingFlow } from '../lib/sellerOnboardingFlow'
@@ -44,7 +45,6 @@ import {
   getPropertyTypeLabel,
   getPropertyTypeOptionsByCategory,
   getPropertyStructureTypeLabel,
-  normalizeCanonicalPropertyType,
   normalizePropertyCategory,
   normalizePropertyStructureType,
   PROPERTY_CATEGORIES,
