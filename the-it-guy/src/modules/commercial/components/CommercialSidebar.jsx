@@ -13,7 +13,7 @@ function CommercialSidebar() {
 
   return (
     <aside className="hidden h-screen w-[268px] shrink-0 border-r border-slate-200 bg-white shadow-[12px_0_32px_rgba(15,23,42,0.03)] lg:flex">
-      <div className="flex min-h-0 w-full flex-col px-4 py-4">
+      <div className="flex min-h-0 w-full flex-col px-4 py-3">
         <div className="shrink-0">
           <CommercialBranding />
 
@@ -23,7 +23,7 @@ function CommercialSidebar() {
           />
         </div>
 
-        <nav className="mt-5 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" aria-label="Commercial Navigation">
+        <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" aria-label="Commercial Navigation">
           <Link
             to={COMMERCIAL_DASHBOARD_NAV_ITEM.to}
             aria-current={isCommercialNavItemActive(currentFullPath, COMMERCIAL_DASHBOARD_NAV_ITEM) ? 'page' : undefined}
@@ -68,7 +68,7 @@ function CommercialSidebar() {
           </div>
         </nav>
 
-        <nav className="mt-3 shrink-0 border-t border-slate-200 pt-3" aria-label="Commercial Settings">
+        <nav className="mt-2 shrink-0 border-t border-slate-200 pt-2" aria-label="Commercial Settings">
           {COMMERCIAL_BOTTOM_NAV_ITEMS.map((item) => {
             const Icon = item.icon
             const active = isCommercialNavItemActive(currentFullPath, item)

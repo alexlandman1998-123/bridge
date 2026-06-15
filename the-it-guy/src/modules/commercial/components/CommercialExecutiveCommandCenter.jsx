@@ -483,21 +483,21 @@ function buildFreshWorkspaceState(summary = {}, data = {}) {
 
 function DashboardHeader({ profile }) {
   return (
-    <header className="flex flex-col gap-6 pt-3 lg:flex-row lg:items-center lg:justify-between">
+    <header className="flex flex-col gap-5 pt-2 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
-        <h1 className="text-[2.5rem] font-semibold leading-tight text-[#0f2748] sm:text-[3rem]">{getGreeting(profile)}</h1>
-        <p className="mt-2 text-lg font-medium text-[#32445d]">Commercial Portfolio Overview</p>
+        <h1 className="text-[46px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{getGreeting(profile)}</h1>
+        <p className="mt-2 text-[20px] font-medium text-[#526276]">Commercial Portfolio Overview</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/commercial/listings" className="inline-flex min-h-11 items-center gap-2 rounded-[14px] bg-[#0e335f] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(14,51,95,0.2)] transition hover:bg-[#0b294e]">
+        <Link to="/commercial/listings" className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#0e335f] px-[18px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.18)] transition hover:bg-[#0b294e]">
           <Plus size={16} />
           Listing
         </Link>
-        <Link to="/commercial/leads" className="inline-flex min-h-11 items-center gap-2 rounded-[14px] border border-[#dce6f0] bg-white px-4 text-sm font-semibold text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
+        <Link to="/commercial/leads" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
           <Plus size={16} />
           Requirement
         </Link>
-        <Link to="/commercial/deals" className="inline-flex min-h-11 items-center gap-2 rounded-[14px] border border-[#dce6f0] bg-white px-4 text-sm font-semibold text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
+        <Link to="/commercial/deals" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
           <Plus size={16} />
           Deal
         </Link>
@@ -508,17 +508,17 @@ function DashboardHeader({ profile }) {
 
 function KpiCard({ label, value, description, icon: Icon, loading = false }) {
   return (
-    <article className={`${GLASS_CARD_CLASS} flex min-h-[180px] min-w-[230px] flex-col justify-between p-6 lg:min-w-0`}>
+    <article className={`${GLASS_CARD_CLASS} flex min-h-[180px] min-w-[230px] flex-col justify-between p-8 lg:min-w-0`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[13px] font-medium text-[#172b47]">{label}</p>
-          <p className="mt-7 text-[40px] font-bold leading-none text-[#0f2748]">{loading ? '...' : value}</p>
+          <p className="text-[14px] font-medium text-[#60758d]">{label}</p>
+          <p className="mt-6 text-[52px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{loading ? '...' : value}</p>
         </div>
         <span className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-white/90 text-[#2d6ecf] shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
           {createElement(Icon, { size: 20 })}
         </span>
       </div>
-      <p className="text-sm font-medium text-[#6b7c91]">{description}</p>
+      <p className="text-[13px] font-normal text-[#7b899a]">{description}</p>
     </article>
   )
 }
@@ -602,7 +602,7 @@ function InlineEmptyPanel({ title, description, actionLabel = '', onAction = nul
     : 'border-dashed border-[#d9e5f0] bg-[#fbfdff] text-[#60758d]'
 
   return (
-    <div className={`rounded-[22px] border px-5 py-6 ${toneClass}`}>
+    <div className={`rounded-[24px] border px-5 py-6 ${toneClass}`}>
       <p className={`text-sm font-semibold ${tone === 'dark' ? 'text-white' : 'text-[#102236]'}`}>{title}</p>
       <p className={`mt-2 max-w-2xl text-sm leading-6 ${tone === 'dark' ? 'text-white/65' : 'text-[#60758d]'}`}>{description}</p>
       {actionLabel && typeof onAction === 'function' ? (
@@ -625,7 +625,7 @@ function InlineEmptyPanel({ title, description, actionLabel = '', onAction = nul
 function SectionTitle({ title, action = null }) {
   return (
     <div className="mb-4 flex items-center justify-between gap-4">
-      <h2 className="text-[28px] font-semibold leading-tight text-[#0f2748]">{title}</h2>
+      <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">{title}</h2>
       {action}
     </div>
   )
@@ -655,9 +655,9 @@ function StageBadge({ stage }) {
 
 function ActionStatusCard({ title, count, detail, icon: Icon, tone }) {
   const styles = {
-    red: 'border-rose-100 bg-[linear-gradient(180deg,#fffafa_0%,#fff6f6_100%)] text-rose-700',
-    amber: 'border-amber-100 bg-[linear-gradient(180deg,#fffdfa_0%,#fff8ef_100%)] text-amber-700',
-    green: 'border-emerald-100 bg-[linear-gradient(180deg,#f8fffb_0%,#f1fcf7_100%)] text-emerald-700',
+    red: 'border-[rgba(255,59,48,0.15)] bg-[rgba(255,59,48,0.05)] text-rose-700',
+    amber: 'border-[rgba(255,149,0,0.15)] bg-[rgba(255,149,0,0.05)] text-amber-700',
+    green: 'border-[rgba(52,199,89,0.15)] bg-[rgba(52,199,89,0.05)] text-emerald-700',
   }[tone]
   return (
     <article className={`rounded-[24px] border p-6 ${styles}`}>
@@ -667,10 +667,10 @@ function ActionStatusCard({ title, count, detail, icon: Icon, tone }) {
             <span className="inline-flex h-9 w-9 items-center justify-center rounded-[14px] bg-white/80 shadow-sm">
               <Icon size={17} />
             </span>
-            <p className="text-sm font-semibold text-[#0f2748]">{title}</p>
+            <p className="text-[16px] font-semibold tracking-[-0.02em] text-[#0f2748]">{title}</p>
           </div>
-          <p className="mt-5 text-[34px] font-bold leading-none text-[#0f2748]">{count}</p>
-          <p className="mt-3 text-sm leading-6 text-[#526276]">{detail}</p>
+          <p className="mt-5 text-[48px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{count}</p>
+          <p className="mt-3 text-[13px] leading-6 text-[#526276]">{detail}</p>
         </div>
       </div>
     </article>
@@ -787,7 +787,7 @@ export default function CommercialExecutiveCommandCenter({
       <section>
         <article className={`${PANEL_CLASS} p-6`}>
           <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-xl font-semibold text-[#0f2748]">Action Centre</h2>
+            <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Action Centre</h2>
             <Link to="/commercial/lease-expiry-watch" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
               View all
               <ArrowUpRight size={14} />
@@ -797,21 +797,21 @@ export default function CommercialExecutiveCommandCenter({
             <ActionStatusCard
               title="Attention Required"
               count={loading ? '...' : formatNumber(actionCentre.attentionCount)}
-              detail="Leases expiring, compliance, or stalled deals"
+              detail="Lease Expiries · Compliance · Stalled Deals"
               icon={AlertTriangle}
               tone="red"
             />
             <ActionStatusCard
               title="Monitor"
               count={loading ? '...' : formatNumber(actionCentre.monitorCount)}
-              detail="Vacancies older than 60 days or overdue items"
+              detail="Vacancies > 60 Days · Overdue Items"
               icon={ShieldAlert}
               tone="amber"
             />
             <ActionStatusCard
               title="Healthy"
               count={loading ? '...' : actionCentre.healthyValue}
-              detail="Portfolio occupancy and renewal posture"
+              detail="Occupancy · Renewals"
               icon={CheckCircle2}
               tone="green"
             />
@@ -822,7 +822,7 @@ export default function CommercialExecutiveCommandCenter({
       <section id="transactions">
         <article className={`${PANEL_CLASS} overflow-hidden`}>
           <div className="flex items-center justify-between gap-4 border-b border-[#edf2f7] px-6 py-5">
-            <h2 className="text-[28px] font-semibold leading-tight text-[#0f2748]">Active Deals</h2>
+            <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Active Deals</h2>
             <Link to="/commercial/deals" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
               View all deals
               <ChevronRight size={15} />
@@ -888,7 +888,7 @@ export default function CommercialExecutiveCommandCenter({
                 const Icon = stage.icon
                 return (
                   <div key={stage.key} className="flex items-center gap-4">
-                    <article className="w-[210px] rounded-[20px] border border-[#e8eef4] bg-[#fbfdff] p-4">
+                    <article className="w-[210px] rounded-[24px] border border-[#e8eef4] bg-[#fbfdff] p-4">
                       <div className="flex items-center justify-between gap-3">
                         <span className="inline-flex h-9 w-9 items-center justify-center rounded-[14px] bg-white text-[#1f6dd5] shadow-sm">
                           <Icon size={17} />
@@ -918,8 +918,8 @@ export default function CommercialExecutiveCommandCenter({
               <article key={item.key} className={`${PANEL_CLASS} flex min-h-[118px] items-center justify-between gap-4 p-6`}>
                 <div>
                   <p className="text-sm font-semibold text-[#0f2748]">{item.label === 'Leases Signed' ? 'Deals Signed' : item.label}</p>
-                  <p className="mt-3 text-[32px] font-bold leading-none text-[#0f2748]">{loading ? '...' : formatNumber(item.value)}</p>
-                  <p className="mt-2 text-sm text-[#6b7c91]">0% vs last week</p>
+                  <p className="mt-3 text-[32px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{loading ? '...' : formatNumber(item.value)}</p>
+                  <p className="mt-2 text-[13px] font-normal text-[#7b899a]">0% vs last week</p>
                 </div>
                 <span className={`inline-flex h-11 w-11 items-center justify-center rounded-[16px] ${item.tone}`}>
                   <Icon size={19} />
@@ -942,9 +942,9 @@ export default function CommercialExecutiveCommandCenter({
                 ['YTD', formatMoney(displayFinancialSummary.paidRevenue || 0)],
                 ['Forecast', formatMoney(displayFinancialSummary.pipelineValue || displaySummary.pipelineValue || 0)],
               ].map(([label, value]) => (
-                <div key={label} className="rounded-[20px] border border-[#ebf1f6] bg-[#fbfdff] px-4 py-4">
-                  <p className="text-[13px] font-medium text-[#6b7c91]">{label}</p>
-                  <p className="mt-2 text-[24px] font-bold leading-tight text-[#0f2748]">{loading ? '...' : value}</p>
+                <div key={label} className="rounded-[24px] border border-[#ebf1f6] bg-[#fbfdff] px-4 py-4">
+                  <p className="text-[14px] font-medium text-[#60758d]">{label}</p>
+                  <p className="mt-2 text-[24px] font-semibold leading-tight tracking-[-0.03em] text-[#0f2748]">{loading ? '...' : value}</p>
                 </div>
               ))}
             </div>
@@ -954,7 +954,7 @@ export default function CommercialExecutiveCommandCenter({
         <article className={`${PANEL_CLASS} p-6`}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-[28px] font-semibold leading-tight text-[#0f2748]">Risk Watch</h2>
+              <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Risk Watch</h2>
             </div>
             <Link to="/commercial/lease-expiry-watch" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
               View all
@@ -962,7 +962,7 @@ export default function CommercialExecutiveCommandCenter({
             </Link>
           </div>
           <div className="mt-6 space-y-4">
-            <div className="rounded-[22px] border border-rose-200 bg-[linear-gradient(180deg,#fffafa_0%,#fff4f4_100%)] p-4">
+            <div className="rounded-[24px] border border-[rgba(255,59,48,0.15)] bg-[rgba(255,59,48,0.05)] p-4">
               <div className="flex items-center gap-2 text-rose-700">
                 <AlertTriangle size={16} />
                 <p className="text-sm font-semibold">Attention Required</p>
@@ -971,13 +971,13 @@ export default function CommercialExecutiveCommandCenter({
                 {riskWatch.critical.map((item) => (
                   <div key={item.label} className="flex items-center justify-between gap-3">
                     <p className="text-sm text-[#5d4950]">{item.label}</p>
-                    <strong className="text-lg font-bold tracking-[-0.03em] text-rose-700">{loading ? '...' : formatNumber(item.value)}</strong>
+                    <strong className="text-[48px] font-semibold leading-none tracking-[-0.04em] text-rose-700">{loading ? '...' : formatNumber(item.value)}</strong>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-[22px] border border-amber-200 bg-[linear-gradient(180deg,#fffdfa_0%,#fff8ef_100%)] p-4">
+            <div className="rounded-[24px] border border-[rgba(255,149,0,0.15)] bg-[rgba(255,149,0,0.05)] p-4">
               <div className="flex items-center gap-2 text-amber-700">
                 <ShieldAlert size={16} />
                 <p className="text-sm font-semibold">Monitor</p>
@@ -986,20 +986,20 @@ export default function CommercialExecutiveCommandCenter({
                 {riskWatch.warning.map((item) => (
                   <div key={item.label} className="flex items-center justify-between gap-3">
                     <p className="text-sm text-[#6a5843]">{item.label}</p>
-                    <strong className="text-lg font-bold tracking-[-0.03em] text-amber-700">{loading ? '...' : formatNumber(item.value)}</strong>
+                    <strong className="text-[48px] font-semibold leading-none tracking-[-0.04em] text-amber-700">{loading ? '...' : formatNumber(item.value)}</strong>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-[22px] border border-emerald-200 bg-[linear-gradient(180deg,#f7fffb_0%,#effcf6_100%)] p-4">
+            <div className="rounded-[24px] border border-[rgba(52,199,89,0.15)] bg-[rgba(52,199,89,0.05)] p-4">
               <div className="flex items-center gap-2 text-emerald-700">
                 <CheckCircle2 size={16} />
                 <p className="text-sm font-semibold">Healthy</p>
               </div>
               <div className="mt-4 flex items-end justify-between gap-4">
                 <div>
-                  <p className="text-[2rem] font-bold tracking-[-0.06em] text-emerald-700">{loading ? '...' : formatPercentValue(riskWatch.healthy)}</p>
+                  <p className="text-[48px] font-semibold leading-none tracking-[-0.04em] text-emerald-700">{loading ? '...' : formatPercentValue(riskWatch.healthy)}</p>
                   <p className="mt-1 text-sm text-[#547567]">Portfolio occupancy</p>
                 </div>
                 <div className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 ring-1 ring-inset ring-emerald-200">
@@ -1015,7 +1015,7 @@ export default function CommercialExecutiveCommandCenter({
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
           <article className={`${PANEL_CLASS} overflow-hidden`}>
             <div className="flex items-center justify-between gap-4 border-b border-[#edf2f7] px-6 py-5">
-              <h3 className="text-[28px] font-semibold leading-tight text-[#0f2748]">Top Brokers</h3>
+              <h3 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Top Brokers</h3>
               <Link to="/commercial/brokers" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
                 View All Brokers
                 <ChevronRight size={15} />
@@ -1065,7 +1065,7 @@ export default function CommercialExecutiveCommandCenter({
 
           <article className={`${PANEL_CLASS} p-6`}>
             <div className="flex items-center justify-between gap-4">
-              <h3 className="text-[28px] font-semibold leading-tight text-[#0f2748]">Properties Requiring Attention</h3>
+              <h3 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Properties Requiring Attention</h3>
               <Link to="/commercial/properties" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
                 View all
                 <ChevronRight size={15} />
@@ -1073,7 +1073,7 @@ export default function CommercialExecutiveCommandCenter({
             </div>
             <div className="mt-5 grid gap-4">
             {portfolioCards.map((card) => (
-              <article key={card.id} className="flex items-center justify-between gap-4 rounded-[20px] border border-[#ebf1f6] bg-[#fbfdff] p-4">
+              <article key={card.id} className="flex items-center justify-between gap-4 rounded-[24px] border border-[#ebf1f6] bg-[#fbfdff] p-4">
                 <div className="flex min-w-0 items-center gap-4">
                   <span className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,var(--tw-gradient-stops))] ${card.accent} text-[#123b61]`}>
                       <Building2 size={18} />

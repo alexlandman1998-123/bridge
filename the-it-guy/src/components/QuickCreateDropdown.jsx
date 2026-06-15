@@ -1147,7 +1147,7 @@ function QuickCreateDropdown({ className = '' }) {
 
         {open ? (
           <div
-            className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 w-[min(24rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-96px)] overflow-y-auto border-[#dde6ef] bg-white p-2 shadow-[0_24px_56px_rgba(15,23,42,0.14)]"
+            className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-[120] w-[min(24rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-96px)] overflow-y-auto border-[#dde6ef] bg-white p-2 shadow-[0_24px_56px_rgba(15,23,42,0.14)]"
             role="menu"
           >
             <div className="px-3 pb-3 pt-2">
