@@ -6527,9 +6527,14 @@ button.agency-setup-row-card:hover {
 }
 
 .auth-page:not(.onboarding-page) .auth-form {
+  flex: 1 1 auto;
   min-height: 0;
   display: grid;
   gap: 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
 }
 
 .auth-page:not(.onboarding-page) .auth-card-head.compact {
@@ -7163,6 +7168,17 @@ button.agency-setup-row-card:hover {
 
 .auth-page:not(.onboarding-page) .auth-trust-line svg {
   color: #008f85;
+}
+
+.auth-page:not(.onboarding-page) .auth-dev-bypass {
+  display: grid;
+  gap: 0.75rem;
+}
+
+@media (max-height: 860px) and (min-width: 981px) {
+  .auth-page:not(.onboarding-page) .auth-dev-bypass {
+    display: none;
+  }
 }
 
 @keyframes authStepIn {

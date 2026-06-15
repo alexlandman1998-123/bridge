@@ -17,7 +17,7 @@ import {
   UsersRound,
   WalletCards,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { setStoredDevAuthRole } from '../lib/devAuth'
 import { isDevAuthBypassEnabled } from '../lib/devAuth'
@@ -253,6 +253,7 @@ function Auth({ onDevBypass = null }) {
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState(() => initialInvitedEmail)
   const [resendCooldownUntil, setResendCooldownUntil] = useState(() => resolveInitialCooldownUntil())
   const [nowTick, setNowTick] = useState(Date.now())
+  const authFormRef = useRef(null)
 
   const redirectTo = useMemo(() => getRedirectPath(location), [location])
   const inviteToken = useMemo(() => resolveInviteTokenFromLocation(location), [location])
@@ -345,6 +346,9 @@ function Auth({ onDevBypass = null }) {
     if (mode !== 'signup' || typeof window === 'undefined') return undefined
     const frame = window.requestAnimationFrame(() => {
       window.scrollTo({ top: 0, left: 0 })
+      if (authFormRef.current) {
+        authFormRef.current.scrollTop = 0
+      }
     })
     return () => window.cancelAnimationFrame(frame)
   }, [mode, signupStep])
@@ -636,7 +640,7 @@ function Auth({ onDevBypass = null }) {
             </button>
           </div>
 
-          <form className="auth-form" onSubmit={handleSubmit}>
+          <form id="auth-form" ref={authFormRef} className="auth-form" onSubmit={handleSubmit}>
             {mode === 'signup' ? (
               <>
                 <div className="signup-stepper" aria-label="Signup progress">
@@ -934,14 +938,14 @@ function Auth({ onDevBypass = null }) {
 
             {error ? <p className="auth-feedback error">{error}</p> : null}
             {message ? <p className="auth-feedback success">{message}</p> : null}
-
-            {mode === 'login' || signupStep === 2 ? (
-              <button type="submit" className="auth-submit" disabled={loading}>
-                {loading ? 'Processing...' : mode === 'login' ? 'Sign in securely' : 'Create Account'}
-                {!loading ? <ArrowRight size={15} /> : null}
-              </button>
-            ) : null}
           </form>
+
+          {mode === 'login' || signupStep === 2 ? (
+            <button type="submit" form="auth-form" className="auth-submit" disabled={loading}>
+              {loading ? 'Processing...' : mode === 'login' ? 'Sign in securely' : 'Create Account'}
+              {!loading ? <ArrowRight size={15} /> : null}
+            </button>
+          ) : null}
 
           {mode === 'login' ? (
             <div className="auth-footer" style={{ borderTop: 0, paddingTop: 0 }}>
@@ -981,7 +985,7 @@ function Auth({ onDevBypass = null }) {
           ) : null}
 
           {isDevAuthBypassEnabled() && !inviteDrivenSignup ? (
-            <div className="mt-6 rounded-[24px] border border-[#d8e2f0] bg-[#f4f7fb] p-4">
+            <div className="auth-dev-bypass mt-6 rounded-[24px] border border-[#d8e2f0] bg-[#f4f7fb] p-4">
               <div className="mb-3">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.24em] text-[#6f87a7]">Local Dev Bypass</h3>
                 <p className="mt-2 text-sm leading-6 text-[#61738f]">

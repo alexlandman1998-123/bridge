@@ -73,6 +73,18 @@ const COMMERCIAL_SCOPE_CACHE_TTL_MS = 60 * 1000
 const COMMERCIAL_PLATFORM_INSTALL_CACHE_TTL_MS = 5 * 60 * 1000
 const COMMERCIAL_MODULE_KEY = 'commercial'
 export const COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE = 'Commercial is not installed on this environment. Contact platform support.'
+const COMMERCIAL_PLATFORM_MIGRATION_GUIDE = Object.freeze({
+  'commercial organisation module entitlement': '202606100002_commercial_organisation_modules_phase3.sql',
+  'organisation commercial activation columns': '202606080001_commercial_brokerage_hierarchy.sql',
+  'commercial teams': '202606080001_commercial_brokerage_hierarchy.sql',
+  commercial_listings: '202606080002_commercial_listings_foundation.sql',
+  commercial_viewings: '202606110003_commercial_viewings_phase1.sql',
+  commercial_transactions: '202606110004_commercial_transactions_phase2.sql',
+  commercial_companies: '202606110005_commercial_crm_foundation_phase3.sql',
+  commercial_contacts: '202606110005_commercial_crm_foundation_phase3.sql',
+  commercial_commissions: '202606110007_commercial_brokerage_os_phase5.sql',
+  'commercial access request workflow': '202606100003_commercial_access_requests_phase4.sql',
+})
 const COMMERCIAL_HQ_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'admin', 'admin_staff', 'manager', 'hq_manager', 'commercial_hq_admin', 'commercial_hq_manager', 'super_admin'])
 const COMMERCIAL_BRANCH_ROLES = new Set(['branch_manager', 'branch_admin', 'regional_manager'])
 const COMMERCIAL_TEAM_ROLES = new Set(['team_leader', 'team_manager', 'commercial_team_leader'])
@@ -105,6 +117,19 @@ let commercialPlatformInstallCache = null
 let commercialPlatformInstallInflight = null
 
 export const COMMERCIAL_TABLES = TABLES
+
+function buildCommercialPlatformMigrationHint(missing = []) {
+  const migrations = Array.from(
+    new Set(
+      (Array.isArray(missing) ? missing : [])
+        .map((label) => COMMERCIAL_PLATFORM_MIGRATION_GUIDE[label])
+        .filter(Boolean),
+    ),
+  )
+
+  if (!migrations.length) return ''
+  return `Apply Commercial migrations: ${migrations.join(', ')}`
+}
 
 const ENTITY_TYPES = {
   companies: 'commercial_company',
@@ -624,7 +649,10 @@ function createCommercialPlatformInstallError(status = {}) {
   const error = new Error(COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE)
   error.code = 'commercial_platform_not_installed'
   error.installStatus = status
-  error.details = missing.length ? `Missing commercial setup: ${missing.join(', ')}` : COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE
+  const migrationHint = buildCommercialPlatformMigrationHint(missing)
+  error.details = missing.length
+    ? `Missing commercial setup: ${missing.join(', ')}${migrationHint ? `. ${migrationHint}` : ''}`
+    : COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE
   return error
 }
 
