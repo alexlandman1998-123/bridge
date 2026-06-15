@@ -7526,9 +7526,12 @@ function getSellerDocumentDisplayStatus(document = {}) {
     : complete ? 'Uploaded' : 'Missing'
 }
 
-function SellerWorkspaceCard({ title, action, children, className = '', id = '' }) {
+function SellerWorkspaceCard({ title, action, children, className = '', id = '', density = 'regular' }) {
+  const densityClasses = density === 'compact'
+    ? 'p-4 min-h-[200px]'
+    : 'p-5 min-h-[220px]'
   return (
-    <section id={id || undefined} className={`${panelClass} flex h-full min-h-[220px] flex-col p-5 ${className}`}>
+    <section id={id || undefined} className={`${panelClass} flex h-full flex-col ${densityClasses} ${className}`}>
       <div className="flex min-h-8 items-start justify-between gap-4">
         <h2 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">{title}</h2>
         {action}
@@ -7962,8 +7965,8 @@ function SellerWorkspaceTabs({ activeTab, onTabChange }) {
 
 function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId, actor, onSaved, onTabChange }) {
   return (
-    <div className="grid items-stretch gap-6 xl:grid-cols-4 xl:auto-rows-[minmax(360px,auto)]">
-      <SellerWorkspaceCard title="Lead Summary">
+    <div className="grid items-stretch gap-5 xl:grid-cols-2 xl:auto-rows-[minmax(320px,auto)]">
+      <SellerWorkspaceCard title="Lead Summary" density="compact">
         <dl className="flex flex-1 flex-col">
           <SellerInfoRow label="Source" value={sourceInfo?.leadSource || row.source} />
           <SellerInfoRow label="Estimated Value" value={formatCurrency(row.estimatedValue || row.estimated_value)} />
@@ -7974,7 +7977,7 @@ function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId,
         </dl>
       </SellerWorkspaceCard>
       <SellerDocumentsSummaryCard journey={journey} />
-      <SellerWorkspaceCard title="Recent Activity" action={<button type="button" onClick={() => onTabChange('activity')} className="text-xs font-semibold text-blue-700">View All</button>}>
+      <SellerWorkspaceCard title="Recent Activity" density="compact" action={<button type="button" onClick={() => onTabChange('activity')} className="text-xs font-semibold text-blue-700">View All</button>}>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <SellerTimelineList timeline={timeline} limit={12} compact />
         </div>
@@ -9413,6 +9416,7 @@ function SellerDocumentsSummaryCard({ journey = null }) {
   const completion = getSellerDocumentCompletion(documents)
   return (
     <SellerWorkspaceCard
+      density="compact"
       className="scroll-mt-6"
       title="Documents"
       action={<StatusPill tone={completion.percent >= 80 ? 'green' : completion.percent ? 'amber' : 'slate'}>{completion.percent}%</StatusPill>}
@@ -9425,7 +9429,7 @@ function SellerDocumentsSummaryCard({ journey = null }) {
         </div>
         <span className="shrink-0 text-sm font-semibold text-slate-500">{completion.percent}% complete</span>
       </div>
-      <div className="mt-4 grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
         {documents.length ? documents.map((document) => {
           const complete = getSellerDocumentCompletion([document]).percent === 100
           return (
@@ -9468,7 +9472,7 @@ function SellerOwnershipSummaryCard({ organisationId, lead, actor, onSaved }) {
   }
 
   return (
-    <SellerWorkspaceCard title="Ownership" id="seller-ownership" action={<StatusPill tone={getSlaTone(lead.slaStatus)}>{formatSlaStatus(lead.slaStatus)}</StatusPill>}>
+    <SellerWorkspaceCard density="compact" title="Ownership" id="seller-ownership" action={<StatusPill tone={getSlaTone(lead.slaStatus)}>{formatSlaStatus(lead.slaStatus)}</StatusPill>}>
       <dl className="flex flex-1 flex-col">
         <SellerInfoRow label="Agent" value={getOwnerName(lead)} />
         <SellerInfoRow label="Queue" value={lead.assignedQueue || 'No queue'} />
