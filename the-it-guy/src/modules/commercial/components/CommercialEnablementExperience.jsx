@@ -44,6 +44,14 @@ const WIZARD_STEPS = [
   'Review & Confirm',
 ]
 
+const WIZARD_STEP_TITLES = [
+  'Business',
+  'Team',
+  'Branches',
+  'Features',
+  'Review',
+]
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -670,10 +678,10 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
   const validationError = validateCurrentStep()
 
   return (
-    <section className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,89,145,0.08),_transparent_34%),linear-gradient(180deg,_#f8fbfe_0%,_#f3f7fb_100%)] px-4 py-8 text-[#102236] sm:px-6">
+    <section className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,89,145,0.08),_transparent_34%),linear-gradient(180deg,_#f8fbfe_0%,_#f3f7fb_100%)] px-4 py-6 text-[#102236] sm:px-6 sm:py-7">
       <div className="mx-auto max-w-6xl">
-        <div className="grid gap-6 lg:grid-cols-[1.08fr_0.92fr]">
-          <div className="rounded-[32px] border border-[#dbe6f2] bg-white p-7 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-9">
+        <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-stretch">
+          <div className="flex h-full flex-col rounded-[34px] border border-[#dbe6f2] bg-white p-7 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-8">
             {!wizardOpen ? (
               <>
                 <div className="flex items-start justify-between gap-4">
@@ -777,47 +785,86 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                   </span>
                 </div>
 
-                <div className="mt-6 flex flex-wrap items-center gap-3">
-                  {WIZARD_STEPS.map((step, index) => (
-                    <div key={step} className="flex items-center gap-3">
-                      <StepBadge index={index} active={index === stepIndex} complete={index < stepIndex} />
-                      <span className={`text-sm font-medium ${index === stepIndex ? 'text-[#102236]' : 'text-slate-400'}`}>{step}</span>
-                    </div>
-                  ))}
+                <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                  {WIZARD_STEPS.map((step, index) => {
+                    const active = index === stepIndex
+                    const complete = index < stepIndex
+                    const shortLabel = WIZARD_STEP_TITLES[index] || step
+
+                    return (
+                      <div
+                        key={step}
+                        className={[
+                          'flex min-w-0 items-center gap-3 rounded-[22px] border px-3 py-3 transition',
+                          complete
+                            ? 'border-emerald-200 bg-emerald-50/70'
+                            : active
+                              ? 'border-[#bfd5ea] bg-[#eef5fb] shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
+                              : 'border-slate-200 bg-white',
+                        ].join(' ')}
+                      >
+                        <StepBadge index={index} active={active} complete={complete} />
+                        <div className="min-w-0">
+                          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-slate-400">Step {index + 1}</p>
+                          <p className={`mt-1 truncate text-sm font-medium ${active ? 'text-[#102236]' : 'text-slate-500'}`}>{shortLabel}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
 
                 <div className="mt-8">
                   {stepIndex === 0 ? (
-                    <div className="space-y-5">
-                      <div>
+                    <div className="space-y-6">
+                      <div className="max-w-2xl">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Step 1</p>
-                        <h2 className="mt-2 text-3xl font-semibold tracking-[-0.045em]">How does your commercial business operate?</h2>
-                        <p className="mt-3 text-sm leading-7 text-slate-500">Help us configure the right commercial workflows for your organisation.</p>
+                        <h2 className="mt-2 max-w-[13ch] text-[2.35rem] font-semibold leading-[1.04] tracking-[-0.055em] text-[#102236] sm:text-[2.55rem]">
+                          How does your commercial business operate?
+                        </h2>
+                        <p className="mt-4 max-w-xl text-sm leading-7 text-slate-500">
+                          Choose the operating model that matches how your team works today. You can adjust it later.
+                        </p>
                       </div>
+
                       <div className="grid gap-3">
                         {BUSINESS_MODEL_OPTIONS.map((option) => {
                           const active = draft.businessModel === option.value
+                          const featured = option.value === 'sales_leasing'
                           return (
                             <button
                               key={option.value}
                               type="button"
                               onClick={() => updateBusinessModel(option.value)}
                               className={[
-                                'rounded-[24px] border px-5 py-5 text-left transition',
+                                'group flex min-h-[96px] items-stretch justify-between gap-4 rounded-[24px] border px-5 py-4 text-left transition',
                                 active
-                                  ? 'border-[#bfd5ea] bg-[#f3f9ff] shadow-[0_18px_36px_rgba(15,23,42,0.05)]'
-                                  : 'border-[#e5edf6] bg-white hover:border-[#d2dfed] hover:bg-[#fbfdff]',
+                                  ? 'border-[#b8d0e7] bg-[#f4f9fe] shadow-[0_18px_40px_rgba(15,23,42,0.06)] ring-1 ring-inset ring-[#d9e7f3]'
+                                  : 'border-[#e5edf6] bg-white hover:border-[#cfddea] hover:bg-[#fcfdff]',
                               ].join(' ')}
                             >
-                              <div className="flex items-start justify-between gap-4">
-                                <div>
-                                  <p className="text-lg font-semibold text-[#102236]">{option.label}</p>
-                                  <p className="mt-2 text-sm leading-6 text-slate-500">{option.description}</p>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-[1.02rem] font-semibold tracking-[-0.03em] text-[#102236]">{option.label}</p>
+                                  {featured ? (
+                                    <span className="rounded-full bg-[#e9f3fb] px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#0c4a7d]">
+                                      Recommended
+                                    </span>
+                                  ) : null}
                                 </div>
-                                <span className={`mt-1 flex h-6 w-6 items-center justify-center rounded-full border ${active ? 'border-[#0c4a7d] bg-[#0c4a7d] text-white' : 'border-slate-300 bg-white text-transparent'}`}>
-                                  <Check size={14} />
-                                </span>
+                                <p className="mt-2 text-sm leading-6 text-slate-500">{option.description}</p>
+                                <p className={`mt-4 text-xs font-semibold uppercase tracking-[0.16em] ${active ? 'text-[#0c4a7d]' : 'text-slate-400'}`}>
+                                  {active ? 'Selected' : 'Tap to choose'}
+                                </p>
                               </div>
+                              <span
+                                className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition ${
+                                  active
+                                    ? 'border-[#0c4a7d] bg-[#0c4a7d] text-white shadow-[0_6px_14px_rgba(12,74,125,0.25)]'
+                                    : 'border-slate-300 bg-white text-transparent group-hover:border-[#bfd5ea]'
+                                }`}
+                              >
+                                <Check size={14} />
+                              </span>
                             </button>
                           )
                         })}
@@ -1139,11 +1186,12 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                   </p>
                 ) : null}
 
-                <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm text-slate-500">
-                    {validationError && stepIndex < WIZARD_STEPS.length - 1 ? validationError : `You're on ${activeStepLabel}.`}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3">
+                <div className="mt-10 border-t border-slate-200/80 pt-6">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className={`text-sm leading-6 ${validationError && stepIndex < WIZARD_STEPS.length - 1 ? 'text-rose-600' : 'text-slate-500'}`}>
+                      {validationError && stepIndex < WIZARD_STEPS.length - 1 ? validationError : `You're on ${activeStepLabel}.`}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3">
                     {stepIndex < WIZARD_STEPS.length - 1 ? (
                       <button
                         type="button"
@@ -1164,14 +1212,15 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                         Enable Commercial Workspace
                       </button>
                     )}
+                    </div>
                   </div>
                 </div>
               </>
             )}
           </div>
 
-          <aside className="space-y-5">
-            <div className="rounded-[28px] border border-[#dbe6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+          <aside className="grid h-full gap-5 lg:grid-rows-2">
+            <div className="flex h-full flex-col rounded-[28px] border border-[#dbe6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">What stays the same</p>
               <h2 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102236]">One organisation. More workspace power.</h2>
               <div className="mt-5 space-y-3 text-sm leading-6 text-slate-500">
@@ -1181,9 +1230,9 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-[#dbe6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
+            <div className="flex h-full flex-col rounded-[28px] border border-[#dbe6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Current summary</p>
-              <div className="mt-4 grid gap-3">
+              <div className="mt-4 grid flex-1 content-start gap-3">
                 <div className="rounded-2xl border border-[#e7eef6] bg-[#fbfdff] px-4 py-4">
                   <p className="text-sm font-semibold text-[#102236]">Business Model</p>
                   <p className="mt-1 text-sm text-slate-500">{formatBusinessModel(draft.businessModel)}</p>

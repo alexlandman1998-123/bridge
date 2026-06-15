@@ -71,6 +71,21 @@ function resolveDocumentLabel(packetType = '') {
   return normalizeKey(packetType) === 'otp' ? 'Offer to Purchase' : 'Mandate Agreement'
 }
 
+function addDaysToIsoDate(days = 0) {
+  const date = new Date()
+  if (Number.isFinite(days) && days) {
+    date.setDate(date.getDate() + days)
+  }
+  return date.toISOString().slice(0, 10)
+}
+
+function toIsoDate(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  const date = new Date(text)
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
+}
+
 function toFriendlyPageError(error = null) {
   const raw = normalizeText(error?.message || error)
   const message = raw.toLowerCase()
@@ -590,6 +605,7 @@ function buildMandateGenerationContext({
   transactionId = '',
   transactionDetail = null,
   leadContext = {},
+  mandateDraft = null,
   actor = {},
   role = 'agent',
   branding = null,
@@ -616,6 +632,7 @@ function buildMandateGenerationContext({
     transactionDetail?.onboardingFormData ||
     leadOnboardingFormData ||
     {}
+  const mandateDraftContext = mandateDraft && typeof mandateDraft === 'object' ? mandateDraft : {}
   const privateListing = leadContext.privateListing || leadContext.listing || leadOnboarding?.listing || null
   const sellerFirstName = normalizeText(
     leadContext.contact?.firstName ||
@@ -688,6 +705,7 @@ function buildMandateGenerationContext({
     transaction,
     transactionId,
     privateListing,
+    mandateDraft: mandateDraftContext,
     unit: transactionDetail?.unit || null,
     buyer: transactionDetail?.buyer || null,
     contact: leadContext.contact || null,
@@ -764,6 +782,125 @@ function buildRuntimeMandateStatusForLead({
   }).status
 }
 
+function buildMandateDraftDefaults({ leadContext = {}, initialStatus = null, transactionDetail = null } = {}) {
+  const lead = leadContext?.lead && typeof leadContext.lead === 'object' ? leadContext.lead : {}
+  const onboarding = lead?.sellerOnboarding?.formData && typeof lead.sellerOnboarding.formData === 'object'
+    ? lead.sellerOnboarding.formData
+    : {}
+  const privateListing = leadContext?.privateListing && typeof leadContext.privateListing === 'object'
+    ? leadContext.privateListing
+    : leadContext?.listing && typeof leadContext.listing === 'object'
+      ? leadContext.listing
+      : lead?.sellerOnboarding?.listing && typeof lead.sellerOnboarding.listing === 'object'
+        ? lead.sellerOnboarding.listing
+        : {}
+  const transactionOnboarding =
+    transactionDetail?.onboardingFormData?.formData ||
+    transactionDetail?.onboardingFormData ||
+    {}
+  const packetSourceContext =
+    initialStatus?.packet?.source_context_json && typeof initialStatus.packet.source_context_json === 'object'
+      ? initialStatus.packet.source_context_json
+      : {}
+  const packetDraft =
+    packetSourceContext?.mandateDraft && typeof packetSourceContext.mandateDraft === 'object'
+      ? packetSourceContext.mandateDraft
+      : {}
+  const generatedSnapshot =
+    initialStatus?.versions?.[0]?.validation_summary_json?.generatedDataSnapshot &&
+    typeof initialStatus.versions[0].validation_summary_json.generatedDataSnapshot === 'object'
+      ? initialStatus.versions[0].validation_summary_json.generatedDataSnapshot
+      : packetSourceContext?.generatedDataSnapshot && typeof packetSourceContext.generatedDataSnapshot === 'object'
+        ? packetSourceContext.generatedDataSnapshot
+        : {}
+  const snapshotMandate = generatedSnapshot?.mandate && typeof generatedSnapshot.mandate === 'object' ? generatedSnapshot.mandate : {}
+
+  return {
+    mandateType: normalizeKey(firstText(packetDraft.mandateType, snapshotMandate.type, onboarding.mandateType, lead.mandateType, 'sole')) || 'sole',
+    commissionStructure: normalizeKey(firstText(
+      packetDraft.commissionStructure,
+      snapshotMandate.commissionStructure,
+      onboarding.commissionStructure,
+      onboarding.commissionType,
+      lead.commissionStructure,
+      'percentage',
+    )) || 'percentage',
+    commissionPercent: String(firstText(
+      packetDraft.commissionPercent,
+      snapshotMandate.commissionPercent,
+      snapshotMandate.commissionPercentage,
+      onboarding.commissionPercentage,
+      onboarding.commissionPercent,
+      onboarding.mandateCommissionPercent,
+      transactionOnboarding.commissionPercentage,
+      transactionOnboarding.commissionPercent,
+      lead.commissionPercent,
+      lead.mandateCommissionPercent,
+      '7.5',
+    )),
+    commissionAmount: String(firstText(
+      packetDraft.commissionAmount,
+      snapshotMandate.commissionAmount,
+      onboarding.commissionAmount,
+      onboarding.mandateCommissionAmount,
+      transactionOnboarding.commissionAmount,
+      lead.commissionAmount,
+    )),
+    vatHandling: normalizeKey(firstText(
+      packetDraft.vatHandling,
+      snapshotMandate.vatHandling,
+      onboarding.vatHandling,
+      transactionOnboarding.vatHandling,
+      lead.vatHandling,
+      'exclusive',
+    )) || 'exclusive',
+    mandateStartDate: toIsoDate(firstText(
+      packetDraft.mandateStartDate,
+      snapshotMandate.startDate,
+      snapshotMandate.mandateStartDate,
+      onboarding.mandateStartDate,
+      onboarding.startDate,
+      transactionOnboarding.mandateStartDate,
+      transactionOnboarding.startDate,
+      lead.mandateStartDate,
+      privateListing.mandateStartDate,
+    )) || addDaysToIsoDate(0),
+    mandateEndDate: toIsoDate(firstText(
+      packetDraft.mandateEndDate,
+      snapshotMandate.expiryDate,
+      snapshotMandate.endDate,
+      snapshotMandate.mandateEndDate,
+      onboarding.mandateExpiryDate,
+      onboarding.mandateEndDate,
+      onboarding.expiryDate,
+      transactionOnboarding.mandateExpiryDate,
+      transactionOnboarding.mandateEndDate,
+      transactionOnboarding.expiryDate,
+      lead.mandateEndDate,
+      privateListing.mandateEndDate,
+    )) || addDaysToIsoDate(90),
+    askingPrice: String(firstText(
+      packetDraft.askingPrice,
+      snapshotMandate.askingPrice,
+      onboarding.askingPrice,
+      onboarding.marketingPrice,
+      transactionOnboarding.askingPrice,
+      transactionOnboarding.marketingPrice,
+      lead.estimatedValue,
+      lead.estimatedPrice,
+      lead.budget,
+      privateListing.askingPrice,
+    )),
+    specialConditions: firstText(
+      packetDraft.specialConditions,
+      snapshotMandate.specialConditions,
+      onboarding.specialConditions,
+      transactionOnboarding.specialConditions,
+      lead.specialConditions,
+    ),
+  }
+}
+
 const LEGAL_WORKSPACE_ROUTE_TIMEOUT_MS = 3500
 const LEGAL_WORKSPACE_GENERATION_TIMEOUT_MS = 65000
 const LEGAL_WORKSPACE_PACKET_SAVE_TIMEOUT_MS = 18000
@@ -807,6 +944,7 @@ export default function LegalDocumentWorkspacePage() {
   const [contextHydrated, setContextHydrated] = useState(false)
   const [initialStatus, setInitialStatus] = useState(null)
   const [validatedRoutePacketId, setValidatedRoutePacketId] = useState('')
+  const [mandateDraftOverrides, setMandateDraftOverrides] = useState({})
   const initialStatusRef = useRef(null)
   const hasRenderedContextRef = useRef(false)
 
@@ -841,6 +979,32 @@ export default function LegalDocumentWorkspacePage() {
   const handleBack = useCallback(() => {
     navigate(backPath)
   }, [backPath, navigate])
+
+  const mandateDraftDefaults = useMemo(
+    () => buildMandateDraftDefaults({
+      leadContext,
+      initialStatus,
+      transactionDetail,
+    }),
+    [initialStatus, leadContext, transactionDetail],
+  )
+  const effectiveMandateDraft = useMemo(
+    () => ({
+      ...mandateDraftDefaults,
+      ...mandateDraftOverrides,
+    }),
+    [mandateDraftDefaults, mandateDraftOverrides],
+  )
+  const showMandateDraftPanel = packetType === 'mandate' && mode === 'generate' && !validatedRoutePacketId && !initialStatus?.packet?.id
+  const updateMandateDraftField = useCallback((field, value) => {
+    setMandateDraftOverrides((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+  }, [])
+  const resetMandateDraftFields = useCallback(() => {
+    setMandateDraftOverrides({})
+  }, [])
 
   const loadRouteContext = useCallback(async () => {
     setContextHydrated(false)
@@ -1302,6 +1466,7 @@ export default function LegalDocumentWorkspacePage() {
           leadId: normalizeLeadUuid(routeLeadId) || null,
           uiLeadId: routeLeadId || null,
           route: 'legal_document_workspace_page',
+          ...(packetType === 'mandate' ? { mandateDraft: effectiveMandateDraft } : {}),
         },
       }),
       'Packet creation is taking too long.',
@@ -1316,7 +1481,7 @@ export default function LegalDocumentWorkspacePage() {
     setValidatedRoutePacketId(normalizeText(packet?.id))
 
     return packet
-  }, [actor.id, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, syncLeadMandateState, transactionId, transactionReference, validatedRoutePacketId])
+  }, [actor.id, effectiveMandateDraft, initialStatus, leadContext.lead, organisationId, packetType, resolveCurrentStatus, routeLeadId, syncLeadMandateState, transactionId, transactionReference, validatedRoutePacketId])
 
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false } = {}) => {
     onProgress?.('Preparing draft...')
@@ -1397,6 +1562,7 @@ export default function LegalDocumentWorkspacePage() {
       transactionId,
       transactionDetail,
       leadContext: effectiveLeadContext,
+      mandateDraft: effectiveMandateDraft,
       actor,
       role,
       branding: workspaceBranding,
@@ -1528,6 +1694,7 @@ export default function LegalDocumentWorkspacePage() {
     ensurePacket,
     initialStatus,
     leadContext,
+    effectiveMandateDraft,
     organisationId,
     packetType,
     profile,
@@ -1668,27 +1835,106 @@ export default function LegalDocumentWorkspacePage() {
   }
 
   return (
-    <LegalDocumentWorkspace
-      displayMode="page"
-      open
-      onBack={handleBack}
-      onClose={handleBack}
-      backLabel={routeLeadId && !transactionId ? 'Back to Lead' : 'Back to Transaction'}
-      transactionId={transactionId}
-      transactionReference={transactionReference}
-      packetType={packetType}
-      packetId={validatedRoutePacketId || normalizeText(initialStatus?.packet?.id)}
-      mode={mode}
-      initialStatus={initialStatus}
-      organisationId={organisationId}
-      branding={workspaceBranding}
-      onGenerate={handleGenerate}
-      onEdit={handleGenerate}
-      onSend={handleSend}
-      onView={() => openLatestDocument({ signed: false })}
-      onViewSigned={() => openLatestDocument({ signed: true })}
-      onRefreshContext={undefined}
-      autoGenerateEnabled={contextHydrated}
-    />
+    <>
+      {showMandateDraftPanel ? (
+        <section className="mb-5 rounded-[24px] border border-[#e3ebf4] bg-white p-5 shadow-[0_14px_34px_rgba(16,32,51,0.05)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Generate Mandate</p>
+              <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#142132]">Mandate terms</h2>
+              <p className="mt-2 max-w-3xl text-sm text-[#607387]">
+                Set the mandate dates here before you generate the draft. Commission stays sourced from the seller lead commission card.
+              </p>
+            </div>
+            <Button type="button" variant="secondary" onClick={resetMandateDraftFields}>
+              Use defaults
+            </Button>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <label className="grid gap-1.5">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate start date</span>
+              <input
+                type="date"
+                value={effectiveMandateDraft.mandateStartDate}
+                onChange={(event) => updateMandateDraftField('mandateStartDate', event.target.value)}
+                className="min-h-11 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#0a66ff]"
+              />
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate expiry date</span>
+              <input
+                type="date"
+                value={effectiveMandateDraft.mandateEndDate}
+                onChange={(event) => updateMandateDraftField('mandateEndDate', event.target.value)}
+                className="min-h-11 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#0a66ff]"
+              />
+            </label>
+            <label className="grid gap-1.5 lg:col-span-2">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Special conditions</span>
+              <textarea
+                rows={3}
+                value={effectiveMandateDraft.specialConditions}
+                onChange={(event) => updateMandateDraftField('specialConditions', event.target.value)}
+                placeholder="Capture any additional terms that should appear on the mandate."
+                className="min-h-[92px] rounded-xl border border-[#dbe6f2] bg-white px-3 py-3 text-sm font-medium text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#0a66ff]"
+              />
+            </label>
+          </div>
+
+          <div className="mt-5 rounded-[20px] border border-[#e6edf7] bg-[#fbfdff] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Commission snapshot</p>
+              <p className="text-xs font-semibold text-[#607387]">Pulled from the seller lead commission card</p>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate type</p>
+                <p className="mt-1 text-sm font-semibold text-[#142132]">{effectiveMandateDraft.mandateType || 'sole'}</p>
+              </div>
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission</p>
+                <p className="mt-1 text-sm font-semibold text-[#142132]">
+                  {effectiveMandateDraft.commissionStructure === 'fixed'
+                    ? `Fixed amount ${effectiveMandateDraft.commissionAmount || 'not captured'}`
+                    : `Percentage ${effectiveMandateDraft.commissionPercent || 'not captured'}%`}
+                </p>
+              </div>
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">VAT handling</p>
+                <p className="mt-1 text-sm font-semibold text-[#142132]">{effectiveMandateDraft.vatHandling || 'exclusive'}</p>
+              </div>
+              <div>
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Asking price</p>
+                <p className="mt-1 text-sm font-semibold text-[#142132]">{effectiveMandateDraft.askingPrice || 'Not captured'}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <LegalDocumentWorkspace
+        displayMode="page"
+        open
+        onBack={handleBack}
+        onClose={handleBack}
+        backLabel={routeLeadId && !transactionId ? 'Back to Lead' : 'Back to Transaction'}
+        transactionId={transactionId}
+        transactionReference={transactionReference}
+        packetType={packetType}
+        packetId={validatedRoutePacketId || normalizeText(initialStatus?.packet?.id)}
+        mode={mode}
+        initialStatus={initialStatus}
+        organisationId={organisationId}
+        branding={workspaceBranding}
+        onGenerate={handleGenerate}
+        onEdit={handleGenerate}
+        onSend={handleSend}
+        onView={() => openLatestDocument({ signed: false })}
+        onViewSigned={() => openLatestDocument({ signed: true })}
+        onRefreshContext={undefined}
+        autoGenerateEnabled={contextHydrated && (Boolean(routeTransactionId) || !routeLeadId)}
+      />
+    </>
   )
 }

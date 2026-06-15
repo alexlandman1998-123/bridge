@@ -1901,6 +1901,7 @@ function SignaturePreparationCard({
 
 function SigningMethodPanel({
   method = 'not_selected',
+  packetType = 'mandate',
   canChange = false,
   lockedReason = '',
   onSelect = null,
@@ -5227,6 +5228,7 @@ export default function LegalDocumentWorkspace({
                 {isMandatePacket ? (
                   <SigningMethodPanel
                     method={signingMethod}
+                    packetType={packetType}
                     canChange={canChangeSigningMethod}
                     lockedReason={signingMethodLockedReason}
                     onSelect={handleSelectSigningMethod}

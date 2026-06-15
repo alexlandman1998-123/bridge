@@ -2,11 +2,13 @@ import {
   AlertTriangle,
   Archive,
   ArrowLeft,
+  BadgeCheck,
   CalendarDays,
   ChevronDown,
   CheckCircle2,
   Clock3,
   CreditCard,
+  Building2,
   ExternalLink,
   FileText,
   Home,
@@ -14,10 +16,12 @@ import {
   MapPin,
   MessageSquarePlus,
   MoreVertical,
+  Banknote,
   Phone,
   Plus,
   RefreshCw,
   Search,
+  Shield,
   Tag,
   Target,
   Trash2,
@@ -68,6 +72,7 @@ import {
 } from '../services/leadListingInterestService'
 import {
   createPrivateListing,
+  createPrivateListingActivity,
   sendSellerOnboarding,
   updatePrivateListingOnboardingFormData,
 } from '../services/privateListingService'
@@ -130,6 +135,10 @@ import { listLeadCommunicationTemplates } from '../services/leadCommunicationTem
 import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
 import { buildSellerJourney } from '../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../services/sellerReadinessService'
+import {
+  buildSellerRequirementProfile,
+  generateSellerDocumentRequirements,
+} from '../lib/sellerDocumentRequirementEngine'
 import {
   acceptRecommendation,
   completeRecommendation,
@@ -7977,7 +7986,12 @@ function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId,
         </dl>
       </SellerWorkspaceCard>
       <SellerDocumentsSummaryCard journey={journey} />
-      <SellerWorkspaceCard title="Recent Activity" density="compact" action={<button type="button" onClick={() => onTabChange('activity')} className="text-xs font-semibold text-blue-700">View All</button>}>
+      <SellerWorkspaceCard
+        title="Recent Activity"
+        density="compact"
+        className="h-[320px] overflow-hidden"
+        action={<button type="button" onClick={() => onTabChange('activity')} className="text-xs font-semibold text-blue-700">View All</button>}
+      >
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
           <SellerTimelineList timeline={timeline} limit={12} compact />
         </div>
@@ -8138,6 +8152,16 @@ const SELLER_PROFILE_TEXTAREA_KEYS = new Set([
 ])
 
 const SELLER_PROFILE_DATE_KEYS = new Set(['leaseExpiryDate'])
+
+const SELLER_DOCUMENT_GROUP_DEFS = [
+  { key: 'seller_identity', label: 'Seller Identity', icon: UserRound },
+  { key: 'company_authority', label: 'Company Authority', icon: Building2 },
+  { key: 'trust_authority', label: 'Trust Authority', icon: Shield },
+  { key: 'property', label: 'Property', icon: Home },
+  { key: 'fica_compliance', label: 'FICA / Compliance', icon: BadgeCheck },
+  { key: 'poa_estate', label: 'POA / Estate Docs', icon: FileText },
+  { key: 'occupancy_bond', label: 'Occupancy & Bond', icon: Banknote },
+]
 
 const SELLER_PROFILE_SECTION_DEFS = [
   {
@@ -8430,7 +8454,7 @@ function SellerOnboardingFieldEditor({
             onChange={(event) => onChange?.(field.key, event.target.checked)}
             className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-300"
           />
-          <span className="text-sm font-semibold text-slate-700">{Boolean(value) ? 'Yes' : 'No'}</span>
+          <span className="text-sm font-semibold text-slate-700">{value ? 'Yes' : 'No'}</span>
         </span>
       </label>
     )
@@ -8516,7 +8540,678 @@ function SellerOnboardingSection({ section, draft, complexDrafts, onChange, onCo
   )
 }
 
-function SellerProfileTab({ row, journey, onboardingStatus, listing = null, onSaved }) {
+function hasValue(value) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string' && value.trim() === '') return false
+  if (Array.isArray(value) && value.length === 0) return false
+  if (typeof value === 'object' && Object.keys(value).length === 0) return false
+  return true
+}
+
+function normalizeComparableSellerValue(value) {
+  if (value === null || value === undefined) return ''
+  if (Array.isArray(value)) return JSON.stringify(value)
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value).trim()
+}
+
+function isMonetarySellerFieldKey(key = '') {
+  return /(?:price|value|amount|levies|ratesTaxes|monthlyRental|rentalDeposit|settlement|commission|askingPrice|estimatedValue|bond|taxNumber)/i.test(String(key || ''))
+}
+
+function formatSubmittedSellerOnboardingFieldValue(field = {}, value) {
+  if (!hasValue(value)) return ''
+  const key = String(field?.key || '').toLowerCase()
+  if (key === 'propertyaddressdetails' || key === 'propertyaddress') {
+    const formattedAddress = formatPropertyAddress(value)
+    if (formattedAddress) return formattedAddress
+  }
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (Array.isArray(value)) {
+    const parts = value.map((item) => {
+      if (item && typeof item === 'object') {
+        return normalizeText(
+          item.fullName ||
+            item.full_name ||
+            item.name ||
+            [item.firstName, item.lastName || item.surname].filter(Boolean).join(' ') ||
+            item.email ||
+            item.idNumber ||
+            item.id_number,
+        )
+      }
+      return normalizeText(item)
+    }).filter(Boolean)
+    return parts.length ? parts.join(', ') : ''
+  }
+  if (value && typeof value === 'object') {
+    const formattedAddress = formatPropertyAddress(value)
+    if (formattedAddress) return formattedAddress
+    const entries = Object.entries(value).filter(([, entryValue]) => hasValue(entryValue))
+    if (!entries.length) return ''
+    if (entries.length === 1) {
+      const [entryKey, entryValue] = entries[0]
+      return `${humanizeSellerFieldKey(entryKey)}: ${formatSubmittedSellerOnboardingFieldValue({ key: entryKey }, entryValue)}`
+    }
+    return entries
+      .slice(0, 3)
+      .map(([entryKey, entryValue]) => `${humanizeSellerFieldKey(entryKey)}: ${formatSubmittedSellerOnboardingFieldValue({ key: entryKey }, entryValue)}`)
+      .join(' · ')
+  }
+  if (key.includes('date')) return formatDate(value, '')
+  if (isMonetarySellerFieldKey(key)) {
+    const numeric = Number(String(value).replace(/[^0-9.-]/g, ''))
+    if (Number.isFinite(numeric) && numeric > 0) return formatCurrency(numeric)
+  }
+  return String(value)
+}
+
+function getSellerOnboardingProgressMeta({ row = {}, listing = null, journey = null, onboardingStatus = '' } = {}) {
+  const normalized = normalizeText(
+    onboardingStatus ||
+      getSellerOnboardingStatus(row, listing, journey) ||
+      row?.sellerOnboardingStatus ||
+      row?.seller_onboarding_status ||
+      listing?.sellerOnboarding?.status ||
+      '',
+  ).toLowerCase()
+
+  if (sellerOnboardingIsSubmitted(normalized)) {
+    return {
+      label: normalized === 'completed' || normalized === 'onboarding_completed' || normalized === 'seller_onboarding_completed'
+        ? 'Completed'
+        : 'Submitted',
+      tone: 'green',
+      state: normalized === 'completed' || normalized === 'onboarding_completed' || normalized === 'seller_onboarding_completed'
+        ? 'completed'
+        : 'submitted',
+      status: normalized || 'completed',
+    }
+  }
+
+  if (sellerOnboardingHasStarted(normalized) || Boolean(getSellerOnboardingToken(row, listing)) || Boolean(journey?.onboardingSent)) {
+    return {
+      label: 'Sent',
+      tone: 'amber',
+      state: 'sent',
+      status: normalized || 'sent',
+    }
+  }
+
+  return {
+    label: 'Not sent',
+    tone: 'slate',
+    state: 'not_sent',
+    status: normalized || 'not_started',
+  }
+}
+
+function isSellerSubmittedSectionRelevant(section = {}, profile = {}, data = {}) {
+  if (!section?.id || section.id === 'metadata') return false
+  const sectionHasValues = (section.keys || []).some((key) => hasValue(data?.[key]))
+  if (section.id === 'identity') return true
+  if (section.id === 'company') return profile?.sellerBranch === 'company' || sectionHasValues
+  if (section.id === 'trust') return profile?.sellerBranch === 'trust' || sectionHasValues
+  if (section.id === 'entity') {
+    return ['deceased_estate', 'power_of_attorney', 'multiple_individuals'].includes(profile?.sellerBranch) || sectionHasValues
+  }
+  if (section.id === 'property') return true
+  if (section.id === 'occupancy') {
+    return profile?.occupancyStatus && profile.occupancyStatus !== 'unknown' ||
+      profile?.bondStatus && profile.bondStatus !== 'unknown' ||
+      sectionHasValues
+  }
+  if (section.id === 'compliance') {
+    return Boolean(profile?.sectionalTitle || profile?.shareBlock || profile?.estateOrHoa || profile?.commercialProperty || sectionHasValues)
+  }
+  return sectionHasValues
+}
+
+function getSellerSubmittedSectionDefinitions(profile = {}, data = {}) {
+  return SELLER_PROFILE_SECTION_DEFS.filter((section) => isSellerSubmittedSectionRelevant(section, profile, data))
+}
+
+function getSellerSubmittedSectionModels({
+  sections = [],
+  data = {},
+  draft = {},
+  complexDrafts = {},
+  editable = false,
+  addedFieldKeys = [],
+} = {}) {
+  const addedSet = new Set((Array.isArray(addedFieldKeys) ? addedFieldKeys : []).filter(Boolean))
+  const knownKeys = new Set(sections.flatMap((section) => section.keys || []))
+
+  const models = sections.map((section) => {
+    const fieldConfigs = (section.keys || []).map((key) => getSellerProfileFieldConfig(key))
+    const fields = fieldConfigs
+      .filter((field) => hasValue(data?.[field.key]) || addedSet.has(field.key))
+      .map((field) => ({
+        ...field,
+        value: editable ? draft?.[field.key] : data?.[field.key],
+        draftValue: editable ? draft?.[field.key] : data?.[field.key],
+        complexValue: editable ? complexDrafts?.[field.key] : undefined,
+        populated: hasValue(data?.[field.key]),
+      }))
+    const missingFields = fieldConfigs.filter((field) => !hasValue(data?.[field.key]) && !addedSet.has(field.key) && !field.readOnly)
+
+    if (!fields.length && !(editable && missingFields.length)) return null
+
+    const capturedCount = (section.keys || []).filter((key) => hasValue(data?.[key])).length
+    const totalCount = (section.keys || []).length
+
+    return {
+      ...section,
+      className: (section.keys || []).length >= 6 ? 'lg:col-span-2' : '',
+      fields,
+      missingFields,
+      capturedCount,
+      totalCount,
+      countLabel: totalCount ? `${capturedCount} of ${totalCount}` : `${capturedCount}`,
+    }
+  }).filter(Boolean)
+
+  const extraKeys = Object.keys(data || {})
+    .filter((key) => !knownKeys.has(key))
+    .filter((key) => !SELLER_PROFILE_READ_ONLY_KEYS.has(key))
+    .filter((key) => key !== 'currentStep')
+    .filter((key) => hasValue(data?.[key]) || addedSet.has(key))
+
+  if (extraKeys.length) {
+    models.push({
+      id: 'other-submitted-details',
+      title: 'Other Submitted Details',
+      description: 'Additional submitted values not covered by the main sections.',
+      className: 'lg:col-span-2',
+      fields: extraKeys.map((key) => {
+        const field = getSellerProfileFieldConfig(key)
+        return {
+          ...field,
+          value: editable ? draft?.[field.key] : data?.[field.key],
+          draftValue: editable ? draft?.[field.key] : data?.[field.key],
+          complexValue: editable ? complexDrafts?.[field.key] : undefined,
+          populated: hasValue(data?.[field.key]),
+        }
+      }),
+      capturedCount: extraKeys.filter((key) => hasValue(data?.[key])).length,
+      totalCount: extraKeys.length,
+      countLabel: `${extraKeys.filter((key) => hasValue(data?.[key])).length} of ${extraKeys.length}`,
+    })
+  }
+
+  return models
+}
+
+function getSellerCapturedFieldSummary({
+  sections = [],
+  data = {},
+} = {}) {
+  const sectionKeys = new Set(sections.flatMap((section) => section.keys || []))
+  const extraKeys = Object.keys(data || {})
+    .filter((key) => !sectionKeys.has(key))
+    .filter((key) => !SELLER_PROFILE_READ_ONLY_KEYS.has(key))
+    .filter((key) => key !== 'currentStep')
+
+  const countableKeys = [
+    ...sectionKeys,
+    ...extraKeys,
+  ]
+
+  const populated = countableKeys.filter((key) => hasValue(data?.[key]))
+  return {
+    populated: populated.length,
+    total: countableKeys.length,
+    label: countableKeys.length ? `${populated.length} of ${countableKeys.length}` : `${populated.length}`,
+  }
+}
+
+function getSellerDocumentOverviewGroupKey(requirement = {}) {
+  const requirementGroup = normalizeText(requirement?.requirement_group || requirement?.group || '').toLowerCase()
+  const requirementKey = normalizeText(requirement?.requirement_key || requirement?.requirementKey || requirement?.key || '').toLowerCase()
+  const requirementLabel = normalizeText(requirement?.requirement_name || requirement?.requirementName || requirement?.label || requirement?.name || '').toLowerCase()
+  const signal = `${requirementKey} ${requirementLabel}`
+
+  if (!requirementGroup || requirementGroup === 'mandate') return ''
+  if (requirementGroup === 'seller_identity' || requirementGroup === 'marital') return 'seller_identity'
+  if (requirementGroup === 'company') return 'company_authority'
+  if (requirementGroup === 'trust') return 'trust_authority'
+  if (requirementGroup === 'property') return 'property'
+  if (requirementGroup === 'fica' || requirementGroup === 'property_compliance' || requirementGroup === 'compliance') return 'fica_compliance'
+  if (requirementGroup === 'deceased_estate' || requirementGroup === 'power_of_attorney') return 'poa_estate'
+  if (requirementGroup === 'occupancy') return 'occupancy_bond'
+  if (requirementGroup === 'financial') {
+    if (/bond|settlement|cancellation|bond_statement|bond_bank|bond_account/.test(signal)) return 'occupancy_bond'
+    return 'fica_compliance'
+  }
+  return ''
+}
+
+function getSellerDocumentRequirementState(status = '', hasDocument = false) {
+  const normalized = normalizeText(status).toLowerCase()
+  if (hasDocument || ['uploaded', 'approved', 'verified', 'accepted', 'completed', 'complete', 'signed', 'submitted', 'received'].includes(normalized)) return 'completed'
+  if (['requested', 'missing', 'outstanding', 'rejected', 'under_review'].includes(normalized)) return 'outstanding'
+  if (!normalized || ['required', 'not_started', 'pending', 'draft'].includes(normalized)) return 'not_started'
+  if (normalized === 'not_applicable') return 'not_applicable'
+  return 'outstanding'
+}
+
+function getSellerDocumentRequirementKey(requirement = {}) {
+  return normalizeText(requirement?.requirement_key || requirement?.requirementKey || requirement?.key || requirement?.id || '')
+}
+
+function buildSellerDocumentOverviewModel({
+  profile = {},
+  listing = null,
+  journey = null,
+} = {}) {
+  const fallbackProfile = buildSellerRequirementProfile(listing?.sellerOnboarding?.formData || {}, listing || {})
+  const requirementProfile = profile && Object.keys(profile || {}).length ? profile : fallbackProfile
+  const requirementSource = generateSellerDocumentRequirements(requirementProfile || {})
+    .filter((requirement) => requirement?.is_required !== false)
+    .filter((requirement) => normalizeText(requirement?.requirement_group || requirement?.group).toLowerCase() !== 'mandate')
+
+  const requirementStatusByKey = new Map()
+  const listingRequirementRows = Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []
+  for (const row of listingRequirementRows) {
+    const key = getSellerDocumentRequirementKey(row)
+    if (!key) continue
+    requirementStatusByKey.set(key.toLowerCase(), {
+      status: row?.status || row?.documentStatus || row?.document_status || '',
+      url: row?.url || row?.documentUrl || row?.document_url || '',
+    })
+  }
+
+  const journeyDocumentRows = Array.isArray(journey?.documents) ? journey.documents : []
+  for (const row of journeyDocumentRows) {
+    const requirement = row?.original?.requirement || row?.requirement || {}
+    const key = getSellerDocumentRequirementKey(requirement)
+    if (!key) continue
+    requirementStatusByKey.set(key.toLowerCase(), {
+      status: row?.status || row?.documentStatus || row?.document_status || '',
+      url: row?.url || row?.documentUrl || row?.document_url || '',
+    })
+  }
+
+  const groupsByKey = new Map(SELLER_DOCUMENT_GROUP_DEFS.map((group) => [group.key, {
+    ...group,
+    total: 0,
+    completed: 0,
+    outstanding: 0,
+    notStarted: 0,
+    requirements: [],
+  }]))
+
+  for (const requirement of requirementSource) {
+    const groupKey = getSellerDocumentOverviewGroupKey(requirement)
+    if (!groupKey) continue
+    const requirementKey = getSellerDocumentRequirementKey(requirement).toLowerCase()
+    const statusEntry = requirementStatusByKey.get(requirementKey) || {}
+    const state = getSellerDocumentRequirementState(statusEntry.status || requirement?.status || '', Boolean(statusEntry.url))
+    if (state === 'not_applicable') continue
+    const group = groupsByKey.get(groupKey)
+    if (!group) continue
+    group.total += 1
+    group[state] += 1
+    group.requirements.push({
+      ...requirement,
+      state,
+      status: statusEntry.status || requirement?.status || '',
+      hasDocument: Boolean(statusEntry.url),
+    })
+  }
+
+  const groups = Array.from(groupsByKey.values()).filter((group) => group.total > 0)
+  const summary = groups.reduce((accumulator, group) => {
+    accumulator.total += group.total
+    accumulator.completed += group.completed
+    accumulator.outstanding += group.outstanding
+    accumulator.notStarted += group.notStarted
+    return accumulator
+  }, {
+    total: 0,
+    completed: 0,
+    outstanding: 0,
+    notStarted: 0,
+  })
+
+  const percent = summary.total ? Math.round((summary.completed / summary.total) * 100) : 0
+
+  return {
+    groups,
+    summary,
+    percent,
+    profile: requirementProfile,
+  }
+}
+
+function SellerSubmittedField({
+  field,
+  editable = false,
+  value,
+  draftValue,
+  complexValue,
+  onChange,
+  onComplexChange,
+}) {
+  if (editable) {
+    return (
+      <SellerOnboardingFieldEditor
+        field={field}
+        value={value}
+        draftValue={draftValue}
+        complexValue={complexValue}
+        onChange={onChange}
+        onComplexChange={onComplexChange}
+      />
+    )
+  }
+
+  const displayValue = formatSubmittedSellerOnboardingFieldValue(field, value)
+  return (
+    <div className={`grid gap-2 ${field.span === 2 ? 'md:col-span-2' : ''}`}>
+      <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{field.label}</span>
+      <div className="min-h-11 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-700 shadow-[0_1px_0_rgba(255,255,255,0.8)]">
+        {displayValue ? <span className="whitespace-pre-wrap leading-6 text-slate-900">{displayValue}</span> : <span className="text-slate-400">Not captured</span>}
+      </div>
+    </div>
+  )
+}
+
+function SellerSubmittedSectionCard({
+  section,
+  editable = false,
+  onChange,
+  onComplexChange,
+  onAddField,
+}) {
+  if (!section?.fields?.length && !(editable && section?.missingFields?.length)) return null
+  const fieldCountLabel = section.countLabel || `${section.capturedCount || 0}`
+  const addableFields = (section.missingFields || []).filter((field) => !field.readOnly)
+  const sectionTone = section.totalCount
+    ? section.capturedCount === section.totalCount
+      ? 'green'
+      : section.capturedCount
+        ? 'amber'
+        : 'slate'
+    : 'slate'
+  return (
+    <section className={`rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)] ${section.className || ''}`.trim()}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-slate-950">{section.title}</h4>
+          <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{section.description}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <StatusPill tone={sectionTone}>{fieldCountLabel}</StatusPill>
+          {editable && addableFields.length ? (
+            <details className="relative">
+              <summary className="cursor-pointer list-none rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 transition hover:bg-slate-100">
+                Add missing field
+              </summary>
+              <div className="absolute right-0 z-20 mt-2 w-72 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Hidden fields</p>
+                <div className="mt-3 max-h-64 space-y-1 overflow-y-auto pr-1">
+                  {addableFields.map((field) => (
+                    <button
+                      key={field.key}
+                      type="button"
+                      onClick={() => onAddField?.(field.key)}
+                      className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      <span className="min-w-0 truncate">{field.label}</span>
+                      <span className="shrink-0 text-xs font-semibold text-blue-700">Add</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </details>
+          ) : null}
+        </div>
+      </div>
+      {section.fields.length ? (
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {section.fields.map((field) => (
+            <SellerSubmittedField
+              key={field.key}
+              field={field}
+              editable={editable}
+              value={field.value}
+              draftValue={field.draftValue}
+              complexValue={field.complexValue}
+              onChange={onChange}
+              onComplexChange={onComplexChange}
+            />
+          ))}
+        </div>
+      ) : editable && addableFields.length ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-500">
+          No submitted values captured for this section yet. Add a missing field to start an override.
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function SellerDocumentGroupCard({ group }) {
+  if (!group) return null
+  const statusLabel = group.outstanding > 0
+    ? 'Outstanding'
+    : group.notStarted > 0
+      ? 'Not started'
+      : 'Completed'
+  const tone = group.outstanding > 0
+    ? 'amber'
+    : group.notStarted > 0
+      ? 'slate'
+      : 'green'
+  const missingCount = group.outstanding + group.notStarted
+  const Icon = group.icon || FileText
+  const detailCopy = group.outstanding > 0
+    ? `${group.outstanding} outstanding`
+    : group.notStarted > 0
+      ? `${group.notStarted} not started`
+      : `${group.completed}/${group.total} complete`
+
+  return (
+    <article className="flex h-full min-h-[170px] min-w-0 flex-col justify-between rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-4 shadow-[0_16px_36px_rgba(15,23,42,0.05)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm">
+            <Icon size={18} />
+          </span>
+          <div className="min-w-0">
+            <h4 className="truncate text-sm font-semibold text-slate-950">{group.label}</h4>
+            <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{detailCopy}</p>
+          </div>
+        </div>
+        <StatusPill tone={tone}>{statusLabel}</StatusPill>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Required docs</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">{group.total} total</p>
+        </div>
+        <div className="rounded-2xl bg-slate-50 px-3 py-2 text-right">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Missing</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">{missingCount}</p>
+        </div>
+      </div>
+      {group.completed === group.total ? (
+        <p className="mt-4 text-sm font-semibold text-emerald-700">All required documents are complete.</p>
+      ) : null}
+    </article>
+  )
+}
+
+function SellerDocumentOverviewPanel({
+  overview = null,
+  profile = {},
+  listing = null,
+  journey = null,
+  onboardingStatus = '',
+}) {
+  const onboardingSubmitted = sellerOnboardingIsSubmitted(onboardingStatus)
+  const resolvedOverview = useMemo(() => {
+    if (overview) return overview
+    if (!onboardingSubmitted) return { groups: [], summary: { total: 0, completed: 0, outstanding: 0, notStarted: 0 }, percent: 0 }
+    return buildSellerDocumentOverviewModel({ profile, listing, journey })
+  }, [journey, listing, onboardingSubmitted, overview, profile])
+
+  if (!onboardingSubmitted) {
+    return (
+      <SellerWorkspaceCard title="Documents Overview" density="compact">
+        <p className="text-sm font-semibold text-slate-900">Waiting for seller submission</p>
+        <p className="mt-2 leading-6">Document readiness will populate once the seller has submitted onboarding details.</p>
+      </SellerWorkspaceCard>
+    )
+  }
+
+  if (!resolvedOverview.groups.length) {
+    return (
+      <SellerWorkspaceCard title="Documents Overview" density="compact" action={<StatusPill tone="slate">No groups</StatusPill>}>
+        <p className="text-sm font-semibold text-slate-900">No document requirements yet</p>
+        <p className="mt-2 leading-6">The submitted onboarding did not produce a scenario-specific seller document set.</p>
+      </SellerWorkspaceCard>
+    )
+  }
+
+  return (
+    <SellerWorkspaceCard
+      title="Documents Overview"
+      density="compact"
+      action={<StatusPill tone={resolvedOverview.percent >= 80 ? 'green' : resolvedOverview.percent ? 'amber' : 'slate'}>{resolvedOverview.percent}% complete</StatusPill>}
+    >
+      <div className="grid gap-5 xl:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-5 shadow-[0_18px_36px_rgba(15,23,42,0.05)]">
+          <ListingReadinessCircle percent={resolvedOverview.percent} />
+          <p className="mt-4 text-lg font-semibold tracking-[-0.035em] text-slate-950">Document Readiness</p>
+          <p className="mt-1 text-sm font-medium text-slate-500">
+            {resolvedOverview.summary.completed} completed, {resolvedOverview.summary.outstanding} outstanding, {resolvedOverview.summary.notStarted} not started
+          </p>
+          <div className="mt-4 space-y-2 text-sm font-medium text-slate-600">
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
+              <span>Completed</span>
+              <span className="font-semibold text-emerald-700">{resolvedOverview.summary.completed}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
+              <span>Outstanding</span>
+              <span className="font-semibold text-amber-700">{resolvedOverview.summary.outstanding}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
+              <span>Not started</span>
+              <span className="font-semibold text-slate-700">{resolvedOverview.summary.notStarted}</span>
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto pb-1">
+          <div className="grid min-w-max grid-flow-col auto-cols-[minmax(240px,1fr)] gap-4">
+            {resolvedOverview.groups.map((group) => (
+              <SellerDocumentGroupCard key={group.key} group={group} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </SellerWorkspaceCard>
+  )
+}
+
+function buildSellerOnboardingSubmissionPatch({
+  sourceData = {},
+  draft = {},
+  complexDrafts = {},
+  addedFieldKeys = [],
+} = {}) {
+  const nextDraft = clonePlainObject(draft)
+  const allKeys = new Set([
+    ...Object.keys(sourceData || {}),
+    ...Object.keys(nextDraft || {}),
+    ...(Array.isArray(addedFieldKeys) ? addedFieldKeys : []),
+  ])
+
+  for (const key of allKeys) {
+    if (!key || key === 'currentStep' || SELLER_PROFILE_READ_ONLY_KEYS.has(key)) continue
+    const field = getSellerProfileFieldConfig(key)
+    const complexValue = complexDrafts?.[key]
+
+    if (field.type === 'json') {
+      if (typeof complexValue === 'string' && complexValue.trim()) {
+        nextDraft[key] = parseSellerOnboardingJson(complexValue, nextDraft[key] || [])
+      }
+    } else if (field.type === 'list') {
+      if (typeof complexValue === 'string' && complexValue.trim()) {
+        nextDraft[key] = parseSellerOnboardingList(complexValue)
+      }
+    }
+  }
+
+  const normalizedAddress = normalizePropertyAddress({
+    propertyAddressDetails: isPlainObject(nextDraft.propertyAddressDetails) ? nextDraft.propertyAddressDetails : {},
+    propertyAddressSearch: nextDraft.propertyAddressSearch || '',
+    propertyAddressLine1: nextDraft.propertyAddressLine1 || '',
+    propertyAddressLine2: nextDraft.propertyAddressLine2 || '',
+    suburb: nextDraft.suburb || '',
+    city: nextDraft.city || '',
+    province: nextDraft.province || '',
+    postalCode: nextDraft.postalCode || '',
+    municipality: nextDraft.municipality || '',
+    country: nextDraft.country || '',
+  }, {}, createBlankPropertyAddress())
+
+  nextDraft.propertyAddressDetails = normalizedAddress
+  nextDraft.propertyAddress = normalizedAddress.formatted || nextDraft.propertyAddress || ''
+  nextDraft.propertyAddressSearch = normalizedAddress.query || nextDraft.propertyAddressSearch || ''
+  nextDraft.propertyAddressLine1 = normalizedAddress.line1 || nextDraft.propertyAddressLine1 || ''
+  nextDraft.propertyAddressLine2 = normalizedAddress.line2 || nextDraft.propertyAddressLine2 || ''
+  nextDraft.suburb = normalizedAddress.suburb || nextDraft.suburb || ''
+  nextDraft.city = normalizedAddress.city || nextDraft.city || ''
+  nextDraft.province = normalizedAddress.province || nextDraft.province || ''
+  nextDraft.postalCode = normalizedAddress.postalCode || nextDraft.postalCode || ''
+  nextDraft.municipality = normalizedAddress.municipality || nextDraft.municipality || ''
+  const addressKeys = [
+    'propertyAddressSearch',
+    'propertyAddressLine1',
+    'propertyAddressLine2',
+    'suburb',
+    'city',
+    'province',
+    'postalCode',
+    'municipality',
+    'country',
+  ]
+  const hasAddressInput = addressKeys.some((key) => hasValue(nextDraft?.[key]) || hasValue(sourceData?.[key]))
+  nextDraft.country = hasAddressInput
+    ? normalizedAddress.country || nextDraft.country || sourceData?.country || 'South Africa'
+    : nextDraft.country || sourceData?.country || ''
+
+  const patch = {}
+  const changedFields = []
+  for (const key of allKeys) {
+    if (!key || key === 'currentStep' || SELLER_PROFILE_READ_ONLY_KEYS.has(key)) continue
+    if (!hasValue(nextDraft?.[key])) continue
+    if (normalizeComparableSellerValue(sourceData?.[key]) === normalizeComparableSellerValue(nextDraft?.[key])) continue
+    patch[key] = nextDraft[key]
+    changedFields.push(key)
+  }
+
+  return {
+    nextDraft,
+    patch,
+    changedFields,
+  }
+}
+
+function SellerProfileTab({
+  row,
+  sourceInfo,
+  journey,
+  onboardingStatus,
+  listing = null,
+  actor = null,
+  onSaved,
+  onSendSellerOnboarding,
+  onResendSellerPortalLink,
+  onCopySellerPortalLink,
+}) {
   const sourceFormData = useMemo(() => clonePlainObject(readSellerOnboardingFormData(listing || row)), [listing, row])
   const sourceKey = useMemo(() => JSON.stringify(sourceFormData), [sourceFormData])
   const [draft, setDraft] = useState(() => clonePlainObject(sourceFormData))
@@ -8528,32 +9223,110 @@ function SellerProfileTab({ row, journey, onboardingStatus, listing = null, onSa
     multipleOwners: formatSellerOnboardingFieldValue(sourceFormData.multipleOwners || []),
     features: Array.isArray(sourceFormData.features) ? sourceFormData.features.join('\n') : '',
   }))
+  const [addedFieldKeys, setAddedFieldKeys] = useState([])
+  const [isEditingSubmittedDetails, setIsEditingSubmittedDetails] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    setDraft(clonePlainObject(sourceFormData))
-    setComplexDrafts({
-      companyDirectors: formatSellerOnboardingFieldValue(sourceFormData.companyDirectors || []),
-      trustees: formatSellerOnboardingFieldValue(sourceFormData.trustees || []),
-      executors: formatSellerOnboardingFieldValue(sourceFormData.executors || []),
-      powerOfAttorneyRepresentatives: formatSellerOnboardingFieldValue(sourceFormData.powerOfAttorneyRepresentatives || []),
-      multipleOwners: formatSellerOnboardingFieldValue(sourceFormData.multipleOwners || []),
-      features: Array.isArray(sourceFormData.features) ? sourceFormData.features.join('\n') : '',
-    })
-  }, [sourceKey, sourceFormData])
+  const createComplexDraftState = useCallback((formData = sourceFormData) => ({
+    companyDirectors: formatSellerOnboardingFieldValue(formData.companyDirectors || []),
+    trustees: formatSellerOnboardingFieldValue(formData.trustees || []),
+    executors: formatSellerOnboardingFieldValue(formData.executors || []),
+    powerOfAttorneyRepresentatives: formatSellerOnboardingFieldValue(formData.powerOfAttorneyRepresentatives || []),
+    multipleOwners: formatSellerOnboardingFieldValue(formData.multipleOwners || []),
+    features: Array.isArray(formData.features) ? formData.features.join('\n') : '',
+  }), [sourceFormData])
 
-  const onboardingStatusLabel = normalizeText(onboardingStatus).replace(/_/g, ' ') || 'Not started'
-  const portalStatus = journey?.sellerPortalStatus || 'Not opened'
-  const sourceAddress = formatPropertyAddress(draft.propertyAddressDetails || {}) || draft.propertyAddress || 'Address pending'
-  const fieldCount = Object.keys(sourceFormData || {}).length
-  const saveLabel = saving ? 'Saving...' : 'Save overrides'
-  const sectionKeys = useMemo(() => SELLER_PROFILE_SECTION_DEFS.flatMap((section) => section.keys), [])
-  const extraKeys = useMemo(
-    () => Object.keys(draft || {}).filter((key) => !sectionKeys.includes(key) && !['propertyAddress', 'propertyAddressDetails'].includes(key)),
-    [draft, sectionKeys],
+  useEffect(() => {
+    const nextDraft = clonePlainObject(sourceFormData)
+    setDraft(nextDraft)
+    setComplexDrafts(createComplexDraftState(nextDraft))
+    setAddedFieldKeys([])
+    setIsEditingSubmittedDetails(false)
+    setMessage('')
+    setError('')
+  }, [createComplexDraftState, sourceKey, sourceFormData])
+
+  const requirementProfile = useMemo(() => buildSellerRequirementProfile(sourceFormData, listing || row), [listing, row, sourceFormData])
+  const progressMeta = useMemo(() => getSellerOnboardingProgressMeta({ row, listing, journey, onboardingStatus }), [journey, listing, onboardingStatus, row])
+  const onboardingState = progressMeta.state
+  const onboardingSubmitted = onboardingState === 'submitted' || onboardingState === 'completed'
+  const submittedSections = useMemo(
+    () => getSellerSubmittedSectionDefinitions(requirementProfile, sourceFormData),
+    [requirementProfile, sourceFormData],
   )
+  const submittedSectionModels = useMemo(
+    () => getSellerSubmittedSectionModels({
+      sections: submittedSections,
+      data: sourceFormData,
+      draft,
+      complexDrafts,
+      editable: onboardingSubmitted && isEditingSubmittedDetails,
+      addedFieldKeys,
+    }),
+    [addedFieldKeys, complexDrafts, draft, onboardingSubmitted, isEditingSubmittedDetails, sourceFormData, submittedSections],
+  )
+  const capturedSummary = useMemo(
+    () => getSellerCapturedFieldSummary({ sections: submittedSections, data: sourceFormData }),
+    [sourceFormData, submittedSections],
+  )
+  const documentOverview = useMemo(
+    () => buildSellerDocumentOverviewModel({ profile: requirementProfile, listing, journey }),
+    [journey, listing, requirementProfile],
+  )
+
+  const sellerName = normalizeText(row.name || row.contact?.name || requirementProfile.sellerName) || 'Seller lead'
+  const sellerPhone = normalizeText(row.phone || row.contact?.phone || requirementProfile.sellerContactPhone)
+  const sellerEmail = normalizeText(row.email || row.contact?.email || requirementProfile.sellerContactEmail)
+  const sourceLabel = normalizeText(sourceInfo?.leadSource || row.source || row.leadSource || 'Unknown')
+  const portalLink = getSellerPortalLink(row, listing)
+  const portalStatus = normalizeText(journey?.sellerPortalStatus || (portalLink ? 'Available' : 'Not opened')) || 'Not opened'
+  const sentDateLabel = onboardingState === 'not_sent'
+    ? 'Not sent'
+    : formatDateTime(
+      listing?.sellerOnboarding?.sentAt ||
+        listing?.sellerOnboarding?.createdAt ||
+        listing?.sellerOnboarding?.submittedAt ||
+        row.updatedAt,
+      'Not sent',
+    )
+  const lastUpdatedLabel = formatDateTime(
+    listing?.sellerOnboarding?.updatedAt ||
+      listing?.sellerOnboarding?.createdAt ||
+      listing?.updatedAt ||
+      row.updatedAt,
+    'Not updated',
+  )
+
+  const syncDraftToSource = useCallback(() => {
+    const nextDraft = clonePlainObject(sourceFormData)
+    setDraft(nextDraft)
+    setComplexDrafts(createComplexDraftState(nextDraft))
+    setAddedFieldKeys([])
+  }, [createComplexDraftState, sourceFormData])
+
+  const beginEditing = useCallback(() => {
+    setIsEditingSubmittedDetails(true)
+    setMessage('')
+    setError('')
+  }, [])
+
+  const discardChanges = useCallback(() => {
+    syncDraftToSource()
+    setIsEditingSubmittedDetails(false)
+    setMessage('')
+    setError('')
+  }, [syncDraftToSource])
+
+  const viewSubmittedOnboarding = useCallback(() => {
+    setIsEditingSubmittedDetails(false)
+    setMessage('')
+    setError('')
+    if (typeof document === 'undefined') return
+    const target = document.getElementById('seller-onboarding-editor')
+    target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }, [])
 
   const updateField = useCallback((key, value) => {
     setError('')
@@ -8598,6 +9371,14 @@ function SellerProfileTab({ row, journey, onboardingStatus, listing = null, onSa
     setComplexDrafts((previous) => ({ ...(previous || {}), [key]: value }))
   }, [])
 
+  const addMissingField = useCallback((key) => {
+    if (!key) return
+    setError('')
+    setMessage('')
+    setIsEditingSubmittedDetails(true)
+    setAddedFieldKeys((previous) => (previous.includes(key) ? previous : [...previous, key]))
+  }, [])
+
   const saveOverrides = useCallback(async () => {
     const listingId = getSellerListingId(row, listing || journey?.listing || null)
     if (!listingId) {
@@ -8605,68 +9386,49 @@ function SellerProfileTab({ row, journey, onboardingStatus, listing = null, onSa
       return
     }
 
-    const nextDraft = clonePlainObject(draft)
     try {
       setSaving(true)
       setError('')
       setMessage('')
-      nextDraft.companyDirectors = parseSellerOnboardingJson(complexDrafts.companyDirectors, nextDraft.companyDirectors || [])
-      nextDraft.trustees = parseSellerOnboardingJson(complexDrafts.trustees, nextDraft.trustees || [])
-      nextDraft.executors = parseSellerOnboardingJson(complexDrafts.executors, nextDraft.executors || [])
-      nextDraft.powerOfAttorneyRepresentatives = parseSellerOnboardingJson(complexDrafts.powerOfAttorneyRepresentatives, nextDraft.powerOfAttorneyRepresentatives || [])
-      nextDraft.multipleOwners = parseSellerOnboardingJson(complexDrafts.multipleOwners, nextDraft.multipleOwners || [])
-      nextDraft.features = parseSellerOnboardingList(complexDrafts.features)
-      for (const key of extraKeys) {
-        const field = getSellerProfileFieldConfig(key)
-        if (field.type === 'json') {
-          const rawValue = complexDrafts?.[key]
-          if (String(rawValue || '').trim()) {
-            nextDraft[key] = parseSellerOnboardingJson(rawValue, nextDraft[key] || [])
-          }
-        } else if (field.type === 'list') {
-          const rawValue = complexDrafts?.[key]
-          if (String(rawValue || '').trim()) {
-            nextDraft[key] = parseSellerOnboardingList(rawValue)
-          }
-        }
+
+      const { nextDraft, patch, changedFields } = buildSellerOnboardingSubmissionPatch({
+        sourceData: sourceFormData,
+        draft,
+        complexDrafts,
+        addedFieldKeys,
+      })
+
+      if (!changedFields.length) {
+        setMessage('No changes detected to save.')
+        return
       }
 
-      const normalizedAddress = normalizePropertyAddress({
-        propertyAddressDetails: isPlainObject(nextDraft.propertyAddressDetails) ? nextDraft.propertyAddressDetails : {},
-        propertyAddressSearch: nextDraft.propertyAddressSearch || '',
-        propertyAddressLine1: nextDraft.propertyAddressLine1 || '',
-        propertyAddressLine2: nextDraft.propertyAddressLine2 || '',
-        suburb: nextDraft.suburb || '',
-        city: nextDraft.city || '',
-        province: nextDraft.province || '',
-        postalCode: nextDraft.postalCode || '',
-        municipality: nextDraft.municipality || '',
-        country: nextDraft.country || '',
-      }, {}, createBlankPropertyAddress())
-      nextDraft.propertyAddressDetails = normalizedAddress
-      nextDraft.propertyAddress = normalizedAddress.formatted || nextDraft.propertyAddress || ''
-      nextDraft.propertyAddressSearch = normalizedAddress.query || nextDraft.propertyAddressSearch || ''
-      nextDraft.propertyAddressLine1 = normalizedAddress.line1 || nextDraft.propertyAddressLine1 || ''
-      nextDraft.propertyAddressLine2 = normalizedAddress.line2 || nextDraft.propertyAddressLine2 || ''
-      nextDraft.suburb = normalizedAddress.suburb || nextDraft.suburb || ''
-      nextDraft.city = normalizedAddress.city || nextDraft.city || ''
-      nextDraft.province = normalizedAddress.province || nextDraft.province || ''
-      nextDraft.postalCode = normalizedAddress.postalCode || nextDraft.postalCode || ''
-      nextDraft.municipality = normalizedAddress.municipality || nextDraft.municipality || ''
-      nextDraft.country = normalizedAddress.country || nextDraft.country || 'South Africa'
+      await updatePrivateListingOnboardingFormData(listingId, patch, {
+        status: onboardingSubmitted ? onboardingStatus : 'in_progress',
+      })
 
-      await updatePrivateListingOnboardingFormData(listingId, nextDraft, {
-        status: sellerOnboardingIsSubmitted(onboardingStatus) ? onboardingStatus : 'in_progress',
-      })
+      const changedFieldLabels = changedFields.slice(0, 6).map((key) => humanizeSellerFieldKey(key)).join(', ')
+      await createPrivateListingActivity({
+        privateListingId: listingId,
+        activityType: 'seller_onboarding_overrides_saved',
+        activityTitle: 'Seller onboarding overrides saved',
+        activityDescription: changedFieldLabels
+          ? `Updated ${changedFieldLabels} from the Seller tab.`
+          : 'Updated seller onboarding from the Seller tab.',
+        performedBy: actor?.id || actor?.userId || null,
+        visibility: 'internal',
+        metadata: {
+          sourceStatus: onboardingStatus || progressMeta.status || '',
+          recordStatus: onboardingSubmitted ? onboardingStatus : 'in_progress',
+          changedFields,
+          addedFieldKeys,
+        },
+      }).catch(() => {})
+
       setDraft(nextDraft)
-      setComplexDrafts({
-        companyDirectors: formatSellerOnboardingFieldValue(nextDraft.companyDirectors || []),
-        trustees: formatSellerOnboardingFieldValue(nextDraft.trustees || []),
-        executors: formatSellerOnboardingFieldValue(nextDraft.executors || []),
-        powerOfAttorneyRepresentatives: formatSellerOnboardingFieldValue(nextDraft.powerOfAttorneyRepresentatives || []),
-        multipleOwners: formatSellerOnboardingFieldValue(nextDraft.multipleOwners || []),
-        features: Array.isArray(nextDraft.features) ? nextDraft.features.join('\n') : formatSellerOnboardingFieldValue(nextDraft.features || []),
-      })
+      setComplexDrafts(createComplexDraftState(nextDraft))
+      setAddedFieldKeys([])
+      setIsEditingSubmittedDetails(false)
       setMessage('Seller onboarding overrides saved.')
       await onSaved?.()
     } catch (saveError) {
@@ -8674,91 +9436,347 @@ function SellerProfileTab({ row, journey, onboardingStatus, listing = null, onSa
     } finally {
       setSaving(false)
     }
-  }, [complexDrafts, draft, journey?.listing, listing, onboardingStatus, onSaved, row])
+  }, [
+    actor?.id,
+    actor?.userId,
+    addedFieldKeys,
+    complexDrafts,
+    createComplexDraftState,
+    draft,
+    journey?.listing,
+    listing,
+    onboardingStatus,
+    onboardingSubmitted,
+    onSaved,
+    progressMeta.status,
+    row,
+    sourceFormData,
+  ])
+
+  const snapshotAction = (() => {
+    if (onboardingState === 'not_sent') {
+      return (
+        <button
+          type="button"
+          onClick={onSendSellerOnboarding}
+          className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          disabled={!onSendSellerOnboarding}
+        >
+          Send seller onboarding
+        </button>
+      )
+    }
+    if (onboardingState === 'sent') {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onResendSellerPortalLink}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={!onResendSellerPortalLink || !portalLink}
+          >
+            Resend onboarding
+          </button>
+          <button
+            type="button"
+            onClick={onCopySellerPortalLink}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!onCopySellerPortalLink || !portalLink}
+          >
+            Copy portal link
+          </button>
+        </div>
+      )
+    }
+    if (isEditingSubmittedDetails) {
+      return (
+        <button
+          type="button"
+          onClick={saveOverrides}
+          disabled={saving}
+          className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          {saving ? 'Saving...' : 'Save overrides'}
+        </button>
+      )
+    }
+    return (
+      <button
+        type="button"
+        onClick={viewSubmittedOnboarding}
+        className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+      >
+        View submitted onboarding
+      </button>
+    )
+  })()
+
+  const snapshotStatusTone = progressMeta.state === 'completed' || progressMeta.state === 'submitted'
+    ? 'green'
+    : progressMeta.state === 'sent'
+      ? 'amber'
+      : 'slate'
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-      <SellerWorkspaceCard
-        title="Seller Snapshot"
-        action={<StatusPill tone={sellerOnboardingIsSubmitted(onboardingStatus) ? 'green' : 'amber'}>{onboardingStatusLabel}</StatusPill>}
-      >
-        <dl className="flex flex-1 flex-col">
-          <SellerInfoRow label="Seller" value={row.name || row.contact?.name} />
-          <SellerInfoRow label="Phone" value={row.phone || row.contact?.phone} />
-          <SellerInfoRow label="Email" value={row.email || row.contact?.email} />
-          <SellerInfoRow label="Portal Status" value={portalStatus} />
-          <SellerInfoRow label="Source Address" value={sourceAddress} />
-          <SellerInfoRow label="Captured Fields" value={`${fieldCount} fields`} />
-          <SellerInfoRow label="Last Updated" value={formatDateTime(listing?.sellerOnboarding?.submittedAt || listing?.sellerOnboarding?.completedAt || listing?.updatedAt || row.updatedAt, 'Not updated')} />
-        </dl>
-        <p className="mt-4 text-sm leading-6 text-slate-500">
-          These values are copied from seller onboarding and written back here when an agent overrides them.
-        </p>
-      </SellerWorkspaceCard>
+    <div className="grid gap-5">
+      <div className="grid gap-5 xl:grid-cols-2">
+        <SellerWorkspaceCard
+          title="Seller Snapshot"
+          action={(
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <StatusPill tone={snapshotStatusTone}>{progressMeta.label}</StatusPill>
+              {snapshotAction}
+            </div>
+          )}
+        >
+          <dl className="flex flex-1 flex-col">
+            <SellerInfoRow label="Seller" value={sellerName} />
+            <SellerInfoRow label="Phone" value={sellerPhone || '—'} />
+            <SellerInfoRow label="Email" value={sellerEmail || '—'} />
+            <SellerInfoRow label="Source" value={sourceLabel} />
+            {onboardingState !== 'not_sent' ? (
+              <SellerInfoRow label="Captured Fields" value={capturedSummary.label} />
+            ) : null}
+            <SellerInfoRow label="Last Updated" value={lastUpdatedLabel} />
+          </dl>
+        </SellerWorkspaceCard>
+
+        <SellerWorkspaceCard
+          title="Document Readiness"
+          action={(
+            <StatusPill tone={onboardingSubmitted ? (documentOverview.percent >= 80 ? 'green' : documentOverview.percent ? 'amber' : 'slate') : progressMeta.tone}>
+              {onboardingSubmitted ? `${documentOverview.percent}% complete` : progressMeta.label}
+            </StatusPill>
+          )}
+        >
+          {onboardingSubmitted ? (
+            <div className="flex h-full flex-col gap-5">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                <ListingReadinessCircle percent={documentOverview.percent} />
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold tracking-[-0.035em] text-slate-950">Document readiness</p>
+                  <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
+                    {documentOverview.summary.completed} completed, {documentOverview.summary.outstanding} outstanding, {documentOverview.summary.notStarted} not started
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-2 text-sm font-medium text-slate-600">
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2">
+                  <span>Completed</span>
+                  <span className="font-semibold text-emerald-700">{documentOverview.summary.completed}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2">
+                  <span>Outstanding</span>
+                  <span className="font-semibold text-amber-700">{documentOverview.summary.outstanding}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-2">
+                  <span>Not started</span>
+                  <span className="font-semibold text-slate-700">{documentOverview.summary.notStarted}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-5">
+              <p className="text-sm font-semibold text-slate-950">Waiting for seller submission</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Document readiness will populate once the seller has submitted onboarding details.
+              </p>
+              <div className="mt-4 grid gap-2 text-sm text-slate-600">
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
+                  <span>Sent date</span>
+                  <span className="font-semibold text-slate-900">{sentDateLabel}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
+                  <span>Portal status</span>
+                  <span className="font-semibold text-slate-900">{portalStatus}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </SellerWorkspaceCard>
+      </div>
+
+      <SellerDocumentOverviewPanel
+        overview={documentOverview}
+        profile={requirementProfile}
+        listing={listing}
+        journey={journey}
+        onboardingStatus={onboardingStatus}
+      />
 
       <SellerWorkspaceCard
         id="seller-onboarding-editor"
         title="Seller Onboarding"
-        action={
-          <div className="flex items-center gap-2">
-            <StatusPill tone={saving ? 'amber' : 'slate'}>{saving ? 'Saving' : 'Editable'}</StatusPill>
-            <button
-              type="button"
-              onClick={saveOverrides}
-              disabled={saving}
-              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              {saveLabel}
-            </button>
-          </div>
-        }
-      >
-        <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          Populate this tab from the onboarding record, then override any field here before generating the mandate.
-        </div>
-        {error ? <p className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p> : null}
-        {message ? <p className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</p> : null}
-        <div className="space-y-4">
-          {SELLER_PROFILE_SECTION_DEFS.map((section) => (
-            <SellerOnboardingSection
-              key={section.id}
-              section={section}
-              draft={draft}
-              complexDrafts={complexDrafts}
-              onChange={updateField}
-              onComplexChange={updateComplexField}
-            />
-          ))}
-          {extraKeys.length ? (
-            <details className="rounded-2xl border border-slate-200 bg-white p-4">
-              <summary className="cursor-pointer list-none">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h4 className="text-sm font-semibold text-slate-950">Other Captured Data</h4>
-                    <p className="mt-1 text-xs font-medium leading-5 text-slate-500">Any additional onboarding values not covered by the main sections.</p>
-                  </div>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{extraKeys.length} fields</span>
-                </div>
-              </summary>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                {extraKeys.map((key) => {
-                  const field = getSellerProfileFieldConfig(key)
-                  return (
-                    <SellerOnboardingFieldEditor
-                      key={field.key}
-                      field={field}
-                      value={draft?.[field.key]}
-                      draftValue={draft?.[field.key]}
-                      complexValue={complexDrafts?.[field.key]}
-                      onChange={updateField}
-                      onComplexChange={updateComplexField}
-                    />
-                  )
-                })}
+        action={(
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <StatusPill tone={snapshotStatusTone}>{progressMeta.label}</StatusPill>
+            {onboardingState === 'not_sent' ? (
+              <button
+                type="button"
+                onClick={onSendSellerOnboarding}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                disabled={!onSendSellerOnboarding}
+              >
+                Send seller onboarding
+              </button>
+            ) : onboardingState === 'sent' ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onResendSellerPortalLink}
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  disabled={!onResendSellerPortalLink || !portalLink}
+                >
+                  Resend onboarding
+                </button>
+                <button
+                  type="button"
+                  onClick={onCopySellerPortalLink}
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!onCopySellerPortalLink || !portalLink}
+                >
+                  Copy portal link
+                </button>
               </div>
-            </details>
-          ) : null}
-        </div>
+            ) : isEditingSubmittedDetails ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={discardChanges}
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={saveOverrides}
+                  disabled={saving}
+                  className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {saving ? 'Saving...' : 'Save overrides'}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={beginEditing}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Edit submitted details
+              </button>
+            )}
+          </div>
+        )}
+      >
+        {message ? <p className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</p> : null}
+        {error ? <p className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p> : null}
+
+        {onboardingState === 'not_sent' ? (
+          <div className="rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-5">
+            <p className="text-sm font-semibold text-slate-950">Onboarding not sent</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Send the onboarding form to collect seller and authority details.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onSendSellerOnboarding}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                disabled={!onSendSellerOnboarding}
+              >
+                Send seller onboarding
+              </button>
+            </div>
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm text-slate-600">
+              <p className="font-semibold text-slate-950">What the seller will submit</p>
+              <p className="mt-2 leading-6">
+                The seller will complete their details and upload the required documents.
+                Submitted information will appear here once received.
+              </p>
+            </div>
+          </div>
+        ) : onboardingState === 'sent' ? (
+          <div className="rounded-3xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5">
+            <p className="text-sm font-semibold text-slate-950">Seller onboarding sent</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Waiting for the seller to complete the form.
+            </p>
+            <div className="mt-4 grid gap-2 text-sm text-slate-600">
+              <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
+                <span>Sent date</span>
+                <span className="font-semibold text-slate-900">{sentDateLabel}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
+                <span>Portal status</span>
+                <span className="font-semibold text-slate-900">{portalStatus}</span>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onResendSellerPortalLink}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                disabled={!onResendSellerPortalLink || !portalLink}
+              >
+                Resend onboarding
+              </button>
+              <button
+                type="button"
+                onClick={onCopySellerPortalLink}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!onCopySellerPortalLink || !portalLink}
+              >
+                Copy portal link
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-3xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+              Only populated submitted fields are shown by default.
+              Click Edit submitted details to reveal blank but relevant fields for overrides.
+            </div>
+            {isEditingSubmittedDetails ? (
+              <div className="mt-4 rounded-3xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                You are editing the seller submission copy.
+                Save overrides writes an audit trail against the lead record and keeps the original seller submission as the baseline.
+              </div>
+            ) : null}
+            {submittedSectionModels.length ? (
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                {submittedSectionModels.map((section) => (
+                  <SellerSubmittedSectionCard
+                    key={section.id}
+                    section={section}
+                    editable={onboardingSubmitted && isEditingSubmittedDetails}
+                    onChange={updateField}
+                    onComplexChange={updateComplexField}
+                    onAddField={addMissingField}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-3xl border border-dashed border-slate-200 bg-slate-50/70 p-6">
+                <p className="text-sm font-semibold text-slate-900">No submitted fields captured yet</p>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  The seller submission exists, but no populated values were returned.
+                  Click Edit submitted details to add the missing information.
+                </p>
+                {!isEditingSubmittedDetails ? (
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={beginEditing}
+                      className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800"
+                    >
+                      Edit submitted details
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </>
+        )}
       </SellerWorkspaceCard>
     </div>
   )
@@ -9337,10 +10355,28 @@ function SellerTabContent({
   onCommissionDraftChange,
   onSaveCommission,
   onSaved,
+  onSendSellerOnboarding,
+  onResendSellerPortalLink,
+  onCopySellerPortalLink,
   onTabChange,
   onGenerateMandate,
 }) {
-  if (activeTab === 'seller') return <SellerProfileTab row={row} journey={journey} onboardingStatus={onboardingStatus} listing={listing} onSaved={onSaved} />
+  if (activeTab === 'seller') {
+    return (
+      <SellerProfileTab
+        row={row}
+        sourceInfo={sourceInfo}
+        journey={journey}
+        onboardingStatus={onboardingStatus}
+        listing={listing}
+        actor={actor}
+        onSaved={onSaved}
+        onSendSellerOnboarding={onSendSellerOnboarding}
+        onResendSellerPortalLink={onResendSellerPortalLink}
+        onCopySellerPortalLink={onCopySellerPortalLink}
+      />
+    )
+  }
   if (activeTab === 'property') return <SellerPropertyTab row={row} listing={listing} />
   if (activeTab === 'mandate') {
     return (
@@ -9472,7 +10508,13 @@ function SellerOwnershipSummaryCard({ organisationId, lead, actor, onSaved }) {
   }
 
   return (
-    <SellerWorkspaceCard density="compact" title="Ownership" id="seller-ownership" action={<StatusPill tone={getSlaTone(lead.slaStatus)}>{formatSlaStatus(lead.slaStatus)}</StatusPill>}>
+    <SellerWorkspaceCard
+      density="compact"
+      className="h-[320px]"
+      title="Ownership"
+      id="seller-ownership"
+      action={<StatusPill tone={getSlaTone(lead.slaStatus)}>{formatSlaStatus(lead.slaStatus)}</StatusPill>}
+    >
       <dl className="flex flex-1 flex-col">
         <SellerInfoRow label="Agent" value={getOwnerName(lead)} />
         <SellerInfoRow label="Queue" value={lead.assignedQueue || 'No queue'} />
@@ -9690,6 +10732,9 @@ function SellerLeadWorkspaceLayout({
         onCommissionDraftChange={updateCommissionDraft}
         onSaveCommission={onSaveCommission}
         onSaved={onSaved}
+        onSendSellerOnboarding={onSendSellerOnboarding}
+        onResendSellerPortalLink={onResendSellerPortalLink}
+        onCopySellerPortalLink={onCopySellerPortalLink}
         onTabChange={setActiveWorkspaceTab}
         onGenerateMandate={onGenerateMandate}
       />
