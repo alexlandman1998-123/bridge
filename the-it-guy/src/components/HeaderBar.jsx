@@ -2,6 +2,7 @@ import { AlertTriangle, Bell, CheckCircle2, ChevronDown, FileText, Plus, Refresh
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { canAccessHQ } from '../auth/hqAccess'
 import { fetchMyNotifications, markAllNotificationsRead, markNotificationRead } from '../lib/api'
 import QuickCreateDropdown from './QuickCreateDropdown'
 
@@ -386,7 +387,8 @@ const ATTORNEY_DASHBOARD_ROLE_VIEWS = [
 function HeaderBar({ onLogout, user }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { role, rolePreviewActive, setActivePersona, personaOptions, agencyWorkflowMode } = useWorkspace()
+  const workspaceContext = useWorkspace()
+  const { role, rolePreviewActive, setActivePersona, personaOptions, agencyWorkflowMode } = workspaceContext
   const [open, setOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [notificationState, setNotificationState] = useState({
@@ -594,6 +596,7 @@ function HeaderBar({ onLogout, user }) {
   const unreadDisplay = notificationState.unreadCount > 99 ? '99+' : String(notificationState.unreadCount || 0)
   const isClientsWorkspaceRoute = location.pathname === '/clients' || location.pathname === '/bond/clients'
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
+  const canOpenMissionControl = canAccessHQ(workspaceContext)
   const notificationSections = groupNotificationsByDate(notificationState.notifications)
   const notificationsControl = (
     <div className="relative flex-none" ref={notificationsRef}>
@@ -707,6 +710,11 @@ function HeaderBar({ onLogout, user }) {
           <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings/account" onClick={() => setOpen(false)}>
             Profile
           </Link>
+          {canOpenMissionControl ? (
+            <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/command-center" onClick={() => setOpen(false)}>
+              ⌘ Mission Control
+            </Link>
+          ) : null}
           <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setOpen(false)}>
             Settings
           </Link>
