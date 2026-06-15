@@ -31,7 +31,7 @@ function BrokerCard({ broker }) {
         <Metric label="Listings" value={broker.activeListings} />
         <Metric label="Deals" value={broker.activeDeals} />
         <Metric label="Transactions" value={broker.activeTransactions || 0} />
-        <Metric label="HOTs" value={broker.hotsInProgress} />
+        <Metric label="Heads of Terms" value={broker.hotsInProgress} />
         <Metric label="Expected Comm." value={formatCurrency(broker.projectedCommission || 0)} />
       </div>
       <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
@@ -98,7 +98,7 @@ function BrokerProfile({ data, brokerId }) {
         <RecordList title="Assigned Deals" rows={broker.deals} getTitle={(row) => row.deal_name || 'Deal'} getMeta={(row) => `${titleize(row.stage)} · ${formatCurrency(row.deal_value)}`} />
         <RecordList title="Transactions & Viewings" rows={[...broker.transactions, ...broker.viewings]} getTitle={(row) => row.transaction_name || row.viewing_date || row.id || 'Commercial workflow'} getMeta={(row) => `${titleize(row.status)} · ${formatDate(row.updated_at || row.created_at || row.viewing_date)}`} />
         <RecordList title="Assigned Properties / Vacancies" rows={[...broker.properties, ...broker.vacancies]} getTitle={(row) => row.property_name || row.vacancy_name || 'Commercial stock'} getMeta={(row) => row.available_area_m2 ? `${formatNumber(row.available_area_m2, 'm²')} available` : titleize(row.status)} />
-        <RecordList title="HOTs and Leases" rows={[...broker.headsOfTerms, ...broker.leases]} getTitle={(row) => row.premises_description || row.id || 'Commercial record'} getMeta={(row) => `${titleize(row.status)} · ${formatDate(row.updated_at || row.created_at || row.lease_end_date)}`} />
+        <RecordList title="Heads of Terms and Leases" rows={[...broker.headsOfTerms, ...broker.leases]} getTitle={(row) => row.premises_description || row.id || 'Commercial record'} getMeta={(row) => `${titleize(row.status)} · ${formatDate(row.updated_at || row.created_at || row.lease_end_date)}`} />
       </section>
     </div>
   )
@@ -141,7 +141,7 @@ function CommercialBrokersPage() {
         {loading ? <div className="h-40 animate-pulse rounded-3xl bg-slate-100" /> : brokers.map((broker) => <BrokerCard key={broker.id} broker={broker} />)}
       </section>
 
-      {!loading && !brokers.length ? <CommercialEmptyState title="No commercial brokers found" description="Add brokers to the organisation user list, then assign requirements, deals, HOTs, vacancies, and leases." /> : null}
+      {!loading && !brokers.length ? <CommercialEmptyState title="No commercial brokers found" description="Add brokers to the organisation user list, then assign requirements, deals, Heads of Terms, vacancies, and leases." /> : null}
     </div>
   )
 }

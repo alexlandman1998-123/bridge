@@ -321,7 +321,7 @@ function buildTopPerformingAssets({ properties = [], vacancies = [], viewings = 
 function buildPipeline(stages, counts, valueByStage = {}) {
   return stages.map((stage) => ({
     key: stage,
-    label: stage === 'heads_of_terms' ? 'HOT' : labelFromStage(stage),
+    label: stage === 'heads_of_terms' ? 'Heads of Terms' : labelFromStage(stage),
     count: counts[stage] || 0,
     value: valueByStage[stage] || 0,
   }))
@@ -351,7 +351,7 @@ function buildActivitySnapshot({ requirements, deals, leases, vacancies, listing
       detail: 'Proposal-stage requirements and deals',
     },
     {
-      label: 'HOT sent',
+      label: 'Heads of Terms sent',
       value: headsOfTerms.filter((row) => ['sent', 'under_review', 'accepted'].includes(normalizeCommercialLifecycleStage('headsOfTerms', row.status, 'draft'))).length,
       detail: 'Heads of Terms in circulation',
     },
@@ -496,7 +496,7 @@ function buildRenewalPipeline({ renewalRisk = [], commercialTransactions = [] } 
   return [
     { key: 'renewal_required', label: 'Renewal Required', count: renewalRequired },
     { key: 'negotiating', label: 'Negotiating', count: negotiating },
-    { key: 'hot', label: 'HOT', count: hot },
+    { key: 'hot', label: 'Heads of Terms', count: hot },
     { key: 'renewed', label: 'Renewed', count: renewed },
     { key: 'vacated', label: 'Vacated', count: vacated },
   ]
@@ -737,7 +737,7 @@ function buildLatestActivity({ activity, requirements, deals, vacancies, listing
       id: `hot-${row.id}`,
       title: 'Heads of Terms updated',
       body: labelFromStage(row.status),
-      entity: 'HOT',
+      entity: 'Heads of Terms',
       timestamp: row.updated_at || row.created_at,
       user: 'Commercial team',
     })),
@@ -778,7 +778,7 @@ function buildDocumentCompliance({ landlords = [], tenants = [], properties = []
     ...tenants.map((row) => ({ type: 'commercial_tenant', label: 'Tenant', id: row.id, name: row.name, brokerId: row.broker_id, branchId: row.branch_id, teamId: row.team_id })),
     ...properties.map((row) => ({ type: 'commercial_property', label: 'Property', id: row.id, name: row.property_name, brokerId: row.broker_id, branchId: row.branch_id, teamId: row.team_id })),
     ...leases.map((row) => ({ type: 'commercial_lease', label: 'Lease', id: row.id, name: `Lease ${String(row.id || '').slice(0, 8)}`, brokerId: row.broker_id, branchId: row.branch_id, teamId: row.team_id })),
-    ...headsOfTerms.map((row) => ({ type: 'commercial_heads_of_terms', label: 'HOT', id: row.id, name: row.premises_description || `HOT ${String(row.id || '').slice(0, 8)}`, brokerId: row.broker_id, branchId: row.branch_id, teamId: row.team_id })),
+    ...headsOfTerms.map((row) => ({ type: 'commercial_heads_of_terms', label: 'Heads of Terms', id: row.id, name: row.premises_description || `Heads of Terms ${String(row.id || '').slice(0, 8)}`, brokerId: row.broker_id, branchId: row.branch_id, teamId: row.team_id })),
   ]
 
   const riskRows = records.map((record) => {

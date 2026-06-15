@@ -209,7 +209,7 @@ function CommercialDocumentLibrary({ organisationId = '', entityType, entityId, 
 
       {documentFlow.length ? (
         <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-          <h4 className="text-sm font-semibold text-[#102236]">{entityType === 'commercial_lease' ? 'Lease Document Progression' : 'HOT Document Progression'}</h4>
+          <h4 className="text-sm font-semibold text-[#102236]">{entityType === 'commercial_lease' ? 'Lease Document Progression' : 'Heads of Terms Document Progression'}</h4>
           <div className="mt-3 grid gap-2 sm:grid-cols-5">
             {documentFlow.map((category) => {
               const received = receivedFlowCategories.has(category)

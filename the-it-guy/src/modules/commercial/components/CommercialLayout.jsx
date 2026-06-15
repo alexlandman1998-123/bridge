@@ -1,9 +1,13 @@
-import { Bell, Search } from 'lucide-react'
+import { Bell, ChevronDown, Search } from 'lucide-react'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../../../components/QuickCreateDropdown'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
-import { COMMERCIAL_BOTTOM_NAV_ITEMS, COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_GROUPS, isCommercialNavItemActive } from '../commercialNavigation'
+import {
+  COMMERCIAL_MOBILE_MORE_NAV_ITEMS,
+  COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS,
+  isCommercialNavItemActive,
+} from '../commercialNavigation'
 import { isCommercialPlatformInstallError, resolveCommercialAccessContext } from '../services/commercialApi'
 import CommercialBranding from './CommercialBranding'
 import CommercialEnablementExperience from './CommercialEnablementExperience'
@@ -30,10 +34,9 @@ function CommercialLayout() {
   const [searchTerm, setSearchTerm] = useState('')
   const [accessState, setAccessState] = useState({ loading: true, allowed: false, reason: '', message: '', scope: null })
   const currentPath = `${location.pathname}${location.search || ''}`
-  const mobileNavItems = useMemo(
-    () => [COMMERCIAL_DASHBOARD_NAV_ITEM, ...COMMERCIAL_NAV_GROUPS.flatMap((group) => group.items), ...COMMERCIAL_BOTTOM_NAV_ITEMS],
-    [],
-  )
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
+  const mobilePrimaryItems = useMemo(() => COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS, [])
+  const mobileMoreItems = useMemo(() => COMMERCIAL_MOBILE_MORE_NAV_ITEMS, [])
 
   useEffect(() => {
     let cancelled = false
@@ -148,13 +151,14 @@ function CommercialLayout() {
             </div>
           </div>
           <nav className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Commercial mobile navigation">
-            {mobileNavItems.map((item) => {
+            {mobilePrimaryItems.map((item) => {
               const Icon = item.icon
               const active = isCommercialNavItemActive(`${location.pathname}${location.hash || ''}`, item)
               return (
                 <Link
                   key={item.to}
                   to={item.to}
+                  onClick={() => setMobileMoreOpen(false)}
                   aria-current={active ? 'page' : undefined}
                   className={[
                     'inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-colors duration-150',
@@ -166,10 +170,46 @@ function CommercialLayout() {
                 </Link>
               )
             })}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setMobileMoreOpen((previous) => !previous)}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition-colors duration-150 hover:border-[#cfe0ef] hover:bg-[#eef5fb] hover:text-[#123b61]"
+                aria-expanded={mobileMoreOpen}
+              >
+                More
+                <ChevronDown size={14} className={`transition ${mobileMoreOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {mobileMoreOpen ? (
+                <div className="absolute right-0 top-[calc(100%+8px)] z-30 min-w-[210px] rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_45px_rgba(15,23,42,0.14)]">
+                  <div className="grid gap-1">
+                    {mobileMoreItems.map((item) => {
+                      const Icon = item.icon
+                      const active = isCommercialNavItemActive(`${location.pathname}${location.hash || ''}`, item)
+                      return (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          onClick={() => setMobileMoreOpen(false)}
+                          aria-current={active ? 'page' : undefined}
+                          className={[
+                            'inline-flex min-h-10 items-center gap-2 rounded-[14px] px-3 text-sm font-semibold transition-colors duration-150',
+                            active ? 'bg-[#eef5fb] text-[#123b61]' : 'text-slate-600 hover:bg-slate-50 hover:text-[#123b61]',
+                          ].join(' ')}
+                        >
+                          <Icon size={15} />
+                          {item.label}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </nav>
         </div>
         <div className="sticky top-0 z-20 hidden border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-6 lg:px-8 lg:block">
-          <div className="mx-auto flex w-full max-w-[1800px] items-center gap-3">
+          <div className="mx-auto flex w-full max-w-[1600px] items-center gap-3">
             <QuickCreateDropdown />
             <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-500 shadow-sm">
               <Search size={16} className="shrink-0" />
@@ -189,7 +229,7 @@ function CommercialLayout() {
             </button>
           </div>
         </div>
-        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8">
           <Suspense fallback={<CommercialPageSkeleton />}>
             <Outlet />
           </Suspense>

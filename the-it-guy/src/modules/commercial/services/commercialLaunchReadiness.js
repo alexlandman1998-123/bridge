@@ -17,12 +17,12 @@ export const COMMERCIAL_LAUNCH_ROLE_MATRIX = [
   },
   {
     role: 'Team Leader',
-    visibility: ['Team records', 'Team activity', 'Team pipeline', 'Team HOTs and leases'],
+    visibility: ['Team records', 'Team activity', 'Team pipeline', 'Team Heads of Terms and leases'],
     blocked: ['Unrelated teams outside permission scope'],
   },
   {
     role: 'Branch Manager',
-    visibility: ['Entire branch', 'All branch brokers', 'All branch teams', 'Branch properties, deals, HOTs, and leases'],
+    visibility: ['Entire branch', 'All branch brokers', 'All branch teams', 'Branch properties, deals, Heads of Terms, and leases'],
     blocked: ['Other branches unless organisation policy allows'],
   },
   {
@@ -37,12 +37,12 @@ export const COMMERCIAL_LAUNCH_ROLE_MATRIX = [
   },
   {
     role: 'Landlord Portal',
-    visibility: ['Curated property, vacancy, HOT, lease, document request, and timeline information'],
+    visibility: ['Curated property, vacancy, Heads of Terms, lease, document request, and timeline information'],
     blocked: ['Commissions', 'Internal notes', 'Broker management tools', 'Other clients'],
   },
   {
     role: 'Tenant Portal',
-    visibility: ['Curated requirement, deal, HOT, lease, document request, and timeline information'],
+    visibility: ['Curated requirement, deal, Heads of Terms, lease, document request, and timeline information'],
     blocked: ['Commissions', 'Internal notes', 'Landlord-only records', 'Other tenants'],
   },
 ]
@@ -203,7 +203,7 @@ export function buildCommercialDataIntegrityAudit(data = {}) {
 
   leases.forEach((lease) => {
     pushMissingReference(issues, { entity: 'leases', id: lease.id, field: 'deal_id', value: lease.deal_id, targetMap: indexes.deals, targetLabel: 'deal' })
-    pushMissingReference(issues, { entity: 'leases', id: lease.id, field: 'heads_of_terms_id', value: lease.heads_of_terms_id, targetMap: indexes.headsOfTerms, targetLabel: 'HOT' })
+    pushMissingReference(issues, { entity: 'leases', id: lease.id, field: 'heads_of_terms_id', value: lease.heads_of_terms_id, targetMap: indexes.headsOfTerms, targetLabel: 'Heads of Terms' })
     pushMissingReference(issues, { entity: 'leases', id: lease.id, field: 'tenant_id', value: lease.tenant_id, targetMap: indexes.tenants, targetLabel: 'tenant' })
     pushMissingReference(issues, { entity: 'leases', id: lease.id, field: 'property_id', value: lease.property_id, targetMap: indexes.properties, targetLabel: 'property' })
     pushMissingReference(issues, { entity: 'leases', id: lease.id, field: 'vacancy_id', value: lease.vacancy_id, targetMap: indexes.vacancies, targetLabel: 'vacancy' })
@@ -276,7 +276,6 @@ export function buildCommercialDashboardIntegrity(data = {}) {
 export function buildCommercialWorkflowReadiness(data = {}) {
   const properties = rows(data.properties)
   const vacancies = rows(data.vacancies)
-  const requirements = rows(data.requirements)
   const deals = rows(data.deals)
   const headsOfTerms = rows(data.headsOfTerms || data.hots)
   const leases = rows(data.leases)
@@ -285,7 +284,6 @@ export function buildCommercialWorkflowReadiness(data = {}) {
   const portalAccess = rows(data.portalAccess)
   const portalMessages = rows(data.portalMessages)
 
-  const dealById = byId(deals)
   const hotByDealId = new Map(headsOfTerms.filter((hot) => hot?.deal_id).map((hot) => [hot.deal_id, hot]))
   const leaseByHotId = new Map(leases.filter((lease) => lease?.heads_of_terms_id).map((lease) => [lease.heads_of_terms_id, lease]))
   const vacanciesByProperty = vacancies.reduce((groups, vacancy) => {
@@ -312,11 +310,11 @@ export function buildCommercialWorkflowReadiness(data = {}) {
   const hasRenewalJourney = leases.some((lease) => ['renewal_pending', 'expiring_soon', 'active'].includes(lower(lease.status)) && lease.lease_end_date)
 
   const journeys = [
-    { name: 'Requirement -> Vacancy -> Deal -> HOT -> Lease', status: hasFullLeaseJourney ? 'pass' : 'fail' },
+    { name: 'Requirement -> Vacancy -> Deal -> Heads of Terms -> Lease', status: hasFullLeaseJourney ? 'pass' : 'fail' },
     { name: 'Property -> Vacancy -> Requirement Match -> Deal', status: hasPropertyJourney ? 'pass' : 'fail' },
     { name: 'Landlord -> Property -> Vacancy -> Tenant -> Lease', status: hasLandlordJourney ? 'pass' : 'fail' },
     { name: 'Portal User -> Document Upload -> Broker Review', status: hasPortalDocumentJourney ? 'pass' : 'warning' },
-    { name: 'HOT Creation -> HOT Approval -> Lease Creation', status: hasHotToLeaseJourney ? 'pass' : 'fail' },
+    { name: 'Heads of Terms Creation -> Heads of Terms Approval -> Lease Creation', status: hasHotToLeaseJourney ? 'pass' : 'fail' },
     { name: 'Lease Expiry -> Renewal Visibility', status: hasRenewalJourney ? 'pass' : 'fail' },
   ]
 

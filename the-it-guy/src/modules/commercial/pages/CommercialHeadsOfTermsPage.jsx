@@ -22,7 +22,11 @@ function lookupLabel(lookups, kind, id, fallback = '-') {
   return match?.name || match?.property_name || match?.deal_name || fallback
 }
 
-function CommercialHeadsOfTermsPage() {
+function CommercialHeadsOfTermsPage({
+  title = 'Heads of Terms',
+  description = 'Review commercial Heads of Terms drafts, approvals, and records ready for lease drafting.',
+  hideHeader = false,
+}) {
   const [expandedHotId, setExpandedHotId] = useState('')
   const { data, loading, error } = useCommercialData(fetchHeadsOfTermsPageData, [])
   const headsOfTerms = Array.isArray(data?.headsOfTerms) ? data.headsOfTerms : []
@@ -30,17 +34,19 @@ function CommercialHeadsOfTermsPage() {
 
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">Heads of Terms</h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Review commercial Heads of Terms drafts, approvals, and records ready for lease drafting.</p>
+      {!hideHeader ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">{title}</h1>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+            <FileSignature size={14} /> Heads of Terms control
+          </span>
         </div>
-        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-          <FileSignature size={14} /> HOT control
-        </span>
-      </div>
+      ) : null}
 
-      <div className="mt-5 grid gap-3">
+      <div className={`${hideHeader ? '' : 'mt-5'} grid gap-3`}>
         {loading ? (
           <div className="h-24 animate-pulse rounded-2xl bg-slate-100" />
         ) : error ? (

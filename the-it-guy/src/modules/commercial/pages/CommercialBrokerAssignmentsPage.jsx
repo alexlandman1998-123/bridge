@@ -191,7 +191,7 @@ function CommercialBrokerAssignmentsPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">Assignments</h1>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Assign or reassign commercial requirements, listings, deals, HOTs, vacancies, and leases to brokers.</p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Assign or reassign commercial requirements, listings, deals, Heads of Terms, vacancies, and leases to brokers.</p>
           </div>
           <button type="button" onClick={refresh} className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-[#102236]">
             <RefreshCw size={16} /> Refresh
@@ -209,7 +209,7 @@ function CommercialBrokerAssignmentsPage() {
         <div className="grid gap-4">
           <AssignmentSection title="Unassigned Requirements" kind="requirements" rows={unassigned.requirements || []} brokerChoices={brokerChoices} teamChoices={teamChoices} branchChoices={branchChoices} canManage={canManage} onAssigned={refresh} />
           <AssignmentSection title="Unassigned Deals" kind="deals" rows={unassigned.deals || []} brokerChoices={brokerChoices} teamChoices={teamChoices} branchChoices={branchChoices} canManage={canManage} onAssigned={refresh} />
-          <AssignmentSection title="Unassigned HOTs" kind="headsOfTerms" rows={unassigned.headsOfTerms || []} brokerChoices={brokerChoices} teamChoices={teamChoices} branchChoices={branchChoices} canManage={canManage} onAssigned={refresh} />
+          <AssignmentSection title="Unassigned Heads of Terms" kind="headsOfTerms" rows={unassigned.headsOfTerms || []} brokerChoices={brokerChoices} teamChoices={teamChoices} branchChoices={branchChoices} canManage={canManage} onAssigned={refresh} />
           <AssignmentSection title="Unassigned Listings" kind="listings" rows={unassigned.listings || []} brokerChoices={brokerChoices} teamChoices={teamChoices} branchChoices={branchChoices} canManage={canManage} onAssigned={refresh} />
           <AssignmentSection title="Unassigned Vacancies" kind="vacancies" rows={unassigned.vacancies || []} brokerChoices={brokerChoices} teamChoices={teamChoices} branchChoices={branchChoices} canManage={canManage} onAssigned={refresh} />
           <AssignmentSection title="Unassigned Leases" kind="leases" rows={unassigned.leases || []} brokerChoices={brokerChoices} teamChoices={teamChoices} branchChoices={branchChoices} canManage={canManage} onAssigned={refresh} />

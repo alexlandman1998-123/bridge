@@ -236,7 +236,24 @@ function TransactionsPanel({ kind, record, rawLookups = {}, onCreateTransaction 
   )
 }
 
-function CommercialRecordDrawer({ open, record, kind = '', title, fields = [], lookups = {}, rawLookups = {}, documentsEntityType = '', showHeadsOfTerms = false, organisationId = '', onClose, onEdit, onArchive, onCreateTransaction }) {
+function CommercialRecordDrawer({
+  open,
+  record,
+  kind = '',
+  title,
+  fields = [],
+  lookups = {},
+  rawLookups = {},
+  documentsEntityType = '',
+  showHeadsOfTerms = false,
+  organisationId = '',
+  primaryActionLabel = '',
+  onPrimaryAction,
+  onClose,
+  onEdit,
+  onArchive,
+  onCreateTransaction,
+}) {
   if (!open || !record) return null
 
   const recordTitle = getCommercialRecordTitle(kind, record)
@@ -244,6 +261,7 @@ function CommercialRecordDrawer({ open, record, kind = '', title, fields = [], l
   const summaryCards = buildCommercialSummaryCards(kind, record, lookups)
   const owner = getCommercialBroker(record)
   const updatedAt = getCommercialUpdatedDate(record)
+  const resolvedPrimaryActionLabel = typeof primaryActionLabel === 'function' ? primaryActionLabel(record) : primaryActionLabel
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/35 backdrop-blur-sm">
@@ -276,10 +294,18 @@ function CommercialRecordDrawer({ open, record, kind = '', title, fields = [], l
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-blue-700">Next Action</p>
                 <p className="mt-1 text-base font-semibold text-[#102236]">{nextAction}</p>
               </div>
-              <button type="button" onClick={onEdit} className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl bg-white px-4 text-sm font-semibold text-[#1267a3] shadow-sm transition hover:bg-blue-50">
-                Update Record
-                <ArrowRight size={15} />
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {resolvedPrimaryActionLabel && onPrimaryAction ? (
+                  <button type="button" onClick={() => onPrimaryAction(record)} className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#163a5b]">
+                    {resolvedPrimaryActionLabel}
+                    <ArrowRight size={15} />
+                  </button>
+                ) : null}
+                <button type="button" onClick={onEdit} className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl bg-white px-4 text-sm font-semibold text-[#1267a3] shadow-sm transition hover:bg-blue-50">
+                  Update Record
+                  <ArrowRight size={15} />
+                </button>
+              </div>
             </div>
           </section>
 

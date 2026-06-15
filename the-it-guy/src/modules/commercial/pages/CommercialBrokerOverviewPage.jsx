@@ -29,7 +29,7 @@ function CommercialBrokerOverviewPage() {
   const unassignedRows = [
     ['Requirements', unassigned.requirements?.length || 0],
     ['Deals', unassigned.deals?.length || 0],
-    ['HOTs', unassigned.headsOfTerms?.length || 0],
+    ['Heads of Terms', unassigned.headsOfTerms?.length || 0],
     ['Vacancies', unassigned.vacancies?.length || 0],
   ]
 
@@ -53,7 +53,7 @@ function CommercialBrokerOverviewPage() {
         <SummaryCard label="Total Brokers" value={loading ? '...' : summary.totalBrokers || 0} detail={`${summary.activeBrokers || 0} active`} icon={Users} />
         <SummaryCard label="Unassigned Work" value={loading ? '...' : summary.unassignedWork || 0} detail="Needs principal review" icon={ClipboardList} />
         <SummaryCard label="Active Pipeline" value={loading ? '...' : formatCurrency(summary.activePipeline || 0)} detail={`${summary.activeDeals || 0} active deals`} icon={BriefcaseBusiness} />
-        <SummaryCard label="HOTs In Progress" value={loading ? '...' : summary.hotsInProgress || 0} detail="Negotiation workload" icon={Handshake} />
+        <SummaryCard label="Heads of Terms In Progress" value={loading ? '...' : summary.hotsInProgress || 0} detail="Negotiation workload" icon={Handshake} />
         <SummaryCard label="Broker Activity" value={loading ? '...' : summary.brokerActivity || 0} detail={`${summary.overloadedBrokers || 0} overloaded`} icon={Activity} />
       </section>
 

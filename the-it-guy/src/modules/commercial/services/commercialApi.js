@@ -4225,8 +4225,8 @@ export async function createLeaseFromHeadsOfTerms(headsOfTerms, payload = {}) {
     entityType: 'commercial_deal',
     entityId: hot.deal_id,
     activityType: 'lease_created_from_hot',
-    title: 'Lease created from HOT',
-    body: lease?.id ? `Lease ${String(lease.id).slice(0, 8)} was created from signed HOT.` : 'Lease was created from signed HOT.',
+    title: 'Lease created from Heads of Terms',
+    body: lease?.id ? `Lease ${String(lease.id).slice(0, 8)} was created from signed Heads of Terms.` : 'Lease was created from signed Heads of Terms.',
     metadata: { headsOfTermsId: hot.id, leaseId: lease?.id },
   })
 

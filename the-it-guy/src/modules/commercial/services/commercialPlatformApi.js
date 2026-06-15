@@ -88,8 +88,8 @@ function deriveTransactionStatus({ deal, hot, lease }) {
   if (['executed', 'pending_signature', 'draft'].includes(leaseStage)) return 'Lease Pending'
   const hotStage = normalizeCommercialLifecycleStage('headsOfTerms', hot?.status, '')
   if (hotStage === 'converted') return 'Lease Pending'
-  if (hotStage === 'signed') return 'Signed HOT'
-  if (['accepted', 'under_review', 'sent', 'draft'].includes(hotStage)) return `HOT ${hotStage.replace(/_/g, ' ')}`
+  if (hotStage === 'signed') return 'Signed Heads of Terms'
+  if (['accepted', 'under_review', 'sent', 'draft'].includes(hotStage)) return `Heads of Terms ${hotStage.replace(/_/g, ' ')}`
   const dealStage = normalizeCommercialLifecycleStage('deals', deal?.stage || deal?.status, 'new')
   if (dealStage === 'converted') return 'Converted'
   if (dealStage === 'lost') return 'Lost'
@@ -250,7 +250,7 @@ export function buildCommercialTransactionTimeline(transaction = {}, { activity 
     items.push(createTimelineItem({
       id: `hot-sent-${hot.id}`,
       type: 'hot',
-      title: 'HOT sent',
+      title: 'Heads of Terms sent',
       body: 'Heads of Terms sent for review',
       timestamp: hot.sent_at || hot.updated_at,
     }))
@@ -259,7 +259,7 @@ export function buildCommercialTransactionTimeline(transaction = {}, { activity 
     items.push(createTimelineItem({
       id: `hot-signed-${hot.id}`,
       type: 'hot',
-      title: 'HOT signed',
+      title: 'Heads of Terms signed',
       body: 'Signed Heads of Terms ready for lease creation',
       timestamp: hot.signed_at || hot.updated_at,
     }))
@@ -335,7 +335,7 @@ export function buildCommercialTasks(transaction = {}, { documentRequests = [] }
   if (['accepted', 'signed'].includes(hotStage) && !transaction.lease?.id) {
     tasks.push({
       id: `create-lease-${transaction.hot?.id || transaction.id}`,
-      title: 'Create lease from signed HOT',
+      title: 'Create lease from signed Heads of Terms',
       status: 'open',
       owner: transaction.brokerName || 'Assigned broker',
       dueDate: '',
@@ -374,9 +374,9 @@ export function buildCommercialNotifications(transaction = {}, { documentRequest
   const hotStage = normalizeCommercialLifecycleStage('headsOfTerms', transaction.hot?.status, '')
   const daysToExpiry = daysBetween(startOfToday(), transaction.lease?.lease_end_date)
 
-  if (hotStage === 'sent') notifications.push({ id: `hot-sent-${transaction.hot.id}`, title: 'HOT sent', channel: 'in_app', status: 'ready' })
-  if (hotStage === 'accepted') notifications.push({ id: `hot-accepted-${transaction.hot.id}`, title: 'HOT accepted', channel: 'in_app', status: 'ready' })
-  if (hotStage === 'signed') notifications.push({ id: `hot-signed-${transaction.hot.id}`, title: 'HOT signed', channel: 'in_app', status: 'ready' })
+  if (hotStage === 'sent') notifications.push({ id: `hot-sent-${transaction.hot.id}`, title: 'Heads of Terms sent', channel: 'in_app', status: 'ready' })
+  if (hotStage === 'accepted') notifications.push({ id: `hot-accepted-${transaction.hot.id}`, title: 'Heads of Terms accepted', channel: 'in_app', status: 'ready' })
+  if (hotStage === 'signed') notifications.push({ id: `hot-signed-${transaction.hot.id}`, title: 'Heads of Terms signed', channel: 'in_app', status: 'ready' })
   if (transaction.lease?.id) notifications.push({ id: `lease-created-${transaction.lease.id}`, title: 'Lease created', channel: 'in_app', status: 'ready' })
   if (daysToExpiry !== null && daysToExpiry >= 0 && daysToExpiry <= 90) {
     notifications.push({ id: `lease-expiry-${transaction.lease.id}`, title: `Lease expires in ${daysToExpiry} days`, channel: 'in_app', status: 'ready' })
@@ -664,7 +664,7 @@ export function buildCommercialSearchIndex({
     ...tenants.map((row) => ({ id: `tenant-${row.id}`, type: 'Commercial Tenant', title: row.name, detail: row.industry || row.email || '', to: '/commercial/clients' })),
     ...landlords.map((row) => ({ id: `landlord-${row.id}`, type: 'Commercial Landlord', title: row.name, detail: row.email || row.phone || '', to: '/commercial/landlords' })),
     ...deals.map((row) => ({ id: `deal-${row.id}`, type: 'Commercial Deal', title: row.deal_name, detail: row.stage || row.status || '', to: '/commercial/deals/leasing' })),
-    ...headsOfTerms.map((row) => ({ id: `hot-${row.id}`, type: 'Heads of Terms', title: row.premises_description || `HOT ${String(row.id).slice(0, 8)}`, detail: row.status || '', to: '/commercial/heads-of-terms' })),
+    ...headsOfTerms.map((row) => ({ id: `hot-${row.id}`, type: 'Heads of Terms', title: row.premises_description || `Heads of Terms ${String(row.id).slice(0, 8)}`, detail: row.status || '', to: '/commercial/heads-of-terms' })),
     ...leases.map((row) => ({ id: `lease-${row.id}`, type: 'Commercial Lease', title: row.lease_name || `Lease ${String(row.id).slice(0, 8)}`, detail: row.status || '', to: '/commercial/leases' })),
   ]
 

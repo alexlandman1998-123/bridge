@@ -1,9 +1,25 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { createMissionControlResponse, writeNodeJsonResponse } from './server/services/hqMissionControlApi.js'
+
+function missionControlApiPlugin() {
+  return {
+    name: 'mission-control-api',
+    configureServer(server) {
+      server.middlewares.use('/api/hq/mission-control', async (request, response) => {
+        const payload = await createMissionControlResponse({
+          method: request.method,
+          headers: request.headers,
+        })
+        writeNodeJsonResponse(response, payload)
+      })
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), missionControlApiPlugin()],
   build: {
     chunkSizeWarningLimit: 1600,
     rollupOptions: {

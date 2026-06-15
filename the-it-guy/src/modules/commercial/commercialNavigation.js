@@ -1,22 +1,18 @@
 import {
-  Activity,
   BarChart3,
   BriefcaseBusiness,
   Building2,
   ClipboardList,
-  FileCheck2,
+  FileBarChart2,
   FileSignature,
-  Gauge,
-  Handshake,
   LayoutDashboard,
-  MapPin,
-  Network,
   Settings,
   Store,
   TrendingUp,
-  Users,
   UserRoundCheck,
+  Users,
   WalletCards,
+  Waypoints,
 } from 'lucide-react'
 
 export const COMMERCIAL_DASHBOARD_NAV_ITEM = {
@@ -24,74 +20,40 @@ export const COMMERCIAL_DASHBOARD_NAV_ITEM = {
   to: '/commercial/dashboard',
   exact: true,
   icon: LayoutDashboard,
+  activePaths: ['/commercial', '/commercial/dashboard'],
 }
 
-export const COMMERCIAL_NAV_GROUPS = [
+export const COMMERCIAL_NAV_SECTIONS = [
   {
-    id: 'crm',
-    label: 'CRM',
-    icon: BriefcaseBusiness,
+    id: 'lifecycle',
     items: [
-      { label: 'Companies', to: '/commercial/companies', icon: Building2 },
-      { label: 'Contacts', to: '/commercial/contacts', icon: Users },
-    ],
-  },
-  {
-    id: 'demand',
-    label: 'Demand',
-    icon: Users,
-    items: [
-      { label: 'Clients', to: '/commercial/clients', icon: Users },
-      { label: 'Tenants', to: '/commercial/tenants', icon: UserRoundCheck },
-      { label: 'Requirements', to: '/commercial/requirements', icon: ClipboardList },
-      { label: 'Pipeline', to: '/commercial/pipeline', icon: Gauge, activePaths: ['/commercial/pipeline', '/commercial/requirements/pipeline'] },
+      { label: 'Leads', to: '/commercial/leads', icon: ClipboardList, activePaths: ['/commercial/leads', '/commercial/requirements', '/commercial/pipeline', '/commercial/requirements/pipeline'] },
+      { label: 'Clients', to: '/commercial/clients', icon: BriefcaseBusiness, activePaths: ['/commercial/clients', '/commercial/companies', '/commercial/contacts', '/commercial/tenants'] },
+      { label: 'Leasing', to: '/commercial/leasing', icon: FileSignature, activePaths: ['/commercial/leasing', '/commercial/deals/leasing', '/commercial/heads-of-terms', '/commercial/hot', '/commercial/leases'] },
+      { label: 'Sales', to: '/commercial/sales', icon: TrendingUp, activePaths: ['/commercial/sales', '/commercial/deals/sales', '/commercial/transactions'] },
     ],
   },
   {
     id: 'supply',
-    label: 'Supply',
-    icon: Building2,
     items: [
-      { label: 'Landlords', to: '/commercial/landlords', icon: WalletCards },
       { label: 'Properties', to: '/commercial/properties', icon: Building2 },
       { label: 'Vacancies', to: '/commercial/vacancies', icon: Store },
       { label: 'Listings', to: '/commercial/listings', icon: ClipboardList },
+      { label: 'Landlords', to: '/commercial/landlords', icon: WalletCards },
     ],
   },
   {
-    id: 'transactions',
-    label: 'Transactions',
-    icon: Handshake,
+    id: 'team',
     items: [
-      { label: 'Deals', to: '/commercial/deals', icon: Handshake },
-      { label: 'Transactions', to: '/commercial/dashboard#transactions', icon: BriefcaseBusiness, exact: true },
-      { label: 'HOT', to: '/commercial/hot', icon: FileSignature, activePaths: ['/commercial/hot', '/commercial/heads-of-terms'] },
-      { label: 'Leases', to: '/commercial/leases', icon: FileCheck2 },
+      { label: 'Brokers', to: '/commercial/brokers', icon: Users, activePaths: ['/commercial/brokers', '/commercial/brokers/overview', '/commercial/brokers/branches', '/commercial/brokers/assignments'] },
+      { label: 'Teams', to: '/commercial/teams', icon: Waypoints, activePaths: ['/commercial/teams', '/commercial/brokers/teams'] },
+      { label: 'Performance', to: '/commercial/performance', icon: BarChart3, activePaths: ['/commercial/performance', '/commercial/brokers/performance', '/commercial/principal'] },
     ],
   },
   {
-    id: 'brokers',
-    label: 'Brokers',
-    icon: UserRoundCheck,
+    id: 'reporting',
     items: [
-      { label: 'Principal View', to: '/commercial/principal', icon: TrendingUp },
-      { label: 'Overview', to: '/commercial/brokers/overview', icon: Gauge },
-      { label: 'Brokers', to: '/commercial/brokers', icon: Users },
-      { label: 'Teams', to: '/commercial/brokers/teams', icon: Network },
-      { label: 'Branches', to: '/commercial/brokers/branches', icon: MapPin },
-      { label: 'Performance', to: '/commercial/brokers/performance', icon: BarChart3 },
-      { label: 'Assignments', to: '/commercial/brokers/assignments', icon: UserRoundCheck },
-    ],
-  },
-  {
-    id: 'reports',
-    label: 'Reports',
-    icon: BarChart3,
-    items: [
-      { label: 'Documents', to: '/commercial/docs', icon: FileCheck2, activePaths: ['/commercial/docs', '/commercial/documents'] },
-      { label: 'Market Intelligence', to: '/commercial/market-intelligence', icon: TrendingUp },
-      { label: 'Reports', to: '/commercial/reports', icon: BarChart3 },
-      { label: 'Activity', to: '/commercial/activity', icon: Activity },
+      { label: 'Reports', to: '/commercial/reports', icon: FileBarChart2, activePaths: ['/commercial/reports', '/commercial/docs', '/commercial/documents', '/commercial/activity', '/commercial/market-intelligence', '/commercial/broker-performance'] },
     ],
   },
 ]
@@ -102,7 +64,17 @@ export const COMMERCIAL_BOTTOM_NAV_ITEMS = [
 
 export const COMMERCIAL_NAV_ITEMS = [
   COMMERCIAL_DASHBOARD_NAV_ITEM,
-  ...COMMERCIAL_NAV_GROUPS.flatMap((group) => group.items),
+  ...COMMERCIAL_NAV_SECTIONS.flatMap((section) => section.items),
+  ...COMMERCIAL_BOTTOM_NAV_ITEMS,
+]
+
+export const COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS = [
+  COMMERCIAL_DASHBOARD_NAV_ITEM,
+  ...COMMERCIAL_NAV_SECTIONS[0].items,
+]
+
+export const COMMERCIAL_MOBILE_MORE_NAV_ITEMS = [
+  ...COMMERCIAL_NAV_SECTIONS.slice(1).flatMap((section) => section.items),
   ...COMMERCIAL_BOTTOM_NAV_ITEMS,
 ]
 
@@ -118,7 +90,7 @@ export function isCommercialNavItemActive(pathname, item = {}) {
     if (String(path).includes('#')) return currentFullPath === path
     const targetPath = pathWithoutHash(path)
     if (!targetPath) return false
-    if (item.exact || targetPath === '/commercial/dashboard') {
+    if (item.exact || targetPath === '/commercial/dashboard' || targetPath === '/commercial') {
       if (currentFullPath.includes('#')) return currentFullPath === targetPath
       return currentPath === targetPath
     }

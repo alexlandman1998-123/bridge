@@ -71,6 +71,19 @@ function optionLabel(options = [], id, fallback = '-') {
   return options.find((item) => String(item.value) === String(id))?.label || fallback
 }
 
+function classifyViewingScope(row = {}, lookups = {}) {
+  const requirement = (lookups.requirements || []).find((item) => item.id === row.requirement_id)
+  const deal = (lookups.deals || []).find((item) => item.id === row.deal_id)
+  const listing = (lookups.listings || []).find((item) => item.id === row.listing_id)
+  const requirementType = normalizeLower(requirement?.requirement_type)
+  const dealType = normalizeLower(deal?.deal_type)
+  const listingType = normalizeLower(listing?.listing_type)
+
+  if (requirementType === 'lease' || dealType === 'lease' || listingType === 'lease') return 'leasing'
+  if (['purchase', 'investment'].includes(requirementType) || dealType === 'sale' || ['sale', 'investment'].includes(listingType)) return 'sales'
+  return 'unknown'
+}
+
 function getViewingSortValue(row = {}) {
   const date = viewingDate(row)
   if (!date) return Number.MAX_SAFE_INTEGER
@@ -114,7 +127,12 @@ function buildViewingFields() {
   ]
 }
 
-function CommercialViewingsPage() {
+function CommercialViewingsPage({
+  title = 'Commercial Viewings',
+  description = 'Schedule, confirm, complete, cancel, and review inspections linked to commercial requirements, vacancies, properties, and listings.',
+  hideHeader = false,
+  scope = 'all',
+}) {
   const location = useLocation()
   const navigate = useNavigate()
   const [organisationId, setOrganisationId] = useState('')
@@ -163,6 +181,7 @@ function CommercialViewingsPage() {
   const visibleRows = useMemo(() => {
     const query = normalizeLower(search)
     return viewings
+      .filter((row) => scope === 'all' || classifyViewingScope(row, lookups) === scope)
       .filter((row) => !filters.status || normalizeLower(row.status) === filters.status)
       .filter((row) => !filters.broker_id || String(row.broker_id || '') === String(filters.broker_id))
       .filter((row) => !filters.property_id || String(row.property_id || '') === String(filters.property_id))
@@ -184,7 +203,7 @@ function CommercialViewingsPage() {
       })
       .slice()
       .sort((left, right) => getViewingSortValue(left) - getViewingSortValue(right))
-  }, [filters, options, search, viewings])
+  }, [filters, lookups, options, scope, search, viewings])
 
   async function handleSave(payload) {
     if (!organisationId) throw new Error('Commercial organisation context is not available.')
@@ -213,22 +232,24 @@ function CommercialViewingsPage() {
 
   return (
     <div className="grid gap-5">
-      <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)] lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">Commercial Viewings</h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Schedule, confirm, complete, cancel, and review inspections linked to commercial requirements, vacancies, properties, and listings.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => void loadData()} className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50">
-            <RefreshCw size={16} />
-            Refresh
-          </button>
-          <button type="button" onClick={() => setModalState({ open: true, mode: 'create', record: null })} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b]">
-            <Plus size={16} />
-            Schedule Viewing
-          </button>
-        </div>
-      </section>
+      {!hideHeader ? (
+        <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)] lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">{title}</h1>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => void loadData()} className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50">
+              <RefreshCw size={16} />
+              Refresh
+            </button>
+            <button type="button" onClick={() => setModalState({ open: true, mode: 'create', record: null })} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b]">
+              <Plus size={16} />
+              Schedule Viewing
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.045)] lg:grid-cols-[minmax(180px,1fr)_repeat(5,minmax(120px,180px))]">
         <label className="flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 px-3 text-sm text-slate-500">

@@ -364,7 +364,7 @@ function buildPortalProgress(transaction = {}) {
     { key: 'requirement', label: 'Requirement', status: hasRequirement ? 'completed' : 'pending', detail: hasRequirement ? 'Submitted' : 'Pending' },
     { key: 'deal', label: 'Deal', status: hasDeal ? 'completed' : 'pending', detail: hasDeal ? 'Created' : 'Pending' },
     { key: 'transaction', label: 'Transaction', status: hasTransaction ? 'in_progress' : 'pending', detail: portalStatusLabel('transaction', transaction.status || transaction.currentStage || '') },
-    { key: 'hot', label: 'HOT', status: hasHot ? 'completed' : 'pending', detail: portalStatusLabel('hot', transaction.hot?.status || '') },
+    { key: 'hot', label: 'Heads of Terms', status: hasHot ? 'completed' : 'pending', detail: portalStatusLabel('hot', transaction.hot?.status || '') },
     { key: 'lease', label: 'Lease', status: hasLease ? (normalizeLower(transaction.lease?.status) === 'active' ? 'completed' : 'in_progress') : 'pending', detail: portalStatusLabel('lease', transaction.lease?.status || '') },
   ]
 }
@@ -385,8 +385,8 @@ function buildClientSafeTimeline(transaction = {}, documents = [], viewings = []
     })
   })
   if (transaction.deal?.id) rows.push({ id: 'deal', title: 'Deal Created', detail: 'The commercial deal workspace is open.', date: transaction.deal.created_at })
-  if (transaction.hot?.id) rows.push({ id: 'hot', title: 'HOT Sent', detail: 'Heads of Terms are being progressed.', date: transaction.hot.sent_at || transaction.hot.created_at })
-  if (transaction.hot?.signed_at || normalizeLower(transaction.hot?.status) === 'signed') rows.push({ id: 'hot-signed', title: 'HOT Signed', detail: 'Heads of Terms have been signed.', date: transaction.hot.signed_at || transaction.hot.updated_at })
+  if (transaction.hot?.id) rows.push({ id: 'hot', title: 'Heads of Terms Sent', detail: 'Heads of Terms are being progressed.', date: transaction.hot.sent_at || transaction.hot.created_at })
+  if (transaction.hot?.signed_at || normalizeLower(transaction.hot?.status) === 'signed') rows.push({ id: 'hot-signed', title: 'Heads of Terms Signed', detail: 'Heads of Terms have been signed.', date: transaction.hot.signed_at || transaction.hot.updated_at })
   if (transaction.lease?.id) rows.push({ id: 'lease', title: 'Lease Generated', detail: 'Lease documentation is in progress.', date: transaction.lease.created_at })
   if (normalizeLower(transaction.lease?.status) === 'active') rows.push({ id: 'lease-active', title: 'Lease Active', detail: 'The commercial lease is active.', date: transaction.lease.lease_start_date || transaction.lease.updated_at })
   if (normalizeLower(transaction.status) === 'completed') rows.push({ id: 'completed', title: 'Transaction Completed', detail: 'The commercial transaction has been completed.', date: transaction.actualCloseDate || transaction.updatedAt })
@@ -443,8 +443,8 @@ function buildPortalSummary({ transaction = {}, access = {}, contact = null, doc
     availableSpace: availableArea,
     pipelineValue: transaction.value || 0,
     importantDates: [
-      ['HOT Sent', formatDate(transaction.hot?.sent_at)],
-      ['HOT Signed', formatDate(transaction.hot?.signed_at)],
+      ['Heads of Terms Sent', formatDate(transaction.hot?.sent_at)],
+      ['Heads of Terms Signed', formatDate(transaction.hot?.signed_at)],
       ['Occupation', formatDate(transaction.lease?.occupation_date || transaction.hot?.beneficial_occupation_date)],
       ['Lease Start', formatDate(transaction.lease?.lease_start_date)],
       ['Lease Expiry', formatDate(transaction.lease?.lease_end_date)],

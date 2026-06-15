@@ -98,7 +98,7 @@ export const COMMERCIAL_DOCUMENT_CATEGORIES = {
     { value: 'supporting_documents', label: 'Supporting Documentation' },
   ],
   commercial_transaction: [
-    { value: 'hot', label: 'HOT' },
+    { value: 'hot', label: 'Heads of Terms' },
     { value: 'lease', label: 'Lease' },
     { value: 'offer', label: 'Offer' },
     { value: 'board_resolution', label: 'Board Resolution' },
@@ -107,12 +107,12 @@ export const COMMERCIAL_DOCUMENT_CATEGORIES = {
     { value: 'supporting_documents', label: 'Supporting Documentation' },
   ],
   commercial_heads_of_terms: [
-    { value: 'draft_hot', label: 'Draft HOT' },
-    { value: 'sent_hot', label: 'Sent HOT' },
-    { value: 'revised_hot', label: 'Revised HOT' },
-    { value: 'approved_hot', label: 'Approved HOT' },
-    { value: 'final_hot', label: 'Final HOT' },
-    { value: 'signed_hot', label: 'Signed HOT' },
+    { value: 'draft_hot', label: 'Draft Heads of Terms' },
+    { value: 'sent_hot', label: 'Sent Heads of Terms' },
+    { value: 'revised_hot', label: 'Revised Heads of Terms' },
+    { value: 'approved_hot', label: 'Approved Heads of Terms' },
+    { value: 'final_hot', label: 'Final Heads of Terms' },
+    { value: 'signed_hot', label: 'Signed Heads of Terms' },
     { value: 'supporting_documents', label: 'Supporting Documentation' },
   ],
   commercial_lease: [
@@ -170,15 +170,15 @@ export const COMMERCIAL_DOCUMENT_REQUIREMENT_TEMPLATES = {
     { category: 'supporting_correspondence', label: 'Supporting Correspondence', required: false },
   ],
   commercial_transaction: [
-    { category: 'hot', label: 'HOT', required: false },
+    { category: 'hot', label: 'Heads of Terms', required: false },
     { category: 'lease', label: 'Lease', required: false },
     { category: 'offer', label: 'Offer', required: false },
     { category: 'fica', label: 'FICA', required: false },
     { category: 'supporting_documents', label: 'Supporting Documentation', required: false },
   ],
   commercial_heads_of_terms: [
-    { category: 'draft_hot', label: 'Draft HOT', required: true },
-    { category: 'signed_hot', label: 'Signed HOT', required: true },
+    { category: 'draft_hot', label: 'Draft Heads of Terms', required: true },
+    { category: 'signed_hot', label: 'Signed Heads of Terms', required: true },
   ],
   commercial_lease: [
     { category: 'draft_lease', label: 'Draft Lease', required: false },

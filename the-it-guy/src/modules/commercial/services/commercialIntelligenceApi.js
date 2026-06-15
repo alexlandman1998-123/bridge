@@ -447,7 +447,7 @@ export function buildNextBestActions({
   const today = startOfToday()
   const actions = []
   const hotFollowUps = headsOfTerms.filter((hot) => active(hot) && ['sent', 'under_review', 'approved_by_landlord', 'approved_by_tenant'].includes(normalize(hot.status)))
-  if (hotFollowUps.length) actions.push({ id: 'hots-follow-up', title: `${hotFollowUps.length} HOTs need follow-up`, reason: 'Heads of Terms are in circulation or awaiting signature.', priority: 'High', relatedRecord: hotFollowUps[0]?.premises_description || 'Heads of Terms', cta: 'Review HOTs', to: '/commercial/heads-of-terms' })
+  if (hotFollowUps.length) actions.push({ id: 'hots-follow-up', title: `${hotFollowUps.length} Heads of Terms need follow-up`, reason: 'Heads of Terms are in circulation or awaiting signature.', priority: 'High', relatedRecord: hotFollowUps[0]?.premises_description || 'Heads of Terms', cta: 'Review Heads of Terms', to: '/commercial/heads-of-terms' })
 
   const leases60 = leases.filter((lease) => {
     const days = daysBetween(today, lease.lease_end_date)
@@ -473,7 +473,7 @@ export function buildNextBestActions({
     const due = asDate(request.due_date)
     return due && due < today && !['completed', 'approved', 'archived'].includes(normalize(request.status))
   })
-  if (overdueRequests.length) actions.push({ id: 'overdue-documents', title: `${overdueRequests.length} document requests are overdue`, reason: 'Outstanding compliance items can block HOT and lease progress.', priority: 'High', relatedRecord: overdueRequests[0]?.document_name || 'Document request', cta: 'Open documents', to: '/commercial/documents' })
+  if (overdueRequests.length) actions.push({ id: 'overdue-documents', title: `${overdueRequests.length} document requests are overdue`, reason: 'Outstanding compliance items can block Heads of Terms and lease progress.', priority: 'High', relatedRecord: overdueRequests[0]?.document_name || 'Document request', cta: 'Open documents', to: '/commercial/documents' })
 
   const emptyVacancies = vacancies.filter((vacancy) => active(vacancy) && !toNumber(vacancy.available_area_m2))
   if (emptyVacancies.length) actions.push({ id: 'vacancy-gla-missing', title: `${emptyVacancies.length} vacancies need GLA captured`, reason: 'Vacancy matching needs available area data.', priority: 'Low', relatedRecord: emptyVacancies[0]?.vacancy_name || 'Vacancy', cta: 'Review vacancies', to: '/commercial/vacancies' })

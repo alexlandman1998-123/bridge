@@ -172,7 +172,7 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
         branch_id: deal?.branch_id || hot.branch_id,
         team_id: deal?.team_id || hot.team_id,
       })
-      setSuccess(lease?.id ? `Lease ${String(lease.id).slice(0, 8)} created from signed HOT.` : 'Lease created from signed HOT.')
+      setSuccess(lease?.id ? `Lease ${String(lease.id).slice(0, 8)} created from signed Heads of Terms.` : 'Lease created from signed Heads of Terms.')
       await loadHot()
       onActivityChange?.()
     } catch (leaseError) {
@@ -214,7 +214,7 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
             <h3 className="text-sm font-semibold tracking-[-0.02em] text-[#102236]">Heads of Terms</h3>
             <CommercialStatusPill value={hot?.status || 'draft'} />
           </div>
-          <p className="mt-1 text-sm text-slate-500">Structured HOT capture for tracking terms, approvals, and lease readiness.</p>
+          <p className="mt-1 text-sm text-slate-500">Structured Heads of Terms capture for tracking terms, approvals, and lease readiness.</p>
           <p className="mt-2 inline-flex rounded-full border border-amber-100 bg-white px-3 py-1 text-xs font-semibold text-amber-700">
             Next: {getCommercialNextAction('headsOfTerms', hot || { status: 'draft' })}
           </p>
@@ -234,7 +234,7 @@ function CommercialHeadsOfTermsPanel({ organisationId = '', deal, onActivityChan
           >
             {COMMERCIAL_HOT_STATUSES.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
           </select>
-          <p className="text-right text-xs text-slate-500">{loading ? 'Loading...' : hot ? statusLabel : 'No HOT yet'}</p>
+          <p className="text-right text-xs text-slate-500">{loading ? 'Loading...' : hot ? statusLabel : 'No Heads of Terms yet'}</p>
         </div>
       </div>
 

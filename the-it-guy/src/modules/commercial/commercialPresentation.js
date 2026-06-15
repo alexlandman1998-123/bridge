@@ -4,6 +4,7 @@ export const COMMERCIAL_STATUS_TONES = {
   active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   accepted: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   available: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  contacted: 'border-blue-200 bg-blue-50 text-blue-700',
   converted: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   closed: 'border-violet-200 bg-violet-50 text-violet-700',
   completed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -31,6 +32,7 @@ export const COMMERCIAL_STATUS_TONES = {
   sold: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   draft: 'border-slate-200 bg-slate-50 text-slate-600',
   hot_draft: 'border-slate-200 bg-slate-50 text-slate-600',
+  new: 'border-slate-200 bg-slate-50 text-slate-600',
   archived: 'border-slate-200 bg-slate-100 text-slate-500',
   inactive: 'border-slate-200 bg-slate-100 text-slate-500',
   lease_pending: 'border-amber-200 bg-amber-50 text-amber-700',
@@ -57,6 +59,7 @@ export const COMMERCIAL_STATUS_TONES = {
   sale_pending: 'border-amber-200 bg-amber-50 text-amber-700',
   superseded: 'border-slate-200 bg-slate-100 text-slate-500',
   terminated: 'border-rose-200 bg-rose-50 text-rose-700',
+  unqualified: 'border-rose-200 bg-rose-50 text-rose-700',
   withdrawn: 'border-rose-200 bg-rose-50 text-rose-700',
 }
 
@@ -146,7 +149,7 @@ export function getCommercialNextAction(kind, record = {}) {
     if (['leased', 'occupied'].includes(status)) return 'Review occupancy'
     if (status === 'withdrawn') return 'Confirm withdrawal'
     if (status === 'suspended') return 'Review suspension'
-    if (status === 'hot_in_progress') return 'Track HOT'
+    if (status === 'hot_in_progress') return 'Track Heads of Terms'
     if (status === 'reserved' || status === 'under_negotiation' || status === 'under_offer') return 'Progress negotiation'
     if (status === 'marketing') return 'Track market response'
     return 'Match to requirement'
@@ -174,7 +177,7 @@ export function getCommercialNextAction(kind, record = {}) {
     if (['new', 'new_requirement', 'qualified', 'matching', 'shortlisting'].includes(stage)) return 'Match vacancy'
     if (stage === 'viewing' || stage === 'viewing_scheduled') return 'Complete viewing'
     if (['proposal', 'negotiating', 'negotiation'].includes(stage)) return 'Create deal'
-    if (['hot', 'lease_stage'].includes(stage)) return 'Progress HOT'
+    if (['hot', 'lease_stage'].includes(stage)) return 'Progress Heads of Terms'
     if (['won', 'converted', 'closed_won'].includes(stage)) return 'Follow lease progress'
     if (['lost', 'closed_lost'].includes(stage)) return 'Review loss reason'
     return 'Follow up'
@@ -185,10 +188,10 @@ export function getCommercialNextAction(kind, record = {}) {
     if (!isPresent(record.property_id)) return 'Link property'
     if (stage === 'new' || stage === 'requirement') return 'Qualify deal'
     if (stage === 'qualified' || stage === 'shortlist') return 'Confirm vacancy'
-    if (stage === 'negotiation' || stage === 'proposal') return 'Prepare HOT'
-    if (stage === 'hot_draft' || stage === 'heads_of_terms') return 'Send HOT'
-    if (stage === 'hot_sent') return 'Await HOT response'
-    if (stage === 'hot_accepted') return 'Get HOT signed'
+    if (stage === 'negotiation' || stage === 'proposal') return 'Prepare Heads of Terms'
+    if (stage === 'hot_draft' || stage === 'heads_of_terms') return 'Send Heads of Terms'
+    if (stage === 'hot_sent') return 'Await Heads of Terms response'
+    if (stage === 'hot_accepted') return 'Get Heads of Terms signed'
     if (stage === 'lease_pending' || stage === 'lease_draft') return 'Create lease'
     if (stage === 'converted' || stage === 'signed' || stage === 'closed_won') return 'Track lease'
     if (stage === 'lost' || stage === 'closed_lost') return 'Capture loss reason'
@@ -198,8 +201,8 @@ export function getCommercialNextAction(kind, record = {}) {
   if (kind === 'transactions') {
     if (!isPresent(record.deal_id)) return 'Link deal'
     if (status === 'draft') return 'Start negotiation'
-    if (status === 'negotiating') return 'Prepare HOT'
-    if (status === 'hot_in_progress') return 'Progress HOT'
+    if (status === 'negotiating') return 'Prepare Heads of Terms'
+    if (status === 'hot_in_progress') return 'Progress Heads of Terms'
     if (status === 'hot_signed') return normalize(record.transaction_type) === 'sale' ? 'Prepare completion' : 'Create lease'
     if (status === 'lease_pending') return 'Complete lease'
     if (status === 'sale_pending') return 'Complete sale'
@@ -210,15 +213,15 @@ export function getCommercialNextAction(kind, record = {}) {
   }
 
   if (kind === 'headsOfTerms' || kind === 'heads_of_terms') {
-    if (!record.id) return 'Draft HOT'
-    if (status === 'draft') return 'Send HOT'
+    if (!record.id) return 'Draft Heads of Terms'
+    if (status === 'draft') return 'Send Heads of Terms'
     if (status === 'sent') return 'Await review'
     if (status === 'under_review') return 'Resolve comments'
     if (status === 'accepted') return 'Await signature'
     if (status === 'signed' || status === 'ready_for_lease') return 'Create lease'
     if (status === 'converted') return 'Track lease'
     if (status === 'rejected') return 'Revise terms'
-    return 'Update HOT status'
+    return 'Update Heads of Terms status'
   }
 
   if (kind === 'leases') {

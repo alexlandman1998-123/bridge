@@ -5,7 +5,9 @@ import CommercialFilterBar from './CommercialFilterBar'
 import CommercialFormModal from './CommercialFormModal'
 import CommercialRecordDrawer from './CommercialRecordDrawer'
 import CommercialTable from './CommercialTable'
+import CommercialWorkspaceTabs from './CommercialWorkspaceTabs'
 import {
+  createDealFromRequirement,
   createCommercialTransaction,
   getCommercialLookupData,
   resolveCommercialOrganisationContext,
@@ -82,7 +84,22 @@ function compareValues(left, right, direction = 'asc') {
   return String(left ?? '').localeCompare(String(right ?? ''), undefined, { numeric: true, sensitivity: 'base' }) * multiplier
 }
 
-function CommercialCrudPage({ config }) {
+function CommercialCrudPage({
+  config,
+  pageTitle = '',
+  pageDescription = '',
+  searchPlaceholder = '',
+  createLabel = '',
+  secondaryActions = [],
+  emptyTitle = '',
+  emptyDescription = '',
+  tabs = [],
+  activeTab = '',
+  onTabChange = null,
+  extraFilter = null,
+  drawerPrimaryActionLabel = '',
+  onDrawerPrimaryAction = null,
+}) {
   const location = useLocation()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
@@ -99,6 +116,13 @@ function CommercialCrudPage({ config }) {
   const [modalState, setModalState] = useState({ open: false, mode: 'create', record: null })
   const [drawerRecord, setDrawerRecord] = useState(null)
   const CreateModal = modalState.mode === 'create' ? config.createModal : null
+  const resolvedPageTitle = pageTitle || config.title
+  const resolvedPageDescription = pageDescription || config.description
+  const resolvedCreateLabel = createLabel || config.createLabel || 'New record'
+  const resolvedSecondaryActions = secondaryActions.length ? secondaryActions : (config.secondaryActions || [])
+  const resolvedEmptyTitle = emptyTitle || config.emptyTitle
+  const resolvedEmptyDescription = emptyDescription || config.emptyDescription
+  const resolvedSearchPlaceholder = searchPlaceholder || `Search ${resolvedPageTitle.toLowerCase()}...`
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -181,9 +205,10 @@ function CommercialCrudPage({ config }) {
     const query = normalizeSearch(searchTerm)
     return records
       .filter((record) => recordMatchesFilters(record, filters, resolvedFilterConfigs))
+      .filter((record) => (typeof extraFilter === 'function' ? extraFilter(record, { activeTab, lookups, rawLookups: lookups, records }) : true))
       .filter((record) => !query || getSearchableValue(record, searchableFields, config.searchLookupFields || [], lookupOptions).includes(query))
       .sort((left, right) => compareValues(left?.[sortState.key], right?.[sortState.key], sortState.direction))
-  }, [config.searchLookupFields, filters, lookupOptions, records, resolvedFilterConfigs, searchTerm, searchableFields, sortState.direction, sortState.key])
+  }, [activeTab, config.searchLookupFields, extraFilter, filters, lookupOptions, lookups, records, resolvedFilterConfigs, searchTerm, searchableFields, sortState.direction, sortState.key])
   const totalPages = Math.max(1, Math.ceil(visibleRecords.length / pageSize))
   const safePage = Math.min(page, totalPages)
   const paginatedRecords = useMemo(() => {
@@ -238,6 +263,38 @@ function CommercialCrudPage({ config }) {
 
   async function handleCreateTransaction(record) {
     if (!record?.id || !organisationId) return
+    if (config.kind === 'requirements') {
+      const normalizedType = String(record.requirement_type || '').trim().toLowerCase()
+      if (!['lease', 'purchase', 'investment'].includes(normalizedType)) {
+        setActionError('Classify this lead as Sales or Leasing before converting it to an opportunity.')
+        setModalState({ open: true, mode: 'edit', record })
+        return
+      }
+
+      const existingDeal = (lookups.deals || []).find((row) => String(row.requirement_id || '') === String(record.id))
+      if (existingDeal?.id) {
+        navigate(`/commercial/${normalizedType === 'lease' ? 'leasing' : 'sales'}?tab=opportunities&converted=${existingDeal.id}`)
+        return
+      }
+
+      try {
+        const dealType = normalizedType === 'lease' ? 'lease' : 'sale'
+        const createdDeal = await createDealFromRequirement(record, {
+          organisation_id: organisationId,
+          deal_name: `${record.requirement_name || 'Lead'} Opportunity`,
+          deal_type: dealType,
+          stage: 'new',
+          status: 'active',
+        })
+        setDrawerRecord(null)
+        await loadData()
+        navigate(`/commercial/${dealType === 'lease' ? 'leasing' : 'sales'}?tab=opportunities&converted=${createdDeal.id}`)
+      } catch (createError) {
+        setActionError(friendlyError(createError, 'The lead could not be converted into an opportunity.'))
+      }
+      return
+    }
+
     const payload = config.kind === 'deals'
       ? {
           organisation_id: organisationId,
@@ -272,8 +329,8 @@ function CommercialCrudPage({ config }) {
     <div className="grid gap-5">
       <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)] sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">{config.title}</h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{config.description}</p>
+          <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">{resolvedPageTitle}</h1>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{resolvedPageDescription}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -282,9 +339,9 @@ function CommercialCrudPage({ config }) {
             className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b]"
           >
             <Plus size={16} />
-            {config.createLabel || 'New record'}
+            {resolvedCreateLabel}
           </button>
-          {(config.secondaryActions || []).map((action) => (
+          {resolvedSecondaryActions.map((action) => (
             action.to ? (
               <Link
                 key={action.to}
@@ -307,13 +364,19 @@ function CommercialCrudPage({ config }) {
         </div>
       </section>
 
+      {tabs.length ? (
+        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+          <CommercialWorkspaceTabs tabs={tabs} activeTab={activeTab} onChange={onTabChange} />
+        </section>
+      ) : null}
+
       <section className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.045)] lg:flex-row lg:items-center lg:justify-between">
         <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-500">
           <Search size={16} className="shrink-0" />
           <input
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder={`Search ${config.title.toLowerCase()}...`}
+            placeholder={resolvedSearchPlaceholder}
             className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#102236] outline-none"
           />
         </label>
@@ -360,13 +423,13 @@ function CommercialCrudPage({ config }) {
         rows={paginatedRecords}
         loading={loading}
         error={error}
-        emptyTitle={config.emptyTitle}
-        emptyDescription={config.emptyDescription}
+        emptyTitle={resolvedEmptyTitle}
+        emptyDescription={resolvedEmptyDescription}
         sortKey={sortState.key}
         sortDirection={sortState.direction}
         pagination={pagination}
         onSort={handleSort}
-        createLabel={config.createLabel || 'New record'}
+        createLabel={resolvedCreateLabel}
         onCreate={() => setModalState({ open: true, mode: 'create', record: null })}
         onView={setDrawerRecord}
         onEdit={(record) => setModalState({ open: true, mode: 'edit', record })}
@@ -408,6 +471,8 @@ function CommercialCrudPage({ config }) {
         documentsEntityType={config.documentsEntityType}
         showHeadsOfTerms={config.showHeadsOfTerms}
         organisationId={organisationId}
+        primaryActionLabel={drawerPrimaryActionLabel}
+        onPrimaryAction={onDrawerPrimaryAction || (drawerPrimaryActionLabel ? (record) => void handleCreateTransaction(record) : null)}
         onClose={() => setDrawerRecord(null)}
         onEdit={() => {
           setModalState({ open: true, mode: 'edit', record: drawerRecord })

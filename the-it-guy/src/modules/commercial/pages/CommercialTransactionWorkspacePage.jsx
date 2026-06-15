@@ -270,7 +270,7 @@ function CommercialTransactionWorkspacePage() {
             <ActivityList
               rows={transaction.activity || []}
               emptyTitle="No transaction activity yet"
-              emptyDescription="Stage changes, HOT actions, lease events, and document updates will appear here."
+              emptyDescription="Stage changes, Heads of Terms actions, lease events, and document updates will appear here."
             />
           </div>
         </section>
@@ -283,7 +283,7 @@ function CommercialTransactionWorkspacePage() {
             <ActivityList
               rows={transaction.timeline || []}
               emptyTitle="No timeline yet"
-              emptyDescription="Transaction created, viewing completed, HOT, lease, and completion milestones will appear here as the transaction progresses."
+              emptyDescription="Transaction created, viewing completed, Heads of Terms, lease, and completion milestones will appear here as the transaction progresses."
             />
           </div>
         </section>
@@ -293,7 +293,7 @@ function CommercialTransactionWorkspacePage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold tracking-[-0.035em] text-[#102236]">Commercial Search</h2>
-            <p className="mt-1 text-sm text-slate-500">Search transactions, companies, properties, vacancies, brokers, deals, HOTs, and leases in this workspace.</p>
+            <p className="mt-1 text-sm text-slate-500">Search transactions, companies, properties, vacancies, brokers, deals, Heads of Terms, and leases in this workspace.</p>
           </div>
           <label className="flex min-h-11 min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-500 shadow-sm sm:w-80">
             <Search size={16} className="shrink-0" />

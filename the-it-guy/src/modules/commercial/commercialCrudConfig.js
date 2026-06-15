@@ -26,6 +26,7 @@ import {
   createCommercialProperty,
   createCommercialRequirement,
   createCommercialTenant,
+  createCommercialTransaction,
   createCommercialVacancy,
   getCommercialCompanies,
   getCommercialContacts,
@@ -46,7 +47,10 @@ import {
   updateCommercialProperty,
   updateCommercialRequirement,
   updateCommercialTenant,
+  updateCommercialTransaction,
   updateCommercialVacancy,
+  archiveCommercialTransaction,
+  getCommercialTransactions,
 } from './services/commercialApi'
 
 export const ACTIVE_STATUSES = [
@@ -91,6 +95,10 @@ export const REQUIREMENT_STAGES = [
 
 export const DEAL_STAGES = [
   ...lifecycleOptions('deals'),
+]
+
+export const TRANSACTION_STAGES = [
+  ...lifecycleOptions('transactions'),
 ]
 
 export const PROPERTY_TYPES = [
@@ -712,6 +720,68 @@ export const commercialCrudConfigs = {
       { name: 'expected_close_date', label: 'Expected close date', type: 'date' },
       { name: 'probability_percentage', label: 'Probability percentage', type: 'percentage' },
       { name: 'status', label: 'Status', type: 'select', options: ACTIVE_STATUSES, defaultValue: 'active' },
+      { name: 'notes', label: 'Notes', type: 'textarea', span: 'full' },
+    ],
+  },
+  transactions: {
+    kind: 'transactions',
+    title: 'Transactions',
+    description: 'Track commercial lease and sale transactions from negotiation through completion.',
+    createLabel: 'New transaction',
+    documentsEntityType: 'commercial_transaction',
+    emptyTitle: 'No transactions yet',
+    emptyDescription: 'Open a commercial transaction once an opportunity moves into active deal execution.',
+    fetchRecords: getCommercialTransactions,
+    createRecord: createCommercialTransaction,
+    updateRecord: updateCommercialTransaction,
+    archiveRecord: archiveCommercialTransaction,
+    defaultSortKey: 'updated_at',
+    defaultSortDirection: 'desc',
+    sortOptions: standardSortOptions('target_value', 'Target value'),
+    filters: [
+      { key: 'branch_id', label: 'Branch', optionsFrom: 'branches' },
+      { key: 'team_id', label: 'Team', optionsFrom: 'teams' },
+      { key: 'broker_id', label: 'Broker Owner', optionsFrom: 'brokers' },
+      { key: 'status', label: 'Status', options: TRANSACTION_STAGES },
+      { key: 'transaction_type', label: 'Transaction type', options: [{ value: 'lease', label: 'Leasing' }, { value: 'sale', label: 'Sales' }] },
+    ],
+    searchLookupFields: [
+      { name: 'company_id', optionsFrom: 'companies' },
+      { name: 'contact_id', optionsFrom: 'contacts' },
+      { name: 'property_id', optionsFrom: 'properties' },
+      { name: 'vacancy_id', optionsFrom: 'vacancies' },
+      { name: 'deal_id', optionsFrom: 'deals' },
+    ],
+    columns: [
+      { key: 'transaction_name', label: 'Transaction', render: (row) => workspaceLink(`/commercial/transactions/${row.id}`, row.transaction_name || 'Commercial transaction') },
+      { key: 'transaction_type', label: 'Type', render: (row) => titleize(row.transaction_type) },
+      { key: 'company_id', label: 'Client / Company', render: (row, lookups) => getLookupLabel(lookups, 'companies', row.company_id, '-') },
+      { key: 'property_id', label: 'Property', render: (row, lookups) => getLookupLabel(lookups, 'properties', row.property_id, '-') },
+      { key: 'deal_id', label: 'Opportunity', render: (row, lookups) => getLookupLabel(lookups, 'deals', row.deal_id, '-') },
+      { key: 'status', label: 'Status', render: (row) => createElement(CommercialStatusPill, { value: row.status }) },
+      { key: 'target_value', label: 'Value', render: (row) => formatCurrency(row.target_value) },
+      { key: 'expected_close_date', label: 'Target Close', render: (row) => formatDate(row.expected_close_date) },
+      { key: 'actual_close_date', label: 'Actual Close', render: (row) => formatDate(row.actual_close_date) },
+      { key: 'broker_id', label: 'Broker Owner', render: (row, lookups) => getLookupLabel(lookups, 'brokers', row.broker_id, 'Unassigned') },
+      updatedColumn(),
+    ],
+    fields: [
+      { name: 'transaction_name', label: 'Transaction name', required: true },
+      { name: 'transaction_type', label: 'Transaction type', type: 'select', required: true, options: [{ value: 'lease', label: 'Leasing' }, { value: 'sale', label: 'Sales' }] },
+      { name: 'deal_id', label: 'Linked opportunity', type: 'select', optionsFrom: 'deals' },
+      { name: 'requirement_id', label: 'Linked lead', type: 'select', optionsFrom: 'requirements' },
+      { name: 'company_id', label: 'Company', type: 'select', optionsFrom: 'companies' },
+      { name: 'contact_id', label: 'Contact', type: 'select', optionsFrom: 'contacts' },
+      { name: 'property_id', label: 'Property', type: 'select', optionsFrom: 'properties' },
+      { name: 'vacancy_id', label: 'Vacancy', type: 'select', optionsFrom: 'vacancies' },
+      { name: 'listing_id', label: 'Listing', type: 'select', optionsFrom: 'listings' },
+      { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
+      { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
+      { name: 'broker_id', label: 'Assigned broker', type: 'select', optionsFrom: 'brokers', required: true },
+      { name: 'status', label: 'Status', type: 'select', options: TRANSACTION_STAGES, defaultValue: 'draft' },
+      { name: 'target_value', label: 'Target value', type: 'number' },
+      { name: 'expected_close_date', label: 'Expected close date', type: 'date' },
+      { name: 'actual_close_date', label: 'Actual close date', type: 'date' },
       { name: 'notes', label: 'Notes', type: 'textarea', span: 'full' },
     ],
   },

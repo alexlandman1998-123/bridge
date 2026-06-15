@@ -37,7 +37,7 @@ function CommercialActivityPage() {
         )) : (
           <CommercialEmptyState
             title="No commercial activity yet"
-            description="Stage changes, notes, documents, HOT updates, and commercial workflow events will appear here."
+            description="Stage changes, notes, documents, Heads of Terms updates, and commercial workflow events will appear here."
           />
         )}
       </div>

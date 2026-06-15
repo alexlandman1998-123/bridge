@@ -1,20 +1,37 @@
-import { commercialCrudConfigs } from '../commercialCrudConfig'
+import { useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import CommercialCrudPage from '../components/CommercialCrudPage'
+import { commercialCrudConfigs } from '../commercialCrudConfig'
 
-const CLIENTS_CONFIG = {
-  ...commercialCrudConfigs.tenants,
-  title: 'Clients',
-  description: 'Manage commercial tenants, buyers, investors, owner occupiers, contacts, requirements, and lease history.',
-  createLabel: 'New client',
-  emptyTitle: 'No clients yet',
-  emptyDescription: 'Create client records for tenants, buyers, investors, and owner occupiers before linking requirements or deals.',
-  columns: commercialCrudConfigs.tenants.columns.map((column) =>
-    column.key === 'name' ? { ...column, label: 'Client' } : column,
-  ),
-}
+const CLIENT_TABS = [
+  { id: 'companies', label: 'Companies' },
+  { id: 'contacts', label: 'Contacts' },
+]
 
 function CommercialClientsPage() {
-  return <CommercialCrudPage config={CLIENTS_CONFIG} />
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = CLIENT_TABS.some((tab) => tab.id === searchParams.get('tab')) ? searchParams.get('tab') : 'companies'
+
+  const config = useMemo(
+    () => (activeTab === 'contacts' ? commercialCrudConfigs.contacts : commercialCrudConfigs.companies),
+    [activeTab],
+  )
+
+  return (
+    <CommercialCrudPage
+      config={config}
+      pageTitle="Clients"
+      pageDescription="Manage commercial companies and contacts in one place."
+      tabs={CLIENT_TABS}
+      activeTab={activeTab}
+      onTabChange={(tabId) => {
+        const next = new URLSearchParams(searchParams)
+        next.set('tab', tabId)
+        setSearchParams(next, { replace: true })
+      }}
+      searchPlaceholder={`Search ${activeTab}...`}
+    />
+  )
 }
 
 export default CommercialClientsPage
