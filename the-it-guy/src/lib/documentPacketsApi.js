@@ -1,4 +1,9 @@
 import { isOrganisationAdminMembershipRole, normalizeOrganisationMembershipRole } from './organisationAccess'
+import {
+  filterMandateSigningRows,
+  mandateRequiresSpouseSignature,
+  resolveMandateSpouseRequirementFromFields,
+} from './mandateSignatureRules'
 import { DOCUMENTS_BUCKET_CANDIDATES, supabase } from './supabaseClient'
 import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
 
@@ -72,98 +77,6 @@ function requireClient() {
 
 function normalizeText(value) {
   return String(value || '').trim()
-}
-
-function valueIndicatesMarried(value = '') {
-  const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
-  if (!normalized) return false
-  if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)($|_)/.test(normalized)) return false
-  return (
-    normalized.includes('married') ||
-    normalized.includes('community') ||
-    normalized.includes('cop') ||
-    normalized.includes('anc') ||
-    normalized.includes('antenuptial')
-  )
-}
-
-function hasMeaningfulSpouseValue(value = '') {
-  const text = normalizeText(value)
-  const lowered = text.toLowerCase()
-  if (lowered.startsWith('[missing:') || lowered.startsWith('missing:')) return false
-  const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, '_')
-  if (!normalized) return false
-  return !['na', 'n_a', 'n/a', 'none', 'unknown', 'tbc', 'missing', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
-}
-
-function mandateRequiresSpouseSignatureFromPacket(packet = {}) {
-  const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
-    ? packet.source_context_json
-    : {}
-  const generatedSnapshot = sourceContext?.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
-    ? sourceContext.generatedDataSnapshot
-    : {}
-  const placeholders = generatedSnapshot?.placeholders && typeof generatedSnapshot.placeholders === 'object'
-    ? generatedSnapshot.placeholders
-    : {}
-  const nestedSource = generatedSnapshot?.sourceContext && typeof generatedSnapshot.sourceContext === 'object'
-    ? generatedSnapshot.sourceContext
-    : {}
-  const sellerOnboarding = sourceContext?.sellerOnboarding && typeof sourceContext.sellerOnboarding === 'object'
-    ? sourceContext.sellerOnboarding
-    : {}
-  const onboardingFormData = {
-    ...(sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object' ? sellerOnboarding.formData : {}),
-    ...(sourceContext?.onboardingFormData && typeof sourceContext.onboardingFormData === 'object' ? sourceContext.onboardingFormData : {}),
-  }
-
-  const spouseSignal = [
-    placeholders.seller_spouse_name,
-    placeholders.seller_spouse_email,
-    placeholders.seller_spouse_id_number,
-    sourceContext.spouseName,
-    sourceContext.spouseEmail,
-    nestedSource.spouseName,
-    nestedSource.spouseEmail,
-    onboardingFormData.spouseName,
-    onboardingFormData.spouseEmail,
-    onboardingFormData.spouseIdNumber,
-  ].some(hasMeaningfulSpouseValue)
-  if (spouseSignal) return true
-
-  return [
-    placeholders.seller_marital_status,
-    placeholders.seller_marital_regime,
-    sourceContext.sellerMaritalStatus,
-    sourceContext.seller_marital_status,
-    sourceContext.sellerMaritalRegime,
-    sourceContext.seller_marital_regime,
-    sourceContext.ownershipType,
-    sourceContext.ownership_structure,
-    nestedSource.ownershipType,
-    nestedSource.ownership_structure,
-    onboardingFormData.ownershipType,
-    onboardingFormData.ownership_structure,
-    onboardingFormData.maritalStatus,
-    onboardingFormData.marital_status,
-    onboardingFormData.marriageRegime,
-    onboardingFormData.maritalRegime,
-  ].some(valueIndicatesMarried)
-}
-
-function filterMandateSigningRows(packet = {}, rows = [], options = {}) {
-  const list = Array.isArray(rows) ? rows : []
-  if (normalizeText(packet?.packet_type).toLowerCase() !== 'mandate') return list
-
-  const requiresSpouse = options.requiresSpouse === undefined
-    ? mandateRequiresSpouseSignatureFromPacket(packet)
-    : Boolean(options.requiresSpouse)
-  return list.filter((row) => {
-    const role = normalizeText(row?.signer_role || row?.signerRole).toLowerCase()
-    if (role === 'agent' || role === 'seller') return true
-    if (role === 'purchaser_2') return requiresSpouse
-    return false
-  })
 }
 
 function normalizeTemplateKey(value = '', fallback = 'template') {
@@ -2279,10 +2192,14 @@ export async function getDocumentPacketSigningSummary({ packetId, packetVersionI
     ? rawFields.filter((field) => normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2')
     : []
   const requiresSpouse = spouseFields.length
-    ? spouseFields.some((field) => Boolean(field?.required))
-    : mandateRequiresSpouseSignatureFromPacket(packet)
-  const fields = filterMandateSigningRows(packet, rawFields, { requiresSpouse })
-  const signers = filterMandateSigningRows(packet, rawSigners, { requiresSpouse })
+    ? resolveMandateSpouseRequirementFromFields(spouseFields)
+    : mandateRequiresSpouseSignature({ packet })
+  const fields = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
+    ? filterMandateSigningRows(rawFields, { requiresSpouse })
+    : rawFields
+  const signers = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
+    ? filterMandateSigningRows(rawSigners, { requiresSpouse })
+    : rawSigners
 
   const groupedBySigner = fields.reduce((accumulator, field) => {
     const role = normalizeText(field?.signer_role || 'other') || 'other'
@@ -2392,8 +2309,8 @@ export async function generateDocumentPacketSigningLinks({
   const spouseFields = signingFields.filter((field) => normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2')
   const mandateSpouseRequired = isMandatePacket && (
     spouseFields.length
-      ? spouseFields.some((field) => Boolean(field?.required))
-      : mandateRequiresSpouseSignatureFromPacket(packet)
+      ? resolveMandateSpouseRequirementFromFields(spouseFields)
+      : mandateRequiresSpouseSignature({ packet })
   )
   const relevantSigners = isMandatePacket
     ? signers.filter((signer) => {

@@ -37,6 +37,10 @@ import {
   MAX_SIGNED_MANDATE_UPLOAD_BYTES,
   validateMandateGenerationData,
 } from '../../core/documents/mandateValidation'
+import {
+  mandateRequiresSpouseSignature,
+  resolveMandateSpouseRequirementFromFields,
+} from '../../lib/mandateSignatureRules'
 import { templateIsUsableForGeneration } from '../../core/documents/structuredTemplateRenderer'
 
 function normalizeText(value) {
@@ -432,85 +436,6 @@ function resolveSignerBlueprint(packetType = 'mandate') {
   return SIGNER_ROLE_BLUEPRINT[key] || SIGNER_ROLE_BLUEPRINT.mandate
 }
 
-function valueIndicatesMarried(value = '') {
-  const normalized = normalizeKey(value)
-  if (!normalized) return false
-  if (/(^|_)(single|unmarried|divorced|widowed|not_married|never_married)($|_)/.test(normalized)) return false
-  return (
-    normalized.includes('married') ||
-    normalized.includes('community') ||
-    normalized.includes('cop') ||
-    normalized.includes('anc') ||
-    normalized.includes('antenuptial')
-  )
-}
-
-function hasMeaningfulSpouseValue(value = '') {
-  const text = normalizeText(value)
-  const lowered = text.toLowerCase()
-  if (lowered.startsWith('[missing:') || lowered.startsWith('missing:')) return false
-  const normalized = normalizeKey(value)
-  if (!normalized) return false
-  return !['na', 'n_a', 'n/a', 'none', 'unknown', 'tbc', 'missing', 'not_applicable', 'not_provided', 'not provided', 'no_spouse'].includes(normalized)
-}
-
-function mandateRequiresSpouseSignature({ sourceContext = {}, latestVersion = null } = {}) {
-  const generatedSnapshot = sourceContext?.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
-    ? sourceContext.generatedDataSnapshot
-    : {}
-  const placeholders = {
-    ...(generatedSnapshot?.placeholders && typeof generatedSnapshot.placeholders === 'object' ? generatedSnapshot.placeholders : {}),
-    ...(latestVersion?.placeholders_resolved_json && typeof latestVersion.placeholders_resolved_json === 'object' ? latestVersion.placeholders_resolved_json : {}),
-  }
-  const nestedSource = generatedSnapshot?.sourceContext && typeof generatedSnapshot.sourceContext === 'object'
-    ? generatedSnapshot.sourceContext
-    : {}
-  const sellerOnboarding = sourceContext?.sellerOnboarding && typeof sourceContext.sellerOnboarding === 'object'
-    ? sourceContext.sellerOnboarding
-    : {}
-  const onboardingFormData = {
-    ...(sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object' ? sellerOnboarding.formData : {}),
-    ...(sourceContext?.onboardingFormData && typeof sourceContext.onboardingFormData === 'object' ? sourceContext.onboardingFormData : {}),
-  }
-
-  const spouseSignal = [
-    placeholders.seller_spouse_name,
-    placeholders.seller_spouse_email,
-    placeholders.seller_spouse_id_number,
-    sourceContext.spouseName,
-    sourceContext.spouseEmail,
-    sourceContext.spouseIdNumber,
-    nestedSource.spouseName,
-    nestedSource.spouseEmail,
-    onboardingFormData.spouseName,
-    onboardingFormData.spouseEmail,
-    onboardingFormData.spouseIdNumber,
-  ].some(hasMeaningfulSpouseValue)
-
-  if (spouseSignal) return true
-
-  return [
-    placeholders.seller_marital_status,
-    placeholders.seller_marital_regime,
-    sourceContext.sellerMaritalStatus,
-    sourceContext.seller_marital_status,
-    sourceContext.sellerMaritalRegime,
-    sourceContext.seller_marital_regime,
-    sourceContext.ownershipType,
-    sourceContext.ownership_structure,
-    nestedSource.sellerMaritalStatus,
-    nestedSource.seller_marital_status,
-    nestedSource.ownershipType,
-    nestedSource.ownership_structure,
-    onboardingFormData.ownershipType,
-    onboardingFormData.ownership_structure,
-    onboardingFormData.maritalStatus,
-    onboardingFormData.marital_status,
-    onboardingFormData.marriageRegime,
-    onboardingFormData.maritalRegime,
-  ].some(valueIndicatesMarried)
-}
-
 function buildSignerDefaultsFromContext({ sourceContext = {}, latestVersion = null, mandateDataSnapshot = null } = {}) {
   const generatedSnapshot = sourceContext?.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
     ? sourceContext.generatedDataSnapshot
@@ -589,10 +514,7 @@ function buildSignerDefaultsFromContext({ sourceContext = {}, latestVersion = nu
 }
 
 function resolveMandateSpouseRequirementFromSigningSummary(signingSummary = null) {
-  const fields = Array.isArray(signingSummary?.fields) ? signingSummary.fields : []
-  const spouseFields = fields.filter((field) => normalizeKey(field?.signer_role || field?.signerRole) === 'purchaser_2')
-  if (!spouseFields.length) return null
-  return spouseFields.some((field) => Boolean(field?.required))
+  return resolveMandateSpouseRequirementFromFields(signingSummary?.fields || [])
 }
 
 function resolveSignerStatusLabel(status = '', statusState = '') {
@@ -1982,6 +1904,8 @@ function SigningMethodPanel({
   canChange = false,
   lockedReason = '',
   onSelect = null,
+  onOpenSignaturePrep = null,
+  signaturePrepSummary = null,
   busy = false,
   className = '',
 }) {
@@ -2003,7 +1927,7 @@ function SigningMethodPanel({
   ]
 
   return (
-    <section className={`rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] ${className}`}>
+    <section className={`flex h-full flex-col rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] ${className}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h4 className="text-[1rem] font-semibold text-[#102033]">Signing Method</h4>
@@ -2014,7 +1938,7 @@ function SigningMethodPanel({
         </span>
       </div>
 
-      <div className="mt-4 grid gap-3">
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {options.map(({ key, title, description, Icon, next }) => {
           const selected = normalizeSigningMethod(method) === key
           const OptionIcon = Icon
@@ -2025,19 +1949,19 @@ function SigningMethodPanel({
               type="button"
               onClick={() => onSelect?.(key)}
               disabled={busy || (!canChange && !selected)}
-              className={`rounded-[20px] border p-4 text-left transition ${
+              className={`flex h-full min-h-[150px] flex-col rounded-[20px] border p-4 text-left transition ${
                 selected
                   ? 'border-[#0a66ff] bg-[#f4f8ff] shadow-[0_18px_44px_rgba(10,102,255,0.08)]'
                   : 'border-[#e7eef7] bg-[#fbfdff] hover:border-[#c7d8eb] hover:bg-white'
               } ${busy || (!canChange && !selected) ? 'cursor-not-allowed opacity-70' : ''}`}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex min-h-0 flex-1 items-start gap-3">
                 <span className={`mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border ${
                   selected ? 'border-[#cfe1ff] bg-white text-[#0a66ff]' : 'border-[#dce6f2] bg-white text-[#6d8299]'
                 }`}>
                   <OptionIcon size={18} />
                 </span>
-                <span className="min-w-0">
+                <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="text-[1rem] font-semibold text-[#102033]">{title}</span>
                     {selected ? (
@@ -2060,13 +1984,43 @@ function SigningMethodPanel({
         })}
       </div>
 
-      {lockedReason ? (
-        <p className="mt-4 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
-          {lockedReason}
-        </p>
-      ) : !canChange ? (
-        <p className="mt-4 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
-      ) : null}
+      <div className="mt-4 rounded-[20px] border border-[#edf3fa] bg-[#f8fbff] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[#102033]">Prepare for Signature</p>
+            <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+              Open signer details in a popup so this panel stays compact.
+            </p>
+          </div>
+          <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+            signaturePrepSummary?.tone === 'amber'
+              ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
+              : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+          }`}>
+            {signaturePrepSummary?.statusLabel || 'Ready to open'}
+          </span>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
+            {resolveDocumentLabel(packetType)}
+          </span>
+          <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
+            {signaturePrepSummary?.readyLabel || 'Signer details ready'}
+          </span>
+        </div>
+        {lockedReason ? (
+          <p className="mt-3 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
+            {lockedReason}
+          </p>
+        ) : !canChange ? (
+          <p className="mt-3 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button type="button" size="sm" className="w-full" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
+            Open Signature Prep
+          </Button>
+        </div>
+      </div>
     </section>
   )
 }
@@ -2566,6 +2520,26 @@ export default function LegalDocumentWorkspace({
       percent,
     }
   }, [signerRoster])
+  const signaturePrepSummary = useMemo(() => {
+    const blockerCount = Array.isArray(signerValidation.blockers) ? signerValidation.blockers.length : 0
+    const warningCount = Array.isArray(signerValidation.warnings) ? signerValidation.warnings.length : 0
+    return {
+      readyLabel: signerProgressMeta.totalRequired
+        ? `${signerProgressMeta.signedRequired}/${signerProgressMeta.totalRequired} ready`
+        : 'No required signers',
+      statusLabel: blockerCount
+        ? `${blockerCount} signer detail${blockerCount === 1 ? '' : 's'} need attention`
+        : warningCount
+          ? `${warningCount} signer warning${warningCount === 1 ? '' : 's'} to review`
+          : 'Signer identities ready',
+      tone: blockerCount || warningCount ? 'amber' : 'green',
+    }
+  }, [
+    signerProgressMeta.signedRequired,
+    signerProgressMeta.totalRequired,
+    signerValidation.blockers.length,
+    signerValidation.warnings.length,
+  ])
 
   const editablePreviewHtml = useMemo(() => {
     if (!editableSections.length) return ''
@@ -4848,7 +4822,7 @@ export default function LegalDocumentWorkspace({
     : 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-4 sm:px-5 sm:pb-24 sm:pt-5'
   const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(700px,calc(100vh-14rem),880px)]'
   const mainGridClassName = `grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[340px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
-  const secondaryGridClassName = 'mt-5 grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-start 2xl:grid-cols-[380px_minmax(0,1fr)]'
+  const secondaryGridClassName = 'mt-5 grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[380px_minmax(0,1fr)]'
 
   return (
     <>
@@ -5256,6 +5230,8 @@ export default function LegalDocumentWorkspace({
                     canChange={canChangeSigningMethod}
                     lockedReason={signingMethodLockedReason}
                     onSelect={handleSelectSigningMethod}
+                    onOpenSignaturePrep={() => setSignerPrepOpen(true)}
+                    signaturePrepSummary={signaturePrepSummary}
                     busy={actionBusy || loading}
                     className="xl:min-h-[360px]"
                   />
@@ -5281,16 +5257,6 @@ export default function LegalDocumentWorkspace({
                   />
                 ) : null}
 
-                {(!isMandatePacket || signingMethod === 'digital') ? (
-                  <SignaturePreparationCard
-                    packetType={packetType}
-                    canManageSigners={legalPermissions.canManageSigners}
-                    roster={signerRoster}
-                    validation={signerValidation}
-                    onOpen={() => setSignerPrepOpen(true)}
-                    busy={actionBusy || signerBusy || loading}
-                  />
-                ) : null}
               </aside>
 
               <aside className="space-y-5">
@@ -5308,52 +5274,57 @@ export default function LegalDocumentWorkspace({
             </div>
 
             <div className="mt-5 rounded-[28px] border border-[#e5edf7] bg-white p-4 shadow-[0_16px_40px_rgba(16,32,51,0.05)] sm:p-5">
-              <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_auto] xl:items-center">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-[6px] border-[#d9efe4] bg-white text-[1.35rem] font-semibold text-[#20b26b]">
-                    {documentHealthPercent}%
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-[#102033]">Document Health</p>
-                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-                        documentHealthPercent >= 85 ? 'border-[#d8f0e3] bg-[#effaf4] text-[#20b26b]' : 'border-[#f7debb] bg-[#fff8ed] text-[#b57a1d]'
-                      }`}>
-                        {documentHealthLabel}
-                      </span>
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_auto] xl:items-center">
+                <div className="grid min-w-0 gap-5 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-center">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-[6px] border-[#d9efe4] bg-white text-[1.35rem] font-semibold text-[#20b26b]">
+                      {documentHealthPercent}%
                     </div>
-                    <div className="mt-2 space-y-1.5">
-                      {documentHealthItems.map((item) => (
-                        <p key={item.key} className={`flex items-center gap-2 text-sm ${item.complete ? 'text-[#35546c]' : 'text-[#8a6a1d]'}`}>
-                          {item.complete ? <Check size={14} className="text-[#20b26b]" /> : <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#f5a524]" />}
-                          {item.label} {item.complete ? 'complete' : 'needs attention'}
-                        </p>
-                      ))}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-[#102033]">Document Health</p>
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                          documentHealthPercent >= 85 ? 'border-[#d8f0e3] bg-[#effaf4] text-[#20b26b]' : 'border-[#f7debb] bg-[#fff8ed] text-[#b57a1d]'
+                        }`}>
+                          {documentHealthLabel}
+                        </span>
+                      </div>
+                      <div className="mt-2 space-y-1.5">
+                        {documentHealthItems.map((item) => (
+                          <p key={item.key} className={`flex items-center gap-2 text-sm ${item.complete ? 'text-[#35546c]' : 'text-[#8a6a1d]'}`}>
+                            {item.complete ? <Check size={14} className="text-[#20b26b]" /> : <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#f5a524]" />}
+                            {item.label} {item.complete ? 'complete' : 'needs attention'}
+                          </p>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)]">
-                  <div className="rounded-[20px] border border-[#edf3fa] bg-[#f8fbff] px-4 py-3">
-                    <p className="text-xs font-semibold text-[#8a6a1d]">{mergeUnresolvedCount} field{mergeUnresolvedCount === 1 ? '' : 's'} missing</p>
-                    <button
-                      type="button"
-                      onClick={() => setMergeDetailsOpen(true)}
-                      className="mt-2 text-sm font-semibold text-[#0a66ff]"
-                    >
-                      View details
-                    </button>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-[#7b8ea4]">Next step</p>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ea4]">Next step</p>
+                      {mergeUnresolvedCount ? (
+                        <button
+                          type="button"
+                          onClick={() => setMergeDetailsOpen(true)}
+                          className="text-xs font-semibold text-[#0a66ff]"
+                        >
+                          View details
+                        </button>
+                      ) : (
+                        <span className="rounded-full border border-[#cde8d6] bg-[#eef9f2] px-2.5 py-1 text-[0.68rem] font-semibold text-[#2e7b4f]">
+                          All fields resolved
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-1 text-[1.1rem] font-semibold text-[#102033]">{workspacePrimaryLabel}</p>
-                    <p className="mt-1 text-sm text-[#6b7c93]">
+                    <p className="mt-1 max-w-2xl text-sm text-[#6b7c93]">
                       {firstNonEmptyText(mandateNextAction, lifecycleCopy.next, lifecycleCopy.current, 'Continue preparing the legal document workspace.')}
                     </p>
                   </div>
                 </div>
 
-                <div className="relative flex flex-wrap gap-2 xl:justify-end">
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 xl:justify-end">
                   <Button type="button" size="md" onClick={handleWorkspacePrimaryAction} disabled={loading || actionBusy}>
                     {actionBusy ? 'Working…' : workspacePrimaryLabel}
                   </Button>

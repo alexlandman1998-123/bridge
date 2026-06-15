@@ -71,6 +71,11 @@ import {
   sendSellerOnboarding,
   updatePrivateListingOnboardingFormData,
 } from '../services/privateListingService'
+import {
+  createBlankPropertyAddress,
+  formatPropertyAddress,
+  normalizePropertyAddress,
+} from '../lib/sellerPropertyAddress'
 import { listOrganisationCommissionStructures } from '../lib/settingsApi'
 import {
   activateLeadRequirement,
@@ -602,7 +607,7 @@ function readSellerOnboardingFormData(listing = {}) {
 }
 
 function getSellerCommissionWorkspace(row = {}, listing = {}) {
-  const formData = readSellerOnboardingFormData(listing)
+  const formData = readSellerOnboardingFormData(listing || row)
   const commission = listing?.commission && typeof listing.commission === 'object' ? listing.commission : {}
   const commissionType = normalizeCommissionTermType(firstFilledValue(
     commission.commission_structure,
@@ -7957,7 +7962,7 @@ function SellerWorkspaceTabs({ activeTab, onTabChange }) {
 
 function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId, actor, onSaved, onTabChange }) {
   return (
-    <div className="grid items-stretch gap-6 xl:grid-cols-4 xl:auto-rows-[360px]">
+    <div className="grid items-stretch gap-6 xl:grid-cols-4 xl:auto-rows-[minmax(360px,auto)]">
       <SellerWorkspaceCard title="Lead Summary">
         <dl className="flex flex-1 flex-col">
           <SellerInfoRow label="Source" value={sourceInfo?.leadSource || row.source} />
@@ -7979,29 +7984,778 @@ function SellerOverviewTab({ row, sourceInfo, journey, timeline, organisationId,
   )
 }
 
-function SellerProfileTab({ row, journey, onboardingStatus }) {
-  const preferences = normalizeLeadCommunicationPreferences(
-    row?.communicationPreferences ||
-    buildDefaultLeadCommunicationPreferences({ organisationId: row?.organisationId || row?.organisation_id, leadId: row?.leadId }),
-  )
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function clonePlainObject(value) {
+  if (!isPlainObject(value)) return {}
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch {
+    return {}
+  }
+}
+
+function humanizeSellerFieldKey(key = '') {
+  return String(key || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Za-z])([0-9]+)/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\bId\b/g, 'ID')
+    .replace(/\bVat\b/g, 'VAT')
+    .replace(/\bCoc\b/g, 'COC')
+    .replace(/\bPoa\b/g, 'POA')
+    .replace(/\bFica\b/g, 'FICA')
+}
+
+function formatSellerOnboardingFieldValue(value) {
+  if (value === null || value === undefined || value === '') return ''
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (Array.isArray(value) || isPlainObject(value)) return JSON.stringify(value, null, 2)
+  return String(value)
+}
+
+function parseSellerOnboardingJson(raw = '', fallback = []) {
+  const text = String(raw || '').trim()
+  if (!text) return fallback
+  const parsed = JSON.parse(text)
+  if (Array.isArray(parsed) || isPlainObject(parsed)) return parsed
+  throw new Error('Expected JSON array or object.')
+}
+
+function parseSellerOnboardingList(raw = '') {
+  const text = String(raw || '').trim()
+  if (!text) return []
+  return text
+    .split(/\r?\n|,/)
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+}
+
+const SELLER_PROFILE_ADDRESS_KEYS = [
+  'propertyAddressSearch',
+  'propertyAddressLine1',
+  'propertyAddressLine2',
+  'suburb',
+  'city',
+  'province',
+  'postalCode',
+  'municipality',
+  'country',
+]
+
+const SELLER_PROFILE_JSON_KEYS = new Set([
+  'companyDirectors',
+  'trustees',
+  'executors',
+  'powerOfAttorneyRepresentatives',
+  'multipleOwners',
+])
+
+const SELLER_PROFILE_READ_ONLY_KEYS = new Set([
+  'propertyAddress',
+  'propertyAddressDetails',
+  'canonicalPropertyType',
+  'flowVersion',
+  'sellerBranch',
+  'propertyBranch',
+  'flowVisibleFields',
+  'flowRequiredFields',
+  'flowDocumentTriggers',
+  'ownershipFieldLabels',
+])
+
+const SELLER_PROFILE_LIST_KEYS = new Set(['features'])
+
+const SELLER_PROFILE_CHECKBOX_KEYS = new Set([
+  'vatRegistered',
+  'sectionalTitle',
+  'shareBlock',
+  'estateOrHoa',
+  'bodyCorporate',
+  'commercialProperty',
+  'schemeRulesAvailable',
+  'hoaRulesAvailable',
+  'tenantScheduleAvailable',
+  'titleDeedAvailable',
+  'sgDiagramAvailable',
+  'erfDiagramAvailable',
+  'approvedBuildingPlansAvailable',
+  'floorPlanAvailable',
+  'pool',
+  'rentalScheduleAvailable',
+  'existingBond',
+  'multipleBonds',
+  'accessBond',
+  'cancellationRequired',
+  'cancellationAttorneyKnown',
+  'gasInstallation',
+  'electricFence',
+  'solarInstallation',
+  'swimmingPool',
+  'boreholeInstallation',
+  'borehole',
+  'generatorInstallation',
+  'beetleCertificateRegion',
+  'plumbingCertificateRequired',
+  'occupationCertificateAvailable',
+  'electricalCocAvailable',
+  'gasCocAvailable',
+  'electricFenceCertificateAvailable',
+  'plumbingCertificateAvailable',
+  'solarComplianceAvailable',
+])
+
+const SELLER_PROFILE_TEXTAREA_KEYS = new Set([
+  'residentialAddress',
+  'companyRegisteredAddress',
+  'authorisedSignatoryAddress',
+  'trustRegisteredAddress',
+  'authorisedTrusteeAddress',
+  'executorAuthorityDetails',
+  'powerOfAttorneyAuthorityDetails',
+  'commercialUseDescription',
+  'mixedUseSplit',
+  'tenantContactDetails',
+  'noticePeriodDetails',
+  'cancellationAttorneyDetails',
+  'propertyCondition',
+  'kitchenCondition',
+  'bathroomCondition',
+  'views',
+  'recentRenovations',
+  'propertyNotes',
+  'sellingReason',
+  'alterationDetails',
+  'schemeName',
+])
+
+const SELLER_PROFILE_DATE_KEYS = new Set(['leaseExpiryDate'])
+
+const SELLER_PROFILE_SECTION_DEFS = [
+  {
+    id: 'identity',
+    title: 'Seller Identity',
+    description: 'Core seller and authority values captured during onboarding.',
+    defaultOpen: true,
+    keys: [
+      'fullName',
+      'sellerFirstName',
+      'sellerSurname',
+      'idNumber',
+      'entityName',
+      'entityRegistrationNumber',
+      'entityRepresentative',
+      'legalType',
+      'sellerType',
+      'sellerLegalType',
+      'sellerTaxNumber',
+      'taxNumber',
+      'email',
+      'phone',
+      'residentialAddress',
+      'ownershipType',
+      'maritalStatus',
+      'maritalRegime',
+      'vatRegistered',
+      'vatNumber',
+      'authorisedRepresentative',
+      'spouseName',
+      'spouseIdNumber',
+      'spouseEmail',
+      'spousePhone',
+    ],
+  },
+  {
+    id: 'company',
+    title: 'Company Authority',
+    description: 'Company identity, directors, and signatory details.',
+    keys: [
+      'companyName',
+      'companyRegistrationNumber',
+      'companyDirectors',
+      'companyDirectorName',
+      'companyDirectorEmail',
+      'companyDirectorPhone',
+      'companyRegisteredAddress',
+      'authorisedSignatoryName',
+      'authorisedSignatoryEmail',
+      'authorisedSignatoryPhone',
+      'authorisedSignatoryAddress',
+    ],
+  },
+  {
+    id: 'trust',
+    title: 'Trust Authority',
+    description: 'Trust identity, trustees, and authorised signatory details.',
+    keys: [
+      'trustName',
+      'trustRegistrationNumber',
+      'trustees',
+      'trusteeName',
+      'trusteeEmail',
+      'trusteePhone',
+      'trustRegisteredAddress',
+      'authorisedTrusteeName',
+      'authorisedTrusteeEmail',
+      'authorisedTrusteePhone',
+      'authorisedTrusteeAddress',
+    ],
+  },
+  {
+    id: 'entity',
+    title: 'Estate / POA / Multiple Owners',
+    description: 'Estate, power of attorney, and co-owner details.',
+    keys: [
+      'executors',
+      'executorName',
+      'executorEmail',
+      'executorPhone',
+      'estateReference',
+      'executorAuthorityDetails',
+      'powerOfAttorneyRepresentatives',
+      'powerOfAttorneyName',
+      'powerOfAttorneyEmail',
+      'powerOfAttorneyPhone',
+      'powerOfAttorneyPrincipalName',
+      'powerOfAttorneyPrincipalIdNumber',
+      'powerOfAttorneyReference',
+      'powerOfAttorneyAuthorityDetails',
+      'multipleOwners',
+      'ownershipFieldLabels',
+    ],
+  },
+  {
+    id: 'property',
+    title: 'Property',
+    description: 'Address, sale context, and the property profile used for mandate prep.',
+    defaultOpen: true,
+    keys: [
+      'askingPrice',
+      'sellingTimeline',
+      'sellingReason',
+      'propertyCategory',
+      'propertyStructureType',
+      'canonicalPropertyType',
+      'sectionalTitle',
+      'shareBlock',
+      'estateOrHoa',
+      'bodyCorporate',
+      'commercialProperty',
+      'propertyAddressSearch',
+      'propertyAddressLine1',
+      'propertyAddressLine2',
+      'suburb',
+      'city',
+      'province',
+      'postalCode',
+      'municipality',
+      'country',
+      'propertyAddress',
+      'propertyAddressDetails',
+      'estateComplexName',
+      'estateName',
+      'schemeBodyCorporateName',
+      'schemeManagingAgentName',
+      'schemeManagingAgentEmail',
+      'schemeManagingAgentPhone',
+      'schemeLevies',
+      'schemeRulesAvailable',
+      'unitNumber',
+      'sectionNumber',
+      'schemeName',
+      'hoaContactName',
+      'hoaContactEmail',
+      'hoaContactPhone',
+      'hoaManagementCompany',
+      'hoaRulesAvailable',
+      'commercialUseDescription',
+      'mixedUseSplit',
+      'tenantScheduleAvailable',
+      'landZoning',
+      'landServicesAvailable',
+      'landWaterSource',
+      'erfNumber',
+      'titleDeedAvailable',
+      'sgDiagramAvailable',
+      'erfDiagramAvailable',
+      'approvedBuildingPlansAvailable',
+      'floorPlanAvailable',
+      'erfSize',
+      'floorSize',
+      'bedrooms',
+      'bathrooms',
+      'livingArea',
+      'kitchens',
+      'garages',
+      'parkingCovered',
+      'parkingOpen',
+      'pool',
+      'levies',
+      'ratesTaxes',
+      'monthlyWaterSpend',
+      'monthlyElectricitySpend',
+      'recentAlterations',
+      'alterationDetails',
+      'features',
+      'propertyCondition',
+      'kitchenCondition',
+      'bathroomCondition',
+      'views',
+      'recentRenovations',
+      'propertyNotes',
+    ],
+  },
+  {
+    id: 'occupancy',
+    title: 'Occupancy & Bond',
+    description: 'Tenant, occupancy, and bond detail captured for mandate risk checks.',
+    keys: [
+      'occupancyStatus',
+      'leaseExists',
+      'leaseExpiryDate',
+      'monthlyRental',
+      'rentalDeposit',
+      'tenantName',
+      'tenantContactDetails',
+      'noticePeriodDetails',
+      'rentalScheduleAvailable',
+      'existingBond',
+      'bondBank',
+      'bondAccountReference',
+      'multipleBonds',
+      'accessBond',
+      'estimatedSettlementAmount',
+      'cancellationRequired',
+      'cancellationAttorneyKnown',
+      'cancellationAttorneyDetails',
+    ],
+  },
+  {
+    id: 'compliance',
+    title: 'Compliance',
+    description: 'Installation and certificate flags that drive document readiness.',
+    keys: [
+      'gasInstallation',
+      'electricFence',
+      'solarInstallation',
+      'swimmingPool',
+      'boreholeInstallation',
+      'borehole',
+      'generatorInstallation',
+      'beetleCertificateRegion',
+      'plumbingCertificateRequired',
+      'occupationCertificateAvailable',
+      'electricalCocAvailable',
+      'gasCocAvailable',
+      'electricFenceCertificateAvailable',
+      'plumbingCertificateAvailable',
+      'solarComplianceAvailable',
+    ],
+  },
+  {
+    id: 'metadata',
+    title: 'Flow Metadata',
+    description: 'Internal flow context and compatibility data from the onboarding record.',
+    keys: [
+      'flowVersion',
+      'sellerBranch',
+      'propertyBranch',
+      'flowVisibleFields',
+      'flowRequiredFields',
+      'flowDocumentTriggers',
+    ],
+  },
+]
+
+function getSellerProfileFieldConfig(key = '') {
+  const normalized = String(key || '')
+  const type = SELLER_PROFILE_JSON_KEYS.has(normalized)
+    ? 'json'
+    : SELLER_PROFILE_LIST_KEYS.has(normalized)
+      ? 'list'
+      : SELLER_PROFILE_CHECKBOX_KEYS.has(normalized)
+        ? 'checkbox'
+        : SELLER_PROFILE_TEXTAREA_KEYS.has(normalized)
+          ? 'textarea'
+          : SELLER_PROFILE_DATE_KEYS.has(normalized)
+            ? 'date'
+            : 'text'
+  const readOnly = SELLER_PROFILE_READ_ONLY_KEYS.has(normalized)
+  const span = ['json', 'list', 'textarea'].includes(type) || readOnly ? 2 : 1
+  const rows = type === 'json'
+    ? 7
+    : type === 'list'
+      ? 5
+      : type === 'textarea'
+        ? 4
+        : 1
+  return {
+    key: normalized,
+    label: humanizeSellerFieldKey(normalized),
+    type,
+    readOnly,
+    span,
+    rows,
+  }
+}
+
+function SellerOnboardingFieldEditor({
+  field,
+  value,
+  draftValue,
+  onChange,
+  complexValue,
+  onComplexChange,
+}) {
+  const commonClass = field.readOnly
+    ? 'min-h-11 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-500 outline-none'
+    : 'min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-blue-300'
+  if (field.type === 'checkbox') {
+    return (
+      <label className={`grid gap-2 ${field.span === 2 ? 'md:col-span-2' : ''}`}>
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{field.label}</span>
+        <span className={`inline-flex min-h-11 items-center gap-3 rounded-xl border px-3 ${field.readOnly ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'}`}>
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            disabled={field.readOnly}
+            onChange={(event) => onChange?.(field.key, event.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-300"
+          />
+          <span className="text-sm font-semibold text-slate-700">{Boolean(value) ? 'Yes' : 'No'}</span>
+        </span>
+      </label>
+    )
+  }
+
+  if (field.type === 'json' || field.type === 'list') {
+    const textValue = field.readOnly
+      ? formatSellerOnboardingFieldValue(value)
+      : complexValue !== undefined
+        ? String(complexValue)
+        : formatSellerOnboardingFieldValue(value)
+    return (
+      <label className={`grid gap-2 ${field.span === 2 ? 'md:col-span-2' : ''}`}>
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{field.label}</span>
+        <textarea
+          rows={field.rows}
+          value={textValue}
+          readOnly={field.readOnly}
+          onChange={field.readOnly ? undefined : (event) => onComplexChange?.(field.key, event.target.value)}
+          className={`${commonClass} resize-y py-3 font-mono text-xs leading-6 ${field.readOnly ? 'text-slate-500' : 'text-slate-900'}`}
+          placeholder={field.type === 'list' ? 'One item per line' : '{ }'}
+        />
+      </label>
+    )
+  }
+
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <SellerWorkspaceCard title="Seller Contact">
+    <label className={`grid gap-2 ${field.span === 2 ? 'md:col-span-2' : ''}`}>
+      <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{field.label}</span>
+      {field.type === 'textarea' ? (
+        <textarea
+          rows={field.rows}
+          value={String(draftValue ?? '')}
+          readOnly={field.readOnly}
+          onChange={field.readOnly ? undefined : (event) => onChange?.(field.key, event.target.value)}
+          className={`${commonClass} resize-y py-3 font-medium leading-6 ${field.readOnly ? 'text-slate-500' : 'text-slate-900'}`}
+        />
+      ) : (
+        <input
+          type={field.type === 'date' ? 'date' : 'text'}
+          value={String(draftValue ?? '')}
+          readOnly={field.readOnly}
+          onChange={field.readOnly ? undefined : (event) => onChange?.(field.key, event.target.value)}
+          className={commonClass}
+        />
+      )}
+    </label>
+  )
+}
+
+function SellerOnboardingSection({ section, draft, complexDrafts, onChange, onComplexChange }) {
+  const fields = section.keys
+    .map((key) => getSellerProfileFieldConfig(key))
+    .filter(Boolean)
+
+  if (!fields.length) return null
+
+  return (
+    <details open={section.defaultOpen} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <summary className="cursor-pointer list-none">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-950">{section.title}</h4>
+            <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{section.description}</p>
+          </div>
+          <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500">{fields.length} fields</span>
+        </div>
+      </summary>
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        {fields.map((field) => (
+          <SellerOnboardingFieldEditor
+            key={field.key}
+            field={field}
+            value={draft?.[field.key]}
+            draftValue={draft?.[field.key]}
+            complexValue={complexDrafts?.[field.key]}
+            onChange={onChange}
+            onComplexChange={onComplexChange}
+          />
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function SellerProfileTab({ row, journey, onboardingStatus, listing = null, onSaved }) {
+  const sourceFormData = useMemo(() => clonePlainObject(readSellerOnboardingFormData(listing || row)), [listing, row])
+  const sourceKey = useMemo(() => JSON.stringify(sourceFormData), [sourceFormData])
+  const [draft, setDraft] = useState(() => clonePlainObject(sourceFormData))
+  const [complexDrafts, setComplexDrafts] = useState(() => ({
+    companyDirectors: formatSellerOnboardingFieldValue(sourceFormData.companyDirectors || []),
+    trustees: formatSellerOnboardingFieldValue(sourceFormData.trustees || []),
+    executors: formatSellerOnboardingFieldValue(sourceFormData.executors || []),
+    powerOfAttorneyRepresentatives: formatSellerOnboardingFieldValue(sourceFormData.powerOfAttorneyRepresentatives || []),
+    multipleOwners: formatSellerOnboardingFieldValue(sourceFormData.multipleOwners || []),
+    features: Array.isArray(sourceFormData.features) ? sourceFormData.features.join('\n') : '',
+  }))
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setDraft(clonePlainObject(sourceFormData))
+    setComplexDrafts({
+      companyDirectors: formatSellerOnboardingFieldValue(sourceFormData.companyDirectors || []),
+      trustees: formatSellerOnboardingFieldValue(sourceFormData.trustees || []),
+      executors: formatSellerOnboardingFieldValue(sourceFormData.executors || []),
+      powerOfAttorneyRepresentatives: formatSellerOnboardingFieldValue(sourceFormData.powerOfAttorneyRepresentatives || []),
+      multipleOwners: formatSellerOnboardingFieldValue(sourceFormData.multipleOwners || []),
+      features: Array.isArray(sourceFormData.features) ? sourceFormData.features.join('\n') : '',
+    })
+  }, [sourceKey, sourceFormData])
+
+  const onboardingStatusLabel = normalizeText(onboardingStatus).replace(/_/g, ' ') || 'Not started'
+  const portalStatus = journey?.sellerPortalStatus || 'Not opened'
+  const sourceAddress = formatPropertyAddress(draft.propertyAddressDetails || {}) || draft.propertyAddress || 'Address pending'
+  const fieldCount = Object.keys(sourceFormData || {}).length
+  const saveLabel = saving ? 'Saving...' : 'Save overrides'
+  const sectionKeys = useMemo(() => SELLER_PROFILE_SECTION_DEFS.flatMap((section) => section.keys), [])
+  const extraKeys = useMemo(
+    () => Object.keys(draft || {}).filter((key) => !sectionKeys.includes(key) && !['propertyAddress', 'propertyAddressDetails'].includes(key)),
+    [draft, sectionKeys],
+  )
+
+  const updateField = useCallback((key, value) => {
+    setError('')
+    setMessage('')
+    setDraft((previous) => {
+      const next = { ...(previous || {}), [key]: value }
+      if (SELLER_PROFILE_ADDRESS_KEYS.includes(key)) {
+        const normalizedAddress = normalizePropertyAddress({
+          propertyAddressDetails: isPlainObject(previous?.propertyAddressDetails) ? previous.propertyAddressDetails : {},
+          propertyAddressSearch: next.propertyAddressSearch || '',
+          propertyAddressLine1: next.propertyAddressLine1 || '',
+          propertyAddressLine2: next.propertyAddressLine2 || '',
+          suburb: next.suburb || '',
+          city: next.city || '',
+          province: next.province || '',
+          postalCode: next.postalCode || '',
+          municipality: next.municipality || '',
+          country: next.country || '',
+        }, {}, createBlankPropertyAddress())
+        return {
+          ...next,
+          propertyAddressDetails: normalizedAddress,
+          propertyAddress: normalizedAddress.formatted || next.propertyAddress || '',
+          propertyAddressSearch: normalizedAddress.query || next.propertyAddressSearch || '',
+          propertyAddressLine1: normalizedAddress.line1 || next.propertyAddressLine1 || '',
+          propertyAddressLine2: normalizedAddress.line2 || next.propertyAddressLine2 || '',
+          suburb: normalizedAddress.suburb || next.suburb || '',
+          city: normalizedAddress.city || next.city || '',
+          province: normalizedAddress.province || next.province || '',
+          postalCode: normalizedAddress.postalCode || next.postalCode || '',
+          municipality: normalizedAddress.municipality || next.municipality || '',
+          country: normalizedAddress.country || next.country || 'South Africa',
+        }
+      }
+      return next
+    })
+  }, [])
+
+  const updateComplexField = useCallback((key, value) => {
+    setError('')
+    setMessage('')
+    setComplexDrafts((previous) => ({ ...(previous || {}), [key]: value }))
+  }, [])
+
+  const saveOverrides = useCallback(async () => {
+    const listingId = getSellerListingId(row, listing || journey?.listing || null)
+    if (!listingId) {
+      setError('Link a seller listing before saving onboarding overrides.')
+      return
+    }
+
+    const nextDraft = clonePlainObject(draft)
+    try {
+      setSaving(true)
+      setError('')
+      setMessage('')
+      nextDraft.companyDirectors = parseSellerOnboardingJson(complexDrafts.companyDirectors, nextDraft.companyDirectors || [])
+      nextDraft.trustees = parseSellerOnboardingJson(complexDrafts.trustees, nextDraft.trustees || [])
+      nextDraft.executors = parseSellerOnboardingJson(complexDrafts.executors, nextDraft.executors || [])
+      nextDraft.powerOfAttorneyRepresentatives = parseSellerOnboardingJson(complexDrafts.powerOfAttorneyRepresentatives, nextDraft.powerOfAttorneyRepresentatives || [])
+      nextDraft.multipleOwners = parseSellerOnboardingJson(complexDrafts.multipleOwners, nextDraft.multipleOwners || [])
+      nextDraft.features = parseSellerOnboardingList(complexDrafts.features)
+      for (const key of extraKeys) {
+        const field = getSellerProfileFieldConfig(key)
+        if (field.type === 'json') {
+          const rawValue = complexDrafts?.[key]
+          if (String(rawValue || '').trim()) {
+            nextDraft[key] = parseSellerOnboardingJson(rawValue, nextDraft[key] || [])
+          }
+        } else if (field.type === 'list') {
+          const rawValue = complexDrafts?.[key]
+          if (String(rawValue || '').trim()) {
+            nextDraft[key] = parseSellerOnboardingList(rawValue)
+          }
+        }
+      }
+
+      const normalizedAddress = normalizePropertyAddress({
+        propertyAddressDetails: isPlainObject(nextDraft.propertyAddressDetails) ? nextDraft.propertyAddressDetails : {},
+        propertyAddressSearch: nextDraft.propertyAddressSearch || '',
+        propertyAddressLine1: nextDraft.propertyAddressLine1 || '',
+        propertyAddressLine2: nextDraft.propertyAddressLine2 || '',
+        suburb: nextDraft.suburb || '',
+        city: nextDraft.city || '',
+        province: nextDraft.province || '',
+        postalCode: nextDraft.postalCode || '',
+        municipality: nextDraft.municipality || '',
+        country: nextDraft.country || '',
+      }, {}, createBlankPropertyAddress())
+      nextDraft.propertyAddressDetails = normalizedAddress
+      nextDraft.propertyAddress = normalizedAddress.formatted || nextDraft.propertyAddress || ''
+      nextDraft.propertyAddressSearch = normalizedAddress.query || nextDraft.propertyAddressSearch || ''
+      nextDraft.propertyAddressLine1 = normalizedAddress.line1 || nextDraft.propertyAddressLine1 || ''
+      nextDraft.propertyAddressLine2 = normalizedAddress.line2 || nextDraft.propertyAddressLine2 || ''
+      nextDraft.suburb = normalizedAddress.suburb || nextDraft.suburb || ''
+      nextDraft.city = normalizedAddress.city || nextDraft.city || ''
+      nextDraft.province = normalizedAddress.province || nextDraft.province || ''
+      nextDraft.postalCode = normalizedAddress.postalCode || nextDraft.postalCode || ''
+      nextDraft.municipality = normalizedAddress.municipality || nextDraft.municipality || ''
+      nextDraft.country = normalizedAddress.country || nextDraft.country || 'South Africa'
+
+      await updatePrivateListingOnboardingFormData(listingId, nextDraft, {
+        status: sellerOnboardingIsSubmitted(onboardingStatus) ? onboardingStatus : 'in_progress',
+      })
+      setDraft(nextDraft)
+      setComplexDrafts({
+        companyDirectors: formatSellerOnboardingFieldValue(nextDraft.companyDirectors || []),
+        trustees: formatSellerOnboardingFieldValue(nextDraft.trustees || []),
+        executors: formatSellerOnboardingFieldValue(nextDraft.executors || []),
+        powerOfAttorneyRepresentatives: formatSellerOnboardingFieldValue(nextDraft.powerOfAttorneyRepresentatives || []),
+        multipleOwners: formatSellerOnboardingFieldValue(nextDraft.multipleOwners || []),
+        features: Array.isArray(nextDraft.features) ? nextDraft.features.join('\n') : formatSellerOnboardingFieldValue(nextDraft.features || []),
+      })
+      setMessage('Seller onboarding overrides saved.')
+      await onSaved?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save seller onboarding overrides.')
+    } finally {
+      setSaving(false)
+    }
+  }, [complexDrafts, draft, journey?.listing, listing, onboardingStatus, onSaved, row])
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <SellerWorkspaceCard
+        title="Seller Snapshot"
+        action={<StatusPill tone={sellerOnboardingIsSubmitted(onboardingStatus) ? 'green' : 'amber'}>{onboardingStatusLabel}</StatusPill>}
+      >
         <dl className="flex flex-1 flex-col">
-          <SellerInfoRow label="Name" value={row.name || row.contact?.name} />
+          <SellerInfoRow label="Seller" value={row.name || row.contact?.name} />
           <SellerInfoRow label="Phone" value={row.phone || row.contact?.phone} />
           <SellerInfoRow label="Email" value={row.email || row.contact?.email} />
-          <SellerInfoRow label="Portal Status" value={journey?.sellerPortalStatus || 'Not opened'} />
-          <SellerInfoRow label="Onboarding" value={normalizeText(onboardingStatus).replace(/_/g, ' ') || 'Not started'} />
+          <SellerInfoRow label="Portal Status" value={portalStatus} />
+          <SellerInfoRow label="Source Address" value={sourceAddress} />
+          <SellerInfoRow label="Captured Fields" value={`${fieldCount} fields`} />
+          <SellerInfoRow label="Last Updated" value={formatDateTime(listing?.sellerOnboarding?.submittedAt || listing?.sellerOnboarding?.completedAt || listing?.updatedAt || row.updatedAt, 'Not updated')} />
         </dl>
+        <p className="mt-4 text-sm leading-6 text-slate-500">
+          These values are copied from seller onboarding and written back here when an agent overrides them.
+        </p>
       </SellerWorkspaceCard>
-      <SellerWorkspaceCard title="Communication">
-        <dl className="flex flex-1 flex-col">
-          <SellerInfoRow label="Preferred Channel" value={preferences.preferredChannel || 'Email'} />
-          <SellerInfoRow label="Email Alerts" value={preferences.emailEnabled ? 'Enabled' : 'Paused'} />
-          <SellerInfoRow label="WhatsApp Alerts" value={preferences.whatsappEnabled ? 'Enabled' : 'Paused'} />
-          <SellerInfoRow label="Notes" value={row.notes || row.description} />
-        </dl>
+
+      <SellerWorkspaceCard
+        id="seller-onboarding-editor"
+        title="Seller Onboarding"
+        action={
+          <div className="flex items-center gap-2">
+            <StatusPill tone={saving ? 'amber' : 'slate'}>{saving ? 'Saving' : 'Editable'}</StatusPill>
+            <button
+              type="button"
+              onClick={saveOverrides}
+              disabled={saving}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {saveLabel}
+            </button>
+          </div>
+        }
+      >
+        <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          Populate this tab from the onboarding record, then override any field here before generating the mandate.
+        </div>
+        {error ? <p className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p> : null}
+        {message ? <p className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</p> : null}
+        <div className="space-y-4">
+          {SELLER_PROFILE_SECTION_DEFS.map((section) => (
+            <SellerOnboardingSection
+              key={section.id}
+              section={section}
+              draft={draft}
+              complexDrafts={complexDrafts}
+              onChange={updateField}
+              onComplexChange={updateComplexField}
+            />
+          ))}
+          {extraKeys.length ? (
+            <details className="rounded-2xl border border-slate-200 bg-white p-4">
+              <summary className="cursor-pointer list-none">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-950">Other Captured Data</h4>
+                    <p className="mt-1 text-xs font-medium leading-5 text-slate-500">Any additional onboarding values not covered by the main sections.</p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{extraKeys.length} fields</span>
+                </div>
+              </summary>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {extraKeys.map((key) => {
+                  const field = getSellerProfileFieldConfig(key)
+                  return (
+                    <SellerOnboardingFieldEditor
+                      key={field.key}
+                      field={field}
+                      value={draft?.[field.key]}
+                      draftValue={draft?.[field.key]}
+                      complexValue={complexDrafts?.[field.key]}
+                      onChange={updateField}
+                      onComplexChange={updateComplexField}
+                    />
+                  )
+                })}
+              </div>
+            </details>
+          ) : null}
+        </div>
       </SellerWorkspaceCard>
     </div>
   )
@@ -8583,7 +9337,7 @@ function SellerTabContent({
   onTabChange,
   onGenerateMandate,
 }) {
-  if (activeTab === 'seller') return <SellerProfileTab row={row} journey={journey} onboardingStatus={onboardingStatus} />
+  if (activeTab === 'seller') return <SellerProfileTab row={row} journey={journey} onboardingStatus={onboardingStatus} listing={listing} onSaved={onSaved} />
   if (activeTab === 'property') return <SellerPropertyTab row={row} listing={listing} />
   if (activeTab === 'mandate') {
     return (
@@ -8664,16 +9418,19 @@ function SellerDocumentsSummaryCard({ journey = null }) {
       action={<StatusPill tone={completion.percent >= 80 ? 'green' : completion.percent ? 'amber' : 'slate'}>{completion.percent}%</StatusPill>}
       id="seller-documents"
     >
-      <div className="flex items-baseline justify-between gap-4">
-        <p className="text-lg font-semibold tracking-[-0.035em] text-slate-950">Documents Complete</p>
-        <span className="text-sm font-semibold text-slate-500">{completion.complete}/{completion.total}</span>
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="truncate text-[1rem] font-semibold tracking-[-0.03em] text-slate-950">Documents Complete</p>
+          <p className="mt-1 text-sm font-medium text-slate-500">{completion.complete}/{completion.total} requirements complete</p>
+        </div>
+        <span className="shrink-0 text-sm font-semibold text-slate-500">{completion.percent}% complete</span>
       </div>
-      <div className="mt-4 flex flex-1 flex-col justify-between gap-2">
+      <div className="mt-4 grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
         {documents.length ? documents.map((document) => {
           const complete = getSellerDocumentCompletion([document]).percent === 100
           return (
-            <div key={document.id} className="flex min-h-8 items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
-              <span className="truncate text-sm font-semibold text-slate-700">{document.label}</span>
+            <div key={document.id} className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+              <span className="min-w-0 truncate text-sm font-semibold text-slate-700">{document.label}</span>
               <span className={`shrink-0 text-xs font-semibold ${complete ? 'text-emerald-600' : 'text-rose-500'}`}>
                 {getSellerDocumentDisplayStatus(document)}
               </span>
@@ -8863,8 +9620,8 @@ function SellerLeadWorkspaceLayout({
     else if (['contact_seller', 'open_timeline'].includes(key)) setActiveWorkspaceTab('activity')
     else if (['capture_property_address'].includes(key)) setActiveWorkspaceTab('property')
     else if (key === 'edit_seller') {
-      setActiveWorkspaceTab('overview')
-      focusSellerWorkspaceSection('seller-details')
+      setActiveWorkspaceTab('seller')
+      focusSellerWorkspaceSection('seller-onboarding-editor')
     }
     else if (key === 'assign_agent') {
       setActiveWorkspaceTab('overview')

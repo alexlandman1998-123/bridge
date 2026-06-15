@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 
 const leads = [
@@ -101,8 +102,10 @@ const requirements = [
   },
 ]
 
+const appRoot = fileURLToPath(new URL('..', import.meta.url))
+
 const server = await createServer({
-  root: process.cwd(),
+  root: appRoot,
   logLevel: 'silent',
   server: { middlewareMode: true },
 })
@@ -200,18 +203,24 @@ try {
   assert.ok(workspaceSource.includes('Post-Viewing Offer Portal Sent'), 'offer portal sends should be logged to lead activity')
   assert.ok(workspaceSource.includes('Send Offer Link'), 'offers tab should expose a clear send offer link action')
   assert.match(workspaceSource, /sticky top-0 z-10 grid grid-cols-2[\s\S]*lg:grid-cols-7/, 'seller workspace tabs should spread across the row with optional appointments')
-  assert.ok(workspaceSource.includes("const SELLER_ADD_ON_APPOINTMENT_TYPES"), 'seller appointments should use an explicit add-on appointment type list')
+  assert.ok(workspaceSource.includes("const linkedWorkflow = journeyAppointment ? 'seller_listing' : 'seller_lead_add_on'"), 'seller appointments should use the seller listing workflow for journey appointments')
   assert.ok(workspaceSource.includes('function SellerAppointmentForm'), 'seller workspace should expose an optional seller appointment form')
   assert.ok(workspaceSource.includes('function SellerAppointmentsTab'), 'seller workspace should expose appointments as an add-on tab')
   assert.ok(workspaceSource.includes("linkedWorkflow = journeyAppointment ? 'seller_listing' : 'seller_lead_add_on'"), 'seller appointment flow should distinguish journey milestones from add-on appointments')
   assert.ok(workspaceSource.includes("linkedWorkflowStage = journeyAppointment ? 'seller_consultation' : 'optional_appointment'"), 'seller appointment flow should map journey appointments to the seller consultation stage')
   assert.ok(workspaceSource.includes("appointmentType: 'seller_consultation'"), 'seller appointment form should default to the seller consultation journey milestone')
   assert.ok(workspaceSource.includes('Schedule Appointment'), 'seller workspace should expose a clear schedule appointment action')
-  assert.match(workspaceSource, /<summary className="inline-flex min-h-11[\s\S]*Actions/, 'seller header actions should collapse into a single dropdown')
+  assert.ok(workspaceSource.includes('aria-label="Seller actions"'), 'seller header actions should expose an accessible trigger button')
   assert.ok(workspaceSource.includes('role="list" aria-label="Seller lead status shortcuts"'), 'seller status chips should be actionable shortcuts')
   for (const actionId of ['edit_seller', 'assign_agent', 'open_journey', 'open_readiness', 'open_listing', 'view_mandate']) {
     assert.ok(workspaceSource.includes(actionId), `seller status chips should link to ${actionId}`)
   }
+  assert.ok(workspaceSource.includes("setActiveWorkspaceTab('seller')"), 'edit seller should open the seller tab')
+  assert.ok(workspaceSource.includes("focusSellerWorkspaceSection('seller-onboarding-editor')"), 'edit seller should focus the onboarding editor')
+  assert.ok(workspaceSource.includes('id="seller-onboarding-editor"'), 'seller tab should expose the onboarding editor anchor')
+  assert.ok(workspaceSource.includes('Seller Onboarding'), 'seller tab should render the onboarding editor')
+  assert.ok(workspaceSource.includes('Save overrides'), 'seller tab should expose an override save action')
+  assert.ok(workspaceSource.includes('Populate this tab from the onboarding record'), 'seller tab should prefill onboarding data for override editing')
   assert.ok(workspaceSource.includes('id="seller-journey"'), 'current stage shortcut should have a seller journey anchor target')
   assert.match(workspaceSource, /grid min-w-0 grid-cols-2[\s\S]*xl:grid-cols-9/, 'seller journey rail should run in a single row on wide screens')
   assert.ok(workspaceSource.includes('w-[calc(100%-3rem)]'), 'seller journey connectors should stay centered between milestones on the single-row layout')

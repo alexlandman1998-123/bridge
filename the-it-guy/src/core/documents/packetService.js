@@ -41,6 +41,11 @@ import {
   templateUsesNativeRenderer,
 } from './structuredTemplateRenderer'
 import { FEATURE_FLAGS } from '../../lib/featureFlags'
+import {
+  filterMandateSigningRows,
+  mandateRequiresSpouseSignature,
+  resolveMandateSpouseRequirementFromFields,
+} from '../../lib/mandateSignatureRules'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -615,83 +620,6 @@ function isSyntheticSigningEmail(email = '') {
   return normalizeText(email).toLowerCase().endsWith('@bridge.local')
 }
 
-function valueIndicatesMarried(value = '') {
-  const normalized = normalizeText(value).toLowerCase()
-  if (!normalized) return false
-  if (/(^|[_\s-])(single|unmarried|divorced|widowed|not_married|not married|never_married|never married)([_\s-]|$)/.test(normalized)) {
-    return false
-  }
-  return (
-    normalized.includes('married') ||
-    normalized.includes('community') ||
-    normalized.includes('cop') ||
-    normalized.includes('anc') ||
-    normalized.includes('antenuptial')
-  )
-}
-
-function hasMeaningfulSpouseValue(value = '') {
-  if (isMissingPlaceholderText(value)) return false
-  const normalized = normalizeText(value).toLowerCase().replace(/[\s._-]+/g, '_')
-  if (!normalized) return false
-  return !['na', 'n_a', 'n/a', 'none', 'unknown', 'tbc', 'missing', 'not_applicable', 'not_provided', 'no_spouse'].includes(normalized)
-}
-
-function mandateRequiresSpouseSignatureFromPacket(packet = {}) {
-  const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
-    ? packet.source_context_json
-    : {}
-  const generatedSnapshot = sourceContext?.generatedDataSnapshot && typeof sourceContext.generatedDataSnapshot === 'object'
-    ? sourceContext.generatedDataSnapshot
-    : {}
-  const placeholders = generatedSnapshot?.placeholders && typeof generatedSnapshot.placeholders === 'object'
-    ? generatedSnapshot.placeholders
-    : {}
-  const nestedSource = generatedSnapshot?.sourceContext && typeof generatedSnapshot.sourceContext === 'object'
-    ? generatedSnapshot.sourceContext
-    : {}
-  const sellerOnboarding = sourceContext?.sellerOnboarding && typeof sourceContext.sellerOnboarding === 'object'
-    ? sourceContext.sellerOnboarding
-    : {}
-  const onboardingFormData = {
-    ...(sellerOnboarding?.formData && typeof sellerOnboarding.formData === 'object' ? sellerOnboarding.formData : {}),
-    ...(sourceContext?.onboardingFormData && typeof sourceContext.onboardingFormData === 'object' ? sourceContext.onboardingFormData : {}),
-  }
-
-  const spouseSignal = [
-    placeholders.seller_spouse_name,
-    placeholders.seller_spouse_email,
-    placeholders.seller_spouse_id_number,
-    sourceContext.spouseName,
-    sourceContext.spouseEmail,
-    nestedSource.spouseName,
-    nestedSource.spouseEmail,
-    onboardingFormData.spouseName,
-    onboardingFormData.spouseEmail,
-    onboardingFormData.spouseIdNumber,
-  ].some(hasMeaningfulSpouseValue)
-  if (spouseSignal) return true
-
-  return [
-    placeholders.seller_marital_status,
-    placeholders.seller_marital_regime,
-    sourceContext.sellerMaritalStatus,
-    sourceContext.seller_marital_status,
-    sourceContext.sellerMaritalRegime,
-    sourceContext.seller_marital_regime,
-    sourceContext.ownershipType,
-    sourceContext.ownership_structure,
-    nestedSource.ownershipType,
-    nestedSource.ownership_structure,
-    onboardingFormData.ownershipType,
-    onboardingFormData.ownership_structure,
-    onboardingFormData.maritalStatus,
-    onboardingFormData.marital_status,
-    onboardingFormData.marriageRegime,
-    onboardingFormData.maritalRegime,
-  ].some(valueIndicatesMarried)
-}
-
 function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
   const normalizedRole = normalizeText(role).toLowerCase()
   const buyer = context?.buyer || {}
@@ -755,27 +683,11 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     onboarding?.spouseEmail,
     onboarding?.spouse_email,
   )
-  const sellerMarriageSignal = firstResolvedText(
-    placeholders.seller_marital_status,
-    placeholders.seller_marital_regime,
-    placeholders['seller.marital_status'],
-    placeholders['seller.marital_regime'],
-    onboarding?.ownershipType,
-    onboarding?.ownership_structure,
-    onboarding?.maritalStatus,
-    onboarding?.marital_status,
-    onboarding?.marriageRegime,
-    onboarding?.marriage_regime,
-    onboarding?.maritalRegime,
-    onboarding?.marital_regime,
-    lead?.sellerType,
-  )
   const isMandatePacket = normalizeText(context?.packetType || context?.packet_type || placeholders.packet_type).toLowerCase() === 'mandate'
-  const sellerRequiresSpouseSignature = isMandatePacket && Boolean(
-    valueIndicatesMarried(sellerMarriageSignal) ||
-    hasMeaningfulSpouseValue(spouseName) ||
-    hasMeaningfulSpouseValue(spouseEmail),
-  )
+  const sellerRequiresSpouseSignature = isMandatePacket && mandateRequiresSpouseSignature({
+    sourceContext: context,
+    placeholders,
+  })
 
   const candidates = {
     purchaser_1: {
@@ -2156,27 +2068,15 @@ export async function generateFinalSignedPacketDocument({
 
   const mandateSpouseRequired = normalizeText(packet?.packet_type).toLowerCase() === 'mandate' &&
     (() => {
-      const spouseFields = (signingSummary.fields || []).filter((field) =>
-        normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2'
-      )
-      if (spouseFields.length) return spouseFields.some((field) => Boolean(field?.required))
-      return mandateRequiresSpouseSignatureFromPacket(packet)
+      const spouseRequirement = resolveMandateSpouseRequirementFromFields(signingSummary.fields || [])
+      if (spouseRequirement !== null) return spouseRequirement
+      return mandateRequiresSpouseSignature({ packet })
     })()
   const relevantSigners = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
-    ? (signingSummary.signers || []).filter((signer) => {
-        const role = normalizeText(signer?.signer_role || signer?.signerRole).toLowerCase()
-        if (role === 'agent' || role === 'seller') return true
-        if (role === 'purchaser_2') return mandateSpouseRequired
-        return false
-      })
+    ? filterMandateSigningRows(signingSummary.signers || [], { requiresSpouse: mandateSpouseRequired })
     : (signingSummary.signers || [])
   const relevantFields = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
-    ? (signingSummary.fields || []).filter((field) => {
-        const role = normalizeText(field?.signer_role || field?.signerRole).toLowerCase()
-        if (role === 'agent' || role === 'seller') return true
-        if (role === 'purchaser_2') return mandateSpouseRequired
-        return false
-      })
+    ? filterMandateSigningRows(signingSummary.fields || [], { requiresSpouse: mandateSpouseRequired })
     : (signingSummary.fields || [])
 
   const incompleteSigners = relevantSigners.filter(

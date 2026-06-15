@@ -1,5 +1,10 @@
 import { inferLeadCategoryFromRecord } from '../lib/leadCategory.js'
 import {
+  filterMandateSigningRows,
+  mandateRequiresSpouseSignature,
+  resolveMandateSpouseRequirementFromFields,
+} from '../lib/mandateSignatureRules.js'
+import {
   buildSellerRequirementProfile,
   generateSellerDocumentRequirements,
 } from '../lib/sellerDocumentRequirementEngine.js'
@@ -321,6 +326,8 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   const packet = mandatePacket || mandatePacketStatus?.packet || lead?.mandatePacket || null
   const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
+    : mandatePacketStatus?.sourceContext && typeof mandatePacketStatus.sourceContext === 'object'
+      ? mandatePacketStatus.sourceContext
     : {}
   const leadMandateStageSignals = [lead?.stage, lead?.status]
     .map(normalizeKey)
@@ -348,7 +355,11 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   )
   const onboardingStatusBlocksStatusOnlyMandate = Boolean(onboardingStatus && !SELLER_ONBOARDING_SUBMITTED_STATUSES.has(onboardingStatus))
 
-  const signers = mandatePacketStatus?.signingSummary?.signers || mandatePacketStatus?.signers || []
+  const rawSigners = mandatePacketStatus?.signingSummary?.signers || mandatePacketStatus?.signers || []
+  const spouseRequirement = resolveMandateSpouseRequirementFromFields(mandatePacketStatus?.signingSummary?.fields || [])
+  const signers = filterMandateSigningRows(rawSigners, {
+    requiresSpouse: spouseRequirement ?? mandateRequiresSpouseSignature({ packet, sourceContext }),
+  })
   const allSignersSigned = Boolean(mandatePacketStatus?.signingSummary?.allSignersSigned) ||
     (Array.isArray(signers) && signers.length > 0 && signers.every((signer) => normalizeKey(signer?.status || signer?.statusRaw).includes('signed')))
   const hasFinalArtifact = (Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []).some((version) =>
