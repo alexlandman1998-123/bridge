@@ -678,9 +678,9 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
   const validationError = validateCurrentStep()
 
   return (
-    <section className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(14,89,145,0.08),_transparent_34%),linear-gradient(180deg,_#f8fbfe_0%,_#f3f7fb_100%)] px-4 py-4 text-[#102236] sm:px-6 sm:py-6">
-      <div className="mx-auto max-w-[1040px]">
-        <div className="flex min-h-full flex-col rounded-[34px] border border-[#dbe6f2] bg-white p-6 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-7 lg:p-8">
+    <section className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(14,89,145,0.08),_transparent_34%),linear-gradient(180deg,_#f8fbfe_0%,_#f3f7fb_100%)] px-4 py-4 text-[#102236] sm:px-6 sm:py-5">
+      <div className="mx-auto max-w-[1320px]">
+        <div className="flex min-h-full flex-col rounded-[34px] border border-[#dbe6f2] bg-white p-6 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-7 lg:p-7">
           {!wizardOpen ? (
             <>
                 <div className="flex items-start justify-between gap-4">
@@ -812,20 +812,22 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                   })}
                 </div>
 
-                <div className="mt-8">
+                <div className="mt-7">
                   {stepIndex === 0 ? (
-                    <div className="space-y-6">
-                      <div className="max-w-2xl">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Step 1</p>
-                        <h2 className="mt-2 max-w-[16ch] text-[2.15rem] font-semibold leading-[1.02] tracking-[-0.055em] text-[#102236] sm:text-[2.45rem] lg:text-[2.65rem]">
-                          How does your commercial business operate?
-                        </h2>
-                        <p className="mt-4 max-w-xl text-sm leading-7 text-slate-500">
+                    <div className="space-y-5">
+                      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)] lg:items-end">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Step 1</p>
+                          <h2 className="mt-2 max-w-[13ch] text-[2.35rem] font-semibold leading-[0.98] tracking-[-0.06em] text-[#102236] sm:text-[2.6rem] lg:max-w-[12ch] lg:text-[2.9rem]">
+                            How does your commercial business operate?
+                          </h2>
+                        </div>
+                        <p className="max-w-md text-sm leading-7 text-slate-500 lg:justify-self-end">
                           Choose the operating model that matches how your team works today. You can adjust it later.
                         </p>
                       </div>
 
-                      <div className="grid gap-3">
+                      <div className="grid gap-3 lg:grid-cols-3">
                         {BUSINESS_MODEL_OPTIONS.map((option) => {
                           const active = draft.businessModel === option.value
                           const featured = option.value === 'sales_leasing'
@@ -835,35 +837,44 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                               type="button"
                               onClick={() => updateBusinessModel(option.value)}
                               className={[
-                                'group flex min-h-[92px] items-stretch justify-between gap-4 rounded-[24px] border px-5 py-4 text-left transition',
+                                'group flex min-h-[180px] flex-col justify-between rounded-[26px] border px-5 py-5 text-left transition',
                                 active
                                   ? 'border-[#b8d0e7] bg-[#f4f9fe] shadow-[0_18px_40px_rgba(15,23,42,0.06)] ring-1 ring-inset ring-[#d9e7f3]'
                                   : 'border-[#e5edf6] bg-white hover:border-[#cfddea] hover:bg-[#fcfdff]',
                               ].join(' ')}
                             >
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-[1.02rem] font-semibold tracking-[-0.03em] text-[#102236]">{option.label}</p>
-                                  {featured ? (
-                                    <span className="rounded-full bg-[#e9f3fb] px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#0c4a7d]">
-                                      Recommended
-                                    </span>
-                                  ) : null}
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="text-[1.06rem] font-semibold tracking-[-0.03em] text-[#102236]">{option.label}</p>
+                                    {featured ? (
+                                      <span className="rounded-full bg-[#e9f3fb] px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#0c4a7d]">
+                                        Recommended
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="mt-3 text-sm leading-6 text-slate-500">{option.description}</p>
                                 </div>
-                                <p className="mt-2 text-sm leading-6 text-slate-500">{option.description}</p>
-                                <p className={`mt-3 text-xs font-semibold uppercase tracking-[0.16em] ${active ? 'text-[#0c4a7d]' : 'text-slate-400'}`}>
+                                <span
+                                  className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition ${
+                                    active
+                                      ? 'border-[#0c4a7d] bg-[#0c4a7d] text-white shadow-[0_6px_14px_rgba(12,74,125,0.25)]'
+                                      : 'border-slate-300 bg-white text-transparent group-hover:border-[#bfd5ea]'
+                                  }`}
+                                >
+                                  <Check size={14} />
+                                </span>
+                              </div>
+                              <div className="mt-5 flex items-center justify-between gap-4">
+                                <p className={`text-xs font-semibold uppercase tracking-[0.16em] ${active ? 'text-[#0c4a7d]' : 'text-slate-400'}`}>
                                   {active ? 'Selected' : 'Tap to choose'}
                                 </p>
+                                {active ? (
+                                  <span className="rounded-full bg-[#0c4a7d] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white">
+                                    Active
+                                  </span>
+                                ) : null}
                               </div>
-                              <span
-                                className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition ${
-                                  active
-                                    ? 'border-[#0c4a7d] bg-[#0c4a7d] text-white shadow-[0_6px_14px_rgba(12,74,125,0.25)]'
-                                    : 'border-slate-300 bg-white text-transparent group-hover:border-[#bfd5ea]'
-                                }`}
-                              >
-                                <Check size={14} />
-                              </span>
                             </button>
                           )
                         })}
