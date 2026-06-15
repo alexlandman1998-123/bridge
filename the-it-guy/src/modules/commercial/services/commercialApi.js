@@ -2,6 +2,7 @@ import { fetchOrganisationSettings, listOrganisationUsers, updateWorkflowSetting
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../../../lib/supabaseClient'
 import { recordSecurityAuditEvent } from '../../../services/auditLogService'
 import { createBranch, getBranches } from '../../../services/agencyBranchService'
+import { isActiveMembershipStatus, normalizeMembershipStatus } from '../../../constants/membershipStatuses'
 import { normalizeCommercialLifecycleStage } from '../commercialWorkflow'
 
 const TABLES = {
@@ -403,6 +404,21 @@ export function isCommercialMembershipRow(member = {}) {
 
   const role = normalizeLower(member.workspace_role || member.workspaceRole || member.organisation_role || member.organisationRole || member.role)
   return role.startsWith('commercial_') || role.includes('commercial_broker')
+}
+
+function pickPreferredOrganisationMembership(rows = [], matcher = null) {
+  const matchingRows = (Array.isArray(rows) ? rows : []).filter((row) => {
+    if (!row) return false
+    return typeof matcher === 'function' ? matcher(row) : true
+  })
+
+  if (!matchingRows.length) return null
+  return (
+    matchingRows.find((row) => isActiveMembershipStatus(row?.status)) ||
+    matchingRows.find((row) => normalizeMembershipStatus(row?.status) === 'pending') ||
+    matchingRows[0] ||
+    null
+  )
 }
 
 function toNumber(value) {
@@ -1918,7 +1934,7 @@ async function findCurrentCommercialMembership(organisationId, userId) {
     .order('updated_at', { ascending: false })
     .limit(10)
 
-  if (!query.error) return (query.data || []).find(isCommercialMembershipRow) || null
+  if (!query.error) return pickPreferredOrganisationMembership(query.data, isCommercialMembershipRow)
   if (isMissingCommercialTableError(query.error) || isCommercialSchemaMismatchError(query.error)) {
     const fallback = await supabase
       .from('organisation_users')
@@ -1931,7 +1947,7 @@ async function findCurrentCommercialMembership(organisationId, userId) {
       if (isMissingCommercialTableError(fallback.error) || isCommercialSchemaMismatchError(fallback.error)) return null
       throw fallback.error
     }
-    return (fallback.data || []).find(isCommercialMembershipRow) || null
+    return pickPreferredOrganisationMembership(fallback.data, isCommercialMembershipRow)
   }
   throw query.error
 }
@@ -2006,9 +2022,9 @@ async function findCurrentOrganisationMembership(organisationId, userId) {
     .eq('organisation_id', organisationId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
-    .limit(1)
+    .limit(10)
 
-  if (!query.error) return query.data?.[0] || null
+  if (!query.error) return pickPreferredOrganisationMembership(query.data)
   if (!isCommercialSchemaMismatchError(query.error)) throw query.error
 
   const fallback = await supabase
@@ -2017,10 +2033,10 @@ async function findCurrentOrganisationMembership(organisationId, userId) {
     .eq('organisation_id', organisationId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
-    .limit(1)
+    .limit(10)
 
   if (fallback.error) throw fallback.error
-  return fallback.data?.[0] || null
+  return pickPreferredOrganisationMembership(fallback.data)
 }
 
 function isMissingCommercialActivationColumn(error) {

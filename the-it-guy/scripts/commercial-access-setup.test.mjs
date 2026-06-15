@@ -40,6 +40,8 @@ for (const marker of [
   "module_context: 'commercial'",
   "module: 'commercial'",
   "source: 'commercial_access_setup_prompt'",
+  'pickPreferredOrganisationMembership',
+  'isActiveMembershipStatus(row?.status)',
   'return resolveCommercialAccessContext({ forceRefresh: true })',
 ]) {
   includes(commercialApi, marker, `Commercial activation should persist and refresh the explicit commercial membership marker: ${marker}`)
@@ -112,6 +114,8 @@ for (const marker of [
   "source: 'manual'",
   'activateCommercialOrganisationModuleForAgencySignup',
   'activateCommercialMembershipForAgencySignup',
+  'const workspaceResolution = await resolveCurrentWorkspace(user.id, {',
+  "workspaceResolution.currentMembership?.source === 'organisation_users'",
 ]) {
   includes(settingsApi, marker, `Organisation settings save should synchronize mixed/commercial access setup: ${marker}`)
 }

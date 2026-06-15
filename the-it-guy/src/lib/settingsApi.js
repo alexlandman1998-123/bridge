@@ -61,6 +61,7 @@ import { assertWorkspaceEntitlementLimit } from '../services/workspaceEntitlemen
 import { isUnsafeFallbackAllowed } from './envValidation'
 import { MOCK_DATA_ENABLED } from './mockData'
 import { loadSignupIntentForUser } from './signupIntent'
+import { isActiveMembershipStatus, normalizeMembershipStatus } from '../constants/membershipStatuses'
 
 const importMetaEnv = import.meta.env || {}
 const PARTNER_ROUTING_DEMO_MODE = Boolean(
@@ -1909,8 +1910,8 @@ async function findActiveMembershipByUserId(client, userId) {
     .select('id, organisation_id, role, status, email, branch_id, primary_branch_id, branch_scope')
     .eq('user_id', userId)
     .neq('status', 'deactivated')
-    .order('created_at', { ascending: true })
-    .limit(1)
+    .order('updated_at', { ascending: false })
+    .limit(10)
 
   if (membershipQuery.error) {
     if (
@@ -1923,19 +1924,26 @@ async function findActiveMembershipByUserId(client, userId) {
         .select('id, organisation_id, role, status, email')
         .eq('user_id', userId)
         .neq('status', 'deactivated')
-        .order('created_at', { ascending: true })
-        .limit(1)
+        .order('updated_at', { ascending: false })
+        .limit(10)
 
       if (fallbackQuery.error) {
         throw fallbackQuery.error
       }
 
-      return fallbackQuery.data?.[0] || null
+      const fallbackRows = fallbackQuery.data || []
+      return fallbackRows.find((row) => isActiveMembershipStatus(row?.status)) || fallbackRows[0] || null
     }
     throw membershipQuery.error
   }
 
-  return membershipQuery.data?.[0] || null
+  const rows = membershipQuery.data || []
+  return (
+    rows.find((row) => isActiveMembershipStatus(row?.status)) ||
+    rows.find((row) => normalizeMembershipStatus(row?.status) === 'pending') ||
+    rows[0] ||
+    null
+  )
 }
 
 async function findPendingInviteByEmail(client, email) {
@@ -2063,7 +2071,39 @@ async function ensureOrganisationContext(client) {
     let membership = null
 
     try {
-      membership = await findActiveMembershipByUserId(client, user.id)
+      const workspaceResolution = await resolveCurrentWorkspace(user.id, {
+        client,
+        user,
+        profile,
+        persistPreference: false,
+      })
+      const resolvedMembership =
+        workspaceResolution.currentMembership?.source === 'organisation_users'
+          ? workspaceResolution.currentMembership
+          : (workspaceResolution.activeMemberships || []).find((entry) => entry?.source === 'organisation_users') || null
+      const rawResolvedMembership = resolvedMembership?.raw && typeof resolvedMembership.raw === 'object'
+        ? resolvedMembership.raw
+        : null
+
+      membership = resolvedMembership
+        ? {
+            ...(rawResolvedMembership || {}),
+            id: normalizeText(rawResolvedMembership?.id || resolvedMembership.id),
+            organisation_id: normalizeText(rawResolvedMembership?.organisation_id || resolvedMembership.workspaceId),
+            role: normalizeText(
+              rawResolvedMembership?.workspace_role ||
+                rawResolvedMembership?.organisation_role ||
+                rawResolvedMembership?.role ||
+                resolvedMembership.workspaceRole ||
+                resolvedMembership.role,
+            ),
+            status: normalizeText(rawResolvedMembership?.status || resolvedMembership.status || 'active'),
+            email: normalizeText(rawResolvedMembership?.email || user.email || profile?.email),
+            branch_id: rawResolvedMembership?.branch_id || resolvedMembership.branchId || null,
+            primary_branch_id: rawResolvedMembership?.primary_branch_id || resolvedMembership.primaryBranchId || resolvedMembership.branchId || null,
+            branch_scope: rawResolvedMembership?.branch_scope || resolvedMembership.branchScope || null,
+          }
+        : await findActiveMembershipByUserId(client, user.id)
     } catch (membershipError) {
       if (
         isMissingTableError(membershipError, 'organisation_users') ||
