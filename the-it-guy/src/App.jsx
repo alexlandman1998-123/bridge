@@ -19,6 +19,7 @@ import { isOnboardingRoute } from './lib/onboardingRouting'
 import { ONBOARDING_REQUIRED_REASONS } from './constants/onboardingStatuses'
 import { resolveSignupIntentRoute } from './lib/signupIntent'
 import { evaluateAccessRequirement, getRouteAccessRequirement } from './auth/permissions/permissionResolver'
+import { canAccessHQ } from './auth/hqAccess'
 import { PERMISSIONS } from './auth/permissions/permissionRegistry'
 import { createRoutePerformanceMarker } from './services/observability/performanceMetrics'
 import { reportError } from './services/observability/errorTracking'
@@ -153,6 +154,7 @@ const CommercialTransactionWorkspacePage = lazy(() => import('./modules/commerci
 const CommercialVacancyWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialVacancyWorkspacePage'))
 const CommercialVacanciesPage = lazy(() => import('./modules/commercial/pages/CommercialVacanciesPage'))
 const CommercialViewingsPage = lazy(() => import('./modules/commercial/pages/CommercialViewingsPage'))
+const CommandCenterPage = lazy(() => import('./pages/CommandCenterPage'))
 const DeveloperIntelligenceDashboardPage = lazy(() => import('./pages/developer-intelligence/DashboardPage'))
 const DeveloperIntelligenceFeasibilityPage = lazy(() => import('./pages/developer-intelligence/FeasibilityPage'))
 const DeveloperIntelligenceGrowthNetworkPage = lazy(() => import('./pages/developer-intelligence/GrowthNetworkPage'))
@@ -1001,6 +1003,28 @@ function SupportOperationsRoute({ children }) {
   return children
 }
 
+function HQRoute({ children }) {
+  const workspaceContext = useWorkspace()
+  const { workspaceReady, profileLoading } = workspaceContext
+
+  if (!workspaceReady || profileLoading) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>Preparing your workspace…</h2>
+          <p>Validating founder HQ access.</p>
+        </div>
+      </section>
+    )
+  }
+
+  if (!canAccessHQ(workspaceContext)) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return children
+}
+
 function OrganisationSettingsManageRoute({ children }) {
   const workspaceContext = useWorkspace()
   const { workspaceReady, profileLoading } = workspaceContext
@@ -1208,6 +1232,7 @@ function AppRoutes() {
             <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
+              <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
               <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout /></AppErrorBoundary></RoleRoute>}>
                 <Route index element={<Navigate to="/commercial/dashboard" replace />} />
                 <Route path="dashboard" element={<CommercialDashboard />} />

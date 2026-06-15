@@ -1,4 +1,5 @@
 import { SHOW_INTELLIGENCE_BETA } from './featureFlags'
+import { canAccessHQ } from '../auth/hqAccess'
 import {
   DEFAULT_APP_ROLE,
   TRANSITIONAL_APP_ROLE_VALUES,
@@ -18,6 +19,14 @@ export const APP_ROLE_LABELS = {
   client: 'Client / Buyer',
   platform_admin: 'Platform Admin',
   viewer: 'Viewer',
+}
+
+const HQ_NAV_ITEM = Object.freeze({ key: 'mission_control', label: '⌘ Mission Control', to: '/command-center', navSection: 'secondary' })
+
+function withHQNavItem(items = [], context = {}) {
+  if (!canAccessHQ(context)) return items
+  if (items.some((item) => item.key === HQ_NAV_ITEM.key)) return items
+  return [...items, HQ_NAV_ITEM]
 }
 
 export const APP_ROLE_MODULE_COPY = {
@@ -389,8 +398,9 @@ export function canManageAgentOrganisations({ role, baseRole = null, profile = n
   return hasAgentLeadershipSignals(profile)
 }
 
-export function getRoleNavItems(role, { baseRole = null, profile = null, membershipRole = null } = {}) {
+export function getRoleNavItems(role, { baseRole = null, profile = null, membershipRole = null, currentMembership = null } = {}) {
   const items = getNavItemsForRole(role)
+  const hqContext = { profile, membershipRole, currentMembership }
   const normalizedRole = normalizeAppRole(role || baseRole || '')
   if (normalizedRole === 'bond_originator') {
     const normalizedMembershipRole = normalizeMembershipRole(membershipRole || profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role)
@@ -398,7 +408,7 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     const independent = workspaceKind === 'personal_originator' || BOND_INDEPENDENT_ROLES.has(normalizedMembershipRole)
 
     if (independent) {
-      return [
+      return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         { key: 'applications', label: 'My Applications', to: '/bond/applications?scope=mine', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
         createBondDevelopmentsNav(),
@@ -407,11 +417,11 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
         { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'main', activeMatch: ['/bond/tasks'] },
         { key: 'settings', label: 'Settings', to: '/settings', navSection: 'secondary' },
-      ]
+      ], hqContext)
     }
 
     if (BOND_HQ_ROLES.has(normalizedMembershipRole)) {
-      return [
+      return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         createBondApplicationsNav(),
         createBondDevelopmentsNav(),
@@ -421,11 +431,11 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
         createBondReportsNav(),
         createBondSettingsNav(),
-      ]
+      ], hqContext)
     }
 
     if (BOND_REGIONAL_ROLES.has(normalizedMembershipRole)) {
-      return [
+      return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         createBondApplicationsNav(),
         createBondDevelopmentsNav(),
@@ -435,11 +445,11 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
         createBondReportsNav(),
         createBondSettingsNav(),
-      ]
+      ], hqContext)
     }
 
     if (BOND_BRANCH_ROLES.has(normalizedMembershipRole)) {
-      return [
+      return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         createBondApplicationsNav(),
         createBondDevelopmentsNav(),
@@ -449,11 +459,11 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'revenue_commissions', label: 'Revenue & Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
         createBondReportsNav(),
         createBondSettingsNav(),
-      ]
+      ], hqContext)
     }
 
     if (BOND_CONSULTANT_ROLES.has(normalizedMembershipRole) || !normalizedMembershipRole || normalizedMembershipRole === 'viewer') {
-      return [
+      return withHQNavItem([
         { key: 'dashboard', label: 'Dashboard', to: '/dashboard', navSection: 'main' },
         { key: 'applications', label: 'My Applications', to: '/bond/applications?scope=mine', navSection: 'main', activeMatch: ['/bond/applications', '/bond/transactions', '/transactions'] },
         createBondDevelopmentsNav(),
@@ -461,35 +471,35 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
         { key: 'revenue_commissions', label: 'My Commissions', to: '/bond/revenue', navSection: 'main', activeMatch: ['/bond/revenue'] },
         { key: 'clients', label: 'Clients', to: '/bond/clients', navSection: 'main', activeMatch: ['/bond/clients', '/clients'] },
         { key: 'tasks', label: 'Tasks', to: '/bond/tasks', navSection: 'main', activeMatch: ['/bond/tasks'] },
-      ]
+      ], hqContext)
     }
 
-    return items
+    return withHQNavItem(items, hqContext)
   }
 
   if (normalizedRole !== 'agent') {
-    return items
+    return withHQNavItem(items, hqContext)
   }
 
   const normalizedMembershipRole = normalizeMembershipRole(membershipRole || profile?.workspaceRole || profile?.workspace_role || profile?.organisationRole || profile?.organisation_role)
   if (SUPPORT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {
-    return [
+    return withHQNavItem([
       { key: 'assistant_dashboard', label: 'Dashboard', to: '/assistant/dashboard' },
       { key: 'assistant_listings', label: 'Listings', to: '/listings', activeMatch: ['/listings', '/agent/listings'] },
       { key: 'assistant_transactions', label: 'Transactions', to: '/transactions' },
       { key: 'assistant_calendar', label: 'Calendar', to: '/pipeline/calendar', activeMatch: ['/pipeline/calendar', '/calendar'] },
       { key: 'assistant_documents', label: 'Documents', to: '/documents' },
       { key: 'assistant_clients', label: 'Clients', to: '/clients' },
-    ]
+    ], hqContext)
   }
 
   const canManageOrganisation = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
   if (!canManageOrganisation) {
-    return items
+    return withHQNavItem(items, hqContext)
   }
   const isBranchManager = normalizedMembershipRole === 'branch_manager'
 
-  return [
+  return withHQNavItem([
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'transactions', label: 'Transactions', to: '/transactions' },
     createAgentPipelineNav(),
@@ -518,6 +528,6 @@ export function getRoleNavItems(role, { baseRole = null, profile = null, members
     { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'reports', label: 'Reports', to: '/reports' },
-  ]
+  ], hqContext)
 
 }

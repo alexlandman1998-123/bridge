@@ -348,7 +348,7 @@ function getPermissionMap(context = {}) {
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
     return new Proxy({}, { get: () => ACCESS_SCOPES.allWorkspace })
   }
-  if (resolved.systemRole === SYSTEM_ROLES.admin || resolved.systemRole === SYSTEM_ROLES.superAdmin || resolved.appRole === APP_ROLES.platformAdmin) return platformAdminPermissions
+  if (resolved.systemRole === SYSTEM_ROLES.admin || resolved.systemRole === SYSTEM_ROLES.superAdmin || resolved.systemRole === SYSTEM_ROLES.founder || resolved.appRole === APP_ROLES.platformAdmin) return platformAdminPermissions
   if (resolved.systemRole === SYSTEM_ROLES.client || resolved.appRole === APP_ROLES.client) return clientPermissions
   if (!resolved.hasActiveMembership) return Object.freeze({})
   return permissionsByWorkspaceRole[resolved.workspaceType]?.[resolved.organisationRole] || Object.freeze({})
@@ -438,7 +438,7 @@ export function isWorkspaceOwner(context = {}) {
 
 export function isPlatformAdmin(context = {}) {
   const resolved = resolvePermissionContext(context)
-  return resolved.systemRole === SYSTEM_ROLES.admin || resolved.systemRole === SYSTEM_ROLES.superAdmin || resolved.appRole === APP_ROLES.platformAdmin
+  return resolved.systemRole === SYSTEM_ROLES.admin || resolved.systemRole === SYSTEM_ROLES.superAdmin || resolved.systemRole === SYSTEM_ROLES.founder || resolved.appRole === APP_ROLES.platformAdmin
 }
 
 export function createPermissionResolver(context = {}) {

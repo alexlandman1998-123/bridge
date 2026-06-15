@@ -274,6 +274,12 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
     }
   }, [draft, setupState])
 
+  useEffect(() => {
+    if (stepIndex === 1) {
+      setInviteFormOpen(true)
+    }
+  }, [stepIndex])
+
   const canEnableCommercial = useMemo(() => {
     const membershipRole = normalizeLower(setupState.context?.membershipRole)
     const profileRole = normalizeLower(setupState.context?.profile?.role)
@@ -714,8 +720,8 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
   const validationError = validateCurrentStep()
 
   return (
-    <section className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(14,89,145,0.08),_transparent_34%),linear-gradient(180deg,_#f8fbfe_0%,_#f3f7fb_100%)] px-4 py-4 text-[#102236] sm:px-6 sm:py-5">
-      <div className="mx-auto max-w-[1320px]">
+    <section className="h-full overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(14,89,145,0.08),_transparent_34%),linear-gradient(180deg,_#f8fbfe_0%,_#f3f7fb_100%)] px-4 py-4 text-[#102236] sm:px-6 sm:py-5">
+      <div className="mx-auto flex min-h-full max-w-[1320px] flex-col">
         <div className="flex min-h-full flex-col rounded-[34px] border border-[#dbe6f2] bg-white p-6 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-7 lg:p-7">
           {!wizardOpen ? (
             <>
@@ -993,18 +999,30 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                         </div>
 
                         <div className="rounded-[26px] border border-dashed border-[#d4e1ee] bg-[#fbfdff] p-5">
-                          <button
-                            type="button"
-                            onClick={() => setInviteFormOpen((value) => !value)}
-                            className="inline-flex items-center gap-2 text-sm font-semibold text-[#0c4a7d]"
-                          >
-                            <MailPlus size={16} />
-                            Invite Commercial User
-                          </button>
-                          <p className="mt-2 text-sm leading-6 text-slate-500">Use the existing workspace invite flow so the team receives the same onboarding experience.</p>
+                          <div className="rounded-[22px] border border-[#dbe7f3] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.03)]">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => setInviteFormOpen((value) => !value)}
+                                  className="inline-flex items-center gap-2 text-sm font-semibold text-[#0c4a7d]"
+                                >
+                                  <MailPlus size={16} />
+                                  Invite Commercial User
+                                </button>
+                                <p className="mt-2 text-sm leading-6 text-slate-500">Use the existing workspace invite flow so the team receives the same onboarding experience.</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setInviteFormOpen((value) => !value)}
+                                className="rounded-full border border-[#d8e7f6] bg-[#f4f9fe] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#0c4a7d]"
+                              >
+                                {inviteFormOpen ? 'Collapse' : 'Open'}
+                              </button>
+                            </div>
 
-                          {inviteFormOpen ? (
-                            <form className="mt-5 grid gap-3" onSubmit={handleInviteCommercialUser}>
+                            {inviteFormOpen ? (
+                              <form className="mt-5 grid gap-3" onSubmit={handleInviteCommercialUser}>
                               <label className="grid gap-2 text-sm text-slate-500">
                                 First name
                                 <input
@@ -1051,8 +1069,9 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                                 {inviteState.saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                                 Send invite
                               </button>
-                            </form>
-                          ) : null}
+                              </form>
+                            ) : null}
+                          </div>
 
                           {inviteState.error ? (
                             <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">

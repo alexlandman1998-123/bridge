@@ -22,6 +22,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { setStoredDevAuthRole } from '../lib/devAuth'
 import { isDevAuthBypassEnabled } from '../lib/devAuth'
 import { APP_ROLE_LABELS } from '../lib/roles'
+import { canAccessHQ } from '../auth/hqAccess'
 import {
   BUSINESS_TYPE_OPTIONS,
   POSITION_OPTIONS_BY_BUSINESS_TYPE,
@@ -85,6 +86,38 @@ function resolvePendingInvitePath() {
   const pendingInviteToken = String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
   if (!pendingInviteToken) return ''
   return `/invite/${pendingInviteToken}`
+}
+
+async function resolveFounderLoginTarget(fallbackTarget = '/dashboard') {
+  const target = String(fallbackTarget || '/dashboard').trim() || '/dashboard'
+  if (!['/', '/dashboard'].includes(target)) return target
+  if (!isSupabaseConfigured || !supabase) return target
+
+  try {
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    if (userError) throw userError
+    const userId = userData?.user?.id || ''
+    if (!userId) return target
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, role, system_role')
+      .eq('id', userId)
+      .maybeSingle()
+    if (!error && canAccessHQ({ profile: data })) return '/command-center'
+
+    const membershipResult = await supabase
+      .from('organisation_users')
+      .select('role, workspace_role, organisation_role, status')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .limit(10)
+    if (membershipResult.error) return target
+    const hasHQMembership = (membershipResult.data || []).some((membership) => canAccessHQ({ currentMembership: membership }))
+    return hasHQMembership ? '/command-center' : target
+  } catch (error) {
+    console.warn('[AUTH] founder landing check skipped', error)
+    return target
+  }
 }
 
 function resolveInviteTokenFromLocation(location) {
@@ -423,7 +456,7 @@ function Auth({ onDevBypass = null }) {
         }
 
         const pendingInvitePath = resolvePendingInvitePath()
-        const target = pendingInvitePath || redirectTo
+        const target = pendingInvitePath || await resolveFounderLoginTarget(redirectTo)
         console.debug('[AUTH] login:success', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
         return

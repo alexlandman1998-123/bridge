@@ -1452,7 +1452,7 @@ export async function listCommercialAccessManagementState() {
     getCommercialOrganisationModuleStatus({ organisationId: context.organisationId }),
     supabase
       .from('organisation_users')
-      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, module, module_type, workspace_type, module_metadata, metadata, updated_at')
+      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, workspace_type, module_metadata, metadata, updated_at')
       .eq('organisation_id', context.organisationId)
       .neq('status', 'deactivated')
       .order('created_at', { ascending: true }),
@@ -1832,7 +1832,7 @@ export async function setCommercialUserAccess(organisationUserId, enabled = true
 
   const existing = await supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, module, module_type, workspace_type, module_metadata, metadata')
+    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, workspace_type, module_metadata, metadata')
     .eq('id', safeOrganisationUserId)
     .eq('organisation_id', context.organisationId)
     .maybeSingle()
@@ -1862,7 +1862,7 @@ export async function setCommercialUserAccess(organisationUserId, enabled = true
     .update(payload)
     .eq('id', safeOrganisationUserId)
     .eq('organisation_id', context.organisationId)
-    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, module, module_type, workspace_type, module_metadata, metadata, updated_at')
+    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, workspace_type, module_metadata, metadata, updated_at')
     .maybeSingle()
 
   if (result.error && isMissingCommercialActivationColumn(result.error)) {
@@ -1957,7 +1957,7 @@ async function findCurrentCommercialMembership(organisationId, userId) {
   if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
   const query = await supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, module, module_type, workspace_type, module_metadata, metadata, status, email, first_name, last_name, last_active_at')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, metadata, status, email, first_name, last_name, last_active_at')
     .eq('organisation_id', organisationId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
@@ -2043,7 +2043,7 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
 
 async function findCurrentOrganisationMembership(organisationId, userId) {
   if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
-  const fullSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, module_type, workspace_type, module_metadata, status, email'
+  const fullSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, email'
   const basicSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, role, workspace_role, organisation_role, status, email'
   const query = await supabase
     .from('organisation_users')
@@ -2140,7 +2140,7 @@ export async function activateCommercialWorkspaceForCurrentUser() {
     module_context: 'commercial',
     module_metadata: buildCommercialActivationMetadata(member, userId),
   }
-  const fullSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, module_type, workspace_type, module_metadata, status, email'
+  const fullSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, email'
   const update = await supabase
     .from('organisation_users')
     .update(fullPayload)

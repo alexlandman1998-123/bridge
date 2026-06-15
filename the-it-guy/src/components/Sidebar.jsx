@@ -164,6 +164,7 @@ const ICON_BY_KEY = {
   agent_intelligence_network: Users,
   platform_diagnostics: ShieldUser,
   platform_transaction_routing: Workflow,
+  mission_control: LayoutDashboard,
 }
 
 const BRIDGE_BRAND_MARK = 'bridge.'
@@ -242,7 +243,7 @@ function Sidebar() {
   const navigate = useNavigate()
   const membershipRole = normalizeOrganisationMembershipRole(organisationMembershipRole || 'viewer')
   const roleNavItems = useMemo(
-    () => filterNavigationItems(getRoleNavItems(role, { baseRole, profile, membershipRole }), workspaceContext),
+    () => filterNavigationItems(getRoleNavItems(role, { baseRole, profile, membershipRole, currentMembership: workspaceContext.currentMembership }), workspaceContext),
     [baseRole, membershipRole, profile, role, workspaceContext],
   )
   const isIntelligencePath =

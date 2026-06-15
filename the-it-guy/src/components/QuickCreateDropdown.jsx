@@ -26,7 +26,7 @@ import Modal from './ui/Modal'
 
 const RESIDENTIAL_QUICK_CREATE_GROUPS = [
   {
-    label: 'Leads',
+    label: 'CRM',
     items: [
       {
         type: 'lead',
@@ -41,6 +41,14 @@ const RESIDENTIAL_QUICK_CREATE_GROUPS = [
         helper: 'Add a potential future client',
         icon: UsersRound,
         action: 'modal',
+      },
+      {
+        type: 'client',
+        label: 'Client',
+        helper: 'Open the client workspace',
+        icon: UsersRound,
+        action: 'route',
+        to: '/clients',
       },
     ],
   },
@@ -63,32 +71,6 @@ const RESIDENTIAL_QUICK_CREATE_GROUPS = [
         icon: Handshake,
         action: 'route',
         to: '/new-transaction',
-      },
-      {
-        type: 'client',
-        label: 'Client',
-        helper: 'Open the client workspace',
-        icon: UsersRound,
-        action: 'route',
-        to: '/clients',
-      },
-      {
-        type: 'seller-intake',
-        label: 'Seller Intake',
-        helper: 'Capture a seller enquiry',
-        icon: ClipboardList,
-        action: 'modal',
-        modalType: 'lead',
-        initialForm: { leadType: 'Seller', source: 'Manual Entry' },
-      },
-      {
-        type: 'buyer-intake',
-        label: 'Buyer Intake',
-        helper: 'Capture a buyer enquiry',
-        icon: UserPlus,
-        action: 'modal',
-        modalType: 'lead',
-        initialForm: { leadType: 'Buyer', source: 'Manual Entry' },
       },
     ],
   },
@@ -355,6 +337,41 @@ const INITIAL_FORMS = {
   },
 }
 
+const QUICK_CREATE_AUDIENCE_CHOICES = {
+  lead: [
+    {
+      key: 'buyer',
+      label: 'Buyer Lead',
+      helper: 'Capture a buyer enquiry with budget and search context.',
+      icon: UserPlus,
+      tileClass: 'bg-[#eef4fb] text-[#24465d]',
+    },
+    {
+      key: 'seller',
+      label: 'Seller Lead',
+      helper: 'Capture a seller enquiry with property and value context.',
+      icon: ClipboardList,
+      tileClass: 'bg-[#edf8f1] text-[#1f7a45]',
+    },
+  ],
+  prospect: [
+    {
+      key: 'buyer',
+      label: 'Buyer Prospect',
+      helper: 'Add a potential future buyer client.',
+      icon: UserPlus,
+      tileClass: 'bg-[#eef4fb] text-[#24465d]',
+    },
+    {
+      key: 'seller',
+      label: 'Seller Prospect',
+      helper: 'Add a potential future seller client.',
+      icon: ClipboardList,
+      tileClass: 'bg-[#edf8f1] text-[#1f7a45]',
+    },
+  ],
+}
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -448,6 +465,62 @@ function FormField({ label, children, className = '' }) {
 
 const inputClass =
   'min-h-[42px] rounded-[12px] border border-[#d8e3ef] bg-white px-3 py-2 text-sm font-medium text-[#162334] outline-none transition focus:border-[#22445e] focus:ring-2 focus:ring-[#22445e]/10'
+
+function QuickCreateAudienceModal({ kind, onClose, onChoose }) {
+  const choices = QUICK_CREATE_AUDIENCE_CHOICES[kind] || []
+  if (!kind || !choices.length) {
+    return null
+  }
+
+  const title = kind === 'lead' ? 'What type of lead?' : 'What type of prospect?'
+  const subtitle =
+    kind === 'lead'
+      ? 'Choose the audience before the intake form opens.'
+      : 'Choose the audience before the prospect workspace opens.'
+
+  return (
+    <Modal
+      open={Boolean(kind)}
+      onClose={onClose}
+      title={title}
+      subtitle={subtitle}
+      className="max-w-[460px]"
+      footer={
+        <button
+          type="button"
+          className="min-h-[42px] rounded-[12px] border border-[#d8e3ef] bg-white px-4 text-sm font-semibold text-[#1f3850] transition hover:border-[#b9c8d8] hover:bg-[#f7fafc]"
+          onClick={onClose}
+        >
+          Cancel
+        </button>
+      }
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        {choices.map((choice, index) => {
+          const Icon = choice.icon
+          return (
+            <button
+              key={choice.key}
+              type="button"
+              className="group flex min-h-[132px] flex-col items-start gap-3 rounded-[18px] border border-[#e4ebf3] bg-[#fbfdff] p-4 text-left shadow-[0_1px_0_rgba(255,255,255,0.76)] transition duration-150 ease-out hover:-translate-y-0.5 hover:border-[#c9d8e6] hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#274c69]/20"
+              onClick={() => onChoose(choice.key)}
+              autoFocus={index === 0}
+              data-testid={`quick-create-${kind}-choice-${choice.key}`}
+            >
+              <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] ${choice.tileClass}`}>
+                <Icon size={16} />
+              </span>
+              <span className="space-y-1">
+                <span className="block text-sm font-semibold text-[#162334]">{choice.label}</span>
+                <span className="block text-xs font-medium leading-5 text-[#6b7d93]">{choice.helper}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </Modal>
+  )
+}
 
 function QuickCreateModal({ type, form, setForm, onClose, onSubmit, saving, feedback, listingOptions = [], listingOptionsLoading = false }) {
   const isLead = type === 'lead'
@@ -702,6 +775,8 @@ function QuickCreateDropdown({ className = '' }) {
   const navigate = useNavigate()
   const { agencyWorkflowMode, profile, role } = useWorkspace()
   const [open, setOpen] = useState(false)
+  const [pendingCreateKind, setPendingCreateKind] = useState('')
+  const [pendingCreateInitialForm, setPendingCreateInitialForm] = useState({})
   const [activeType, setActiveType] = useState('')
   const [form, setForm] = useState(INITIAL_FORMS.lead)
   const [saving, setSaving] = useState(false)
@@ -739,6 +814,38 @@ function QuickCreateDropdown({ className = '' }) {
     document.addEventListener('mousedown', onClickOutside)
     return () => document.removeEventListener('mousedown', onClickOutside)
   }, [])
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      if (saving) {
+        return
+      }
+
+      if (pendingCreateKind) {
+        setPendingCreateKind('')
+        setPendingCreateInitialForm({})
+        return
+      }
+
+      if (activeType) {
+        setActiveType('')
+        setFeedback({ kind: '', message: '' })
+        setSaving(false)
+        return
+      }
+
+      if (open) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [activeType, open, pendingCreateKind, saving])
 
   useEffect(() => {
     if (activeType !== 'lead') return undefined
@@ -786,6 +893,8 @@ function QuickCreateDropdown({ className = '' }) {
       ...initialForm,
     }
     setOpen(false)
+    setPendingCreateKind('')
+    setPendingCreateInitialForm({})
     setActiveType(resolvedType)
     setFeedback({ kind: '', message: '' })
     setForm({
@@ -802,11 +911,21 @@ function QuickCreateDropdown({ className = '' }) {
   function handleItemSelect(item) {
     if (item.action === 'route' && item.to) {
       setOpen(false)
+      setPendingCreateKind('')
+      setPendingCreateInitialForm({})
       const state =
         item.type === 'listing'
           ? { ...(item.state || {}), listingModalMode: role === 'agent' ? agencyWorkflowMode : 'principal' }
           : item.state
       navigate(item.to, state ? { state } : undefined)
+      return
+    }
+
+    if (item.type === 'lead' || item.type === 'prospect') {
+      setOpen(false)
+      setFeedback({ kind: '', message: '' })
+      setPendingCreateKind(item.type)
+      setPendingCreateInitialForm(item.initialForm || {})
       return
     }
 
@@ -817,6 +936,30 @@ function QuickCreateDropdown({ className = '' }) {
     setActiveType('')
     setFeedback({ kind: '', message: '' })
     setSaving(false)
+    setPendingCreateKind('')
+    setPendingCreateInitialForm({})
+  }
+
+  function closeAudienceModal() {
+    setPendingCreateKind('')
+    setPendingCreateInitialForm({})
+  }
+
+  function chooseAudience(choiceKey) {
+    const flowType = pendingCreateKind
+    if (!flowType) {
+      closeAudienceModal()
+      return
+    }
+
+    const selectedChoice = choiceKey === 'seller' ? 'Seller' : 'Buyer'
+    const nextInitialForm =
+      flowType === 'lead'
+        ? { ...pendingCreateInitialForm, leadType: selectedChoice }
+        : { ...pendingCreateInitialForm, prospectType: selectedChoice }
+
+    closeAudienceModal()
+    openModal(flowType, nextInitialForm)
   }
 
   function validateCurrentForm() {
@@ -1003,30 +1146,41 @@ function QuickCreateDropdown({ className = '' }) {
         </button>
 
         {open ? (
-          <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 max-h-[min(74vh,640px)] w-[320px] overflow-y-auto p-2" role="menu">
-            <div className="px-3 pb-2 pt-1">
-              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-textMuted">Create</p>
+          <div
+            className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-40 w-[min(24rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-96px)] overflow-y-auto border-[#dde6ef] bg-white p-2 shadow-[0_24px_56px_rgba(15,23,42,0.14)]"
+            role="menu"
+          >
+            <div className="px-3 pb-3 pt-2">
+              <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Create</p>
+              <p className="mt-1 text-sm text-[#7b8ca2]">Choose the record or workspace you want to open.</p>
             </div>
-            {quickCreateGroups.map((group) => (
-              <div key={group.label} className="border-t border-borderSoft py-2 first:border-t-0 first:pt-0">
-                <p className="px-3 pb-1 text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-textSoft">{group.label}</p>
+            {quickCreateGroups.map((group, groupIndex) => (
+              <div key={group.label} className={`border-t border-[#edf2f7] py-2 first:border-t-0 first:pt-0 ${groupIndex === 0 ? 'pt-0' : 'pt-3'}`.trim()}>
+                <p className="px-3 pb-2 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">{group.label}</p>
                 {group.items.map((item) => {
                   const Icon = item.icon
+                  const iconTileClass =
+                    item.type === 'lead' || item.type === 'listing' || item.type === 'appointment'
+                      ? 'bg-[#eef4fb] text-[#24465d]'
+                      : item.type === 'prospect' || item.type === 'client' || item.type === 'viewing'
+                        ? 'bg-[#edf8f1] text-[#1f7a45]'
+                        : 'bg-[#f1f5f9] text-[#42596f]'
                   return (
                     <button
                       key={item.type}
                       type="button"
-                      className="flex w-full items-start gap-3 rounded-[16px] px-3 py-2.5 text-left transition hover:bg-surfaceAlt"
+                      className="group flex w-full items-start gap-3 rounded-[18px] px-3 py-3 text-left transition duration-150 ease-out hover:bg-[#f7fafc] focus-visible:bg-[#f7fafc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#274c69]/15"
                       onClick={() => handleItemSelect(item)}
                       role="menuitem"
+                      aria-haspopup={item.type === 'lead' || item.type === 'prospect' ? 'dialog' : undefined}
                       data-testid={`quick-create-${item.type}`}
                     >
-                      <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4fb] text-[#24465d]">
+                      <span className={`mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] transition group-hover:bg-white ${iconTileClass}`}>
                         <Icon size={16} />
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-textStrong">{item.label}</span>
-                        <span className="mt-0.5 block text-xs font-medium text-textMuted">{item.helper}</span>
+                        <span className="block text-[0.95rem] font-semibold text-[#162334]">{item.label}</span>
+                        <span className="mt-0.5 block text-xs font-medium leading-5 text-[#6b7d93]">{item.helper}</span>
                       </span>
                     </button>
                   )
@@ -1047,6 +1201,12 @@ function QuickCreateDropdown({ className = '' }) {
         feedback={feedback}
         listingOptions={listingOptions}
         listingOptionsLoading={listingOptionsLoading}
+      />
+
+      <QuickCreateAudienceModal
+        kind={pendingCreateKind}
+        onClose={closeAudienceModal}
+        onChoose={chooseAudience}
       />
     </>
   )
