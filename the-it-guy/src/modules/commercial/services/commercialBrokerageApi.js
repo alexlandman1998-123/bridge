@@ -129,7 +129,7 @@ async function listCommercialMembers(organisationId) {
   if (!organisationId || !isSupabaseConfigured || !supabase) return listOrganisationUsers().catch(() => [])
   const query = await supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, module_context, workspace_type, metadata, status, invited_at, accepted_at, last_active_at')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, invited_at, accepted_at, last_active_at')
     .eq('organisation_id', organisationId)
     .order('created_at', { ascending: true })
 
