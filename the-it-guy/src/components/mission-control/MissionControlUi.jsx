@@ -566,3 +566,81 @@ export function AlertContainer({
     </ExecutiveCard>
   )
 }
+
+export function FocusAreasContainer({
+  title = 'Focus Areas',
+  loading = false,
+  items = [],
+  emptyTitle = 'No focus areas yet',
+  emptyDescription = 'Executive focus areas will appear here once Mission Control has enough live data to prioritise them.',
+  className = '',
+}) {
+  if (loading) {
+    return (
+      <ExecutiveCard
+        eyebrow="Executive"
+        title={title}
+        description="Deterministic founder priorities are loading."
+        className={className}
+      >
+        <div className="space-y-3">
+          <AlertSkeletonRow />
+          <AlertSkeletonRow />
+          <AlertSkeletonRow />
+        </div>
+      </ExecutiveCard>
+    )
+  }
+
+  return (
+    <ExecutiveCard
+      eyebrow="Executive"
+      title={title}
+      description="Rules-based founder priorities derived from live HQ data."
+      className={className}
+    >
+      {items.length ? (
+        <div className="space-y-3">
+          {items.map((item) => {
+            const severity = item?.severity === 'critical' ? 'critical' : item?.severity === 'warning' ? 'warning' : 'info'
+            const tone =
+              severity === 'critical'
+                ? {
+                    row: 'border-[#f3c7d0] bg-[linear-gradient(180deg,#fffefe_0%,#fff7f8_100%)]',
+                    badge: 'bg-[#fff1f2] text-[#b42318] ring-[#fecdd3]',
+                    meta: 'text-[#b42318]',
+                  }
+                : severity === 'warning'
+                  ? {
+                      row: 'border-[#f0d2b7] bg-[linear-gradient(180deg,#fffdfa_0%,#fff7ed_100%)]',
+                      badge: 'bg-[#fff2df] text-[#9a5b13] ring-[#f0d2b7]',
+                      meta: 'text-[#9a5b13]',
+                    }
+                  : {
+                      row: 'border-[#dbe8f7] bg-[linear-gradient(180deg,#fbfdff_0%,#f7fbfe_100%)]',
+                      badge: 'bg-[#eef4ff] text-[#34506b] ring-[#dbe8f7]',
+                      meta: 'text-[#49617b]',
+                    }
+
+            return (
+              <article key={item.type || item.title} className={cn('rounded-[22px] border px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]', tone.row)}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#102033]">{item.title}</p>
+                    {item.type ? <p className={cn('mt-1 text-xs font-semibold uppercase tracking-[0.16em]', tone.meta)}>{item.type.replace(/[_-]+/g, ' ')}</p> : null}
+                  </div>
+                  <span className={cn('inline-flex shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ring-1 ring-inset', tone.badge)}>
+                    {severity}
+                  </span>
+                </div>
+                {item.description ? <p className="mt-2 text-sm leading-6 text-[#60758d]">{item.description}</p> : null}
+              </article>
+            )
+          })}
+        </div>
+      ) : (
+        <EmptyState title={emptyTitle} description={emptyDescription} />
+      )}
+    </ExecutiveCard>
+  )
+}

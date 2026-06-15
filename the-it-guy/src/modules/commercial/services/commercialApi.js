@@ -31,7 +31,7 @@ const SELECTS = {
   contacts:
     'id, organisation_id, branch_id, team_id, broker_id, company_id, first_name, last_name, job_title, email, phone, mobile, preferred_contact_method, decision_maker, is_primary, notes, status, legacy_source_type, legacy_source_id, created_at, updated_at, created_by, updated_by',
   landlords:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, email, phone, website, landlord_type, portfolio_notes, preferred_contact_method',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, property_manager_name, property_manager_email, asset_manager_name, asset_manager_email, email, phone, website, landlord_type, portfolio_notes, preferred_contact_method',
   tenants:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, email, phone, industry, company_size, current_location, current_lease_expiry, preferred_contact_method',
   properties:
@@ -750,8 +750,7 @@ function createCommercialOrganisationDisabledStatus(organisationId = '', row = n
   }
 }
 
-export async function getCommercialOrganisationModuleStatus({ organisationId = '', forceRefresh = false } = {}) {
-  await assertCommercialPlatformInstalled({ forceRefresh })
+export async function getCommercialOrganisationModuleStatus({ organisationId = '' } = {}) {
   const resolvedOrganisationId = normalizeText(organisationId) || normalizeText((await resolveCommercialOrganisationContext()).organisationId)
   if (!resolvedOrganisationId || !isSupabaseConfigured || !supabase) {
     return createCommercialOrganisationDisabledStatus(resolvedOrganisationId)
@@ -1986,18 +1985,18 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
   if (!forceRefresh && commercialScopeInflight) return commercialScopeInflight
 
   commercialScopeInflight = (async () => {
-    await assertCommercialPlatformInstalled({ forceRefresh })
     const context = await resolveCommercialOrganisationContext()
     const userId = context.userId || await getCurrentUserId()
     const isPlatformAdmin = normalizeLower(context.profile?.role) === 'platform_admin' || normalizeLower(context.membershipRole) === 'platform_admin'
     const canReviewCommercialAccess = isPlatformAdmin || COMMERCIAL_ACCESS_REVIEWER_ROLES.has(context.membershipRole)
     const organisationSettingsCommercialEnabled = isCommercialEnabledInOrganisationSettings(context.organisationSettings)
-    const commercialModuleStatus = await getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh })
+    const currentMembershipPromise = findCurrentOrganisationMembership(context.organisationId, userId).catch(() => null)
+    const [commercialModuleStatus, currentMembership] = await Promise.all([
+      getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh }),
+      currentMembershipPromise,
+    ])
     const organisationCommercialEnabled = isPlatformAdmin || Boolean(commercialModuleStatus.enabled)
-    const membership = organisationCommercialEnabled
-      ? await findCurrentCommercialMembership(context.organisationId, userId).catch(() => null)
-      : null
-    const currentMembership = await findCurrentOrganisationMembership(context.organisationId, userId).catch(() => null)
+    const membership = organisationCommercialEnabled ? currentMembership : null
     const role = normalizeLower(membership?.workspace_role || membership?.organisation_role || membership?.role || context.membershipRole || 'viewer')
     const memberHasCommercialAccess = Boolean(membership?.id && isCommercialMembershipRow(membership))
     const hasCommercialAccess = isPlatformAdmin || (organisationCommercialEnabled && memberHasCommercialAccess)

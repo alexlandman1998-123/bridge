@@ -7,6 +7,10 @@ import { getCommercialNextAction, getCommercialUpdatedDate } from './commercialP
 import { lifecycleOptions } from './commercialWorkflow'
 import { scoreListingQuality } from './services/commercialIntelligenceApi'
 import {
+  getPropertyTypeOptionsByCategory,
+  normalizePropertyCategory,
+} from '../../lib/propertyTaxonomy'
+import {
   archiveCommercialCompany,
   archiveCommercialContact,
   archiveCommercialDeal,
@@ -102,15 +106,70 @@ export const TRANSACTION_STAGES = [
 ]
 
 export const PROPERTY_TYPES = [
+  ...getPropertyTypeOptionsByCategory('commercial'),
+  ...getPropertyTypeOptionsByCategory('industrial'),
+  ...getPropertyTypeOptionsByCategory('retail'),
+  ...getPropertyTypeOptionsByCategory('agricultural'),
   { value: 'office', label: 'Office' },
   { value: 'retail', label: 'Retail' },
   { value: 'industrial', label: 'Industrial' },
-  { value: 'mixed_use', label: 'Mixed-use' },
+  { value: 'mixed_use', label: 'Mixed Use' },
   { value: 'investment', label: 'Investment' },
   { value: 'development_land', label: 'Development Land' },
   { value: 'agricultural', label: 'Agricultural' },
   { value: 'land', label: 'Land' },
 ]
+
+const COMMERCIAL_PROPERTY_CATEGORIES = [
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'industrial', label: 'Industrial' },
+  { value: 'retail', label: 'Retail' },
+  { value: 'agricultural', label: 'Agricultural' },
+]
+
+function normalizeCommercialPropertyCategory(value = '') {
+  const normalized = normalizePropertyCategory(value, { fallback: 'commercial' })
+  if (COMMERCIAL_PROPERTY_CATEGORIES.some((category) => category.value === normalized)) return normalized
+  return 'commercial'
+}
+
+function commercialPropertyCategoryOptions() {
+  return COMMERCIAL_PROPERTY_CATEGORIES
+}
+
+function commercialPropertyTypeOptions(values = {}) {
+  const category = normalizeCommercialPropertyCategory(values.property_category || values.property_type)
+  const options = [...getPropertyTypeOptionsByCategory(category)]
+
+  if (category === 'commercial') {
+    options.push(
+      { value: 'office', label: 'Office' },
+      { value: 'mixed_use', label: 'Mixed Use' },
+      { value: 'investment', label: 'Investment' },
+      { value: 'development_land', label: 'Development Land' },
+      { value: 'land', label: 'Land' },
+    )
+  }
+
+  if (category === 'industrial') options.push({ value: 'industrial', label: 'Industrial' })
+  if (category === 'retail') options.push({ value: 'retail', label: 'Retail' })
+  if (category === 'agricultural') options.push({ value: 'agricultural', label: 'Agricultural' })
+
+  const seen = new Set()
+  return options.filter((option) => {
+    if (seen.has(option.value)) return false
+    seen.add(option.value)
+    return true
+  })
+}
+
+function showForPropertyCategories(...categories) {
+  const allowed = new Set(categories.flat().map((category) => normalizeCommercialPropertyCategory(category)))
+  return (values, record) => {
+    const currentCategory = normalizeCommercialPropertyCategory(values?.property_category || record?.property_type || record?.property_category)
+    return allowed.has(currentCategory)
+  }
+}
 
 function workspaceLink(to, label) {
   return createElement(Link, { to, className: 'font-semibold text-[#1267a3] transition hover:text-[#0c4f80]' }, label)
@@ -332,6 +391,10 @@ export const commercialCrudConfigs = {
       { name: 'name', label: 'Landlord name', required: true },
       { name: 'landlord_type', label: 'Landlord type', type: 'select', options: LANDLORD_TYPES },
       { name: 'contact_person', label: 'Contact person' },
+      { name: 'property_manager_name', label: 'Property manager' },
+      { name: 'property_manager_email', label: 'Property manager email', type: 'email' },
+      { name: 'asset_manager_name', label: 'Asset manager' },
+      { name: 'asset_manager_email', label: 'Asset manager email', type: 'email' },
       { name: 'email', label: 'Email', type: 'email' },
       { name: 'phone', label: 'Phone' },
       { name: 'website', label: 'Website' },
@@ -420,59 +483,81 @@ export const commercialCrudConfigs = {
       { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
       { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
       { name: 'broker_id', label: 'Broker owner', type: 'select', optionsFrom: 'brokers', required: true },
-      { name: 'property_type', label: 'Property type', type: 'select', options: PROPERTY_TYPES },
+      {
+        name: 'property_category',
+        label: 'Property category',
+        type: 'select',
+        options: commercialPropertyCategoryOptions(),
+        required: true,
+        persist: false,
+        getInitialValue: (record) => normalizeCommercialPropertyCategory(record?.property_type || record?.property_category || 'commercial'),
+        onChange: (nextValue, previous, next) => {
+          if (next.property_type && normalizeCommercialPropertyCategory(next.property_type) !== normalizeCommercialPropertyCategory(nextValue)) {
+            next.property_type = ''
+          }
+        },
+      },
+      {
+        name: 'property_type',
+        label: 'Property type',
+        type: 'select',
+        options: commercialPropertyTypeOptions,
+        required: true,
+        visibleWhen: (values, record) => Boolean(values.property_category || record?.property_type || record?.property_category),
+        help: 'Choose the subtype for the selected category.',
+      },
       { name: 'address', label: 'Address', span: 'full' },
       { name: 'suburb', label: 'Suburb' },
       { name: 'city', label: 'City' },
       { name: 'province', label: 'Province' },
       { name: 'country', label: 'Country', defaultValue: 'South Africa' },
-      { name: 'gla_m2', label: 'GLA m²', type: 'number' },
-      { name: 'available_space_m2', label: 'Available space m²', type: 'number' },
-      { name: 'number_of_units', label: 'Number of units', type: 'number' },
-      { name: 'vacancy_percentage', label: 'Vacancy percentage', type: 'percentage' },
-      { name: 'zoning', label: 'Zoning' },
-      { name: 'parking_ratio', label: 'Parking ratio' },
-      { name: 'loading_bays', label: 'Loading bays', type: 'number' },
-      { name: 'power_supply', label: 'Power supply' },
-      { name: 'height_m', label: 'Height m', type: 'number' },
-      { name: 'asking_rental_per_m2', label: 'Asking rental per m²', type: 'number' },
-      { name: 'asking_sale_price', label: 'Asking sale price', type: 'number' },
-      { name: 'building_grade', label: 'Building grade' },
-      { name: 'backup_power', label: 'Backup power', type: 'checkbox' },
-      { name: 'generator', label: 'Generator', type: 'checkbox' },
-      { name: 'solar', label: 'Solar', type: 'checkbox' },
-      { name: 'fibre', label: 'Fibre', type: 'checkbox' },
-      { name: 'number_of_lifts', label: 'Number of lifts', type: 'number' },
-      { name: 'amenities', label: 'Amenities', type: 'textarea', span: 'full' },
-      { name: 'yard_size_m2', label: 'Yard size m²', type: 'number' },
-      { name: 'eaves_height_m', label: 'Eaves height m', type: 'number' },
-      { name: 'roller_doors', label: 'Roller doors', type: 'number' },
-      { name: 'truck_access', label: 'Truck access', type: 'checkbox' },
-      { name: 'sprinklers', label: 'Sprinklers', type: 'checkbox' },
-      { name: 'warehouse_area_m2', label: 'Warehouse area m²', type: 'number' },
-      { name: 'office_area_m2', label: 'Office area m²', type: 'number' },
-      { name: 'frontage_m', label: 'Frontage m', type: 'number' },
-      { name: 'anchor_tenants', label: 'Anchor tenants' },
-      { name: 'foot_traffic', label: 'Foot traffic' },
-      { name: 'trading_hours', label: 'Trading hours' },
-      { name: 'mall_type', label: 'Mall type' },
-      { name: 'visibility_rating', label: 'Visibility rating' },
-      { name: 'noi', label: 'NOI', type: 'number' },
-      { name: 'cap_rate', label: 'Cap rate %', type: 'percentage' },
-      { name: 'wale_months', label: 'WALE months', type: 'number' },
-      { name: 'gross_yield', label: 'Gross yield %', type: 'percentage' },
-      { name: 'net_yield', label: 'Net yield %', type: 'percentage' },
-      { name: 'annual_income', label: 'Annual income', type: 'number' },
-      { name: 'land_size_m2', label: 'Land size m²', type: 'number' },
-      { name: 'bulk', label: 'Bulk' },
-      { name: 'coverage', label: 'Coverage' },
-      { name: 'services_available', label: 'Services available' },
-      { name: 'environmental_status', label: 'Environmental status' },
-      { name: 'farm_size_ha', label: 'Farm size ha', type: 'number' },
-      { name: 'water_rights', label: 'Water rights' },
-      { name: 'irrigation', label: 'Irrigation' },
-      { name: 'crop_type', label: 'Crop type' },
-      { name: 'livestock_capacity', label: 'Livestock capacity' },
+      { name: 'gla_m2', label: 'GLA m²', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'available_space_m2', label: 'Available space m²', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'number_of_units', label: 'Number of units', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'vacancy_percentage', label: 'Vacancy percentage', type: 'percentage', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'zoning', label: 'Zoning', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'parking_ratio', label: 'Parking ratio', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'loading_bays', label: 'Loading bays', type: 'number', visibleWhen: showForPropertyCategories('industrial') },
+      { name: 'power_supply', label: 'Power supply', visibleWhen: showForPropertyCategories('commercial', 'industrial') },
+      { name: 'height_m', label: 'Height m', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial') },
+      { name: 'asking_rental_per_m2', label: 'Asking rental per m²', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'asking_sale_price', label: 'Asking sale price', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail', 'agricultural') },
+      { name: 'building_grade', label: 'Building grade', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'backup_power', label: 'Backup power', type: 'checkbox', visibleWhen: showForPropertyCategories('commercial', 'industrial') },
+      { name: 'generator', label: 'Generator', type: 'checkbox', visibleWhen: showForPropertyCategories('commercial', 'industrial') },
+      { name: 'solar', label: 'Solar', type: 'checkbox', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'fibre', label: 'Fibre', type: 'checkbox', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'number_of_lifts', label: 'Number of lifts', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'retail') },
+      { name: 'amenities', label: 'Amenities', type: 'textarea', span: 'full', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'yard_size_m2', label: 'Yard size m²', type: 'number', visibleWhen: showForPropertyCategories('industrial') },
+      { name: 'eaves_height_m', label: 'Eaves height m', type: 'number', visibleWhen: showForPropertyCategories('industrial') },
+      { name: 'roller_doors', label: 'Roller doors', type: 'number', visibleWhen: showForPropertyCategories('industrial') },
+      { name: 'truck_access', label: 'Truck access', type: 'checkbox', visibleWhen: showForPropertyCategories('industrial') },
+      { name: 'sprinklers', label: 'Sprinklers', type: 'checkbox', visibleWhen: showForPropertyCategories('industrial') },
+      { name: 'warehouse_area_m2', label: 'Warehouse area m²', type: 'number', visibleWhen: showForPropertyCategories('industrial') },
+      { name: 'office_area_m2', label: 'Office area m²', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'frontage_m', label: 'Frontage m', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'retail') },
+      { name: 'anchor_tenants', label: 'Anchor tenants', visibleWhen: showForPropertyCategories('retail', 'commercial') },
+      { name: 'foot_traffic', label: 'Foot traffic', visibleWhen: showForPropertyCategories('retail') },
+      { name: 'trading_hours', label: 'Trading hours', visibleWhen: showForPropertyCategories('retail') },
+      { name: 'mall_type', label: 'Mall type', visibleWhen: showForPropertyCategories('retail') },
+      { name: 'visibility_rating', label: 'Visibility rating', visibleWhen: showForPropertyCategories('retail') },
+      { name: 'noi', label: 'NOI', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'cap_rate', label: 'Cap rate %', type: 'percentage', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'wale_months', label: 'WALE months', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'gross_yield', label: 'Gross yield %', type: 'percentage', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'net_yield', label: 'Net yield %', type: 'percentage', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
+      { name: 'annual_income', label: 'Annual income', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail', 'agricultural') },
+      { name: 'land_size_m2', label: 'Land size m²', type: 'number', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'bulk', label: 'Bulk', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'coverage', label: 'Coverage', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'services_available', label: 'Services available', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'environmental_status', label: 'Environmental status', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'farm_size_ha', label: 'Farm size ha', type: 'number', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'water_rights', label: 'Water rights', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'irrigation', label: 'Irrigation', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'crop_type', label: 'Crop type', visibleWhen: showForPropertyCategories('agricultural') },
+      { name: 'livestock_capacity', label: 'Livestock capacity', visibleWhen: showForPropertyCategories('agricultural') },
       { name: 'status', label: 'Status', type: 'select', options: ACTIVE_STATUSES, defaultValue: 'active' },
       { name: 'notes', label: 'Notes', type: 'textarea', span: 'full' },
     ],

@@ -55,6 +55,12 @@ function addDays(date, days) {
   return next
 }
 
+function addMonths(date, months) {
+  const next = new Date(date)
+  next.setMonth(next.getMonth() + months)
+  return next
+}
+
 function daysBetween(start, end = new Date()) {
   const startDate = toDate(start)
   const endDate = toDate(end)
@@ -70,6 +76,283 @@ function isWithinRange(value, start, end) {
 function isOnOrAfter(value, threshold) {
   const date = toDate(value)
   return Boolean(date && date >= threshold)
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(Number(value) || 0, min), max)
+}
+
+function calculatePercentageChange(currentValue, previousValue) {
+  const current = Number.isFinite(Number(currentValue)) ? Number(currentValue) : null
+  const previous = Number.isFinite(Number(previousValue)) ? Number(previousValue) : null
+  if (current === null || previous === null || previous <= 0) return null
+  return (current - previous) / previous
+}
+
+function hasSelectedColumn(fields = '', columnName = '') {
+  return normalizeLower(fields).includes(normalizeLower(columnName))
+}
+
+function buildExecutiveEmptyState() {
+  return {
+    platformHealthScore: null,
+    healthStatus: null,
+    growthTrend: {
+      currentMonth: null,
+      previousMonth: null,
+      percentageChange: null,
+    },
+    registrationTrend: {
+      registeredThisMonth: null,
+      registeredLastMonth: null,
+      percentageChange: null,
+    },
+    registrationForecast: {
+      next7Days: null,
+      next14Days: null,
+      next30Days: null,
+    },
+    revenue: {
+      actualThisMonth: null,
+      forecastThisMonth: null,
+      subscriptionRevenue: null,
+      transactionRevenue: null,
+    },
+    focusAreas: [],
+  }
+}
+
+function resolveHealthStatus(score) {
+  if (score === null || score === undefined) return null
+  if (score >= 80) return 'healthy'
+  if (score >= 60) return 'watch'
+  return 'attention'
+}
+
+function buildFocusArea({ type, title, description, severity = 'info' }) {
+  return {
+    type: normalizeToken(type || 'focus_area') || 'focus_area',
+    title: normalizeText(title) || 'Focus area',
+    description: normalizeText(description),
+    severity: severity === 'critical' ? 'critical' : severity === 'warning' ? 'warning' : 'info',
+  }
+}
+
+function buildExecutiveFocusAreas({ snapshot, executive }) {
+  const items = []
+  const attentionSummary = snapshot?.attention || {}
+  const registrationTrend = executive?.registrationTrend || {}
+  const growthTrend = executive?.growthTrend || {}
+  const registrationForecast = executive?.registrationForecast || {}
+  const revenue = executive?.revenue || {}
+  const inviteAcceptanceRate = snapshot?.invites?.inviteAcceptanceRate
+  const activeTransactions = snapshot?.summary?.activeTransactions
+
+  if ((attentionSummary.critical || 0) > 0) {
+    items.push(
+      buildFocusArea({
+        type: 'critical_attention',
+        title: `${attentionSummary.critical} critical item${attentionSummary.critical === 1 ? '' : 's'} need intervention`,
+        description: 'Mission Control is surfacing live operational blockers that need founder attention now.',
+        severity: 'critical',
+      }),
+    )
+  } else if ((attentionSummary.warning || 0) > 0) {
+    items.push(
+      buildFocusArea({
+        type: 'warning_attention',
+        title: `${attentionSummary.warning} warning item${attentionSummary.warning === 1 ? '' : 's'} should be watched`,
+        description: 'The platform has live operational risks that have not escalated to critical yet.',
+        severity: 'warning',
+      }),
+    )
+  }
+
+  if (activeTransactions > 0 && registrationTrend.registeredThisMonth === 0) {
+    items.push(
+      buildFocusArea({
+        type: 'registration_stalled',
+        title: 'Registrations have not landed this month',
+        description: 'Active transactions exist, but no registration has been recorded this month.',
+        severity: 'critical',
+      }),
+    )
+  } else if (registrationTrend.percentageChange !== null) {
+    items.push(
+      buildFocusArea({
+        type: registrationTrend.percentageChange >= 0 ? 'registration_improving' : 'registration_softening',
+        title: registrationTrend.percentageChange >= 0 ? 'Registration momentum is improving' : 'Registration momentum has softened',
+        description:
+          registrationTrend.percentageChange >= 0
+            ? 'Registered transactions are ahead of last month so far.'
+            : 'Registered transactions are behind last month so far.',
+        severity: registrationTrend.percentageChange >= 0 ? 'info' : 'warning',
+      }),
+    )
+  }
+
+  if (inviteAcceptanceRate !== null && inviteAcceptanceRate < 0.4) {
+    items.push(
+      buildFocusArea({
+        type: 'invite_acceptance_below_target',
+        title: 'Invite acceptance is below target',
+        description: 'Less than 40% of this month’s invites have converted into accepted access.',
+        severity: 'warning',
+      }),
+    )
+  }
+
+  if (growthTrend.currentMonth === 0) {
+    items.push(
+      buildFocusArea({
+        type: 'growth_flat',
+        title: 'New organisation growth is flat this month',
+        description: 'No new organisation signup has been recorded yet this month.',
+        severity: 'warning',
+      }),
+    )
+  } else if (growthTrend.percentageChange !== null) {
+    items.push(
+      buildFocusArea({
+        type: growthTrend.percentageChange >= 0 ? 'growth_improving' : 'growth_softening',
+        title: growthTrend.percentageChange >= 0 ? 'Organisation growth is improving' : 'Organisation growth has slowed',
+        description:
+          growthTrend.percentageChange >= 0
+            ? 'New organisation signups are running ahead of last month.'
+            : 'New organisation signups are trailing last month.',
+        severity: growthTrend.percentageChange >= 0 ? 'info' : 'warning',
+      }),
+    )
+  }
+
+  if (revenue.subscriptionRevenue !== null && revenue.actualThisMonth === null && revenue.transactionRevenue === null) {
+    items.push(
+      buildFocusArea({
+        type: 'revenue_partial',
+        title: 'Revenue intelligence is partially connected',
+        description: 'Subscription revenue is live, while collected revenue and transaction revenue remain unavailable.',
+        severity: 'info',
+      }),
+    )
+  } else if (
+    revenue.actualThisMonth === null &&
+    revenue.forecastThisMonth === null &&
+    revenue.subscriptionRevenue === null &&
+    revenue.transactionRevenue === null
+  ) {
+    items.push(
+      buildFocusArea({
+        type: 'revenue_unavailable',
+        title: 'Revenue data is not connected yet',
+        description: 'Mission Control is intentionally withholding revenue until the platform has a trustworthy billing source of truth.',
+        severity: 'info',
+      }),
+    )
+  }
+
+  if (registrationForecast.next7Days !== null && registrationForecast.next7Days > 0) {
+    items.push(
+      buildFocusArea({
+        type: 'registration_pipeline',
+        title: `${registrationForecast.next7Days} registration${registrationForecast.next7Days === 1 ? '' : 's'} expected in the next 7 days`,
+        description: 'Upcoming expected registration dates are already visible in the live pipeline.',
+        severity: 'info',
+      }),
+    )
+  }
+
+  const deduped = []
+  const seen = new Set()
+  for (const item of items) {
+    const key = `${item.type}::${item.title}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(item)
+    if (deduped.length >= 5) break
+  }
+
+  if (!deduped.length) {
+    return [
+      buildFocusArea({
+        type: 'monitoring',
+        title: 'Executive monitoring is live',
+        description: 'Mission Control is connected to real operational data and ready to surface the next meaningful signal.',
+        severity: 'info',
+      }),
+    ]
+  }
+
+  return deduped
+}
+
+function buildExecutiveSnapshot({
+  snapshot,
+  growthCurrentMonth = null,
+  growthPreviousMonth = null,
+  registeredThisMonth = null,
+  registeredLastMonth = null,
+  supportsExpectedRegistrationDates = false,
+  subscriptionRevenue = null,
+}) {
+  const executive = buildExecutiveEmptyState()
+  const growthCurrentValue = Number(growthCurrentMonth)
+  const growthPreviousValue = Number(growthPreviousMonth)
+  executive.growthTrend.currentMonth = Number.isFinite(growthCurrentValue) ? growthCurrentValue : null
+  executive.growthTrend.previousMonth = Number.isFinite(growthPreviousValue) ? growthPreviousValue : null
+  executive.growthTrend.percentageChange = calculatePercentageChange(executive.growthTrend.currentMonth, executive.growthTrend.previousMonth)
+
+  const registeredCurrentValue = Number(registeredThisMonth)
+  const registeredPreviousValue = Number(registeredLastMonth)
+  executive.registrationTrend.registeredThisMonth = Number.isFinite(registeredCurrentValue) ? registeredCurrentValue : null
+  executive.registrationTrend.registeredLastMonth = Number.isFinite(registeredPreviousValue) ? registeredPreviousValue : null
+  executive.registrationTrend.percentageChange = calculatePercentageChange(
+    executive.registrationTrend.registeredThisMonth,
+    executive.registrationTrend.registeredLastMonth,
+  )
+
+  executive.registrationForecast.next7Days = supportsExpectedRegistrationDates ? snapshot?.registrationForecast?.next7Days ?? 0 : null
+  executive.registrationForecast.next14Days = supportsExpectedRegistrationDates ? snapshot?.registrationForecast?.next14Days ?? 0 : null
+  executive.registrationForecast.next30Days = supportsExpectedRegistrationDates ? snapshot?.registrationForecast?.next30Days ?? 0 : null
+
+  // Real revenue remains intentionally conservative. A live subscription source exists,
+  // but there is not yet a trustworthy platform-wide actuals/forecast ledger for HQ.
+  executive.revenue.actualThisMonth = null
+  executive.revenue.forecastThisMonth = null
+  executive.revenue.subscriptionRevenue = subscriptionRevenue
+  executive.revenue.transactionRevenue = null
+
+  const hasHealthInputs =
+    Number.isFinite(Number(snapshot?.attention?.critical)) &&
+    Number.isFinite(Number(snapshot?.attention?.warning)) &&
+    Number.isFinite(Number(snapshot?.summary?.activeTransactions)) &&
+    executive.registrationTrend.registeredThisMonth !== null &&
+    executive.growthTrend.currentMonth !== null &&
+    snapshot?.invites?.inviteAcceptanceRate !== null
+
+  if (hasHealthInputs) {
+    // Explainable Phase 6 formula:
+    // Start at 100, subtract capped penalties for critical/warning attention items,
+    // then subtract fixed penalties for stalled registrations, flat signups,
+    // and low invite acceptance. Clamp to 0-100 for a simple founder signal.
+    let score = 100
+    score -= Math.min(Number(snapshot.attention.critical || 0) * 3, 30)
+    score -= Math.min(Number(snapshot.attention.warning || 0), 20)
+    if (Number(snapshot.summary.activeTransactions || 0) > 0 && Number(executive.registrationTrend.registeredThisMonth || 0) === 0) {
+      score -= 10
+    }
+    if (Number(executive.growthTrend.currentMonth || 0) === 0) {
+      score -= 10
+    }
+    if (Number(snapshot.invites.inviteAcceptanceRate) < 0.4) {
+      score -= 10
+    }
+    executive.platformHealthScore = clampNumber(score, 0, 100)
+    executive.healthStatus = resolveHealthStatus(executive.platformHealthScore)
+  }
+
+  executive.focusAreas = buildExecutiveFocusAreas({ snapshot, executive })
+
+  return executive
 }
 
 function humanizeKey(value = '') {
@@ -343,6 +626,7 @@ function buildEmptySnapshot(now = new Date()) {
       trialsStarted: null,
       organisationsLive: 0,
     },
+    executive: buildExecutiveEmptyState(),
   }
 }
 
@@ -1301,6 +1585,8 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
   const todayStart = startOfDay(now)
   const tomorrowStart = addDays(todayStart, 1)
   const monthStart = startOfMonth(now)
+  const nextMonthStart = startOfMonth(addMonths(now, 1))
+  const previousMonthStart = startOfMonth(addMonths(now, -1))
   const next7Days = addDays(todayStart, 7)
   const next14Days = addDays(todayStart, 14)
   const next30Days = addDays(todayStart, 30)
@@ -1320,6 +1606,7 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
     communicationFailureResult,
     auditResult,
     transactionEventResult,
+    subscriptionResult,
   ] = await Promise.all([
     fetchAllRows(
       serviceClient,
@@ -1491,6 +1778,20 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
         limit: 12,
       },
     ),
+    fetchAllRows(
+      serviceClient,
+      'workspace_subscriptions',
+      [
+        'id, organisation_id, status, billing_cycle, monthly_amount, current_period_ends_at, created_at, updated_at',
+        'id, organisation_id, status, monthly_amount, created_at, updated_at',
+        'id, organisation_id, status, created_at, updated_at',
+      ],
+      {
+        allowMissing: true,
+        order: { column: 'updated_at', ascending: false },
+        pageSize: 500,
+      },
+    ),
   ])
 
   const transactions = transactionResult.rows || []
@@ -1505,8 +1806,19 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
   const communicationFailureRows = communicationFailureResult.rows || []
   const auditRows = auditResult.rows || []
   const transactionEventRows = transactionEventResult.rows || []
+  const subscriptions = subscriptionResult.rows || []
 
   const activeTransactions = transactions.filter((row) => isDashboardTransactionActive(row))
+  const supportsOrganisationSource = Boolean(organisationResult.fieldsUsed)
+  const supportsTransactionSource = Boolean(transactionResult.fieldsUsed)
+  const supportsRegistrationDates =
+    hasSelectedColumn(transactionResult.fieldsUsed, 'registered_at') ||
+    hasSelectedColumn(transactionResult.fieldsUsed, 'registration_date') ||
+    hasSelectedColumn(transactionResult.fieldsUsed, 'completed_at')
+  const supportsExpectedRegistrationDates =
+    hasSelectedColumn(transactionResult.fieldsUsed, 'target_registration_date') ||
+    hasSelectedColumn(transactionResult.fieldsUsed, 'expected_registration_date') ||
+    hasSelectedColumn(transactionResult.fieldsUsed, 'expected_transfer_date')
   const activeOrganisations = organisations.filter(isActiveOrganisation)
   const activeOrganisationIds = new Set(activeOrganisations.map((row) => normalizeText(row?.id)).filter(Boolean))
   const activeAgencies = activeOrganisations.filter((row) => normalizeOrganisationType(row?.type) === 'agency')
@@ -1579,18 +1891,27 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
     const expectedDate = getExpectedRegistrationDate(row)
     return isWithinRange(expectedDate, todayStart, next7Days) ? count + 1 : count
   }, 0)
-  snapshot.summary.registeredToday = transactions.reduce((count, row) => {
+  const registeredTransactions = transactions.filter((row) => isRegisteredTransaction(row))
+  const registeredThisMonth = supportsRegistrationDates
+    ? registeredTransactions.filter((row) => isWithinRange(getRegistrationDate(row), monthStart, nextMonthStart)).length
+    : null
+  const registeredLastMonth = supportsRegistrationDates
+    ? registeredTransactions.filter((row) => isWithinRange(getRegistrationDate(row), previousMonthStart, monthStart)).length
+    : null
+  snapshot.summary.registeredToday = registeredTransactions.reduce((count, row) => {
     if (!isRegisteredTransaction(row)) return count
     return isWithinRange(getRegistrationDate(row), todayStart, tomorrowStart) ? count + 1 : count
   }, 0)
-  // TODO: connect founder revenue once the platform billing model is finalised.
-  snapshot.summary.revenueThisMonth = null
-  // TODO: connect the formal platform health score once the HQ scoring formula exists.
-  snapshot.summary.platformHealthScore = null
 
   snapshot.growth.activeAgencies = activeAgencies.length
   snapshot.growth.activeAgents = activeAgentUserIds.size
   snapshot.growth.newAgencySignups = organisations.filter((row) => normalizeOrganisationType(row?.type) === 'agency' && isOnOrAfter(row?.created_at, monthStart)).length
+  const newOrganisationsThisMonth = supportsOrganisationSource
+    ? organisations.filter((row) => isWithinRange(row?.created_at, monthStart, nextMonthStart)).length
+    : null
+  const newOrganisationsLastMonth = supportsOrganisationSource
+    ? organisations.filter((row) => isWithinRange(row?.created_at, previousMonthStart, monthStart)).length
+    : null
   snapshot.growth.websiteEnquiries = leads.filter(isWebsiteEnquiry).length
   // TODO: connect demo requests once the enquiry/demo workflow is modelled explicitly.
   snapshot.growth.demoRequests = null
@@ -1781,6 +2102,30 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
   // TODO: connect trial lifecycle stages once they exist in the platform model.
   snapshot.funnel.trialsStarted = null
   snapshot.funnel.organisationsLive = activeOrganisations.length
+
+  const supportsSubscriptionRevenue = hasSelectedColumn(subscriptionResult.fieldsUsed, 'monthly_amount')
+  const subscriptionRevenue = supportsSubscriptionRevenue
+    ? subscriptions.reduce((sum, row) => {
+        const normalizedStatus = normalizeToken(row?.status)
+        if (!['active', 'past_due'].includes(normalizedStatus)) return sum
+        const monthlyAmount = Number(row?.monthly_amount)
+        if (!Number.isFinite(monthlyAmount) || monthlyAmount <= 0) return sum
+        return sum + monthlyAmount / 100
+      }, 0)
+    : null
+
+  snapshot.executive = buildExecutiveSnapshot({
+    snapshot,
+    growthCurrentMonth: newOrganisationsThisMonth,
+    growthPreviousMonth: newOrganisationsLastMonth,
+    registeredThisMonth: supportsTransactionSource ? registeredThisMonth : null,
+    registeredLastMonth: supportsTransactionSource ? registeredLastMonth : null,
+    supportsExpectedRegistrationDates,
+    subscriptionRevenue,
+  })
+
+  snapshot.summary.revenueThisMonth = snapshot.executive.revenue.actualThisMonth
+  snapshot.summary.platformHealthScore = snapshot.executive.platformHealthScore
 
   return snapshot
 }

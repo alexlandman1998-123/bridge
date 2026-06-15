@@ -181,7 +181,7 @@ function CommercialCrudPage({
     [config.filters, lookupOptions],
   )
   const drawerFields = useMemo(
-    () => config.fields.map((field) => ({
+    () => config.fields.filter((field) => field.persist !== false).map((field) => ({
       key: field.name,
       label: field.label,
       render: field.type === 'select'

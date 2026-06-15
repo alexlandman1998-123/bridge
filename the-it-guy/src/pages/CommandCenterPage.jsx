@@ -6,6 +6,7 @@ import {
   ActivityFeedContainer,
   AlertContainer,
   ExecutiveCard,
+  FocusAreasContainer,
   HQSkeletonCard,
   MiniMetricCard,
   MissionControlCarousel,
@@ -112,6 +113,19 @@ function formatMetricValue(value, formatter = formatCount) {
   return formatter(value)
 }
 
+function formatSignedPercentChange(value) {
+  if (value === null || value === undefined) return 'Not available yet'
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 'Not available yet'
+  const absoluteLabel = PERCENT_FORMATTER.format(Math.abs(numeric))
+  if (numeric === 0) return absoluteLabel
+  return `${numeric > 0 ? '+' : '-'}${absoluteLabel}`
+}
+
+function formatHealthStatus(value) {
+  return value ? humanizeToken(value) : 'Not available yet'
+}
+
 function SectionHeading({ eyebrow, title, description, className = '' }) {
   return (
     <div className={`flex items-end justify-between gap-4 ${className}`.trim()}>
@@ -202,13 +216,6 @@ function getSnapshotStatusLabel({ showSkeleton, refreshing, error }) {
   return 'Live data'
 }
 
-function getAvailabilityStatus({ showSkeleton, refreshing, error }) {
-  if (showSkeleton) return 'Loading snapshot'
-  if (refreshing) return 'Refreshing snapshot'
-  if (error) return 'Snapshot issue'
-  return 'Live snapshot'
-}
-
 export default function CommandCenterPage() {
   const { profile } = useWorkspace()
   const [snapshot, setSnapshot] = useState(null)
@@ -261,13 +268,27 @@ export default function CommandCenterPage() {
 
   const activityItems = useMemo(() => buildActivityItems(snapshot), [snapshot])
   const alertItems = useMemo(() => buildAlertItems(snapshot), [snapshot])
+  const focusAreaItems = snapshot?.executive?.focusAreas || []
 
   const activeTransactionsValue = formatMetricValue(snapshot?.summary?.activeTransactions)
   const scheduledRegistrationsValue = formatMetricValue(snapshot?.summary?.scheduledRegistrationsSoon)
   const registeredTodayValue = formatMetricValue(snapshot?.summary?.registeredToday)
-  const revenueThisMonthValue = formatMetricValue(snapshot?.summary?.revenueThisMonth, formatCurrency)
-  const revenueForecastValue = formatMetricValue(snapshot?.registrationForecast?.forecastRevenue, formatCurrency)
-  const healthScoreValue = formatMetricValue(snapshot?.summary?.platformHealthScore)
+  const healthScoreValue = formatMetricValue(snapshot?.executive?.platformHealthScore)
+  const healthStatusValue = formatHealthStatus(snapshot?.executive?.healthStatus)
+  const topFocusAreaTitle = snapshot?.executive?.focusAreas?.[0]?.title || ''
+  const revenueThisMonthValue = formatMetricValue(snapshot?.executive?.revenue?.actualThisMonth, formatCurrency)
+  const revenueForecastValue = formatMetricValue(snapshot?.executive?.revenue?.forecastThisMonth, formatCurrency)
+  const subscriptionRevenueValue = formatMetricValue(snapshot?.executive?.revenue?.subscriptionRevenue, formatCurrency)
+  const transactionRevenueValue = formatMetricValue(snapshot?.executive?.revenue?.transactionRevenue, formatCurrency)
+  const growthCurrentMonthValue = formatMetricValue(snapshot?.executive?.growthTrend?.currentMonth)
+  const growthPreviousMonthValue = formatMetricValue(snapshot?.executive?.growthTrend?.previousMonth)
+  const growthChangeValue = formatSignedPercentChange(snapshot?.executive?.growthTrend?.percentageChange)
+  const registrationCurrentMonthValue = formatMetricValue(snapshot?.executive?.registrationTrend?.registeredThisMonth)
+  const registrationLastMonthValue = formatMetricValue(snapshot?.executive?.registrationTrend?.registeredLastMonth)
+  const registrationChangeValue = formatSignedPercentChange(snapshot?.executive?.registrationTrend?.percentageChange)
+  const forecastNext7Value = formatMetricValue(snapshot?.executive?.registrationForecast?.next7Days)
+  const forecastNext14Value = formatMetricValue(snapshot?.executive?.registrationForecast?.next14Days)
+  const forecastNext30Value = formatMetricValue(snapshot?.executive?.registrationForecast?.next30Days)
   const acceptanceRateValue = formatMetricValue(snapshot?.invites?.inviteAcceptanceRate, formatPercent)
   const attentionTotalValue = formatMetricValue(snapshot?.attention?.total)
   const attentionCriticalValue = formatMetricValue(snapshot?.attention?.critical)
@@ -275,7 +296,6 @@ export default function CommandCenterPage() {
   const delayedRegistrationsValue = formatMetricValue(snapshot?.transactionHealth?.delayedRegistrations)
   const generatedAtLabel = snapshot?.generatedAt ? formatDateTime(snapshot.generatedAt) : ''
   const snapshotStatus = getSnapshotStatusLabel({ showSkeleton, refreshing, error })
-  const availabilityStatus = getAvailabilityStatus({ showSkeleton, refreshing, error })
 
   return (
     <section className="space-y-8 pb-8">
@@ -356,14 +376,23 @@ export default function CommandCenterPage() {
             <ExecutiveCard
               eyebrow="Platform health"
               title="Platform Health"
-              status={snapshotStatus}
-              description="Real operational counts are connected. Platform scoring remains intentionally unavailable until the production HQ formula is defined."
+              status={snapshot?.executive?.healthStatus ? humanizeToken(snapshot.executive.healthStatus) : snapshotStatus}
+              description="Mission Control now turns live operational data into an explainable founder signal, while staying explicit when the platform lacks a trustworthy source."
             >
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                 <div className="rounded-[26px] border border-[#e5ebf2] bg-[linear-gradient(180deg,#fbfcfe_0%,#f6f9fc_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <MetricSurface label="Health Score" value={healthScoreValue} helper="Phase 6 will define the real scoring model." hero />
-                    <MetricSurface label="Status" value={availabilityStatus} helper="This label reflects snapshot availability, not a synthetic score." />
+                    <MetricSurface
+                      label="Health Score"
+                      value={healthScoreValue}
+                      helper={topFocusAreaTitle || 'Health score not available yet'}
+                      hero
+                    />
+                    <MetricSurface
+                      label="Status"
+                      value={healthStatusValue}
+                      helper={snapshot?.executive?.healthStatus ? 'Derived from attention, registrations, growth, and invite acceptance.' : 'Not available until all required live inputs exist.'}
+                    />
                   </div>
                 </div>
 
@@ -381,11 +410,38 @@ export default function CommandCenterPage() {
               eyebrow="Finance"
               title="Revenue"
               status={snapshotStatus}
-              description="Mission Control shows real revenue only when the platform has a trustworthy billing model to read from."
+              description="Only real billing sources appear here. Mission Control does not estimate collected or forecast revenue when the platform cannot prove it."
             >
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                <MetricSurface label="This Month" value={revenueThisMonthValue} hero helper="No revenue estimate is invented when billing data is unavailable." />
-                <MetricSurface label="Forecast" value={revenueForecastValue} helper="Forecast revenue remains unavailable until revenue attribution is finalised." />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <MetricSurface
+                  label="This Month"
+                  value={revenueThisMonthValue}
+                  hero
+                  helper={
+                    snapshot?.executive?.revenue?.actualThisMonth === null
+                      ? 'Revenue data not connected yet.'
+                      : 'Collected platform revenue recorded this month.'
+                  }
+                />
+                <MetricSurface label="Forecast" value={revenueForecastValue} helper="No forecast is shown until the production revenue model is trustworthy." />
+                <MetricSurface
+                  label="Subscription Revenue"
+                  value={subscriptionRevenueValue}
+                  helper={
+                    snapshot?.executive?.revenue?.subscriptionRevenue === null
+                      ? 'Subscription revenue is not connected yet.'
+                      : 'Live subscription revenue from workspace subscriptions.'
+                  }
+                />
+                <MetricSurface
+                  label="Transaction Revenue"
+                  value={transactionRevenueValue}
+                  helper={
+                    snapshot?.executive?.revenue?.transactionRevenue === null
+                      ? 'Transaction-linked revenue remains unavailable until attribution is finalised.'
+                      : 'Real transaction revenue from a connected production source.'
+                  }
+                />
               </div>
             </ExecutiveCard>
 
@@ -393,13 +449,18 @@ export default function CommandCenterPage() {
               eyebrow="Growth"
               title="Growth"
               status={snapshotStatus}
-              description="These cards surface the real network and demand signals that already exist in the platform."
+              description="Founder growth momentum compares this month’s real organisation signups with the previous month."
+              footer={
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <MetricSurface label="Active Agencies" value={formatMetricValue(snapshot?.growth?.activeAgencies)} />
+                  <MetricSurface label="Active Users" value={formatMetricValue(snapshot?.growth?.activeAgents)} />
+                </div>
+              }
             >
-              <div className="grid gap-3 sm:grid-cols-2">
-                <MetricSurface label="Active Agencies" value={formatMetricValue(snapshot?.growth?.activeAgencies)} />
-                <MetricSurface label="Active Users" value={formatMetricValue(snapshot?.growth?.activeAgents)} />
-                <MetricSurface label="New Organisations" value={formatMetricValue(snapshot?.growth?.newAgencySignups)} />
-                <MetricSurface label="Website Leads" value={formatMetricValue(snapshot?.growth?.websiteEnquiries)} />
+              <div className="grid gap-3 sm:grid-cols-3">
+                <MetricSurface label="Current Month" value={growthCurrentMonthValue} hero />
+                <MetricSurface label="Previous Month" value={growthPreviousMonthValue} />
+                <MetricSurface label="Change" value={growthChangeValue} helper="Month-on-month organisation growth." />
               </div>
             </ExecutiveCard>
 
@@ -420,7 +481,7 @@ export default function CommandCenterPage() {
             <ExecutiveCard
               eyebrow="Attention"
               title="Attention Required"
-              status={snapshotStatus}
+              status={snapshot?.attention?.critical ? `${snapshot.attention.critical} critical` : snapshotStatus}
               warning
               description="Real operational alerts are ranked for founder intervention, with critical issues surfaced first."
             >
@@ -470,6 +531,49 @@ export default function CommandCenterPage() {
         </div>
       </section>
 
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <FocusAreasContainer
+          loading={showSkeleton}
+          items={focusAreaItems}
+          emptyTitle={error ? 'Snapshot unavailable' : 'No focus areas yet'}
+          emptyDescription={
+            error
+              ? error.message || 'Executive focus areas could not be loaded.'
+              : 'Mission Control will surface deterministic founder priorities here once enough live data is available.'
+          }
+        />
+
+        {showSkeleton ? (
+          <HQSkeletonCard compact />
+        ) : (
+          <ExecutiveCard
+            eyebrow="Executive"
+            title="Registration Outlook"
+            description="Real registration movement and expected registration dates, kept honest when a production source is not yet connected."
+          >
+            <div className="space-y-4">
+              <div>
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-[#7b899a]">Registration Trend</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <MetricSurface label="This Month" value={registrationCurrentMonthValue} hero />
+                  <MetricSurface label="Last Month" value={registrationLastMonthValue} />
+                  <MetricSurface label="Change" value={registrationChangeValue} helper="Month-on-month registration movement." />
+                </div>
+              </div>
+
+              <div>
+                <p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-[#7b899a]">Registration Forecast</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <MetricSurface label="Next 7 Days" value={forecastNext7Value} />
+                  <MetricSurface label="Next 14 Days" value={forecastNext14Value} />
+                  <MetricSurface label="Next 30 Days" value={forecastNext30Value} />
+                </div>
+              </div>
+            </div>
+          </ExecutiveCard>
+        )}
+      </section>
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
         <ActivityFeedContainer
           loading={showSkeleton}
@@ -502,12 +606,12 @@ export default function CommandCenterPage() {
             <Sparkles className="h-4 w-4" />
           </span>
           <div className="min-w-0">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#7b899a]">Phase 5 live</p>
-            <p className="mt-1 text-[1.02rem] font-semibold text-[#102033]">Mission Control now highlights the real work that needs intervention.</p>
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#7b899a]">Phase 6 live</p>
+            <p className="mt-1 text-[1.02rem] font-semibold text-[#102033]">Mission Control now turns live platform signals into founder-level executive intelligence.</p>
             <p className="mt-2 text-sm leading-6 text-[#60758d]">
               {generatedAtLabel
-                ? `Snapshot generated ${generatedAtLabel}. Attention, activity, and platform counts are derived from real platform data, while metrics without a trustworthy production source remain explicitly unavailable.`
-                : 'Attention, activity, and platform counts are derived from real platform data, while metrics without a trustworthy production source remain explicitly unavailable.'}
+                ? `Snapshot generated ${generatedAtLabel}. Health, growth, and registration intelligence are derived from real platform data, while revenue and any unsupported metric remain explicitly unavailable until a trustworthy production source exists.`
+                : 'Health, growth, and registration intelligence are derived from real platform data, while revenue and any unsupported metric remain explicitly unavailable until a trustworthy production source exists.'}
             </p>
           </div>
         </div>

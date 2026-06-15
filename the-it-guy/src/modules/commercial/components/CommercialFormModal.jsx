@@ -2,12 +2,26 @@ import { X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 function normalizeInitialValue(field, record) {
+  if (typeof field.getInitialValue === 'function') {
+    return field.getInitialValue(record)
+  }
   if (record && record[field.name] !== undefined && record[field.name] !== null) {
     if (field.type === 'multiText' && Array.isArray(record[field.name])) return record[field.name].join(', ')
     return String(record[field.name])
   }
+  if (typeof field.defaultValue === 'function') return field.defaultValue(record)
   if (field.type === 'checkbox') return Boolean(field.defaultValue)
   return field.defaultValue ?? ''
+}
+
+function isFieldVisible(field, values, record) {
+  if (typeof field.visibleWhen === 'function') return Boolean(field.visibleWhen(values, record))
+  if (field.visibleWhen && typeof field.visibleWhen === 'object') {
+    const targetField = field.visibleWhen.field || field.visibleWhen.name
+    const expected = field.visibleWhen.equals
+    return String(values?.[targetField] ?? '') === String(expected ?? '')
+  }
+  return true
 }
 
 function isValidEmail(value) {
@@ -68,6 +82,7 @@ function serializeValues(fields, values) {
   const payload = {}
 
   for (const field of fields) {
+    if (field.persist === false) continue
     const value = values[field.name]
     if (field.readOnly) continue
     if (field.type === 'number' || field.type === 'percentage') {
@@ -100,6 +115,7 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
     })
     return next
   }, [fields, record])
+  const visibleFields = useMemo(() => fields.filter((field) => isFieldVisible(field, values, record)), [fields, record, values])
 
   useEffect(() => {
     if (!open) return
@@ -112,14 +128,14 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
 
   async function handleSubmit(event) {
     event.preventDefault()
-    const nextErrors = validateForm(fields, values, crossValidate)
+    const nextErrors = validateForm(visibleFields, values, crossValidate)
     setErrors(nextErrors)
     setSaveError('')
     if (Object.keys(nextErrors).length) return
 
     try {
       setSaving(true)
-      await onSubmit?.(serializeValues(fields, values))
+      await onSubmit?.(serializeValues(visibleFields, values))
       onClose?.()
     } catch (error) {
       setSaveError(friendlyError(error))
@@ -130,7 +146,9 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
 
   function renderField(field) {
     const value = values[field.name] ?? ''
-    const options = field.options || lookups[field.optionsFrom] || []
+    const options = typeof field.options === 'function'
+      ? field.options(values, record)
+      : field.options || lookups[field.optionsFrom] || []
     const commonClass = 'min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-medium text-[#102236] outline-none transition focus:border-[#9fb9d1] focus:ring-4 focus:ring-[#dbeafe]'
 
     if (field.type === 'textarea') {
@@ -138,7 +156,14 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
         <textarea
           rows={4}
           value={value}
-          onChange={(event) => setValues((previous) => ({ ...previous, [field.name]: event.target.value }))}
+          onChange={(event) => {
+            const nextValue = event.target.value
+            setValues((previous) => {
+              const next = { ...previous, [field.name]: nextValue }
+              field.onChange?.(nextValue, previous, next)
+              return next
+            })
+          }}
           className={`${commonClass} py-3`}
         />
       )
@@ -148,7 +173,14 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
       return (
         <select
           value={value}
-          onChange={(event) => setValues((previous) => ({ ...previous, [field.name]: event.target.value }))}
+          onChange={(event) => {
+            const nextValue = event.target.value
+            setValues((previous) => {
+              const next = { ...previous, [field.name]: nextValue }
+              field.onChange?.(nextValue, previous, next)
+              return next
+            })
+          }}
           className={commonClass}
         >
           <option value="">{field.placeholder || 'Select...'}</option>
@@ -167,7 +199,14 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
           <input
             type="checkbox"
             checked={Boolean(value)}
-            onChange={(event) => setValues((previous) => ({ ...previous, [field.name]: event.target.checked }))}
+            onChange={(event) => {
+              const nextValue = event.target.checked
+              setValues((previous) => {
+                const next = { ...previous, [field.name]: nextValue }
+                field.onChange?.(nextValue, previous, next)
+                return next
+              })
+            }}
             className="h-4 w-4 rounded border-slate-300"
           />
           Yes
@@ -180,7 +219,14 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
         type={field.type === 'date' ? 'date' : field.type === 'time' ? 'time' : field.type === 'number' || field.type === 'percentage' ? 'number' : field.type === 'email' ? 'email' : 'text'}
         value={value}
         step={field.step || (field.type === 'number' || field.type === 'percentage' ? 'any' : undefined)}
-        onChange={(event) => setValues((previous) => ({ ...previous, [field.name]: event.target.value }))}
+        onChange={(event) => {
+          const nextValue = event.target.value
+          setValues((previous) => {
+            const next = { ...previous, [field.name]: nextValue }
+            field.onChange?.(nextValue, previous, next)
+            return next
+          })
+        }}
         className={commonClass}
       />
     )
@@ -204,7 +250,7 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
             <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{saveError}</div>
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
-            {fields.map((field) => (
+            {visibleFields.map((field) => (
               <label key={field.name} className={field.span === 'full' ? 'grid gap-1.5 md:col-span-2' : 'grid gap-1.5'}>
                 <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
                   {field.label}

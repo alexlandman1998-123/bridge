@@ -1,6 +1,4 @@
 import {
-  BarChart3,
-  BriefcaseBusiness,
   Building2,
   ClipboardList,
   FileBarChart2,
@@ -9,14 +7,10 @@ import {
   Settings,
   Store,
   TrendingUp,
-  UserRoundCheck,
-  Users,
-  WalletCards,
-  Waypoints,
 } from 'lucide-react'
 
 export const COMMERCIAL_DASHBOARD_NAV_ITEM = {
-  label: 'Dashboard',
+  label: 'Overview',
   to: '/commercial/dashboard',
   exact: true,
   icon: LayoutDashboard,
@@ -25,34 +19,14 @@ export const COMMERCIAL_DASHBOARD_NAV_ITEM = {
 
 export const COMMERCIAL_NAV_SECTIONS = [
   {
-    id: 'lifecycle',
+    id: 'primary',
     items: [
       { label: 'Leads', to: '/commercial/leads', icon: ClipboardList, activePaths: ['/commercial/leads', '/commercial/requirements', '/commercial/pipeline', '/commercial/requirements/pipeline'] },
-      { label: 'Clients', to: '/commercial/clients', icon: BriefcaseBusiness, activePaths: ['/commercial/clients', '/commercial/companies', '/commercial/contacts', '/commercial/tenants'] },
-      { label: 'Leasing', to: '/commercial/leasing', icon: FileSignature, activePaths: ['/commercial/leasing', '/commercial/deals/leasing', '/commercial/heads-of-terms', '/commercial/hot', '/commercial/leases'] },
-      { label: 'Sales', to: '/commercial/sales', icon: TrendingUp, activePaths: ['/commercial/sales', '/commercial/deals/sales', '/commercial/transactions'] },
-    ],
-  },
-  {
-    id: 'supply',
-    items: [
+      { label: 'Deals', to: '/commercial/deals', icon: TrendingUp, activePaths: ['/commercial/deals', '/commercial/deals/pipeline', '/commercial/deals/overview', '/commercial/transactions'] },
       { label: 'Properties', to: '/commercial/properties', icon: Building2 },
       { label: 'Vacancies', to: '/commercial/vacancies', icon: Store },
-      { label: 'Listings', to: '/commercial/listings', icon: ClipboardList },
-      { label: 'Landlords', to: '/commercial/landlords', icon: WalletCards },
-    ],
-  },
-  {
-    id: 'team',
-    items: [
-      { label: 'Brokers', to: '/commercial/brokers', icon: Users, activePaths: ['/commercial/brokers', '/commercial/brokers/overview', '/commercial/brokers/branches', '/commercial/brokers/assignments'] },
-      { label: 'Teams', to: '/commercial/teams', icon: Waypoints, activePaths: ['/commercial/teams', '/commercial/brokers/teams'] },
-      { label: 'Performance', to: '/commercial/performance', icon: BarChart3, activePaths: ['/commercial/performance', '/commercial/brokers/performance', '/commercial/principal'] },
-    ],
-  },
-  {
-    id: 'reporting',
-    items: [
+      { label: 'Leasing', to: '/commercial/leasing', icon: FileSignature, activePaths: ['/commercial/leasing', '/commercial/deals/leasing', '/commercial/heads-of-terms', '/commercial/hot', '/commercial/leases'] },
+      { label: 'Sales', to: '/commercial/sales', icon: TrendingUp, activePaths: ['/commercial/sales', '/commercial/deals/sales', '/commercial/transactions'] },
       { label: 'Reports', to: '/commercial/reports', icon: FileBarChart2, activePaths: ['/commercial/reports', '/commercial/docs', '/commercial/documents', '/commercial/activity', '/commercial/market-intelligence', '/commercial/broker-performance'] },
     ],
   },
