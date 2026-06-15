@@ -278,7 +278,9 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
 
   const canSelfActivate = Boolean(accessState?.scope?.eligibleForCommercialSelfActivation)
   const activeStepLabel = WIZARD_STEPS[stepIndex] || WIZARD_STEPS[0]
-  const selectedUserCount = (draft?.selectedOrganisationUserIds || []).length + (draft?.invitedUsers || []).length
+  const selectedExistingUserCount = (draft?.selectedOrganisationUserIds || []).length
+  const invitedUserCount = (draft?.invitedUsers || []).length
+  const selectedUserCount = selectedExistingUserCount + invitedUserCount
   const enabledFeatureCount = Object.values(draft?.featureSelections || {}).filter(Boolean).length
   const branchCount = draft?.branchMode === 'dedicated'
     ? (draft?.dedicatedBranches || []).filter((branch) => normalizeText(branch.name)).length
@@ -883,121 +885,163 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                   ) : null}
 
                   {stepIndex === 1 ? (
-                    <div className="space-y-6">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Step 2</p>
-                        <h2 className="mt-2 text-3xl font-semibold tracking-[-0.045em]">Who should have access to Commercial?</h2>
-                        <p className="mt-3 text-sm leading-7 text-slate-500">Select existing users or invite new commercial team members.</p>
+                    <div className="space-y-5">
+                      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-end">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Step 2</p>
+                          <h2 className="mt-2 max-w-[13ch] text-[2.2rem] font-semibold leading-[1] tracking-[-0.055em] text-[#102236] sm:text-[2.5rem] lg:max-w-[12ch] lg:text-[2.75rem]">
+                            Who should have access to Commercial?
+                          </h2>
+                        </div>
+                        <div className="max-w-md lg:justify-self-end">
+                          <p className="text-sm leading-7 text-slate-500">Select existing users or invite new commercial team members.</p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <span className="rounded-full border border-[#d8e7f6] bg-[#f4f9fe] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#0c4a7d]">
+                              {selectedExistingUserCount} selected
+                            </span>
+                            {invitedUserCount ? (
+                              <span className="rounded-full border border-[#d8e7f6] bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                {invitedUserCount} invited
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="grid gap-3">
-                        {(setupState.users || []).map((user) => {
-                          const checked = (draft.selectedOrganisationUserIds || []).includes(user.id)
-                          return (
-                            <label key={user.id} className={`flex cursor-pointer items-start gap-4 rounded-2xl border px-4 py-4 transition ${checked ? 'border-[#bfd5ea] bg-[#f3f9ff]' : 'border-[#e5edf6] bg-white hover:border-[#d2dfed]'}`}>
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleUser(user.id)}
-                                className="mt-1 h-4 w-4 rounded border-slate-300 text-[#0c4a7d] focus:ring-[#0c4a7d]"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-semibold text-[#102236]">{formatUserName(user)}</p>
-                                <p className="mt-1 text-sm text-slate-500">{user.email}</p>
-                                <p className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
-                                  {formatUserRole(user)} · {normalizeText(user.status || 'active')}
-                                </p>
-                              </div>
-                            </label>
-                          )
-                        })}
-                      </div>
-
-                      <div className="rounded-[24px] border border-dashed border-[#d4e1ee] bg-[#fbfdff] p-5">
-                        <button
-                          type="button"
-                          onClick={() => setInviteFormOpen((value) => !value)}
-                          className="inline-flex items-center gap-2 text-sm font-semibold text-[#0c4a7d]"
-                        >
-                          <MailPlus size={16} />
-                          Invite Commercial User
-                        </button>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">Uses your existing workspace invite flow so the team receives the same onboarding experience.</p>
-
-                        {inviteFormOpen ? (
-                          <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={handleInviteCommercialUser}>
-                            <label className="grid gap-2 text-sm text-slate-500">
-                              First name
-                              <input
-                                value={inviteForm.firstName}
-                                onChange={(event) => setInviteForm((previous) => ({ ...previous, firstName: event.target.value }))}
-                                className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-[#102236] outline-none transition focus:border-[#bfd5ea]"
-                              />
-                            </label>
-                            <label className="grid gap-2 text-sm text-slate-500">
-                              Last name
-                              <input
-                                value={inviteForm.lastName}
-                                onChange={(event) => setInviteForm((previous) => ({ ...previous, lastName: event.target.value }))}
-                                className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-[#102236] outline-none transition focus:border-[#bfd5ea]"
-                              />
-                            </label>
-                            <label className="grid gap-2 text-sm text-slate-500 sm:col-span-2">
-                              Email
-                              <input
-                                value={inviteForm.email}
-                                onChange={(event) => setInviteForm((previous) => ({ ...previous, email: event.target.value }))}
-                                className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-[#102236] outline-none transition focus:border-[#bfd5ea]"
-                              />
-                            </label>
-                            <label className="grid gap-2 text-sm text-slate-500">
-                              Role
-                              <select
-                                value={inviteForm.role}
-                                onChange={(event) => setInviteForm((previous) => ({ ...previous, role: event.target.value }))}
-                                className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-[#102236] outline-none transition focus:border-[#bfd5ea]"
+                      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.82fr)]">
+                        <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                          {(setupState.users || []).map((user) => {
+                            const checked = (draft.selectedOrganisationUserIds || []).includes(user.id)
+                            return (
+                              <label
+                                key={user.id}
+                                className={[
+                                  'group flex min-h-[168px] cursor-pointer flex-col justify-between rounded-[24px] border px-5 py-5 transition',
+                                  checked
+                                    ? 'border-[#b8d0e7] bg-[#f4f9fe] shadow-[0_18px_36px_rgba(15,23,42,0.05)] ring-1 ring-inset ring-[#d9e7f3]'
+                                    : 'border-[#e5edf6] bg-white hover:border-[#cfddea] hover:bg-[#fcfdff]',
+                                ].join(' ')}
                               >
-                                {COMMERCIAL_ROLE_OPTIONS.map((option) => (
-                                  <option key={option.value} value={option.value}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <div className="flex items-end">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleUser(user.id)}
+                                  className="sr-only"
+                                />
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[1.03rem] font-semibold tracking-[-0.03em] text-[#102236]">{formatUserName(user)}</p>
+                                    <p className="mt-2 break-words text-sm leading-6 text-slate-500">{user.email}</p>
+                                  </div>
+                                  <span
+                                    className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition ${
+                                      checked
+                                        ? 'border-[#0c4a7d] bg-[#0c4a7d] text-white shadow-[0_6px_14px_rgba(12,74,125,0.25)]'
+                                        : 'border-slate-300 bg-white text-transparent group-hover:border-[#bfd5ea]'
+                                    }`}
+                                  >
+                                    <Check size={14} />
+                                  </span>
+                                </div>
+                                <div className="mt-5 flex items-center justify-between gap-4">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                    {formatUserRole(user)} · {normalizeText(user.status || 'active')}
+                                  </p>
+                                  {checked ? (
+                                    <span className="rounded-full bg-[#0c4a7d] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-white">
+                                      Selected
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </label>
+                            )
+                          })}
+                        </div>
+
+                        <div className="rounded-[26px] border border-dashed border-[#d4e1ee] bg-[#fbfdff] p-5">
+                          <button
+                            type="button"
+                            onClick={() => setInviteFormOpen((value) => !value)}
+                            className="inline-flex items-center gap-2 text-sm font-semibold text-[#0c4a7d]"
+                          >
+                            <MailPlus size={16} />
+                            Invite Commercial User
+                          </button>
+                          <p className="mt-2 text-sm leading-6 text-slate-500">Use the existing workspace invite flow so the team receives the same onboarding experience.</p>
+
+                          {inviteFormOpen ? (
+                            <form className="mt-5 grid gap-3" onSubmit={handleInviteCommercialUser}>
+                              <label className="grid gap-2 text-sm text-slate-500">
+                                First name
+                                <input
+                                  value={inviteForm.firstName}
+                                  onChange={(event) => setInviteForm((previous) => ({ ...previous, firstName: event.target.value }))}
+                                  className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-[#102236] outline-none transition focus:border-[#bfd5ea]"
+                                />
+                              </label>
+                              <label className="grid gap-2 text-sm text-slate-500">
+                                Last name
+                                <input
+                                  value={inviteForm.lastName}
+                                  onChange={(event) => setInviteForm((previous) => ({ ...previous, lastName: event.target.value }))}
+                                  className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-[#102236] outline-none transition focus:border-[#bfd5ea]"
+                                />
+                              </label>
+                              <label className="grid gap-2 text-sm text-slate-500">
+                                Email
+                                <input
+                                  value={inviteForm.email}
+                                  onChange={(event) => setInviteForm((previous) => ({ ...previous, email: event.target.value }))}
+                                  className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-[#102236] outline-none transition focus:border-[#bfd5ea]"
+                                />
+                              </label>
+                              <label className="grid gap-2 text-sm text-slate-500">
+                                Role
+                                <select
+                                  value={inviteForm.role}
+                                  onChange={(event) => setInviteForm((previous) => ({ ...previous, role: event.target.value }))}
+                                  className="min-h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm text-[#102236] outline-none transition focus:border-[#bfd5ea]"
+                                >
+                                  {COMMERCIAL_ROLE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                               <button
                                 type="submit"
                                 disabled={inviteState.saving}
-                                className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {inviteState.saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                                 Send invite
                               </button>
+                            </form>
+                          ) : null}
+
+                          {inviteState.error ? (
+                            <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+                              {inviteState.error}
+                            </p>
+                          ) : null}
+                          {inviteState.message ? (
+                            <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">
+                              {inviteState.message}
+                            </p>
+                          ) : null}
+
+                          {(draft.invitedUsers || []).length ? (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {draft.invitedUsers.map((invite) => (
+                                <span key={invite.email} className="inline-flex items-center gap-2 rounded-full border border-[#d8e7f6] bg-white px-3 py-1.5 text-sm font-medium text-[#15324f]">
+                                  <MailPlus size={14} className="text-[#0c4a7d]" />
+                                  {invite.fullName || invite.email}
+                                </span>
+                              ))}
                             </div>
-                          </form>
-                        ) : null}
-
-                        {inviteState.error ? (
-                          <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
-                            {inviteState.error}
-                          </p>
-                        ) : null}
-                        {inviteState.message ? (
-                          <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">
-                            {inviteState.message}
-                          </p>
-                        ) : null}
-
-                        {(draft.invitedUsers || []).length ? (
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            {draft.invitedUsers.map((invite) => (
-                              <span key={invite.email} className="inline-flex items-center gap-2 rounded-full border border-[#d8e7f6] bg-white px-3 py-1.5 text-sm font-medium text-[#15324f]">
-                                <MailPlus size={14} className="text-[#0c4a7d]" />
-                                {invite.fullName || invite.email}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   ) : null}
