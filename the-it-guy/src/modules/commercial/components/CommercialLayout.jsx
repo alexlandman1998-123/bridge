@@ -208,7 +208,7 @@ function CommercialLayout() {
             </div>
           </nav>
         </div>
-        <div className="sticky top-0 z-20 hidden border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-6 lg:px-8 lg:block">
+        <div className="sticky top-0 z-20 hidden border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-6 lg:px-10 xl:px-12 lg:block">
           <div className="mx-auto flex w-full max-w-[1600px] items-center gap-3">
             <QuickCreateDropdown />
             <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-500 shadow-sm">
@@ -229,7 +229,7 @@ function CommercialLayout() {
             </button>
           </div>
         </div>
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-10 xl:px-12">
           <Suspense fallback={<CommercialPageSkeleton />}>
             <Outlet />
           </Suspense>

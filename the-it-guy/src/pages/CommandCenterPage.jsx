@@ -172,23 +172,27 @@ function buildActivityItems(snapshot = null) {
 }
 
 function buildAlertItems(snapshot = null) {
-  const stuckItems = (snapshot?.stuckTransactions || []).map((item) => ({
-    id: `transaction-${item.id}`,
-    title: item.reference || item.address || item.agency || 'Stuck transaction',
-    meta: item.daysInactive !== null && item.daysInactive !== undefined ? `${formatCount(item.daysInactive)} days inactive` : 'Stuck transaction',
-    badge: 'Transaction',
-    body: [item.reason, item.agency ? `Agency: ${item.agency}` : '', item.agent ? `Agent: ${item.agent}` : ''].filter(Boolean).join(' · '),
-  }))
+  return (snapshot?.attention?.items || []).map((item) => {
+    const ageSource = item.lastActivityAt || item.createdAt
+    const ageLabel = item.lastActivityAt
+      ? `Last activity ${formatRelativeActivityTime(item.lastActivityAt)}`
+      : item.createdAt
+        ? `Created ${formatRelativeActivityTime(item.createdAt)}`
+        : ''
 
-  const organisationItems = (snapshot?.organisationsNeedingAttention || []).map((item) => ({
-    id: `organisation-${item.id}`,
-    title: item.name || 'Organisation',
-    meta: item.type ? humanizeToken(item.type) : 'Organisation',
-    badge: 'Organisation',
-    body: [item.reason, item.lastActivityAt ? `Last activity ${formatDateTime(item.lastActivityAt)}` : ''].filter(Boolean).join(' · '),
-  }))
-
-  return [...stuckItems, ...organisationItems].slice(0, 5)
+    return {
+      id: item.id,
+      severity: item.severity || 'warning',
+      title: item.title || humanizeToken(item.type || 'Attention item'),
+      meta: [item.organisationName, item.entityType ? humanizeToken(item.entityType) : '', ageLabel].filter(Boolean).join(' · '),
+      badge: item.severity ? humanizeToken(item.severity) : '',
+      body: item.description || '',
+      actionLabel: item.route ? item.actionLabel || 'Open' : '',
+      route: item.route || null,
+      timestamp: ageSource ? formatRelativeActivityTime(ageSource) : '',
+      absoluteTimestamp: ageSource ? formatDateTime(ageSource) : '',
+    }
+  })
 }
 
 function getSnapshotStatusLabel({ showSkeleton, refreshing, error }) {
@@ -265,7 +269,9 @@ export default function CommandCenterPage() {
   const revenueForecastValue = formatMetricValue(snapshot?.registrationForecast?.forecastRevenue, formatCurrency)
   const healthScoreValue = formatMetricValue(snapshot?.summary?.platformHealthScore)
   const acceptanceRateValue = formatMetricValue(snapshot?.invites?.inviteAcceptanceRate, formatPercent)
-  const failedInvitesValue = formatMetricValue(snapshot?.invites?.failedInvites)
+  const attentionTotalValue = formatMetricValue(snapshot?.attention?.total)
+  const attentionCriticalValue = formatMetricValue(snapshot?.attention?.critical)
+  const attentionWarningValue = formatMetricValue(snapshot?.attention?.warning)
   const delayedRegistrationsValue = formatMetricValue(snapshot?.transactionHealth?.delayedRegistrations)
   const generatedAtLabel = snapshot?.generatedAt ? formatDateTime(snapshot.generatedAt) : ''
   const snapshotStatus = getSnapshotStatusLabel({ showSkeleton, refreshing, error })
@@ -416,12 +422,12 @@ export default function CommandCenterPage() {
               title="Attention Required"
               status={snapshotStatus}
               warning
-              description="Operational blockers and stale work come from the real platform state, with unavailable metrics called out explicitly."
+              description="Real operational alerts are ranked for founder intervention, with critical issues surfaced first."
             >
               <div className="grid gap-3 sm:grid-cols-2">
-                <MetricSurface label="Stuck Transactions" value={formatMetricValue(snapshot?.transactionHealth?.stuck)} warning />
-                <MetricSurface label="Organisations At Risk" value={formatMetricValue(snapshot?.organisationsNeedingAttention?.length)} warning />
-                <MetricSurface label="Failed Invitations" value={failedInvitesValue} warning />
+                <MetricSurface label="Items Need Attention" value={attentionTotalValue} warning hero />
+                <MetricSurface label="Critical" value={attentionCriticalValue} warning />
+                <MetricSurface label="Warnings" value={attentionWarningValue} warning />
                 <MetricSurface label="Delayed Registrations" value={delayedRegistrationsValue} warning />
               </div>
             </ExecutiveCard>
@@ -480,11 +486,12 @@ export default function CommandCenterPage() {
         <AlertContainer
           loading={showSkeleton}
           items={alertItems}
+          summary={snapshot?.attention || null}
           emptyTitle={error ? 'Snapshot unavailable' : 'No alerts yet'}
           emptyDescription={
             error
               ? error.message || 'The alert feed could not be loaded.'
-              : 'No stuck transactions or organisations needing attention are currently surfaced.'
+              : 'No attention items yet. Real operational blockers will appear here when transactions, organisations, invites, or delivery failures need intervention.'
           }
         />
       </section>
@@ -495,12 +502,12 @@ export default function CommandCenterPage() {
             <Sparkles className="h-4 w-4" />
           </span>
           <div className="min-w-0">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#7b899a]">Phase 4 live</p>
-            <p className="mt-1 text-[1.02rem] font-semibold text-[#102033]">Mission Control now surfaces real platform movement for founders.</p>
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#7b899a]">Phase 5 live</p>
+            <p className="mt-1 text-[1.02rem] font-semibold text-[#102033]">Mission Control now highlights the real work that needs intervention.</p>
             <p className="mt-2 text-sm leading-6 text-[#60758d]">
               {generatedAtLabel
-                ? `Snapshot generated ${generatedAtLabel}. Activity is refreshed from real platform events, while metrics without a trustworthy production source remain explicitly unavailable.`
-                : 'Activity is refreshed from real platform events, while metrics without a trustworthy production source remain explicitly unavailable.'}
+                ? `Snapshot generated ${generatedAtLabel}. Attention, activity, and platform counts are derived from real platform data, while metrics without a trustworthy production source remain explicitly unavailable.`
+                : 'Attention, activity, and platform counts are derived from real platform data, while metrics without a trustworthy production source remain explicitly unavailable.'}
             </p>
           </div>
         </div>

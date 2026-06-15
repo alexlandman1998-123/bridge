@@ -321,6 +321,12 @@ function buildEmptySnapshot(now = new Date()) {
       stuck: null,
       delayedRegistrations: null,
     },
+    attention: {
+      total: 0,
+      critical: 0,
+      warning: 0,
+      items: [],
+    },
     activeAreas: [],
     recentActivity: [],
     stuckTransactions: [],
@@ -983,6 +989,312 @@ function buildRecentActivity({
   return deduped
 }
 
+function getAttentionSeverityRank(severity = '') {
+  if (severity === 'critical') return 0
+  if (severity === 'warning') return 1
+  return 2
+}
+
+function buildAttentionRecord({
+  id,
+  type,
+  severity,
+  title,
+  description = null,
+  entityId = null,
+  entityType = null,
+  organisationName = null,
+  createdAt = null,
+  lastActivityAt = null,
+  actionLabel = null,
+  route = null,
+}) {
+  return {
+    id: normalizeText(id),
+    type: normalizeToken(type || 'attention_item') || 'attention_item',
+    severity: severity === 'critical' ? 'critical' : severity === 'warning' ? 'warning' : 'info',
+    title: normalizeText(title) || 'Needs attention',
+    description: normalizeText(description) || null,
+    entityId: normalizeText(entityId) || null,
+    entityType: normalizeText(entityType) || null,
+    organisationName: normalizeText(organisationName) || null,
+    createdAt: createdAt ? toIsoString(createdAt) : null,
+    lastActivityAt: lastActivityAt ? toIsoString(lastActivityAt) : null,
+    actionLabel: normalizeText(actionLabel) || null,
+    route: normalizeText(route) || null,
+  }
+}
+
+function buildTransactionRoute(transactionId = '') {
+  const safeId = normalizeText(transactionId)
+  return safeId ? `/transactions/${encodeURIComponent(safeId)}` : null
+}
+
+function buildOrganisationRoute(organisationId = '') {
+  const safeId = normalizeText(organisationId)
+  return safeId ? `/organizations/${encodeURIComponent(safeId)}` : null
+}
+
+function sortAttentionItems(items = []) {
+  return [...items].sort((left, right) => {
+    const severityDelta = getAttentionSeverityRank(left?.severity) - getAttentionSeverityRank(right?.severity)
+    if (severityDelta !== 0) return severityDelta
+
+    const leftLastActivity = toDate(left?.lastActivityAt)
+    const rightLastActivity = toDate(right?.lastActivityAt)
+    if (leftLastActivity && rightLastActivity) {
+      const inactivityDelta = leftLastActivity.getTime() - rightLastActivity.getTime()
+      if (inactivityDelta !== 0) return inactivityDelta
+    }
+
+    if (leftLastActivity && !rightLastActivity) return -1
+    if (!leftLastActivity && rightLastActivity) return 1
+
+    const leftCreatedAt = toDate(left?.createdAt)
+    const rightCreatedAt = toDate(right?.createdAt)
+    if (left?.severity === 'warning' && leftCreatedAt && rightCreatedAt) {
+      const warningDelta = rightCreatedAt.getTime() - leftCreatedAt.getTime()
+      if (warningDelta !== 0) return warningDelta
+    }
+
+    const leftCreatedMs = leftCreatedAt?.getTime() || 0
+    const rightCreatedMs = rightCreatedAt?.getTime() || 0
+    return rightCreatedMs - leftCreatedMs
+  })
+}
+
+function buildAttentionSnapshot(items = []) {
+  const sorted = sortAttentionItems(items).filter((item) => item?.id && item?.title)
+  return {
+    total: sorted.length,
+    critical: sorted.filter((item) => item.severity === 'critical').length,
+    warning: sorted.filter((item) => item.severity === 'warning').length,
+    items: sorted.slice(0, 10),
+  }
+}
+
+function buildStuckTransactionAttentionItems(stuckTransactions = [], organisationById = new Map()) {
+  return (Array.isArray(stuckTransactions) ? stuckTransactions : []).map(({ row, reason, daysInactive }) => {
+    const organisationName = organisationById.get(normalizeText(row?.organisation_id))?.name || null
+    const severity = daysInactive >= 14 ? 'critical' : 'warning'
+    const locationLabel = getTransactionAddress(row)
+    const referenceLabel = getTransactionReference(row)
+    return buildAttentionRecord({
+      id: `attention-stuck-transaction-${normalizeText(row?.id)}`,
+      type: 'stuck_transaction',
+      severity,
+      title: `Transaction inactive for ${daysInactive} day${daysInactive === 1 ? '' : 's'}`,
+      description: [reason, [referenceLabel, locationLabel].filter(Boolean).join(' · ')].filter(Boolean).join(' · '),
+      entityId: normalizeText(row?.id),
+      entityType: 'transaction',
+      organisationName,
+      createdAt: row?.created_at,
+      lastActivityAt: getLastMeaningfulActivityAt(row),
+      actionLabel: 'Review transaction',
+      route: buildTransactionRoute(row?.id),
+    })
+  })
+}
+
+function buildDelayedRegistrationAttentionItems(activeTransactions = [], organisationById = new Map(), { todayStart = new Date(), soonThreshold = new Date() } = {}) {
+  return (Array.isArray(activeTransactions) ? activeTransactions : [])
+    .filter((row) => !isRegisteredTransaction(row))
+    .map((row) => {
+      const expectedRegistrationDate = getExpectedRegistrationDate(row)
+      const expectedDate = toDate(expectedRegistrationDate)
+      if (!expectedDate) return null
+      if (expectedDate >= soonThreshold) return null
+      const passed = expectedDate < todayStart
+      const severity = passed ? 'critical' : 'warning'
+      const organisationName = organisationById.get(normalizeText(row?.organisation_id))?.name || null
+      const dueText = passed ? 'Expected registration date has passed' : 'Expected registration date is within 3 days'
+      return buildAttentionRecord({
+        id: `attention-delayed-registration-${normalizeText(row?.id)}`,
+        type: 'delayed_registration',
+        severity,
+        title: passed ? 'Registration may be delayed' : 'Registration approaching quickly',
+        description: [dueText, [getTransactionReference(row), getTransactionAddress(row)].filter(Boolean).join(' · ')].filter(Boolean).join(' · '),
+        entityId: normalizeText(row?.id),
+        entityType: 'transaction',
+        organisationName,
+        createdAt: row?.created_at,
+        lastActivityAt: expectedRegistrationDate,
+        actionLabel: 'Review transaction',
+        route: buildTransactionRoute(row?.id),
+      })
+    })
+    .filter(Boolean)
+}
+
+function buildOrganisationAttentionItems(organisations = [], { transactionsByOrganisationId = new Map(), usersByOrganisationId = new Map(), organisationById = new Map(), now = new Date() } = {}) {
+  return (Array.isArray(organisations) ? organisations : [])
+    .map((organisation) => {
+      const organisationId = normalizeText(organisation?.id)
+      const organisationTransactions = transactionsByOrganisationId.get(organisationId) || []
+      const organisationUsers = usersByOrganisationId.get(organisationId) || []
+      const activeUsers = organisationUsers.filter(isActiveMembership)
+      const lastActivityCandidates = [
+        organisation?.updated_at,
+        ...organisationUsers.map((row) => row?.last_active_at || row?.updated_at || row?.accepted_at || row?.created_at),
+        ...organisationTransactions.map((row) => getLastMeaningfulActivityAt(row)),
+      ]
+        .map(toDate)
+        .filter(Boolean)
+        .sort((left, right) => right.getTime() - left.getTime())
+      const lastActivityAt = lastActivityCandidates[0]?.toISOString() || null
+      const daysSinceActivity = daysBetween(lastActivityAt, now)
+
+      if (activeUsers.length === 0) {
+        return buildAttentionRecord({
+          id: `attention-organisation-no-users-${organisationId}`,
+          type: 'organisation_no_active_users',
+          severity: 'warning',
+          title: 'Organisation has no activated users',
+          description: 'New organisation exists in the platform, but no user has activated access yet.',
+          entityId: organisationId,
+          entityType: 'organisation',
+          organisationName: organisationById.get(organisationId)?.name || 'Organisation',
+          createdAt: organisation?.created_at,
+          lastActivityAt,
+          actionLabel: 'Review organisation',
+          route: buildOrganisationRoute(organisationId),
+        })
+      }
+
+      if (!organisationTransactions.length) {
+        return buildAttentionRecord({
+          id: `attention-organisation-no-transactions-${organisationId}`,
+          type: 'organisation_no_transactions',
+          severity: 'warning',
+          title: 'Organisation has no transactions yet',
+          description: 'Active users exist, but no transaction has been created for this organisation.',
+          entityId: organisationId,
+          entityType: 'organisation',
+          organisationName: organisationById.get(organisationId)?.name || 'Organisation',
+          createdAt: organisation?.created_at,
+          lastActivityAt,
+          actionLabel: 'Review organisation',
+          route: buildOrganisationRoute(organisationId),
+        })
+      }
+
+      if (daysSinceActivity !== null && daysSinceActivity >= 14) {
+        return buildAttentionRecord({
+          id: `attention-organisation-inactive-${organisationId}`,
+          type: 'organisation_inactive',
+          severity: daysSinceActivity >= 30 ? 'critical' : 'warning',
+          title: `Organisation inactive for ${daysSinceActivity} day${daysSinceActivity === 1 ? '' : 's'}`,
+          description: 'No recent organisation, user, or transaction activity has been detected.',
+          entityId: organisationId,
+          entityType: 'organisation',
+          organisationName: organisationById.get(organisationId)?.name || 'Organisation',
+          createdAt: organisation?.created_at,
+          lastActivityAt,
+          actionLabel: 'Review organisation',
+          route: buildOrganisationRoute(organisationId),
+        })
+      }
+
+      return null
+    })
+    .filter(Boolean)
+}
+
+function buildInviteAttentionItems(invites = [], organisationById = new Map(), { now = new Date() } = {}) {
+  return (Array.isArray(invites) ? invites : [])
+    .map((row) => {
+      const roleType = classifyInviteRole(row)
+      if (!roleType) return null
+
+      const status = normalizeToken(row?.status)
+      const createdAt = row?.created_at
+      const inviteAge = daysBetween(createdAt, now)
+      const organisationName =
+        organisationById.get(normalizeText(row?.target_workspace_id))?.name ||
+        normalizeText(normalizeObject(row?.metadata)?.organisation_name || normalizeObject(row?.metadata)?.organization_name) ||
+        null
+
+      if (['failed', 'bounced', 'declined', 'expired', 'revoked', 'cancelled', 'canceled'].includes(status)) {
+        return buildAttentionRecord({
+          id: `attention-invite-failed-${normalizeText(row?.id)}`,
+          type: 'failed_invitation',
+          severity: 'critical',
+          title: `${humanizeKey(roleType)} invite failed`,
+          description: [normalizeText(row?.email), humanizeKey(status)].filter(Boolean).join(' · '),
+          entityId: normalizeText(row?.id),
+          entityType: 'invite',
+          organisationName,
+          createdAt,
+          lastActivityAt: row?.updated_at || row?.accepted_at || createdAt,
+          actionLabel: null,
+          route: null,
+        })
+      }
+
+      const deliveryStatus = normalizeToken(row?.last_delivery_status)
+      if (['failed', 'bounced'].includes(deliveryStatus)) {
+        return buildAttentionRecord({
+          id: `attention-invite-delivery-${normalizeText(row?.id)}`,
+          type: 'failed_invitation_delivery',
+          severity: 'critical',
+          title: `${humanizeKey(roleType)} invite delivery failed`,
+          description: [normalizeText(row?.email), humanizeKey(deliveryStatus)].filter(Boolean).join(' · '),
+          entityId: normalizeText(row?.id),
+          entityType: 'invite',
+          organisationName,
+          createdAt,
+          lastActivityAt: row?.last_delivery_failed_at || row?.updated_at || createdAt,
+          actionLabel: null,
+          route: null,
+        })
+      }
+
+      if (['pending', 'invited', 'sent', 'queued'].includes(status) && inviteAge !== null && inviteAge > 7) {
+        return buildAttentionRecord({
+          id: `attention-invite-stalled-${normalizeText(row?.id)}`,
+          type: 'stalled_invitation',
+          severity: inviteAge > 14 ? 'critical' : 'warning',
+          title: `${humanizeKey(roleType)} invite pending for ${inviteAge} day${inviteAge === 1 ? '' : 's'}`,
+          description: [normalizeText(row?.email), organisationName ? `for ${organisationName}` : ''].filter(Boolean).join(' · '),
+          entityId: normalizeText(row?.id),
+          entityType: 'invite',
+          organisationName,
+          createdAt,
+          lastActivityAt: row?.updated_at || createdAt,
+          actionLabel: null,
+          route: null,
+        })
+      }
+
+      return null
+    })
+    .filter(Boolean)
+}
+
+function buildCommunicationFailureAttentionItems(rows = [], organisationById = new Map()) {
+  return (Array.isArray(rows) ? rows : [])
+    .filter((row) => normalizeToken(row?.status) === 'failed')
+    .map((row) => {
+      const channel = normalizeToken(row?.channel) || 'communication'
+      const organisationName = organisationById.get(normalizeText(row?.organisation_id))?.name || null
+      const transactionRoute = buildTransactionRoute(row?.transaction_id)
+      return buildAttentionRecord({
+        id: `attention-delivery-failed-${normalizeText(row?.id)}`,
+        type: 'communication_delivery_failed',
+        severity: 'critical',
+        title: `${humanizeKey(channel)} delivery failed`,
+        description: [normalizeText(row?.recipient), normalizeText(row?.error_message)].filter(Boolean).join(' · '),
+        entityId: normalizeText(row?.transaction_id || row?.id),
+        entityType: normalizeText(row?.transaction_id) ? 'transaction' : 'communication_delivery',
+        organisationName,
+        createdAt: row?.created_at,
+        lastActivityAt: row?.failed_at || row?.updated_at || row?.created_at,
+        actionLabel: transactionRoute ? 'Review transaction' : null,
+        route: transactionRoute,
+      })
+    })
+}
+
 export async function getMissionControlSnapshot({ headers = {}, now = new Date() } = {}) {
   const { serviceClient } = await authenticateHqRequest(headers)
   const snapshot = buildEmptySnapshot(now)
@@ -1000,10 +1312,12 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
     organisationResult,
     organisationUserResult,
     inviteMetricResult,
+    inviteAttentionResult,
     inviteActivityResult,
     leadMetricResult,
     leadActivityResult,
     documentActivityResult,
+    communicationFailureResult,
     auditResult,
     transactionEventResult,
   ] = await Promise.all([
@@ -1050,15 +1364,28 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
       serviceClient,
       'invites',
       [
-        'id, invite_type, status, target_workspace_role, target_transaction_role, email, inviter_user_id, target_workspace_id, metadata, accepted_at, created_at, updated_at',
-        'id, invite_type, status, target_workspace_role, email, inviter_user_id, target_workspace_id, metadata, accepted_at, created_at, updated_at',
-        'id, invite_type, status, email, inviter_user_id, metadata, accepted_at, created_at, updated_at',
+        'id, invite_type, status, target_workspace_role, target_transaction_role, email, inviter_user_id, target_workspace_id, last_delivery_status, last_delivery_failed_at, metadata, accepted_at, created_at, updated_at',
+        'id, invite_type, status, target_workspace_role, email, inviter_user_id, target_workspace_id, last_delivery_status, last_delivery_failed_at, metadata, accepted_at, created_at, updated_at',
+        'id, invite_type, status, email, inviter_user_id, last_delivery_status, last_delivery_failed_at, metadata, accepted_at, created_at, updated_at',
       ],
       {
         allowMissing: true,
         apply(query) {
           return query.gte('created_at', monthStart.toISOString())
         },
+        order: { column: 'created_at', ascending: false },
+      },
+    ),
+    fetchAllRows(
+      serviceClient,
+      'invites',
+      [
+        'id, invite_type, status, target_workspace_role, target_transaction_role, email, inviter_user_id, target_workspace_id, last_delivery_status, last_delivery_failed_at, metadata, accepted_at, created_at, updated_at',
+        'id, invite_type, status, target_workspace_role, email, inviter_user_id, target_workspace_id, last_delivery_status, last_delivery_failed_at, metadata, accepted_at, created_at, updated_at',
+        'id, invite_type, status, email, inviter_user_id, last_delivery_status, last_delivery_failed_at, metadata, accepted_at, created_at, updated_at',
+      ],
+      {
+        allowMissing: true,
         order: { column: 'created_at', ascending: false },
       },
     ),
@@ -1082,9 +1409,9 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
       serviceClient,
       'invites',
       [
-        'id, invite_type, status, target_workspace_role, target_transaction_role, email, inviter_user_id, target_workspace_id, metadata, accepted_at, created_at, updated_at',
-        'id, invite_type, status, target_workspace_role, email, inviter_user_id, target_workspace_id, metadata, accepted_at, created_at, updated_at',
-        'id, invite_type, status, email, inviter_user_id, metadata, accepted_at, created_at, updated_at',
+        'id, invite_type, status, target_workspace_role, target_transaction_role, email, inviter_user_id, target_workspace_id, last_delivery_status, last_delivery_failed_at, metadata, accepted_at, created_at, updated_at',
+        'id, invite_type, status, target_workspace_role, email, inviter_user_id, target_workspace_id, last_delivery_status, last_delivery_failed_at, metadata, accepted_at, created_at, updated_at',
+        'id, invite_type, status, email, inviter_user_id, last_delivery_status, last_delivery_failed_at, metadata, accepted_at, created_at, updated_at',
       ],
       {
         allowMissing: true,
@@ -1110,14 +1437,31 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
       serviceClient,
       'documents',
       [
-        'id, transaction_id, name, document_name, file_name, uploaded_at, uploaded_by, created_at, created_by, updated_at',
-        'id, transaction_id, document_name, uploaded_at, uploaded_by, created_at, created_by, updated_at',
-        'id, transaction_id, name, created_at, updated_at',
+        'id, transaction_id, name, document_name, file_name, status, uploaded_at, uploaded_by, created_at, created_by, updated_at',
+        'id, transaction_id, document_name, status, uploaded_at, uploaded_by, created_at, created_by, updated_at',
+        'id, transaction_id, name, status, created_at, updated_at',
       ],
       {
         allowMissing: true,
-        order: { column: 'uploaded_at', ascending: false },
+        order: { column: 'created_at', ascending: false },
         limit: 12,
+      },
+    ),
+    selectRows(
+      serviceClient,
+      'communication_deliveries',
+      [
+        'id, organisation_id, transaction_id, lead_id, channel, status, recipient, error_message, failed_at, created_at, updated_at',
+        'id, organisation_id, transaction_id, channel, status, recipient, error_message, failed_at, created_at, updated_at',
+        'id, organisation_id, channel, status, recipient, error_message, created_at, updated_at',
+      ],
+      {
+        allowMissing: true,
+        apply(query) {
+          return query.eq('status', 'failed')
+        },
+        order: { column: 'created_at', ascending: false },
+        limit: 20,
       },
     ),
     selectRows(
@@ -1153,10 +1497,12 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
   const organisations = organisationResult.rows || []
   const organisationUsers = organisationUserResult.rows || []
   const invites = inviteMetricResult.rows || []
+  const inviteAttentionRows = inviteAttentionResult.rows || []
   const inviteActivityRows = inviteActivityResult.rows || []
   const leads = leadMetricResult.rows || []
   const leadActivityRows = leadActivityResult.rows || []
   const documentActivityRows = documentActivityResult.rows || []
+  const communicationFailureRows = communicationFailureResult.rows || []
   const auditRows = auditResult.rows || []
   const transactionEventRows = transactionEventResult.rows || []
 
@@ -1402,6 +1748,26 @@ export async function getMissionControlSnapshot({ headers = {}, now = new Date()
     .slice(0, 5)
 
   snapshot.organisationsNeedingAttention = organisationsNeedingAttention
+
+  const attentionItems = [
+    ...buildStuckTransactionAttentionItems(stuckTransactions, organisationById),
+    // TODO: if the platform adds an explicit registration-readiness field, tighten this warning logic to require "not ready" instead of "not yet registered".
+    ...buildDelayedRegistrationAttentionItems(activeTransactions, organisationById, {
+      todayStart,
+      soonThreshold: addDays(todayStart, 3),
+    }),
+    ...buildOrganisationAttentionItems(activeOrganisations, {
+      transactionsByOrganisationId,
+      usersByOrganisationId,
+      organisationById,
+      now,
+    }),
+    ...buildInviteAttentionItems(inviteAttentionRows, organisationById, { now }),
+    // TODO: add document-generation failure alerts once there is a stable platform-wide failure source beyond communication delivery failures.
+    ...buildCommunicationFailureAttentionItems(communicationFailureRows, organisationById),
+  ]
+
+  snapshot.attention = buildAttentionSnapshot(attentionItems)
 
   snapshot.registrationForecast.next7Days = activeTransactions.filter((row) => isWithinRange(getExpectedRegistrationDate(row), todayStart, next7Days)).length
   snapshot.registrationForecast.next14Days = activeTransactions.filter((row) => isWithinRange(getExpectedRegistrationDate(row), todayStart, next14Days)).length

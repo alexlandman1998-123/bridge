@@ -12,8 +12,8 @@ function CommercialSidebar() {
   const DashboardIcon = COMMERCIAL_DASHBOARD_NAV_ITEM.icon
 
   return (
-    <aside className="hidden h-screen w-[278px] shrink-0 border-r border-slate-200 bg-white shadow-[12px_0_36px_rgba(15,23,42,0.035)] lg:flex">
-      <div className="flex min-h-0 w-full flex-col px-4 py-5">
+    <aside className="hidden h-screen w-[268px] shrink-0 border-r border-slate-200 bg-white shadow-[12px_0_32px_rgba(15,23,42,0.03)] lg:flex">
+      <div className="flex min-h-0 w-full flex-col px-4 py-4">
         <div className="shrink-0">
           <CommercialBranding />
 

@@ -11,6 +11,7 @@ import {
   RefreshCcw,
   UserPlus,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { cn } from '../../lib/utils'
 
 function SkeletonLine({ className = '' }) {
@@ -432,10 +433,14 @@ export function AlertContainer({
   title = 'Attention Required',
   loading = false,
   items = [],
+  summary = null,
   emptyTitle = 'No alerts yet',
   emptyDescription = 'No stuck transactions or organisations needing attention are currently surfaced.',
   className = '',
 }) {
+  const [showAllMobile, setShowAllMobile] = useState(false)
+  const hasMoreItems = items.length > 5
+
   if (loading) {
     return (
       <ExecutiveCard
@@ -459,30 +464,101 @@ export function AlertContainer({
       eyebrow="Attention"
       title={title}
       description="Live risk signals and operational blockers surfaced from HQ data."
+      status={summary?.critical ? `${summary.critical} critical` : ''}
       warning
       className={className}
     >
+      {summary ? (
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-[18px] border border-[#f0d2b7] bg-[#fff8ef] px-4 py-3">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#9a5b13]">Total</p>
+            <p className="mt-2 text-[1.35rem] font-semibold tracking-[-0.04em] text-[#102033]">{summary.total ?? 0}</p>
+          </div>
+          <div className="rounded-[18px] border border-[#f3c7d0] bg-[#fff7f8] px-4 py-3">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#b42318]">Critical</p>
+            <p className="mt-2 text-[1.35rem] font-semibold tracking-[-0.04em] text-[#102033]">{summary.critical ?? 0}</p>
+          </div>
+          <div className="rounded-[18px] border border-[#f0d2b7] bg-white px-4 py-3">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#9a5b13]">Warnings</p>
+            <p className="mt-2 text-[1.35rem] font-semibold tracking-[-0.04em] text-[#102033]">{summary.warning ?? 0}</p>
+          </div>
+        </div>
+      ) : null}
+
       {items.length ? (
         <div className="space-y-3">
-          {items.map((item) => (
+          {items.map((item, index) => {
+            const severity = item?.severity === 'critical' ? 'critical' : item?.severity === 'warning' ? 'warning' : 'info'
+            const severityClasses =
+              severity === 'critical'
+                ? {
+                    row: 'border-[#f3c7d0] bg-[linear-gradient(180deg,#fffefe_0%,#fff7f8_100%)]',
+                    badge: 'bg-[#fff1f2] text-[#b42318] ring-[#fecdd3]',
+                    meta: 'text-[#b42318]',
+                  }
+                : severity === 'warning'
+                  ? {
+                      row: 'border-[#f0d2b7] bg-white',
+                      badge: 'bg-[#fff2df] text-[#9a5b13] ring-[#f0d2b7]',
+                      meta: 'text-[#9a5b13]',
+                    }
+                  : {
+                      row: 'border-[#e6edf4] bg-[#fbfdff]',
+                      badge: 'bg-[#eef4ff] text-[#34506b] ring-[#dbe8f7]',
+                      meta: 'text-[#60758d]',
+                    }
+
+            return (
             <div
               key={item.id || item.title}
-              className="rounded-[22px] border border-[#f0d2b7] bg-white px-4 py-4 shadow-[0_10px_24px_rgba(180,114,31,0.05)]"
+              className={cn(
+                'rounded-[22px] border px-4 py-4 shadow-[0_10px_24px_rgba(180,114,31,0.05)]',
+                severityClasses.row,
+                index >= 5 && !showAllMobile ? 'hidden sm:block' : '',
+              )}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-[#102033]">{item.title}</p>
-                  {item.meta ? <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#9a5b13]">{item.meta}</p> : null}
+                  {item.meta ? <p className={cn('mt-1 text-xs font-semibold uppercase tracking-[0.16em]', severityClasses.meta)}>{item.meta}</p> : null}
                 </div>
                 {item.badge ? (
-                  <span className="inline-flex shrink-0 rounded-full bg-[#fff2df] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#9a5b13] ring-1 ring-inset ring-[#f0d2b7]">
+                  <span className={cn('inline-flex shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ring-1 ring-inset', severityClasses.badge)}>
                     {item.badge}
                   </span>
                 ) : null}
               </div>
               {item.body ? <p className="mt-2 text-sm leading-6 text-[#60758d]">{item.body}</p> : null}
+              <div className="mt-3 flex items-center justify-between gap-3">
+                {item.timestamp ? (
+                  <time title={item.absoluteTimestamp || item.timestamp} className="text-xs font-medium text-[#7b899a]">
+                    {item.timestamp}
+                  </time>
+                ) : (
+                  <span />
+                )}
+                {item.route && item.actionLabel ? (
+                  <Link
+                    to={item.route}
+                    className="inline-flex items-center rounded-full border border-[#e4d0b6] bg-white px-3 py-1.5 text-xs font-semibold text-[#7d4f1a] shadow-[0_8px_18px_rgba(180,114,31,0.06)] transition hover:bg-[#fff9f2]"
+                  >
+                    {item.actionLabel}
+                  </Link>
+                ) : null}
+              </div>
             </div>
-          ))}
+            )
+          })}
+          {hasMoreItems ? (
+            <button
+              type="button"
+              onClick={() => setShowAllMobile((current) => !current)}
+              aria-expanded={showAllMobile ? 'true' : 'false'}
+              className="inline-flex rounded-full border border-[#dde6ef] bg-white px-4 py-2 text-sm font-semibold text-[#7d4f1a] shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:hidden"
+            >
+              {showAllMobile ? 'Show top 5' : `View all ${items.length}`}
+            </button>
+          ) : null}
         </div>
       ) : (
         <EmptyState title={emptyTitle} description={emptyDescription} />

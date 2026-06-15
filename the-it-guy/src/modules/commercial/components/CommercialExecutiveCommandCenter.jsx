@@ -202,7 +202,7 @@ function buildExecutivePipelineStages(data = {}, summary = {}, financialSummary 
 
   return stages.map((stage, index) => {
     const previous = stages[index - 1]
-    const conversion = !previous?.count ? 100 : Math.max(0, Math.min(100, (stage.count / previous.count) * 100))
+    const conversion = index === 0 ? 100 : !previous?.count ? 0 : Math.max(0, Math.min(100, (stage.count / previous.count) * 100))
     return { ...stage, conversion }
   })
 }
@@ -607,6 +607,16 @@ function TrendPill({ delta = 0 }) {
 function MobileBrokerLeaderboard({ rows = [], loading = false }) {
   const topRows = rows.slice(0, 3)
 
+  if (!loading && !rows.length) {
+    return (
+      <div className="border-t border-[#edf2f7] px-5 py-5">
+        <div className="rounded-[20px] border border-dashed border-[#d9e5f0] bg-[#fbfdff] px-4 py-5 text-sm text-[#60758d]">
+          Broker rankings will appear here once commercial opportunities are assigned across the team.
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="md:hidden">
       <div className="space-y-3 px-5 py-4">
@@ -647,6 +657,57 @@ function MobileBrokerLeaderboard({ rows = [], loading = false }) {
           </div>
         </details>
       ) : null}
+    </div>
+  )
+}
+
+function InlineEmptyPanel({ title, description, actionLabel = '', onAction = null, tone = 'light' }) {
+  const toneClass = tone === 'dark'
+    ? 'border-white/10 bg-white/5 text-white/70'
+    : 'border-dashed border-[#d9e5f0] bg-[#fbfdff] text-[#60758d]'
+
+  return (
+    <div className={`rounded-[22px] border px-5 py-6 ${toneClass}`}>
+      <p className={`text-sm font-semibold ${tone === 'dark' ? 'text-white' : 'text-[#102236]'}`}>{title}</p>
+      <p className={`mt-2 max-w-2xl text-sm leading-6 ${tone === 'dark' ? 'text-white/65' : 'text-[#60758d]'}`}>{description}</p>
+      {actionLabel && typeof onAction === 'function' ? (
+        <button
+          type="button"
+          onClick={onAction}
+          className={`mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl px-4 text-sm font-semibold transition ${
+            tone === 'dark'
+              ? 'bg-white text-[#102236] hover:bg-[#f5f8fb]'
+              : 'bg-[#123b61] text-white hover:bg-[#102f4d]'
+          }`}
+        >
+          {actionLabel}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function FreshWorkspaceBanner({ onCreateListing }) {
+  return (
+    <div className={`${GLASS_CARD_CLASS} p-5 sm:p-6`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#7b899a]">Empty workspace</p>
+          <h2 className="mt-2 text-[1.2rem] font-semibold tracking-[-0.04em] text-[#102236]">Your executive command centre is ready for first data.</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
+            Everything below is laid out as it will appear live. Metrics are zero-rated until listings, requirements, Heads of Terms, leases, and transactions start flowing in.
+          </p>
+        </div>
+        {typeof onCreateListing === 'function' ? (
+          <button
+            type="button"
+            onClick={onCreateListing}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-2xl bg-[#123b61] px-4 text-sm font-semibold text-white transition hover:bg-[#102f4d]"
+          >
+            Create Listing
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -692,34 +753,18 @@ export default function CommercialExecutiveCommandCenter({
 
   if (error) {
     return (
-      <div className="mx-auto max-w-[1600px] px-3 pb-10 sm:px-5 lg:px-6">
+      <div className="space-y-8 pb-10">
         <DashboardHeader profile={profile} organisationName={data?.organisation?.name} />
-        <div className="mt-8">
-          <CommercialEmptyState title="Commercial dashboard data could not be loaded" description={error} />
-        </div>
-      </div>
-    )
-  }
-
-  if (!loading && isFreshCommercialWorkspace) {
-    return (
-      <div className="mx-auto max-w-[1600px] px-3 pb-10 sm:px-5 lg:px-6">
-        <DashboardHeader profile={profile} organisationName={data?.organisation?.name} />
-        <div className="mt-8">
-          <CommercialEmptyState
-            title="No commercial portfolio data yet"
-            description="Create your first listing, requirement, or transaction to start populating the executive command centre."
-            primaryActionLabel="Create Listing"
-            onPrimaryAction={onCreateListing}
-          />
-        </div>
+        <CommercialEmptyState title="Commercial dashboard data could not be loaded" description={error} />
       </div>
     )
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-8 px-3 pb-10 sm:px-5 lg:px-6">
+    <div className="space-y-8 pb-10">
       <DashboardHeader profile={profile} organisationName={data?.organisation?.name} />
+
+      {!loading && isFreshCommercialWorkspace ? <FreshWorkspaceBanner onCreateListing={onCreateListing} /> : null}
 
       <section className="space-y-4">
         <SectionHeading
@@ -837,7 +882,13 @@ export default function CommercialExecutiveCommandCenter({
                     </div>
                   </Link>
                 ))}
-                {!openDeals.length && !loading ? <p className="rounded-[20px] border border-white/10 bg-white/5 px-4 py-5 text-sm text-white/65">No open deals yet.</p> : null}
+                {!openDeals.length && !loading ? (
+                  <InlineEmptyPanel
+                    tone="dark"
+                    title="No open deals yet."
+                    description="As leasing and sales transactions are created, the most active commercial deals will surface here with stage, broker, and value."
+                  />
+                ) : null}
               </div>
             </div>
           </div>
@@ -926,38 +977,44 @@ export default function CommercialExecutiveCommandCenter({
             </div>
             <MobileBrokerLeaderboard rows={brokerLeaderboard} loading={loading} />
             <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-[#f8fbfe] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#7b899a]">
-                  <tr>
-                    <th className="px-5 py-3">Rank</th>
-                    <th className="px-5 py-3">Broker</th>
-                    <th className="px-5 py-3">Pipeline Value</th>
-                    <th className="px-5 py-3 text-right">Active Deals</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#edf2f7]">
-                  {brokerLeaderboard.map((row, index) => (
-                    <tr key={row.id || row.name} className="bg-white">
-                      <td className="px-5 py-4">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#f4f8fd] text-xs font-semibold text-[#102236]">{index + 1}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[linear-gradient(180deg,#eff5fb_0%,#dfeaf7_100%)] text-[#123b61]">
-                            <UserRound size={16} />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-[#102236]">{row.name || 'Broker'}</p>
-                            <p className="truncate text-xs text-[#7b899a]">{titleize(row.role || 'broker')}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 font-semibold text-[#102236]">{loading ? '...' : formatCompactCurrency(row.pipelineValue || 0)}</td>
-                      <td className="px-5 py-4 text-right font-semibold text-[#102236]">{loading ? '...' : formatNumber(row.activeDeals || 0)}</td>
+              {brokerLeaderboard.length ? (
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-[#f8fbfe] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#7b899a]">
+                    <tr>
+                      <th className="px-5 py-3">Rank</th>
+                      <th className="px-5 py-3">Broker</th>
+                      <th className="px-5 py-3">Pipeline Value</th>
+                      <th className="px-5 py-3 text-right">Active Deals</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-[#edf2f7]">
+                    {brokerLeaderboard.map((row, index) => (
+                      <tr key={row.id || row.name} className="bg-white">
+                        <td className="px-5 py-4">
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#f4f8fd] text-xs font-semibold text-[#102236]">{index + 1}</span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[linear-gradient(180deg,#eff5fb_0%,#dfeaf7_100%)] text-[#123b61]">
+                              <UserRound size={16} />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-[#102236]">{row.name || 'Broker'}</p>
+                              <p className="truncate text-xs text-[#7b899a]">{titleize(row.role || 'broker')}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 font-semibold text-[#102236]">{loading ? '...' : formatCompactCurrency(row.pipelineValue || 0)}</td>
+                        <td className="px-5 py-4 text-right font-semibold text-[#102236]">{loading ? '...' : formatNumber(row.activeDeals || 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : !loading ? (
+                <div className="p-5">
+                  <InlineEmptyPanel title="No broker pipeline yet." description="Once brokers are assigned to commercial opportunities, their ranked pipeline value and active deal counts will appear here." />
+                </div>
+              ) : null}
             </div>
           </article>
 
@@ -989,6 +1046,9 @@ export default function CommercialExecutiveCommandCenter({
                   </div>
                 </div>
               ))}
+              {!brokerActivityRows.length && !loading ? (
+                <InlineEmptyPanel title="No broker activity recorded yet." description="Monthly activity will populate here as viewings, matches, Heads of Terms, and signed deals are captured by the team." />
+              ) : null}
             </div>
           </article>
         </div>
@@ -1039,6 +1099,38 @@ export default function CommercialExecutiveCommandCenter({
                 </div>
               </article>
             ))}
+            {!portfolioCards.length && !loading ? (
+              <>
+                {[
+                  { key: 'occupancy', title: 'Occupancy ready', detail: 'Portfolio cards will surface asset occupancy, vacancies, and active commercial demand once properties are linked.' },
+                  { key: 'vacancies', title: 'Vacancy watch ready', detail: 'Older vacancies, revenue gaps, and asset-level risk scores will show here as stock is added.' },
+                  { key: 'revenue', title: 'Revenue cards ready', detail: 'Annual revenue, active deals, and property risk scoring will populate automatically from your live workspace.' },
+                ].map((item) => (
+                  <article key={item.key} className={`${PANEL_CLASS} min-w-[290px] p-5 lg:min-w-0`}>
+                    <div className="rounded-[22px] border border-dashed border-[#d9e5f0] bg-[linear-gradient(180deg,#fbfdff_0%,#f5f9fd_100%)] p-5">
+                      <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#123b61] shadow-[0_8px_20px_rgba(15,23,42,0.05)]">
+                        <Building2 size={18} />
+                      </span>
+                      <p className="mt-4 text-lg font-semibold tracking-[-0.03em] text-[#102236]">{item.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-[#60758d]">{item.detail}</p>
+                      <div className="mt-5 grid grid-cols-2 gap-3">
+                        {[
+                          ['Occupancy', '0%'],
+                          ['Vacancies', '0'],
+                          ['Annual Revenue', 'R0'],
+                          ['Risk Score', 'Low'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-[18px] border border-[#edf2f7] bg-white px-3 py-3">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b899a]">{label}</p>
+                            <p className="mt-2 text-sm font-semibold text-[#102236]">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </>
+            ) : null}
           </div>
         </div>
       </section>
@@ -1069,7 +1161,9 @@ export default function CommercialExecutiveCommandCenter({
                 </Link>
               )
             })}
-            {!actionItems.length && !loading ? <p className="rounded-[22px] border border-[#e6edf4] bg-[#fbfdff] px-4 py-5 text-sm text-[#60758d]">No urgent action items right now.</p> : null}
+            {!actionItems.length && !loading ? (
+              <InlineEmptyPanel title="No urgent action items right now." description="Critical lease expiries, overdue compliance, stalled deals, and long-running vacancies will surface here as soon as they need attention." />
+            ) : null}
           </div>
         </article>
       </section>
