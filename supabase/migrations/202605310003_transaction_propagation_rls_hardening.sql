@@ -1,8 +1,6 @@
 begin;
-
 alter table if exists public.transactions
   add column if not exists external_onboarding_submitted_at timestamptz;
-
 alter table if exists public.transaction_role_players
   add column if not exists assigned_organisation_id uuid,
   add column if not exists assigned_workspace_unit_id uuid,
@@ -12,7 +10,6 @@ alter table if exists public.transaction_role_players
   add column if not exists assigned_user_id uuid,
   add column if not exists scope_level text,
   add column if not exists scope_metadata jsonb not null default '{}'::jsonb;
-
 update public.transaction_role_players trp
 set
   assigned_organisation_id = coalesce(trp.assigned_organisation_id, trp.organisation_id),
@@ -28,7 +25,6 @@ set
     else null
   end)
 where true;
-
 alter table if exists public.transaction_participants
   add column if not exists assigned_organisation_id uuid,
   add column if not exists assigned_workspace_unit_id uuid,
@@ -38,19 +34,16 @@ alter table if exists public.transaction_participants
   add column if not exists assigned_user_id uuid,
   add column if not exists scope_level text,
   add column if not exists scope_metadata jsonb not null default '{}'::jsonb;
-
 update public.transaction_participants tp
 set
   assigned_user_id = coalesce(tp.assigned_user_id, tp.user_id),
   scope_level = coalesce(nullif(tp.scope_level, ''), case when coalesce(tp.assigned_user_id, tp.user_id) is not null then 'user' else null end)
 where true;
-
 alter table if exists public.transaction_attorney_assignments
   add column if not exists assigned_region_id uuid,
   add column if not exists assigned_team_id uuid,
   add column if not exists scope_level text,
   add column if not exists scope_metadata jsonb not null default '{}'::jsonb;
-
 update public.transaction_attorney_assignments taa
 set
   scope_level = coalesce(nullif(taa.scope_level, ''), case
@@ -62,7 +55,6 @@ set
     else null
   end)
 where true;
-
 alter table if exists public.transaction_bond_applications
   add column if not exists assigned_region_id uuid,
   add column if not exists assigned_team_id uuid,
@@ -70,7 +62,6 @@ alter table if exists public.transaction_bond_applications
   add column if not exists assigned_user_id uuid,
   add column if not exists scope_level text,
   add column if not exists scope_metadata jsonb not null default '{}'::jsonb;
-
 update public.transaction_bond_applications tba
 set
   assigned_workspace_unit_id = coalesce(tba.assigned_workspace_unit_id, tba.assigned_team_id, tba.assigned_branch_id),
@@ -84,22 +75,16 @@ set
     else null
   end)
 where true;
-
 create index if not exists transaction_role_players_assignment_scope_idx
   on public.transaction_role_players (assigned_organisation_id, assigned_region_id, assigned_branch_id, assigned_team_id, assigned_user_id);
-
 create index if not exists transaction_participants_assignment_scope_idx
   on public.transaction_participants (assigned_organisation_id, assigned_region_id, assigned_branch_id, assigned_team_id, assigned_user_id);
-
 create index if not exists transaction_attorney_assignments_assignment_scope_idx
   on public.transaction_attorney_assignments (assigned_organisation_id, assigned_region_id, assigned_branch_id, assigned_team_id, assigned_user_id);
-
 create index if not exists transaction_bond_applications_assignment_scope_v2_idx
   on public.transaction_bond_applications (assigned_organisation_id, assigned_region_id, assigned_branch_id, assigned_team_id, assigned_user_id);
-
 alter table if exists public.transaction_events
   drop constraint if exists transaction_events_event_type_check;
-
 alter table if exists public.transaction_events
   add constraint transaction_events_event_type_check
   check (
@@ -135,7 +120,6 @@ alter table if exists public.transaction_events
       'roleplayer_reassigned'
     )
   );
-
 create or replace function public.bridge_transaction_scope_is_internal_user()
 returns boolean
 language sql
@@ -150,7 +134,6 @@ as $$
       and lower(coalesce(p.role, '')) in ('developer', 'internal_admin', 'admin', 'super_admin')
   )
 $$;
-
 create or replace function public.bridge_can_access_bond_application_scope(application_id uuid)
 returns boolean
 language sql
@@ -234,7 +217,6 @@ as $$
     from app
   ), false)
 $$;
-
 create or replace function public.bridge_can_access_transaction_spine(target_transaction_id uuid)
 returns boolean
 language sql
@@ -315,14 +297,12 @@ as $$
     from tx
   ), false)
 $$;
-
 alter table if exists public.transactions enable row level security;
 alter table if exists public.transaction_role_players enable row level security;
 alter table if exists public.transaction_participants enable row level security;
 alter table if exists public.transaction_events enable row level security;
 alter table if exists public.transaction_attorney_assignments enable row level security;
 alter table if exists public.transaction_bond_applications enable row level security;
-
 drop policy if exists transactions_demo_all on public.transactions;
 drop policy if exists transaction_role_players_demo_all on public.transaction_role_players;
 drop policy if exists transaction_participants_demo_all on public.transaction_participants;
@@ -330,14 +310,12 @@ drop policy if exists transaction_events_demo_all on public.transaction_events;
 drop policy if exists transaction_bond_applications_demo_all on public.transaction_bond_applications;
 drop policy if exists transaction_bond_applications_select_scoped on public.transaction_bond_applications;
 drop policy if exists transaction_bond_applications_modify_scoped on public.transaction_bond_applications;
-
 drop policy if exists transactions_select_transaction_spine_scope on public.transactions;
 create policy transactions_select_transaction_spine_scope
   on public.transactions
   for select
   to authenticated
   using (public.bridge_can_access_transaction_spine(id));
-
 drop policy if exists transactions_insert_transaction_spine_scope on public.transactions;
 create policy transactions_insert_transaction_spine_scope
   on public.transactions
@@ -352,7 +330,6 @@ create policy transactions_insert_transaction_spine_scope
       or lower(coalesce(assigned_agent_email, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
     )
   );
-
 drop policy if exists transactions_update_transaction_spine_scope on public.transactions;
 create policy transactions_update_transaction_spine_scope
   on public.transactions
@@ -360,21 +337,18 @@ create policy transactions_update_transaction_spine_scope
   to authenticated
   using (public.bridge_can_access_transaction_spine(id))
   with check (public.bridge_can_access_transaction_spine(id));
-
 drop policy if exists transaction_bond_applications_select_scope_hardened on public.transaction_bond_applications;
 create policy transaction_bond_applications_select_scope_hardened
   on public.transaction_bond_applications
   for select
   to authenticated
   using (public.bridge_can_access_bond_application_scope(id));
-
 drop policy if exists transaction_bond_applications_insert_scope_hardened on public.transaction_bond_applications;
 create policy transaction_bond_applications_insert_scope_hardened
   on public.transaction_bond_applications
   for insert
   to authenticated
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_bond_applications_update_scope_hardened on public.transaction_bond_applications;
 create policy transaction_bond_applications_update_scope_hardened
   on public.transaction_bond_applications
@@ -382,21 +356,18 @@ create policy transaction_bond_applications_update_scope_hardened
   to authenticated
   using (public.bridge_can_access_bond_application_scope(id) or public.bridge_can_access_transaction_spine(transaction_id))
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_participants_select_transaction_spine_scope on public.transaction_participants;
 create policy transaction_participants_select_transaction_spine_scope
   on public.transaction_participants
   for select
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_participants_insert_transaction_spine_scope on public.transaction_participants;
 create policy transaction_participants_insert_transaction_spine_scope
   on public.transaction_participants
   for insert
   to authenticated
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_participants_update_transaction_spine_scope on public.transaction_participants;
 create policy transaction_participants_update_transaction_spine_scope
   on public.transaction_participants
@@ -404,21 +375,18 @@ create policy transaction_participants_update_transaction_spine_scope
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id))
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_role_players_select_transaction_spine_scope on public.transaction_role_players;
 create policy transaction_role_players_select_transaction_spine_scope
   on public.transaction_role_players
   for select
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_role_players_insert_transaction_spine_scope on public.transaction_role_players;
 create policy transaction_role_players_insert_transaction_spine_scope
   on public.transaction_role_players
   for insert
   to authenticated
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_role_players_update_transaction_spine_scope on public.transaction_role_players;
 create policy transaction_role_players_update_transaction_spine_scope
   on public.transaction_role_players
@@ -426,21 +394,18 @@ create policy transaction_role_players_update_transaction_spine_scope
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id))
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_events_select_transaction_spine_scope on public.transaction_events;
 create policy transaction_events_select_transaction_spine_scope
   on public.transaction_events
   for select
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_events_insert_transaction_spine_scope on public.transaction_events;
 create policy transaction_events_insert_transaction_spine_scope
   on public.transaction_events
   for insert
   to authenticated
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 drop policy if exists transaction_attorney_assignments_select_transaction_spine_scope on public.transaction_attorney_assignments;
 create policy transaction_attorney_assignments_select_transaction_spine_scope
   on public.transaction_attorney_assignments
@@ -465,11 +430,8 @@ create policy transaction_attorney_assignments_select_transaction_spine_scope
       )
     )
   );
-
 grant execute on function public.bridge_transaction_scope_is_internal_user() to authenticated;
 grant execute on function public.bridge_can_access_bond_application_scope(uuid) to authenticated;
 grant execute on function public.bridge_can_access_transaction_spine(uuid) to authenticated;
-
 notify pgrst, 'reload schema';
-
 commit;

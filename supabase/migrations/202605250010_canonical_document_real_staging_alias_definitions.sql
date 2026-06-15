@@ -1,5 +1,4 @@
 begin;
-
 insert into public.document_definitions (
   key,
   display_label,
@@ -76,7 +75,5 @@ set
   sort_order = excluded.sort_order,
   is_active = true,
   metadata_json = excluded.metadata_json;
-
 notify pgrst, 'reload schema';
-
 commit;

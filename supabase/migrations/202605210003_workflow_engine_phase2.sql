@@ -15,11 +15,9 @@ create table if not exists public.workflow_templates (
     workflow_type in ('buyer', 'seller', 'transaction', 'transfer', 'bond', 'finance')
   )
 );
-
 create unique index if not exists workflow_templates_unique_active_idx
   on public.workflow_templates (coalesce(organisation_id, '00000000-0000-0000-0000-000000000000'::uuid), workflow_type, name)
   where active = true;
-
 create table if not exists public.workflow_stages (
   id uuid primary key default gen_random_uuid(),
   workflow_template_id uuid not null references public.workflow_templates(id) on delete cascade,
@@ -34,7 +32,6 @@ create table if not exists public.workflow_stages (
   created_at timestamptz not null default now(),
   unique (workflow_template_id, stage_key)
 );
-
 create table if not exists public.workflow_stage_requirements (
   id uuid primary key default gen_random_uuid(),
   workflow_stage_id uuid not null references public.workflow_stages(id) on delete cascade,
@@ -45,7 +42,6 @@ create table if not exists public.workflow_stage_requirements (
   created_at timestamptz not null default now(),
   unique (workflow_stage_id, requirement_type, requirement_key)
 );
-
 create table if not exists public.workflow_automations (
   id uuid primary key default gen_random_uuid(),
   workflow_template_id uuid references public.workflow_templates(id) on delete cascade,
@@ -58,7 +54,6 @@ create table if not exists public.workflow_automations (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.workflow_permissions (
   id uuid primary key default gen_random_uuid(),
   workflow_template_id uuid references public.workflow_templates(id) on delete cascade,
@@ -75,7 +70,6 @@ create table if not exists public.workflow_permissions (
     permission_key
   )
 );
-
 create table if not exists public.workflow_audit_log (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
@@ -95,7 +89,6 @@ create table if not exists public.workflow_audit_log (
   metadata_json jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.workflow_generated_tasks (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
@@ -118,7 +111,6 @@ create table if not exists public.workflow_generated_tasks (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.workflow_alerts (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
@@ -143,7 +135,6 @@ create table if not exists public.workflow_alerts (
   constraint workflow_alerts_severity_check check (severity in ('info', 'warning', 'critical')),
   constraint workflow_alerts_status_check check (status in ('open', 'acknowledged', 'resolved', 'dismissed'))
 );
-
 create table if not exists public.transaction_workflow_lanes (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
@@ -164,7 +155,6 @@ create table if not exists public.transaction_workflow_lanes (
   constraint transaction_workflow_lanes_status_check check (status in ('pending', 'active', 'blocked', 'completed', 'cancelled')),
   unique (transaction_id, lane_type)
 );
-
 create index if not exists workflow_templates_org_type_idx on public.workflow_templates (organisation_id, workflow_type, active);
 create index if not exists workflow_stages_template_order_idx on public.workflow_stages (workflow_template_id, stage_order);
 create index if not exists workflow_requirements_stage_idx on public.workflow_stage_requirements (workflow_stage_id, blocking);
@@ -178,37 +168,31 @@ create index if not exists workflow_alerts_org_status_idx on public.workflow_ale
 create index if not exists workflow_alerts_transaction_idx on public.workflow_alerts (transaction_id, status, due_at);
 create index if not exists transaction_workflow_lanes_transaction_idx on public.transaction_workflow_lanes (transaction_id, lane_type);
 create index if not exists transaction_workflow_lanes_org_status_idx on public.transaction_workflow_lanes (organisation_id, lane_type, status, blocked);
-
 drop trigger if exists workflow_templates_set_updated_at on public.workflow_templates;
 create trigger workflow_templates_set_updated_at
 before update on public.workflow_templates
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists workflow_automations_set_updated_at on public.workflow_automations;
 create trigger workflow_automations_set_updated_at
 before update on public.workflow_automations
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists workflow_generated_tasks_set_updated_at on public.workflow_generated_tasks;
 create trigger workflow_generated_tasks_set_updated_at
 before update on public.workflow_generated_tasks
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists workflow_alerts_set_updated_at on public.workflow_alerts;
 create trigger workflow_alerts_set_updated_at
 before update on public.workflow_alerts
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists transaction_workflow_lanes_set_updated_at on public.transaction_workflow_lanes;
 create trigger transaction_workflow_lanes_set_updated_at
 before update on public.transaction_workflow_lanes
 for each row
 execute function public.bridge_set_updated_at();
-
 alter table if exists public.workflow_templates enable row level security;
 alter table if exists public.workflow_stages enable row level security;
 alter table if exists public.workflow_stage_requirements enable row level security;
@@ -218,7 +202,6 @@ alter table if exists public.workflow_audit_log enable row level security;
 alter table if exists public.workflow_generated_tasks enable row level security;
 alter table if exists public.workflow_alerts enable row level security;
 alter table if exists public.transaction_workflow_lanes enable row level security;
-
 drop policy if exists workflow_templates_org_members on public.workflow_templates;
 create policy workflow_templates_org_members
   on public.workflow_templates
@@ -231,7 +214,6 @@ create policy workflow_templates_org_members
     organisation_id is null
     or public.bridge_is_active_member(organisation_id)
   );
-
 drop policy if exists workflow_stages_template_members on public.workflow_stages;
 create policy workflow_stages_template_members
   on public.workflow_stages
@@ -256,7 +238,6 @@ create policy workflow_stages_template_members
         )
     )
   );
-
 drop policy if exists workflow_stage_requirements_template_members on public.workflow_stage_requirements;
 create policy workflow_stage_requirements_template_members
   on public.workflow_stage_requirements
@@ -285,7 +266,6 @@ create policy workflow_stage_requirements_template_members
         )
     )
   );
-
 do $$
 declare
   table_name text;
@@ -311,7 +291,6 @@ begin
     );
   end loop;
 end $$;
-
 grant select, insert, update on public.workflow_templates to authenticated;
 grant select, insert, update on public.workflow_stages to authenticated;
 grant select, insert, update on public.workflow_stage_requirements to authenticated;
@@ -321,7 +300,6 @@ grant select, insert on public.workflow_audit_log to authenticated;
 grant select, insert, update on public.workflow_generated_tasks to authenticated;
 grant select, insert, update on public.workflow_alerts to authenticated;
 grant select, insert, update on public.transaction_workflow_lanes to authenticated;
-
 with buyer_template as (
   insert into public.workflow_templates (name, workflow_type, organisation_id, active, metadata_json)
   values ('Buyer Workflow', 'buyer', null, true, '{"version":"phase_2"}'::jsonb)
@@ -359,7 +337,6 @@ select template.id, stages.stage_key, stages.stage_name, stages.stage_order, sta
 from template
 cross join stages
 on conflict (workflow_template_id, stage_key) do nothing;
-
 with template as (
   select id from public.workflow_templates
   where workflow_type = 'buyer'

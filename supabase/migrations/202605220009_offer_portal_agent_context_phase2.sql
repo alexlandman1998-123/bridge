@@ -168,7 +168,5 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_get_offer_portal_session(text) to anon, authenticated;
-
 notify pgrst, 'reload schema';

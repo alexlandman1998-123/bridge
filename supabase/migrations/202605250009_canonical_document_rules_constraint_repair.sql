@@ -1,5 +1,4 @@
 begin;
-
 do $$
 begin
   if to_regclass('public.document_requirement_rules') is not null then
@@ -78,10 +77,7 @@ begin
     end if;
   end if;
 end $$;
-
 comment on table public.document_requirement_rules is
   'Canonical conditional document requirement rules used by the resolver. Legacy columns may remain for compatibility; active canonical rows are constrained to definition, pack and context keys.';
-
 notify pgrst, 'reload schema';
-
 commit;

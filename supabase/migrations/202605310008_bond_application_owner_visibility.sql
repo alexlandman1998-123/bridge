@@ -1,5 +1,4 @@
 begin;
-
 drop policy if exists transaction_bond_applications_select_scope_hardened on public.transaction_bond_applications;
 create policy transaction_bond_applications_select_scope_hardened
   on public.transaction_bond_applications
@@ -20,7 +19,6 @@ create policy transaction_bond_applications_select_scope_hardened
         )
     )
   );
-
 drop policy if exists transaction_bond_applications_update_scope_hardened on public.transaction_bond_applications;
 create policy transaction_bond_applications_update_scope_hardened
   on public.transaction_bond_applications
@@ -56,7 +54,5 @@ create policy transaction_bond_applications_update_scope_hardened
         )
     )
   );
-
 notify pgrst, 'reload schema';
-
 commit;

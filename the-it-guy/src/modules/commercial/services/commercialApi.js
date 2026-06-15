@@ -1725,7 +1725,8 @@ export async function enableCommercialWorkspaceForCurrentUser(input = {}) {
 
   await updateWorkflowSettings(nextSettings)
   const commercialModuleStatus = await setCommercialOrganisationModuleEnabled(true, {
-    source: 'self_service_enablement',
+    // Persist a DB-safe source value; the richer setup context is kept in metadata.
+    source: 'manual',
     metadata: {
       source: 'commercial_workspace_enablement',
       actor_email: actorEmail || null,

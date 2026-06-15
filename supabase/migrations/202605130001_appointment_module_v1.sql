@@ -56,7 +56,6 @@ create table if not exists public.appointments (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 alter table if exists public.appointments add column if not exists custom_type_label text;
 alter table if exists public.appointments add column if not exists timezone text not null default 'Africa/Johannesburg';
 alter table if exists public.appointments add column if not exists all_day boolean not null default false;
@@ -67,12 +66,10 @@ alter table if exists public.appointments add column if not exists related_entit
 alter table if exists public.appointments add column if not exists cancelled_at timestamptz;
 alter table if exists public.appointments add column if not exists cancelled_by uuid references public.profiles(id) on delete set null;
 alter table if exists public.appointments add column if not exists cancellation_reason text;
-
 alter table if exists public.appointments drop constraint if exists appointments_location_type_check;
 alter table if exists public.appointments
   add constraint appointments_location_type_check
   check (location_type in ('physical_address', 'video_call', 'phone_call', 'to_be_confirmed'));
-
 alter table if exists public.appointments drop constraint if exists appointments_related_entity_type_check;
 alter table if exists public.appointments
   add constraint appointments_related_entity_type_check
@@ -80,7 +77,6 @@ alter table if exists public.appointments
     related_entity_type is null
     or related_entity_type in ('transaction', 'lead', 'development', 'unit', 'client', 'private_transaction', 'none')
   );
-
 create table if not exists public.appointment_participants (
   participant_id uuid primary key default gen_random_uuid(),
   appointment_id uuid not null references public.appointments(appointment_id) on delete cascade,
@@ -102,7 +98,6 @@ create table if not exists public.appointment_participants (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 alter table if exists public.appointment_participants add column if not exists user_id uuid references public.profiles(id) on delete set null;
 alter table if exists public.appointment_participants add column if not exists contact_id uuid references public.contacts(contact_id) on delete set null;
 alter table if exists public.appointment_participants add column if not exists is_required boolean not null default true;
@@ -110,32 +105,25 @@ alter table if exists public.appointment_participants add column if not exists r
 alter table if exists public.appointment_participants add column if not exists rsvp_token text;
 alter table if exists public.appointment_participants add column if not exists invitation_sent_at timestamptz;
 alter table if exists public.appointment_participants add column if not exists last_invitation_sent_at timestamptz;
-
 update public.appointment_participants
 set rsvp_token = gen_random_uuid()::text
 where rsvp_token is null;
-
 alter table if exists public.appointment_participants alter column rsvp_token set default gen_random_uuid()::text;
-
 alter table if exists public.appointment_participants drop constraint if exists appointment_participants_role_check;
 alter table if exists public.appointment_participants
   add constraint appointment_participants_role_check
   check (participant_role in ('Client', 'Buyer', 'Seller', 'Agent', 'Co-agent', 'Principal', 'Attorney', 'Bond Originator', 'Developer', 'Other', 'Other Contact'));
-
 alter table if exists public.appointment_participants drop constraint if exists appointment_participants_rsvp_check;
 alter table if exists public.appointment_participants
   add constraint appointment_participants_rsvp_check
   check (rsvp_status in ('Pending', 'Accepted', 'Declined', 'Proposed New Time'));
-
 create unique index if not exists appointment_participants_rsvp_token_idx on public.appointment_participants (rsvp_token) where rsvp_token is not null;
 create index if not exists appointment_participants_email_idx on public.appointment_participants (email);
 create index if not exists appointment_participants_status_idx on public.appointment_participants (rsvp_status);
 create index if not exists appointments_related_entity_idx on public.appointments (related_entity_type, related_entity_id);
 create index if not exists appointments_org_date_idx on public.appointments (organisation_id, date_time);
-
 alter table public.appointments enable row level security;
 alter table public.appointment_participants enable row level security;
-
 drop policy if exists appointments_agency_select on public.appointments;
 create policy appointments_agency_select on public.appointments
 for select to authenticated
@@ -148,7 +136,6 @@ using (
     and agent_id = auth.uid()
   )
 );
-
 drop policy if exists appointments_agency_write on public.appointments;
 create policy appointments_agency_write on public.appointments
 for all to authenticated
@@ -165,7 +152,6 @@ with check (
     and agent_id = auth.uid()
   )
 );
-
 drop policy if exists appointment_participants_agency_select on public.appointment_participants;
 create policy appointment_participants_agency_select on public.appointment_participants
 for select to authenticated
@@ -182,7 +168,6 @@ using (
       )
   )
 );
-
 drop policy if exists appointment_participants_agency_write on public.appointment_participants;
 create policy appointment_participants_agency_write on public.appointment_participants
 for all to authenticated
@@ -212,10 +197,8 @@ with check (
       )
   )
 );
-
 drop policy if exists "appointment participants can rsvp with token" on public.appointment_participants;
 drop policy if exists "appointment participants can view own rsvp token" on public.appointment_participants;
-
 create or replace function public.get_appointment_rsvp_by_token(p_token text)
 returns table (
   participant_id uuid,
@@ -257,7 +240,6 @@ as $$
   where ap.rsvp_token = p_token
   limit 1
 $$;
-
 create or replace function public.submit_appointment_rsvp(
   p_token text,
   p_rsvp_status text,
@@ -329,6 +311,5 @@ begin
   returning ap.participant_id, ap.appointment_id, ap.rsvp_status, ap.responded_at;
 end;
 $$;
-
 grant execute on function public.get_appointment_rsvp_by_token(text) to anon, authenticated;
 grant execute on function public.submit_appointment_rsvp(text, text, timestamptz, text) to anon, authenticated;

@@ -1,7 +1,5 @@
 begin;
-
 create extension if not exists "pgcrypto";
-
 create table if not exists public.transaction_finance_workflows (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null references public.transactions(id) on delete cascade,
@@ -27,7 +25,6 @@ create table if not exists public.transaction_finance_workflows (
   ),
   constraint transaction_finance_workflows_status_check check (status in ('active', 'completed', 'blocked'))
 );
-
 create table if not exists public.transaction_finance_workflow_events (
   id uuid primary key default gen_random_uuid(),
   workflow_id uuid not null references public.transaction_finance_workflows(id) on delete cascade,
@@ -69,7 +66,6 @@ create table if not exists public.transaction_finance_workflow_events (
     )
   )
 );
-
 create table if not exists public.transaction_bond_applications (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null references public.transactions(id) on delete cascade,
@@ -98,7 +94,6 @@ create table if not exists public.transaction_bond_applications (
     )
   )
 );
-
 create table if not exists public.transaction_bond_quotes (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null references public.transactions(id) on delete cascade,
@@ -121,29 +116,21 @@ create table if not exists public.transaction_bond_quotes (
     quote_status in ('received', 'approved_by_buyer', 'declined_by_buyer', 'expired')
   )
 );
-
 create unique index if not exists transaction_bond_quotes_one_approved_per_workflow_idx
   on public.transaction_bond_quotes (workflow_id)
   where quote_status = 'approved_by_buyer';
-
 create index if not exists transaction_finance_workflows_transaction_idx
   on public.transaction_finance_workflows (transaction_id, workflow_type);
-
 create index if not exists transaction_finance_workflow_events_workflow_idx
   on public.transaction_finance_workflow_events (workflow_id, created_at desc);
-
 create index if not exists transaction_bond_applications_workflow_idx
   on public.transaction_bond_applications (workflow_id, status);
-
 create index if not exists transaction_bond_applications_transaction_idx
   on public.transaction_bond_applications (transaction_id, created_at desc);
-
 create index if not exists transaction_bond_quotes_workflow_idx
   on public.transaction_bond_quotes (workflow_id, quote_status);
-
 create index if not exists transaction_bond_quotes_transaction_idx
   on public.transaction_bond_quotes (transaction_id, created_at desc);
-
 create or replace function public.touch_bond_hybrid_finance_workflow_updated_at()
 returns trigger
 language plpgsql
@@ -153,28 +140,23 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists touch_transaction_finance_workflows_updated_at on public.transaction_finance_workflows;
 create trigger touch_transaction_finance_workflows_updated_at
   before update on public.transaction_finance_workflows
   for each row execute function public.touch_bond_hybrid_finance_workflow_updated_at();
-
 drop trigger if exists touch_transaction_bond_applications_updated_at on public.transaction_bond_applications;
 create trigger touch_transaction_bond_applications_updated_at
   before update on public.transaction_bond_applications
   for each row execute function public.touch_bond_hybrid_finance_workflow_updated_at();
-
 drop trigger if exists touch_transaction_bond_quotes_updated_at on public.transaction_bond_quotes;
 create trigger touch_transaction_bond_quotes_updated_at
   before update on public.transaction_bond_quotes
   for each row execute function public.touch_bond_hybrid_finance_workflow_updated_at();
-
 insert into public.transaction_finance_workflows (transaction_id, workflow_type, current_stage, status)
 select t.id, 'bond_hybrid', 'documents_received', 'active'
 from public.transactions t
 where lower(coalesce(t.finance_type, '')) in ('bond', 'hybrid', 'combination')
 on conflict (transaction_id, workflow_type) do nothing;
-
 alter table if exists public.transaction_events drop constraint if exists transaction_events_event_type_check;
 alter table if exists public.transaction_events
   add constraint transaction_events_event_type_check
@@ -221,12 +203,10 @@ alter table if exists public.transaction_events
       'BondHybridFinanceInstructionSent'
     )
   );
-
 alter table public.transaction_finance_workflows enable row level security;
 alter table public.transaction_finance_workflow_events enable row level security;
 alter table public.transaction_bond_applications enable row level security;
 alter table public.transaction_bond_quotes enable row level security;
-
 drop policy if exists transaction_finance_workflows_select on public.transaction_finance_workflows;
 create policy transaction_finance_workflows_select
   on public.transaction_finance_workflows
@@ -250,7 +230,6 @@ create policy transaction_finance_workflows_select
         )
     )
   );
-
 drop policy if exists transaction_finance_workflows_modify on public.transaction_finance_workflows;
 create policy transaction_finance_workflows_modify
   on public.transaction_finance_workflows
@@ -288,7 +267,6 @@ create policy transaction_finance_workflows_modify
         and tp.user_id = auth.uid()
     )
   );
-
 drop policy if exists transaction_finance_workflow_events_select on public.transaction_finance_workflow_events;
 create policy transaction_finance_workflow_events_select
   on public.transaction_finance_workflow_events
@@ -301,7 +279,6 @@ create policy transaction_finance_workflow_events_select
       where tfw.id = transaction_finance_workflow_events.workflow_id
     )
   );
-
 drop policy if exists transaction_finance_workflow_events_insert on public.transaction_finance_workflow_events;
 create policy transaction_finance_workflow_events_insert
   on public.transaction_finance_workflow_events
@@ -330,7 +307,6 @@ create policy transaction_finance_workflow_events_insert
         )
     )
   );
-
 drop policy if exists transaction_bond_applications_select on public.transaction_bond_applications;
 create policy transaction_bond_applications_select
   on public.transaction_bond_applications
@@ -343,7 +319,6 @@ create policy transaction_bond_applications_select
       where tfw.id = transaction_bond_applications.workflow_id
     )
   );
-
 drop policy if exists transaction_bond_applications_modify on public.transaction_bond_applications;
 create policy transaction_bond_applications_modify
   on public.transaction_bond_applications
@@ -381,7 +356,6 @@ create policy transaction_bond_applications_modify
         and tp.user_id = auth.uid()
     )
   );
-
 drop policy if exists transaction_bond_quotes_select on public.transaction_bond_quotes;
 create policy transaction_bond_quotes_select
   on public.transaction_bond_quotes
@@ -394,7 +368,6 @@ create policy transaction_bond_quotes_select
       where tfw.id = transaction_bond_quotes.workflow_id
     )
   );
-
 drop policy if exists transaction_bond_quotes_modify on public.transaction_bond_quotes;
 create policy transaction_bond_quotes_modify
   on public.transaction_bond_quotes
@@ -432,5 +405,4 @@ create policy transaction_bond_quotes_modify
         and tp.user_id = auth.uid()
     )
   );
-
 commit;

@@ -1,8 +1,6 @@
 begin;
-
 alter table if exists public.transaction_required_documents
   drop constraint if exists transaction_required_documents_status_check;
-
 alter table if exists public.transaction_required_documents
   add constraint transaction_required_documents_status_check check (
     status in (
@@ -19,7 +17,6 @@ alter table if exists public.transaction_required_documents
       'not_required'
     )
   );
-
 create or replace function public.bridge_review_canonical_requirement(
   p_requirement_instance_id uuid,
   p_document_id uuid default null,
@@ -337,15 +334,11 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.bridge_review_canonical_requirement(uuid, uuid, text, text, text, uuid) from public;
 revoke all on function public.bridge_review_canonical_requirement(uuid, uuid, text, text, text, uuid) from anon;
 grant execute on function public.bridge_review_canonical_requirement(uuid, uuid, text, text, text, uuid) to authenticated;
 grant execute on function public.bridge_review_canonical_requirement(uuid, uuid, text, text, text, uuid) to service_role;
-
 comment on function public.bridge_review_canonical_requirement(uuid, uuid, text, text, text, uuid) is
   'Scoped browser review helper for canonical document approve/reject/waive lifecycle actions without granting broad canonical table writes.';
-
 notify pgrst, 'reload schema';
-
 commit;

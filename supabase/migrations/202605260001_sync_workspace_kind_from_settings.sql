@@ -35,13 +35,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists organisations_sync_workspace_kind on public.organisations;
 create trigger organisations_sync_workspace_kind
 before insert or update of type, settings_json, workspace_kind on public.organisations
 for each row
 execute function public.bridge_sync_organisation_workspace_kind();
-
 update public.organisations
 set workspace_kind = case
   when nullif(trim(coalesce(settings_json->>'workspaceKind', settings_json->>'workspace_kind', '')), '') in ('bond_originator', 'bond') then 'bond_company'

@@ -1,5 +1,4 @@
 begin;
-
 create table if not exists public.private_listing_activity (
   id uuid primary key default gen_random_uuid(),
   private_listing_id uuid not null references public.private_listings(id) on delete cascade,
@@ -14,14 +13,11 @@ create table if not exists public.private_listing_activity (
     visibility in ('internal', 'shared', 'client_visible')
   )
 );
-
 create index if not exists private_listing_activity_listing_idx
   on public.private_listing_activity(private_listing_id, created_at desc);
 create index if not exists private_listing_activity_type_idx
   on public.private_listing_activity(activity_type);
-
 alter table public.private_listing_activity enable row level security;
-
 drop policy if exists private_listing_activity_select_member on public.private_listing_activity;
 create policy private_listing_activity_select_member
 on public.private_listing_activity
@@ -35,7 +31,6 @@ using (
       and public.bridge_is_active_member(pl.organisation_id)
   )
 );
-
 drop policy if exists private_listing_activity_insert_member on public.private_listing_activity;
 create policy private_listing_activity_insert_member
 on public.private_listing_activity
@@ -53,9 +48,7 @@ with check (
       )
   )
 );
-
 grant select, insert on public.private_listing_activity to authenticated;
-
 create or replace function public.bridge_complete_private_listing_seller_onboarding(
   p_token text,
   p_form_data jsonb default '{}'::jsonb,
@@ -131,7 +124,5 @@ begin
   return public.bridge_private_listing_seller_portal_payload(p_token);
 end;
 $$;
-
 grant execute on function public.bridge_complete_private_listing_seller_onboarding(text, jsonb, text, text, text) to anon, authenticated;
-
 commit;

@@ -1,14 +1,10 @@
 begin;
-
 alter table if exists public.transaction_finance_workflows
   drop constraint if exists transaction_finance_workflows_stage_check;
-
 alter table if exists public.transaction_finance_workflow_events
   drop constraint if exists transaction_finance_workflow_events_to_stage_check;
-
 alter table if exists public.transaction_finance_workflow_events
   drop constraint if exists transaction_finance_workflow_events_from_stage_check;
-
 update public.transaction_finance_workflows
 set current_stage = case current_stage
   when 'documents_received' then 'documents'
@@ -29,7 +25,6 @@ where current_stage in (
   'registered',
   'completed'
 );
-
 update public.transaction_finance_workflow_events
 set
   from_stage = case from_stage
@@ -52,10 +47,8 @@ set
     when 'completed' then 'complete'
     else to_stage
   end;
-
 alter table if exists public.transaction_finance_workflows
   alter column current_stage set default 'intake';
-
 alter table if exists public.transaction_finance_workflows
   add constraint transaction_finance_workflows_stage_check
   check (
@@ -70,7 +63,6 @@ alter table if exists public.transaction_finance_workflows
       'complete'
     )
   );
-
 alter table if exists public.transaction_finance_workflow_events
   add constraint transaction_finance_workflow_events_to_stage_check
   check (
@@ -85,7 +77,6 @@ alter table if exists public.transaction_finance_workflow_events
       'complete'
     )
   );
-
 alter table if exists public.transaction_finance_workflow_events
   add constraint transaction_finance_workflow_events_from_stage_check
   check (
@@ -100,8 +91,6 @@ alter table if exists public.transaction_finance_workflow_events
       'complete'
     )
   );
-
 comment on table public.transaction_finance_workflows is
   'Canonical shared finance workflow progress source for bond/hybrid applications across Bridge workspaces.';
-
 commit;

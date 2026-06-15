@@ -4,7 +4,6 @@ alter table if exists public.appointments drop constraint if exists appointments
 alter table if exists public.appointments
   add constraint appointments_status_check
   check (status in ('Draft', 'Pending Confirmation', 'Proposed', 'Confirmed', 'Completed', 'Cancelled', 'Declined', 'Needs Reschedule', 'Reschedule Requested'));
-
 do $$
 begin
   if to_regclass('public.appointments') is null then
@@ -31,12 +30,10 @@ begin
   $create_table$;
 end;
 $$;
-
 alter table if exists public.appointment_reschedule_requests drop constraint if exists appointment_reschedule_requests_status_check;
 alter table if exists public.appointment_reschedule_requests
   add constraint appointment_reschedule_requests_status_check
   check (status in ('pending', 'proposed', 'accepted', 'rejected', 'cancelled', 'completed'));
-
 do $$
 begin
   if to_regclass('public.appointment_reschedule_requests') is null then

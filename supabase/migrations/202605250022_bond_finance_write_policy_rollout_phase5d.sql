@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_is_bond_finance_document_request_surface_phase5d(
   lane_key text,
   document_type text,
@@ -29,7 +28,6 @@ as $$
       else false
     end
 $$;
-
 create or replace function public.bridge_is_bond_finance_document_surface_phase5d(
   lane_key text,
   stage_key text,
@@ -69,7 +67,6 @@ as $$
       else false
     end
 $$;
-
 create or replace function public.bridge_is_bond_compliance_step_key_phase5d(step_key text)
 returns boolean
 language sql
@@ -85,7 +82,6 @@ as $$
     ]
   )
 $$;
-
 create or replace function public.bridge_is_bond_bank_feedback_step_key_phase5d(step_key text)
 returns boolean
 language sql
@@ -101,7 +97,6 @@ as $$
     ]
   )
 $$;
-
 create or replace function public.bridge_can_mutate_bond_finance_details_phase5d(transaction_id uuid)
 returns boolean
 language sql
@@ -111,7 +106,6 @@ as $$
     public.bridge_is_bond_transaction_canonical_ready(transaction_id)
     and public.bridge_can_mutate_bond_transaction_canonical(transaction_id, 'finance_details_edit')
 $$;
-
 create or replace function public.bridge_can_mutate_bond_document_request_phase5d(transaction_id uuid)
 returns boolean
 language sql
@@ -124,7 +118,6 @@ as $$
       or public.bridge_can_mutate_bond_transaction_scoped(transaction_id, 'document_upload')
     )
 $$;
-
 create or replace function public.bridge_can_upload_bond_document_phase5d(transaction_id uuid)
 returns boolean
 language sql
@@ -134,7 +127,6 @@ as $$
     public.bridge_is_bond_transaction_canonical_ready(transaction_id)
     and public.bridge_can_mutate_bond_transaction_canonical(transaction_id, 'document_upload')
 $$;
-
 create or replace function public.bridge_can_manage_bond_bank_feedback_phase5d(transaction_id uuid)
 returns boolean
 language sql
@@ -147,7 +139,6 @@ as $$
       or public.bridge_can_mutate_bond_transaction_scoped(transaction_id, 'bank_feedback_capture')
     )
 $$;
-
 create or replace function public.bridge_can_submit_bond_to_banks_phase5d(transaction_id uuid)
 returns boolean
 language sql
@@ -160,7 +151,6 @@ as $$
       or public.bridge_can_mutate_bond_transaction_scoped(transaction_id, 'bank_submission')
     )
 $$;
-
 create or replace function public.bridge_can_manage_bond_assignment_phase5d(transaction_id uuid)
 returns boolean
 language sql
@@ -173,7 +163,6 @@ as $$
       or public.bridge_can_mutate_bond_transaction_scoped(transaction_id, 'assignment_manage')
     )
 $$;
-
 create or replace function public.bridge_can_review_bond_compliance_phase5d(transaction_id uuid)
 returns boolean
 language sql
@@ -186,7 +175,6 @@ as $$
       or public.bridge_can_mutate_bond_transaction_scoped(transaction_id, 'workflow_mutation')
     )
 $$;
-
 create or replace function public.bridge_can_mutate_bond_finance_step_phase5d(
   transaction_id uuid,
   step_key text
@@ -207,7 +195,6 @@ as $$
         or public.bridge_can_mutate_bond_transaction_scoped(transaction_id, 'workflow_mutation')
     end
 $$;
-
 create or replace function public.bridge_can_record_bond_finance_event_phase5d(transaction_id uuid)
 returns boolean
 language sql
@@ -223,7 +210,6 @@ as $$
       or public.bridge_can_review_bond_compliance_phase5d(transaction_id)
     )
 $$;
-
 create policy transaction_subprocess_steps_update_phase5d_bond_finance on public.transaction_subprocess_steps
 for update to authenticated
 using (
@@ -250,7 +236,6 @@ with check (
       )
   )
 );
-
 create policy transaction_finance_details_update_phase5d_bond_finance on public.transaction_finance_details
 for update to authenticated
 using (
@@ -259,7 +244,6 @@ using (
 with check (
   public.bridge_can_mutate_bond_finance_details_phase5d(transaction_id)
 );
-
 create policy document_requests_insert_phase5d_bond_finance on public.document_requests
 for insert to authenticated
 with check (
@@ -271,7 +255,6 @@ with check (
   )
   and public.bridge_can_mutate_bond_document_request_phase5d(public.document_requests.transaction_id)
 );
-
 create policy document_requests_update_phase5d_bond_finance on public.document_requests
 for update to authenticated
 using (
@@ -292,7 +275,6 @@ with check (
   )
   and public.bridge_can_mutate_bond_document_request_phase5d(public.document_requests.transaction_id)
 );
-
 create policy documents_insert_phase5d_bond_finance on public.documents
 for insert to authenticated
 with check (
@@ -306,7 +288,6 @@ with check (
   )
   and public.bridge_can_upload_bond_document_phase5d(public.documents.transaction_id)
 );
-
 create policy documents_update_phase5d_bond_finance on public.documents
 for update to authenticated
 using (
@@ -331,7 +312,6 @@ with check (
   )
   and public.bridge_can_upload_bond_document_phase5d(public.documents.transaction_id)
 );
-
 create policy transaction_events_insert_phase5d_bond_finance on public.transaction_events
 for insert to authenticated
 with check (
@@ -339,7 +319,6 @@ with check (
   and coalesce(public.transaction_events.visibility_scope, 'internal') <> 'client_visible'
   and public.bridge_can_record_bond_finance_event_phase5d(public.transaction_events.transaction_id)
 );
-
 create policy transaction_notifications_insert_phase5d_bond_finance on public.transaction_notifications
 for insert to authenticated
 with check (
@@ -350,7 +329,6 @@ with check (
   )
   and public.bridge_can_record_bond_finance_event_phase5d(public.transaction_notifications.transaction_id)
 );
-
 create policy transaction_notifications_update_phase5d_bond_finance on public.transaction_notifications
 for update to authenticated
 using (
@@ -369,7 +347,6 @@ with check (
   )
   and public.bridge_can_record_bond_finance_event_phase5d(public.transaction_notifications.transaction_id)
 );
-
 grant execute on function public.bridge_is_bond_finance_document_request_surface_phase5d(text, text, text) to authenticated;
 grant execute on function public.bridge_is_bond_finance_document_surface_phase5d(text, text, text, text, text) to authenticated;
 grant execute on function public.bridge_is_bond_compliance_step_key_phase5d(text) to authenticated;
@@ -383,5 +360,4 @@ grant execute on function public.bridge_can_manage_bond_assignment_phase5d(uuid)
 grant execute on function public.bridge_can_review_bond_compliance_phase5d(uuid) to authenticated;
 grant execute on function public.bridge_can_mutate_bond_finance_step_phase5d(uuid, text) to authenticated;
 grant execute on function public.bridge_can_record_bond_finance_event_phase5d(uuid) to authenticated;
-
 commit;

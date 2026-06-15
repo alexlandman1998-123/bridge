@@ -1,9 +1,7 @@
 alter table if exists public.appointments
   add column if not exists offer_invite_id uuid;
-
 alter table if exists public.offers
   add column if not exists offer_token text;
-
 do $$
 begin
   if to_regclass('public.offers') is null then
@@ -12,7 +10,6 @@ begin
     execute 'create unique index if not exists offers_offer_token_idx on public.offers (offer_token) where offer_token is not null';
   end if;
 end $$;
-
 do $$
 begin
   if to_regclass('public.appointments') is not null and to_regclass('public.offers') is not null then
@@ -26,7 +23,6 @@ begin
       on delete set null;
   end if;
 end $$;
-
 drop policy if exists offers_public_token_select on public.offers;
 create policy offers_public_token_select
   on public.offers
@@ -36,7 +32,6 @@ create policy offers_public_token_select
     and status in ('draft', 'submitted', 'under_review', 'countered')
     and (expiry_date is null or expiry_date >= current_date)
   );
-
 drop policy if exists offers_public_token_update on public.offers;
 create policy offers_public_token_update
   on public.offers
@@ -50,7 +45,6 @@ create policy offers_public_token_update
     offer_token is not null
     and status in ('submitted', 'under_review')
   );
-
 do $$
 begin
   if to_regclass('public.appointments') is null then

@@ -21,7 +21,6 @@ create table if not exists public.bridge_intelligence_runs (
   created_at timestamptz not null default now(),
   constraint bridge_intelligence_runs_status_check check (status in ('queued', 'running', 'completed', 'failed', 'skipped'))
 );
-
 create table if not exists public.bridge_intelligence_signals (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
@@ -44,7 +43,6 @@ create table if not exists public.bridge_intelligence_signals (
   created_at timestamptz not null default now(),
   constraint bridge_intelligence_signals_severity_check check (severity in ('info', 'positive', 'warning', 'critical'))
 );
-
 create table if not exists public.buyer_intelligence_profiles (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references public.organisations(id) on delete cascade,
@@ -64,7 +62,6 @@ create table if not exists public.buyer_intelligence_profiles (
   updated_at timestamptz not null default now(),
   unique (organisation_id, buyer_lead_id)
 );
-
 create table if not exists public.transaction_intelligence_snapshots (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references public.organisations(id) on delete cascade,
@@ -81,7 +78,6 @@ create table if not exists public.transaction_intelligence_snapshots (
   computed_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.bridge_recommendations (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
@@ -107,7 +103,6 @@ create table if not exists public.bridge_recommendations (
   constraint bridge_recommendations_priority_check check (priority in ('low', 'medium', 'high', 'urgent')),
   constraint bridge_recommendations_status_check check (status in ('open', 'accepted', 'dismissed', 'expired', 'completed'))
 );
-
 create table if not exists public.bridge_identity_profiles (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
@@ -124,7 +119,6 @@ create table if not exists public.bridge_identity_profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.industry_benchmark_snapshots (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
@@ -143,7 +137,6 @@ create table if not exists public.industry_benchmark_snapshots (
   computed_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.document_intelligence_extractions (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid references public.organisations(id) on delete cascade,
@@ -164,7 +157,6 @@ create table if not exists public.document_intelligence_extractions (
   updated_at timestamptz not null default now(),
   constraint document_intelligence_extractions_status_check check (extraction_status in ('pending', 'processed', 'needs_review', 'approved', 'rejected'))
 );
-
 create index if not exists intelligence_runs_org_created_idx on public.bridge_intelligence_runs (organisation_id, created_at desc);
 create index if not exists intelligence_runs_entity_idx on public.bridge_intelligence_runs (entity_type, entity_id, created_at desc);
 create index if not exists intelligence_signals_org_created_idx on public.bridge_intelligence_signals (organisation_id, created_at desc);
@@ -179,31 +171,26 @@ create index if not exists bridge_identity_contact_idx on public.bridge_identity
 create index if not exists bridge_identity_email_idx on public.bridge_identity_profiles (lower(primary_email));
 create index if not exists industry_benchmark_key_idx on public.industry_benchmark_snapshots (benchmark_scope, benchmark_key, period_end desc);
 create index if not exists document_intelligence_entity_idx on public.document_intelligence_extractions (entity_type, entity_id, created_at desc);
-
 drop trigger if exists buyer_intelligence_profiles_set_updated_at on public.buyer_intelligence_profiles;
 create trigger buyer_intelligence_profiles_set_updated_at
 before update on public.buyer_intelligence_profiles
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists bridge_recommendations_set_updated_at on public.bridge_recommendations;
 create trigger bridge_recommendations_set_updated_at
 before update on public.bridge_recommendations
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists bridge_identity_profiles_set_updated_at on public.bridge_identity_profiles;
 create trigger bridge_identity_profiles_set_updated_at
 before update on public.bridge_identity_profiles
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists document_intelligence_extractions_set_updated_at on public.document_intelligence_extractions;
 create trigger document_intelligence_extractions_set_updated_at
 before update on public.document_intelligence_extractions
 for each row
 execute function public.bridge_set_updated_at();
-
 alter table if exists public.bridge_intelligence_runs enable row level security;
 alter table if exists public.bridge_intelligence_signals enable row level security;
 alter table if exists public.buyer_intelligence_profiles enable row level security;
@@ -212,7 +199,6 @@ alter table if exists public.bridge_recommendations enable row level security;
 alter table if exists public.bridge_identity_profiles enable row level security;
 alter table if exists public.industry_benchmark_snapshots enable row level security;
 alter table if exists public.document_intelligence_extractions enable row level security;
-
 do $$
 declare
   table_name text;
@@ -240,7 +226,6 @@ begin
     );
   end loop;
 end $$;
-
 grant select, insert, update on public.bridge_intelligence_runs to authenticated;
 grant select, insert, update on public.bridge_intelligence_signals to authenticated;
 grant select, insert, update on public.buyer_intelligence_profiles to authenticated;

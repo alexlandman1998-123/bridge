@@ -206,5 +206,4 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_submit_seller_offer_decision(text, text, text) to anon, authenticated;

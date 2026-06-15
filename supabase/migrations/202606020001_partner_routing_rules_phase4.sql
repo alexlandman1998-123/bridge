@@ -33,6 +33,15 @@ create table if not exists public.partner_routing_rules (
     check (assignment_priority >= 0)
 );
 
+alter table if exists public.partner_routing_rules
+  add column if not exists rule_name text not null default 'Routing Rule';
+
+alter table if exists public.partner_routing_rules
+  add column if not exists source_scope_name text;
+
+alter table if exists public.partner_routing_rules
+  add column if not exists target_scope_name text;
+
 create index if not exists partner_routing_rules_source_org_idx
   on public.partner_routing_rules (source_organisation_id, is_active, is_default, assignment_priority, rule_name);
 

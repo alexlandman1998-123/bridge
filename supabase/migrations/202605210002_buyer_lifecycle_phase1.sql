@@ -39,25 +39,18 @@ create table if not exists public.offers (
     )
   )
 );
-
 create index if not exists offers_organisation_status_idx
   on public.offers (organisation_id, status, updated_at desc);
-
 create index if not exists offers_buyer_lead_idx
   on public.offers (buyer_lead_id, updated_at desc);
-
 create index if not exists offers_buyer_contact_idx
   on public.offers (buyer_contact_id, updated_at desc);
-
 create index if not exists offers_listing_idx
   on public.offers (listing_id, updated_at desc);
-
 create index if not exists offers_viewing_appointment_idx
   on public.offers (viewing_appointment_id);
-
 create index if not exists offers_transaction_idx
   on public.offers (transaction_id);
-
 create or replace function public.bridge_set_updated_at()
 returns trigger
 language plpgsql
@@ -67,39 +60,32 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists offers_set_updated_at on public.offers;
 create trigger offers_set_updated_at
 before update on public.offers
 for each row
 execute function public.bridge_set_updated_at();
-
 alter table if exists public.leads
   add column if not exists lead_type text,
   add column if not exists current_stage text,
   add column if not exists converted_transaction_id uuid references public.transactions(id) on delete set null,
   add column if not exists converted_at timestamptz;
-
 alter table if exists public.transactions
   add column if not exists accepted_offer_id uuid references public.offers(id) on delete set null,
   add column if not exists originating_buyer_lead_id uuid references public.leads(lead_id) on delete set null,
   add column if not exists buyer_contact_id uuid references public.contacts(contact_id) on delete set null,
   add column if not exists listing_id uuid;
-
 alter table if exists public.offers enable row level security;
-
 drop policy if exists offers_org_members_select on public.offers;
 create policy offers_org_members_select
   on public.offers
   for select
   using (public.bridge_is_active_member(organisation_id));
-
 drop policy if exists offers_org_members_insert on public.offers;
 create policy offers_org_members_insert
   on public.offers
   for insert
   with check (public.bridge_is_active_member(organisation_id));
-
 drop policy if exists offers_org_members_update on public.offers;
 create policy offers_org_members_update
   on public.offers

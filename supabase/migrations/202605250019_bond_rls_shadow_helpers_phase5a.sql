@@ -1,5 +1,4 @@
 begin;
-
 create table if not exists public.bond_rls_cutover_exclusions (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null references public.transactions(id) on delete cascade,
@@ -12,13 +11,10 @@ create table if not exists public.bond_rls_cutover_exclusions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists bond_rls_cutover_exclusions_transaction_idx
   on public.bond_rls_cutover_exclusions(transaction_id);
-
 create index if not exists bond_rls_cutover_exclusions_active_type_idx
   on public.bond_rls_cutover_exclusions(active, exclusion_type);
-
 create or replace function public.bridge_bond_transaction_workspace_id(transaction_id uuid)
 returns uuid
 language sql
@@ -29,7 +25,6 @@ as $$
   where t.id = transaction_id
   limit 1
 $$;
-
 create or replace function public.bridge_bond_transaction_region_id(transaction_id uuid)
 returns uuid
 language sql
@@ -40,7 +35,6 @@ as $$
   where t.id = transaction_id
   limit 1
 $$;
-
 create or replace function public.bridge_bond_transaction_workspace_unit_id(transaction_id uuid)
 returns uuid
 language sql
@@ -51,7 +45,6 @@ as $$
   where t.id = transaction_id
   limit 1
 $$;
-
 create or replace function public.bridge_bond_primary_consultant_user_id(transaction_id uuid)
 returns uuid
 language sql
@@ -62,7 +55,6 @@ as $$
   where t.id = transaction_id
   limit 1
 $$;
-
 create or replace function public.bridge_bond_processor_user_id(transaction_id uuid)
 returns uuid
 language sql
@@ -73,7 +65,6 @@ as $$
   where t.id = transaction_id
   limit 1
 $$;
-
 create or replace function public.bridge_bond_manager_user_id(transaction_id uuid)
 returns uuid
 language sql
@@ -84,7 +75,6 @@ as $$
   where t.id = transaction_id
   limit 1
 $$;
-
 create or replace function public.bridge_bond_compliance_user_id(transaction_id uuid)
 returns uuid
 language sql
@@ -95,7 +85,6 @@ as $$
   where t.id = transaction_id
   limit 1
 $$;
-
 create or replace function public.bridge_current_bond_workspace_role(workspace_id uuid)
 returns text
 language sql
@@ -109,7 +98,6 @@ as $$
   order by ou.active_workspace_selected_at desc nulls last, ou.updated_at desc nulls last
   limit 1
 $$;
-
 create or replace function public.bridge_current_bond_scope_level(workspace_id uuid)
 returns text
 language sql
@@ -123,7 +111,6 @@ as $$
   order by ou.active_workspace_selected_at desc nulls last, ou.updated_at desc nulls last
   limit 1
 $$;
-
 create or replace function public.bridge_current_bond_region_id(workspace_id uuid)
 returns uuid
 language sql
@@ -137,7 +124,6 @@ as $$
   order by ou.active_workspace_selected_at desc nulls last, ou.updated_at desc nulls last
   limit 1
 $$;
-
 create or replace function public.bridge_current_bond_workspace_unit_id(workspace_id uuid)
 returns uuid
 language sql
@@ -151,7 +137,6 @@ as $$
   order by ou.active_workspace_selected_at desc nulls last, ou.updated_at desc nulls last
   limit 1
 $$;
-
 create or replace function public.bridge_is_bond_workspace_hq_member(workspace_id uuid)
 returns boolean
 language sql
@@ -169,7 +154,6 @@ as $$
       )
   )
 $$;
-
 create or replace function public.bridge_can_access_bond_region(workspace_id uuid, region_id uuid)
 returns boolean
 language sql
@@ -187,7 +171,6 @@ as $$
         and ou.region_id = region_id
     )
 $$;
-
 create or replace function public.bridge_can_access_bond_workspace_unit(workspace_id uuid, workspace_unit_id uuid)
 returns boolean
 language sql
@@ -205,7 +188,6 @@ as $$
         and ou.workspace_unit_id = workspace_unit_id
     )
 $$;
-
 create or replace function public.bridge_can_access_bond_assignment(transaction_id uuid)
 returns boolean
 language sql
@@ -223,7 +205,6 @@ as $$
       )
   )
 $$;
-
 create or replace function public.bridge_has_bond_transaction_participant_access(transaction_id uuid)
 returns boolean
 language sql
@@ -249,7 +230,6 @@ as $$
       )
   )
 $$;
-
 create or replace function public.bridge_can_access_bond_transaction_shadow(transaction_id uuid)
 returns boolean
 language sql
@@ -299,7 +279,6 @@ as $$
         )
     )
 $$;
-
 grant execute on function public.bridge_bond_transaction_workspace_id(uuid) to authenticated;
 grant execute on function public.bridge_bond_transaction_region_id(uuid) to authenticated;
 grant execute on function public.bridge_bond_transaction_workspace_unit_id(uuid) to authenticated;
@@ -317,5 +296,4 @@ grant execute on function public.bridge_can_access_bond_workspace_unit(uuid, uui
 grant execute on function public.bridge_can_access_bond_assignment(uuid) to authenticated;
 grant execute on function public.bridge_has_bond_transaction_participant_access(uuid) to authenticated;
 grant execute on function public.bridge_can_access_bond_transaction_shadow(uuid) to authenticated;
-
 commit;

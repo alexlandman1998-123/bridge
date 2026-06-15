@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_private_listing_seller_portal_payload(p_token text)
 returns jsonb
 language plpgsql
@@ -55,7 +54,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.bridge_upload_private_listing_seller_document(
   p_token text,
   p_requirement_key text,
@@ -178,8 +176,6 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_private_listing_seller_portal_payload(text) to anon, authenticated;
 grant execute on function public.bridge_upload_private_listing_seller_document(text, text, text, text, text, text) to anon, authenticated;
-
 commit;

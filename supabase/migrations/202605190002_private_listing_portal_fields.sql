@@ -1,5 +1,4 @@
 begin;
-
 alter table if exists public.private_listings
   add column if not exists property24_listing_url text,
   add column if not exists property24_reference text,
@@ -11,7 +10,6 @@ alter table if exists public.private_listings
   add column if not exists bridge_listing_public_url text,
   add column if not exists listing_preview_description text,
   add column if not exists internal_listing_notes text;
-
 do $$
 begin
   if to_regclass('public.private_listings') is not null then
@@ -40,5 +38,4 @@ begin
     end if;
   end if;
 end $$;
-
 commit;

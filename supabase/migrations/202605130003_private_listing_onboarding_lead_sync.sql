@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_complete_private_listing_seller_onboarding(
   p_token text,
   p_form_data jsonb default '{}'::jsonb,
@@ -94,7 +93,5 @@ begin
   return public.bridge_private_listing_seller_portal_payload(p_token);
 end;
 $func$;
-
 grant execute on function public.bridge_complete_private_listing_seller_onboarding(text, jsonb, text, text, text) to anon, authenticated;
-
 commit;

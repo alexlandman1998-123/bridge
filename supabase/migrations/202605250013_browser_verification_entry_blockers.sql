@@ -5,7 +5,6 @@
 -- for staging buyer/client portal verification fixtures.
 
 begin;
-
 create or replace function public.bridge_private_listing_seller_portal_payload(p_token text)
 returns jsonb
 language plpgsql
@@ -78,9 +77,7 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_private_listing_seller_portal_payload(text) to anon, authenticated;
-
 create or replace function public.bridge_create_staging_client_portal_fixture(
   p_confirm_staging text,
   p_transaction_id uuid default null
@@ -172,10 +169,7 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.bridge_create_staging_client_portal_fixture(text, uuid) from public, anon, authenticated;
 grant execute on function public.bridge_create_staging_client_portal_fixture(text, uuid) to service_role;
-
 notify pgrst, 'reload schema';
-
 commit;

@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_sync_organisation_branches_from_settings(
   p_organisation_id uuid,
   p_settings_json jsonb,
@@ -183,7 +182,6 @@ begin
   return v_synced_count;
 end;
 $$;
-
 create or replace function public.bridge_sync_organisation_branches_from_settings_trigger()
 returns trigger
 language plpgsql
@@ -199,13 +197,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_bridge_sync_organisation_branches_from_settings on public.organisation_settings;
 create trigger trg_bridge_sync_organisation_branches_from_settings
 after insert or update of settings_json on public.organisation_settings
 for each row
 execute function public.bridge_sync_organisation_branches_from_settings_trigger();
-
 do $$
 declare
   v_settings record;
@@ -221,7 +217,5 @@ begin
     );
   end loop;
 end $$;
-
 grant execute on function public.bridge_sync_organisation_branches_from_settings(uuid, jsonb, uuid) to authenticated;
-
 commit;

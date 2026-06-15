@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_workspace_invite_type(workspace_type text)
 returns text
 language sql
@@ -10,7 +9,6 @@ as $$
     else 'workspace_invite'
   end;
 $$;
-
 insert into public.invites (
   invite_type,
   status,
@@ -68,7 +66,6 @@ do update set
   accepted_at = excluded.accepted_at,
   accepted_by_user_id = excluded.accepted_by_user_id,
   updated_at = now();
-
 create or replace function public.bridge_sync_workspace_invite_to_invites()
 returns trigger
 language plpgsql
@@ -136,12 +133,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists workspace_invites_sync_to_invites on public.workspace_invites;
 create trigger workspace_invites_sync_to_invites
 after insert or update of token, status, expires_at, invited_by, workspace_id, organisation_role, branch_id, invited_email, accepted_at, accepted_by
 on public.workspace_invites
 for each row
 execute function public.bridge_sync_workspace_invite_to_invites();
-
 commit;

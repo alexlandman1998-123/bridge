@@ -2,7 +2,6 @@
 -- document_requirement_reminders.reminder_type constraint.
 
 begin;
-
 create or replace function public.canonical_document_service_insert_reminder(
   p_requirement_instance_id uuid,
   p_context_type text,
@@ -56,10 +55,7 @@ begin
   return inserted_id;
 end;
 $$;
-
 revoke all on function public.canonical_document_service_insert_reminder(uuid, text, uuid, text, uuid, text, text, text, text, jsonb) from public, anon, authenticated;
 grant execute on function public.canonical_document_service_insert_reminder(uuid, text, uuid, text, uuid, text, text, text, text, jsonb) to service_role;
-
 notify pgrst, 'reload schema';
-
 commit;

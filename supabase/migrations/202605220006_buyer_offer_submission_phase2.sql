@@ -4,16 +4,13 @@
 
 alter table if exists public.offer_portal_sessions
   drop constraint if exists offer_portal_sessions_status_check;
-
 alter table if exists public.offer_portal_sessions
   add column if not exists viewed_at timestamptz,
   add column if not exists submitted_at timestamptz;
-
 alter table if exists public.offer_portal_sessions
   add constraint offer_portal_sessions_status_check check (
     status in ('draft', 'active', 'sent', 'viewed', 'submitted', 'expired', 'closed', 'revoked')
   );
-
 create or replace function public.bridge_get_offer_portal_session(p_token text)
 returns jsonb
 language plpgsql
@@ -152,7 +149,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.bridge_submit_offer_portal_offer(
   p_token text,
   p_listing_id uuid,
@@ -332,8 +328,6 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_get_offer_portal_session(text) to anon, authenticated;
 grant execute on function public.bridge_submit_offer_portal_offer(text, uuid, jsonb) to anon, authenticated;
-
 notify pgrst, 'reload schema';

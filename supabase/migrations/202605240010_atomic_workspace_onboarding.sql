@@ -1,7 +1,5 @@
 begin;
-
 create extension if not exists "pgcrypto";
-
 alter table if exists public.organisations
   add column if not exists type text,
   add column if not exists legal_name text,
@@ -10,7 +8,6 @@ alter table if exists public.organisations
   add column if not exists status text not null default 'active',
   add column if not exists created_by uuid references auth.users(id) on delete set null,
   add column if not exists settings_json jsonb not null default '{}'::jsonb;
-
 alter table if exists public.organisation_branches
   add column if not exists slug text,
   add column if not exists province text,
@@ -22,15 +19,12 @@ alter table if exists public.organisation_branches
   add column if not exists status text not null default 'active',
   add column if not exists is_default boolean not null default false,
   add column if not exists created_by uuid references auth.users(id) on delete set null;
-
 create unique index if not exists organisation_branches_org_slug_unique
   on public.organisation_branches (organisation_id, lower(slug))
   where slug is not null and length(trim(slug)) > 0;
-
 create index if not exists organisation_branches_org_default_idx
   on public.organisation_branches (organisation_id, is_default)
   where is_default = true;
-
 alter table if exists public.organisation_users
   add column if not exists app_role text,
   add column if not exists workspace_type text,
@@ -39,23 +33,14 @@ alter table if exists public.organisation_users
   add column if not exists primary_branch_id uuid references public.organisation_branches(id) on delete set null,
   add column if not exists branch_scope text not null default 'own',
   add column if not exists is_primary_owner boolean not null default false,
-  add column if not exists permissions_json jsonb not null default '{}'::jsonb,
-  add column if not exists invited_by_user_id uuid references auth.users(id) on delete set null,
-  add column if not exists invited_at timestamptz,
-  add column if not exists joined_at timestamptz,
-  add column if not exists accepted_at timestamptz,
-  add column if not exists last_active_at timestamptz,
   add column if not exists created_by uuid references auth.users(id) on delete set null;
-
 update public.organisation_users
 set workspace_role = coalesce(workspace_role, organisation_role, role)
 where workspace_role is null;
-
 update public.organisation_users
 set primary_branch_id = coalesce(primary_branch_id, branch_id)
 where primary_branch_id is null
   and branch_id is not null;
-
 update public.organisation_users
 set branch_scope = case
   when coalesce(workspace_role, organisation_role, role) in ('owner', 'principal', 'director', 'partner') then 'all_branches'
@@ -63,7 +48,6 @@ set branch_scope = case
   else 'own'
 end
 where branch_scope is null or branch_scope not in ('own', 'assigned_branch', 'all_branches');
-
 create table if not exists public.workspace_onboarding_completions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -77,30 +61,23 @@ create table if not exists public.workspace_onboarding_completions (
   constraint workspace_onboarding_completions_status_check
     check (status in ('completed', 'failed', 'repaired'))
 );
-
 create unique index if not exists workspace_onboarding_completions_user_key_idx
   on public.workspace_onboarding_completions (user_id, idempotency_key);
-
 create index if not exists workspace_onboarding_completions_workspace_idx
   on public.workspace_onboarding_completions (workspace_id);
-
 drop trigger if exists workspace_onboarding_completions_set_updated_at on public.workspace_onboarding_completions;
 create trigger workspace_onboarding_completions_set_updated_at
 before update on public.workspace_onboarding_completions
 for each row
 execute function public.bridge_set_updated_at();
-
 alter table public.workspace_onboarding_completions enable row level security;
-
 drop policy if exists workspace_onboarding_completions_select_self on public.workspace_onboarding_completions;
 create policy workspace_onboarding_completions_select_self
   on public.workspace_onboarding_completions
   for select
   to authenticated
   using (user_id = auth.uid());
-
 grant select on public.workspace_onboarding_completions to authenticated;
-
 create or replace function public.bridge_complete_workspace_onboarding(payload jsonb)
 returns jsonb
 language plpgsql
@@ -142,8 +119,6 @@ declare
   v_idempotency_key text := nullif(trim(coalesce(v_payload->>'idempotency_key', '')), '');
   v_existing_completion public.workspace_onboarding_completions%rowtype;
   v_duplicate_org_id uuid;
-  v_duplicate_org_created_by uuid;
-  v_resume_duplicate_workspace boolean := false;
   v_existing_membership public.organisation_users%rowtype;
   v_workspace_id uuid;
   v_membership_id uuid;
@@ -279,7 +254,7 @@ begin
     return jsonb_build_object('success', false, 'code', 'invalid_workspace_role', 'message', 'Workspace role is not valid.', 'details', jsonb_build_object('workspace_role', v_owner_role));
   end if;
 
-  select id, created_by into v_duplicate_org_id, v_duplicate_org_created_by
+  select id into v_duplicate_org_id
   from public.organisations
   where type = v_workspace_type
     and (
@@ -293,105 +268,50 @@ begin
   limit 1;
 
   if v_duplicate_org_id is not null then
-    select * into v_existing_membership
-    from public.organisation_users
-    where organisation_id = v_duplicate_org_id
-      and (
-        user_id = v_user_id
-        or lower(email) = lower(coalesce(v_profile.email, v_org_email))
-      )
-    order by
-      case when user_id = v_user_id then 0 else 1 end,
-      created_at asc
-    limit 1;
-
-    if found and v_existing_membership.user_id is not null and v_existing_membership.user_id <> v_user_id then
-      return jsonb_build_object(
-        'success', false,
-        'code', 'duplicate_organisation_detected',
-        'message', 'A workspace with this name or registration number already exists.',
-        'details', jsonb_build_object('organisation_id', v_duplicate_org_id, 'recoverable', false)
-      );
-    end if;
-
-    if v_duplicate_org_created_by = v_user_id or found then
-      v_workspace_id := v_duplicate_org_id;
-      v_resume_duplicate_workspace := true;
-    else
-      return jsonb_build_object(
-        'success', false,
-        'code', 'duplicate_organisation_detected',
-        'message', 'A workspace with this name or registration number already exists.',
-        'details', jsonb_build_object('organisation_id', v_duplicate_org_id, 'recoverable', false)
-      );
-    end if;
+    return jsonb_build_object('success', false, 'code', 'duplicate_organisation_detected', 'message', 'A workspace with this name or registration number already exists.', 'details', jsonb_build_object('organisation_id', v_duplicate_org_id));
   end if;
 
   begin
-    if v_resume_duplicate_workspace then
-      v_error_code := 'organisation_resume_failed';
-      update public.organisations
-      set
-        display_name = coalesce(v_trading_name, display_name, name),
-        legal_name = coalesce(nullif(trim(coalesce(v_org_payload->>'legal_name', v_org_name)), ''), legal_name),
-        registration_number = coalesce(v_registration_number, registration_number),
-        company_email = coalesce(v_org_email, company_email),
-        company_phone = coalesce(v_org_phone, company_phone),
-        website = coalesce(v_org_website, website),
-        address_line_1 = coalesce(v_org_address, address_line_1),
-        province = coalesce(v_org_province, province),
-        country = coalesce(v_org_country, country, 'South Africa'),
-        support_email = coalesce(v_org_email, support_email),
-        support_phone = coalesce(v_org_phone, support_phone),
-        primary_contact_person = coalesce(nullif(trim(coalesce(v_payload #>> '{owner,full_name}', v_profile.full_name, v_profile.email, '')), ''), primary_contact_person),
-        status = coalesce(status, 'active'),
-        created_by = coalesce(created_by, v_user_id),
-        settings_json = coalesce(settings_json, '{}'::jsonb)
-          || jsonb_build_object('workspaceType', v_workspace_type, 'workspaceKind', v_workspace_kind, 'onboardingSource', 'bridge_complete_workspace_onboarding', 'resumedDuplicateAt', v_now),
-        updated_at = v_now
-      where id = v_workspace_id;
-    else
-      v_error_code := 'organisation_creation_failed';
-      insert into public.organisations (
-        name,
-        display_name,
-        type,
-        legal_name,
-        registration_number,
-        company_email,
-        company_phone,
-        website,
-        address_line_1,
-        province,
-        country,
-        support_email,
-        support_phone,
-        primary_contact_person,
-        status,
-        created_by,
-        settings_json
-      )
-      values (
-        v_org_name,
-        coalesce(v_trading_name, v_org_name),
-        v_workspace_type,
-        nullif(trim(coalesce(v_org_payload->>'legal_name', v_org_name)), ''),
-        v_registration_number,
-        v_org_email,
-        v_org_phone,
-        v_org_website,
-        v_org_address,
-        v_org_province,
-        coalesce(v_org_country, 'South Africa'),
-        v_org_email,
-        v_org_phone,
-        nullif(trim(coalesce(v_payload #>> '{owner,full_name}', v_profile.full_name, v_profile.email, '')), ''),
-        'active',
-        v_user_id,
-        jsonb_build_object('workspaceType', v_workspace_type, 'workspaceKind', v_workspace_kind, 'onboardingSource', 'bridge_complete_workspace_onboarding')
-      )
-      returning id into v_workspace_id;
-    end if;
+    v_error_code := 'organisation_creation_failed';
+    insert into public.organisations (
+      name,
+      display_name,
+      type,
+      legal_name,
+      registration_number,
+      company_email,
+      company_phone,
+      website,
+      address_line_1,
+      province,
+      country,
+      support_email,
+      support_phone,
+      primary_contact_person,
+      status,
+      created_by,
+      settings_json
+    )
+    values (
+      v_org_name,
+      coalesce(v_trading_name, v_org_name),
+      v_workspace_type,
+      nullif(trim(coalesce(v_org_payload->>'legal_name', v_org_name)), ''),
+      v_registration_number,
+      v_org_email,
+      v_org_phone,
+      v_org_website,
+      v_org_address,
+      v_org_province,
+      coalesce(v_org_country, 'South Africa'),
+      v_org_email,
+      v_org_phone,
+      nullif(trim(coalesce(v_payload #>> '{owner,full_name}', v_profile.full_name, v_profile.email, '')), ''),
+      'active',
+      v_user_id,
+      jsonb_build_object('workspaceType', v_workspace_type, 'workspaceKind', v_workspace_kind, 'onboardingSource', 'bridge_complete_workspace_onboarding')
+    )
+    returning id into v_workspace_id;
 
     if v_workspace_type in ('agency', 'attorney_firm', 'bond_originator') then
       v_error_code := 'branch_creation_failed';
@@ -405,17 +325,7 @@ begin
         v_branch_slug := 'main-branch';
       end if;
 
-      if v_resume_duplicate_workspace then
-        select id into v_branch_id
-        from public.organisation_branches
-        where organisation_id = v_workspace_id
-          and is_active = true
-        order by is_default desc, is_head_office desc, created_at asc
-        limit 1;
-      end if;
-
-      if v_branch_id is null then
-        insert into public.organisation_branches (
+      insert into public.organisation_branches (
         organisation_id,
         name,
         slug,
@@ -454,9 +364,8 @@ begin
         coalesce(nullif(v_branch_payload->>'agent_count', '')::int, nullif(v_branch_payload->>'numberOfAgents', '')::int, 0),
         jsonb_build_object('defaultStructure', true, 'source', 'bridge_complete_workspace_onboarding', 'raw', v_branch_payload),
         v_user_id
-        )
-        returning id into v_branch_id;
-      end if;
+      )
+      returning id into v_branch_id;
     end if;
 
     v_error_code := 'membership_conflict';
@@ -660,7 +569,6 @@ begin
       'workspace_onboarding_completed',
       jsonb_build_object(
         'source', 'bridge_complete_workspace_onboarding',
-        'resumedDuplicateWorkspace', v_resume_duplicate_workspace,
         'workspaceType', v_workspace_type,
         'workspaceRole', v_owner_role,
         'membershipId', v_membership_id,
@@ -708,7 +616,6 @@ begin
     v_result := jsonb_build_object(
       'success', true,
       'idempotent', false,
-      'resumed_duplicate_workspace', v_resume_duplicate_workspace,
       'workspace_id', v_workspace_id,
       'organisation_id', v_workspace_id,
       'branch_id', v_branch_id,
@@ -740,14 +647,7 @@ begin
       v_workspace_id,
       'completed',
       v_result
-    )
-    on conflict (user_id, idempotency_key)
-    do update set
-      signup_intent_id = excluded.signup_intent_id,
-      workspace_id = excluded.workspace_id,
-      status = excluded.status,
-      result = excluded.result,
-      updated_at = v_now;
+    );
 
     return v_result;
   exception
@@ -767,9 +667,7 @@ begin
   end;
 end;
 $$;
-
 grant execute on function public.bridge_complete_workspace_onboarding(jsonb) to authenticated;
-
 create or replace function public.bridge_repair_workspace_onboarding(target_user_id uuid default auth.uid())
 returns jsonb
 language plpgsql
@@ -976,7 +874,5 @@ exception
     );
 end;
 $$;
-
 grant execute on function public.bridge_repair_workspace_onboarding(uuid) to authenticated;
-
 commit;

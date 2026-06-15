@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_delete_agency_lead(
   p_organisation_id uuid,
   p_lead_id uuid
@@ -71,7 +70,5 @@ begin
   return true;
 end;
 $$;
-
 grant execute on function public.bridge_delete_agency_lead(uuid, uuid) to authenticated;
-
 commit;

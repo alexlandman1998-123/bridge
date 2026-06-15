@@ -1,15 +1,12 @@
 begin;
-
 alter table if exists public.private_listing_seller_onboarding
   add column if not exists canonical_facts_json jsonb not null default '{}'::jsonb,
   add column if not exists canonical_fact_readiness_json jsonb not null default '{}'::jsonb,
   add column if not exists canonical_facts_updated_at timestamptz;
-
 alter table if exists public.private_listings
   add column if not exists seller_canonical_facts_json jsonb not null default '{}'::jsonb,
   add column if not exists seller_canonical_fact_readiness_json jsonb not null default '{}'::jsonb,
   add column if not exists seller_canonical_facts_updated_at timestamptz;
-
 do $$
 begin
   if to_regclass('public.private_listing_seller_onboarding') is not null then
@@ -22,7 +19,6 @@ begin
       on public.private_listings using gin (seller_canonical_facts_json);
   end if;
 end $$;
-
 do $$
 begin
   if to_regclass('public.private_listing_seller_onboarding') is not null then
@@ -43,7 +39,5 @@ begin
       'Timestamp of the latest listing-level seller canonical facts update.';
   end if;
 end $$;
-
 notify pgrst, 'reload schema';
-
 commit;

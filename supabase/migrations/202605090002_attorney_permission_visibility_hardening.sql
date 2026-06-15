@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.attorney_user_is_firm_lead(target_firm_id uuid)
 returns boolean
 language sql
@@ -16,9 +15,7 @@ as $$
       and m.role in ('firm_admin', 'director_partner')
   );
 $$;
-
 grant execute on function public.attorney_user_is_firm_lead(uuid) to authenticated;
-
 do $$
 begin
   if to_regclass('public.transaction_attorney_assignments') is null then
@@ -72,5 +69,4 @@ begin
   $policy_write$;
 end;
 $$;
-
 commit;

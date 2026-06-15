@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_can_access_bond_application_scope(application_id uuid)
 returns boolean
 language sql
@@ -85,9 +84,6 @@ as $$
     from app
   ), false)
 $$;
-
 grant execute on function public.bridge_can_access_bond_application_scope(uuid) to authenticated;
-
 notify pgrst, 'reload schema';
-
 commit;

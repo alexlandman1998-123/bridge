@@ -27,7 +27,6 @@ begin
   $create_events$;
 end;
 $$;
-
 alter table if exists public.appointment_notification_events add column if not exists appointment_id uuid references public.appointments(appointment_id) on delete cascade;
 alter table if exists public.appointment_notification_events add column if not exists transaction_id uuid references public.transactions(id) on delete set null;
 alter table if exists public.appointment_notification_events add column if not exists event_type text not null default 'appointment_updated';
@@ -43,22 +42,18 @@ alter table if exists public.appointment_notification_events add column if not e
 alter table if exists public.appointment_notification_events add column if not exists dedupe_key text;
 alter table if exists public.appointment_notification_events add column if not exists created_at timestamptz not null default now();
 alter table if exists public.appointment_notification_events add column if not exists updated_at timestamptz not null default now();
-
 alter table if exists public.appointment_notification_events drop constraint if exists appointment_notification_events_visibility_check;
 alter table if exists public.appointment_notification_events
   add constraint appointment_notification_events_visibility_check
   check (visibility in ('client_visible', 'internal_only', 'shared_role_players'));
-
 alter table if exists public.appointment_notification_events drop constraint if exists appointment_notification_events_email_status_check;
 alter table if exists public.appointment_notification_events
   add constraint appointment_notification_events_email_status_check
   check (email_status in ('pending', 'sent', 'failed', 'skipped'));
-
 alter table if exists public.appointment_notification_events drop constraint if exists appointment_notification_events_in_app_status_check;
 alter table if exists public.appointment_notification_events
   add constraint appointment_notification_events_in_app_status_check
   check (in_app_status in ('pending', 'sent', 'failed', 'skipped'));
-
 do $$
 begin
   if to_regclass('public.appointment_notification_events') is null then
@@ -72,7 +67,6 @@ begin
   execute 'create unique index if not exists appointment_notification_events_dedupe_idx on public.appointment_notification_events (dedupe_key) where dedupe_key is not null';
 end;
 $$;
-
 do $$
 begin
   if to_regclass('public.appointments') is null then
@@ -99,7 +93,6 @@ begin
   $create_reminders$;
 end;
 $$;
-
 alter table if exists public.appointment_reminders add column if not exists appointment_id uuid references public.appointments(appointment_id) on delete cascade;
 alter table if exists public.appointment_reminders add column if not exists recipient_id uuid references public.profiles(id) on delete set null;
 alter table if exists public.appointment_reminders add column if not exists recipient_role text;
@@ -112,7 +105,6 @@ alter table if exists public.appointment_reminders add column if not exists sent
 alter table if exists public.appointment_reminders add column if not exists metadata jsonb not null default '{}'::jsonb;
 alter table if exists public.appointment_reminders add column if not exists created_at timestamptz not null default now();
 alter table if exists public.appointment_reminders add column if not exists updated_at timestamptz not null default now();
-
 do $$
 begin
   if to_regclass('public.appointment_reminders') is null then
@@ -130,7 +122,6 @@ begin
   $constraint$;
 end;
 $$;
-
 do $$
 begin
   if to_regclass('public.appointment_reminders') is null then

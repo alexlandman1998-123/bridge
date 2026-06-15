@@ -1,5 +1,4 @@
 create extension if not exists "pgcrypto";
-
 create or replace function public.set_updated_at_timestamp()
 returns trigger
 language plpgsql
@@ -9,7 +8,6 @@ begin
   return new;
 end;
 $$;
-
 create table if not exists public.attorney_firms (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -32,7 +30,6 @@ create table if not exists public.attorney_firms (
   updated_at timestamptz not null default now(),
   is_active boolean not null default true
 );
-
 create table if not exists public.attorney_firm_departments (
   id uuid primary key default gen_random_uuid(),
   firm_id uuid not null references public.attorney_firms(id) on delete cascade,
@@ -44,7 +41,6 @@ create table if not exists public.attorney_firm_departments (
   constraint attorney_firm_departments_department_type_check
     check (department_type in ('transfer', 'bond', 'admin', 'management'))
 );
-
 create table if not exists public.attorney_firm_members (
   id uuid primary key default gen_random_uuid(),
   firm_id uuid not null references public.attorney_firms(id) on delete cascade,
@@ -62,7 +58,6 @@ create table if not exists public.attorney_firm_members (
     check (status in ('invited', 'active', 'suspended', 'removed')),
   constraint attorney_firm_members_firm_user_unique unique (firm_id, user_id)
 );
-
 create table if not exists public.attorney_firm_invitations (
   id uuid primary key default gen_random_uuid(),
   firm_id uuid not null references public.attorney_firms(id) on delete cascade,
@@ -81,13 +76,10 @@ create table if not exists public.attorney_firm_invitations (
   constraint attorney_firm_invitations_status_check
     check (status in ('pending', 'accepted', 'expired', 'cancelled'))
 );
-
 alter table if exists public.profiles
   add column if not exists primary_attorney_firm_id uuid references public.attorney_firms(id) on delete set null;
-
 alter table if exists public.profiles
   add column if not exists attorney_role text;
-
 alter table public.profiles drop constraint if exists profiles_attorney_role_check;
 alter table public.profiles
   add constraint profiles_attorney_role_check
@@ -95,29 +87,21 @@ alter table public.profiles
     attorney_role is null
     or attorney_role in ('firm_admin', 'director_partner', 'transfer_attorney', 'bond_attorney', 'conveyancing_secretary', 'admin_staff', 'reception_scheduling', 'candidate_attorney')
   );
-
 create index if not exists attorney_firms_created_by_idx
   on public.attorney_firms (created_by);
-
 create index if not exists attorney_firm_departments_firm_idx
   on public.attorney_firm_departments (firm_id);
-
 create unique index if not exists attorney_firm_departments_firm_department_type_unique_idx
   on public.attorney_firm_departments (firm_id, department_type);
-
 create index if not exists attorney_firm_members_firm_status_idx
   on public.attorney_firm_members (firm_id, status, role);
-
 create index if not exists attorney_firm_members_user_idx
   on public.attorney_firm_members (user_id, status);
-
 create index if not exists attorney_firm_invitations_firm_status_idx
   on public.attorney_firm_invitations (firm_id, status, created_at desc);
-
 create unique index if not exists attorney_firm_invitations_firm_email_pending_unique_idx
   on public.attorney_firm_invitations (firm_id, lower(email))
   where status = 'pending';
-
 create or replace function public.seed_default_attorney_departments()
 returns trigger
 language plpgsql
@@ -134,13 +118,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_attorney_firms_seed_departments on public.attorney_firms;
 create trigger trg_attorney_firms_seed_departments
 after insert on public.attorney_firms
 for each row
 execute function public.seed_default_attorney_departments();
-
 create or replace function public.ensure_last_attorney_firm_admin()
 returns trigger
 language plpgsql
@@ -184,37 +166,31 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_attorney_firm_members_ensure_admin on public.attorney_firm_members;
 create trigger trg_attorney_firm_members_ensure_admin
 before update or delete on public.attorney_firm_members
 for each row
 execute function public.ensure_last_attorney_firm_admin();
-
 drop trigger if exists trg_attorney_firms_updated_at on public.attorney_firms;
 create trigger trg_attorney_firms_updated_at
 before update on public.attorney_firms
 for each row
 execute function public.set_updated_at_timestamp();
-
 drop trigger if exists trg_attorney_firm_departments_updated_at on public.attorney_firm_departments;
 create trigger trg_attorney_firm_departments_updated_at
 before update on public.attorney_firm_departments
 for each row
 execute function public.set_updated_at_timestamp();
-
 drop trigger if exists trg_attorney_firm_members_updated_at on public.attorney_firm_members;
 create trigger trg_attorney_firm_members_updated_at
 before update on public.attorney_firm_members
 for each row
 execute function public.set_updated_at_timestamp();
-
 drop trigger if exists trg_attorney_firm_invitations_updated_at on public.attorney_firm_invitations;
 create trigger trg_attorney_firm_invitations_updated_at
 before update on public.attorney_firm_invitations
 for each row
 execute function public.set_updated_at_timestamp();
-
 create or replace function public.attorney_user_is_active_member(target_firm_id uuid)
 returns boolean
 language sql
@@ -230,7 +206,6 @@ as $$
       and m.status = 'active'
   );
 $$;
-
 create or replace function public.attorney_user_is_firm_admin(target_firm_id uuid)
 returns boolean
 language sql
@@ -247,53 +222,43 @@ as $$
       and m.role = 'firm_admin'
   );
 $$;
-
 grant execute on function public.attorney_user_is_active_member(uuid) to authenticated;
 grant execute on function public.attorney_user_is_firm_admin(uuid) to authenticated;
-
 alter table public.attorney_firms enable row level security;
 alter table public.attorney_firm_departments enable row level security;
 alter table public.attorney_firm_members enable row level security;
 alter table public.attorney_firm_invitations enable row level security;
-
 drop policy if exists attorney_firms_select_member on public.attorney_firms;
 create policy attorney_firms_select_member on public.attorney_firms
 for select to authenticated
 using (public.attorney_user_is_active_member(id));
-
 drop policy if exists attorney_firms_insert_creator on public.attorney_firms;
 create policy attorney_firms_insert_creator on public.attorney_firms
 for insert to authenticated
 with check (created_by = auth.uid());
-
 drop policy if exists attorney_firms_update_admin on public.attorney_firms;
 create policy attorney_firms_update_admin on public.attorney_firms
 for update to authenticated
 using (public.attorney_user_is_firm_admin(id))
 with check (public.attorney_user_is_firm_admin(id));
-
 drop policy if exists attorney_firm_departments_select_member on public.attorney_firm_departments;
 create policy attorney_firm_departments_select_member on public.attorney_firm_departments
 for select to authenticated
 using (public.attorney_user_is_active_member(firm_id));
-
 drop policy if exists attorney_firm_departments_manage_admin on public.attorney_firm_departments;
 create policy attorney_firm_departments_manage_admin on public.attorney_firm_departments
 for all to authenticated
 using (public.attorney_user_is_firm_admin(firm_id))
 with check (public.attorney_user_is_firm_admin(firm_id));
-
 drop policy if exists attorney_firm_members_select_member on public.attorney_firm_members;
 create policy attorney_firm_members_select_member on public.attorney_firm_members
 for select to authenticated
 using (public.attorney_user_is_active_member(firm_id));
-
 drop policy if exists attorney_firm_members_manage_admin on public.attorney_firm_members;
 create policy attorney_firm_members_manage_admin on public.attorney_firm_members
 for all to authenticated
 using (public.attorney_user_is_firm_admin(firm_id))
 with check (public.attorney_user_is_firm_admin(firm_id));
-
 drop policy if exists attorney_firm_invitations_select_admin on public.attorney_firm_invitations;
 create policy attorney_firm_invitations_select_admin on public.attorney_firm_invitations
 for select to authenticated
@@ -304,18 +269,15 @@ using (
     and lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
   )
 );
-
 drop policy if exists attorney_firm_invitations_insert_admin on public.attorney_firm_invitations;
 create policy attorney_firm_invitations_insert_admin on public.attorney_firm_invitations
 for insert to authenticated
 with check (public.attorney_user_is_firm_admin(firm_id));
-
 drop policy if exists attorney_firm_invitations_update_admin on public.attorney_firm_invitations;
 create policy attorney_firm_invitations_update_admin on public.attorney_firm_invitations
 for update to authenticated
 using (public.attorney_user_is_firm_admin(firm_id))
 with check (public.attorney_user_is_firm_admin(firm_id));
-
 drop policy if exists attorney_firm_invitations_accept_self on public.attorney_firm_invitations;
 create policy attorney_firm_invitations_accept_self on public.attorney_firm_invitations
 for update to authenticated
@@ -328,7 +290,6 @@ with check (
   status in ('pending', 'accepted', 'expired')
   and lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
 );
-
 grant select, insert, update, delete on public.attorney_firms to authenticated;
 grant select, insert, update, delete on public.attorney_firm_departments to authenticated;
 grant select, insert, update, delete on public.attorney_firm_members to authenticated;

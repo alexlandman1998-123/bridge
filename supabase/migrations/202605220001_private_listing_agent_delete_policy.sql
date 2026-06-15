@@ -1,5 +1,4 @@
 begin;
-
 drop policy if exists private_listings_delete_admin on public.private_listings;
 drop policy if exists private_listings_delete_member_owner on public.private_listings;
 create policy private_listings_delete_member_owner
@@ -14,7 +13,5 @@ using (
     or created_by = auth.uid()
   )
 );
-
 grant delete on public.private_listings to authenticated;
-
 commit;

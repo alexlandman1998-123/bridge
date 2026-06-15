@@ -8,14 +8,11 @@ create table if not exists public.matter_number_sequences (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 alter table if exists public.transactions
   add column if not exists matter_number text;
-
 create unique index if not exists transactions_matter_number_uidx
   on public.transactions (matter_number)
   where matter_number is not null;
-
 create or replace function public.next_matter_number(
   p_matter_year integer default extract(year from now())::integer,
   p_prefix text default 'MAT'
@@ -41,7 +38,6 @@ begin
   return format('%s-%s-%s', v_prefix, v_year, lpad(v_next::text, 6, '0'));
 end;
 $$;
-
 create or replace function public.assign_transaction_matter_number()
 returns trigger
 language plpgsql
@@ -59,13 +55,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_assign_transaction_matter_number on public.transactions;
 create trigger trg_assign_transaction_matter_number
 before insert on public.transactions
 for each row
 execute function public.assign_transaction_matter_number();
-
 with numbered as (
   select
     id,
@@ -81,7 +75,6 @@ update public.transactions t
 set matter_number = format('MAT-%s-%s', numbered.matter_year, lpad(numbered.sequence_value::text, 6, '0'))
 from numbered
 where t.id = numbered.id;
-
 insert into public.matter_number_sequences (matter_year, last_value)
 select
   split_part(matter_number, '-', 2)::integer as matter_year,
@@ -93,5 +86,4 @@ on conflict (matter_year)
 do update
   set last_value = greatest(public.matter_number_sequences.last_value, excluded.last_value),
       updated_at = now();
-
 grant select on public.matter_number_sequences to authenticated;

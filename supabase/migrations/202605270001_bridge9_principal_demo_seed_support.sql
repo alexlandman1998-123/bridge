@@ -1,26 +1,18 @@
 begin;
-
 create extension if not exists "pgcrypto";
-
 alter table if exists public.organisations
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.organisation_users
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.organisation_branches
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.organisation_settings
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.organisation_preferred_partners
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.contacts
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists demo_metadata jsonb not null default '{}'::jsonb;
-
 alter table if exists public.leads
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists lead_score integer,
@@ -28,19 +20,15 @@ alter table if exists public.leads
   add column if not exists min_budget numeric(14, 2),
   add column if not exists preferred_suburbs text[],
   add column if not exists demo_metadata jsonb not null default '{}'::jsonb;
-
 alter table if exists public.lead_activities
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists demo_metadata jsonb not null default '{}'::jsonb;
-
 alter table if exists public.tasks
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists demo_metadata jsonb not null default '{}'::jsonb;
-
 alter table if exists public.appointments
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists demo_metadata jsonb not null default '{}'::jsonb;
-
 alter table if exists public.private_listings
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists bedrooms integer,
@@ -54,13 +42,10 @@ alter table if exists public.private_listings
   add column if not exists listing_age_days integer,
   add column if not exists bridge_listing_status text not null default 'not_published',
   add column if not exists demo_metadata jsonb not null default '{}'::jsonb;
-
 alter table if exists public.private_listing_seller_onboarding
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.private_listing_activity
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.buyers
   add column if not exists organisation_id uuid references public.organisations(id) on delete set null,
   add column if not exists phone text,
@@ -68,7 +53,6 @@ alter table if exists public.buyers
   add column if not exists updated_at timestamptz not null default now(),
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists demo_metadata jsonb not null default '{}'::jsonb;
-
 alter table if exists public.transactions
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists seller_name text,
@@ -80,23 +64,18 @@ alter table if exists public.transactions
   add column if not exists estimated_settlement_amount numeric,
   add column if not exists target_registration_date date,
   add column if not exists demo_metadata jsonb not null default '{}'::jsonb;
-
 alter table if exists public.transaction_finance_details
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.transaction_role_players
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.transaction_subprocesses
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.transaction_subprocess_steps
   add column if not exists assigned_to uuid references auth.users(id) on delete set null,
   add column if not exists due_date date,
   add column if not exists blocker_reason text,
   add column if not exists notes text,
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.documents
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists document_type text,
@@ -105,36 +84,27 @@ alter table if exists public.documents
   add column if not exists stage_key text,
   add column if not exists lane_key text,
   add column if not exists review_status text;
-
 alter table if exists public.document_requests
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists visibility_scope text not null default 'internal',
   add column if not exists created_by_role text,
   add column if not exists lane_key text,
   add column if not exists review_status text not null default 'requested';
-
 alter table if exists public.transaction_comments
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.transaction_events
   add column if not exists is_demo_data boolean not null default false,
   add column if not exists visibility_scope text not null default 'internal';
-
 alter table if exists public.transaction_status_links
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.transaction_readiness_states
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.transaction_notifications
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.transaction_onboarding
   add column if not exists is_demo_data boolean not null default false;
-
 alter table if exists public.onboarding_form_data
   add column if not exists is_demo_data boolean not null default false;
-
 create table if not exists public.demo_canvassing_records (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid not null references public.organisations(id) on delete cascade,
@@ -159,7 +129,6 @@ create table if not exists public.demo_canvassing_records (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.demo_canvassing_activities (
   id uuid primary key default gen_random_uuid(),
   canvassing_record_id uuid not null references public.demo_canvassing_records(id) on delete cascade,
@@ -172,7 +141,6 @@ create table if not exists public.demo_canvassing_activities (
   is_demo_data boolean not null default true,
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.client_portal_notifications (
   id uuid primary key default gen_random_uuid(),
   transaction_id uuid not null references public.transactions(id) on delete cascade,
@@ -200,10 +168,8 @@ create table if not exists public.client_portal_notifications (
   constraint client_portal_notifications_status_check check (status in ('unread', 'read', 'dismissed')),
   constraint client_portal_notifications_visibility_check check (visibility in ('client_visible', 'shared_role_players', 'internal_only'))
 );
-
 alter table if exists public.client_portal_notifications
   add column if not exists is_demo_data boolean not null default false;
-
 create index if not exists organisations_bridge9_demo_idx on public.organisations (company_email) where is_demo_data = true;
 create index if not exists contacts_bridge9_demo_idx on public.contacts (organisation_id, created_at desc) where is_demo_data = true;
 create index if not exists leads_bridge9_demo_idx on public.leads (organisation_id, lead_category, stage) where is_demo_data = true;
@@ -212,5 +178,4 @@ create index if not exists transactions_bridge9_demo_idx on public.transactions 
 create index if not exists demo_canvassing_records_org_status_idx on public.demo_canvassing_records (organisation_id, status, created_at desc);
 create index if not exists demo_canvassing_activities_record_idx on public.demo_canvassing_activities (canvassing_record_id, activity_date desc);
 create index if not exists client_portal_notifications_bridge9_demo_idx on public.client_portal_notifications (transaction_id, client_role, created_at desc) where is_demo_data = true;
-
 commit;

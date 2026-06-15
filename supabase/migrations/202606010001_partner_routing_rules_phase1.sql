@@ -1,7 +1,5 @@
 begin;
-
 create extension if not exists "pgcrypto";
-
 create table if not exists public.partner_routing_rules (
   id uuid primary key default gen_random_uuid(),
   source_organisation_id uuid not null references public.organisations(id) on delete cascade,
@@ -50,7 +48,6 @@ create table if not exists public.partner_routing_rules (
       or (source_scope = 'organisation' and source_context_id is null and source_user_id is null)
 )
 );
-
 create index if not exists partner_routing_rules_source_idx
   on public.partner_routing_rules (
     source_organisation_id,
@@ -58,21 +55,17 @@ create index if not exists partner_routing_rules_source_idx
     is_active,
     assignment_priority
   );
-
 create index if not exists partner_routing_rules_target_idx
   on public.partner_routing_rules (
     target_organisation_id,
     target_scope,
     is_active
   );
-
 create index if not exists partner_routing_rules_mode_idx
   on public.partner_routing_rules (assignment_mode);
-
 create index if not exists partner_routing_rules_target_user_idx
   on public.partner_routing_rules (target_user_id)
   where target_scope = 'consultant';
-
 create unique index if not exists partner_routing_rules_source_context_priority_ukey
   on public.partner_routing_rules (
     source_organisation_id,
@@ -88,37 +81,28 @@ create unique index if not exists partner_routing_rules_source_context_priority_
     assignment_priority
   )
   where is_active = true;
-
 drop trigger if exists trg_partner_routing_rules_updated_at on public.partner_routing_rules;
 create trigger trg_partner_routing_rules_updated_at
 before update on public.partner_routing_rules
 for each row
 execute function public.set_updated_at_timestamp();
-
 alter table if exists public.transactions
   add column if not exists bond_assignment_rule_id uuid references public.partner_routing_rules(id) on delete set null,
   add column if not exists bond_assignment_method text;
-
 alter table if exists public.transaction_bond_applications
   add column if not exists assignment_rule_id uuid references public.partner_routing_rules(id) on delete set null,
   add column if not exists assignment_method text;
-
 create index if not exists transactions_bond_assignment_rule_idx
   on public.transactions (bond_assignment_rule_id);
-
 create index if not exists transactions_bond_assignment_method_idx
   on public.transactions (bond_assignment_method)
   where bond_assignment_method is not null;
-
 create index if not exists transaction_bond_applications_assignment_rule_idx
   on public.transaction_bond_applications (assignment_rule_id);
-
 create index if not exists transaction_bond_applications_assignment_method_idx
   on public.transaction_bond_applications (assignment_method)
   where assignment_method is not null;
-
 alter table if exists public.partner_routing_rules enable row level security;
-
 drop policy if exists partner_routing_rules_select on public.partner_routing_rules;
 create policy partner_routing_rules_select
   on public.partner_routing_rules
@@ -128,14 +112,12 @@ create policy partner_routing_rules_select
     public.bridge_is_org_admin(source_organisation_id)
     or public.bridge_is_org_admin(target_organisation_id)
   );
-
 drop policy if exists partner_routing_rules_insert on public.partner_routing_rules;
 create policy partner_routing_rules_insert
   on public.partner_routing_rules
   for insert
   to authenticated
   with check (public.bridge_is_org_admin(source_organisation_id));
-
 drop policy if exists partner_routing_rules_update on public.partner_routing_rules;
 create policy partner_routing_rules_update
   on public.partner_routing_rules
@@ -143,16 +125,12 @@ create policy partner_routing_rules_update
   to authenticated
   using (public.bridge_is_org_admin(source_organisation_id))
   with check (public.bridge_is_org_admin(source_organisation_id));
-
 drop policy if exists partner_routing_rules_delete on public.partner_routing_rules;
 create policy partner_routing_rules_delete
   on public.partner_routing_rules
   for delete
   to authenticated
   using (public.bridge_is_org_admin(source_organisation_id));
-
 grant select, insert, update, delete on public.partner_routing_rules to authenticated;
-
 notify pgrst, 'reload schema';
-
 commit;

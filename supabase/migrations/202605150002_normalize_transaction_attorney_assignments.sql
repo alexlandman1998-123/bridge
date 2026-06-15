@@ -1,7 +1,5 @@
 begin;
-
 create extension if not exists "pgcrypto";
-
 alter table public.transaction_attorney_assignments
   add column if not exists attorney_firm_id uuid references public.attorney_firms(id) on delete cascade,
   add column if not exists attorney_user_id uuid references auth.users(id) on delete set null,
@@ -16,7 +14,6 @@ alter table public.transaction_attorney_assignments
   add column if not exists can_add_internal_notes boolean not null default true,
   add column if not exists can_add_shared_updates boolean not null default true,
   add column if not exists can_update_workflow_lane boolean not null default true;
-
 update public.transaction_attorney_assignments
 set
   attorney_firm_id = coalesce(attorney_firm_id, firm_id),
@@ -32,7 +29,6 @@ set
   ),
   assignment_status = coalesce(nullif(assignment_status, ''), status, 'active'),
   is_primary = coalesce(is_primary, true);
-
 insert into public.transaction_attorney_assignments (
   transaction_id,
   firm_id,
@@ -93,58 +89,42 @@ where existing.assignment_type = 'transfer_and_bond'
       and coalesce(bond_assignment.assignment_status, bond_assignment.status, '') = 'active'
       and coalesce(bond_assignment.is_primary, false) = true
   );
-
 alter table public.transaction_attorney_assignments
   alter column attorney_firm_id set not null,
   alter column attorney_role set not null;
-
 alter table public.transaction_attorney_assignments
   drop constraint if exists transaction_attorney_assignments_assignment_type_check;
-
 alter table public.transaction_attorney_assignments
   add constraint transaction_attorney_assignments_assignment_type_check
   check (assignment_type in ('transfer', 'bond', 'transfer_and_bond', 'cancellation'));
-
 alter table public.transaction_attorney_assignments
   drop constraint if exists transaction_attorney_assignments_attorney_role_check;
-
 alter table public.transaction_attorney_assignments
   add constraint transaction_attorney_assignments_attorney_role_check
   check (attorney_role in ('transfer_attorney', 'bond_attorney', 'cancellation_attorney'));
-
 alter table public.transaction_attorney_assignments
   drop constraint if exists transaction_attorney_assignments_assignment_status_check;
-
 alter table public.transaction_attorney_assignments
   add constraint transaction_attorney_assignments_assignment_status_check
   check (assignment_status in ('pending', 'active', 'paused', 'completed', 'removed'));
-
 alter table public.transaction_attorney_assignments
   drop constraint if exists transaction_attorney_assignments_visibility_scope_check;
-
 alter table public.transaction_attorney_assignments
   add constraint transaction_attorney_assignments_visibility_scope_check
   check (visibility_scope in ('assigned_matter', 'firm_matter', 'internal_only'));
-
 drop index if exists public.transaction_attorney_assignments_unique_active_type;
-
 create unique index if not exists transaction_attorney_assignments_unique_active_primary_role
   on public.transaction_attorney_assignments (transaction_id, attorney_role)
   where is_primary = true and assignment_status = 'active';
-
 create unique index if not exists transaction_attorney_assignments_unique_active_role_user
   on public.transaction_attorney_assignments (transaction_id, attorney_role, attorney_user_id)
   where attorney_user_id is not null and assignment_status <> 'removed';
-
 create index if not exists transaction_attorney_assignments_attorney_role_idx
   on public.transaction_attorney_assignments (transaction_id, attorney_role, assignment_status);
-
 create index if not exists transaction_attorney_assignments_attorney_user_idx
   on public.transaction_attorney_assignments (attorney_user_id, assignment_status);
-
 create index if not exists transaction_attorney_assignments_attorney_firm_idx
   on public.transaction_attorney_assignments (attorney_firm_id, assignment_status, attorney_role);
-
 drop policy if exists transaction_attorney_assignments_select on public.transaction_attorney_assignments;
 create policy transaction_attorney_assignments_select on public.transaction_attorney_assignments
 for select to authenticated
@@ -167,7 +147,6 @@ using (
       )
   )
 );
-
 drop policy if exists transaction_attorney_assignments_write on public.transaction_attorney_assignments;
 create policy transaction_attorney_assignments_write on public.transaction_attorney_assignments
 for all to authenticated
@@ -197,14 +176,10 @@ with check (
       )
   )
 );
-
 comment on column public.transaction_attorney_assignments.attorney_role is
   'Canonical transaction-level legal role: transfer_attorney, bond_attorney, or cancellation_attorney.';
-
 comment on column public.transaction_attorney_assignments.is_primary is
   'True for the primary attorney assignment for this role. Supporting attorneys use false.';
-
 comment on column public.transaction_attorney_assignments.visibility_scope is
   'Assignment visibility scope. Internal by default and not automatically client-visible.';
-
 commit;

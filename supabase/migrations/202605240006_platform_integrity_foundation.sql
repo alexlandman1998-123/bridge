@@ -1,5 +1,4 @@
 create extension if not exists "pgcrypto";
-
 create table if not exists public.integrity_logs (
   id uuid primary key default gen_random_uuid(),
   entity_type text not null,
@@ -17,12 +16,10 @@ create table if not exists public.integrity_logs (
   constraint integrity_logs_severity_check check (severity in ('info', 'warning', 'error', 'critical')),
   constraint integrity_logs_status_check check (status in ('open', 'acknowledged', 'resolved', 'dismissed'))
 );
-
 create index if not exists integrity_logs_entity_idx on public.integrity_logs(entity_type, entity_id);
 create index if not exists integrity_logs_workspace_idx on public.integrity_logs(workspace_id);
 create index if not exists integrity_logs_user_idx on public.integrity_logs(user_id);
 create index if not exists integrity_logs_status_idx on public.integrity_logs(status, severity);
-
 create table if not exists public.repair_logs (
   id uuid primary key default gen_random_uuid(),
   entity_type text not null,
@@ -38,11 +35,9 @@ create table if not exists public.repair_logs (
   created_at timestamptz not null default now(),
   constraint repair_logs_status_check check (status in ('recommended', 'approved', 'applied', 'failed', 'rejected'))
 );
-
 create index if not exists repair_logs_entity_idx on public.repair_logs(entity_type, entity_id);
 create index if not exists repair_logs_workspace_idx on public.repair_logs(workspace_id);
 create index if not exists repair_logs_user_idx on public.repair_logs(user_id);
-
 create table if not exists public.validation_states (
   id uuid primary key default gen_random_uuid(),
   entity_type text not null,
@@ -56,10 +51,8 @@ create table if not exists public.validation_states (
   unique(entity_type, entity_id),
   constraint validation_states_status_check check (validation_status in ('valid', 'warning', 'invalid', 'unknown'))
 );
-
 create index if not exists validation_states_workspace_idx on public.validation_states(workspace_id);
 create index if not exists validation_states_status_idx on public.validation_states(validation_status);
-
 create table if not exists public.system_health_snapshots (
   id uuid primary key default gen_random_uuid(),
   status text not null default 'unknown',
@@ -68,14 +61,11 @@ create table if not exists public.system_health_snapshots (
   created_at timestamptz not null default now(),
   constraint system_health_snapshots_status_check check (status in ('healthy', 'warning', 'critical', 'unknown'))
 );
-
 create index if not exists system_health_snapshots_created_at_idx on public.system_health_snapshots(created_at desc);
-
 alter table public.integrity_logs enable row level security;
 alter table public.repair_logs enable row level security;
 alter table public.validation_states enable row level security;
 alter table public.system_health_snapshots enable row level security;
-
 do $$
 begin
   if not exists (

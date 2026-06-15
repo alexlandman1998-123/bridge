@@ -1,8 +1,6 @@
 begin;
-
 alter table if exists public.document_requirement_events
   drop constraint if exists document_requirement_events_type_check;
-
 alter table if exists public.document_requirement_events
   add constraint document_requirement_events_type_check check (
     event_type in (
@@ -24,7 +22,5 @@ alter table if exists public.document_requirement_events
       'rule_unmatched'
     )
   );
-
 notify pgrst, 'reload schema';
-
 commit;

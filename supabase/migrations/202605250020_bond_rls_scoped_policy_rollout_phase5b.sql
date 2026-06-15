@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_is_bond_transaction_canonical_ready(transaction_id uuid)
 returns boolean
 language sql
@@ -38,7 +37,6 @@ as $$
       false
     );
 $$;
-
 create or replace function public.bridge_can_access_bond_transaction_canonical(transaction_id uuid)
 returns boolean
 language sql
@@ -114,7 +112,6 @@ as $$
       false
     );
 $$;
-
 create or replace function public.bridge_can_access_bond_transaction_legacy_compat(transaction_id uuid)
 returns boolean
 language sql
@@ -122,7 +119,6 @@ stable
 as $$
   select public.bridge_can_access_bond_transaction_shadow(transaction_id);
 $$;
-
 create or replace function public.bridge_can_access_bond_transaction_phase5b(transaction_id uuid)
 returns boolean
 language sql
@@ -136,14 +132,12 @@ as $$
         public.bridge_can_access_bond_transaction_legacy_compat(transaction_id)
     end;
 $$;
-
 create policy transactions_select_phase5b_scoped on public.transactions
 for select to authenticated
 using (
   public.bridge_is_bond_transaction_canonical_ready(id)
   and public.bridge_can_access_bond_transaction_canonical(id)
 );
-
 create policy transaction_subprocesses_select_phase5b_scoped on public.transaction_subprocesses
 for select to authenticated
 using (
@@ -154,7 +148,6 @@ using (
     or public.bridge_is_internal_user()
   )
 );
-
 create policy transaction_subprocess_steps_select_phase5b_scoped on public.transaction_subprocess_steps
 for select to authenticated
 using (
@@ -170,14 +163,12 @@ using (
       )
   )
 );
-
 create policy transaction_finance_details_select_phase5b_scoped on public.transaction_finance_details
 for select to authenticated
 using (
   public.bridge_is_bond_transaction_canonical_ready(transaction_id)
   and public.bridge_can_access_bond_transaction_canonical(transaction_id)
 );
-
 create policy document_requests_select_phase5b_scoped on public.document_requests
 for select to authenticated
 using (
@@ -185,14 +176,12 @@ using (
   and public.bridge_is_bond_transaction_canonical_ready(public.document_requests.transaction_id)
   and public.bridge_can_access_bond_transaction_canonical(public.document_requests.transaction_id)
 );
-
 create policy documents_select_phase5b_scoped on public.documents
 for select to authenticated
 using (
   public.bridge_is_bond_transaction_canonical_ready(transaction_id)
   and public.bridge_can_access_bond_transaction_canonical(transaction_id)
 );
-
 create policy transaction_events_select_phase5b_scoped on public.transaction_events
 for select to authenticated
 using (
@@ -203,7 +192,6 @@ using (
     or public.bridge_is_internal_user()
   )
 );
-
 create policy transaction_notifications_select_phase5b_scoped on public.transaction_notifications
 for select to authenticated
 using (
@@ -214,10 +202,8 @@ using (
     or public.bridge_is_admin()
   )
 );
-
 grant execute on function public.bridge_is_bond_transaction_canonical_ready(uuid) to authenticated;
 grant execute on function public.bridge_can_access_bond_transaction_canonical(uuid) to authenticated;
 grant execute on function public.bridge_can_access_bond_transaction_legacy_compat(uuid) to authenticated;
 grant execute on function public.bridge_can_access_bond_transaction_phase5b(uuid) to authenticated;
-
 commit;

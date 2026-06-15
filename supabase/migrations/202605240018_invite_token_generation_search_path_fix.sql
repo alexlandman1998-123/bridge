@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_random_token(p_bytes integer default 24)
 returns text
 language plpgsql
@@ -43,13 +42,10 @@ begin
   return substring(v_token from 1 for v_bytes * 2);
 end;
 $$;
-
 alter table if exists public.invites
   alter column token set default public.bridge_random_token(24);
-
 alter table if exists public.workspace_invites
   alter column token set default public.bridge_random_token(24);
-
 create or replace function public.bridge_create_invite(payload jsonb)
 returns jsonb
 language plpgsql
@@ -146,8 +142,6 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_random_token(integer) to authenticated;
 grant execute on function public.bridge_create_invite(jsonb) to authenticated;
-
 commit;

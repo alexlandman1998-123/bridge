@@ -1,5 +1,4 @@
 begin;
-
 drop policy if exists attorney_firm_departments_select_member on public.attorney_firm_departments;
 create policy attorney_firm_departments_select_member on public.attorney_firm_departments
 for select to authenticated
@@ -12,7 +11,6 @@ using (
       and f.created_by = auth.uid()
   )
 );
-
 drop policy if exists attorney_firm_departments_manage_admin on public.attorney_firm_departments;
 create policy attorney_firm_departments_manage_admin on public.attorney_firm_departments
 for all to authenticated
@@ -34,5 +32,4 @@ with check (
       and f.created_by = auth.uid()
   )
 );
-
 commit;

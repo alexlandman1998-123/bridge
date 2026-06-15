@@ -1,5 +1,4 @@
 begin;
-
 alter table if exists public.organisation_users
   add column if not exists workspace_role text,
   add column if not exists organisation_role text,
@@ -8,20 +7,16 @@ alter table if exists public.organisation_users
   add column if not exists region_id uuid references public.workspace_regions(id) on delete set null,
   add column if not exists workspace_unit_id uuid references public.workspace_units(id) on delete set null,
   add column if not exists scope_metadata jsonb not null default '{}'::jsonb;
-
 alter table if exists public.organisation_users
   drop constraint if exists organisation_users_scope_level_check;
-
 alter table if exists public.organisation_users
   add constraint organisation_users_scope_level_check
   check (
     scope_level is null
     or scope_level in ('organisation', 'organization', 'workspace_hq', 'region', 'branch', 'team', 'user', 'assigned', 'independent')
   );
-
 alter table if exists public.organisation_users
   drop constraint if exists organisation_users_workspace_role_check;
-
 alter table if exists public.organisation_users
   add constraint organisation_users_workspace_role_check
   check (
@@ -60,11 +55,9 @@ alter table if exists public.organisation_users
       'bond_independent_consultant'
     )
   );
-
 create index if not exists organisation_users_bond_scope_idx
   on public.organisation_users (organisation_id, scope_level, region_id, workspace_unit_id, user_id)
   where workspace_type = 'bond_originator' or role = 'bond_originator';
-
 alter table if exists public.transaction_bond_applications
   add column if not exists assigned_organisation_id uuid references public.organisations(id) on delete set null,
   add column if not exists assigned_region_id uuid references public.workspace_regions(id) on delete set null,
@@ -77,17 +70,14 @@ alter table if exists public.transaction_bond_applications
   add column if not exists buyer_party_id uuid references public.buyers(id) on delete set null,
   add column if not exists application_type text,
   add column if not exists metadata jsonb not null default '{}'::jsonb;
-
 update public.transaction_bond_applications tba
 set
   assigned_workspace_unit_id = coalesce(tba.assigned_workspace_unit_id, tba.assigned_team_id, tba.assigned_branch_id),
   assignment_status = coalesce(nullif(tba.assignment_status, ''), 'organisation_queue'),
   assignment_source = coalesce(nullif(tba.assignment_source, ''), 'legacy_backfill')
 where true;
-
 alter table if exists public.transaction_bond_applications
   drop constraint if exists transaction_bond_applications_assignment_status_check;
-
 alter table if exists public.transaction_bond_applications
   add constraint transaction_bond_applications_assignment_status_check
   check (
@@ -104,10 +94,8 @@ alter table if exists public.transaction_bond_applications
       'declined'
     )
   );
-
 alter table if exists public.transaction_bond_applications
   drop constraint if exists transaction_bond_applications_assignment_source_check;
-
 alter table if exists public.transaction_bond_applications
   add constraint transaction_bond_applications_assignment_source_check
   check (
@@ -125,13 +113,10 @@ alter table if exists public.transaction_bond_applications
       'system_repair'
     )
   );
-
 drop index if exists public.transaction_bond_applications_originator_intake_uidx;
-
 create unique index transaction_bond_applications_originator_intake_uidx
   on public.transaction_bond_applications (transaction_id, coalesce(application_type, 'originator_intake'))
   where coalesce(application_type, 'originator_intake') = 'originator_intake';
-
 create index if not exists transaction_bond_applications_assignment_scope_idx
   on public.transaction_bond_applications (
     assigned_organisation_id,
@@ -141,7 +126,6 @@ create index if not exists transaction_bond_applications_assignment_scope_idx
     assigned_user_id,
     assignment_status
   );
-
 create or replace function public.bridge_current_bond_scope_level(workspace_id uuid)
 returns text
 language sql
@@ -159,7 +143,6 @@ as $$
   order by ou.active_workspace_selected_at desc nulls last, ou.updated_at desc nulls last
   limit 1
 $$;
-
 create or replace function public.bridge_is_bond_workspace_hq_member(workspace_id uuid)
 returns boolean
 language sql
@@ -177,7 +160,6 @@ as $$
       )
   )
 $$;
-
 create or replace function public.bridge_bond_application_workspace_id(application_id uuid)
 returns uuid
 language sql
@@ -189,9 +171,7 @@ as $$
   where tba.id = application_id
   limit 1
 $$;
-
 drop function if exists public.bridge_can_access_bond_application(uuid);
-
 create function public.bridge_can_access_bond_application(application_id uuid)
 returns boolean
 language sql
@@ -229,19 +209,15 @@ as $$
     from app
   ), false)
 $$;
-
 drop policy if exists transaction_bond_applications_select on public.transaction_bond_applications;
 drop policy if exists transaction_bond_applications_select_scoped on public.transaction_bond_applications;
-
 create policy transaction_bond_applications_select_scoped
   on public.transaction_bond_applications
   for select
   to authenticated
   using (public.bridge_can_access_bond_application(id));
-
 drop policy if exists transaction_bond_applications_modify on public.transaction_bond_applications;
 drop policy if exists transaction_bond_applications_modify_scoped on public.transaction_bond_applications;
-
 create policy transaction_bond_applications_modify_scoped
   on public.transaction_bond_applications
   for all
@@ -256,8 +232,6 @@ create policy transaction_bond_applications_modify_scoped
   with check (
     public.bridge_can_access_bond_transaction_phase5b(transaction_id)
   );
-
 grant execute on function public.bridge_bond_application_workspace_id(uuid) to authenticated;
 grant execute on function public.bridge_can_access_bond_application(uuid) to authenticated;
-
 commit;

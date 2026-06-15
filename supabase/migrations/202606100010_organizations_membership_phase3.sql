@@ -56,13 +56,37 @@ alter table if exists public.organisation_users
   drop constraint if exists organisation_users_membership_status_check;
 alter table if exists public.organisation_users
   add constraint organisation_users_membership_status_check
-  check (membership_status is null or membership_status in ('pending', 'active', 'removed', 'declined', 'invited'));
+  check (
+    membership_status is null
+    or membership_status in ('pending', 'active', 'removed', 'declined', 'invited', 'deactivated')
+  );
 
 alter table if exists public.organisation_users
   drop constraint if exists organisation_users_phase3_organization_role_check;
 alter table if exists public.organisation_users
   add constraint organisation_users_phase3_organization_role_check
-  check (organization_role is null or organization_role in ('owner', 'admin', 'member', 'principal', 'super_admin', 'director', 'partner', 'viewer'));
+  check (
+    organization_role is null
+    or organization_role in (
+      'owner',
+      'admin',
+      'member',
+      'principal',
+      'super_admin',
+      'director',
+      'partner',
+      'viewer',
+      'agent',
+      'attorney',
+      'branch_manager',
+      'compliance',
+      'consultant',
+      'firm_admin',
+      'hq_manager',
+      'processor',
+      'regional_manager'
+    )
+  );
 
 alter table if exists public.partner_prospects
   add column if not exists organisation_id uuid references public.organisations(id) on delete set null;

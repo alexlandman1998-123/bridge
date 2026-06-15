@@ -89,7 +89,7 @@ set landlord_id = coalesce(listing.landlord_id, vacancy.landlord_id, property.la
     team_id = coalesce(listing.team_id, vacancy.team_id, property.team_id),
     broker_id = coalesce(listing.broker_id, vacancy.broker_id, vacancy.broker_assignment, property.broker_id)
 from public.commercial_vacancies vacancy
-left join public.commercial_properties property on property.id = coalesce(listing.property_id, vacancy.property_id)
+left join public.commercial_properties property on property.id = vacancy.property_id
 where listing.vacancy_id = vacancy.id
   and (
     listing.landlord_id is null

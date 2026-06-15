@@ -33,9 +33,7 @@ as $$
     )
   );
 $$;
-
 grant execute on function public.bridge_is_org_admin(uuid) to authenticated;
-
 create or replace function public.bridge_list_calendar_appointments(
   p_organisation_id uuid,
   p_include_all boolean default false,
@@ -197,5 +195,4 @@ as $$
     )
   order by a.date_time asc nulls last, a.created_at desc;
 $$;
-
 grant execute on function public.bridge_list_calendar_appointments(uuid, boolean, text, timestamptz, timestamptz) to authenticated;

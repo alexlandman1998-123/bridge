@@ -7,13 +7,10 @@ alter table if exists public.transactions
   add column if not exists assigned_agent_id uuid references public.profiles(id) on delete set null,
   add column if not exists listing_id uuid,
   add column if not exists onboarding_status text not null default 'awaiting_client_onboarding';
-
 create index if not exists transactions_accepted_offer_idx
   on public.transactions (accepted_offer_id);
-
 create index if not exists transactions_originating_buyer_lead_idx
   on public.transactions (originating_buyer_lead_id, created_at desc);
-
 create or replace function public.bridge_submit_seller_offer_decision(
   p_token text,
   p_decision text,
@@ -513,5 +510,4 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_submit_seller_offer_decision(text, text, text) to anon, authenticated;

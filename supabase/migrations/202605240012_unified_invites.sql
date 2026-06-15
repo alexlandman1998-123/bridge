@@ -1,7 +1,5 @@
 begin;
-
 create extension if not exists "pgcrypto";
-
 create table if not exists public.invites (
   id uuid primary key default gen_random_uuid(),
   invite_type text not null,
@@ -40,27 +38,21 @@ create table if not exists public.invites (
     status in ('pending', 'accepted', 'declined', 'expired', 'revoked', 'cancelled')
   )
 );
-
 create unique index if not exists invites_token_unique_idx
   on public.invites (token);
-
 create index if not exists invites_email_status_idx
   on public.invites (lower(email), status);
-
 create index if not exists invites_workspace_status_idx
   on public.invites (target_workspace_id, status, created_at desc)
   where target_workspace_id is not null;
-
 create index if not exists invites_transaction_status_idx
   on public.invites (target_transaction_id, status, created_at desc)
   where target_transaction_id is not null;
-
 drop trigger if exists invites_set_updated_at on public.invites;
 create trigger invites_set_updated_at
 before update on public.invites
 for each row
 execute function public.bridge_set_updated_at();
-
 create table if not exists public.invite_events (
   id uuid primary key default gen_random_uuid(),
   invite_id uuid references public.invites(id) on delete cascade,
@@ -71,13 +63,10 @@ create table if not exists public.invite_events (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-
 create index if not exists invite_events_invite_idx
   on public.invite_events (invite_id, created_at desc);
-
 create index if not exists invite_events_user_idx
   on public.invite_events (user_id, created_at desc);
-
 alter table if exists public.transaction_participants
   add column if not exists firm_id uuid,
   add column if not exists invited_by_user_id uuid references auth.users(id) on delete set null,
@@ -88,14 +77,11 @@ alter table if exists public.transaction_participants
   add column if not exists transaction_role text,
   add column if not exists visibility_scope text,
   add column if not exists is_internal boolean not null default false;
-
 create index if not exists transaction_participants_invitation_token_idx
   on public.transaction_participants (invitation_token)
   where invitation_token is not null;
-
 alter table public.invites enable row level security;
 alter table public.invite_events enable row level security;
-
 drop policy if exists invites_select_invitee_or_workspace_admin on public.invites;
 create policy invites_select_invitee_or_workspace_admin
   on public.invites
@@ -114,7 +100,6 @@ create policy invites_select_invitee_or_workspace_admin
         and coalesce(ou.workspace_role, ou.organisation_role, ou.role) in ('owner', 'principal', 'director', 'partner', 'admin', 'admin_staff', 'branch_manager', 'manager')
     )
   );
-
 drop policy if exists invites_insert_workspace_admin on public.invites;
 create policy invites_insert_workspace_admin
   on public.invites
@@ -134,7 +119,6 @@ create policy invites_insert_workspace_admin
       )
     )
   );
-
 drop policy if exists invites_update_invitee_or_workspace_admin on public.invites;
 create policy invites_update_invitee_or_workspace_admin
   on public.invites
@@ -158,7 +142,6 @@ create policy invites_update_invitee_or_workspace_admin
     or accepted_by_user_id = auth.uid()
     or revoked_by_user_id = auth.uid()
   );
-
 drop policy if exists invite_events_select_related on public.invite_events;
 create policy invite_events_select_related
   on public.invite_events
@@ -177,10 +160,8 @@ create policy invite_events_select_related
         )
     )
   );
-
 grant select, insert, update on public.invites to authenticated;
 grant select on public.invite_events to authenticated;
-
 create or replace function public.bridge_record_invite_event(
   p_invite_id uuid,
   p_event_type text,
@@ -218,7 +199,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.bridge_create_invite(payload jsonb)
 returns jsonb
 language plpgsql
@@ -315,7 +295,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.bridge_accept_invite(p_token text)
 returns jsonb
 language plpgsql
@@ -677,7 +656,6 @@ begin
   );
 end;
 $$;
-
 insert into public.invites (
   invite_type,
   status,
@@ -721,7 +699,6 @@ from public.workspace_invites wi
 where not exists (
   select 1 from public.invites i where i.token = wi.token
 );
-
 insert into public.invites (
   invite_type,
   status,
@@ -756,9 +733,7 @@ from public.attorney_firm_invitations ai
 where not exists (
   select 1 from public.invites i where i.token = ai.token
 );
-
 grant execute on function public.bridge_create_invite(jsonb) to authenticated;
 grant execute on function public.bridge_accept_invite(text) to authenticated;
 grant execute on function public.bridge_record_invite_event(uuid, text, uuid, jsonb) to authenticated;
-
 commit;

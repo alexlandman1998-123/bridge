@@ -152,5 +152,4 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_get_seller_offer_review_session(text) to anon, authenticated;

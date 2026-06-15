@@ -2,9 +2,7 @@
 
 alter table if exists public.appointments
   alter column status set default 'requested';
-
 alter table if exists public.appointments drop constraint if exists appointments_status_check;
-
 update public.appointments
 set status = case
   when lower(status) in ('draft') then 'draft'
@@ -20,7 +18,6 @@ set status = case
   else 'requested'
 end
 where status is not null;
-
 alter table if exists public.appointments
   add constraint appointments_status_check
   check (
@@ -46,7 +43,6 @@ alter table if exists public.appointments
       'Reschedule Requested'
     )
   );
-
 alter table if exists public.appointments drop constraint if exists appointments_related_entity_type_check;
 alter table if exists public.appointments
   add constraint appointments_related_entity_type_check
@@ -54,9 +50,7 @@ alter table if exists public.appointments
     related_entity_type is null
     or related_entity_type in ('transaction', 'lead', 'listing', 'development', 'unit', 'client', 'private_transaction', 'none')
   );
-
 drop function if exists public.submit_appointment_rsvp(text, text, timestamptz, text);
-
 create or replace function public.submit_appointment_rsvp(
   p_token text,
   p_rsvp_status text,
@@ -188,5 +182,4 @@ begin
   where ap.rsvp_token = p_token;
 end;
 $$;
-
 grant execute on function public.submit_appointment_rsvp(text, text, timestamptz, timestamptz, text) to anon, authenticated;

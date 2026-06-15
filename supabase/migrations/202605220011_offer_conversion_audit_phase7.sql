@@ -107,7 +107,6 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists offers_audit_transaction_conversion on public.offers;
 create trigger offers_audit_transaction_conversion
 after update of status, transaction_id on public.offers

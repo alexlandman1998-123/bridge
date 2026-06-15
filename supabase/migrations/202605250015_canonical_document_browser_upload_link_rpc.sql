@@ -185,15 +185,12 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.bridge_link_document_to_canonical_requirement(uuid, uuid, text, uuid, jsonb) from public;
 revoke all on function public.bridge_link_document_to_canonical_requirement(uuid, uuid, text, uuid, jsonb) from anon;
 grant execute on function public.bridge_link_document_to_canonical_requirement(uuid, uuid, text, uuid, jsonb) to authenticated;
 grant execute on function public.bridge_link_document_to_canonical_requirement(uuid, uuid, text, uuid, jsonb) to service_role;
-
 comment on function public.bridge_link_document_to_canonical_requirement(uuid, uuid, text, uuid, jsonb) is
   'Staging-safe scoped RPC for browser uploads to satisfy canonical document requirement instances without exposing broad table CRUD.';
-
 create or replace function public.bridge_link_document_to_canonical_requirement_by_key(
   p_document_id uuid,
   p_transaction_id uuid,
@@ -317,11 +314,9 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.bridge_link_document_to_canonical_requirement_by_key(uuid, uuid, text, text, uuid, jsonb) from public;
 revoke all on function public.bridge_link_document_to_canonical_requirement_by_key(uuid, uuid, text, text, uuid, jsonb) from anon;
 grant execute on function public.bridge_link_document_to_canonical_requirement_by_key(uuid, uuid, text, text, uuid, jsonb) to authenticated;
 grant execute on function public.bridge_link_document_to_canonical_requirement_by_key(uuid, uuid, text, text, uuid, jsonb) to service_role;
-
 comment on function public.bridge_link_document_to_canonical_requirement_by_key(uuid, uuid, text, text, uuid, jsonb) is
   'Scoped browser upload helper that resolves a single canonical document requirement by transaction and explicit document key without exposing operational canonical tables.';

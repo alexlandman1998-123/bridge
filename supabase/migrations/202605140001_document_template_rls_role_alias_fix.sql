@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_membership_role(target_org uuid)
 returns text
 language sql
@@ -24,12 +23,9 @@ as $$
   order by ou.created_at asc
   limit 1;
 $$;
-
 grant execute on function public.bridge_membership_role(uuid) to authenticated;
 grant execute on function public.bridge_is_org_admin(uuid) to authenticated;
-
 grant select, insert, update, delete on table public.document_packet_templates to authenticated;
 grant select, insert, update, delete on table public.document_template_sections to authenticated;
 grant select, insert, update, delete on table public.document_placeholder_registry to authenticated;
-
 commit;

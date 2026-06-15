@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.seed_default_attorney_departments()
 returns trigger
 language plpgsql
@@ -18,7 +17,6 @@ begin
   return new;
 end;
 $$;
-
 create or replace function public.seed_attorney_firm_branding_from_firm()
 returns trigger
 language plpgsql
@@ -45,7 +43,6 @@ begin
   return new;
 end;
 $$;
-
 create or replace function public.attorney_user_can_bootstrap_firm_admin(
   target_firm_id uuid,
   target_user_id uuid,
@@ -75,9 +72,7 @@ as $$
         and m.status = 'active'
     );
 $$;
-
 grant execute on function public.attorney_user_can_bootstrap_firm_admin(uuid, uuid, text, text) to authenticated;
-
 drop policy if exists attorney_firms_select_member on public.attorney_firms;
 create policy attorney_firms_select_member on public.attorney_firms
 for select to authenticated
@@ -85,12 +80,10 @@ using (
   public.attorney_user_is_active_member(id)
   or created_by = auth.uid()
 );
-
 drop policy if exists attorney_firm_members_bootstrap_creator_admin on public.attorney_firm_members;
 create policy attorney_firm_members_bootstrap_creator_admin on public.attorney_firm_members
 for insert to authenticated
 with check (
   public.attorney_user_can_bootstrap_firm_admin(firm_id, user_id, role, status)
 );
-
 commit;

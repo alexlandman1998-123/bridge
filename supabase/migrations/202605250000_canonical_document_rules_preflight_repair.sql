@@ -1,7 +1,5 @@
 begin;
-
 create extension if not exists "pgcrypto";
-
 create or replace function public.bridge_set_updated_at()
 returns trigger
 language plpgsql
@@ -11,7 +9,6 @@ begin
   return new;
 end;
 $$;
-
 do $$
 begin
   if to_regclass('public.document_requirement_rules') is not null then
@@ -42,10 +39,7 @@ begin
       add column if not exists effective_to timestamptz;
   end if;
 end $$;
-
 comment on table public.document_requirement_rules is
   'Canonical conditional document requirement rules. This table was additively upgraded from an earlier legacy rule shape where present.';
-
 notify pgrst, 'reload schema';
-
 commit;

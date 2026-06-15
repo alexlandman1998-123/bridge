@@ -1,5 +1,4 @@
 create extension if not exists "pgcrypto";
-
 create table if not exists public.platform_environment_settings (
   id boolean primary key default true,
   environment text not null default 'production',
@@ -11,11 +10,9 @@ create table if not exists public.platform_environment_settings (
   constraint platform_environment_settings_singleton check (id = true),
   constraint platform_environment_settings_environment_check check (environment in ('local', 'demo', 'staging', 'preview', 'production'))
 );
-
 insert into public.platform_environment_settings (id, environment, demo_tools_enabled, production_locked, notes)
 values (true, 'production', false, true, 'Default locked state. Change only in isolated staging/demo projects.')
 on conflict (id) do nothing;
-
 create table if not exists public.demo_seed_manifests (
   id uuid primary key default gen_random_uuid(),
   environment text not null default 'demo',
@@ -31,7 +28,6 @@ create table if not exists public.demo_seed_manifests (
   constraint demo_seed_manifests_status_check check (status in ('planned', 'seeded', 'needs_reset', 'disabled')),
   constraint demo_seed_manifests_unique_key unique (environment, demo_key)
 );
-
 create table if not exists public.demo_reset_runs (
   id uuid primary key default gen_random_uuid(),
   environment text not null,
@@ -45,10 +41,8 @@ create table if not exists public.demo_reset_runs (
   error_message text,
   constraint demo_reset_runs_status_check check (status in ('requested', 'dry_run_completed', 'completed', 'blocked', 'failed'))
 );
-
 create index if not exists demo_reset_runs_environment_idx on public.demo_reset_runs(environment, started_at desc);
 create index if not exists demo_reset_runs_requested_by_idx on public.demo_reset_runs(requested_by);
-
 create table if not exists public.launch_readiness_checks (
   id uuid primary key default gen_random_uuid(),
   environment text not null,
@@ -64,10 +58,8 @@ create table if not exists public.launch_readiness_checks (
   constraint launch_readiness_status_check check (status in ('pass', 'warning', 'fail', 'not_checked')),
   constraint launch_readiness_risk_check check (risk_level in ('low', 'medium', 'high', 'critical'))
 );
-
 create index if not exists launch_readiness_checks_environment_idx on public.launch_readiness_checks(environment, checked_at desc);
 create index if not exists launch_readiness_checks_category_idx on public.launch_readiness_checks(category, checked_at desc);
-
 create table if not exists public.post_deploy_verification_runs (
   id uuid primary key default gen_random_uuid(),
   environment text not null,
@@ -79,15 +71,12 @@ create table if not exists public.post_deploy_verification_runs (
   verified_at timestamptz not null default now(),
   constraint post_deploy_verification_status_check check (status in ('pass', 'warning', 'fail', 'not_checked'))
 );
-
 create index if not exists post_deploy_verification_runs_environment_idx on public.post_deploy_verification_runs(environment, verified_at desc);
-
 alter table public.platform_environment_settings enable row level security;
 alter table public.demo_seed_manifests enable row level security;
 alter table public.demo_reset_runs enable row level security;
 alter table public.launch_readiness_checks enable row level security;
 alter table public.post_deploy_verification_runs enable row level security;
-
 do $$
 begin
   if not exists (
@@ -135,7 +124,6 @@ begin
       with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'platform_admin'));
   end if;
 end $$;
-
 create or replace function public.request_demo_environment_reset(
   p_reset_scope text default 'all',
   p_dry_run boolean default true
@@ -195,12 +183,7 @@ begin
     'scope', coalesce(nullif(p_reset_scope, ''), 'all'),
     'dryRun', coalesce(p_dry_run, true),
     'resetPolicy', 'Only data marked as demo seed data may be reset. Production data is never eligible.',
-    'seedScripts', jsonb_build_array(
-      'supabase/seed/reset-bridge9-principal-demo-data.sql',
-      'supabase/seed/seed-bridge9-principal-demo-data.sql',
-      'supabase/seed/reset-dalawyer-demo-data.sql',
-      'supabase/seed/seed-dalawyer-demo-data.sql'
-    ),
+    'seedScripts', jsonb_build_array('supabase/seed/reset-dalawyer-demo-data.sql', 'supabase/seed/seed-dalawyer-demo-data.sql'),
     'nextStep', case when coalesce(p_dry_run, true) then 'Review the dry-run and run the staging seed/reset pipeline.' else 'Run the staging seed/reset pipeline and verify manifests.' end
   );
 

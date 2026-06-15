@@ -1,11 +1,8 @@
 begin;
-
 alter table if exists public.attorney_firms
   add column if not exists organisation_id uuid references public.organisations(id) on delete set null;
-
 alter table if exists public.partner_invitations
   alter column recipient_email drop not null;
-
 alter table if exists public.organisation_partners
   add column if not exists partner_type text,
   add column if not exists status text,
@@ -13,7 +10,6 @@ alter table if exists public.organisation_partners
   add column if not exists scope_id uuid,
   add column if not exists scope_name text,
   add column if not exists preferred boolean not null default false;
-
 update public.organisation_partners
 set
   status = coalesce(nullif(status, ''), nullif(relationship_status, ''), 'pending'),
@@ -21,7 +17,6 @@ set
   scope_id = coalesce(scope_id, organisation_id),
   preferred = coalesce(preferred, false) or relationship_type = 'preferred' or visibility_level = 'preferred_partners_only'
 where true;
-
 alter table if exists public.partner_invitations
   add column if not exists invited_email text,
   add column if not exists from_organisation_name text,
@@ -36,7 +31,6 @@ alter table if exists public.partner_invitations
   add column if not exists invited_by_user_id uuid references auth.users(id) on delete set null,
   add column if not exists responded_by_user_id uuid references auth.users(id) on delete set null,
   add column if not exists responded_at timestamptz;
-
 update public.partner_invitations
 set
   invited_email = coalesce(invited_email, recipient_email),
@@ -46,7 +40,6 @@ set
   partner_type = coalesce(nullif(partner_type, ''), nullif(to_workspace_type, '')),
   invited_by_user_id = coalesce(invited_by_user_id, created_by)
 where true;
-
 alter table if exists public.transaction_role_players
   add column if not exists partner_relationship_id uuid references public.organisation_partners(id) on delete set null,
   add column if not exists organisation_id uuid references public.organisations(id) on delete set null,
@@ -56,20 +49,16 @@ alter table if exists public.transaction_role_players
   add column if not exists activated_at timestamptz,
   add column if not exists notified_at timestamptz,
   add column if not exists assigned_by uuid references auth.users(id) on delete set null;
-
 update public.transaction_role_players
 set
   status = coalesce(status, 'selected'),
   assignment_status = coalesce(assignment_status, status, 'selected')
 where true;
-
 alter table if exists public.transaction_role_players
   drop constraint if exists transaction_role_players_selection_source_check;
-
 alter table if exists public.transaction_role_players
   add constraint transaction_role_players_selection_source_check
   check (selection_source in ('agency_preferred', 'buyer_appointed', 'manual', 'connected_partner', 'preferred_partner', 'recently_used'));
-
 create or replace function public.bridge_attorney_role_to_organisation_role(role_value text)
 returns text
 language sql
@@ -88,7 +77,6 @@ as $$
     else 'viewer'
   end;
 $$;
-
 create or replace function public.bridge_ensure_attorney_firm_organisation(target_firm_id uuid)
 returns uuid
 language plpgsql
@@ -252,7 +240,6 @@ begin
   return v_org_id;
 end;
 $$;
-
 do $$
 declare
   firm_record record;
@@ -263,12 +250,9 @@ begin
     perform public.bridge_ensure_attorney_firm_organisation(firm_record.id);
   end loop;
 end $$;
-
 create index if not exists attorney_firms_organisation_id_idx
   on public.attorney_firms (organisation_id)
   where organisation_id is not null;
-
 grant execute on function public.bridge_attorney_role_to_organisation_role(text) to authenticated;
 grant execute on function public.bridge_ensure_attorney_firm_organisation(uuid) to authenticated;
-
 commit;

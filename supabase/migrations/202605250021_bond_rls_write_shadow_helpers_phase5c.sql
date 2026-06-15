@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_normalize_bond_write_action(action text)
 returns text
 language sql
@@ -24,7 +23,6 @@ as $$
       else null
     end
 $$;
-
 create or replace function public.bridge_has_bond_transaction_role_player_access(transaction_id uuid)
 returns boolean
 language sql
@@ -49,7 +47,6 @@ as $$
       )
   );
 $$;
-
 create or replace function public.bridge_can_mutate_bond_transaction_assigned(transaction_id uuid, action text)
 returns boolean
 language sql
@@ -100,7 +97,6 @@ as $$
       false
     );
 $$;
-
 create or replace function public.bridge_can_mutate_bond_transaction_scoped(transaction_id uuid, action text)
 returns boolean
 language sql
@@ -141,7 +137,6 @@ as $$
       else false
     end;
 $$;
-
 create or replace function public.bridge_can_mutate_bond_transaction_canonical(transaction_id uuid, action text)
 returns boolean
 language sql
@@ -164,7 +159,6 @@ as $$
       else false
     end;
 $$;
-
 create or replace function public.bridge_can_mutate_bond_transaction_phase5c(transaction_id uuid, action text)
 returns boolean
 language sql
@@ -182,12 +176,10 @@ as $$
         public.bridge_can_access_bond_transaction_legacy_compat(transaction_id)
     end;
 $$;
-
 grant execute on function public.bridge_normalize_bond_write_action(text) to authenticated;
 grant execute on function public.bridge_has_bond_transaction_role_player_access(uuid) to authenticated;
 grant execute on function public.bridge_can_mutate_bond_transaction_assigned(uuid, text) to authenticated;
 grant execute on function public.bridge_can_mutate_bond_transaction_scoped(uuid, text) to authenticated;
 grant execute on function public.bridge_can_mutate_bond_transaction_canonical(uuid, text) to authenticated;
 grant execute on function public.bridge_can_mutate_bond_transaction_phase5c(uuid, text) to authenticated;
-
 commit;

@@ -58,7 +58,7 @@ create table if not exists public.lead_communication_preferences (
   property_alerts_enabled boolean not null default true,
   preferred_channel text not null default 'email',
   frequency text not null default 'immediate',
-  unsubscribe_token text not null default encode(gen_random_bytes(24), 'hex'),
+  unsubscribe_token text not null default encode(extensions.gen_random_bytes(24), 'hex'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint lead_communication_preferences_channel_check

@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_current_email()
 returns text
 language sql
@@ -7,7 +6,6 @@ stable
 as $$
   select lower(coalesce(auth.jwt() ->> 'email', ''));
 $$;
-
 create or replace function public.bridge_membership_role(target_org uuid)
 returns text
 language sql
@@ -23,7 +21,6 @@ as $$
   order by ou.created_at asc
   limit 1;
 $$;
-
 create or replace function public.bridge_is_active_member(target_org uuid)
 returns boolean
 language sql
@@ -39,7 +36,6 @@ as $$
       and ou.status = 'active'
   );
 $$;
-
 create or replace function public.bridge_is_org_admin(target_org uuid)
 returns boolean
 language sql
@@ -52,7 +48,6 @@ as $$
     false
   );
 $$;
-
 create or replace function public.bridge_claim_pending_org_invite()
 returns table (
   id uuid,
@@ -92,17 +87,14 @@ begin
   returning ou.id, ou.organisation_id, ou.role, ou.status, ou.email;
 end;
 $$;
-
 grant execute on function public.bridge_current_email() to authenticated;
 grant execute on function public.bridge_membership_role(uuid) to authenticated;
 grant execute on function public.bridge_is_active_member(uuid) to authenticated;
 grant execute on function public.bridge_is_org_admin(uuid) to authenticated;
 grant execute on function public.bridge_claim_pending_org_invite() to authenticated;
-
 alter table if exists public.organisations enable row level security;
 alter table if exists public.organisation_users enable row level security;
 alter table if exists public.organisation_settings enable row level security;
-
 -- organisations
 
 drop policy if exists organisations_agency_select on public.organisations;
@@ -118,23 +110,19 @@ using (
       and lower(ou.email) = public.bridge_current_email()
   )
 );
-
 drop policy if exists organisations_agency_insert on public.organisations;
 create policy organisations_agency_insert on public.organisations
 for insert to authenticated
 with check (auth.uid() is not null);
-
 drop policy if exists organisations_agency_update on public.organisations;
 create policy organisations_agency_update on public.organisations
 for update to authenticated
 using (public.bridge_is_org_admin(id))
 with check (public.bridge_is_org_admin(id));
-
 drop policy if exists organisations_agency_delete on public.organisations;
 create policy organisations_agency_delete on public.organisations
 for delete to authenticated
 using (public.bridge_is_org_admin(id));
-
 -- organisation_users
 
 drop policy if exists organisation_users_agency_select on public.organisation_users;
@@ -144,7 +132,6 @@ using (
   public.bridge_is_active_member(organisation_id)
   or (status = 'invited' and lower(email) = public.bridge_current_email())
 );
-
 drop policy if exists organisation_users_agency_insert on public.organisation_users;
 create policy organisation_users_agency_insert on public.organisation_users
 for insert to authenticated
@@ -156,29 +143,24 @@ with check (
     and lower(email) = public.bridge_current_email()
   )
 );
-
 drop policy if exists organisation_users_agency_update on public.organisation_users;
 create policy organisation_users_agency_update on public.organisation_users
 for update to authenticated
 using (public.bridge_is_org_admin(organisation_id))
 with check (public.bridge_is_org_admin(organisation_id));
-
 drop policy if exists organisation_users_agency_delete on public.organisation_users;
 create policy organisation_users_agency_delete on public.organisation_users
 for delete to authenticated
 using (public.bridge_is_org_admin(organisation_id));
-
 -- organisation_settings
 
 drop policy if exists organisation_settings_agency_select on public.organisation_settings;
 create policy organisation_settings_agency_select on public.organisation_settings
 for select to authenticated
 using (public.bridge_is_active_member(organisation_id));
-
 drop policy if exists organisation_settings_agency_write on public.organisation_settings;
 create policy organisation_settings_agency_write on public.organisation_settings
 for all to authenticated
 using (public.bridge_is_org_admin(organisation_id))
 with check (public.bridge_is_org_admin(organisation_id));
-
 commit;

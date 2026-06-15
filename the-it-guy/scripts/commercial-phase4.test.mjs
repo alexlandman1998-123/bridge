@@ -23,7 +23,7 @@ for (const marker of [
   assert.match(auditSource, new RegExp(marker), `Phase 4 audit should document ${marker}`)
 }
 
-const migrationSource = await read('../../supabase/migrations/202606080002_commercial_document_compliance_workflow.sql')
+const migrationSource = await read('../../supabase/migrations/20260608000201_commercial_document_compliance_workflow.sql')
 for (const marker of [
   'version_number',
   'supersedes_document_id',

@@ -9,12 +9,10 @@ alter table if exists public.appointments add column if not exists visibility_sc
 alter table if exists public.appointments add column if not exists completion_behavior text;
 alter table if exists public.appointments add column if not exists appointment_instructions text;
 alter table if exists public.appointments add column if not exists required_documents jsonb not null default '[]'::jsonb;
-
 alter table if exists public.appointments drop constraint if exists appointments_visibility_scope_check;
 alter table if exists public.appointments
   add constraint appointments_visibility_scope_check
   check (visibility_scope in ('client_visible', 'internal_only', 'shared_role_players'));
-
 do $$
 begin
   if to_regclass('public.appointments') is null then

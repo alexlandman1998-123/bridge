@@ -2,10 +2,8 @@
 
 alter table if exists public.appointments
   add column if not exists confirmed_at timestamptz;
-
 drop function if exists public.submit_appointment_rsvp(text, text, timestamptz, text);
 drop function if exists public.submit_appointment_rsvp(text, text, timestamptz, timestamptz, text);
-
 create or replace function public.submit_appointment_rsvp(
   p_token text,
   p_rsvp_status text,
@@ -235,9 +233,7 @@ begin
   where ap.rsvp_token = p_token;
 end;
 $$;
-
 grant execute on function public.submit_appointment_rsvp(text, text, timestamptz, timestamptz, text) to anon, authenticated;
-
 drop policy if exists appointments_agent_linked_lead_select on public.appointments;
 create policy appointments_agent_linked_lead_select on public.appointments
 for select to authenticated
@@ -250,7 +246,6 @@ using (
       and l.assigned_agent_id = auth.uid()
   )
 );
-
 drop policy if exists appointment_participants_agent_linked_lead_select on public.appointment_participants;
 create policy appointment_participants_agent_linked_lead_select on public.appointment_participants
 for select to authenticated

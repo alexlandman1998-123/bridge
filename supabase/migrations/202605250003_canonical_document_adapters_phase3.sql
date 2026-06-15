@@ -1,36 +1,27 @@
 begin;
-
 alter table if exists public.private_listing_document_requirements
   add column if not exists canonical_requirement_instance_id uuid
   references public.document_requirement_instances(id) on delete set null;
-
 alter table if exists public.private_listing_documents
   add column if not exists canonical_requirement_instance_id uuid
   references public.document_requirement_instances(id) on delete set null;
-
 alter table if exists public.transaction_required_documents
   add column if not exists canonical_requirement_instance_id uuid
   references public.document_requirement_instances(id) on delete set null;
-
 alter table if exists public.document_requests
   add column if not exists canonical_requirement_instance_id uuid
   references public.document_requirement_instances(id) on delete set null;
-
 alter table if exists public.documents
   add column if not exists canonical_requirement_instance_id uuid
   references public.document_requirement_instances(id) on delete set null;
-
 alter table if exists public.document_packets
   add column if not exists canonical_requirement_instance_id uuid
   references public.document_requirement_instances(id) on delete set null;
-
 alter table if exists public.document_packet_versions
   add column if not exists canonical_requirement_instance_id uuid
   references public.document_requirement_instances(id) on delete set null;
-
 alter table if exists public.document_requirement_events
   drop constraint if exists document_requirement_events_type_check;
-
 alter table if exists public.document_requirement_events
   add constraint document_requirement_events_type_check check (
     event_type in (
@@ -60,7 +51,6 @@ alter table if exists public.document_requirement_events
       'status_conflict'
     )
   );
-
 do $$
 begin
   if to_regclass('public.private_listing_document_requirements') is not null then
@@ -105,7 +95,6 @@ begin
       where canonical_requirement_instance_id is not null;
   end if;
 end $$;
-
 do $$
 begin
   if to_regclass('public.private_listing_document_requirements') is not null then
@@ -143,7 +132,5 @@ begin
       'Compatibility link from generated packet versions to canonical document requirement instances.';
   end if;
 end $$;
-
 notify pgrst, 'reload schema';
-
 commit;

@@ -1,5 +1,7 @@
 begin;
 
+drop function if exists public.bridge_nudge_commercial_access_request(uuid);
+
 create or replace function public.bridge_nudge_commercial_access_request(p_request_id uuid)
 returns table(notification_id uuid, recipient_user_id uuid, recipient_email text, recipient_name text)
 language plpgsql

@@ -5,7 +5,6 @@
 -- helper RPCs for staging verification/service operations.
 
 begin;
-
 alter table if exists public.document_packs enable row level security;
 alter table if exists public.document_definitions enable row level security;
 alter table if exists public.document_requirement_rules enable row level security;
@@ -14,12 +13,9 @@ alter table if exists public.document_requirement_reviews enable row level secur
 alter table if exists public.document_requirement_events enable row level security;
 alter table if exists public.document_requirement_reminders enable row level security;
 alter table if exists public.document_requirement_reminder_items enable row level security;
-
 drop policy if exists document_requirement_rules_demo_all on public.document_requirement_rules;
-
 drop policy if exists document_packs_authenticated_read on public.document_packs;
 drop policy if exists document_definitions_authenticated_read on public.document_definitions;
-
 drop policy if exists document_packs_service_role_all on public.document_packs;
 drop policy if exists document_definitions_service_role_all on public.document_definitions;
 drop policy if exists document_requirement_rules_service_role_all on public.document_requirement_rules;
@@ -28,7 +24,6 @@ drop policy if exists document_requirement_reviews_service_role_all on public.do
 drop policy if exists document_requirement_events_service_role_all on public.document_requirement_events;
 drop policy if exists document_requirement_reminders_service_role_all on public.document_requirement_reminders;
 drop policy if exists document_requirement_reminder_items_service_role_all on public.document_requirement_reminder_items;
-
 revoke all on table public.document_packs from anon, authenticated;
 revoke all on table public.document_definitions from anon, authenticated;
 revoke all on table public.document_requirement_rules from anon, authenticated;
@@ -37,10 +32,8 @@ revoke all on table public.document_requirement_reviews from anon, authenticated
 revoke all on table public.document_requirement_events from anon, authenticated;
 revoke all on table public.document_requirement_reminders from anon, authenticated;
 revoke all on table public.document_requirement_reminder_items from anon, authenticated;
-
 grant select on table public.document_packs to authenticated;
 grant select on table public.document_definitions to authenticated;
-
 grant all on table public.document_packs to service_role;
 grant all on table public.document_definitions to service_role;
 grant all on table public.document_requirement_rules to service_role;
@@ -49,75 +42,64 @@ grant all on table public.document_requirement_reviews to service_role;
 grant all on table public.document_requirement_events to service_role;
 grant all on table public.document_requirement_reminders to service_role;
 grant all on table public.document_requirement_reminder_items to service_role;
-
 create policy document_packs_authenticated_read
 on public.document_packs
 for select
 to authenticated
 using (is_active = true);
-
 create policy document_definitions_authenticated_read
 on public.document_definitions
 for select
 to authenticated
 using (is_active = true);
-
 create policy document_packs_service_role_all
 on public.document_packs
 for all
 to service_role
 using (true)
 with check (true);
-
 create policy document_definitions_service_role_all
 on public.document_definitions
 for all
 to service_role
 using (true)
 with check (true);
-
 create policy document_requirement_rules_service_role_all
 on public.document_requirement_rules
 for all
 to service_role
 using (true)
 with check (true);
-
 create policy document_requirement_instances_service_role_all
 on public.document_requirement_instances
 for all
 to service_role
 using (true)
 with check (true);
-
 create policy document_requirement_reviews_service_role_all
 on public.document_requirement_reviews
 for all
 to service_role
 using (true)
 with check (true);
-
 create policy document_requirement_events_service_role_all
 on public.document_requirement_events
 for all
 to service_role
 using (true)
 with check (true);
-
 create policy document_requirement_reminders_service_role_all
 on public.document_requirement_reminders
 for all
 to service_role
 using (true)
 with check (true);
-
 create policy document_requirement_reminder_items_service_role_all
 on public.document_requirement_reminder_items
 for all
 to service_role
 using (true)
 with check (true);
-
 create or replace function public.canonical_document_verification_snapshot(
   p_purpose text default 'canonical_staging_verification'
 )
@@ -146,10 +128,8 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.canonical_document_verification_snapshot(text) from public, anon, authenticated;
 grant execute on function public.canonical_document_verification_snapshot(text) to anon, authenticated, service_role;
-
 create or replace function public.canonical_document_rls_grants_audit()
 returns jsonb
 language plpgsql
@@ -278,10 +258,8 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.canonical_document_rls_grants_audit() from public, anon, authenticated;
 grant execute on function public.canonical_document_rls_grants_audit() to anon, authenticated, service_role;
-
 create or replace function public.canonical_document_service_insert_reminder(
   p_requirement_instance_id uuid,
   p_context_type text,
@@ -335,10 +313,7 @@ begin
   return inserted_id;
 end;
 $$;
-
 revoke all on function public.canonical_document_service_insert_reminder(uuid, text, uuid, text, uuid, text, text, text, text, jsonb) from public, anon, authenticated;
 grant execute on function public.canonical_document_service_insert_reminder(uuid, text, uuid, text, uuid, text, text, text, text, jsonb) to service_role;
-
 notify pgrst, 'reload schema';
-
 commit;

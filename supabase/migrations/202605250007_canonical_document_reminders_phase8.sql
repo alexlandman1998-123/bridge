@@ -1,5 +1,4 @@
 begin;
-
 create table if not exists public.document_requirement_reminders (
   id uuid primary key default gen_random_uuid(),
   requirement_instance_id uuid references public.document_requirement_instances(id) on delete cascade,
@@ -40,7 +39,6 @@ create table if not exists public.document_requirement_reminders (
     status in ('pending', 'scheduled', 'sent', 'suppressed', 'paused', 'completed', 'failed', 'cancelled')
   )
 );
-
 create table if not exists public.document_requirement_reminder_items (
   id uuid primary key default gen_random_uuid(),
   reminder_id uuid not null references public.document_requirement_reminders(id) on delete cascade,
@@ -48,34 +46,25 @@ create table if not exists public.document_requirement_reminder_items (
   created_at timestamptz not null default now(),
   unique (reminder_id, requirement_instance_id)
 );
-
 create index if not exists document_requirement_reminders_context_idx
   on public.document_requirement_reminders (context_type, context_id, status, next_reminder_at);
-
 create index if not exists document_requirement_reminders_requirement_idx
   on public.document_requirement_reminders (requirement_instance_id, status, created_at desc);
-
 create index if not exists document_requirement_reminders_recipient_idx
   on public.document_requirement_reminders (recipient_role, recipient_contact_id, recipient_email, status);
-
 create index if not exists document_requirement_reminders_type_channel_idx
   on public.document_requirement_reminders (reminder_type, channel, status);
-
 create index if not exists document_requirement_reminders_metadata_gin_idx
   on public.document_requirement_reminders using gin (metadata_json);
-
 create index if not exists document_requirement_reminder_items_requirement_idx
   on public.document_requirement_reminder_items (requirement_instance_id);
-
 drop trigger if exists document_requirement_reminders_set_updated_at on public.document_requirement_reminders;
 create trigger document_requirement_reminders_set_updated_at
 before update on public.document_requirement_reminders
 for each row
 execute function public.bridge_set_updated_at();
-
 alter table if exists public.document_requirement_events
   drop constraint if exists document_requirement_events_type_check;
-
 alter table if exists public.document_requirement_events
   add constraint document_requirement_events_type_check check (
     event_type in (
@@ -119,22 +108,15 @@ alter table if exists public.document_requirement_events
       'reminder_completed'
     )
   );
-
 alter table if exists public.document_requirement_reminders enable row level security;
 alter table if exists public.document_requirement_reminder_items enable row level security;
-
 grant select, insert, update on public.document_requirement_reminders to authenticated;
 grant select, insert on public.document_requirement_reminder_items to authenticated;
-
 comment on table public.document_requirement_reminders is
   'Canonical reminder, follow-up and escalation records grouped by context, recipient, pack, gate and reminder type.';
-
 comment on table public.document_requirement_reminder_items is
   'Items included in grouped canonical document reminders.';
-
 comment on table public.document_requirement_events is
   'Audit trail for canonical document requirement lifecycle, workflow gate and reminder activity.';
-
 notify pgrst, 'reload schema';
-
 commit;

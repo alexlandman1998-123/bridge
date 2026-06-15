@@ -1,5 +1,7 @@
 begin;
 
+drop function if exists public.bridge_notify_commercial_access_decision(uuid);
+
 create or replace function public.bridge_notify_commercial_access_decision(p_request_id uuid)
 returns table(notification_id uuid, recipient_user_id uuid)
 language plpgsql

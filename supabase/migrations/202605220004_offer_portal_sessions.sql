@@ -16,54 +16,42 @@ create table if not exists public.offer_portal_sessions (
     status in ('draft', 'active', 'sent', 'expired', 'closed', 'revoked')
   )
 );
-
 create index if not exists offer_portal_sessions_organisation_status_idx
   on public.offer_portal_sessions (organisation_id, status, updated_at desc);
-
 create index if not exists offer_portal_sessions_appointment_idx
   on public.offer_portal_sessions (appointment_id, updated_at desc);
-
 create index if not exists offer_portal_sessions_buyer_lead_idx
   on public.offer_portal_sessions (buyer_lead_id, updated_at desc);
-
 create index if not exists offer_portal_sessions_token_idx
   on public.offer_portal_sessions (token);
-
 drop trigger if exists offer_portal_sessions_set_updated_at on public.offer_portal_sessions;
 create trigger offer_portal_sessions_set_updated_at
 before update on public.offer_portal_sessions
 for each row
 execute function public.bridge_set_updated_at();
-
 alter table if exists public.offer_portal_sessions enable row level security;
-
 drop policy if exists offer_portal_sessions_org_members_select on public.offer_portal_sessions;
 create policy offer_portal_sessions_org_members_select
   on public.offer_portal_sessions
   for select
   using (public.bridge_is_active_member(organisation_id));
-
 drop policy if exists offer_portal_sessions_org_members_insert on public.offer_portal_sessions;
 create policy offer_portal_sessions_org_members_insert
   on public.offer_portal_sessions
   for insert
   with check (public.bridge_is_active_member(organisation_id));
-
 drop policy if exists offer_portal_sessions_org_members_update on public.offer_portal_sessions;
 create policy offer_portal_sessions_org_members_update
   on public.offer_portal_sessions
   for update
   using (public.bridge_is_active_member(organisation_id))
   with check (public.bridge_is_active_member(organisation_id));
-
 drop policy if exists offer_portal_sessions_org_members_delete on public.offer_portal_sessions;
 create policy offer_portal_sessions_org_members_delete
   on public.offer_portal_sessions
   for delete
   using (public.bridge_is_active_member(organisation_id));
-
 grant select, insert, update, delete on public.offer_portal_sessions to authenticated;
-
 create or replace function public.bridge_jsonb_money(p_value text)
 returns numeric
 language sql
@@ -75,7 +63,6 @@ as $$
     else null
   end
 $$;
-
 create or replace function public.bridge_get_offer_portal_session(p_token text)
 returns jsonb
 language plpgsql
@@ -189,7 +176,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.bridge_submit_offer_portal_offer(
   p_token text,
   p_listing_id uuid,
@@ -358,8 +344,6 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_get_offer_portal_session(text) to anon, authenticated;
 grant execute on function public.bridge_submit_offer_portal_offer(text, uuid, jsonb) to anon, authenticated;
-
 notify pgrst, 'reload schema';

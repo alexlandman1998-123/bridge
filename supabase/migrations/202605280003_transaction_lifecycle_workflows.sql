@@ -13,10 +13,8 @@ create table if not exists public.transaction_lifecycle_workflows (
   constraint transaction_lifecycle_workflows_status_check
     check (status in ('active', 'completed', 'blocked'))
 );
-
 create unique index if not exists transaction_lifecycle_workflows_transaction_uidx
   on public.transaction_lifecycle_workflows (transaction_id);
-
 insert into public.transaction_lifecycle_workflows (
   transaction_id,
   current_stage,
@@ -59,6 +57,5 @@ select
 from public.transactions t
 where t.id is not null
 on conflict (transaction_id) do nothing;
-
 comment on table public.transaction_lifecycle_workflows is
   'Canonical parent transaction lifecycle: Confirmed, OTP, Finance, Transfer, Registration. Module workflows store detailed sub-statuses separately.';

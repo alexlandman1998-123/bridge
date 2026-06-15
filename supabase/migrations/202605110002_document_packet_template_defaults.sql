@@ -1,5 +1,4 @@
 begin;
-
 -- Ensure document packet template defaults exist in linked environments.
 -- The app can render a runtime fallback, but these global rows make the
 -- mandate/OTP template registry refresh-safe and discoverable.
@@ -7,14 +6,11 @@ begin;
 create unique index if not exists document_packet_templates_global_key_version_unique
 on public.document_packet_templates (template_key, version_tag)
 where organisation_id is null;
-
 create unique index if not exists document_template_sections_template_key_unique
 on public.document_template_sections (template_id, section_key);
-
 grant select on table public.document_packet_templates to authenticated;
 grant select on table public.document_template_sections to authenticated;
 grant select on table public.document_placeholder_registry to authenticated;
-
 insert into public.document_packet_templates (
   organisation_id,
   module_type,
@@ -74,7 +70,6 @@ do update set
   is_active = true,
   metadata_json = public.document_packet_templates.metadata_json || excluded.metadata_json,
   updated_at = now();
-
 with mandate_template as (
   select id
   from public.document_packet_templates
@@ -211,7 +206,6 @@ do update set
   placeholder_keys = excluded.placeholder_keys,
   metadata_json = excluded.metadata_json,
   updated_at = now();
-
 with otp_template as (
   select id
   from public.document_packet_templates
@@ -265,5 +259,4 @@ do update set
   placeholder_keys = excluded.placeholder_keys,
   metadata_json = excluded.metadata_json,
   updated_at = now();
-
 commit;

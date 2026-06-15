@@ -1,5 +1,4 @@
 begin;
-
 do $$
 declare
   policy_row record;
@@ -20,20 +19,17 @@ begin
     execute format('drop policy if exists %I on %I.%I', policy_row.policyname, policy_row.schemaname, policy_row.tablename);
   end loop;
 end $$;
-
 alter table if exists public.transactions enable row level security;
 alter table if exists public.transaction_role_players enable row level security;
 alter table if exists public.transaction_participants enable row level security;
 alter table if exists public.transaction_events enable row level security;
 alter table if exists public.transaction_attorney_assignments enable row level security;
 alter table if exists public.transaction_bond_applications enable row level security;
-
 create policy transactions_select_transaction_spine_scope
   on public.transactions
   for select
   to authenticated
   using (public.bridge_can_access_transaction_spine(id));
-
 create policy transactions_insert_transaction_spine_scope
   on public.transactions
   for insert
@@ -47,83 +43,70 @@ create policy transactions_insert_transaction_spine_scope
       or lower(coalesce(assigned_agent_email, '')) = lower(coalesce(auth.jwt() ->> 'email', ''))
     )
   );
-
 create policy transactions_update_transaction_spine_scope
   on public.transactions
   for update
   to authenticated
   using (public.bridge_can_access_transaction_spine(id))
   with check (public.bridge_can_access_transaction_spine(id));
-
 create policy transaction_bond_applications_select_scope_hardened
   on public.transaction_bond_applications
   for select
   to authenticated
   using (public.bridge_can_access_bond_application_scope(id));
-
 create policy transaction_bond_applications_insert_scope_hardened
   on public.transaction_bond_applications
   for insert
   to authenticated
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_bond_applications_update_scope_hardened
   on public.transaction_bond_applications
   for update
   to authenticated
   using (public.bridge_can_access_bond_application_scope(id) or public.bridge_can_access_transaction_spine(transaction_id))
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_participants_select_transaction_spine_scope
   on public.transaction_participants
   for select
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_participants_insert_transaction_spine_scope
   on public.transaction_participants
   for insert
   to authenticated
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_participants_update_transaction_spine_scope
   on public.transaction_participants
   for update
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id))
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_role_players_select_transaction_spine_scope
   on public.transaction_role_players
   for select
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_role_players_insert_transaction_spine_scope
   on public.transaction_role_players
   for insert
   to authenticated
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_role_players_update_transaction_spine_scope
   on public.transaction_role_players
   for update
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id))
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_events_select_transaction_spine_scope
   on public.transaction_events
   for select
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_events_insert_transaction_spine_scope
   on public.transaction_events
   for insert
   to authenticated
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_attorney_assignments_select_transaction_spine_scope
   on public.transaction_attorney_assignments
   for select
@@ -147,20 +130,16 @@ create policy transaction_attorney_assignments_select_transaction_spine_scope
       )
     )
   );
-
 create policy transaction_attorney_assignments_insert_transaction_spine_scope
   on public.transaction_attorney_assignments
   for insert
   to authenticated
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 create policy transaction_attorney_assignments_update_transaction_spine_scope
   on public.transaction_attorney_assignments
   for update
   to authenticated
   using (public.bridge_can_access_transaction_spine(transaction_id))
   with check (public.bridge_can_access_transaction_spine(transaction_id));
-
 notify pgrst, 'reload schema';
-
 commit;

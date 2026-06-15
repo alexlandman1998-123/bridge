@@ -1,5 +1,4 @@
 begin;
-
 drop policy if exists transaction_finance_workflows_owner_agent_access on public.transaction_finance_workflows;
 create policy transaction_finance_workflows_owner_agent_access
   on public.transaction_finance_workflows
@@ -33,7 +32,5 @@ create policy transaction_finance_workflows_owner_agent_access
         )
     )
   );
-
 notify pgrst, 'reload schema';
-
 commit;

@@ -46,7 +46,6 @@ begin
       on public.transactions (listing_id);
   end if;
 end $$;
-
 create table if not exists public.transaction_commissions (
   id uuid primary key default gen_random_uuid(),
   organisation_id uuid,
@@ -60,12 +59,9 @@ create table if not exists public.transaction_commissions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists transaction_commissions_organisation_id_idx
   on public.transaction_commissions (organisation_id);
-
 create index if not exists transaction_commissions_transaction_id_idx
   on public.transaction_commissions (transaction_id);
-
 grant select, insert, update, delete on public.transaction_commissions to authenticated;
 grant select on public.transaction_commissions to anon;

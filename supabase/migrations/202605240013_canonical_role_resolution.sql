@@ -1,14 +1,10 @@
 begin;
-
 alter table if exists public.profiles
   add column if not exists system_role text;
-
 alter table if exists public.organisation_users
   add column if not exists workspace_role text;
-
 alter table if exists public.transaction_participants
   add column if not exists transaction_role text;
-
 do $$
 begin
   alter table public.profiles
@@ -19,7 +15,6 @@ begin
 exception
   when undefined_table then null;
 end $$;
-
 create or replace function public.bridge_normalize_system_role(role_value text)
 returns text
 language sql
@@ -34,7 +29,6 @@ as $$
     else null
   end;
 $$;
-
 create or replace function public.bridge_normalize_workspace_role(role_value text)
 returns text
 language sql
@@ -56,7 +50,6 @@ as $$
     else 'viewer'
   end;
 $$;
-
 create or replace function public.bridge_normalize_transaction_role(role_type text, legal_role text default null, transaction_role text default null)
 returns text
 language sql
@@ -87,7 +80,6 @@ as $$
     else 'external_collaborator'
   end;
 $$;
-
 update public.profiles
 set system_role = coalesce(
   public.bridge_normalize_system_role(system_role),
@@ -96,26 +88,20 @@ set system_role = coalesce(
 )
 where system_role is null
   or public.bridge_normalize_system_role(system_role) is distinct from system_role;
-
 update public.organisation_users
 set workspace_role = public.bridge_normalize_workspace_role(coalesce(workspace_role, organisation_role, role))
 where workspace_role is null
   or public.bridge_normalize_workspace_role(workspace_role) is distinct from workspace_role;
-
 update public.transaction_participants
 set transaction_role = public.bridge_normalize_transaction_role(role_type, legal_role, transaction_role)
 where transaction_role is null
   or public.bridge_normalize_transaction_role(role_type, legal_role, transaction_role) is distinct from transaction_role;
-
 create index if not exists profiles_system_role_idx
   on public.profiles (system_role);
-
 create index if not exists organisation_users_workspace_role_idx
   on public.organisation_users (organisation_id, workspace_role, status);
-
 create index if not exists transaction_participants_transaction_role_idx
   on public.transaction_participants (transaction_id, transaction_role, status);
-
 create or replace function public.bridge_profiles_sync_system_role()
 returns trigger
 language plpgsql
@@ -130,13 +116,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists profiles_sync_system_role on public.profiles;
 create trigger profiles_sync_system_role
 before insert or update of role, system_role on public.profiles
 for each row
 execute function public.bridge_profiles_sync_system_role();
-
 create or replace function public.bridge_organisation_users_sync_workspace_role()
 returns trigger
 language plpgsql
@@ -147,13 +131,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists organisation_users_sync_workspace_role on public.organisation_users;
 create trigger organisation_users_sync_workspace_role
 before insert or update of role, organisation_role, workspace_role on public.organisation_users
 for each row
 execute function public.bridge_organisation_users_sync_workspace_role();
-
 create or replace function public.bridge_transaction_participants_sync_transaction_role()
 returns trigger
 language plpgsql
@@ -164,13 +146,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists transaction_participants_sync_transaction_role on public.transaction_participants;
 create trigger transaction_participants_sync_transaction_role
 before insert or update of role_type, legal_role, transaction_role on public.transaction_participants
 for each row
 execute function public.bridge_transaction_participants_sync_transaction_role();
-
 create or replace function public.bridge_current_workspace_role(workspace_id uuid)
 returns text
 language sql
@@ -186,7 +166,6 @@ as $$
   order by member.is_primary_owner desc, member.updated_at desc nulls last, member.created_at desc
   limit 1;
 $$;
-
 create or replace function public.bridge_current_transaction_role(transaction_id uuid)
 returns text
 language sql
@@ -203,7 +182,6 @@ as $$
   order by participant.accepted_at desc nulls last, participant.updated_at desc nulls last, participant.created_at desc
   limit 1;
 $$;
-
 create or replace function public.bridge_has_workspace_permission(workspace_id uuid, permission_key text)
 returns boolean
 language plpgsql
@@ -231,7 +209,6 @@ begin
   return v_role not in ('viewer');
 end;
 $$;
-
 create or replace function public.bridge_has_transaction_permission(transaction_id uuid, permission_key text)
 returns boolean
 language plpgsql
@@ -262,7 +239,6 @@ begin
   return false;
 end;
 $$;
-
 grant execute on function public.bridge_normalize_system_role(text) to authenticated;
 grant execute on function public.bridge_normalize_workspace_role(text) to authenticated;
 grant execute on function public.bridge_normalize_transaction_role(text, text, text) to authenticated;
@@ -270,5 +246,4 @@ grant execute on function public.bridge_current_workspace_role(uuid) to authenti
 grant execute on function public.bridge_current_transaction_role(uuid) to authenticated;
 grant execute on function public.bridge_has_workspace_permission(uuid, text) to authenticated;
 grant execute on function public.bridge_has_transaction_permission(uuid, text) to authenticated;
-
 commit;

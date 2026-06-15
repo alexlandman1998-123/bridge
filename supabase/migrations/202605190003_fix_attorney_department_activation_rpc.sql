@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.set_attorney_firm_department_activation(
   target_firm_id uuid,
   active_department_types text[]
@@ -69,7 +68,5 @@ begin
   order by d.name;
 end;
 $$;
-
 grant execute on function public.set_attorney_firm_department_activation(uuid, text[]) to authenticated;
-
 commit;

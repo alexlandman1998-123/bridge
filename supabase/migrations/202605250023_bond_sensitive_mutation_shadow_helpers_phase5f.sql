@@ -1,5 +1,4 @@
 begin;
-
 create or replace function public.bridge_can_submit_bond_to_banks_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -9,7 +8,6 @@ as $$
     public.bridge_is_bond_transaction_canonical_ready(transaction_id)
     and public.bridge_can_submit_bond_to_banks_phase5d(transaction_id)
 $$;
-
 create or replace function public.bridge_can_assign_bond_workspace_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -23,7 +21,6 @@ as $$
     and (select workspace_id from workspace_target) is not null
     and public.bridge_is_bond_workspace_hq_member((select workspace_id from workspace_target))
 $$;
-
 create or replace function public.bridge_can_assign_bond_region_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -44,7 +41,6 @@ as $$
       )
     )
 $$;
-
 create or replace function public.bridge_can_assign_bond_unit_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -65,7 +61,6 @@ as $$
       )
     )
 $$;
-
 create or replace function public.bridge_can_assign_bond_consultant_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -75,7 +70,6 @@ as $$
     public.bridge_is_bond_transaction_canonical_ready(transaction_id)
     and public.bridge_can_manage_bond_assignment_phase5d(transaction_id)
 $$;
-
 create or replace function public.bridge_can_assign_bond_processor_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -85,7 +79,6 @@ as $$
     public.bridge_is_bond_transaction_canonical_ready(transaction_id)
     and public.bridge_can_manage_bond_assignment_phase5d(transaction_id)
 $$;
-
 create or replace function public.bridge_can_assign_bond_manager_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -95,7 +88,6 @@ as $$
     public.bridge_is_bond_transaction_canonical_ready(transaction_id)
     and public.bridge_can_manage_bond_assignment_phase5d(transaction_id)
 $$;
-
 create or replace function public.bridge_can_assign_bond_compliance_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -105,7 +97,6 @@ as $$
     public.bridge_is_bond_transaction_canonical_ready(transaction_id)
     and public.bridge_can_manage_bond_assignment_phase5d(transaction_id)
 $$;
-
 create or replace function public.bridge_can_clear_bond_assignment_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -115,7 +106,6 @@ as $$
     public.bridge_is_bond_transaction_canonical_ready(transaction_id)
     and public.bridge_can_manage_bond_assignment_phase5d(transaction_id)
 $$;
-
 create or replace function public.bridge_can_transfer_bond_application_workspace_phase5f(transaction_id uuid)
 returns boolean
 language sql
@@ -125,7 +115,6 @@ as $$
     public.bridge_is_bond_transaction_canonical_ready(transaction_id)
     and public.bridge_can_assign_bond_workspace_phase5f(transaction_id)
 $$;
-
 grant execute on function public.bridge_can_submit_bond_to_banks_phase5f(uuid) to authenticated;
 grant execute on function public.bridge_can_assign_bond_workspace_phase5f(uuid) to authenticated;
 grant execute on function public.bridge_can_assign_bond_region_phase5f(uuid) to authenticated;
@@ -136,5 +125,4 @@ grant execute on function public.bridge_can_assign_bond_manager_phase5f(uuid) to
 grant execute on function public.bridge_can_assign_bond_compliance_phase5f(uuid) to authenticated;
 grant execute on function public.bridge_can_clear_bond_assignment_phase5f(uuid) to authenticated;
 grant execute on function public.bridge_can_transfer_bond_application_workspace_phase5f(uuid) to authenticated;
-
 commit;

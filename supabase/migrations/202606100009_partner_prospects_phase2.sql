@@ -111,7 +111,18 @@ alter table if exists public.transaction_role_players
 alter table if exists public.transaction_participants drop constraint if exists transaction_participants_assignment_source_check;
 alter table if exists public.transaction_participants
   add constraint transaction_participants_assignment_source_check
-  check (assignment_source in ('transaction_direct', 'development_default', 'system_inherited', 'reference_only', 'partner_invitation', 'partner_prospect'));
+  check (
+    assignment_source in (
+      'transaction_direct',
+      'development_default',
+      'system_inherited',
+      'reference_only',
+      'partner_invitation',
+      'partner_prospect',
+      'attorney_assignment',
+      'dalawyer_demo_seed'
+    )
+  );
 
 create table if not exists public.partner_prospect_events (
   id uuid primary key default gen_random_uuid(),

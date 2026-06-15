@@ -1,5 +1,4 @@
 begin;
-
 create table if not exists public.private_listing_document_requirements (
   id uuid primary key default gen_random_uuid(),
   private_listing_id uuid not null references public.private_listings(id) on delete cascade,
@@ -34,14 +33,12 @@ create table if not exists public.private_listing_document_requirements (
     document_visibility in ('internal', 'seller_visible', 'shared_role_players')
   )
 );
-
 create unique index if not exists private_listing_document_requirements_listing_key_unique_idx
   on public.private_listing_document_requirements(private_listing_id, requirement_key);
 create index if not exists private_listing_document_requirements_listing_idx
   on public.private_listing_document_requirements(private_listing_id, requirement_group);
 create index if not exists private_listing_document_requirements_status_idx
   on public.private_listing_document_requirements(status);
-
 create table if not exists public.private_listing_documents (
   id uuid primary key default gen_random_uuid(),
   private_listing_id uuid not null references public.private_listings(id) on delete cascade,
@@ -63,14 +60,12 @@ create table if not exists public.private_listing_documents (
     visibility in ('internal', 'seller_visible', 'shared_role_players')
   )
 );
-
 create index if not exists private_listing_documents_listing_idx
   on public.private_listing_documents(private_listing_id, uploaded_at desc);
 create index if not exists private_listing_documents_requirement_idx
   on public.private_listing_documents(requirement_id);
 create index if not exists private_listing_documents_status_idx
   on public.private_listing_documents(status);
-
 create or replace function public.bridge_private_listing_set_updated_at()
 returns trigger
 language plpgsql
@@ -80,20 +75,16 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_private_listing_document_requirements_updated_at on public.private_listing_document_requirements;
 create trigger trg_private_listing_document_requirements_updated_at
 before update on public.private_listing_document_requirements
 for each row execute function public.bridge_private_listing_set_updated_at();
-
 drop trigger if exists trg_private_listing_documents_updated_at on public.private_listing_documents;
 create trigger trg_private_listing_documents_updated_at
 before update on public.private_listing_documents
 for each row execute function public.bridge_private_listing_set_updated_at();
-
 alter table if exists public.private_listing_document_requirements enable row level security;
 alter table if exists public.private_listing_documents enable row level security;
-
 drop policy if exists private_listing_document_requirements_select_member on public.private_listing_document_requirements;
 create policy private_listing_document_requirements_select_member
 on public.private_listing_document_requirements
@@ -107,7 +98,6 @@ using (
       and public.bridge_is_active_member(pl.organisation_id)
   )
 );
-
 drop policy if exists private_listing_document_requirements_mutate_member on public.private_listing_document_requirements;
 create policy private_listing_document_requirements_mutate_member
 on public.private_listing_document_requirements
@@ -137,7 +127,6 @@ with check (
       )
   )
 );
-
 drop policy if exists private_listing_documents_select_member on public.private_listing_documents;
 create policy private_listing_documents_select_member
 on public.private_listing_documents
@@ -151,7 +140,6 @@ using (
       and public.bridge_is_active_member(pl.organisation_id)
   )
 );
-
 drop policy if exists private_listing_documents_mutate_member on public.private_listing_documents;
 create policy private_listing_documents_mutate_member
 on public.private_listing_documents
@@ -181,8 +169,6 @@ with check (
       )
   )
 );
-
 grant select, insert, update on public.private_listing_document_requirements to authenticated;
 grant select, insert, update on public.private_listing_documents to authenticated;
-
 commit;

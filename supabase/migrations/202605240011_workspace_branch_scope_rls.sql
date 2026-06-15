@@ -1,10 +1,8 @@
 begin;
-
 alter table if exists public.organisation_users
   add column if not exists workspace_role text,
   add column if not exists primary_branch_id uuid references public.organisation_branches(id) on delete set null,
   add column if not exists branch_scope text not null default 'own';
-
 do $$
 begin
   alter table public.organisation_users
@@ -15,13 +13,10 @@ begin
 exception
   when undefined_table then null;
 end $$;
-
 create index if not exists organisation_users_primary_branch_idx
   on public.organisation_users (primary_branch_id);
-
 create index if not exists organisation_users_branch_scope_idx
   on public.organisation_users (organisation_id, branch_scope);
-
 update public.organisation_users
 set
   workspace_role = coalesce(workspace_role, organisation_role, role),
@@ -35,7 +30,6 @@ where workspace_role is null
   or primary_branch_id is null
   or branch_scope is null
   or branch_scope not in ('own', 'assigned_branch', 'all_branches');
-
 insert into public.organisation_branches (
   organisation_id,
   name,
@@ -74,7 +68,6 @@ where org.type in ('agency', 'attorney_firm', 'bond_originator')
     from public.organisation_branches branch
     where branch.organisation_id = org.id
   );
-
 with default_branches as (
   select distinct on (organisation_id)
     organisation_id,
@@ -95,7 +88,6 @@ set
 from default_branches
 where member.organisation_id = default_branches.organisation_id
   and (member.branch_id is null or member.primary_branch_id is null or member.branch_scope is null);
-
 create or replace function public.bridge_current_workspace_role(workspace_id uuid)
 returns text
 language sql
@@ -111,7 +103,6 @@ as $$
   order by member.is_primary_owner desc, member.updated_at desc nulls last, member.created_at desc
   limit 1;
 $$;
-
 create or replace function public.bridge_current_branch_scope(workspace_id uuid)
 returns text
 language sql
@@ -134,7 +125,6 @@ as $$
   order by member.is_primary_owner desc, member.updated_at desc nulls last, member.created_at desc
   limit 1;
 $$;
-
 create or replace function public.bridge_current_branch_id(workspace_id uuid)
 returns uuid
 language sql
@@ -150,7 +140,6 @@ as $$
   order by member.is_primary_owner desc, member.updated_at desc nulls last, member.created_at desc
   limit 1;
 $$;
-
 create or replace function public.bridge_can_access_workspace_record(
   workspace_id uuid,
   record_branch_id uuid default null,
@@ -192,10 +181,8 @@ begin
   return assigned_user_id is not null and assigned_user_id = auth.uid();
 end;
 $$;
-
 grant execute on function public.bridge_current_workspace_role(uuid) to authenticated;
 grant execute on function public.bridge_current_branch_scope(uuid) to authenticated;
 grant execute on function public.bridge_current_branch_id(uuid) to authenticated;
 grant execute on function public.bridge_can_access_workspace_record(uuid, uuid, uuid, text) to authenticated;
-
 commit;

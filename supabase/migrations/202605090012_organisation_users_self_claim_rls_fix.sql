@@ -1,5 +1,4 @@
 begin;
-
 -- Allow invited users to safely claim their own org membership row without requiring org-admin rights.
 -- This specifically unblocks onboarding bootstrap paths that run membership upserts.
 
@@ -22,7 +21,6 @@ with check (
     and status = 'active'
   )
 );
-
 create or replace function public.bridge_guard_org_user_self_claim_update()
 returns trigger
 language plpgsql
@@ -58,11 +56,9 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_bridge_guard_org_user_self_claim_update on public.organisation_users;
 create trigger trg_bridge_guard_org_user_self_claim_update
 before update on public.organisation_users
 for each row
 execute function public.bridge_guard_org_user_self_claim_update();
-
 commit;

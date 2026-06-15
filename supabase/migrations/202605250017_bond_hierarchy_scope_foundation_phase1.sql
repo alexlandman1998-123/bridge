@@ -1,7 +1,5 @@
 begin;
-
 create extension if not exists "pgcrypto";
-
 create table if not exists public.workspace_regions (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.organisations(id) on delete cascade,
@@ -15,7 +13,6 @@ create table if not exists public.workspace_regions (
   created_by uuid references auth.users(id) on delete set null,
   updated_by uuid references auth.users(id) on delete set null
 );
-
 create index if not exists workspace_regions_workspace_id_idx
   on public.workspace_regions (workspace_id);
 create index if not exists workspace_regions_workspace_active_idx
@@ -23,7 +20,6 @@ create index if not exists workspace_regions_workspace_active_idx
 create unique index if not exists workspace_regions_workspace_code_unique
   on public.workspace_regions (workspace_id, lower(code))
   where code is not null and length(trim(code)) > 0;
-
 create table if not exists public.workspace_units (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.organisations(id) on delete cascade,
@@ -40,7 +36,6 @@ create table if not exists public.workspace_units (
   created_by uuid references auth.users(id) on delete set null,
   updated_by uuid references auth.users(id) on delete set null
 );
-
 create index if not exists workspace_units_workspace_id_idx
   on public.workspace_units (workspace_id);
 create index if not exists workspace_units_region_id_idx
@@ -52,7 +47,6 @@ create index if not exists workspace_units_parent_unit_id_idx
 create unique index if not exists workspace_units_workspace_type_code_unique
   on public.workspace_units (workspace_id, unit_type, lower(code))
   where code is not null and length(trim(code)) > 0;
-
 alter table if exists public.workspace_units
   drop constraint if exists workspace_units_unit_type_check;
 alter table if exists public.workspace_units
@@ -65,10 +59,8 @@ alter table if exists public.workspace_units
       'admin_team',
       'compliance_team'
     ));
-
 alter table if exists public.organisations
   add column if not exists workspace_kind text;
-
 alter table if exists public.organisations
   drop constraint if exists organisations_workspace_kind_check;
 alter table if exists public.organisations
@@ -84,11 +76,9 @@ alter table if exists public.organisations
         'bond_company'
       )
     );
-
 create index if not exists organisations_workspace_kind_idx
   on public.organisations (workspace_kind)
   where workspace_kind is not null;
-
 alter table if exists public.organisation_users
   add column if not exists scope_level text;
 alter table if exists public.organisation_users
@@ -99,7 +89,6 @@ alter table if exists public.organisation_users
   add column if not exists scope_metadata jsonb not null default '{}'::jsonb;
 alter table if exists public.organisation_users
   add column if not exists active_workspace_selected_at timestamptz;
-
 alter table if exists public.organisation_users
   drop constraint if exists organisation_users_scope_level_check;
 alter table if exists public.organisation_users
@@ -108,7 +97,6 @@ alter table if exists public.organisation_users
       scope_level is null or
       scope_level in ('workspace_hq', 'region', 'branch', 'team', 'assigned')
     );
-
 create index if not exists organisation_users_scope_level_idx
   on public.organisation_users (organisation_id, scope_level);
 create index if not exists organisation_users_region_idx
@@ -120,7 +108,6 @@ create index if not exists organisation_users_workspace_unit_idx
 create index if not exists organisation_users_active_workspace_selected_idx
   on public.organisation_users (organisation_id, active_workspace_selected_at desc)
   where active_workspace_selected_at is not null;
-
 update public.organisations
 set workspace_kind = case
   when type = 'bond_originator' then 'bond_company'
@@ -129,12 +116,10 @@ set workspace_kind = case
 end
 where workspace_kind is null
    or trim(workspace_kind) = '';
-
 update public.organisation_users
 set workspace_role = coalesce(workspace_role, organisation_role, role)
 where workspace_role is null
    or trim(workspace_role) = '';
-
 update public.organisation_users
 set scope_level = coalesce(
   nullif(trim(scope_level), ''),
@@ -162,7 +147,6 @@ set scope_level = coalesce(
 )
 where scope_level is null
    or trim(scope_level) = '';
-
 create or replace function public.bridge_current_workspace_role(workspace_id uuid)
 returns text
 language sql
@@ -182,7 +166,6 @@ as $$
   order by member.is_primary_owner desc, member.updated_at desc nulls last, member.created_at desc
   limit 1;
 $$;
-
 create or replace function public.bridge_current_scope_level(workspace_id uuid)
 returns text
 language sql
@@ -205,7 +188,6 @@ as $$
   order by member.is_primary_owner desc, member.updated_at desc nulls last, member.created_at desc
   limit 1;
 $$;
-
 create or replace function public.bridge_current_region_id(workspace_id uuid)
 returns uuid
 language sql
@@ -221,7 +203,6 @@ as $$
   order by member.is_primary_owner desc, member.updated_at desc nulls last, member.created_at desc
   limit 1;
 $$;
-
 create or replace function public.bridge_current_workspace_unit_id(workspace_id uuid)
 returns uuid
 language sql
@@ -237,7 +218,6 @@ as $$
   order by member.is_primary_owner desc, member.updated_at desc nulls last, member.created_at desc
   limit 1;
 $$;
-
 create or replace function public.bridge_is_workspace_hq_member(workspace_id uuid)
 returns boolean
 language sql
@@ -247,7 +227,6 @@ set search_path = public
 as $$
   select public.bridge_current_scope_level(workspace_id) = 'workspace_hq';
 $$;
-
 create or replace function public.bridge_can_access_region(workspace_id uuid, target_region_id uuid)
 returns boolean
 language plpgsql
@@ -288,7 +267,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.bridge_can_access_workspace_unit(workspace_id uuid, target_unit_id uuid)
 returns boolean
 language plpgsql
@@ -321,7 +299,6 @@ begin
   return false;
 end;
 $$;
-
 create or replace function public.bridge_can_access_assigned_bond_application(transaction_id uuid)
 returns boolean
 language plpgsql
@@ -368,7 +345,6 @@ begin
   return false;
 end;
 $$;
-
 create or replace function public.bridge_can_access_bond_application(transaction_id uuid)
 returns boolean
 language plpgsql
@@ -428,7 +404,6 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.bridge_current_workspace_role(uuid) to authenticated;
 grant execute on function public.bridge_current_scope_level(uuid) to authenticated;
 grant execute on function public.bridge_current_region_id(uuid) to authenticated;
@@ -438,5 +413,4 @@ grant execute on function public.bridge_can_access_region(uuid, uuid) to authent
 grant execute on function public.bridge_can_access_workspace_unit(uuid, uuid) to authenticated;
 grant execute on function public.bridge_can_access_assigned_bond_application(uuid) to authenticated;
 grant execute on function public.bridge_can_access_bond_application(uuid) to authenticated;
-
 commit;

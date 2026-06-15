@@ -75,6 +75,8 @@ alter table if exists public.transaction_notifications
     )
   );
 
+drop function if exists public.bridge_notify_commercial_access_request(uuid);
+
 create or replace function public.bridge_notify_commercial_access_request(p_request_id uuid)
 returns table(notification_id uuid, recipient_user_id uuid)
 language plpgsql

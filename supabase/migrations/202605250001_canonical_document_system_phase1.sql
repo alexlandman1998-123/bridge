@@ -1,7 +1,5 @@
 begin;
-
 create extension if not exists "pgcrypto";
-
 create or replace function public.bridge_set_updated_at()
 returns trigger
 language plpgsql
@@ -11,7 +9,6 @@ begin
   return new;
 end;
 $$;
-
 do $$
 begin
   if to_regclass('public.document_requirement_rules') is not null
@@ -27,7 +24,6 @@ begin
       'public.document_requirement_rules already exists with a legacy schema. Resolve the legacy table before applying the canonical document system migration.';
   end if;
 end $$;
-
 create table if not exists public.document_packs (
   key text primary key,
   display_label text not null,
@@ -39,7 +35,6 @@ create table if not exists public.document_packs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.document_definitions (
   key text primary key,
   display_label text not null,
@@ -64,7 +59,6 @@ create table if not exists public.document_definitions (
     validity_period_days is null or validity_period_days > 0
   )
 );
-
 create table if not exists public.document_requirement_rules (
   id uuid primary key default gen_random_uuid(),
   document_definition_key text not null references public.document_definitions(key) on update cascade on delete cascade,
@@ -92,7 +86,6 @@ create table if not exists public.document_requirement_rules (
     effective_to is null or effective_from is null or effective_to > effective_from
   )
 );
-
 do $$
 begin
   if to_regclass('public.document_requirement_rules') is not null then
@@ -119,7 +112,6 @@ begin
     end if;
   end if;
 end $$;
-
 create table if not exists public.document_requirement_instances (
   id uuid primary key default gen_random_uuid(),
   document_definition_key text not null references public.document_definitions(key) on update cascade on delete restrict,
@@ -165,7 +157,6 @@ create table if not exists public.document_requirement_instances (
     )
   )
 );
-
 create table if not exists public.document_requirement_reviews (
   id uuid primary key default gen_random_uuid(),
   requirement_instance_id uuid not null references public.document_requirement_instances(id) on delete cascade,
@@ -181,7 +172,6 @@ create table if not exists public.document_requirement_reviews (
     review_status in ('pending', 'approved', 'rejected', 'needs_reupload')
   )
 );
-
 create table if not exists public.document_requirement_events (
   id uuid primary key default gen_random_uuid(),
   requirement_instance_id uuid not null references public.document_requirement_instances(id) on delete cascade,
@@ -207,55 +197,38 @@ create table if not exists public.document_requirement_events (
     )
   )
 );
-
 create index if not exists document_packs_active_sort_idx
   on public.document_packs (is_active, sort_order);
-
 create index if not exists document_definitions_pack_sort_idx
   on public.document_definitions (pack_key, sort_order);
-
 create index if not exists document_definitions_category_idx
   on public.document_definitions (category);
-
 create index if not exists document_definitions_active_idx
   on public.document_definitions (is_active);
-
 create index if not exists document_requirement_rules_context_active_idx
   on public.document_requirement_rules (context_type, is_active);
-
 create index if not exists document_requirement_rules_definition_idx
   on public.document_requirement_rules (document_definition_key);
-
 create index if not exists document_requirement_rules_condition_gin_idx
   on public.document_requirement_rules using gin (condition_json);
-
 create index if not exists document_requirement_instances_context_idx
   on public.document_requirement_instances (context_type, context_id);
-
 create index if not exists document_requirement_instances_transaction_idx
   on public.document_requirement_instances (transaction_id);
-
 create index if not exists document_requirement_instances_listing_idx
   on public.document_requirement_instances (listing_id);
-
 create index if not exists document_requirement_instances_pack_idx
   on public.document_requirement_instances (pack_key);
-
 create index if not exists document_requirement_instances_status_idx
   on public.document_requirement_instances (status);
-
 create index if not exists document_requirement_instances_level_idx
   on public.document_requirement_instances (requirement_level);
-
 create index if not exists document_requirement_instances_stage_gates_gin_idx
   on public.document_requirement_instances using gin (stage_gates);
-
 create index if not exists document_requirement_instances_visible_roles_gin_idx
   on public.document_requirement_instances using gin (visible_to_roles);
-
 create index if not exists document_requirement_instances_upload_roles_gin_idx
   on public.document_requirement_instances using gin (uploadable_by_roles);
-
 create unique index if not exists document_requirement_instances_active_unique_idx
   on public.document_requirement_instances (
     context_type,
@@ -265,53 +238,42 @@ create unique index if not exists document_requirement_instances_active_unique_i
     coalesce(requested_from_contact_id, '00000000-0000-0000-0000-000000000000'::uuid)
   )
   where status <> 'not_applicable';
-
 create index if not exists document_requirement_reviews_instance_idx
   on public.document_requirement_reviews (requirement_instance_id);
-
 create index if not exists document_requirement_reviews_document_idx
   on public.document_requirement_reviews (document_id);
-
 create index if not exists document_requirement_reviews_status_idx
   on public.document_requirement_reviews (review_status);
-
 create index if not exists document_requirement_events_instance_created_idx
   on public.document_requirement_events (requirement_instance_id, created_at);
-
 create index if not exists document_requirement_events_type_created_idx
   on public.document_requirement_events (event_type, created_at);
-
 drop trigger if exists document_packs_set_updated_at on public.document_packs;
 create trigger document_packs_set_updated_at
 before update on public.document_packs
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists document_definitions_set_updated_at on public.document_definitions;
 create trigger document_definitions_set_updated_at
 before update on public.document_definitions
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists document_requirement_rules_set_updated_at on public.document_requirement_rules;
 create trigger document_requirement_rules_set_updated_at
 before update on public.document_requirement_rules
 for each row
 execute function public.bridge_set_updated_at();
-
 drop trigger if exists document_requirement_instances_set_updated_at on public.document_requirement_instances;
 create trigger document_requirement_instances_set_updated_at
 before update on public.document_requirement_instances
 for each row
 execute function public.bridge_set_updated_at();
-
 comment on table public.document_packs is 'Canonical Bridge 9 document pack definitions for grouping requirement instances.';
 comment on table public.document_definitions is 'Canonical reusable document type definitions. A definition is not a contextual requirement.';
 comment on table public.document_requirement_rules is 'Canonical conditional rule metadata used by future resolvers to create requirement instances.';
 comment on table public.document_requirement_instances is 'Future canonical source of truth for contextual document requirements.';
 comment on table public.document_requirement_reviews is 'Review records for documents uploaded against canonical requirement instances.';
 comment on table public.document_requirement_events is 'Audit trail for canonical document requirement lifecycle events.';
-
 insert into public.document_packs (
   key,
   display_label,
@@ -343,7 +305,6 @@ set
   default_visible_to_roles = excluded.default_visible_to_roles,
   sort_order = excluded.sort_order,
   is_active = true;
-
 insert into public.document_definitions (
   key,
   display_label,
@@ -471,7 +432,6 @@ set
   sort_order = excluded.sort_order,
   is_active = true,
   metadata_json = excluded.metadata_json;
-
 insert into public.document_requirement_rules (
   id,
   document_definition_key,
@@ -517,7 +477,5 @@ set
   priority = excluded.priority,
   resolver_key = excluded.resolver_key,
   is_active = true;
-
 notify pgrst, 'reload schema';
-
 commit;

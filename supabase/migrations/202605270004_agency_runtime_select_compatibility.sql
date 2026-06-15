@@ -1,5 +1,4 @@
 begin;
-
 -- Additive compatibility for the current agency/principal dashboard bundle.
 -- The deployed client reads a broad denormalised shape from PostgREST; this
 -- migration keeps older or partially migrated demo databases from returning
@@ -17,7 +16,6 @@ alter table if exists public.leads
   add column if not exists seller_onboarding_status text not null default 'not_started',
   add column if not exists mandate_packet_id uuid,
   add column if not exists listing_id uuid;
-
 alter table if exists public.transactions
   add column if not exists assigned_branch_id uuid,
   add column if not exists assigned_user_id uuid,
@@ -62,7 +60,6 @@ alter table if exists public.transactions
   add column if not exists agency_split_percentage_snapshot numeric,
   add column if not exists agent_commission_amount numeric,
   add column if not exists agency_commission_amount numeric;
-
 do $$
 begin
   if to_regclass('public.leads') is not null then
@@ -133,18 +130,13 @@ begin
       or t.agency_commission_amount is null;
   end if;
 end $$;
-
 create index if not exists leads_organisation_assigned_agent_email_idx
   on public.leads (organisation_id, assigned_agent_email);
-
 create index if not exists transactions_organisation_finance_status_idx
   on public.transactions (organisation_id, finance_status);
-
 create index if not exists transactions_organisation_bond_assignment_idx
   on public.transactions (organisation_id, bond_assignment_status);
-
 create index if not exists transactions_organisation_deleted_idx
   on public.transactions (organisation_id, deleted_at)
   where deleted_at is not null;
-
 commit;
