@@ -288,11 +288,11 @@
   }
 
   .ui-content-container-dashboard {
-    @apply px-2 sm:px-3 lg:px-4;
+    @apply w-full max-w-none px-4 py-0 md:px-6 xl:px-8;
   }
 
   .ui-content-container-edge {
-    @apply px-0;
+    @apply w-full max-w-none px-4 py-0 md:px-6 xl:px-8;
   }
 
   .ui-page-scroll {
@@ -304,7 +304,7 @@
   }
 
   .page-content {
-    padding: 24px;
+    padding: 0;
   }
 
   .section-stack {

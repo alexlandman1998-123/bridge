@@ -151,8 +151,8 @@ import {
   rejectSuggestion,
 } from '../services/leadSuggestionService'
 
-const pageShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5 px-3 sm:px-4 lg:px-6 xl:px-8 2xl:px-10'
-const leadListShell = 'flex w-full min-w-0 flex-col gap-5 px-4 sm:px-6 lg:px-8 xl:px-10 2xl:px-12'
+const pageShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5'
+const leadListShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 const buyerWorkspaceCardClass = `${panelClass} card`
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -11365,7 +11365,7 @@ function AgentLeadWorkspace() {
               onArchiveLead={archiveSellerLead}
             />
           ) : (
-            <div className="buyer-lead-workspace page-content">
+            <div className="buyer-lead-workspace">
               <BuyerLeadHeader
                 row={row}
                 sourceInfo={sourceInfo}

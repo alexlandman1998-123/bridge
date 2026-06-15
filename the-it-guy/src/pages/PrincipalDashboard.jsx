@@ -2418,7 +2418,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
 
   return (
     <main className="principal-dashboard min-h-screen bg-[#f8fafc] text-[#101828]">
-      <div className="mx-auto flex w-full max-w-none flex-col gap-5 px-2 py-5 sm:px-3 lg:px-4">
+      <div className="mx-auto flex w-full max-w-none flex-col gap-5 px-0 py-5">
         <PrincipalDashboardHeader
           dateRange={dateRange}
           onDateRangeChange={setDateRange}

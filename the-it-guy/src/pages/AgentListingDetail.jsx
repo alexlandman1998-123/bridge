@@ -5879,7 +5879,7 @@ function AgentListingDetail() {
       ) : null}
 
       {activeTab === 'seller' ? (
-        <section className="mx-auto w-full max-w-[1600px] space-y-5 px-1 sm:px-2">
+        <section className="mx-auto w-full max-w-[1600px] space-y-5 px-0">
           <section className="relative min-h-[240px] overflow-hidden rounded-[24px] border border-[#dde4ee] bg-[#123955] shadow-[0_14px_34px_rgba(15,23,42,0.08)] sm:min-h-[300px]">
             <div className="absolute inset-0">
               {getImageBlock(coverImage?.url || '', listingIdentity.title)}

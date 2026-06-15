@@ -524,7 +524,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
 
   if (accessState?.loading || setupState.loading || !draft) {
     return (
-      <section className="flex min-h-screen items-center justify-center bg-[#f6f8fb] px-4 py-10 text-[#102236]">
+      <section className="flex min-h-full items-center justify-center bg-[#f6f8fb] px-4 py-10 text-[#102236]">
         <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Commercial workspace</p>
           <h1 className="mt-3 text-2xl font-semibold tracking-[-0.04em]">Preparing your Commercial workspace</h1>
@@ -536,7 +536,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
 
   if (actionState.completion) {
     return (
-      <section className="flex min-h-screen items-center justify-center bg-[#f6f8fb] px-4 py-10 text-[#102236]">
+      <section className="flex min-h-full items-center justify-center bg-[#f6f8fb] px-4 py-10 text-[#102236]">
         <div className="w-full max-w-2xl rounded-[32px] border border-[#dbe6f2] bg-white p-8 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-10">
           <span className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] bg-emerald-50 text-emerald-700">
             <CheckCircle2 size={24} />
@@ -583,7 +583,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
       : 'Commercial Workspace access'
 
     return (
-      <section className="flex min-h-screen items-center justify-center bg-[#f6f8fb] px-4 py-10 text-[#102236]">
+      <section className="flex min-h-full items-center justify-center bg-[#f6f8fb] px-4 py-10 text-[#102236]">
         <div className="w-full max-w-2xl rounded-[32px] border border-[#dbe6f2] bg-white p-8 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-10">
           <span className={`inline-flex h-14 w-14 items-center justify-center rounded-[20px] ${canSelfActivate ? 'bg-[#eef5fb] text-[#15324f]' : 'bg-amber-50 text-amber-700'}`}>
             {canSelfActivate ? <Building2 size={24} /> : <Bell size={24} />}
@@ -678,12 +678,11 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
   const validationError = validateCurrentStep()
 
   return (
-    <section className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(14,89,145,0.08),_transparent_34%),linear-gradient(180deg,_#f8fbfe_0%,_#f3f7fb_100%)] px-4 py-6 text-[#102236] sm:px-6 sm:py-7">
-      <div className="mx-auto max-w-6xl">
-        <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-stretch">
-          <div className="flex h-full flex-col rounded-[34px] border border-[#dbe6f2] bg-white p-7 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-8">
-            {!wizardOpen ? (
-              <>
+    <section className="min-h-full bg-[radial-gradient(circle_at_top_left,_rgba(14,89,145,0.08),_transparent_34%),linear-gradient(180deg,_#f8fbfe_0%,_#f3f7fb_100%)] px-4 py-4 text-[#102236] sm:px-6 sm:py-6">
+      <div className="mx-auto max-w-[1040px]">
+        <div className="flex min-h-full flex-col rounded-[34px] border border-[#dbe6f2] bg-white p-6 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-7 lg:p-8">
+          {!wizardOpen ? (
+            <>
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Commercial workspace</p>
@@ -697,7 +696,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                   </span>
                 </div>
 
-                <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {[
                     'Commercial Listings',
                     'Commercial Leasing',
@@ -762,9 +761,9 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                     Back to Residential
                   </button>
                 </div>
-              </>
-            ) : (
-              <>
+            </>
+          ) : (
+            <>
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     type="button"
@@ -785,7 +784,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                   </span>
                 </div>
 
-                <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="mt-6 grid gap-2 md:grid-cols-5">
                   {WIZARD_STEPS.map((step, index) => {
                     const active = index === stepIndex
                     const complete = index < stepIndex
@@ -818,7 +817,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                     <div className="space-y-6">
                       <div className="max-w-2xl">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Step 1</p>
-                        <h2 className="mt-2 max-w-[13ch] text-[2.35rem] font-semibold leading-[1.04] tracking-[-0.055em] text-[#102236] sm:text-[2.55rem]">
+                        <h2 className="mt-2 max-w-[16ch] text-[2.15rem] font-semibold leading-[1.02] tracking-[-0.055em] text-[#102236] sm:text-[2.45rem] lg:text-[2.65rem]">
                           How does your commercial business operate?
                         </h2>
                         <p className="mt-4 max-w-xl text-sm leading-7 text-slate-500">
@@ -836,7 +835,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                               type="button"
                               onClick={() => updateBusinessModel(option.value)}
                               className={[
-                                'group flex min-h-[96px] items-stretch justify-between gap-4 rounded-[24px] border px-5 py-4 text-left transition',
+                                'group flex min-h-[92px] items-stretch justify-between gap-4 rounded-[24px] border px-5 py-4 text-left transition',
                                 active
                                   ? 'border-[#b8d0e7] bg-[#f4f9fe] shadow-[0_18px_40px_rgba(15,23,42,0.06)] ring-1 ring-inset ring-[#d9e7f3]'
                                   : 'border-[#e5edf6] bg-white hover:border-[#cfddea] hover:bg-[#fcfdff]',
@@ -852,7 +851,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                                   ) : null}
                                 </div>
                                 <p className="mt-2 text-sm leading-6 text-slate-500">{option.description}</p>
-                                <p className={`mt-4 text-xs font-semibold uppercase tracking-[0.16em] ${active ? 'text-[#0c4a7d]' : 'text-slate-400'}`}>
+                                <p className={`mt-3 text-xs font-semibold uppercase tracking-[0.16em] ${active ? 'text-[#0c4a7d]' : 'text-slate-400'}`}>
                                   {active ? 'Selected' : 'Tap to choose'}
                                 </p>
                               </div>
@@ -1186,74 +1185,37 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                   </p>
                 ) : null}
 
-                <div className="mt-10 border-t border-slate-200/80 pt-6">
+                <div className="mt-8 border-t border-slate-200/80 pt-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <p className={`text-sm leading-6 ${validationError && stepIndex < WIZARD_STEPS.length - 1 ? 'text-rose-600' : 'text-slate-500'}`}>
                       {validationError && stepIndex < WIZARD_STEPS.length - 1 ? validationError : `You're on ${activeStepLabel}.`}
                     </p>
                     <div className="flex flex-wrap items-center gap-3">
-                    {stepIndex < WIZARD_STEPS.length - 1 ? (
-                      <button
-                        type="button"
-                        onClick={handleContinue}
-                        className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#163a5b]"
-                      >
-                        Continue
-                        <ChevronRight size={16} />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleEnableCommercialWorkspace}
-                        disabled={actionState.saving}
-                        className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {actionState.saving ? <Loader2 size={16} className="animate-spin" /> : <Building2 size={16} />}
-                        Enable Commercial Workspace
-                      </button>
-                    )}
+                      {stepIndex < WIZARD_STEPS.length - 1 ? (
+                        <button
+                          type="button"
+                          onClick={handleContinue}
+                          className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#163a5b]"
+                        >
+                          Continue
+                          <ChevronRight size={16} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleEnableCommercialWorkspace}
+                          disabled={actionState.saving}
+                          className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {actionState.saving ? <Loader2 size={16} className="animate-spin" /> : <Building2 size={16} />}
+                          Enable Commercial Workspace
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
-              </>
-            )}
-          </div>
-
-          <aside className="grid h-full gap-5 lg:grid-rows-2">
-            <div className="flex h-full flex-col rounded-[28px] border border-[#dbe6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">What stays the same</p>
-              <h2 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102236]">One organisation. More workspace power.</h2>
-              <div className="mt-5 space-y-3 text-sm leading-6 text-slate-500">
-                <p>Residential data stays untouched.</p>
-                <p>Existing branches, users, and permissions stay in place.</p>
-                <p>Commercial is enabled inside the same CRM, not in a separate environment.</p>
-              </div>
-            </div>
-
-            <div className="flex h-full flex-col rounded-[28px] border border-[#dbe6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Current summary</p>
-              <div className="mt-4 grid flex-1 content-start gap-3">
-                <div className="rounded-2xl border border-[#e7eef6] bg-[#fbfdff] px-4 py-4">
-                  <p className="text-sm font-semibold text-[#102236]">Business Model</p>
-                  <p className="mt-1 text-sm text-slate-500">{formatBusinessModel(draft.businessModel)}</p>
-                </div>
-                <div className="rounded-2xl border border-[#e7eef6] bg-[#fbfdff] px-4 py-4">
-                  <p className="text-sm font-semibold text-[#102236]">Users</p>
-                  <p className="mt-1 text-sm text-slate-500">{selectedUserCount} selected or invited</p>
-                </div>
-                <div className="rounded-2xl border border-[#e7eef6] bg-[#fbfdff] px-4 py-4">
-                  <p className="text-sm font-semibold text-[#102236]">Branches</p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {draft.branchMode === 'existing' ? `${draft.availableBranches.length} existing branches` : `${branchCount} dedicated branches`}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-[#e7eef6] bg-[#fbfdff] px-4 py-4">
-                  <p className="text-sm font-semibold text-[#102236]">Features</p>
-                  <p className="mt-1 text-sm text-slate-500">{enabledFeatureCount} enabled</p>
-                </div>
-              </div>
-            </div>
-          </aside>
+            </>
+          )}
         </div>
       </div>
     </section>

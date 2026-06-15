@@ -1464,7 +1464,7 @@ function AttributionSection({ attribution, campaignPerformance, listingAttributi
 
 function LoadingSkeleton() {
   return (
-    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 p-8">
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-0 py-8">
       <div className="h-36 animate-pulse rounded-[16px] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.05)]" />
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         {[0, 1, 2, 3].map((item) => (
@@ -1478,7 +1478,7 @@ function LoadingSkeleton() {
 
 function StateCard({ title, description, onBack }) {
   return (
-    <main className="min-h-full bg-[#f6f8fb] p-8 text-[#10243a]">
+    <main className="min-h-full bg-[#f6f8fb] px-0 py-8 text-[#10243a]">
       <div className="mx-auto max-w-[900px]">
         <PageCard>
           <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#7b8fa7]">Partner profile</p>
@@ -1881,7 +1881,7 @@ export default function BondPartnerProfilePage() {
 
   return (
     <main className="min-h-full bg-[#f6f8fb] text-[#10243a]">
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 p-8">
+      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-0 py-8">
         <PageCard>
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 gap-4">

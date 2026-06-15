@@ -1,4 +1,4 @@
-import { Search } from 'lucide-react'
+import { Bell, Search } from 'lucide-react'
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import QuickCreateDropdown from '../../../components/QuickCreateDropdown'
@@ -122,9 +122,9 @@ function CommercialLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f6f8fb] text-[#102236]">
+    <div className="flex h-screen min-h-0 overflow-hidden bg-[#f6f8fb] text-[#102236]">
       <CommercialSidebar />
-      <main ref={contentScrollRef} className="min-w-0 flex-1 overflow-y-auto">
+      <main ref={contentScrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <CommercialBranding compact />
@@ -166,7 +166,7 @@ function CommercialLayout() {
             })}
           </nav>
         </div>
-        <div className="sticky top-0 z-20 hidden border-b border-slate-200 bg-white/95 px-5 py-3 shadow-sm backdrop-blur lg:block">
+        <div className="sticky top-0 z-20 hidden border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:px-6 lg:px-8 lg:block">
           <div className="mx-auto flex w-full max-w-[1800px] items-center gap-3">
             <QuickCreateDropdown />
             <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-500 shadow-sm">
@@ -187,7 +187,7 @@ function CommercialLayout() {
             </button>
           </div>
         </div>
-        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 overflow-x-hidden px-4 py-5 sm:px-5 lg:px-6">
+        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-5 overflow-x-hidden px-4 py-5 sm:px-6 lg:px-8">
           <Suspense fallback={<CommercialPageSkeleton />}>
             <Outlet />
           </Suspense>

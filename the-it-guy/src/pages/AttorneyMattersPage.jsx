@@ -477,7 +477,7 @@ function AttorneyMattersPage() {
   }
 
   return (
-    <main className="w-full max-w-none px-3 py-4 sm:px-4 lg:px-5">
+    <main className="w-full max-w-none px-0 py-4">
       <div className="mx-auto w-full max-w-[1800px] space-y-5">
         <section className="flex justify-end">
           <div className="flex flex-wrap items-center gap-2">
