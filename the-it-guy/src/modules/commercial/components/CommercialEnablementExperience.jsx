@@ -111,6 +111,10 @@ function formatCommercialError(error, fallbackMessage) {
   const message = normalizeText(error?.message || error)
   if (!message) return fallbackMessage
   if (message.includes('Commercial is not installed on this environment')) {
+    const detail = normalizeText(error?.details)
+    if (detail) {
+      return `Commercial couldn't be enabled right now. ${detail.endsWith('.') ? detail : `${detail}.`}`
+    }
     return "Commercial couldn't be enabled right now. Please retry once the latest Commercial workspace update is available on this environment."
   }
   return message
@@ -565,6 +569,36 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
               Go To Commercial
               <ChevronRight size={16} />
             </button>
+            <button
+              type="button"
+              onClick={() => navigate('/dashboard')}
+              className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 text-sm font-semibold text-[#15324f] transition hover:border-[#bfd5ea] hover:text-[#0c4a7d]"
+            >
+              <Home size={16} />
+              Back to Residential
+            </button>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  if (accessState?.reason === 'platform_install_missing') {
+    return (
+      <section className="flex min-h-full items-center justify-center bg-[#f6f8fb] px-4 py-10 text-[#102236]">
+        <div className="w-full max-w-2xl rounded-[32px] border border-[#dbe6f2] bg-white p-8 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-10">
+          <span className="inline-flex h-14 w-14 items-center justify-center rounded-[20px] bg-amber-50 text-amber-700">
+            <Bell size={24} />
+          </span>
+          <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Commercial workspace</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.045em]">Commercial isn't installed on this environment yet</h1>
+          <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500">
+            Selecting a mixed agency type updates your organisation settings, but it cannot activate Commercial until the Commercial backend schema is available on this deployed environment.
+          </p>
+          <p className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+            {accessState.message || "Commercial couldn't be enabled right now. Please retry once the latest Commercial workspace update is available on this environment."}
+          </p>
+          <div className="mt-8 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => navigate('/dashboard')}

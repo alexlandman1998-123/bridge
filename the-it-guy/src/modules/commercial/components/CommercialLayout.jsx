@@ -68,7 +68,9 @@ function CommercialLayout() {
             loading: false,
             allowed: false,
             reason: platformInstallMissing ? 'platform_install_missing' : 'access_error',
-            message: error?.message || 'Commercial workspace access could not be verified.',
+            message: platformInstallMissing
+              ? error?.details || error?.message || 'Commercial workspace access could not be verified.'
+              : error?.message || 'Commercial workspace access could not be verified.',
             scope: null,
           })
         }
