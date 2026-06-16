@@ -453,7 +453,11 @@ export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacket
   }
   if (!derivedStage && onboardingSignals.submitted) derivedStage = { ...SELLER_JOURNEY_STAGES[2], status: 'Submitted' }
   if (!derivedStage && onboardingSignals.sent) derivedStage = { ...SELLER_JOURNEY_STAGES[1], status: onboardingSignals.status === 'in_progress' ? 'In Progress' : 'Sent' }
-  return laterSellerJourneyStage(derivedStage || { ...SELLER_JOURNEY_STAGES[0], status: 'Active' }, leadStage)
+  const evidenceStage = derivedStage || { ...SELLER_JOURNEY_STAGES[0], status: 'Active' }
+  const leadStageIndex = STAGE_INDEX.get(leadStage?.key) ?? 0
+  const listingCreatedIndex = STAGE_INDEX.get('listing_created') ?? 5
+  const canUseLeadStageAsProgressFloor = leadStageIndex < listingCreatedIndex || hasListingShell({ lead, listing })
+  return canUseLeadStageAsProgressFloor ? laterSellerJourneyStage(evidenceStage, leadStage) : evidenceStage
 }
 
 function buildJourneySteps(stageKey, evidence = {}) {

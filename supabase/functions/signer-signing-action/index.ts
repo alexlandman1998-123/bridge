@@ -420,6 +420,268 @@ function collectMandateLeadIds(packet: Record<string, unknown>, sourceContext: R
   return [...new Set(candidates.map((value) => normalizeText(value)).filter((value) => UUID_PATTERN.test(value)))];
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function firstText(...values: unknown[]) {
+  for (const value of values) {
+    const text = normalizeText(value);
+    if (text) return text;
+  }
+  return "";
+}
+
+function firstNumber(...values: unknown[]) {
+  for (const value of values) {
+    const number = typeof value === "number" ? value : Number(normalizeText(value).replace(/[^\d.-]/g, ""));
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return null;
+}
+
+function uuidOrNull(value: unknown) {
+  const text = normalizeText(value);
+  return UUID_PATTERN.test(text) ? text : null;
+}
+
+function createListingReference() {
+  return `PL-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
+function missingColumnName(error: Record<string, unknown> | null | undefined) {
+  const message = `${normalizeText(error?.message)} ${normalizeText(error?.details)}`;
+  return message.match(/column\s+"([^"]+)"/i)?.[1] || message.match(/'([a-z0-9_]+)'\s+column/i)?.[1] || "";
+}
+
+async function insertPrivateListingWithFallback(supabase: any, payload: Record<string, unknown>) {
+  let nextPayload = { ...payload };
+  const removableColumns = new Set([
+    "branch_id",
+    "seller_lead_id",
+    "assigned_agent_email",
+    "property_category",
+    "listing_source",
+    "property_structure_type",
+    "property24_status",
+    "private_property_status",
+    "bridge_listing_status",
+    "mandate_packet_id",
+  ]);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const insert = await supabase
+      .from("private_listings")
+      .insert(nextPayload)
+      .select("id, listing_status, listing_visibility, is_active")
+      .single();
+
+    if (!insert.error) return insert;
+
+    const missingColumn = missingColumnName(insert.error as Record<string, unknown>);
+    if (!missingColumn || !removableColumns.has(missingColumn) || !(missingColumn in nextPayload)) return insert;
+    const { [missingColumn]: _removed, ...rest } = nextPayload;
+    nextPayload = rest;
+  }
+
+  return {
+    data: null,
+    error: { message: "Private listing insert fallback exceeded safe retry limit." },
+  };
+}
+
+async function findExistingPrivateListingForLead({
+  supabase,
+  organisationId,
+  leadId,
+}: {
+  supabase: any;
+  organisationId: string;
+  leadId: string;
+}) {
+  const byOriginating = await supabase
+    .from("private_listings")
+    .select("id, listing_status, listing_visibility, is_active")
+    .eq("organisation_id", organisationId)
+    .eq("originating_crm_lead_id", leadId)
+    .neq("listing_status", "withdrawn")
+    .neq("listing_visibility", "archived")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!byOriginating.error && byOriginating.data?.id) return byOriginating.data as Record<string, unknown>;
+
+  const bySeller = await supabase
+    .from("private_listings")
+    .select("id, listing_status, listing_visibility, is_active")
+    .eq("organisation_id", organisationId)
+    .eq("seller_lead_id", leadId)
+    .neq("listing_status", "withdrawn")
+    .neq("listing_visibility", "archived")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!bySeller.error && bySeller.data?.id) return bySeller.data as Record<string, unknown>;
+
+  return null;
+}
+
+function buildSignedMandateListingPayload({
+  lead,
+  sourceContext,
+  packetId,
+  organisationId,
+  nowIso,
+}: {
+  lead: Record<string, unknown>;
+  sourceContext: Record<string, unknown>;
+  packetId: string;
+  organisationId: string;
+  nowIso: string;
+}) {
+  const generatedSnapshot = asRecord(sourceContext.generatedDataSnapshot);
+  const nestedSource = asRecord(generatedSnapshot.sourceContext);
+  const placeholders = asRecord(generatedSnapshot.placeholders);
+  const sourceLead = asRecord(sourceContext.lead);
+  const sellerOnboarding = {
+    ...asRecord(nestedSource.sellerOnboarding),
+    ...asRecord(generatedSnapshot.sellerOnboarding),
+    ...asRecord(sourceLead.sellerOnboarding),
+    ...asRecord(sourceContext.sellerOnboarding),
+  };
+  const onboardingFormData = {
+    ...asRecord(nestedSource.onboardingFormData),
+    ...asRecord(generatedSnapshot.onboardingFormData),
+    ...asRecord(sourceContext.onboardingFormData),
+    ...asRecord(sellerOnboarding.formData),
+    ...asRecord(sellerOnboarding.form_data),
+  };
+
+  const leadId = firstText(lead.lead_id, lead.leadId, sourceContext.leadId, sourceContext.lead_id);
+  const propertyAddress = firstText(
+    onboardingFormData.propertyAddress,
+    onboardingFormData.propertyAddressSearch,
+    onboardingFormData.propertyAddressLine1,
+    placeholders.property_address,
+    sourceContext.propertyAddress,
+    nestedSource.propertyAddress,
+    sourceLead.sellerPropertyAddress,
+    lead.seller_property_address,
+    lead.property_interest,
+    lead.area_interest,
+  );
+  const title = firstText(
+    sourceContext.propertyTitle,
+    nestedSource.propertyTitle,
+    onboardingFormData.listingTitle,
+    onboardingFormData.propertyTitle,
+    placeholders.property_address,
+    propertyAddress,
+    lead.property_interest,
+    "Signed mandate listing",
+  );
+  const assignedAgentId = uuidOrNull(firstText(
+    lead.assigned_agent_id,
+    lead.assignedAgentId,
+    sourceContext.assignedAgentId,
+    nestedSource.assignedAgentId,
+  ));
+
+  return {
+    organisation_id: organisationId,
+    assigned_agent_id: assignedAgentId,
+    assigned_agent_email: firstText(lead.assigned_agent_email, sourceContext.assignedAgentEmail, nestedSource.assignedAgentEmail).toLowerCase() || null,
+    seller_lead_id: leadId || null,
+    originating_crm_lead_id: leadId || null,
+    listing_reference: createListingReference(),
+    listing_status: "mandate_signed",
+    listing_visibility: "internal",
+    property_category: "residential",
+    listing_source: "private_listing",
+    property_structure_type: "other",
+    property_type: firstText(onboardingFormData.propertyType, sourceContext.propertyType, nestedSource.propertyType, lead.property_type),
+    listing_category: "private_sale",
+    title,
+    description: firstText(onboardingFormData.propertyNotes, onboardingFormData.description, lead.notes),
+    asking_price: firstNumber(onboardingFormData.askingPrice, sourceContext.askingPrice, nestedSource.askingPrice, lead.estimated_value, lead.budget),
+    estimated_value: firstNumber(onboardingFormData.estimatedValue, onboardingFormData.askingPrice, lead.estimated_value, lead.budget),
+    address_line_1: propertyAddress,
+    address_line_2: firstText(onboardingFormData.propertyAddressLine2),
+    suburb: firstText(onboardingFormData.suburb, lead.area_interest),
+    city: firstText(onboardingFormData.city),
+    province: firstText(onboardingFormData.province),
+    postal_code: firstText(onboardingFormData.postalCode, onboardingFormData.postal_code),
+    seller_type: firstText(onboardingFormData.sellerType, sellerOnboarding.seller_type),
+    finance_context: firstText(onboardingFormData.financeContext),
+    mandate_type: firstText(onboardingFormData.mandateType, sourceContext.mandateType, "sole"),
+    mandate_status: "signed",
+    mandate_packet_id: packetId,
+    seller_onboarding_status: firstText(lead.seller_onboarding_status, sellerOnboarding.status, sourceContext.sellerOnboardingStatus, "completed").toLowerCase().includes("complete") ? "completed" : firstText(lead.seller_onboarding_status, sellerOnboarding.status, sourceContext.sellerOnboardingStatus, "completed"),
+    is_active: false,
+    created_by: assignedAgentId,
+    property24_status: "not_published",
+    private_property_status: "not_published",
+    bridge_listing_status: "not_published",
+    internal_listing_notes: `Auto-created from signed mandate packet ${packetId}`,
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+}
+
+async function createPrivateListingForSignedMandate({
+  supabase,
+  lead,
+  sourceContext,
+  packetId,
+  organisationId,
+  nowIso,
+}: {
+  supabase: any;
+  lead: Record<string, unknown>;
+  sourceContext: Record<string, unknown>;
+  packetId: string;
+  organisationId: string;
+  nowIso: string;
+}) {
+  const leadId = firstText(lead.lead_id, lead.leadId);
+  if (!leadId) return null;
+
+  const existing = await findExistingPrivateListingForLead({ supabase, organisationId, leadId });
+  if (existing?.id) return existing;
+
+  const payload = buildSignedMandateListingPayload({ lead, sourceContext, packetId, organisationId, nowIso });
+  const insert = await insertPrivateListingWithFallback(supabase, payload);
+  if (insert.error) {
+    const code = normalizeText(insert.error.code);
+    if (code === "23505") {
+      const retriedExisting = await findExistingPrivateListingForLead({ supabase, organisationId, leadId });
+      if (retriedExisting?.id) return retriedExisting;
+    }
+    console.error("[mandate-signing] auto listing creation failed", insert.error);
+    return null;
+  }
+
+  const listing = insert.data as Record<string, unknown>;
+  await supabase.from("private_listing_activity").insert({
+    private_listing_id: listing.id,
+    activity_type: "listing_created_after_mandate",
+    activity_title: "Listing auto-created from signed mandate",
+    activity_description: "The mandate was fully signed, so Bridge created and linked the private listing shell.",
+    performed_by: payload.created_by,
+    visibility: "internal",
+    metadata: {
+      leadId,
+      packetId,
+      source: "mandate_signature_completion",
+    },
+    created_at: nowIso,
+  }).catch((activityError: unknown) => {
+    console.error("[mandate-signing] auto listing activity failed", activityError);
+  });
+
+  return listing;
+}
+
 async function syncSellerMandateCompletion({
   supabase,
   packet,
@@ -440,6 +702,7 @@ async function syncSellerMandateCompletion({
     : {};
   const leadIds = collectMandateLeadIds(packet, sourceContext);
   const syncedListingIds = new Set<string>();
+  const listingIdByLeadId = new Map<string, string>();
   const syncedListingStatuses = new Map<string, { status: string; visibility: string; isActive: boolean }>();
 
   const listingPatch = {
@@ -448,10 +711,11 @@ async function syncSellerMandateCompletion({
     updated_at: nowIso,
   };
 
-  const collectListings = (rows: Record<string, unknown>[] | null | undefined) => {
+  const collectListings = (rows: Record<string, unknown>[] | null | undefined, leadId = "") => {
     for (const row of rows || []) {
       const id = normalizeText(row?.id);
       if (id) syncedListingIds.add(id);
+      if (id && leadId) listingIdByLeadId.set(leadId, id);
       if (id) {
         syncedListingStatuses.set(id, {
           status: lower(row?.listing_status),
@@ -470,6 +734,9 @@ async function syncSellerMandateCompletion({
     .select("id, listing_status, listing_visibility, is_active");
   if (byPacket.error) console.error("[mandate-signing] listing mandate packet sync failed", byPacket.error);
   else collectListings(byPacket.data as Record<string, unknown>[]);
+  if (leadIds.length === 1 && syncedListingIds.size === 1) {
+    listingIdByLeadId.set(leadIds[0], Array.from(syncedListingIds)[0]);
+  }
 
   for (const leadId of leadIds) {
     const bySellerLead = await supabase
@@ -479,7 +746,7 @@ async function syncSellerMandateCompletion({
       .eq("seller_lead_id", leadId)
       .select("id, listing_status, listing_visibility, is_active");
     if (bySellerLead.error) console.error("[mandate-signing] listing seller lead sync failed", bySellerLead.error);
-    else collectListings(bySellerLead.data as Record<string, unknown>[]);
+    else collectListings(bySellerLead.data as Record<string, unknown>[], leadId);
 
     const byOriginatingLead = await supabase
       .from("private_listings")
@@ -488,7 +755,33 @@ async function syncSellerMandateCompletion({
       .eq("originating_crm_lead_id", leadId)
       .select("id, listing_status, listing_visibility, is_active");
     if (byOriginatingLead.error) console.error("[mandate-signing] listing originating lead sync failed", byOriginatingLead.error);
-    else collectListings(byOriginatingLead.data as Record<string, unknown>[]);
+    else collectListings(byOriginatingLead.data as Record<string, unknown>[], leadId);
+  }
+
+  if (!syncedListingIds.size && leadIds.length) {
+    const leadsQuery = await supabase
+      .from("leads")
+      .select("*")
+      .eq("organisation_id", organisationId)
+      .in("lead_id", leadIds);
+    if (leadsQuery.error) {
+      console.error("[mandate-signing] lead fetch for auto listing failed", leadsQuery.error);
+    } else {
+      for (const lead of (leadsQuery.data || []) as Record<string, unknown>[]) {
+        const leadId = normalizeText(lead.lead_id || lead.leadId);
+        const listing = await createPrivateListingForSignedMandate({
+          supabase,
+          lead,
+          sourceContext,
+          packetId,
+          organisationId,
+          nowIso,
+        });
+        if (listing?.id) {
+          collectListings([listing], leadId);
+        }
+      }
+    }
   }
 
   if (leadIds.length) {
@@ -500,24 +793,31 @@ async function syncSellerMandateCompletion({
       listing.visibility === "active_market" ||
       listing.isActive,
     );
-    const leadUpdate = await supabase
-      .from("leads")
-      .update({
-        stage: anyListingLive ? "Listing Live" : "Mandate Signed",
-        status: anyListingLive ? "Live" : "Signed",
+    for (const leadId of leadIds) {
+      const listingId = listingIdByLeadId.get(leadId) || (syncedListingIds.size === 1 ? Array.from(syncedListingIds)[0] : "");
+      const updatePayload: Record<string, unknown> = {
+        stage: anyListingLive ? "Listing Live" : listingId ? "Converted To Listing" : "Mandate Signed",
+        status: anyListingLive ? "Live" : listingId ? "Converted To Listing" : "Signed",
         mandate_packet_id: packetId,
         updated_at: nowIso,
-      })
-      .eq("organisation_id", organisationId)
-      .in("lead_id", leadIds);
-    if (leadUpdate.error) console.error("[mandate-signing] lead mandate signed sync failed", leadUpdate.error);
+      };
+      if (listingId) updatePayload.listing_id = listingId;
+      const leadUpdate = await supabase
+        .from("leads")
+        .update(updatePayload)
+        .eq("organisation_id", organisationId)
+        .eq("lead_id", leadId);
+      if (leadUpdate.error) console.error("[mandate-signing] lead mandate signed sync failed", leadUpdate.error);
+    }
 
     const leadActivityRows = leadIds.map((leadId) => ({
       organisation_id: organisationId,
       lead_id: leadId,
-      activity_type: "Mandate Signed",
-      activity_note: "Mandate was fully signed by all required parties.",
-      outcome: "Signed",
+      activity_type: listingIdByLeadId.get(leadId) ? "Listing Created" : "Mandate Signed",
+      activity_note: listingIdByLeadId.get(leadId)
+        ? "Mandate was fully signed and the listing was created and linked."
+        : "Mandate was fully signed by all required parties.",
+      outcome: listingIdByLeadId.get(leadId) ? "Converted To Listing" : "Signed",
       activity_date: nowIso,
       created_at: nowIso,
     }));
