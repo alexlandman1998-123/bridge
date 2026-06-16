@@ -23,6 +23,7 @@ import {
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchMissionControlSnapshot } from '../services/hqMissionControlApi'
 import {
+  getLegacyMissionControlMockSnapshot,
   getMissionControlMockSnapshot,
   normalizeMissionControlSnapshot,
   shouldUseMissionControlMockSnapshot,
@@ -282,22 +283,26 @@ export default function CommandCenterPage() {
       try {
         const nextSnapshot = await fetchMissionControlSnapshot({ signal: controller.signal })
         if (!active) return
-        setSnapshot(nextSnapshot)
         if (shouldUseMissionControlMockSnapshot({ liveSnapshot: nextSnapshot })) {
+          setSnapshot(getLegacyMissionControlMockSnapshot())
           setMobileSnapshot(getMissionControlMockSnapshot())
           setMobileSnapshotSource('mock')
+          setError(null)
         } else {
+          setSnapshot(nextSnapshot)
           setMobileSnapshot(normalizeMissionControlSnapshot(nextSnapshot))
           setMobileSnapshotSource('live')
+          setError(null)
         }
       } catch (nextError) {
         if (!active || nextError?.name === 'AbortError') return
-        setSnapshot(null)
         if (shouldUseMissionControlMockSnapshot({ error: nextError })) {
+          setSnapshot(getLegacyMissionControlMockSnapshot())
           setMobileSnapshot(getMissionControlMockSnapshot())
           setMobileSnapshotSource('mock')
-          setError(nextError)
+          setError(null)
         } else {
+          setSnapshot(null)
           setMobileSnapshot(null)
           setMobileSnapshotSource('error')
           setError(nextError)

@@ -207,6 +207,154 @@ export function getMissionControlMockSnapshot() {
   return cloneSnapshot(MISSION_CONTROL_MOCK_SNAPSHOT)
 }
 
+export function getLegacyMissionControlMockSnapshot(now = new Date()) {
+  const generatedAt = now instanceof Date ? now : new Date(now || Date.now())
+  const activityTimes = [2, 6, 11, 18, 23].map((minutes) => new Date(generatedAt.getTime() - minutes * 60 * 1000).toISOString())
+
+  return {
+    generatedAt: generatedAt.toISOString(),
+    summary: {
+      activeTransactions: 156,
+      scheduledRegistrationsSoon: 9,
+      registeredToday: 4,
+    },
+    executive: {
+      platformHealthScore: 87,
+      healthStatus: 'healthy',
+      growthTrend: {
+        currentMonth: 16,
+        previousMonth: 12,
+        percentageChange: 0.3333,
+      },
+      registrationTrend: {
+        registeredThisMonth: 28,
+        registeredLastMonth: 22,
+        percentageChange: 0.2727,
+      },
+      registrationForecast: {
+        next7Days: 9,
+        next14Days: 17,
+        next30Days: 28,
+      },
+      revenue: {
+        actualThisMonth: 1240000,
+        forecastThisMonth: 1580000,
+        subscriptionRevenue: 920000,
+        transactionRevenue: 320000,
+      },
+      focusAreas: [
+        {
+          type: 'healthy_platform',
+          title: 'Platform health is holding steady',
+          description: 'Registrations, usage growth, and alerts are all within the expected founder range.',
+          severity: 'info',
+        },
+        {
+          type: 'critical_attention',
+          title: '3 critical items still need intervention',
+          description: 'Mission Control is surfacing a small set of founder-level items that still need attention.',
+          severity: 'critical',
+        },
+        {
+          type: 'revenue_growth',
+          title: 'Revenue momentum is up 32% vs the last 30 days',
+          description: 'Month-to-date revenue and forecast are trending ahead in the demo snapshot.',
+          severity: 'info',
+        },
+      ],
+    },
+    growth: {
+      activeAgencies: 74,
+      activeAgents: 312,
+      newAgencySignups: 16,
+      websiteEnquiries: 89,
+    },
+    invites: {
+      agentInvitesSent: 24,
+      attorneyInvitesSent: 11,
+      bondOriginatorInvitesSent: 7,
+      inviteAcceptanceRate: 0.68,
+    },
+    attention: {
+      total: 12,
+      critical: 3,
+      warning: 9,
+      items: [
+        {
+          id: 'attention-1',
+          severity: 'critical',
+          type: 'missing_docs',
+          title: '3 files are waiting on critical document completion',
+          organisationName: 'Harcourts East Rand',
+          entityType: 'transaction',
+          description: 'Document readiness is blocking downstream registration progress.',
+          lastActivityAt: activityTimes[2],
+        },
+        {
+          id: 'attention-2',
+          severity: 'warning',
+          type: 'stalled_invites',
+          title: 'Attorney invite acceptance has softened',
+          organisationName: 'Smith Attorneys',
+          entityType: 'invite',
+          description: 'Several firm invites are still pending founder follow-up.',
+          lastActivityAt: activityTimes[3],
+        },
+      ],
+    },
+    transactionHealth: {
+      delayedRegistrations: 5,
+    },
+    recentActivity: [
+      {
+        id: 'registration-completed',
+        type: 'registration_completed',
+        severity: 'info',
+        label: 'Registration completed',
+        description: '17 Eagle Street, Benoni',
+        organisationName: 'Harcourts East Rand',
+        time: activityTimes[0],
+      },
+      {
+        id: 'otp-signed',
+        type: 'otp_signed',
+        severity: 'info',
+        label: 'OTP signed',
+        description: '42 Oak Avenue, Randburg',
+        organisationName: 'Fine & Country Northcliff',
+        time: activityTimes[1],
+      },
+      {
+        id: 'document-uploaded',
+        type: 'document_uploaded',
+        severity: 'info',
+        label: 'Document uploaded',
+        description: 'Sale Agreement - 12 Main Road',
+        organisationName: 'Legacy Living Properties',
+        time: activityTimes[2],
+      },
+      {
+        id: 'attorney-invited',
+        type: 'attorney_invited',
+        severity: 'warning',
+        label: 'Attorney invited',
+        description: 'Jane Smith',
+        organisationName: 'Smith Attorneys',
+        time: activityTimes[3],
+      },
+      {
+        id: 'agency-joined',
+        type: 'agency_joined',
+        severity: 'info',
+        label: 'New agency joined',
+        description: 'Sunset Properties',
+        organisationName: '',
+        time: activityTimes[4],
+      },
+    ],
+  }
+}
+
 export function normalizeMissionControlSnapshot(liveSnapshot = null) {
   if (!liveSnapshot || typeof liveSnapshot !== 'object') return null
 
