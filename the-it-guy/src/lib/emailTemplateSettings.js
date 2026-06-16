@@ -1,6 +1,7 @@
 export const EMAIL_TEMPLATE_KEYS = {
   CLIENT_ONBOARDING: 'client_onboarding',
   SELLER_ONBOARDING: 'seller_onboarding',
+  SELLER_ONBOARDING_SUBMITTED: 'seller_onboarding_submitted',
 }
 
 const DEFAULT_CLIENT_SECURITY_BODY =
@@ -60,6 +61,28 @@ export const DEFAULT_EMAIL_TEMPLATE_SETTINGS = {
     securityBody: DEFAULT_SELLER_SECURITY_BODY,
     helpBody: 'Need help? Reply to this email or contact your agent directly.',
   },
+  [EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING_SUBMITTED]: {
+    templateKey: EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING_SUBMITTED,
+    displayName: 'Seller Onboarding Submitted',
+    subject: 'Seller onboarding submitted',
+    title: 'Seller Onboarding Submitted',
+    preheader: 'The seller has submitted their onboarding. Review it and generate the mandate.',
+    introParagraphs: [
+      'The seller has submitted their onboarding for the property.',
+      'Please review the submission and generate the mandate from the lead workspace.',
+      'Bridge keeps the onboarding, mandate, and signing flow tied to the same lead record.',
+    ],
+    processSteps: [
+      'Open the lead workspace.',
+      'Review the seller onboarding submission.',
+      'Generate the mandate.',
+      'Continue the signing flow once the draft is ready.',
+    ],
+    ctaLabel: 'Generate Mandate',
+    securityTitle: 'Submission Review',
+    securityBody: 'This handoff is shared securely through Bridge and is only visible to authorised members of the transaction workspace.',
+    helpBody: 'Need help? Reply to this email or open the lead workspace to continue the mandate workflow.',
+  },
 }
 
 function normalizeText(value, fallback = '') {
@@ -113,6 +136,10 @@ export function sanitizeEmailTemplateSettings(input = {}) {
     [EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING]: normalizeTemplateConfig(
       source[EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING],
       DEFAULT_EMAIL_TEMPLATE_SETTINGS[EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING],
+    ),
+    [EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING_SUBMITTED]: normalizeTemplateConfig(
+      source[EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING_SUBMITTED],
+      DEFAULT_EMAIL_TEMPLATE_SETTINGS[EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING_SUBMITTED],
     ),
   }
 }

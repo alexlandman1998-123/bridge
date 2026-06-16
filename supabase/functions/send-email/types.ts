@@ -199,6 +199,11 @@ export type SendSellerOnboardingSubmittedPayload = {
   agentName?: string;
   sellerName?: string;
   propertyTitle?: string;
+  transactionReference?: string;
+  organisationId?: string;
+  leadId?: string;
+  listingId?: string;
+  actionLink?: string;
 };
 
 export type SendSellerMandateSentPayload = {

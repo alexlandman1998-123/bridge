@@ -1419,7 +1419,7 @@ function buildSellerClientPortalContextPayload({ listing = {}, onboarding = {}, 
     transaction_id: null,
     seller_lead_id: sellerLeadId,
     listing_id: listingId,
-    mandate_packet_id: null,
+    mandate_packet_id: normalizeUuid(listing?.mandatePacketId || listing?.mandate_packet_id) || null,
     seller_workspace_token: token,
     status: normalizeNullableText(status) || 'active',
     updated_at: new Date().toISOString(),
@@ -2327,6 +2327,24 @@ export async function getAgentPrivateListings(
 
   const query = await queryBuilder.order('updated_at', { ascending: false })
   if (query.error) {
+    if (isMissingColumnError(query.error, 'assigned_agent_email') && normalizedOrgId && normalizedAgentId) {
+      const retryQuery = await applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
+        .eq('organisation_id', normalizedOrgId)
+        .eq('assigned_agent_id', normalizedAgentId)
+        .order('updated_at', { ascending: false })
+      if (retryQuery.error) {
+        if (isMissingTableError(retryQuery.error, 'private_listings')) return []
+        throw retryQuery.error
+      }
+      const retryRows = (Array.isArray(retryQuery.data) ? retryQuery.data : []).filter((row) => !isDeletedPrivateListingRow(row))
+      const retryListingIds = retryRows.map((row) => row.id)
+      const [retryOnboardingMap, retryRequirementsMap, retryDocumentsMap] = await Promise.all([
+        fetchOnboardingRowsForListings(client, retryListingIds),
+        fetchRequirementRowsForListings(client, retryListingIds),
+        fetchDocumentRowsForListings(client, retryListingIds),
+      ])
+      return retryRows.map((row) => mapPrivateListingRow(row, retryOnboardingMap, retryRequirementsMap, retryDocumentsMap)).filter(Boolean)
+    }
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }

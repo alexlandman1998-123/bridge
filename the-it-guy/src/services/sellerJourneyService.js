@@ -65,6 +65,8 @@ const STAGE_KEY_BY_LABEL = new Map(SELLER_JOURNEY_STAGES.map((stage) => [normali
 const SELLER_JOURNEY_STAGE_ALIASES = new Map([
   ['appointment_valuation', 'contacted'],
   ['valuation', 'contacted'],
+  ['converted_to_listing', 'listing_created'],
+  ['converted_listing', 'listing_created'],
   ['onboarding_sent', 'seller_onboarding_sent'],
   ['seller_onboarding_sent', 'seller_onboarding_sent'],
   ['onboarding_completed', 'seller_onboarding_submitted'],
@@ -176,7 +178,7 @@ export function resolveSellerJourneyStageFromToken(value = '') {
 }
 const SELLER_ONBOARDING_SUBMITTED_STATUSES = new Set(['submitted', 'completed', 'complete', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'])
 const SELLER_ONBOARDING_SENT_STATUSES = new Set(['sent', 'in_progress', ...SELLER_ONBOARDING_SUBMITTED_STATUSES])
-const LISTING_CREATED_STATUS_KEYS = new Set(['mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'])
+const LISTING_CREATED_STATUS_KEYS = new Set(['converted_to_listing', 'mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold'])
 const SELLER_ONBOARDING_SENT_STAGE_SIGNALS = new Set([
   'seller_onboarding_sent',
   'onboarding_sent',
@@ -366,9 +368,11 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   )
   const mandatePacketRef = firstPresent(lead?.mandatePacketId, lead?.mandate_packet_id, listing?.mandatePacketId, listing?.mandate_packet_id, packet?.id)
   const allowStatusOnlyMandate = !onboardingStatusBlocksStatusOnlyMandate || Boolean(mandatePacketRef)
+  const convertedToListing = statuses.some((status) => status.includes('converted_to_listing'))
   if (
     allSignersSigned ||
     hasFinalArtifact ||
+    (mandatePacketRef && convertedToListing) ||
     (allowStatusOnlyMandate && statuses.some((status) => ['signed', 'completed', 'fully_signed', 'uploaded_signed'].includes(status) || status.includes('mandate_signed')))
   ) {
     return 'signed'

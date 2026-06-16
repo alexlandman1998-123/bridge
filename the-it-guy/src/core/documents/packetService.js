@@ -572,13 +572,13 @@ function toFriendlyGenerationMessage(code = '', fallback = '') {
 const DEFAULT_SIGNING_LAYOUT = {
   otp: {
     pageCount: 6,
-    initialsRoles: ['purchaser_1', 'seller'],
-    conditionalInitialRoles: ['agent', 'contractor'],
+    initialsRoles: [],
+    conditionalInitialRoles: [],
     signatureRoles: ['purchaser_1', 'seller', 'agent', 'contractor'],
   },
   mandate: {
     pageCount: 3,
-    initialsRoles: ['seller'],
+    initialsRoles: [],
     conditionalInitialRoles: [],
     signatureRoles: ['agent', 'seller', 'purchaser_2'],
     signerOrder: ['agent', 'seller'],

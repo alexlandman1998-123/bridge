@@ -1218,14 +1218,16 @@ Deno.serve(async (req: Request) => {
       }
       const requiredFieldsQuery = await supabase
         .from("document_signing_fields")
-        .select("id, status, required, signer_role, signer_email")
+        .select("id, status, required, signer_role, signer_email, field_type")
         .eq("packet_id", packetId)
         .eq("packet_version_id", packetVersionId)
         .eq("required", true)
         .order("created_at", { ascending: true });
       if (requiredFieldsQuery.error) throw requiredFieldsQuery.error;
 
-      const relevantRequired = (requiredFieldsQuery.data || []).filter((field: Record<string, unknown>) => fieldBelongsToSigner(field, signer));
+      const relevantRequired = (requiredFieldsQuery.data || [])
+        .filter((field: Record<string, unknown>) => normalizeText(field.field_type).toLowerCase() !== "initial")
+        .filter((field: Record<string, unknown>) => fieldBelongsToSigner(field, signer));
       const remaining = relevantRequired.filter((field: Record<string, unknown>) => normalizeText(field.status).toLowerCase() !== "completed");
       if (remaining.length) {
         return jsonResponse(400, {

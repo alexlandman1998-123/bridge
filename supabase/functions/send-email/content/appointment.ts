@@ -13,7 +13,7 @@ function pickText(value: string | undefined, fallback: string) {
 function eventTitle(eventType: string) {
   const mapping: Record<string, string> = {
     appointment_scheduled: 'Appointment Requested',
-    appointment_confirmed: 'Appointment Confirmed',
+    appointment_confirmed: 'Appointment Accepted',
     appointment_updated: 'Appointment Updated',
     appointment_cancelled: 'Appointment Cancelled',
     appointment_rescheduled: 'Appointment Rescheduled',
@@ -73,7 +73,9 @@ export function buildAppointmentEmailHtml({
       `A ${typeLabel.toLowerCase()} has been requested.`,
       'Please accept the proposed time, or request an alternative if it does not work for you.',
     ],
-    appointment_confirmed: [`Your ${typeLabel.toLowerCase()} is confirmed.`],
+    appointment_confirmed: [
+      `Your ${typeLabel.toLowerCase()} has been accepted and it's on.`,
+    ],
     appointment_updated: [`Your ${typeLabel.toLowerCase()} details were updated.`],
     appointment_cancelled: [`Your ${typeLabel.toLowerCase()} has been cancelled.`],
     appointment_rescheduled: [`Your ${typeLabel.toLowerCase()} has been rescheduled.`],

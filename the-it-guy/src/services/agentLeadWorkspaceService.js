@@ -279,7 +279,7 @@ function normalizeTransaction(row = {}) {
 
 function normalizeListing(row = {}) {
   const listingId = getListingId(row) || readId(row, ['id'])
-  const propertyAddress = normalizeText(row?.title || row?.property_address || row?.propertyAddress || row?.address || row?.addressLine1)
+  const propertyAddress = normalizeText(row?.title || row?.property_address || row?.propertyAddress || row?.address || row?.addressLine1 || row?.address_line_1)
   return {
     ...row,
     id: listingId,
@@ -287,10 +287,17 @@ function normalizeListing(row = {}) {
     leadId: readId(row, ['sellerLeadId', 'seller_lead_id', 'originatingCrmLeadId', 'originating_crm_lead_id']),
     assignedAgentId: readId(row, ['assignedAgentId', 'assigned_agent_id']),
     assignedAgentEmail: normalizeText(row?.assignedAgentEmail || row?.assigned_agent_email).toLowerCase(),
-    status: normalizeText(row?.listingStatus || row?.listing_status),
+    listingStatus: normalizeText(row?.listingStatus || row?.listing_status || row?.status),
+    listingVisibility: normalizeText(row?.listingVisibility || row?.listing_visibility),
+    mandateStatus: normalizeText(row?.mandateStatus || row?.mandate_status),
+    mandatePacketId: readId(row, ['mandatePacketId', 'mandate_packet_id']),
+    sellerOnboardingStatus: normalizeText(row?.sellerOnboardingStatus || row?.seller_onboarding_status),
+    status: normalizeText(row?.listingStatus || row?.listing_status || row?.status),
     title: propertyAddress || normalizeText(row?.suburb),
     propertyAddress,
+    addressLine1: normalizeText(row?.addressLine1 || row?.address_line_1 || row?.property_address),
     suburb: normalizeText(row?.suburb || row?.area),
+    city: normalizeText(row?.city),
     askingPrice: row?.asking_price ?? row?.askingPrice ?? row?.price ?? null,
   }
 }
@@ -573,6 +580,7 @@ async function safeReadTransactions(organisationId = '', context = {}) {
 async function safeReadPrivateListings(organisationId = '') {
   if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
   const selectVariants = [
+    'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, listing_status, listing_visibility, mandate_status, mandate_packet_id, seller_onboarding_status, title, address_line_1, property_address, suburb, city, asking_price, estimated_value, property_type, property_category, seller_canonical_facts_json, seller_canonical_fact_readiness_json, created_at, updated_at',
     'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, assigned_agent_email, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
     'id, organisation_id, seller_lead_id, originating_crm_lead_id, assigned_agent_id, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
     'id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_status, property_address, suburb, city, asking_price, created_at, updated_at',
@@ -603,7 +611,15 @@ async function safeReadHydratedPrivateListing(listingId = '') {
   try {
     return await getPrivateListing(listingId, { includeRequirementsAndDocuments: true })
   } catch (error) {
-    if (isRecoverableReadError(error, 'private_listings') || isRecoverableReadError(error, 'private_listing_documents')) return null
+    if (isRecoverableReadError(error, 'private_listing_document_requirements') || isRecoverableReadError(error, 'private_listing_documents')) {
+      try {
+        return await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+      } catch (fallbackError) {
+        if (isRecoverableReadError(fallbackError, 'private_listings')) return null
+        throw fallbackError
+      }
+    }
+    if (isRecoverableReadError(error, 'private_listings')) return null
     throw error
   }
 }

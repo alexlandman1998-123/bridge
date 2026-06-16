@@ -133,6 +133,7 @@ async function ensureSignerSignatureField({
     .eq("packet_id", packetId)
     .eq("packet_version_id", versionId)
     .eq("signer_role", signerRole)
+    .eq("field_type", "signature")
     .limit(1);
   if (existing.error) throw existing.error;
   if ((existing.data || []).length) return null;
@@ -600,7 +601,8 @@ Deno.serve(async (req: Request) => {
       .order("page_number", { ascending: true })
       .order("created_at", { ascending: true });
     if (fieldsQuery.error) throw fieldsQuery.error;
-    let allFields = (fieldsQuery.data || []) as Record<string, unknown>[];
+    let allFields = ((fieldsQuery.data || []) as Record<string, unknown>[])
+      .filter((field) => normalizeText(field?.field_type).toLowerCase() !== "initial");
 
     if (!allFields.length) {
       await ensureSignerSignatureField({ supabase, signer, packet, version });
@@ -615,7 +617,8 @@ Deno.serve(async (req: Request) => {
         .order("page_number", { ascending: true })
         .order("created_at", { ascending: true });
       if (fieldsQuery.error) throw fieldsQuery.error;
-      allFields = (fieldsQuery.data || []) as Record<string, unknown>[];
+      allFields = ((fieldsQuery.data || []) as Record<string, unknown>[])
+        .filter((field) => normalizeText(field?.field_type).toLowerCase() !== "initial");
     }
 
     const signerEmail = normalizeText(signer.signer_email).toLowerCase();

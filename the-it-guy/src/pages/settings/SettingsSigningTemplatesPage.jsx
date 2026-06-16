@@ -335,6 +335,12 @@ function sectionsFromTemplate(template = null) {
   const sections = Array.isArray(template?.sections) ? template.sections : []
   return sections.map((section, index) => {
     const legalText = String(section.legal_text || section.legalText || '')
+    const metadata = section?.metadata_json && typeof section.metadata_json === 'object'
+      ? section.metadata_json
+      : section?.metadataJson && typeof section.metadataJson === 'object'
+        ? section.metadataJson
+        : {}
+    const signingMetadata = metadata.signing && typeof metadata.signing === 'object' ? metadata.signing : {}
     const tokenScan = detectTemplateTokenIssues(legalText)
     const placeholderKeysFromSection = Array.isArray(section.placeholder_keys)
       ? section.placeholder_keys
@@ -355,6 +361,9 @@ function sectionsFromTemplate(template = null) {
       placeholderKeys: allPlaceholderKeys,
       placeholderKeysText: allPlaceholderKeys.join(', '),
       isRequired: section.is_required === undefined ? true : Boolean(section.is_required),
+      requiresInitial: Boolean(section.requiresInitial ?? section.requires_initial ?? metadata.requiresInitial ?? metadata.requires_initial ?? signingMetadata.requiresInitial ?? signingMetadata.requires_initial),
+      initialPlaceholderKey: normalizeText(section.initialPlaceholderKey || section.initial_placeholder_key || metadata.initialPlaceholderKey || metadata.initial_placeholder_key || signingMetadata.initialPlaceholderKey || signingMetadata.initial_placeholder_key),
+      metadataJson: metadata,
       sortOrder: Number.isFinite(Number(section.sort_order)) ? Number(section.sort_order) : index,
     }
   })
@@ -392,6 +401,8 @@ function mapSectionForSave(section = {}, index = 0) {
     .split(',')
     .map((item) => normalizeText(item))
     .filter(Boolean)
+  const metadataJson = section.metadataJson && typeof section.metadataJson === 'object' ? section.metadataJson : {}
+  const initialPlaceholderKey = normalizeText(section.initialPlaceholderKey)
 
   return {
     sectionKey: normalizeText(section.sectionKey || `section_${index + 1}`),
@@ -400,6 +411,16 @@ function mapSectionForSave(section = {}, index = 0) {
     legalText: String(section.legalText || ''),
     placeholderKeys,
     isRequired: section.isRequired === undefined ? true : Boolean(section.isRequired),
+    metadataJson: {
+      ...metadataJson,
+      signing: {
+        ...(metadataJson.signing && typeof metadataJson.signing === 'object' ? metadataJson.signing : {}),
+        requires_initial: Boolean(section.requiresInitial),
+        initial_placeholder_key: initialPlaceholderKey,
+      },
+      requires_initial: Boolean(section.requiresInitial),
+      initial_placeholder_key: initialPlaceholderKey,
+    },
     sortOrder: Number.isFinite(Number(section.sortOrder)) ? Number(section.sortOrder) : index,
   }
 }
@@ -1567,6 +1588,8 @@ export default function SettingsSigningTemplatesPage({
           legalText: '',
           placeholderKeysText: '',
           isRequired: true,
+          requiresInitial: false,
+          initialPlaceholderKey: '',
           sortOrder: (previous.sections || []).length,
         },
       ],
@@ -2451,6 +2474,41 @@ export default function SettingsSigningTemplatesPage({
                               placeholder="seller_full_name, purchase_price"
                             />
                           </label>
+
+                          <div className="rounded-[18px] border border-[#dbe7f3] bg-[#f8fbff] p-4 md:col-span-2">
+                            <label className="flex items-start gap-3 text-sm font-semibold text-[#102033]">
+                              <input
+                                type="checkbox"
+                                className="mt-1 h-4 w-4 rounded border-[#c9d8e8] text-[#0a66ff]"
+                                checked={Boolean(selectedSection.requiresInitial)}
+                                disabled={!canEdit || !selectedIsOrgOwned}
+                                onChange={(event) => updateSection(selectedSectionIndex, {
+                                  requiresInitial: event.target.checked,
+                                  initialPlaceholderKey: event.target.checked
+                                    ? selectedSection.initialPlaceholderKey || `${selectedSection.sectionKey || `section_${selectedSectionIndex + 1}`}_initials`
+                                    : selectedSection.initialPlaceholderKey,
+                                })}
+                              />
+                              <span>
+                                Initial required in this section
+                                <span className="mt-1 block font-normal leading-5 text-[#6b7c93]">
+                                  This records the section anchor for template-driven signing fields.
+                                </span>
+                              </span>
+                            </label>
+                            {selectedSection.requiresInitial ? (
+                              <label className={`${settingsFieldClass} mt-4`}>
+                                Initial field key
+                                <input
+                                  type="text"
+                                  value={selectedSection.initialPlaceholderKey || ''}
+                                  disabled={!canEdit || !selectedIsOrgOwned}
+                                  onChange={(event) => updateSection(selectedSectionIndex, { initialPlaceholderKey: event.target.value })}
+                                  placeholder="seller_initials"
+                                />
+                              </label>
+                            ) : null}
+                          </div>
                         </div>
 
                         {canEdit && selectedIsOrgOwned ? (

@@ -180,12 +180,27 @@ function areCanonicalSellerFactsEnabled() {
 }
 
 async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
-  const assignedAgentEmail = String(updated?.assignedAgentEmail || updated?.agentEmail || updated?.agentId || '').trim()
+  const assignedAgentEmail = String(
+    updated?.assignedAgentEmail ||
+      updated?.assigned_agent_email ||
+      updated?.agentEmail ||
+      updated?.agent_email ||
+      updated?.assignedAgent?.email ||
+      updated?.assigned_agent?.email ||
+      updated?.agentId ||
+      ''
+  ).trim()
   if (!assignedAgentEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedAgentEmail)) return
 
   const assignedAgentName = String(updated?.assignedAgentName || updated?.assignedAgent || 'Agent').trim()
   const sellerName = [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || 'Seller'
   const propertyTitle = String(updated?.listingTitle || getPropertyDisplayAddress(updated || {}, form || {}) || 'property').trim()
+  const leadId = String(updated?.sellerLeadId || updated?.seller_lead_id || updated?.leadId || updated?.lead_id || '').trim()
+  const listingId = String(updated?.id || updated?.listingId || updated?.listing_id || '').trim()
+  const transactionReference = String(updated?.transactionReference || updated?.transaction_reference || updated?.reference || '').trim()
+  const actionLink = typeof window !== 'undefined' && leadId
+    ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(leadId)}/legal/mandate`
+    : ''
 
   let timeoutId = null
   try {
@@ -197,6 +212,11 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
           agentName: assignedAgentName,
           sellerName,
           propertyTitle,
+          transactionReference,
+          organisationId: String(updated?.organisationId || updated?.organisation_id || '').trim(),
+          leadId,
+          listingId,
+          actionLink,
         },
       }),
       new Promise((_, reject) => {

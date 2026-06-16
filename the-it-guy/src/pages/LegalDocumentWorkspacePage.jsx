@@ -1896,7 +1896,7 @@ export default function LegalDocumentWorkspacePage() {
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Generate Mandate</p>
               <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#142132]">Mandate terms</h2>
               <p className="mt-2 max-w-3xl text-sm text-[#607387]">
-                Set the mandate dates here before you generate the draft. Commission stays sourced from the seller lead commission card.
+                Set the mandate dates and commission override here before you generate the draft.
               </p>
             </div>
             <Button type="button" variant="secondary" onClick={resetMandateDraftFields}>
@@ -1904,7 +1904,7 @@ export default function LegalDocumentWorkspacePage() {
             </Button>
           </div>
 
-          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="mt-5 grid gap-4 lg:grid-cols-3">
             <label className="grid gap-1.5">
               <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Mandate start date</span>
               <input
@@ -1923,7 +1923,19 @@ export default function LegalDocumentWorkspacePage() {
                 className="min-h-11 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition focus:border-[#0a66ff]"
               />
             </label>
-            <label className="grid gap-1.5 lg:col-span-2">
+            <label className="grid gap-1.5">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission amount override</span>
+              <input
+                type="number"
+                min="0"
+                step="100"
+                value={effectiveMandateDraft.commissionAmount}
+                onChange={(event) => updateMandateDraftField('commissionAmount', event.target.value)}
+                placeholder="Leave blank to use the lead commission card amount"
+                className="min-h-11 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#102033] outline-none transition placeholder:text-[#9aabba] focus:border-[#0a66ff]"
+              />
+            </label>
+            <label className="grid gap-1.5 lg:col-span-3">
               <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Special conditions</span>
               <textarea
                 rows={3}
@@ -1938,7 +1950,7 @@ export default function LegalDocumentWorkspacePage() {
           <div className="mt-5 rounded-[20px] border border-[#e6edf7] bg-[#fbfdff] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Commission snapshot</p>
-              <p className="text-xs font-semibold text-[#607387]">Pulled from the seller lead commission card</p>
+              <p className="text-xs font-semibold text-[#607387]">Lead card values prefill the draft</p>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <div>
@@ -1951,6 +1963,9 @@ export default function LegalDocumentWorkspacePage() {
                   {effectiveMandateDraft.commissionStructure === 'fixed'
                     ? `Fixed amount ${effectiveMandateDraft.commissionAmount || 'not captured'}`
                     : `Percentage ${effectiveMandateDraft.commissionPercent || 'not captured'}%`}
+                  {effectiveMandateDraft.commissionAmount && effectiveMandateDraft.commissionStructure !== 'fixed'
+                    ? `, override ${effectiveMandateDraft.commissionAmount}`
+                    : ''}
                 </p>
               </div>
               <div>

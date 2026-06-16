@@ -2592,6 +2592,7 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
 
   const current = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
   if (!current) return null
+  const previousStatus = normalizeLowerText(current?.status)
 
   const merged = normalizeAppointmentRecord(
     {
@@ -2768,7 +2769,7 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
       await cancelAppointmentReminders(updatedRecord.appointmentId)
       return
     }
-    if (currentStatus.includes('confirm')) {
+    if (currentStatus.includes('confirm') && !previousStatus.includes('confirm')) {
       await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmed', {
         visibility: updatedRecord.visibility,
         metadata: notificationMetadata,
@@ -2878,16 +2879,6 @@ export async function updateAppointmentParticipantRsvpAsync(
 
   const normalizedRsvp = normalizeLowerText(participantUpdate?.rsvp_status)
   await runAppointmentNotificationTask('participant_rsvp_updated', async () => {
-    if (normalizedRsvp === 'accepted') {
-      await notifyAppointmentParticipants(scopedAppointmentId, 'appointment_confirmed', {
-        visibility: appointment.visibility,
-        metadata: {
-          source: 'updateAppointmentParticipantRsvpAsync',
-          rsvpStatus: 'accepted',
-        },
-      })
-      return
-    }
     if (normalizedRsvp === 'declined') {
       await notifyAppointmentParticipants(scopedAppointmentId, 'appointment_declined', {
         visibility: appointment.visibility,

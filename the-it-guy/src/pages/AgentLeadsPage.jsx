@@ -633,6 +633,14 @@ function readSellerOnboardingFormData(listing = {}, row = {}) {
       record?.sellerOnboardingRecord ||
       record?.seller_onboarding_record ||
       {}
+    const canonicalFacts = record?.sellerCanonicalFacts ||
+      record?.seller_canonical_facts_json ||
+      onboarding?.canonicalFacts ||
+      onboarding?.canonical_facts_json ||
+      {}
+    const canonicalProperty = isPlainObject(canonicalFacts?.property) ? canonicalFacts.property : {}
+    const canonicalTransaction = isPlainObject(canonicalFacts?.transaction) ? canonicalFacts.transaction : {}
+    const canonicalSeller = isPlainObject(canonicalFacts?.seller) ? canonicalFacts.seller : {}
 
     const candidates = [
       record?.onboardingDataSnapshot,
@@ -643,6 +651,25 @@ function readSellerOnboardingFormData(listing = {}, row = {}) {
       onboarding?.formData,
       onboarding?.form_data,
       onboarding,
+      {
+        sellerFirstName: canonicalSeller.first_name,
+        sellerSurname: canonicalSeller.surname,
+        email: canonicalSeller.email,
+        phone: canonicalSeller.phone,
+        propertyAddress: canonicalProperty.address,
+        propertyAddressLine1: canonicalProperty.address_line_1,
+        suburb: canonicalProperty.suburb,
+        city: canonicalProperty.city,
+        province: canonicalProperty.province,
+        postalCode: canonicalProperty.postal_code,
+        propertyType: canonicalProperty.property_type,
+        bedrooms: canonicalProperty.bedrooms,
+        bathrooms: canonicalProperty.bathrooms,
+        erfSize: canonicalProperty.erf_size,
+        floorSize: canonicalProperty.floor_size,
+        askingPrice: canonicalTransaction.asking_price,
+        mandateType: canonicalTransaction.mandate_type,
+      },
     ]
 
     for (const candidate of candidates) {
@@ -5797,8 +5824,21 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
   )
 }
 
-function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, onSaved }) {
+function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, onSaved, openComposerSignal = 0 }) {
   const navigate = useNavigate()
+  const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
+
+  const handleAppointmentSaved = useCallback(async () => {
+    setAppointmentModalOpen(false)
+    await onSaved?.()
+  }, [onSaved])
+
+  useEffect(() => {
+    if (openComposerSignal > 0) {
+      setAppointmentModalOpen(true)
+    }
+  }, [openComposerSignal])
+
   return (
     <SellerWorkspaceCard title="Appointments" action={<StatusPill tone={(lead?.appointments || []).length ? 'blue' : 'slate'}>{(lead?.appointments || []).length} linked</StatusPill>}>
       <div className="grid gap-5">
@@ -5814,9 +5854,19 @@ function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, on
           onOpenCalendar={() => navigate('/pipeline/calendar')}
           onManageAppointment={() => navigate('/pipeline/calendar')}
           onOpenAppointment={() => navigate('/pipeline/calendar')}
-          onScheduleAppointment={() => navigate('/pipeline/calendar')}
+          onScheduleAppointment={() => setAppointmentModalOpen(true)}
+          emptyActionLabel="Create Appointment"
           refreshKey={`${lead?.leadId || ''}:${(lead?.appointments || []).length}`}
         />
+        <Modal
+          open={appointmentModalOpen}
+          onClose={() => setAppointmentModalOpen(false)}
+          title="Create Appointment"
+          subtitle="Create a seller appointment without leaving the lead workspace."
+          className="max-w-2xl"
+        >
+          <SellerAppointmentForm organisationId={organisationId} lead={lead} listing={listing} actor={actor} onSaved={handleAppointmentSaved} />
+        </Modal>
         <SellerAppointmentForm organisationId={organisationId} lead={lead} listing={listing} actor={actor} onSaved={onSaved} />
         <AppointmentList items={lead.appointments} organisationId={organisationId} lead={lead} actor={actor} onSaved={onSaved} />
       </div>
@@ -9183,6 +9233,7 @@ function SellerProfileTab({
   onboardingStatus,
   listing = null,
   actor = null,
+  sendingOnboarding = false,
   onSaved,
   onSendSellerOnboarding,
   onResendSellerPortalLink,
@@ -9436,9 +9487,9 @@ function SellerProfileTab({
           type="button"
           onClick={onSendSellerOnboarding}
           className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-          disabled={!onSendSellerOnboarding}
+          disabled={!onSendSellerOnboarding || sendingOnboarding}
         >
-          Send seller onboarding
+          {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
         </button>
       )
     }
@@ -9583,9 +9634,9 @@ function SellerProfileTab({
                 type="button"
                 onClick={onSendSellerOnboarding}
                 className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                disabled={!onSendSellerOnboarding}
+                disabled={!onSendSellerOnboarding || sendingOnboarding}
               >
-                Send seller onboarding
+                {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
               </button>
             ) : onboardingState === 'sent' ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -9650,9 +9701,9 @@ function SellerProfileTab({
                 type="button"
                 onClick={onSendSellerOnboarding}
                 className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                disabled={!onSendSellerOnboarding}
+                disabled={!onSendSellerOnboarding || sendingOnboarding}
               >
-                Send seller onboarding
+                {sendingOnboarding ? 'Sending seller onboarding...' : 'Send seller onboarding'}
               </button>
             </div>
             <div className="mt-5 rounded-2xl border border-slate-200 bg-white/90 p-4 text-sm text-slate-600">
@@ -10435,6 +10486,7 @@ function SellerTabContent({
   commissionStructures,
   commissionStructuresLoading,
   savingCommission,
+  sendingSellerOnboarding,
   onCommissionDraftChange,
   onSaveCommission,
   onSaved,
@@ -10443,6 +10495,7 @@ function SellerTabContent({
   onCopySellerPortalLink,
   onTabChange,
   onGenerateMandate,
+  appointmentComposerSignal = 0,
 }) {
   if (activeTab === 'seller') {
     return (
@@ -10453,6 +10506,7 @@ function SellerTabContent({
         onboardingStatus={onboardingStatus}
         listing={listing}
         actor={actor}
+        sendingOnboarding={sendingSellerOnboarding}
         onSaved={onSaved}
         onSendSellerOnboarding={onSendSellerOnboarding}
         onResendSellerPortalLink={onResendSellerPortalLink}
@@ -10479,7 +10533,18 @@ function SellerTabContent({
       />
     )
   }
-  if (activeTab === 'appointments') return <SellerAppointmentsTab organisationId={organisationId} lead={row} listing={listing} actor={actor} onSaved={onSaved} />
+  if (activeTab === 'appointments') {
+    return (
+      <SellerAppointmentsTab
+        organisationId={organisationId}
+        lead={row}
+        listing={listing}
+        actor={actor}
+        onSaved={onSaved}
+        openComposerSignal={appointmentComposerSignal}
+      />
+    )
+  }
   if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} />
   if (activeTab === 'activity') return <SellerActivityTab timeline={timeline} row={row} listing={listing} journey={journey} readiness={readiness} onTabChange={onTabChange} />
   return (
@@ -10718,6 +10783,8 @@ function SellerLeadWorkspaceLayout({
   onArchiveLead,
 }) {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('overview')
+  const [appointmentComposerSignal, setAppointmentComposerSignal] = useState(0)
+  const sellerOnboardingInFlightRef = useRef(false)
   const commissionSummary = useMemo(() => getSellerCommissionWorkspace(row, linkedSellerListing), [linkedSellerListing, row])
   const [commissionDraft, setCommissionDraft] = useState(() => buildSellerCommissionDraft(commissionSummary))
   const [commissionStructures, setCommissionStructures] = useState([])
@@ -10753,6 +10820,10 @@ function SellerLeadWorkspaceLayout({
       target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     }, 80)
   }, [])
+  const openAppointmentComposer = useCallback(() => {
+    setActiveWorkspaceTab('appointments')
+    setAppointmentComposerSignal((value) => value + 1)
+  }, [])
   const handleAcquisitionAction = useCallback((actionId = '') => {
     const key = normalizeText(actionId).toLowerCase()
     if (key === 'send_onboarding') onSendSellerOnboarding?.()
@@ -10761,7 +10832,7 @@ function SellerLeadWorkspaceLayout({
     else if (['add_commission', 'review_commission', 'open_commission'].includes(key)) setActiveWorkspaceTab('mandate')
     else if (['create_listing', 'open_listing', 'complete_listing', 'activate_listing'].includes(key)) onOpenListing?.()
     else if (['open_documents'].includes(key)) setActiveWorkspaceTab('documents')
-    else if (['schedule_appointment', 'open_appointments'].includes(key)) setActiveWorkspaceTab('appointments')
+    else if (['schedule_appointment', 'open_appointments'].includes(key)) openAppointmentComposer()
     else if (['contact_seller', 'open_timeline'].includes(key)) setActiveWorkspaceTab('activity')
     else if (['capture_property_address'].includes(key)) setActiveWorkspaceTab('property')
     else if (key === 'edit_seller') {
@@ -10777,7 +10848,7 @@ function SellerLeadWorkspaceLayout({
       setActiveWorkspaceTab('documents')
     }
     else setActiveWorkspaceTab('overview')
-  }, [focusSellerWorkspaceSection, onGenerateMandate, onOpenListing, onOpenSellerPortalLink, onSendSellerOnboarding])
+  }, [focusSellerWorkspaceSection, onGenerateMandate, onOpenListing, onOpenSellerPortalLink, onSendSellerOnboarding, openAppointmentComposer])
 
   return (
     <div className="space-y-6">
@@ -10793,7 +10864,7 @@ function SellerLeadWorkspaceLayout({
         onResendSellerPortalLink={onResendSellerPortalLink}
         onGenerateMandate={onGenerateMandate}
         onOpenListing={onOpenListing}
-        onOpenAppointments={() => setActiveWorkspaceTab('appointments')}
+        onOpenAppointments={openAppointmentComposer}
         onCopySellerPortalLink={onCopySellerPortalLink}
         onCopyListingLink={onCopyListingLink}
         onMarkAsLost={onMarkAsLost}
@@ -10828,6 +10899,7 @@ function SellerLeadWorkspaceLayout({
         commissionStructures={commissionStructures}
         commissionStructuresLoading={commissionStructuresLoading}
         savingCommission={savingCommission}
+        sendingSellerOnboarding={sendingSellerOnboarding}
         onCommissionDraftChange={updateCommissionDraft}
         onSaveCommission={onSaveCommission}
         onSaved={onSaved}
@@ -10836,6 +10908,7 @@ function SellerLeadWorkspaceLayout({
         onCopySellerPortalLink={onCopySellerPortalLink}
         onTabChange={setActiveWorkspaceTab}
         onGenerateMandate={onGenerateMandate}
+        appointmentComposerSignal={appointmentComposerSignal}
       />
     </div>
   )
@@ -11066,7 +11139,7 @@ function AgentLeadWorkspace() {
   }, [activeTab, isSellerLeadWorkspace, row, tabs])
 
   const sendSellerOnboardingForLead = useCallback(async () => {
-    if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding) return
+    if (!row || !isSellerLeadWorkspace || sendingSellerOnboarding || sellerOnboardingInFlightRef.current) return
     if (!organisationId) {
       setSellerActionError('Select an agency workspace before sending seller onboarding.')
       return
@@ -11078,6 +11151,7 @@ function AgentLeadWorkspace() {
     }
 
     try {
+      sellerOnboardingInFlightRef.current = true
       setSendingSellerOnboarding(true)
       setSellerActionError('')
       setSellerActionMessage('')
@@ -11150,6 +11224,7 @@ function AgentLeadWorkspace() {
     } catch (actionError) {
       setSellerActionError(actionError?.message || 'Unable to send seller onboarding right now.')
     } finally {
+      sellerOnboardingInFlightRef.current = false
       setSendingSellerOnboarding(false)
     }
   }, [actor, isSellerLeadWorkspace, linkedSellerListing, loadWorkspace, organisationId, row, sendingSellerOnboarding, workspaceName])

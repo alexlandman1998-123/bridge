@@ -146,7 +146,7 @@ function safeNumber(value: unknown, fallback = 0) {
 
 function fieldIsSignatureLike(field: Record<string, unknown>) {
   const fieldType = lower(field?.field_type);
-  return fieldType === "initial" || fieldType === "signature";
+  return fieldType === "signature";
 }
 
 function isPdfPath(path: string) {
@@ -1234,16 +1234,18 @@ async function ensureListingFromSignedMandate({
       lead?.estimated_value ||
       lead?.budget,
   );
-  const sellerOnboardingStatus = normalizeText(lead?.seller_onboarding_status).toLowerCase() === "completed"
-    || normalizeText(sourceLead.sellerOnboardingStatus || sourceLead.seller_onboarding_status).toLowerCase() === "completed"
-    ? "completed"
-    : "not_started";
   const sellerOnboardingSnapshot = resolveSellerOnboardingSnapshot({
     sourceContext,
     generatedSnapshot,
     sourceLead,
     lead,
   });
+  const sellerOnboardingStatus = normalizeText(lead?.seller_onboarding_status).toLowerCase() === "completed"
+    || normalizeText(sourceLead.sellerOnboardingStatus || sourceLead.seller_onboarding_status).toLowerCase() === "completed"
+    || normalizeText(sellerOnboardingSnapshot.status).toLowerCase() === "completed"
+    || Object.keys(asRecord(sellerOnboardingSnapshot.formData)).length > 0
+    ? "completed"
+    : "not_started";
   let existingListingFound = Boolean(listing?.id);
 
   if (listing?.id) {
@@ -1251,38 +1253,40 @@ async function ensureListingFromSignedMandate({
     const nextListingStatus = resolveSignedMandateListingStatus(listing.listing_status);
     const autoActivated = nextListingStatus === "active";
     const listingOwnsOperationalFields = listingAlreadyOwnsOperationalFields(listing.listing_status);
+    const listingUpdatePayload = {
+      // Once a listing has entered mandate-signed or later, acquisition data
+      // may only sync lifecycle/linkage fields. Listing-owned operational
+      // fields must not be backfilled from a later-edited lead.
+      assigned_agent_id: listingOwnsOperationalFields
+        ? normalizeNullableUuid(listing.assigned_agent_id)
+        : normalizeNullableUuid(listing.assigned_agent_id || lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
+      seller_lead_id: normalizeText(listing.seller_lead_id) || leadId || null,
+      originating_crm_lead_id: normalizeText(listing.originating_crm_lead_id) || leadId || null,
+      listing_status: nextListingStatus,
+      listing_visibility: autoActivated
+        ? normalizeText(listing.listing_visibility) || "active_market"
+        : normalizeText(listing.listing_visibility) || "internal",
+      mandate_status: "signed",
+      mandate_packet_id: normalizeText(packet.id) || null,
+      seller_onboarding_status: sellerOnboardingStatus === "completed" || !existingSellerOnboardingStatus || existingSellerOnboardingStatus === "not_started"
+        ? sellerOnboardingStatus
+        : existingSellerOnboardingStatus,
+      is_active: autoActivated ? true : Boolean(listing.is_active),
+      title: listingOwnsOperationalFields ? normalizeText(listing.title) || null : firstMissingText(listing.title, title),
+      address_line_1: listingOwnsOperationalFields ? normalizeText(listing.address_line_1) || null : firstMissingText(listing.address_line_1, address),
+      property_type: listingOwnsOperationalFields ? normalizeText(listing.property_type) || null : firstMissingText(listing.property_type, placeholders.property_type, placeholders["property.property_type"]),
+      suburb: listingOwnsOperationalFields ? normalizeText(listing.suburb) || null : firstMissingText(listing.suburb, placeholders.property_suburb, placeholders["property.suburb"], lead?.area_interest),
+      city: listingOwnsOperationalFields ? normalizeText(listing.city) || null : firstMissingText(listing.city, placeholders.property_city, placeholders["property.city"]),
+      province: listingOwnsOperationalFields ? normalizeText(listing.province) || null : firstMissingText(listing.province, placeholders.property_province, placeholders["property.province"]),
+      asking_price: listingOwnsOperationalFields ? normalizeNumber(listing.asking_price) : firstMissingNumber(listing.asking_price, askingPrice),
+      estimated_value: listingOwnsOperationalFields ? normalizeNumber(listing.estimated_value) : firstMissingNumber(listing.estimated_value, askingPrice),
+      updated_at: new Date().toISOString(),
+    };
     await supabase
       .from("private_listings")
-      .update({
-        // Once a listing has entered mandate-signed or later, acquisition data
-        // may only sync lifecycle/linkage fields. Listing-owned operational
-        // fields must not be backfilled from a later-edited lead.
-        assigned_agent_id: listingOwnsOperationalFields
-          ? normalizeNullableUuid(listing.assigned_agent_id)
-          : normalizeNullableUuid(listing.assigned_agent_id || lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
-        seller_lead_id: normalizeText(listing.seller_lead_id) || leadId || null,
-        originating_crm_lead_id: normalizeText(listing.originating_crm_lead_id) || leadId || null,
-        listing_status: nextListingStatus,
-        listing_visibility: autoActivated
-          ? normalizeText(listing.listing_visibility) || "active_market"
-          : normalizeText(listing.listing_visibility) || "internal",
-        mandate_status: "signed",
-        mandate_packet_id: normalizeText(packet.id) || null,
-        seller_onboarding_status: sellerOnboardingStatus === "completed" || !existingSellerOnboardingStatus || existingSellerOnboardingStatus === "not_started"
-          ? sellerOnboardingStatus
-          : existingSellerOnboardingStatus,
-        is_active: autoActivated ? true : Boolean(listing.is_active),
-        title: listingOwnsOperationalFields ? normalizeText(listing.title) || null : firstMissingText(listing.title, title),
-        address_line_1: listingOwnsOperationalFields ? normalizeText(listing.address_line_1) || null : firstMissingText(listing.address_line_1, address),
-        property_type: listingOwnsOperationalFields ? normalizeText(listing.property_type) || null : firstMissingText(listing.property_type, placeholders.property_type, placeholders["property.property_type"]),
-        suburb: listingOwnsOperationalFields ? normalizeText(listing.suburb) || null : firstMissingText(listing.suburb, placeholders.property_suburb, placeholders["property.suburb"], lead?.area_interest),
-        city: listingOwnsOperationalFields ? normalizeText(listing.city) || null : firstMissingText(listing.city, placeholders.property_city, placeholders["property.city"]),
-        province: listingOwnsOperationalFields ? normalizeText(listing.province) || null : firstMissingText(listing.province, placeholders.property_province, placeholders["property.province"]),
-        asking_price: listingOwnsOperationalFields ? normalizeNumber(listing.asking_price) : firstMissingNumber(listing.asking_price, askingPrice),
-        estimated_value: listingOwnsOperationalFields ? normalizeNumber(listing.estimated_value) : firstMissingNumber(listing.estimated_value, askingPrice),
-        updated_at: new Date().toISOString(),
-      })
+      .update(listingUpdatePayload)
       .eq("id", String(listing.id));
+    listing = { ...listing, ...listingUpdatePayload };
   } else {
     const insertPayload = {
       organisation_id: organisationId,
@@ -1952,7 +1956,9 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const fields = rawFields.filter((field) => mandateRoleIsRequired(packet, field.signer_role, spouseRequiredForVersion));
+    const fields = rawFields
+      .filter((field) => lower(field.field_type) !== "initial")
+      .filter((field) => mandateRoleIsRequired(packet, field.signer_role, spouseRequiredForVersion));
 
     const requiredFields = fields.filter((field) => Boolean(field.required));
     const incompleteFields = requiredFields.filter((field) => lower(field.status) !== "completed");

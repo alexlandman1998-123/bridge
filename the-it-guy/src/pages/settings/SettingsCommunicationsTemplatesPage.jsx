@@ -1,4 +1,4 @@
-import { MessageSquareText, Send } from 'lucide-react'
+import { BellRing, MessageSquareText, Send } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { EMAIL_TEMPLATE_KEYS, getDefaultEmailTemplateSettings, sanitizeEmailTemplateSettings } from '../../lib/emailTemplateSettings'
@@ -30,6 +30,7 @@ function textareaToLines(value = '') {
 const TEMPLATE_LABELS = {
   [EMAIL_TEMPLATE_KEYS.CLIENT_ONBOARDING]: 'Client Onboarding',
   [EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING]: 'Seller Onboarding',
+  [EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING_SUBMITTED]: 'Seller Onboarding Submitted',
 }
 
 export default function SettingsCommunicationsTemplatesPage() {
@@ -77,6 +78,7 @@ export default function SettingsCommunicationsTemplatesPage() {
     () => [
       EMAIL_TEMPLATE_KEYS.CLIENT_ONBOARDING,
       EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING,
+      EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING_SUBMITTED,
     ],
     [],
   )
@@ -117,7 +119,7 @@ export default function SettingsCommunicationsTemplatesPage() {
       <SettingsPageHeader
         kicker="Settings"
         title="Communications Templates"
-        description="Edit core onboarding email copy used by Bridge-branded client and seller onboarding sends."
+        description="Edit the Bridge-branded onboarding and seller handoff email copy used across the current communications sequence."
       />
 
       {!canEdit ? (
@@ -154,7 +156,13 @@ export default function SettingsCommunicationsTemplatesPage() {
                         : 'Seller onboarding introduction email.'}
                     </p>
                   </div>
-                  {templateKey === EMAIL_TEMPLATE_KEYS.CLIENT_ONBOARDING ? <MessageSquareText size={16} /> : <Send size={16} />}
+                  {templateKey === EMAIL_TEMPLATE_KEYS.CLIENT_ONBOARDING ? (
+                    <MessageSquareText size={16} />
+                  ) : templateKey === EMAIL_TEMPLATE_KEYS.SELLER_ONBOARDING ? (
+                    <Send size={16} />
+                  ) : (
+                    <BellRing size={16} />
+                  )}
                 </div>
               </button>
             )
