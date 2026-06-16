@@ -424,8 +424,15 @@ function hasListingCreated({ lead = {}, listing = {}, mandateStatus = '' } = {})
   return listingHasCreationLifecycle(listing || lead) || mandateStatus === 'signed'
 }
 
+function laterSellerJourneyStage(left = null, right = null) {
+  const leftIndex = STAGE_INDEX.get(left?.key) ?? 0
+  const rightIndex = STAGE_INDEX.get(right?.key) ?? 0
+  return rightIndex > leftIndex ? right : left
+}
+
 export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacketStatus = null, mandatePacket = null } = {}) {
   if (!isSellerLead(lead)) return null
+  const leadStage = getSellerJourneyStageFromLead(lead)
   const onboardingSignals = getSellerOnboardingSignals({ lead, listing })
   const mandateStatus = getMandateStatus({ lead, listing, mandatePacketStatus, mandatePacket })
   const listingCreated = hasListingCreated({ lead, listing, mandateStatus })
@@ -436,16 +443,17 @@ export function getSellerJourneyStage({ lead = {}, listing = null, mandatePacket
     ],
   })
 
-  if (listingCreated && isListingLive(listing || lead) && documentsSubmitted) return { ...SELLER_JOURNEY_STAGES[7], status: 'Submitted' }
-  if (listingCreated && isListingLive(listing || lead)) return { ...SELLER_JOURNEY_STAGES[6], status: 'Live' }
-  if (listingCreated) return { ...SELLER_JOURNEY_STAGES[5], status: 'Draft' }
-  if (mandateStatus === 'signed') return { ...SELLER_JOURNEY_STAGES[4], status: 'Signed' }
-  if (['sent', 'draft'].includes(mandateStatus)) {
-    return { ...SELLER_JOURNEY_STAGES[3], status: mandateStatus === 'sent' ? 'Sent' : 'Draft' }
+  let derivedStage = null
+  if (listingCreated && isListingLive(listing || lead) && documentsSubmitted) derivedStage = { ...SELLER_JOURNEY_STAGES[7], status: 'Submitted' }
+  else if (listingCreated && isListingLive(listing || lead)) derivedStage = { ...SELLER_JOURNEY_STAGES[6], status: 'Live' }
+  else if (listingCreated) derivedStage = { ...SELLER_JOURNEY_STAGES[5], status: 'Draft' }
+  else if (mandateStatus === 'signed') derivedStage = { ...SELLER_JOURNEY_STAGES[4], status: 'Signed' }
+  if (!derivedStage && ['sent', 'draft'].includes(mandateStatus)) {
+    derivedStage = { ...SELLER_JOURNEY_STAGES[3], status: mandateStatus === 'sent' ? 'Sent' : 'Draft' }
   }
-  if (onboardingSignals.submitted) return { ...SELLER_JOURNEY_STAGES[2], status: 'Submitted' }
-  if (onboardingSignals.sent) return { ...SELLER_JOURNEY_STAGES[1], status: onboardingSignals.status === 'in_progress' ? 'In Progress' : 'Sent' }
-  return { ...SELLER_JOURNEY_STAGES[0], status: 'Active' }
+  if (!derivedStage && onboardingSignals.submitted) derivedStage = { ...SELLER_JOURNEY_STAGES[2], status: 'Submitted' }
+  if (!derivedStage && onboardingSignals.sent) derivedStage = { ...SELLER_JOURNEY_STAGES[1], status: onboardingSignals.status === 'in_progress' ? 'In Progress' : 'Sent' }
+  return laterSellerJourneyStage(derivedStage || { ...SELLER_JOURNEY_STAGES[0], status: 'Active' }, leadStage)
 }
 
 function buildJourneySteps(stageKey, evidence = {}) {

@@ -337,11 +337,17 @@ function getLeadSourceInfo(row = {}) {
   const firstActivity = enquiryActivities[enquiryActivities.length - 1] || null
   const latestActivity = enquiryActivities[0] || null
   const sourceFromType = (activity) => normalizeText(activity?.activityType || activity?.activity_type).replace(/enquiry received/i, '').trim()
+  const explicitSource = normalizeText(row.source || row.leadSource || row.lead_source)
+  const source = explicitSource && !['unknown', 'other'].includes(explicitSource.toLowerCase())
+    ? explicitSource
+    : normalizeText(row.canvassingProspectId || row.canvassing_prospect_id) || /canvassing prospect id:/i.test(normalizeText(row.notes))
+      ? 'Canvassing'
+      : explicitSource || 'Unknown'
   return {
-    leadSource: row.source || row.leadSource || row.lead_source || 'Unknown',
-    originalSource: sourceFromType(firstActivity) || row.source || 'Unknown',
-    firstSource: sourceFromType(firstActivity) || row.source || 'Unknown',
-    latestSource: sourceFromType(latestActivity) || row.source || 'Unknown',
+    leadSource: source,
+    originalSource: sourceFromType(firstActivity) || source,
+    firstSource: sourceFromType(firstActivity) || source,
+    latestSource: sourceFromType(latestActivity) || source,
     enquiryActivities,
   }
 }
@@ -7902,6 +7908,7 @@ function SellerLeadHeader({
   onArchiveLead,
   onStatusAction,
 }) {
+  const headerSource = getLeadSourceInfo(row).leadSource
   return (
     <header className={`${panelClass} overflow-visible border-slate-200/80 bg-white/95 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.07)]`}>
       <div className="grid gap-6 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.35fr)]">
@@ -7918,7 +7925,7 @@ function SellerLeadHeader({
               <span className="inline-flex min-w-0 items-center gap-1.5"><Mail size={14} /><span className="max-w-[280px] truncate">{row.email || 'No email'}</span></span>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <StatusPill>{row.source || 'Unknown source'}</StatusPill>
+              <StatusPill>{headerSource || 'Unknown source'}</StatusPill>
               <StatusPill>{row.status || row.stage || 'Active'}</StatusPill>
               <StatusPill>{formatDate(row.createdAt, 'No created date')}</StatusPill>
             </div>
@@ -11091,6 +11098,27 @@ function AgentLeadWorkspace() {
       return (leadListingId && listingId === leadListingId) || sellerLeadId === row.leadId
     }) || row.listings?.[0] || (leadListingId ? { id: leadListingId } : null)
   }, [data?.listings, row])
+  const sellerMandatePacket = useMemo(() => {
+    if (!row || !isSellerLeadWorkspace) return null
+    const mandatePacketId = normalizeText(row.mandatePacketId || row.mandate_packet_id || linkedSellerListing?.mandatePacketId || linkedSellerListing?.mandate_packet_id)
+    const packets = Array.isArray(row.documentPackets) ? row.documentPackets : []
+    return packets.find((packet) => mandatePacketId && normalizeText(packet.id || packet.packetId || packet.packet_id) === mandatePacketId) ||
+      packets.find((packet) => normalizeText(packet.packetType || packet.packet_type || packet.title).toLowerCase().includes('mandate')) ||
+      row.mandatePacket ||
+      null
+  }, [isSellerLeadWorkspace, linkedSellerListing, row])
+  const sellerMandatePacketStatus = useMemo(() => {
+    if (!sellerMandatePacket) return null
+    const sourceContext = sellerMandatePacket.sourceContextJson || sellerMandatePacket.source_context_json || {}
+    return {
+      packet: sellerMandatePacket,
+      state: sellerMandatePacket.status || sellerMandatePacket.packetStatus || sellerMandatePacket.packet_status,
+      signingStatus: sourceContext.signingStatus || sourceContext.signing_status || sourceContext.mandateStatus || sourceContext.mandate_status,
+      sourceContext,
+      signedAt: sourceContext.signedAt || sourceContext.signed_at || sellerMandatePacket.completedAt || sellerMandatePacket.completed_at,
+      completedAt: sellerMandatePacket.completedAt || sellerMandatePacket.completed_at,
+    }
+  }, [sellerMandatePacket])
   const sellerJourney = useMemo(() => {
     if (!row || !isSellerLeadWorkspace) return null
     return buildSellerJourney({
@@ -11098,8 +11126,10 @@ function AgentLeadWorkspace() {
       contact: row.contact || {},
       appointments: row.appointments || [],
       listing: linkedSellerListing,
+      mandatePacket: sellerMandatePacket,
+      mandatePacketStatus: sellerMandatePacketStatus,
     })
-  }, [isSellerLeadWorkspace, linkedSellerListing, row])
+  }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerMandatePacket, sellerMandatePacketStatus])
   const sellerReadiness = useMemo(() => {
     if (!row || !isSellerLeadWorkspace) return null
     return buildSellerReadinessSummary({
@@ -11107,9 +11137,11 @@ function AgentLeadWorkspace() {
       contact: row.contact || {},
       appointments: row.appointments || [],
       listing: linkedSellerListing,
+      mandatePacket: sellerMandatePacket,
+      mandatePacketStatus: sellerMandatePacketStatus,
       journey: sellerJourney,
     })
-  }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney])
+  }, [isSellerLeadWorkspace, linkedSellerListing, row, sellerJourney, sellerMandatePacket, sellerMandatePacketStatus])
   const sellerOnboardingStatus = row ? getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney) : ''
   const workspaceName = normalizeText(workspaceContext.currentWorkspace?.name || workspaceContext.workspace?.name)
   const tabs = useMemo(() => isSellerLeadWorkspace

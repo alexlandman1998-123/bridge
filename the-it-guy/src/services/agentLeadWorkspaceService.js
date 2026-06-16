@@ -42,6 +42,17 @@ function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function normalizeLeadSourceLabel(lead = {}) {
+  const explicit = normalizeText(lead?.leadSource || lead?.lead_source || lead?.source || lead?.source_label || lead?.origin)
+  if (explicit && !['unknown', 'other'].includes(normalizeLower(explicit))) return explicit
+  const canvassingProspectId = normalizeText(lead?.canvassingProspectId || lead?.canvassing_prospect_id)
+  const notes = normalizeText(lead?.notes)
+  if (canvassingProspectId || /canvassing prospect id:/i.test(notes) || normalizeLower(explicit).includes('canvassing')) {
+    return 'Canvassing'
+  }
+  return explicit || 'Unknown'
+}
+
 function normalizeAgentDirectoryValue(value = '') {
   return normalizeLower(value)
 }
@@ -302,6 +313,48 @@ function normalizeListing(row = {}) {
   }
 }
 
+function sourceContextFromPacket(packet = {}) {
+  return packet?.source_context_json && typeof packet.source_context_json === 'object'
+    ? packet.source_context_json
+    : packet?.sourceContextJson && typeof packet.sourceContextJson === 'object'
+      ? packet.sourceContextJson
+      : {}
+}
+
+function normalizeDocumentPacket(row = {}) {
+  const sourceContext = sourceContextFromPacket(row)
+  return {
+    ...row,
+    id: readId(row, ['id', 'packetId', 'packet_id']),
+    packetId: readId(row, ['id', 'packetId', 'packet_id']),
+    leadId: readId(row, ['leadId', 'lead_id']) || readId(sourceContext, ['leadId', 'lead_id', 'sellerLeadId', 'seller_lead_id', 'crmLeadId', 'crm_lead_id']),
+    listingId: readId(sourceContext, ['listingId', 'listing_id', 'privateListingId', 'private_listing_id']),
+    packetType: normalizeText(row?.packetType || row?.packet_type),
+    status: normalizeText(row?.status),
+    completedAt: row?.completedAt || row?.completed_at || null,
+    updatedAt: row?.updatedAt || row?.updated_at || row?.createdAt || row?.created_at || null,
+    sourceContextJson: sourceContext,
+  }
+}
+
+function packetMatchesLeadContext(packet = {}, context = {}) {
+  const normalized = normalizeDocumentPacket(packet)
+  const sourceContext = normalized.sourceContextJson || {}
+  const packetLeadIds = [
+    normalized.leadId,
+    readId(packet, ['sellerLeadId', 'seller_lead_id', 'crmLeadId', 'crm_lead_id', 'relatedEntityId', 'related_entity_id']),
+    readId(sourceContext, ['leadId', 'lead_id', 'sellerLeadId', 'seller_lead_id', 'crmLeadId', 'crm_lead_id', 'relatedEntityId', 'related_entity_id']),
+  ].map(normalizeText).filter(Boolean)
+  const packetListingIds = [
+    normalized.listingId,
+    readId(sourceContext, ['listingId', 'listing_id', 'privateListingId', 'private_listing_id']),
+  ].map(normalizeText).filter(Boolean)
+  return Boolean(
+    (context.leadId && packetLeadIds.includes(context.leadId)) ||
+    (context.listingId && packetListingIds.includes(context.listingId)),
+  )
+}
+
 function isRecoverableReadError(error, tableName = '') {
   const code = normalizeText(error?.code).toLowerCase()
   const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
@@ -328,6 +381,7 @@ export function buildAgentLeadRows({
   recommendations = [],
   savedSearches = [],
   propertyShares = [],
+  documentPackets = [],
   assignmentHistory = [],
   agentDirectory = {},
 } = {}) {
@@ -335,6 +389,7 @@ export function buildAgentLeadRows({
   const normalizedOffers = offers.map(normalizeOffer).filter((offer) => offer.id || offer.leadId || offer.contactId || offer.listingId)
   const normalizedTransactions = transactions.map(normalizeTransaction).filter((transaction) => transaction.id || transaction.leadId || transaction.contactId)
   const normalizedListings = listings.map(normalizeListing).filter((listing) => listing.id || listing.leadId)
+  const normalizedDocumentPackets = documentPackets.map(normalizeDocumentPacket).filter((packet) => packet.id)
 
   return leads.map((lead) => {
     const leadId = getLeadId(lead)
@@ -352,6 +407,10 @@ export function buildAgentLeadRows({
       ...context,
       listingId: context.listingId || getListingId(relatedListings[0] || {}) || readId(relatedListings[0] || {}, ['id']),
     }
+    const relatedDocumentPackets = normalizedDocumentPackets
+      .filter((packet) => packetMatchesLeadContext(packet, expandedContext))
+      .sort((left, right) => new Date(right.updatedAt || right.completedAt || 0).getTime() - new Date(left.updatedAt || left.completedAt || 0).getTime())
+    const mandatePacket = relatedDocumentPackets.find((packet) => normalizeLower(packet.packetType || packet.packet_type || packet.title).includes('mandate')) || null
     const relatedAppointments = appointments.filter((appointment) => matchesLeadContext(appointment, expandedContext))
     const relatedOffers = normalizedOffers.filter((offer) => matchesLeadContext(offer, expandedContext) || relatedAppointments.some((appointment) => getAppointmentId(appointment) && getAppointmentId(appointment) === offer.appointmentId))
     const relatedTransactions = normalizedTransactions.filter((transaction) => matchesLeadContext(transaction, expandedContext))
@@ -454,7 +513,7 @@ export function buildAgentLeadRows({
       name: getLeadName(lead, contact),
       phone: normalizeText(contact?.phone || contact?.phone_number || lead?.phone || lead?.sellerPhone),
       email: normalizeText(contact?.email || lead?.email || lead?.sellerEmail).toLowerCase(),
-      source: normalizeText(lead?.leadSource || lead?.lead_source) || 'Unknown',
+      source: normalizeLeadSourceLabel(lead),
       stage: normalizeText(lead?.stage || lead?.status) || 'Unknown',
       status: normalizeText(lead?.status || lead?.stage) || 'Unknown',
       assignedAgentId: resolvedAssignedAgentId || readId(relatedListings[0] || {}, ['assignedAgentId', 'assigned_agent_id']),
@@ -496,6 +555,8 @@ export function buildAgentLeadRows({
       offers: relatedOffers,
       transactions: relatedTransactions,
       listings: relatedListings,
+      documentPackets: relatedDocumentPackets,
+      mandatePacket,
       listingInterests: relatedListingInterests,
       requirements: relatedRequirements,
       communications: relatedCommunications,
@@ -600,6 +661,35 @@ async function safeReadPrivateListings(organisationId = '') {
   }
   if (error) {
     if (isRecoverableReadError(error, 'private_listings')) return []
+    throw error
+  }
+  return Array.isArray(data) ? data : []
+}
+
+async function safeReadDocumentPackets(organisationId = '') {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(organisationId)) return []
+  const selectVariants = [
+    'id, organisation_id, lead_id, packet_type, title, status, source_context_json, completed_at, created_at, updated_at',
+    'id, organisation_id, lead_id, packet_type, title, status, source_context_json, created_at, updated_at',
+    'id, organisation_id, lead_id, packet_type, title, status, created_at, updated_at',
+    'id, organisation_id, lead_id, packet_type, title, status, source_context_json, created_at',
+    'id, organisation_id, lead_id, packet_type, title, status, created_at',
+  ]
+  let data = []
+  let error = null
+  for (const fields of selectVariants) {
+    const result = await supabase
+      .from('document_packets')
+      .select(fields)
+      .eq('organisation_id', organisationId)
+      .order('updated_at', { ascending: false })
+      .limit(1000)
+    data = result.data
+    error = result.error
+    if (!error || !isRecoverableReadError(error, 'document_packets')) break
+  }
+  if (error) {
+    if (isRecoverableReadError(error, 'document_packets')) return []
     throw error
   }
   return Array.isArray(data) ? data : []
@@ -803,10 +893,11 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     listingId: getListingId(lead),
     convertedTransactionId: readId(lead, ['convertedTransactionId', 'converted_transaction_id', 'convertedDealId']),
   }
-  const [allAppointments, transactions, listings, listingInterests, requirements, communications, suggestions, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, assignmentHistory, ownershipRows] = await Promise.all([
+  const [allAppointments, transactions, listings, documentPackets, listingInterests, requirements, communications, suggestions, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, assignmentHistory, ownershipRows] = await Promise.all([
     safeReadAppointments(organisationId),
     safeReadTransactions(organisationId, context),
     safeReadPrivateListings(organisationId),
+    safeReadDocumentPackets(organisationId),
     listLeadListingInterests({ organisationId, leadId: context.leadId }),
     listLeadRequirements({ organisationId, leadId: context.leadId }),
     listLeadCommunications({ organisationId, leadId: context.leadId }).catch(() => []),
@@ -863,6 +954,7 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     offers,
     transactions,
     listings: workspaceListings,
+    documentPackets,
     listingInterests,
     requirements,
     communications,

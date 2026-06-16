@@ -975,6 +975,13 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     const match = notes.match(/Canvassing Prospect ID:\s*([^\s|]+)/i)
     return normalizeText(match?.[1])
   })()
+  const canvassingProspectId = normalizeText(lead.canvassingProspectId || lead.canvassing_prospect_id || canvassingProspectIdFromNotes)
+  const explicitLeadSource = normalizeText(lead.leadSource || lead.lead_source || lead.source || lead.source_label || lead.origin)
+  const leadSource = explicitLeadSource && !['unknown', 'other'].includes(explicitLeadSource.toLowerCase())
+    ? explicitLeadSource
+    : canvassingProspectId || /canvassing prospect id:/i.test(notes)
+      ? 'Canvassing'
+      : explicitLeadSource || 'Other'
   const sellerOnboarding =
     lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
       ? {
@@ -1000,7 +1007,7 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     contactId: normalizeText(lead.contactId),
     leadCategory: inferLeadCategoryFromRecord(lead, 'other'),
     leadDirection: normalizeListValue(lead.leadDirection, LEAD_DIRECTIONS, 'Inbound'),
-    leadSource: normalizeText(lead.leadSource) || 'Other',
+    leadSource,
     stage: normalizeListValue(lead.stage, LEAD_STAGES, 'Lead'),
     status: normalizeText(lead.status || lead.stage || 'Lead'),
     priority: normalizeListValue(lead.priority, LEAD_PRIORITIES, 'Medium'),
@@ -1010,7 +1017,7 @@ function normalizeLeadRecord(lead = {}, organisationId) {
     sellerPropertyAddress: normalizeText(lead.sellerPropertyAddress),
     estimatedValue: Number(lead.estimatedValue || 0) || 0,
     notes,
-    canvassingProspectId: normalizeText(lead.canvassingProspectId || canvassingProspectIdFromNotes),
+    canvassingProspectId,
     sellerName: normalizeText(lead.sellerName),
     sellerSurname: normalizeText(lead.sellerSurname),
     sellerEmail: normalizeText(lead.sellerEmail).toLowerCase(),
