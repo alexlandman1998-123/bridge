@@ -77,6 +77,7 @@ function mapProspectRow(row = {}) {
   return {
     id: normalizeText(row.id),
     organisationId: normalizeText(row.organisation_id || row.organisationId),
+    branchId: normalizeText(row.branch_id || row.branchId),
     assignedBrokerId: normalizeText(row.assigned_broker_id || row.assignedBrokerId || row.broker_id || row.brokerId),
     assignedBrokerName: normalizeText(row.assigned_broker_name || row.assignedBrokerName),
     assignedBrokerEmail: normalizeEmail(row.assigned_broker_email || row.assignedBrokerEmail),
@@ -136,6 +137,7 @@ function mapActivityRow(row = {}) {
 function prospectPayloadToRow(organisationId, payload = {}) {
   return {
     organisation_id: normalizeText(organisationId),
+    branch_id: toNullableUuid(payload.branchId || payload.branch_id),
     assigned_broker_id: toNullableUuid(payload.assignedBrokerId || payload.assigned_broker_id || payload.brokerId || payload.broker_id),
     assigned_broker_name: normalizeText(payload.assignedBrokerName || payload.assigned_broker_name),
     assigned_broker_email: normalizeEmail(payload.assignedBrokerEmail || payload.assigned_broker_email),

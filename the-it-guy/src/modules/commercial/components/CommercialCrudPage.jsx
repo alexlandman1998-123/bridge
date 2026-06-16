@@ -1,6 +1,7 @@
 import { Plus, Search } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import CommercialEmptyState from './CommercialEmptyState'
 import CommercialFilterBar from './CommercialFilterBar'
 import CommercialFormModal from './CommercialFormModal'
 import CommercialRecordDrawer from './CommercialRecordDrawer'

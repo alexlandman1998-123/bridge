@@ -36,6 +36,17 @@ function inferPropertyCategory(raw = {}) {
   return 'other'
 }
 
+function inferLeadStageFromStatus(raw = {}) {
+  const status = normalizeKey(raw.status)
+  if (['archived'].includes(status)) return 'archived'
+  if (['lost'].includes(status)) return 'lost'
+  if (['converted to lead', 'converted to listing', 'converted to requirement', 'converted'].includes(status)) return 'converted'
+  if (['follow up', 'follow-up later', 'follow up later'].includes(status)) return 'follow_up'
+  if (['interested', 'qualified'].includes(status)) return 'qualification'
+  if (['contacted'].includes(status)) return 'discovery'
+  return 'discovery'
+}
+
 function inferDealType(raw = {}, role = inferProspectRole(raw)) {
   const explicit = normalizeKey(raw.dealType || raw.deal_type || raw.commercialType || raw.commercial_type)
   if (COMMERCIAL_DEAL_TYPES.includes(explicit)) return explicit
@@ -110,10 +121,14 @@ export function normaliseCommercialProspect(raw = {}, context = {}) {
   const displayName = getDisplayName(raw)
   const areaLabel = getAreaLabel(raw, role)
   const assignedBrokerName = normalizeText(context.assignedBrokerName || raw.assignedBrokerName || raw.assigned_broker_name)
+  const branchId = normalizeText(raw.branchId || raw.branch_id || context.branchId || context.branch_id)
+  const teamId = normalizeText(raw.teamId || raw.team_id || context.teamId || context.team_id)
   const lastActivity = context.lastActivity || null
 
   return {
     ...raw,
+    branchId,
+    teamId,
     prospectRole: role,
     dealType,
     propertyCategory,
@@ -126,6 +141,7 @@ export function normaliseCommercialProspect(raw = {}, context = {}) {
     roleLabel: getRoleLabel(role),
     dealTypeLabel: getDealTypeLabel(dealType),
     categoryLabel: getPropertyCategoryLabel(propertyCategory),
+    leadStage: inferLeadStageFromStatus(raw),
     lastActivity,
     sourceLabel: normalizeText(raw.canvassingMethod || raw.source || raw.method) || 'Other',
     stageLabel: normalizeText(raw.status) || 'New',
@@ -143,18 +159,30 @@ export function filterCommercialProspects(prospects = [], filters = {}) {
   const roleFilter = normalizeKey(filters.role || 'all')
   const categoryFilter = normalizeKey(filters.category || 'all')
   const assignedFilter = normalizeKey(filters.assigned || 'all')
+  const branchFilter = normalizeKey(filters.branch || 'all')
+  const teamFilter = normalizeKey(filters.team || 'all')
+  const statusFilter = normalizeKey(filters.status || 'all')
+  const stageFilter = normalizeKey(filters.stage || 'all')
 
   return prospects.filter((prospect) => {
     const dealType = normalizeKey(prospect.dealType || inferDealType(prospect))
     const role = normalizeKey(prospect.prospectRole || inferProspectRole(prospect))
     const category = normalizeKey(prospect.propertyCategory || inferPropertyCategory(prospect))
     const assigned = normalizeKey(prospect.assignedBrokerId || prospect.assigned_broker_id || prospect.assignedBrokerName || '')
+    const branch = normalizeKey(prospect.branchId || prospect.branch_id)
+    const team = normalizeKey(prospect.teamId || prospect.team_id)
+    const status = normalizeKey(prospect.status || prospect.stageLabel)
+    const stage = normalizeKey(prospect.leadStage || inferLeadStageFromStatus(prospect))
     const matchesSearch = !search || normalizeText(prospect.searchText || '').includes(search)
     const matchesDeal = dealFilter === 'all' || dealType === dealFilter
     const matchesRole = roleFilter === 'all' || role === roleFilter
     const matchesCategory = categoryFilter === 'all' || category === categoryFilter
     const matchesAssigned = assignedFilter === 'all' || assigned === assignedFilter || normalizeKey(prospect.assignedBrokerName) === assignedFilter
-    return matchesSearch && matchesDeal && matchesRole && matchesCategory && matchesAssigned
+    const matchesBranch = branchFilter === 'all' || branch === branchFilter
+    const matchesTeam = teamFilter === 'all' || team === teamFilter
+    const matchesStatus = statusFilter === 'all' || status === statusFilter
+    const matchesStage = stageFilter === 'all' || stage === stageFilter
+    return matchesSearch && matchesDeal && matchesRole && matchesCategory && matchesAssigned && matchesBranch && matchesTeam && matchesStatus && matchesStage
   })
 }
 
@@ -203,4 +231,3 @@ export function deriveCommercialCanvassingMetrics(prospects = [], activities = [
     pipelineValue,
   }
 }
-

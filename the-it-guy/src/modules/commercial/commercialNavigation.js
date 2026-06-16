@@ -8,9 +8,11 @@ import {
   FileText,
   LayoutDashboard,
   Radar,
-  Settings,
+  Settings2,
   TrendingUp,
   UserRoundCheck,
+  Workflow,
+  KeyRound,
 } from 'lucide-react'
 
 export const COMMERCIAL_DASHBOARD_NAV_ITEM = {
@@ -25,6 +27,7 @@ export const COMMERCIAL_NAV_SECTIONS = [
   {
     id: 'pipeline',
     label: 'Pipeline',
+    icon: Workflow,
     items: [
       { label: 'Leads', to: '/commercial/leads', icon: ClipboardList, activePaths: ['/commercial/leads', '/commercial/requirements'] },
       { label: 'Canvassing', to: '/commercial/canvassing', icon: Radar },
@@ -32,24 +35,27 @@ export const COMMERCIAL_NAV_SECTIONS = [
     ],
   },
   {
-    id: 'listings',
-    label: 'Listings',
+    id: 'leasing',
+    label: 'Leasing',
+    icon: KeyRound,
     items: [
       { label: 'Vacancies', to: '/commercial/vacancies', icon: Building2 },
-      { label: 'Sales Listings', to: '/commercial/sales-listings', icon: BadgeDollarSign },
+      { label: 'Leasing Deals', to: '/commercial/leasing', icon: FileText, activePaths: ['/commercial/leasing', '/commercial/deals/leasing', '/commercial/heads-of-terms', '/commercial/hot', '/commercial/leases'] },
     ],
   },
   {
-    id: 'deals',
-    label: 'Deals',
+    id: 'sales',
+    label: 'Sales',
+    icon: TrendingUp,
     items: [
-      { label: 'Leasing Deals', to: '/commercial/leasing', icon: FileText, activePaths: ['/commercial/leasing', '/commercial/deals/leasing', '/commercial/heads-of-terms', '/commercial/hot', '/commercial/leases'] },
-      { label: 'Sales Deals', to: '/commercial/sales', icon: TrendingUp, activePaths: ['/commercial/sales', '/commercial/deals/sales', '/commercial/transactions'] },
+      { label: 'Listings', to: '/commercial/listings', icon: BadgeDollarSign, activePaths: ['/commercial/listings', '/commercial/sales-listings'] },
+      { label: 'Sales Deals', to: '/commercial/sales', icon: FileText, activePaths: ['/commercial/sales', '/commercial/deals/sales', '/commercial/transactions'] },
     ],
   },
   {
     id: 'portfolio',
     label: 'Portfolio',
+    icon: BriefcaseBusiness,
     items: [
       { label: 'Properties', to: '/commercial/properties', icon: Building2 },
       { label: 'Landlords', to: '/commercial/landlords', icon: BriefcaseBusiness },
@@ -58,6 +64,7 @@ export const COMMERCIAL_NAV_SECTIONS = [
   {
     id: 'performance',
     label: 'Performance',
+    icon: BarChart3,
     items: [
       { label: 'Brokers', to: '/commercial/brokers', icon: UserRoundCheck, activePaths: ['/commercial/brokers', '/commercial/brokers/overview', '/commercial/brokers/assignments', '/commercial/brokers/teams', '/commercial/brokers/branches', '/commercial/brokers/performance', '/commercial/performance'] },
       { label: 'Reports', to: '/commercial/reports', icon: BarChart3, activePaths: ['/commercial/reports', '/commercial/docs', '/commercial/documents', '/commercial/activity', '/commercial/market-intelligence', '/commercial/broker-performance'] },
@@ -66,7 +73,7 @@ export const COMMERCIAL_NAV_SECTIONS = [
 ]
 
 export const COMMERCIAL_BOTTOM_NAV_ITEMS = [
-  { label: 'Settings', to: '/commercial/settings', icon: Settings },
+  { label: 'Settings', to: '/commercial/settings', icon: Settings2 },
 ]
 
 export const COMMERCIAL_NAV_ITEMS = [
@@ -77,11 +84,14 @@ export const COMMERCIAL_NAV_ITEMS = [
 
 export const COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS = [
   COMMERCIAL_DASHBOARD_NAV_ITEM,
-  ...COMMERCIAL_NAV_SECTIONS.flatMap((section) => section.items).slice(0, 4),
+  COMMERCIAL_NAV_SECTIONS[0].items[0],
+  COMMERCIAL_NAV_SECTIONS[0].items[1],
+  COMMERCIAL_NAV_SECTIONS[1].items[0],
 ]
 
 export const COMMERCIAL_MOBILE_MORE_NAV_ITEMS = [
-  ...COMMERCIAL_NAV_SECTIONS.flatMap((section) => section.items).slice(4),
+  COMMERCIAL_NAV_SECTIONS[0].items[2],
+  ...COMMERCIAL_NAV_SECTIONS.slice(1).flatMap((section) => section.items.slice()),
   ...COMMERCIAL_BOTTOM_NAV_ITEMS,
 ]
 

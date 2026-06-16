@@ -15,6 +15,7 @@ import {
   Plus,
   Save,
   Search,
+  SlidersHorizontal,
   Trash2,
   UserPlus,
 } from 'lucide-react'
@@ -392,12 +393,35 @@ function SearchField({ value, onChange, placeholder = 'Search canvassing prospec
   )
 }
 
-function EmptyDetailState() {
+function RegisterTab({ active = false, onClick, children }) {
   return (
-    <CommercialEmptyState
-      title="No prospect selected"
-      description="Choose a canvassing record to review the follow-up trail, conversion actions, and linked commercial records."
-    />
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative whitespace-nowrap pb-3 text-sm font-semibold transition ${
+        active
+          ? 'text-[#1952c6] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:rounded-full after:bg-[#2c6cf0]'
+          : 'text-[#63768b] hover:text-[#0f2748]'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function FilterChip({ active = false, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`whitespace-nowrap rounded-[10px] px-4 py-2 text-sm font-semibold transition ${
+        active
+          ? 'bg-[#edf3ff] text-[#1952c6] shadow-[inset_0_0_0_1px_rgba(44,108,240,0.08)]'
+          : 'text-[#60758d] hover:bg-[#f7faff] hover:text-[#0f2748]'
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -731,6 +755,7 @@ function CommercialCanvassingPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [methodFilter, setMethodFilter] = useState('all')
   const [brokerFilter, setBrokerFilter] = useState('all')
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [selectedProspectId, setSelectedProspectId] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [createStep, setCreateStep] = useState(2)
@@ -861,13 +886,32 @@ function CommercialCanvassingPage() {
     [activities, selectedProspect],
   )
 
+  const roleFilterOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All' },
+      ...(dealFilter === 'lease'
+        ? [{ value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]
+        : dealFilter === 'sale'
+          ? [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }]
+          : [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }, { value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]),
+    ],
+    [dealFilter],
+  )
+
+  const categoryFilterOptions = useMemo(
+    () => [{ value: 'all', label: 'All Categories' }, ...COMMERCIAL_CATEGORY_OPTIONS],
+    [],
+  )
+
   const filteredProspects = useMemo(() => filterCommercialProspects(normalizedProspects, {
     search,
     dealType: dealFilter,
     role: roleFilter,
     category: categoryFilter,
     assigned: brokerFilter,
-  }).filter((prospect) => statusFilter === 'all' || normalizeKey(prospect.stageLabel || prospect.status) === normalizeKey(statusFilter)), [brokerFilter, categoryFilter, dealFilter, normalizedProspects, roleFilter, search, statusFilter])
+  })
+    .filter((prospect) => statusFilter === 'all' || normalizeKey(prospect.stageLabel || prospect.status) === normalizeKey(statusFilter))
+    .filter((prospect) => methodFilter === 'all' || normalizeKey(prospect.sourceLabel || prospect.canvassingMethod || prospect.source) === normalizeKey(methodFilter)), [brokerFilter, categoryFilter, dealFilter, methodFilter, normalizedProspects, roleFilter, search, statusFilter])
 
   const metrics = useMemo(() => deriveCommercialCanvassingMetrics(normalizedProspects, activities), [activities, normalizedProspects])
 
@@ -1512,6 +1556,9 @@ function CommercialCanvassingPage() {
   )
 
   const selectedBrokerLabel = selectedProspectView?.assignedBrokerDisplay || pickLookupLabel(brokerOptions, selectedProspect?.assignedBrokerId, selectedProspect?.assignedBrokerName || 'Unassigned')
+  const advancedFilterCount = [statusFilter, brokerFilter, methodFilter].filter((value) => value !== 'all').length
+  const shouldShowAdvancedFilters = showAdvancedFilters || advancedFilterCount > 0
+  const hasAnyProspects = normalizedProspects.length > 0
 
   return (
     <div className="space-y-8 pb-10">
@@ -1570,101 +1617,90 @@ function CommercialCanvassingPage() {
         <ProspectStat label="Pipeline Value" value={loading ? '...' : formatCurrencyZAR(metrics.pipelineValue)} detail="Opportunity value in motion" icon={DollarSign} />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+      <section className="space-y-6">
         <article className={`${CARD_CLASS} overflow-hidden`}>
           <div className="border-b border-[#e6edf4] p-5 sm:p-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#102236]">Prospects</h2>
-                <p className="mt-1 text-sm leading-6 text-[#63768b]">Unified commercial prospect register and follow-up state.</p>
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#102236]">Prospects</h2>
+                  <p className="mt-1 text-sm leading-6 text-[#63768b]">Unified commercial prospect register and follow-up state.</p>
+                </div>
+                <SearchField value={search} onChange={setSearch} placeholder="Search prospects, companies, brokers..." className="w-full xl:w-[380px]" />
               </div>
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,260px)_repeat(3,minmax(0,180px))]">
-                <SearchField value={search} onChange={setSearch} placeholder="Search prospects, areas, brokers..." />
-                <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-[14px]">
-                  <option value="all">All stages</option>
-                  {PROSPECT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
-                </Field>
-                <Field as="select" value={brokerFilter} onChange={(event) => setBrokerFilter(event.target.value)} className="h-11 rounded-[14px]">
-                  <option value="all">All brokers</option>
-                  {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </Field>
-                <Field as="select" value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)} className="h-11 rounded-[14px]">
-                  <option value="all">All methods</option>
-                  {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
-                </Field>
-              </div>
-            </div>
 
-            <div className="mt-5 space-y-3">
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {FILTER_DEAL_TABS.map((tab) => {
-                  const active = dealFilter === tab.value
-                  return (
-                    <button
+              <div className="border-b border-[#eef3f7]">
+                <div className="flex gap-8 overflow-x-auto">
+                  {FILTER_DEAL_TABS.map((tab) => (
+                    <RegisterTab
                       key={tab.value}
-                      type="button"
+                      active={dealFilter === tab.value}
                       onClick={() => setDealFilter(tab.value)}
-                      className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition ${
-                        active
-                          ? 'border-[#2c6cf0] bg-[#eff5ff] text-[#1f4f78]'
-                          : 'border-[#dce6f0] bg-white text-[#63768b] hover:border-[#bfd2e6] hover:text-[#0f2748]'
-                      }`}
                     >
                       {tab.label}
-                    </button>
-                  )
-                })}
+                    </RegisterTab>
+                  ))}
+                </div>
               </div>
 
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {[
-                  { value: 'all', label: 'All' },
-                  ...(dealFilter === 'lease'
-                    ? [{ value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]
-                    : dealFilter === 'sale'
-                      ? [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }]
-                      : [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }, { value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]),
-                ].map((item) => {
-                  const active = roleFilter === item.value
-                  return (
-                    <button
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex gap-1.5 overflow-x-auto">
+                  {roleFilterOptions.map((item) => (
+                    <FilterChip
                       key={item.value}
-                      type="button"
+                      active={roleFilter === item.value}
                       onClick={() => setRoleFilter(item.value)}
-                      className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition ${
-                        active
-                          ? 'border-[#2c6cf0] bg-[#eff5ff] text-[#1f4f78]'
-                          : 'border-[#dce6f0] bg-white text-[#63768b] hover:border-[#bfd2e6] hover:text-[#0f2748]'
-                      }`}
                     >
                       {item.label}
-                    </button>
-                  )
-                })}
+                    </FilterChip>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto xl:justify-end">
+                  {categoryFilterOptions.map((item) => (
+                    <FilterChip
+                      key={item.value}
+                      active={categoryFilter === item.value}
+                      onClick={() => setCategoryFilter(item.value)}
+                    >
+                      {item.label}
+                    </FilterChip>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedFilters((current) => !current)}
+                    className={`inline-flex h-10 items-center gap-2 rounded-[12px] border px-4 text-sm font-semibold transition ${
+                      shouldShowAdvancedFilters
+                        ? 'border-[#d7e3f4] bg-[#f5f8fc] text-[#0f2748]'
+                        : 'border-[#e2eaf3] bg-white text-[#63768b] hover:border-[#d0dceb] hover:text-[#0f2748]'
+                    }`}
+                  >
+                    <SlidersHorizontal size={15} />
+                    Filters
+                    {advancedFilterCount ? (
+                      <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#e7efff] px-1.5 text-[11px] font-semibold text-[#1952c6]">
+                        {advancedFilterCount}
+                      </span>
+                    ) : null}
+                  </button>
+                </div>
               </div>
 
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {[
-                  { value: 'all', label: 'All Categories' },
-                  ...COMMERCIAL_CATEGORY_OPTIONS,
-                ].map((item) => {
-                  const active = categoryFilter === item.value
-                  return (
-                    <button
-                      key={item.value}
-                      type="button"
-                      onClick={() => setCategoryFilter(item.value)}
-                      className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition ${
-                        active
-                          ? 'border-[#2c6cf0] bg-[#eff5ff] text-[#1f4f78]'
-                          : 'border-[#dce6f0] bg-white text-[#63768b] hover:border-[#bfd2e6] hover:text-[#0f2748]'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  )
-                })}
-              </div>
+              {shouldShowAdvancedFilters ? (
+                <div className="grid gap-3 rounded-[20px] border border-[#e6edf4] bg-[#fbfdff] p-4 md:grid-cols-3">
+                  <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-[14px] bg-white">
+                    <option value="all">All stages</option>
+                    {PROSPECT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </Field>
+                  <Field as="select" value={brokerFilter} onChange={(event) => setBrokerFilter(event.target.value)} className="h-11 rounded-[14px] bg-white">
+                    <option value="all">All brokers</option>
+                    {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </Field>
+                  <Field as="select" value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)} className="h-11 rounded-[14px] bg-white">
+                    <option value="all">All methods</option>
+                    {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </Field>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -1855,29 +1891,46 @@ function CommercialCanvassingPage() {
                     )
                   })}
                 </div>
+
+                <div className="flex flex-col gap-3 border-t border-[#eef3f7] px-5 py-4 text-sm text-[#63768b] sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                  <p>Showing {filteredProspects.length} of {normalizedProspects.length} prospects</p>
+                  <p>{selectedProspect ? `Selected: ${getProspectDisplayName(selectedProspect)}` : 'Select a row to open its workspace below.'}</p>
+                </div>
               </>
             ) : (
               <div className="p-6">
                 <CommercialEmptyState
-                  title="No commercial prospects yet."
+                  title={hasAnyProspects ? 'No prospects match these filters.' : 'No commercial prospects yet.'}
                   description={
-                    dealFilter === 'sale'
-                      ? 'Track property owners and buyers ready to move through the sales pipeline.'
-                      : dealFilter === 'lease'
-                        ? 'Track landlords and tenants for the leasing pipeline.'
-                        : 'Add your first seller, buyer, landlord or tenant prospect to start building your commercial pipeline.'
+                    hasAnyProspects
+                      ? 'Try widening the role, category, or advanced filters to bring more prospects back into view.'
+                      : dealFilter === 'sale'
+                        ? 'Track property owners and buyers ready to move through the sales pipeline.'
+                        : dealFilter === 'lease'
+                          ? 'Track landlords and tenants for the leasing pipeline.'
+                          : 'Add your first seller, buyer, landlord or tenant prospect to start building your commercial pipeline.'
                   }
-                  primaryActionLabel="+ Add Prospect"
-                  onPrimaryAction={() => openCreateModal(createRole)}
+                  primaryActionLabel={hasAnyProspects ? 'Clear Filters' : '+ Add Prospect'}
+                  onPrimaryAction={hasAnyProspects
+                    ? () => {
+                      setSearch('')
+                      setRoleFilter('all')
+                      setCategoryFilter('all')
+                      setStatusFilter('all')
+                      setMethodFilter('all')
+                      setBrokerFilter('all')
+                      setShowAdvancedFilters(false)
+                    }
+                    : () => openCreateModal(createRole)}
                 />
               </div>
             )}
           </div>
         </article>
 
-        <aside className="space-y-6">
-          {selectedProspect ? (
-            <>
+        {selectedProspect ? (
+          <section className="grid gap-6 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <div className="space-y-6">
               <article className={`${CARD_CLASS} p-6`}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
@@ -2008,6 +2061,9 @@ function CommercialCanvassingPage() {
                 </div>
               </article>
 
+            </div>
+
+            <div className="space-y-6">
               <article className={`${CARD_CLASS} p-6`}>
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -2175,11 +2231,9 @@ function CommercialCanvassingPage() {
                   </Button>
                 </div>
               </article>
-            </>
-          ) : (
-            <EmptyDetailState />
-          )}
-        </aside>
+            </div>
+          </section>
+        ) : null}
       </section>
 
       {createModal}

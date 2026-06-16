@@ -1,4 +1,5 @@
-import { memo } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { memo, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
 import { COMMERCIAL_BOTTOM_NAV_ITEMS, COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_SECTIONS, isCommercialNavItemActive, isCommercialNavItemAvailable } from '../commercialNavigation'
@@ -12,7 +13,23 @@ function CommercialSidebar({ scope = null }) {
   const DashboardIcon = COMMERCIAL_DASHBOARD_NAV_ITEM.icon
   const activeItemClass = 'bg-[rgba(0,102,204,0.08)] text-[#0B3A5B] shadow-[inset_0_0_0_1px_rgba(0,102,204,0.12)]'
   const inactiveItemClass = 'text-slate-600 hover:bg-slate-50 hover:text-[#0B3A5B]'
-  const navItemClass = 'flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150'
+  const navItemClass = 'flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150'
+  const childItemClass = 'ml-4 min-h-9 rounded-lg pr-3 pl-9 text-[0.94rem]'
+  const visibleSections = useMemo(
+    () => COMMERCIAL_NAV_SECTIONS
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((item) => isCommercialNavItemAvailable(item, scope)),
+      }))
+      .filter((section) => section.items.length),
+    [scope],
+  )
+  const activeSectionId = useMemo(
+    () => visibleSections.find((section) => section.items.some((item) => isCommercialNavItemActive(currentFullPath, item)))?.id || null,
+    [currentFullPath, visibleSections],
+  )
+  const [manualExpandedSectionId, setManualExpandedSectionId] = useState(null)
+  const expandedSectionId = activeSectionId || (visibleSections.some((section) => section.id === manualExpandedSectionId) ? manualExpandedSectionId : null)
 
   return (
     <aside className="hidden h-screen w-[268px] shrink-0 border-r border-slate-200 bg-white shadow-[12px_0_32px_rgba(15,23,42,0.03)] lg:flex">
@@ -40,36 +57,52 @@ function CommercialSidebar({ scope = null }) {
           </Link>
 
           <div>
-            {COMMERCIAL_NAV_SECTIONS.map((section) => (
-              <div key={section.id}>
-                <h2
-                  className="mb-2 mt-6 text-[11px] font-semibold uppercase leading-none tracking-[0.08em]"
-                  style={{ color: 'var(--text-tertiary, #94a3b8)' }}
-                >
-                  {section.label}
-                </h2>
-                <div className="grid gap-1">
-                  {section.items.filter((item) => isCommercialNavItemAvailable(item, scope)).map((item) => {
-                    const ItemIcon = item.icon
-                    const active = isCommercialNavItemActive(currentFullPath, item)
-                    return (
-                      <Link
-                        key={item.to}
-                        to={item.to}
-                        aria-current={active ? 'page' : undefined}
-                        className={[
-                          navItemClass,
-                          active ? activeItemClass : inactiveItemClass,
-                        ].join(' ')}
-                      >
-                        <ItemIcon size={17} />
-                        <span className="truncate">{item.label}</span>
-                      </Link>
-                    )
-                  })}
+            {visibleSections.map((section) => {
+              const SectionIcon = section.icon
+              return (
+                <div key={section.id}>
+                  <button
+                    type="button"
+                    onClick={() => setManualExpandedSectionId((current) => (current === section.id ? null : section.id))}
+                    className={[
+                      navItemClass,
+                      'mt-3 w-full justify-between',
+                      activeSectionId === section.id ? activeItemClass : inactiveItemClass,
+                    ].join(' ')}
+                    aria-expanded={expandedSectionId === section.id}
+                  >
+                    <span className="inline-flex items-center gap-3">
+                      <SectionIcon size={17} />
+                      <span>{section.label}</span>
+                    </span>
+                    <ChevronDown size={14} className={`transition ${expandedSectionId === section.id ? 'rotate-180 text-[#0B3A5B]' : 'text-slate-400'}`} />
+                  </button>
+                  {expandedSectionId === section.id ? (
+                    <div className="mt-1 grid gap-1">
+                      {section.items.map((item) => {
+                        const ItemIcon = item.icon
+                        const active = isCommercialNavItemActive(currentFullPath, item)
+                        return (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            aria-current={active ? 'page' : undefined}
+                            className={[
+                              navItemClass,
+                              childItemClass,
+                              active ? activeItemClass : inactiveItemClass,
+                            ].join(' ')}
+                          >
+                            <ItemIcon size={15} />
+                            <span className="truncate">{item.label}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </nav>
 
