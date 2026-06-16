@@ -284,7 +284,7 @@ function CommercialPrincipalWorkspacePage() {
             <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">Commercial Principal View</h1>
             <p className="mt-1 max-w-4xl text-sm leading-6 text-slate-500">One place to run the commercial brokerage: performance, stock, pipeline, transactions, revenue, and reporting.</p>
           </div>
-          <Link to="/commercial/dashboard" className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-[#102236]">
+          <Link to="/commercial" className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-[#102236]">
             Open Dashboard
             <ArrowUpRight size={15} />
           </Link>

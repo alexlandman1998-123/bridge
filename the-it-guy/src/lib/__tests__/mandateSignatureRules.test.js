@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 
 import {
   filterMandateSigningRows,
+  getMandateSignerRoleLabel,
   mandateRequiresSpouseSignature,
+  resolveMandateSecondarySignerConfig,
   resolveMandateSpouseRequirementFromFields,
 } from '../mandateSignatureRules.js'
 
@@ -47,6 +49,52 @@ assert.equal(
 assert.equal(resolveMandateSpouseRequirementFromFields([{ signer_role: 'purchaser_2', required: false }]), false)
 assert.equal(resolveMandateSpouseRequirementFromFields([{ signer_role: 'purchaser_2', required: true }]), true)
 assert.equal(resolveMandateSpouseRequirementFromFields([]), null)
+
+assert.deepEqual(
+  resolveMandateSecondarySignerConfig({
+    sourceContext: {
+      onboardingFormData: {
+        ownershipType: 'single',
+        spouseName: 'Jordan Seller',
+        spouseEmail: 'jordan@example.com',
+      },
+    },
+  }),
+  {
+    role: 'purchaser_2',
+    kind: '',
+    label: 'Co-signer',
+    required: false,
+    signerName: '',
+    signerEmail: '',
+  },
+)
+
+assert.deepEqual(
+  resolveMandateSecondarySignerConfig({
+    sourceContext: {
+      onboardingFormData: {
+        ownershipType: 'multiple_owners',
+        sellerFullName: 'Alex Seller',
+        sellerEmail: 'alex@example.com',
+        multipleOwners: [
+          { name: 'Alex Seller', email: 'alex@example.com' },
+          { name: 'Jamie Coowner', email: 'jamie@example.com' },
+        ],
+      },
+    },
+  }),
+  {
+    role: 'purchaser_2',
+    kind: 'co_owner',
+    label: 'Co-owner',
+    required: true,
+    signerName: 'Jamie Coowner',
+    signerEmail: 'jamie@example.com',
+  },
+)
+
+assert.equal(getMandateSignerRoleLabel('purchaser_2', { secondarySignerLabel: 'Co-owner' }), 'Co-owner')
 
 const filteredWithoutSpouse = filterMandateSigningRows([
   { signer_role: 'agent' },

@@ -134,7 +134,7 @@ function CommercialTransactionWorkspacePage() {
   return (
     <div className="grid gap-5">
       <section className={CARD_CLASS}>
-        <Link to="/commercial/dashboard#transactions" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-[#102236]">
+        <Link to="/commercial/pipeline" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-[#102236]">
           <ArrowLeft size={16} />
           Commercial dashboard
         </Link>

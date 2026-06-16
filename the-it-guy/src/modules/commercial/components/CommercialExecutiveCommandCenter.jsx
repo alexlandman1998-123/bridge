@@ -1,7 +1,8 @@
-import { createElement, useId, useMemo } from 'react'
+import { useId, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
+  BadgeDollarSign,
   Building2,
   CalendarDays,
   CheckCircle2,
@@ -11,19 +12,15 @@ import {
   Flame,
   Handshake,
   LineChart,
-  MoreVertical,
-  Plus,
   PieChart,
   ShieldAlert,
-  Sparkles,
   TrendingUp,
-  UserRound,
   Users,
   Warehouse,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import CommercialEmptyState from './CommercialEmptyState'
-import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
+import { formatNumber, titleize } from '../commercialFormatters'
 
 const PANEL_CLASS = 'rounded-[24px] border border-[rgba(15,23,42,0.07)] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]'
 const GLASS_CARD_CLASS = 'rounded-[24px] border border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] shadow-[0_8px_24px_rgba(15,23,42,0.04)] backdrop-blur-xl'
@@ -119,11 +116,6 @@ function daysBetween(start, end) {
   return Math.round((endDate.getTime() - startDate.getTime()) / 86400000)
 }
 
-function formatMoney(value) {
-  const formatted = formatCurrency(value)
-  return formatted === '-' ? 'R0' : formatted
-}
-
 function formatCompactCurrency(value) {
   const amount = toNumber(value)
   if (!amount) return 'R0'
@@ -136,10 +128,6 @@ function formatCompactCurrency(value) {
 function formatPercentValue(value, maximumFractionDigits = 0) {
   const amount = toNumber(value)
   return `${new Intl.NumberFormat('en-ZA', { maximumFractionDigits }).format(amount)}%`
-}
-
-function formatCurrencyZAR(value) {
-  return formatMoney(value)
 }
 
 function formatPercentage(value, maximumFractionDigits = 0) {
@@ -204,323 +192,12 @@ function buildMonthlyValueSeries(rows = [], valueAccessor = (row) => row.value |
   }))
 }
 
-function buildPipelineTrendPoints(data = {}) {
-  return buildMonthlyValueSeries(
-    data.commercialTransactions || [],
-    (row) => row.value || row.targetValue || 0,
-    (row) => row.actualCloseDate || row.updatedAt || row.createdAt,
-    6,
-  )
-}
-
-function deriveCommercialStageBreakdown({
-  summary = {},
-  financialSummary = {},
-  requirements = [],
-  viewings = [],
-  deals = [],
-  headsOfTerms = [],
-  commercialTransactions = [],
-} = {}) {
-  const totalPipelineValue = toNumber(financialSummary.pipelineValue || summary.pipelineValue || 0)
-  const requirementsCount = requirements.filter(isActiveRequirement).length || toNumber(summary.activeRequirements)
-  const viewingsCount = viewings.filter((row) => !['cancelled', 'no_show'].includes(normalizeLower(row.status))).length
-  const proposalCount = headsOfTerms.filter((row) => !['converted', 'superseded', 'archived'].includes(normalizeLower(row.status))).length
-  const negotiationCount = [
-    ...deals.filter((row) => ['negotiation', 'proposal', 'hot_draft', 'hot_sent', 'hot_accepted', 'lease_pending'].includes(normalizeLower(row.stage || row.status))),
-    ...commercialTransactions.filter((row) => ['negotiating', 'proposal', 'heads_of_terms', 'lease_draft'].includes(normalizeLower(row.status))),
-  ].length
-
-  const stages = [
-    { key: 'prospecting', label: 'Prospecting', value: requirementsCount, color: '#3773f5', softClass: 'bg-blue-50 text-blue-700' },
-    { key: 'qualifying', label: 'Qualifying', value: viewingsCount, color: '#22b8cf', softClass: 'bg-cyan-50 text-cyan-700' },
-    { key: 'proposal', label: 'Proposal', value: proposalCount, color: '#8b5cf6', softClass: 'bg-violet-50 text-violet-700' },
-    { key: 'negotiation', label: 'Negotiation', value: negotiationCount, color: '#2ab673', softClass: 'bg-emerald-50 text-emerald-700' },
-  ]
-
-  const totalWeight = stages.reduce((sum, stage) => sum + stage.value, 0)
-  if (!totalWeight) {
-    return {
-      totalValue: totalPipelineValue,
-      hasData: false,
-      stages: stages.map((stage) => ({ ...stage, percent: 0, amount: 0 })),
-    }
-  }
-
-  return {
-    totalValue: totalPipelineValue,
-    hasData: true,
-    stages: stages.map((stage) => {
-      const percent = (stage.value / totalWeight) * 100
-      return {
-        ...stage,
-        percent,
-        amount: totalPipelineValue * (percent / 100),
-      }
-    }),
-  }
-}
-
-function deriveCommercialDashboardMetrics({
-  summary = {},
-  financialSummary = {},
-  pipelineTrend = [],
-  occupancyTrend = [],
-  listingSeries = [],
-  requirementSeries = [],
-  loading = false,
-  isFreshCommercialWorkspace = false,
-} = {}) {
-  const pipelineValue = toNumber(financialSummary.pipelineValue || summary.pipelineValue || 0)
-  const expectedCommission = toNumber(financialSummary.expectedCommission || summary.expectedRevenue || 0)
-  const activeListings = toNumber(summary.activeListings || 0)
-  const activeRequirements = toNumber(summary.activeRequirements || 0)
-  const occupancyRate = toNumber(summary.occupancyRate || 0)
-
-  const pipelineCurrent = pipelineTrend[pipelineTrend.length - 1]?.value || 0
-  const pipelinePrevious = pipelineTrend[pipelineTrend.length - 2]?.value || 0
-  const pipelineDelta = calculateMonthDelta(pipelineCurrent, pipelinePrevious)
-
-  const listingsCurrent = listingSeries[listingSeries.length - 1]?.value || 0
-  const listingsPrevious = listingSeries[listingSeries.length - 2]?.value || 0
-  const listingsDelta = calculateMonthDelta(listingsCurrent, listingsPrevious)
-
-  const requirementsCurrent = requirementSeries[requirementSeries.length - 1]?.value || 0
-  const requirementsPrevious = requirementSeries[requirementSeries.length - 2]?.value || 0
-  const requirementsDelta = calculateMonthDelta(requirementsCurrent, requirementsPrevious)
-
-  const occupancyCurrent = occupancyTrend[occupancyTrend.length - 1]?.occupancy ?? occupancyRate
-  const occupancyPrevious = occupancyTrend[occupancyTrend.length - 2]?.occupancy ?? occupancyCurrent
-  const occupancyDelta = calculateMonthDelta(occupancyCurrent, occupancyPrevious, 'points')
-
-  const buildComparison = (delta, emptyLabel, currentValue = 0, suffix = '%') => {
-    if (loading) return 'Updating…'
-    if (isFreshCommercialWorkspace) return emptyLabel
-    if (!currentValue) return emptyLabel
-    if (!delta && delta !== 0) return emptyLabel
-    if (delta === 0) return 'No movement yet'
-    const prefix = delta > 0 ? '+' : '−'
-    return `${prefix}${Math.abs(delta).toFixed(0)}${suffix} vs last month`
-  }
-
-  return {
-    pipelineValue: {
-      value: formatCurrencyZAR(pipelineValue),
-      comparison: buildComparison(pipelineDelta.delta, 'No pipeline activity yet', pipelineValue),
-      direction: pipelineDelta.direction,
-    },
-    expectedCommission: {
-      value: formatCurrencyZAR(expectedCommission),
-      comparison: expectedCommission ? 'Projected from active commercial work' : 'No expected commission yet',
-      direction: expectedCommission ? 'up' : 'flat',
-    },
-    activeListings: {
-      value: formatNumber(activeListings),
-      comparison: buildComparison(listingsDelta.delta, 'No listings live yet', activeListings),
-      direction: listingsDelta.direction,
-    },
-    activeRequirements: {
-      value: formatNumber(activeRequirements),
-      comparison: buildComparison(requirementsDelta.delta, 'No active requirements yet', activeRequirements),
-      direction: requirementsDelta.direction,
-    },
-    occupancy: {
-      value: formatPercentage(occupancyRate),
-      comparison: occupancyRate ? `${occupancyDelta.delta > 0 ? '+' : ''}${Math.abs(occupancyDelta.delta).toFixed(0)}pp vs last month` : 'No active vacancies yet',
-      direction: occupancyDelta.direction,
-    },
-  }
-}
-
-function activityIconForEntity(entity = '') {
-  const normalized = normalizeLower(entity)
-  if (normalized.includes('listing')) return Warehouse
-  if (normalized.includes('requirement')) return Users
-  if (normalized.includes('deal') || normalized.includes('transaction')) return Handshake
-  if (normalized.includes('vacancy')) return Building2
-  if (normalized.includes('heads')) return FileText
-  return Clock3
-}
-
-function buildLatestActivityFeed(items = []) {
-  return items.map((item) => ({
-    ...item,
-    icon: activityIconForEntity(item.entity),
-    timestampLabel: relativeTime(item.timestamp),
-    title: item.title || item.entity || 'Activity update',
-    body: item.body || item.detail || '',
-  }))
-}
-
-function relativeTime(value) {
-  const date = asDate(value)
-  if (!date) return 'Recently'
-  const diffMs = Date.now() - date.getTime()
-  const diffHours = Math.max(1, Math.round(diffMs / 3600000))
-  if (diffHours < 24) return `${diffHours}h ago`
-  const diffDays = Math.round(diffHours / 24)
-  if (diffDays < 30) return `${diffDays}d ago`
-  return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short' }).format(date)
-}
-
 function getFirstName(profile = null) {
   const direct = normalizeText(profile?.firstName || profile?.first_name)
   if (direct) return direct
   const fullName = normalizeText(profile?.fullName || profile?.full_name || profile?.name)
   if (fullName) return fullName.split(/\s+/)[0]
   return 'there'
-}
-
-function getGreeting(profile = null) {
-  const hour = new Date().getHours()
-  const prefix = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
-  return `${prefix}, ${getFirstName(profile)}`
-}
-
-function leaseValue(row = {}) {
-  const monthlyRental = toNumber(row.monthly_rental)
-  const termMonths = Math.max(toNumber(row.lease_term_months || row.lease_term || 12), 1)
-  return monthlyRental * termMonths
-}
-
-function buildExecutivePipelineStages(data = {}, summary = {}, financialSummary = {}) {
-  const requirements = (data.requirements || []).filter(isActiveRequirement)
-  const viewings = (data.viewings || []).filter((row) => !['cancelled', 'no_show'].includes(normalizeLower(row.status)))
-  const headsOfTerms = (data.headsOfTerms || []).filter((row) => !['converted', 'superseded', 'archived'].includes(normalizeLower(row.status)))
-  const negotiationDeals = (data.deals || []).filter((row) => {
-    const stage = normalizeLower(row.stage || row.status)
-    return isActiveDeal(row) && (stage.includes('negotiat') || stage === 'qualified')
-  })
-  const leaseDrafts = (data.leases || []).filter((row) => {
-    const status = normalizeLower(row.status)
-    return !['active', 'archived', 'terminated', 'completed'].includes(status)
-  })
-  const signedHots = headsOfTerms.filter((row) => ['signed', 'ready_for_lease'].includes(normalizeLower(row.status)))
-  const activeLeases = (data.leases || []).filter((row) => normalizeLower(row.status) === 'active')
-  const requirementValue = requirements.reduce((sum, row) => sum + Math.max(toNumber(row.budget_max), toNumber(row.budget_min)), 0)
-  const viewingValue = viewings.reduce((sum, row) => sum + Math.max(toNumber(row.asking_rental), 0), 0)
-  const hotValue = headsOfTerms.reduce((sum, row) => sum + leaseValue(row), 0)
-  const negotiationValue = negotiationDeals.reduce((sum, row) => sum + toNumber(row.deal_value), 0)
-  const leaseDraftValue = leaseDrafts.reduce((sum, row) => sum + leaseValue(row), 0)
-  const signedValue = signedHots.reduce((sum, row) => sum + leaseValue(row), 0)
-  const activeValue = toNumber(financialSummary.activeLeaseValue || 0)
-
-  const stages = [
-    { key: 'requirements', label: 'Requirements', count: requirements.length || toNumber(summary.activeRequirements), value: requirementValue, icon: Users, accent: 'text-sky-200', border: 'border-sky-400/20', bg: 'bg-sky-400/10' },
-    { key: 'viewings', label: 'Viewings', count: viewings.length, value: viewingValue, icon: CalendarDays, accent: 'text-blue-200', border: 'border-blue-400/20', bg: 'bg-blue-400/10' },
-    { key: 'hot', label: 'Heads of Terms', count: headsOfTerms.length, value: hotValue, icon: Flame, accent: 'text-orange-200', border: 'border-orange-300/20', bg: 'bg-orange-400/10' },
-    { key: 'negotiation', label: 'Negotiation', count: negotiationDeals.length || toNumber(summary.dealsInNegotiation), value: negotiationValue || toNumber(summary.activeNegotiationValue), icon: Handshake, accent: 'text-amber-100', border: 'border-amber-300/20', bg: 'bg-amber-400/10' },
-    { key: 'lease_draft', label: 'Lease Draft', count: leaseDrafts.length, value: leaseDraftValue, icon: FileText, accent: 'text-yellow-100', border: 'border-yellow-300/20', bg: 'bg-yellow-400/10' },
-    { key: 'signed', label: 'Signed', count: signedHots.length, value: signedValue, icon: CheckCircle2, accent: 'text-emerald-200', border: 'border-emerald-300/20', bg: 'bg-emerald-400/10' },
-    { key: 'active', label: 'Active', count: activeLeases.length, value: activeValue, icon: Building2, accent: 'text-green-200', border: 'border-green-300/20', bg: 'bg-green-400/10' },
-  ]
-
-  return stages.map((stage, index) => {
-    const previous = stages[index - 1]
-    const conversion = index === 0 ? 100 : !previous?.count ? 0 : Math.max(0, Math.min(100, (stage.count / previous.count) * 100))
-    return { ...stage, conversion }
-  })
-}
-
-function buildWeeklyActivity(data = {}) {
-  const today = new Date()
-  const weekStart = startOfWeek(today)
-  const weekEnd = endOfWeek(today)
-  const viewings = (data.viewings || []).filter((row) => {
-    const viewingDate = row.viewing_date ? new Date(`${row.viewing_date}T${row.viewing_time || '09:00'}`) : asDate(row.created_at)
-    return viewingDate && viewingDate >= weekStart && viewingDate <= weekEnd && !['cancelled', 'no_show'].includes(normalizeLower(row.status))
-  }).length
-  const hots = (data.headsOfTerms || []).filter((row) => isWithinRange(row.updated_at || row.created_at, weekStart, weekEnd)).length
-  const leaseTransactions = (data.commercialTransactions || []).filter((row) => {
-    if (normalizeLower(row.transactionType) !== 'lease') return false
-    return normalizeLower(row.status) === 'completed' && isWithinRange(row.actualCloseDate || row.updatedAt || row.createdAt, weekStart, weekEnd)
-  }).length
-  const renewals = (data.commercialTransactions || []).filter((row) => {
-    const expiryDate = row.lease?.lease_end_date
-    const daysToExpiry = daysBetween(today, expiryDate)
-    if (daysToExpiry === null || daysToExpiry > 180) return false
-    return isWithinRange(row.updatedAt || row.actualCloseDate || row.createdAt, weekStart, weekEnd)
-  }).length
-
-  return [
-    { key: 'viewings', label: 'Viewings', value: viewings, icon: CalendarDays, tone: 'text-sky-600 bg-sky-50' },
-    { key: 'hots', label: 'Heads of Terms', value: hots, icon: Flame, tone: 'text-orange-600 bg-orange-50' },
-    { key: 'signed', label: 'Leases Signed', value: leaseTransactions, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50' },
-    { key: 'renewals', label: 'Renewals', value: renewals, icon: Clock3, tone: 'text-violet-600 bg-violet-50' },
-  ]
-}
-
-function buildRevenueTrend(data = {}) {
-  const today = new Date()
-  const firstMonth = startOfMonth(addMonths(today, -11))
-  const points = Array.from({ length: 12 }, (_, index) => {
-    const monthDate = addMonths(firstMonth, index)
-    return {
-      label: new Intl.DateTimeFormat('en-ZA', { month: 'short' }).format(monthDate),
-      key: `${monthDate.getFullYear()}-${monthDate.getMonth()}`,
-      value: 0,
-    }
-  })
-  const pointMap = new Map(points.map((point) => [point.key, point]))
-
-  ;(data.commercialTransactions || []).forEach((transaction) => {
-    if (!isOpenTransaction(transaction) && normalizeLower(transaction.status) !== 'completed') return
-    const date = asDate(transaction.actualCloseDate || transaction.updatedAt || transaction.createdAt)
-    if (!date || date < firstMonth) return
-    const key = `${date.getFullYear()}-${date.getMonth()}`
-    const point = pointMap.get(key)
-    if (!point) return
-    point.value += toNumber(transaction.value || transaction.targetValue)
-  })
-
-  return points
-}
-
-function buildOpenDeals(data = {}) {
-  return (data.commercialTransactions || [])
-    .filter(isOpenTransaction)
-    .slice()
-    .sort((left, right) => {
-      const rightDate = asDate(right.updatedAt || right.createdAt || 0)?.getTime() || 0
-      const leftDate = asDate(left.updatedAt || left.createdAt || 0)?.getTime() || 0
-      return rightDate - leftDate || toNumber(right.value) - toNumber(left.value)
-    })
-    .slice(0, 8)
-    .map((row) => ({
-      id: row.id,
-      deal: row.title || row.transactionName || row.transaction_name || row.deal?.deal_name || 'Commercial deal',
-      property: row.property?.property_name || row.deal?.property?.property_name || row.vacancy?.property_name || 'Unassigned property',
-      broker: row.brokerName || 'Unassigned',
-      stage: titleize(row.status || row.stage || row.deal?.stage),
-      value: toNumber(row.value || row.targetValue),
-      lastActivity: row.updatedAt || row.actualCloseDate || row.createdAt,
-      daysOpen: daysBetween(row.createdAt || row.created_at, startOfToday()),
-      to: `/commercial/transactions/${row.id}`,
-    }))
-}
-
-function buildRiskWatch(data = {}, summary = {}, intelligence = {}) {
-  const criticalLeases = (intelligence.renewalRisk || []).filter((row) => row.daysToExpiry <= 90).length
-  const stalledDeals = (intelligence.managementAlerts || []).filter((row) => row.type === 'Stalled Transaction').length
-  const overdueCompliance = toNumber(summary.documentCompliance?.overdue)
-  const staleVacancies = (data.vacancies || []).filter((row) => {
-    if (!isOpenVacancy(row)) return false
-    const age = daysBetween(row.marketed_at || row.created_at, startOfToday())
-    return Number.isFinite(age) && age > 60
-  }).length
-  const healthyOccupancy = toNumber(summary.occupancyRate)
-
-  return {
-    critical: [
-      { label: 'Leases expiring', value: criticalLeases },
-      { label: 'Overdue compliance items', value: overdueCompliance },
-      { label: 'Stalled deals', value: stalledDeals },
-    ],
-    warning: [
-      { label: 'Vacancies older than 60 days', value: staleVacancies },
-    ],
-    healthy: healthyOccupancy,
-  }
 }
 
 function buildBrokerActivityRows(data = {}, brokerRows = []) {
@@ -573,60 +250,6 @@ function buildBrokerActivityRows(data = {}, brokerRows = []) {
   })
 }
 
-function buildPortfolioCards(data = {}) {
-  return (data.properties || [])
-    .filter((row) => !['archived', 'inactive'].includes(normalizeLower(row.status || 'active')))
-    .map((property) => {
-      const propertyVacancies = (data.vacancies || []).filter((row) => row.property_id === property.id && isOpenVacancy(row))
-      const propertyDeals = (data.deals || []).filter((row) => row.property_id === property.id && isActiveDeal(row))
-      const propertyLeases = (data.leases || []).filter((row) => row.property_id === property.id && isActiveLease(row))
-      const totalGla = toNumber(property.gla_m2)
-      const availableArea = propertyVacancies.reduce((sum, row) => sum + toNumber(row.available_area_m2), 0)
-      const occupancy = totalGla ? Math.max(0, Math.min(100, 100 - ((availableArea / totalGla) * 100))) : 0
-      const annualRevenue = propertyLeases.reduce((sum, row) => sum + (toNumber(row.monthly_rental) * 12), 0)
-      const expiringLease = propertyLeases
-        .map((row) => ({ row, daysToExpiry: daysBetween(startOfToday(), row.lease_end_date) }))
-        .filter((item) => item.daysToExpiry !== null && item.daysToExpiry >= 0)
-        .sort((left, right) => left.daysToExpiry - right.daysToExpiry)[0]
-      const criticalLeaseRisk = propertyLeases.some((row) => {
-        const daysToExpiry = daysBetween(startOfToday(), row.lease_end_date)
-        return daysToExpiry !== null && daysToExpiry >= 0 && daysToExpiry <= 90
-      })
-      const risk = criticalLeaseRisk || occupancy < 75 || propertyVacancies.length >= 8
-        ? 'High'
-        : occupancy < 90 || propertyVacancies.length > 0
-          ? 'Medium'
-          : 'Low'
-      const riskTone = risk === 'High' ? 'text-rose-700 bg-rose-50' : risk === 'Medium' ? 'text-amber-700 bg-amber-50' : 'text-emerald-700 bg-emerald-50'
-      const accent = risk === 'High' ? 'from-rose-500/15 via-orange-500/10 to-white' : risk === 'Medium' ? 'from-amber-500/15 via-yellow-400/10 to-white' : 'from-emerald-500/15 via-sky-500/10 to-white'
-      return {
-        id: property.id,
-        name: property.property_name || 'Commercial asset',
-        location: [property.suburb, property.city || property.province].filter(Boolean).join(', ') || property.address || 'Portfolio asset',
-        occupancy,
-        vacancies: propertyVacancies.length,
-        activeDeals: propertyDeals.length,
-        annualRevenue,
-        risk,
-        riskTone,
-        accent,
-        type: titleize(property.property_type || 'Commercial'),
-        attentionLabel: propertyVacancies.length
-          ? `${formatNumber(propertyVacancies.length)} ${propertyVacancies.length === 1 ? 'Vacancy' : 'Vacancies'}`
-          : expiringLease?.daysToExpiry <= 90
-            ? `Lease expiry in ${formatNumber(expiringLease.daysToExpiry)} days`
-            : propertyDeals.length
-              ? 'High demand'
-              : 'Stable',
-      }
-    })
-    .sort((left, right) => {
-      const riskScore = { High: 3, Medium: 2, Low: 1 }
-      return (riskScore[right.risk] || 0) - (riskScore[left.risk] || 0) || right.vacancies - left.vacancies || right.annualRevenue - left.annualRevenue
-    })
-    .slice(0, 4)
-}
-
 function buildFreshWorkspaceState(summary = {}, data = {}) {
   return !toNumber(summary.activeListings) &&
     !toNumber(summary.activeRequirements) &&
@@ -637,107 +260,172 @@ function buildFreshWorkspaceState(summary = {}, data = {}) {
     !(data.commercialTransactions || []).length
 }
 
-function DashboardHeader({ profile }) {
+function getDisplayName(profile = null) {
+  return normalizeText(profile?.fullName || profile?.full_name || profile?.name)
+    || [normalizeText(profile?.firstName || profile?.first_name), normalizeText(profile?.lastName || profile?.last_name)].filter(Boolean).join(' ')
+    || getFirstName(profile)
+}
+
+function getModeFromRole(value = '') {
+  const role = normalizeLower(value)
+  if (['seller', 'buyer', 'investor', 'purchaser'].includes(role) || role.includes('seller') || role.includes('buyer') || role.includes('invest')) return 'sales'
+  if (['landlord', 'tenant', 'occupier'].includes(role) || role.includes('landlord') || role.includes('tenant') || role.includes('occupier')) return 'leasing'
+  return ''
+}
+
+function getRecordMode(row = {}, fallback = 'leasing') {
+  const explicit = normalizeLower(row.mode || row.workflowMode || row.workflow_mode || row.businessLine || row.business_line)
+  if (explicit.includes('sales') || explicit.includes('sale')) return 'sales'
+  if (explicit.includes('leasing') || explicit.includes('lease')) return 'leasing'
+
+  const transactionType = normalizeLower(row.transactionType || row.transaction_type || row.dealType || row.deal_type || row.listing_intent || row.listingIntent || row.requirement_type || row.requirementType || row.listing_type || row.listingType)
+  if (['sale', 'sales', 'purchase', 'investment'].includes(transactionType) || transactionType.includes('sale') || transactionType.includes('purchase') || transactionType.includes('investment')) return 'sales'
+  if (['lease', 'leasing', 'rental'].includes(transactionType) || transactionType.includes('lease') || transactionType.includes('rental')) return 'leasing'
+
+  return getModeFromRole(row.prospectRole || row.prospectType || row.leadRole || row.lead_role || row.client_type || row.clientType) || fallback
+}
+
+function isModeRecord(row = {}, mode = 'leasing', fallback = 'leasing') {
+  return getRecordMode(row, fallback) === mode
+}
+
+function getRowDate(row = {}) {
+  return row.created_at || row.createdAt || row.created_date || row.updated_at || row.updatedAt || ''
+}
+
+function isThisWeek(row = {}) {
+  return isWithinRange(getRowDate(row), startOfWeek(), endOfWeek())
+}
+
+function getCommissionValue(row = {}) {
+  return toNumber(row.commission?.commissionValue || row.commissionValue || row.commission_value || row.estimated_commission || row.commission_amount)
+}
+
+function getTransactionValue(row = {}) {
+  return toNumber(row.value || row.targetValue || row.target_value || row.deal_value || row.pricing || row.asking_price || row.asking_rental)
+}
+
+function getBrokerId(row = {}) {
+  return normalizeText(row.brokerId || row.broker_id || row.assigned_broker || row.broker_assignment || row.deal?.broker_id || row.deal?.assigned_broker)
+}
+
+function stageMatches(row = {}, patterns = []) {
+  const value = normalizeLower(row.status || row.stage || row.currentStage || row.current_stage || row.listing_status)
+  return patterns.some((pattern) => value.includes(pattern))
+}
+
+function buildChangeForRows(rows = []) {
+  const months = buildMonthWindows(2)
+  const previous = rows.filter((row) => isWithinRange(getRowDate(row), months[0].start, months[0].end)).length
+  const current = rows.filter((row) => isWithinRange(getRowDate(row), months[1].start, months[1].end)).length
+  return calculateMonthDelta(current, previous)
+}
+
+function trendLabelFromDelta(delta = {}, emptyLabel = 'No prior period') {
+  if (!delta || delta.direction === 'flat') return emptyLabel
+  const prefix = delta.delta > 0 ? '+' : '-'
+  return `${prefix}${Math.abs(delta.delta).toFixed(0)}% vs last month`
+}
+
+function buildModeSlices(data = {}, mode = 'leasing') {
+  const companies = data.companies || []
+  const landlords = data.landlords || []
+  const tenants = data.tenants || []
+  const vacancies = data.vacancies || []
+  const listings = data.listings || []
+  const requirements = data.requirements || []
+  const viewings = data.viewings || []
+  const deals = data.deals || []
+  const headsOfTerms = data.headsOfTerms || []
+  const leases = data.leases || []
+  const transactions = data.commercialTransactions || []
+  const commissions = data.commissions || []
+
+  const modeCompanies = companies.filter((row) => isModeRecord(row, mode, mode))
+  const modeListings = listings.filter((row) => isModeRecord(row, mode, 'sales'))
+  const modeRequirements = requirements.filter((row) => isModeRecord(row, mode, 'leasing'))
+  const modeDeals = deals.filter((row) => isModeRecord(row, mode, 'leasing'))
+  const modeTransactions = transactions.filter((row) => isModeRecord(row, mode, 'leasing'))
+  const modeCommissions = commissions.filter((row) => isModeRecord(row, mode, mode))
+  const modeViewings = viewings.filter((row) => {
+    if (mode === 'leasing') return true
+    return isModeRecord(row, mode, 'leasing')
+  })
+
+  const openTransactions = modeTransactions.filter(isOpenTransaction)
+  const openDeals = modeDeals.filter(isActiveDeal)
+  const activeListings = modeListings.filter(isActiveListing)
+  const openVacancies = vacancies.filter(isOpenVacancy)
+  const activeRequirements = modeRequirements.filter(isActiveRequirement)
+  const activeHeadsOfTerms = headsOfTerms.filter((row) => !['converted', 'superseded', 'archived'].includes(normalizeLower(row.status)))
+  const activeLeases = leases.filter(isActiveLease)
+  const modeLeads = mode === 'leasing'
+    ? [...modeCompanies, ...landlords, ...tenants].filter((row, index, rows) => rows.findIndex((candidate) => normalizeText(candidate.id) && normalizeText(candidate.id) === normalizeText(row.id)) === index)
+    : modeCompanies
+
+  const pipelineValue = [...openTransactions, ...openDeals, ...activeListings].reduce((sum, row) => sum + getTransactionValue(row), 0)
+  const commissionForecast = [...openTransactions, ...openDeals, ...modeCommissions].reduce((sum, row) => sum + getCommissionValue(row), 0)
+
+  return {
+    companies: modeCompanies,
+    leads: modeLeads,
+    landlords,
+    tenants,
+    vacancies: openVacancies,
+    listings: activeListings,
+    requirements: activeRequirements,
+    viewings: modeViewings.filter((row) => !['cancelled', 'no_show'].includes(normalizeLower(row.status))),
+    deals: openDeals,
+    headsOfTerms: activeHeadsOfTerms,
+    leases: activeLeases,
+    transactions: modeTransactions,
+    openTransactions,
+    commissions: modeCommissions,
+    pipelineValue,
+    commissionForecast,
+  }
+}
+
+function CommercialDashboardModeToggle({ mode, onChange }) {
+  return (
+    <div className="inline-flex h-10 rounded-[12px] border border-[#d8e2ee] bg-white p-1 shadow-[0_8px_20px_rgba(15,23,42,0.05)]" role="tablist" aria-label="Commercial dashboard mode">
+      {[
+        { key: 'leasing', label: 'Leasing', icon: Building2 },
+        { key: 'sales', label: 'Sales', icon: BadgeDollarSign },
+      ].map((item) => {
+        const selected = mode === item.key
+        const Icon = item.icon
+        return (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(item.key)}
+            className={`inline-flex min-w-[104px] items-center justify-center gap-2 rounded-[9px] px-4 text-[13px] font-semibold transition ${
+              selected
+                ? 'bg-[#0b2342] text-white shadow-[0_8px_18px_rgba(11,35,66,0.18)]'
+                : 'text-[#33465d] hover:bg-[#f5f8fb]'
+            }`}
+          >
+            <Icon size={15} />
+            {item.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function DashboardHeader({ profile, mode, onModeChange }) {
   return (
     <header className="flex flex-col gap-3 pt-1 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
-        <h1 className="text-[38px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748] lg:text-[40px]">{getGreeting(profile)}</h1>
-        <p className="mt-1.5 text-[15px] font-normal text-[#60758d] lg:text-[16px]">Commercial Portfolio Overview</p>
+        <h1 className="text-[20px] font-semibold leading-tight tracking-[-0.02em] text-[#0f2748] lg:text-[22px]">{getDisplayName(profile)}</h1>
+        <p className="mt-1 text-[13px] font-medium text-[#60758d]">Commercial Operations Overview</p>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <Link to="/commercial/listings" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] bg-[#0e335f] px-[16px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.14)] transition hover:bg-[#0b294e]">
-          <Plus size={16} />
-          Listing
-        </Link>
-        <Link to="/commercial/leads" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[16px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
-          <Plus size={16} />
-          Requirement
-        </Link>
-        <Link to="/commercial/deals" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[16px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
-          <Plus size={16} />
-          Deal
-        </Link>
-      </div>
+      <CommercialDashboardModeToggle mode={mode} onChange={onModeChange} />
     </header>
-  )
-}
-
-function KpiCard({ label, value, description, icon: Icon, loading = false }) {
-  return (
-    <article className={`${GLASS_CARD_CLASS} flex min-h-[168px] min-w-[230px] flex-col justify-between p-7 lg:min-w-0`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[13px] font-medium text-[#6f7f92]">{label}</p>
-          <p className="mt-5 text-[48px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{loading ? '...' : value}</p>
-        </div>
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-white/90 text-[#2d6ecf] shadow-[0_8px_18px_rgba(15,23,42,0.05)]">
-          {createElement(Icon, { size: 20 })}
-        </span>
-      </div>
-      <p className="text-[12px] font-normal text-[#7b899a]">{description}</p>
-    </article>
-  )
-}
-
-function RevenueTrendChart({ points = [], loading = false }) {
-  const width = 560
-  const height = 320
-  const paddingX = 20
-  const paddingTop = 22
-  const paddingBottom = 42
-  const chartHeight = height - paddingTop - paddingBottom
-  const stepX = points.length > 1 ? (width - (paddingX * 2)) / (points.length - 1) : 0
-  const maxValue = Math.max(...points.map((point) => toNumber(point.value)), 1)
-
-  const coordinates = points.map((point, index) => {
-    const x = paddingX + (index * stepX)
-    const y = paddingTop + chartHeight - ((toNumber(point.value) / maxValue) * chartHeight)
-    return { ...point, x, y }
-  })
-
-  const path = coordinates.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
-  const area = coordinates.length
-    ? `${path} L ${coordinates[coordinates.length - 1].x} ${height - paddingBottom} L ${coordinates[0].x} ${height - paddingBottom} Z`
-    : ''
-
-  return (
-    <div className="rounded-[24px] border border-[#edf2f7] bg-[linear-gradient(180deg,#fbfdff_0%,#f5faff_100%)] p-4">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[320px] w-full" aria-label="Revenue trend">
-        {[0.25, 0.5, 0.75].map((tick) => (
-          <line
-            key={tick}
-            x1={paddingX}
-            x2={width - paddingX}
-            y1={paddingTop + (chartHeight * tick)}
-            y2={paddingTop + (chartHeight * tick)}
-            stroke="#dbe7f2"
-            strokeDasharray="4 8"
-          />
-        ))}
-        {!loading && area ? <path d={area} fill="url(#revenue-fill)" /> : null}
-        {!loading && path ? <path d={path} fill="none" stroke="#2ab673" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" /> : null}
-        {!loading ? coordinates.map((point) => (
-          <circle key={point.key} cx={point.x} cy={point.y} r="4.5" fill="#2ab673" stroke="#ffffff" strokeWidth="2" />
-        )) : null}
-        <defs>
-          <linearGradient id="revenue-fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(42,182,115,0.24)" />
-            <stop offset="100%" stopColor="rgba(42,182,115,0.02)" />
-          </linearGradient>
-        </defs>
-        {points.map((point, index) => (
-          <text
-            key={`${point.key}-label`}
-            x={paddingX + (index * stepX)}
-            y={height - 10}
-            textAnchor="middle"
-            className="fill-[#7b899a] text-[10px] font-semibold"
-          >
-            {point.label}
-          </text>
-        ))}
-      </svg>
-    </div>
   )
 }
 
@@ -778,33 +466,6 @@ function MiniSparkline({ values = [], tone = '#2d6ecf' }) {
   )
 }
 
-function MiniBars({ values = [], tone = '#2d6ecf' }) {
-  const height = 58
-  const maxValue = Math.max(...values.map((value) => toNumber(value)), 1)
-  if (!values.length) {
-    return <div className="h-[58px] rounded-[18px] border border-dashed border-[#e4ebf2] bg-[#fbfdff]" />
-  }
-
-  return (
-    <div className="flex h-[58px] items-end gap-1.5">
-      {values.map((value, index) => {
-        const barHeight = Math.max(8, (toNumber(value) / maxValue) * height)
-        return (
-          <span
-            key={`${index}-${value}`}
-            className="flex-1 rounded-full"
-            style={{
-              height: `${barHeight}px`,
-              background: `linear-gradient(180deg, ${tone} 0%, rgba(255,255,255,0.08) 100%)`,
-              opacity: 0.9,
-            }}
-          />
-        )
-      })}
-    </div>
-  )
-}
-
 function MiniProgress({ value = 0, tone = '#23b26d', label = '' }) {
   const amount = Math.max(0, Math.min(100, toNumber(value)))
   return (
@@ -823,222 +484,699 @@ function MiniProgress({ value = 0, tone = '#23b26d', label = '' }) {
   )
 }
 
-function CommercialMetricCard({ label, value, comparison, icon: Icon, loading = false, visual = null }) {
+function CommercialKpiRow({ items = [], loading = false }) {
   return (
-    <article className={`${GLASS_CARD_CLASS} flex min-h-[188px] flex-col justify-between p-6`}>
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-[14px] font-medium text-[#6b7c91]">{label}</p>
-          <p className="mt-4 text-[52px] font-semibold leading-none tracking-[-0.045em] text-[#0f2748]">{loading ? '...' : value}</p>
-        </div>
-        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#2d6ecf] shadow-[0_10px_20px_rgba(15,23,42,0.05)]">
-          {createElement(Icon, { size: 20 })}
-        </span>
-      </div>
-      <div className="mt-4 min-h-[18px]">
-        <p className={`text-[13px] font-medium ${normalizeLower(comparison).includes('no ') || normalizeLower(comparison).includes('updating') ? 'text-[#7b899a]' : 'text-[#526276]'}`}>{comparison}</p>
-      </div>
-      <div className="mt-4">
-        {visual}
-      </div>
-    </article>
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => {
+        const Icon = item.icon || LineChart
+        const delta = item.delta || {}
+        const positive = delta.direction !== 'down'
+        return (
+          <article key={item.key || item.label} className={`${GLASS_CARD_CLASS} min-h-[146px] p-4`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-[12px] font-semibold uppercase tracking-[0.08em] text-[#66768a]">{item.label}</p>
+                <p className="mt-3 text-[30px] font-semibold leading-none tracking-normal text-[#0f2748] tabular-nums">{loading ? '...' : item.value}</p>
+              </div>
+              <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] ${item.tone || 'bg-[#edf5ff] text-[#1769d1]'}`}>
+                <Icon size={17} />
+              </span>
+            </div>
+            <p className="mt-3 truncate text-[12px] font-medium text-[#52657a]">{item.subLabel}</p>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${positive ? 'text-[#16894f]' : 'text-[#c83b36]'}`}>
+                <TrendingUp size={12} className={positive ? '' : 'rotate-180'} />
+                {trendLabelFromDelta(delta, item.emptyTrend || 'No trend yet')}
+              </span>
+              <span className="w-[92px]">
+                <MiniSparkline values={item.sparkline || []} tone={item.sparkTone || '#3773f5'} />
+              </span>
+            </div>
+          </article>
+        )
+      })}
+    </section>
   )
 }
 
-function CommercialTrendCard({ points = [], loading = false }) {
-  const hasActivity = points.some((point) => toNumber(point.value) > 0)
-  return (
-    <article className={`${PANEL_CLASS} p-6`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Pipeline Value Trend</h2>
-          <p className="mt-2 text-[13px] text-[#6b7c91]">Commercial pipeline value across the last 6 months.</p>
-        </div>
-        <button type="button" className="inline-flex h-[40px] items-center gap-2 rounded-[12px] border border-[#dbe5ee] bg-white px-3.5 text-[13px] font-medium text-[#304159] shadow-sm">
-          <CalendarDays size={15} />
-          Last 6 months
-          <ChevronRight size={14} className="-rotate-90 text-[#8ea1b6]" />
-        </button>
-      </div>
-      <div className="mt-5">
-        {hasActivity || loading ? (
-          <RevenueTrendChart points={points} loading={loading} />
-        ) : (
-          <InlineEmptyPanel
-            title="No pipeline activity yet"
-            description="Create your first listing or deal to start tracking commercial pipeline value."
-          />
-        )}
-      </div>
-    </article>
-  )
-}
+function buildCommercialKpis({ mode, slices, summary, financialSummary, series }) {
+  const leadRows = slices.leads || []
+  const newLeadsThisWeek = leadRows.filter(isThisWeek).length
+  const hotCount = slices.headsOfTerms.filter((row) => ['sent', 'under_review', 'accepted', 'signed', 'ready_for_lease'].includes(normalizeLower(row.status))).length
+  const negotiationCount = [...slices.deals, ...slices.openTransactions].filter((row) => stageMatches(row, ['negotiat', 'proposal', 'under_offer', 'hot'])).length
+  const signedPending = slices.headsOfTerms.filter((row) => ['signed', 'ready_for_lease'].includes(normalizeLower(row.status))).length
+  const activeTransactions = slices.openTransactions.length || slices.deals.length
+  const vacancyDelta = buildChangeForRows(slices.vacancies)
+  const transactionsDelta = buildChangeForRows([...slices.openTransactions, ...slices.deals])
+  const listingsDelta = buildChangeForRows(slices.listings)
+  const leadsDelta = buildChangeForRows(leadRows)
+  const commissionDelta = calculateMonthDelta(series.commission.at(-1)?.value || 0, series.commission.at(-2)?.value || 0)
+  const pipelineDelta = calculateMonthDelta(series.pipeline.at(-1)?.value || 0, series.pipeline.at(-2)?.value || 0)
 
-function CommercialDonutChart({ segments = [], totalValue = 0 }) {
-  const size = 220
-  const center = size / 2
-  const radius = 66
-  const strokeWidth = 28
-  const circumference = 2 * Math.PI * radius
-  let offset = 0
-
-  if (!segments.some((segment) => segment.value > 0)) {
-    return (
-      <div className="flex h-[220px] items-center justify-center rounded-[24px] border border-dashed border-[#e4ebf2] bg-[#fbfdff] text-[#7b899a]">
-        No active pipeline yet
-      </div>
-    )
+  if (mode === 'sales') {
+    return [
+      {
+        key: 'active-transactions',
+        label: 'Active Transactions',
+        value: formatNumber(activeTransactions),
+        subLabel: 'Sales deals in progress',
+        delta: transactionsDelta,
+        icon: Handshake,
+        tone: 'bg-[#edf5ff] text-[#1769d1]',
+        sparkline: series.transactions.map((point) => point.value),
+      },
+      {
+        key: 'active-listings',
+        label: 'Active Listings',
+        value: formatNumber(slices.listings.length || toNumber(summary.activeListings)),
+        subLabel: 'Live sales listings',
+        delta: listingsDelta,
+        icon: Building2,
+        tone: 'bg-[#ecfdf3] text-[#16894f]',
+        sparkTone: '#18a765',
+        sparkline: series.listings.map((point) => point.value),
+      },
+      {
+        key: 'pipeline-value',
+        label: 'Pipeline Value',
+        value: formatCompactCurrency(slices.pipelineValue || financialSummary.pipelineValue || summary.pipelineValue),
+        subLabel: 'Total sales pipeline value',
+        delta: pipelineDelta,
+        icon: LineChart,
+        tone: 'bg-[#f3efff] text-[#7657d8]',
+        sparkTone: '#7657d8',
+        sparkline: series.pipeline.map((point) => point.value),
+      },
+      {
+        key: 'new-leads',
+        label: 'New Leads This Week',
+        value: formatNumber(newLeadsThisWeek),
+        subLabel: 'Seller and buyer leads',
+        delta: leadsDelta,
+        icon: Users,
+        tone: 'bg-[#fff7ea] text-[#df7b14]',
+        sparkTone: '#f97316',
+        sparkline: series.leads.map((point) => point.value),
+      },
+    ]
   }
 
+  return [
+    {
+      key: 'vacancies',
+      label: 'Number of Vacancies',
+      value: formatNumber(slices.vacancies.length || summary.activeVacancies || 0),
+      subLabel: 'Active vacancies',
+      delta: vacancyDelta,
+      icon: Warehouse,
+      tone: 'bg-[#edf5ff] text-[#1769d1]',
+      sparkline: series.vacancies.map((point) => point.value),
+    },
+    {
+      key: 'deals-progress',
+      label: 'Deals in Progress',
+      value: formatNumber(activeTransactions),
+      subLabel: `${formatNumber(hotCount)} HOT · ${formatNumber(negotiationCount)} negotiation · ${formatNumber(signedPending)} signed pending`,
+      delta: transactionsDelta,
+      icon: FileText,
+      tone: 'bg-[#ecfdf3] text-[#16894f]',
+      sparkTone: '#18a765',
+      sparkline: series.transactions.map((point) => point.value),
+    },
+    {
+      key: 'commission',
+      label: 'Commission Forecast',
+      value: formatCompactCurrency(slices.commissionForecast || financialSummary.expectedCommission || summary.expectedRevenue),
+      subLabel: 'Expected leasing commission',
+      delta: commissionDelta,
+      icon: BadgeDollarSign,
+      tone: 'bg-[#f3efff] text-[#7657d8]',
+      sparkTone: '#7657d8',
+      sparkline: series.commission.map((point) => point.value),
+    },
+    {
+      key: 'new-leads',
+      label: 'New Leads This Week',
+      value: formatNumber(newLeadsThisWeek),
+      subLabel: 'Landlord and tenant leads',
+      delta: leadsDelta,
+      icon: Users,
+      tone: 'bg-[#fff7ea] text-[#df7b14]',
+      sparkTone: '#f97316',
+      sparkline: series.leads.map((point) => point.value),
+    },
+  ]
+}
+
+function buildModeSeries(slices = {}) {
+  return {
+    leads: buildMonthlyCountSeries(slices.leads || []),
+    vacancies: buildMonthlyCountSeries(slices.vacancies || []),
+    listings: buildMonthlyCountSeries(slices.listings || []),
+    transactions: buildMonthlyCountSeries([...(slices.openTransactions || []), ...(slices.deals || [])]),
+    pipeline: buildMonthlyValueSeries([...(slices.transactions || []), ...(slices.deals || []), ...(slices.listings || [])], getTransactionValue),
+    commission: buildMonthlyValueSeries([...(slices.transactions || []), ...(slices.deals || []), ...(slices.commissions || [])], getCommissionValue),
+  }
+}
+
+function buildModeStageBreakdown(mode, slices = {}) {
+  const valueForRows = (rows = []) => rows.reduce((sum, row) => sum + getTransactionValue(row), 0)
+  const leaseNegotiation = [...slices.deals, ...slices.openTransactions].filter((row) => stageMatches(row, ['negotiat', 'proposal', 'under_offer', 'lease_draft']))
+  const signed = [
+    ...slices.headsOfTerms.filter((row) => ['signed', 'ready_for_lease'].includes(normalizeLower(row.status))),
+    ...slices.transactions.filter((row) => normalizeLower(row.status) === 'completed'),
+  ]
+  const salesOffers = [...slices.deals, ...slices.openTransactions].filter((row) => stageMatches(row, ['offer', 'proposal']))
+  const underOffer = [...slices.listings, ...slices.openTransactions, ...slices.deals].filter((row) => stageMatches(row, ['under_offer', 'under offer']))
+  const dueDiligence = [...slices.openTransactions, ...slices.deals].filter((row) => stageMatches(row, ['due_diligence', 'due diligence', 'legal']))
+  const sold = slices.transactions.filter((row) => ['completed', 'sold', 'closed'].includes(normalizeLower(row.status)))
+
+  const rawStages = mode === 'sales'
+    ? [
+        { key: 'listings', label: 'Listings', rows: slices.listings, value: valueForRows(slices.listings), color: '#0f9f6e', icon: Building2 },
+        { key: 'offers', label: 'Offers', rows: salesOffers, value: valueForRows(salesOffers), color: '#3773f5', icon: Handshake },
+        { key: 'under-offer', label: 'Under Offer', rows: underOffer, value: valueForRows(underOffer), color: '#7c4dff', icon: Flame },
+        { key: 'due-diligence', label: 'Due Diligence', rows: dueDiligence, value: valueForRows(dueDiligence), color: '#f59e0b', icon: ShieldAlert },
+        { key: 'sold', label: 'Sold', rows: sold, value: valueForRows(sold), color: '#d94c5c', icon: CheckCircle2 },
+      ]
+    : [
+        { key: 'requirements', label: 'Requirements', rows: slices.requirements, value: valueForRows(slices.requirements), color: '#0f9f6e', icon: Users },
+        { key: 'viewings', label: 'Viewings', rows: slices.viewings, value: valueForRows(slices.viewings), color: '#3773f5', icon: CalendarDays },
+        { key: 'hot', label: 'Heads of Terms', rows: slices.headsOfTerms, value: valueForRows(slices.headsOfTerms), color: '#7c4dff', icon: FileText },
+        { key: 'negotiation', label: 'Negotiation', rows: leaseNegotiation, value: valueForRows(leaseNegotiation), color: '#f59e0b', icon: Handshake },
+        { key: 'signed', label: 'Signed', rows: signed, value: valueForRows(signed), color: '#d94c5c', icon: CheckCircle2 },
+      ]
+
+  const total = rawStages.reduce((sum, stage) => sum + stage.rows.length, 0)
+  return rawStages.map((stage, index) => {
+    const previous = rawStages[index - 1]
+    const delta = buildChangeForRows(stage.rows)
+    return {
+      ...stage,
+      count: stage.rows.length,
+      percent: total ? (stage.rows.length / total) * 100 : 0,
+      conversion: index === 0 ? 100 : !previous?.rows?.length ? 0 : (stage.rows.length / previous.rows.length) * 100,
+      delta,
+    }
+  })
+}
+
+function CommercialTransactionHealth({ mode, stages = [], loading = false }) {
+  const total = stages.reduce((sum, stage) => sum + stage.count, 0)
+  const circumference = 2 * Math.PI * 54
+  const donutSegments = stages.reduce((items, stage) => {
+    const previousOffset = items.reduce((sum, item) => sum + item.length, 0)
+    return [
+      ...items,
+      {
+        ...stage,
+        length: (stage.percent / 100) * circumference,
+        offset: previousOffset,
+      },
+    ]
+  }, [])
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="h-[220px] w-[220px]">
-      <circle cx={center} cy={center} r={radius} fill="none" stroke="#edf2f7" strokeWidth={strokeWidth} />
-      {segments.map((segment) => {
-        const length = (toNumber(segment.percent) / 100) * circumference
-        const dasharray = `${length} ${circumference - length}`
-        const circle = (
-          <circle
-            key={segment.key}
-            cx={center}
-            cy={center}
-            r={radius}
-            fill="none"
-            stroke={segment.color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={dasharray}
-            strokeDashoffset={-offset}
-            strokeLinecap="round"
-            transform={`rotate(-90 ${center} ${center})`}
-          />
-        )
-        offset += length
-        return circle
-      })}
-      <g>
-        <text x={center} y={center - 8} textAnchor="middle" className="fill-[#0f2748] text-[22px] font-semibold tracking-[-0.03em]">
-          {formatCurrencyZAR(totalValue)}
-        </text>
-        <text x={center} y={center + 14} textAnchor="middle" className="fill-[#6b7c91] text-[11px] font-medium uppercase tracking-[0.18em]">
-          Total
-        </text>
-      </g>
+    <section className={`${PANEL_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#0f2748]">Transaction Health</h2>
+          <p className="mt-1 text-[12px] text-[#66768a]">Breakdown of your {mode} pipeline by stage.</p>
+        </div>
+        <PieChart size={18} className="text-[#8a9aac]" />
+      </div>
+      {total || loading ? (
+        <div className="mt-5 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
+          <div className="relative mx-auto h-[170px] w-[170px]">
+            <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90">
+              <circle cx="70" cy="70" r="54" fill="none" stroke="#edf2f7" strokeWidth="24" />
+              {donutSegments.map((stage) => (
+                <circle key={stage.key} cx="70" cy="70" r="54" fill="none" stroke={stage.color} strokeWidth="24" strokeDasharray={`${stage.length} ${circumference - stage.length}`} strokeDashoffset={-stage.offset} />
+              ))}
+            </svg>
+            <div className="absolute inset-0 grid place-items-center text-center">
+              <div>
+                <p className="text-[28px] font-semibold leading-none text-[#0f2748]">{loading ? '...' : formatNumber(total)}</p>
+                <p className="mt-1 text-[11px] font-medium text-[#66768a]">Active</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            {stages.map((stage) => (
+              <div key={stage.key} className="grid grid-cols-[minmax(0,1fr)_44px_52px] items-center gap-3 rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: stage.color }} />
+                  <span className="truncate text-[12px] font-semibold text-[#203247]">{stage.label}</span>
+                </span>
+                <span className="text-right text-[12px] font-semibold text-[#102236]">{loading ? '...' : formatNumber(stage.count)}</span>
+                <span className="text-right text-[12px] font-medium text-[#66768a]">{formatPercentage(stage.percent, 0)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <InlineEmptyPanel title="No active pipeline yet" description={`No ${mode} stages are available for this workspace yet.`} />
+      )}
+    </section>
+  )
+}
+
+function CommercialAgencyPerformance({ mode, conversionSeries = [], loading = false }) {
+  const current = conversionSeries.at(-1)?.value || 0
+  return (
+    <section className={`${PANEL_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#0f2748]">Agency Performance</h2>
+          <p className="mt-1 text-[12px] text-[#66768a]">{mode === 'sales' ? 'Seller/Buyer lead to sale conversion.' : 'Landlord/Tenant lead to deal conversion.'}</p>
+        </div>
+        <div className="rounded-[12px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2 text-right">
+          <p className="text-[18px] font-semibold leading-none text-[#0f2748]">{loading ? '...' : formatPercentage(current, 1)}</p>
+          <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Current</p>
+        </div>
+      </div>
+      <div className="mt-4 rounded-[16px] border border-[#edf2f7] bg-[#fbfdff] p-3">
+        <LineChartBox points={conversionSeries} loading={loading} suffix="%" />
+      </div>
+    </section>
+  )
+}
+
+function LineChartBox({ points = [], loading = false, suffix = '', valueFormatter = null }) {
+  const width = 520
+  const height = 210
+  const paddingX = 28
+  const paddingY = 24
+  const maxValue = Math.max(1, ...points.map((point) => toNumber(point.value)))
+  const stepX = points.length > 1 ? (width - (paddingX * 2)) / (points.length - 1) : 0
+  const coords = points.map((point, index) => ({
+    ...point,
+    x: paddingX + (index * stepX),
+    y: height - paddingY - ((toNumber(point.value) / maxValue) * (height - (paddingY * 2))),
+  }))
+  const path = coords.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+  const area = coords.length ? `${path} L ${coords.at(-1).x} ${height - paddingY} L ${coords[0].x} ${height - paddingY} Z` : ''
+  const formatValue = valueFormatter || ((value) => `${formatNumber(value)}${suffix}`)
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-[210px] w-full" aria-label="Trend chart">
+      {[0, 0.25, 0.5, 0.75, 1].map((tick) => (
+        <line key={tick} x1={paddingX} x2={width - paddingX} y1={paddingY + ((height - paddingY * 2) * tick)} y2={paddingY + ((height - paddingY * 2) * tick)} stroke="#e4ebf2" />
+      ))}
+      {!loading && area ? <path d={area} fill="rgba(55,115,245,0.08)" /> : null}
+      {!loading && path ? <path d={path} fill="none" stroke="#2368e8" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /> : null}
+      {!loading && coords.length ? <circle cx={coords.at(-1).x} cy={coords.at(-1).y} r="4" fill="#2368e8" stroke="#fff" strokeWidth="2" /> : null}
+      {coords.map((point) => (
+        <text key={point.key || point.label} x={point.x} y={height - 6} textAnchor="middle" className="fill-[#7b8ca2] text-[10px] font-semibold">{point.label}</text>
+      ))}
+      {!loading && coords.length ? (
+        <text x={coords.at(-1).x - 8} y={Math.max(14, coords.at(-1).y - 10)} textAnchor="end" className="fill-[#0f2748] text-[13px] font-bold">{formatValue(coords.at(-1).value)}</text>
+      ) : null}
     </svg>
   )
 }
 
-function CommercialPipelineStageCard({ stages = [], totalValue = 0, loading = false, hasData = false }) {
+function buildConversionSeries(mode, slices = {}) {
+  const leads = slices.leads || []
+  const closedRows = mode === 'sales'
+    ? slices.transactions.filter((row) => ['completed', 'sold', 'closed'].includes(normalizeLower(row.status)))
+    : [...slices.deals, ...slices.transactions].filter((row) => !['lost', 'cancelled'].includes(normalizeLower(row.status)))
+  return buildMonthWindows(6).map((window) => {
+    const leadCount = leads.filter((row) => isWithinRange(getRowDate(row), window.start, window.end)).length
+    const converted = closedRows.filter((row) => isWithinRange(row.actualCloseDate || row.updatedAt || row.updated_at || row.createdAt || row.created_at, window.start, window.end)).length
+    return {
+      key: window.key,
+      label: window.label,
+      value: leadCount ? (converted / leadCount) * 100 : 0,
+    }
+  })
+}
+
+function CommercialTransactionFlow({ stages = [], mode, loading = false }) {
+  const total = stages.reduce((sum, stage) => sum + stage.count, 0)
+  const final = stages.at(-1)?.count || 0
+  const conversion = total ? (final / Math.max(1, stages[0]?.count || total)) * 100 : 0
   return (
-    <article className={`${PANEL_CLASS} p-6`}>
-      <div className="flex items-start justify-between gap-4">
+    <section className={`${PANEL_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Pipeline by Stage</h2>
-          <p className="mt-2 text-[13px] text-[#6b7c91]">Live commercial work broken into prospecting, qualification, proposal, and negotiation.</p>
+          <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#0f2748]">Transaction Flow</h2>
+          <p className="mt-1 text-[12px] text-[#66768a]">Track your {mode} pipeline at every stage.</p>
         </div>
-        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[16px] bg-[#f4f8fc] text-[#2d6ecf]">
-          <PieChart size={18} />
-        </span>
       </div>
-      <div className="mt-5">
-        {loading && !hasData ? (
-          <InlineEmptyPanel
-            title="Loading pipeline stages…"
-            description="We’re pulling the latest commercial pipeline data."
-          />
-        ) : hasData ? (
-          <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
-            <div className="flex justify-center">
-              <CommercialDonutChart segments={stages} totalValue={totalValue} />
-            </div>
-            <div className="space-y-4">
-              {stages.map((stage) => (
-                <div key={stage.key} className="flex items-center justify-between gap-4 rounded-[18px] border border-[#ebf1f6] bg-[#fbfdff] px-4 py-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className={`h-3.5 w-3.5 shrink-0 rounded-full ${stage.softClass}`} />
-                    <div className="min-w-0">
-                      <p className="text-[14px] font-semibold text-[#0f2748]">{stage.label}</p>
-                      <p className="text-[12px] text-[#6b7c91]">{formatPercentage(stage.percent, 0)} of visible pipeline</p>
-                    </div>
+      <div className="mt-4 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-w-max items-stretch gap-3 xl:min-w-0 xl:grid xl:grid-cols-5">
+          {stages.map((stage, index) => {
+            const Icon = stage.icon
+            const positive = stage.delta.direction !== 'down'
+            return (
+              <div key={stage.key} className="flex min-w-[166px] flex-1 items-center gap-3">
+                <article className="min-h-[128px] flex-1 rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-[11px] bg-white text-[#1f6dd5] shadow-sm"><Icon size={15} /></span>
+                    <span className={`text-[11px] font-semibold ${positive ? 'text-[#16894f]' : 'text-[#c83b36]'}`}>{trendLabelFromDelta(stage.delta, '0%')}</span>
                   </div>
-                  <div className="text-right">
-                    <p className="text-[15px] font-semibold text-[#0f2748]">{formatCurrencyZAR(stage.amount)}</p>
-                    <p className="text-[12px] text-[#6b7c91]">{formatNumber(stage.value)} items</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <InlineEmptyPanel
-            title="No active pipeline yet"
-            description="Add listings, requirements, or deals to start building a commercial stage breakdown."
-          />
-        )}
+                  <p className="mt-3 truncate text-[12px] font-semibold text-[#203247]">{stage.label}</p>
+                  <p className="mt-2 text-[26px] font-semibold leading-none text-[#0f2748]">{loading ? '...' : formatNumber(stage.count)}</p>
+                  <p className="mt-2 truncate text-[12px] font-semibold text-[#52657a]">{loading ? '...' : formatCompactCurrency(stage.value)}</p>
+                </article>
+                {index < stages.length - 1 ? <ArrowRight size={17} className="hidden shrink-0 text-[#9aaabd] xl:block" /> : null}
+              </div>
+            )
+          })}
+        </div>
       </div>
-    </article>
+      <div className="mt-4 grid gap-2 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-4 py-3 md:grid-cols-[160px_minmax(0,1fr)_140px] md:items-center">
+        <div>
+          <p className="text-[11px] font-semibold text-[#52657a]">Overall conversion rate</p>
+          <p className="mt-1 text-[18px] font-semibold text-[#16894f]">{formatPercentage(conversion, 1)}</p>
+        </div>
+        <MiniProgress value={conversion} tone="#16894f" />
+        <p className="text-[11px] font-semibold text-[#66768a] md:text-right">vs last 30 days</p>
+      </div>
+    </section>
   )
 }
 
-function CommercialRecentActivityCard({ items = [], loading = false }) {
-  const rows = loading ? [] : items.slice(0, 5)
+function getPropertyName(row = {}) {
+  return normalizeText(row.property?.property_name || row.property_name || row.listing?.title || row.deal?.property?.property_name || row.vacancy?.property_name || row.title) || 'Commercial asset'
+}
+
+function getAreaName(row = {}) {
+  return [row.property?.suburb || row.suburb, row.property?.city || row.city || row.property?.province || row.province].map(normalizeText).filter(Boolean).join(', ') || normalizeText(row.property?.address || row.address || row.listing?.location) || 'Area pending'
+}
+
+function getClientName(row = {}) {
+  return normalizeText(row.company?.company_name || row.company?.name || row.tenant?.name || row.landlord?.name || row.deal?.company_name || row.title) || 'Client pending'
+}
+
+function getBrokerName(row = {}) {
+  return normalizeText(row.brokerName || row.broker_name || row.assignedBrokerName || row.assigned_broker_name || row.deal?.brokerName) || 'Unassigned'
+}
+
+function getPropertyImage(row = {}) {
+  return normalizeText(row.property?.image_url || row.property?.hero_image_url || row.property?.photo_url || row.listing?.image_url || row.listing?.hero_image_url || row.image_url || row.photo_url)
+}
+
+function buildActiveDealCards(mode, slices = {}) {
+  const rows = mode === 'sales'
+    ? [...slices.openTransactions, ...slices.deals, ...slices.listings]
+    : [...slices.openTransactions, ...slices.deals, ...slices.headsOfTerms]
+  const seen = new Set()
+  return rows
+    .filter((row) => {
+      const key = normalizeText(row.id)
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .sort((left, right) => (asDate(right.updatedAt || right.updated_at || right.createdAt || right.created_at || 0)?.getTime() || 0) - (asDate(left.updatedAt || left.updated_at || left.createdAt || left.created_at || 0)?.getTime() || 0))
+    .slice(0, 10)
+    .map((row) => ({
+      id: row.id,
+      property: getPropertyName(row),
+      area: getAreaName(row),
+      client: getClientName(row),
+      broker: getBrokerName(row),
+      stage: titleize(row.status || row.stage || row.currentStage || row.listing_status || (mode === 'sales' ? 'listing' : 'requirement')),
+      value: getTransactionValue(row),
+      image: getPropertyImage(row),
+      daysInStage: daysBetween(row.updatedAt || row.updated_at || row.createdAt || row.created_at, startOfToday()),
+      to: row.id && String(row.id).startsWith('ctx-') ? '/commercial/deals' : `/commercial/transactions/${row.id}`,
+    }))
+}
+
+function CommercialActiveDealsCarousel({ mode, rows = [], loading = false }) {
+  const title = mode === 'sales' ? 'Active Sales Deals' : 'Active Lease Deals'
   return (
-    <article className={`${PANEL_CLASS} p-6`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Recent Activity</h2>
-          <p className="mt-2 text-[13px] text-[#6b7c91]">The latest commercial updates across listings, requirements, deals, and vacancies.</p>
-        </div>
-        <Link to="/commercial/activity" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
+    <section className={`${PANEL_CLASS} p-5`}>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#0f2748]">{title}</h2>
+        <Link to={mode === 'sales' ? '/commercial/sales/deals' : '/commercial/leasing/deals'} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f6dd5]">
           View all
-          <ChevronRight size={15} />
+          <ChevronRight size={14} />
         </Link>
       </div>
-      <div className="mt-5 space-y-3">
-        {rows.length ? rows.map((item) => {
-          const Icon = item.icon || Clock3
-          return (
-            <div key={item.id} className="flex items-start gap-3 rounded-[18px] border border-[#ebf1f6] bg-[#fbfdff] px-4 py-3">
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-white text-[#2d6ecf] shadow-sm">
-                <Icon size={17} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] font-semibold text-[#0f2748]">{item.title}</p>
-                <p className="mt-1 text-[13px] leading-5 text-[#6b7c91]">{item.body || item.entity}</p>
+      {rows.length ? (
+        <div className="mt-4 flex snap-x gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {rows.map((row) => (
+            <Link key={row.id} to={row.to} className="w-[254px] shrink-0 snap-start overflow-hidden rounded-[16px] border border-[#e3ebf4] bg-white shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(15,23,42,0.07)]">
+              <div className="relative h-[112px] bg-[#edf2f7]">
+                {row.image ? (
+                  <img src={row.image} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="grid h-full place-items-center bg-[linear-gradient(135deg,#f4f8fc_0%,#e7eef7_100%)] text-[#8a9aac]">
+                    <Building2 size={28} />
+                  </div>
+                )}
+                <span className="absolute right-2 top-2 max-w-[140px] truncate rounded-full bg-white/92 px-2.5 py-1 text-[10px] font-bold text-[#123b61] shadow-sm">{row.stage}</span>
               </div>
-              <p className="shrink-0 text-[12px] font-medium text-[#7b899a]">{item.timestampLabel}</p>
-            </div>
-          )
-        }) : loading ? (
-          <InlineEmptyPanel
-            title="Loading recent activity…"
-            description="We’re pulling the latest commercial updates."
-          />
-        ) : (
-          <InlineEmptyPanel
-            title="No recent commercial activity yet."
-            description="New listings, requirements and deals will appear here."
-          />
-        )}
-      </div>
-    </article>
+              <div className="p-3">
+                <p className="truncate text-[13px] font-semibold text-[#102236]">{row.property}</p>
+                <p className="mt-1 truncate text-[11px] font-medium text-[#66768a]">{row.area}</p>
+                <p className="mt-2 text-[16px] font-semibold leading-none text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.value)}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] text-[#66768a]">
+                  <span className="min-w-0"><strong className="block truncate text-[#203247]">{row.client}</strong>Client</span>
+                  <span className="min-w-0 text-right"><strong className="block truncate text-[#203247]">{row.broker}</strong>Broker</span>
+                </div>
+                <p className="mt-2 text-[10px] font-semibold text-[#7b8ca2]">{row.daysInStage ?? '-'} days in stage</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : !loading ? (
+        <InlineEmptyPanel title={`No active ${mode} deals yet`} description="Live transactions will appear here once commercial work is opened." />
+      ) : null}
+    </section>
   )
 }
 
-function CommercialInsightBanner({ title, description, actionLabel = 'View insights', to = '/commercial/reports' }) {
+function buildAttentionRows(mode, slices = {}, summary = {}, intelligence = {}) {
+  const alerts = (intelligence.managementAlerts || []).filter((row) => {
+    if (!row) return false
+    return mode === 'leasing' || !normalizeLower(row.type).includes('lease')
+  })
+  const openDocumentRequests = toNumber(summary.documentRequests?.outstanding || summary.documentCompliance?.outstanding)
+  const overdueDocumentRequests = toNumber(summary.documentRequests?.overdue || summary.documentCompliance?.overdue)
+  const stalledDeals = [...slices.openTransactions, ...slices.deals].filter((row) => {
+    const age = daysBetween(row.updatedAt || row.updated_at || row.createdAt || row.created_at, startOfToday())
+    return Number.isFinite(age) && age > 21
+  }).length
+  const awaitingHot = slices.headsOfTerms.filter((row) => ['sent', 'under_review', 'draft'].includes(normalizeLower(row.status))).length
+  const expiringVacancies = mode === 'leasing' ? slices.vacancies.filter((row) => {
+    const days = daysBetween(startOfToday(), row.available_to || row.expiry_date || row.lease_end_date)
+    return days !== null && days >= 0 && days <= 45
+  }).length : 0
+  const expiringListings = mode === 'sales' ? slices.listings.filter((row) => {
+    const days = daysBetween(startOfToday(), row.expires_at || row.expiry_date || row.mandate_expiry_date)
+    return days !== null && days >= 0 && days <= 45
+  }).length : 0
+
+  return [
+    ...alerts.slice(0, 2).map((row) => ({
+      key: row.id,
+      label: row.type || 'Attention item',
+      detail: row.detail || row.title || 'Review required',
+      count: row.priority || 'High',
+      tone: normalizeLower(row.priority) === 'high' ? 'red' : 'amber',
+      icon: AlertTriangle,
+      to: row.to || '/commercial/reports',
+    })),
+    { key: 'overdue-followups', label: 'Overdue follow-ups', detail: 'No movement beyond operating window', count: stalledDeals, tone: stalledDeals ? 'amber' : 'slate', icon: Clock3, to: '/commercial/deals' },
+    { key: 'hot-response', label: mode === 'sales' ? 'Offers awaiting response' : 'HOT awaiting response', detail: mode === 'sales' ? 'Offer and proposal follow-up' : 'Heads of Terms awaiting movement', count: awaitingHot, tone: awaitingHot ? 'amber' : 'slate', icon: Flame, to: '/commercial/heads-of-terms' },
+    { key: 'documents', label: 'Documents outstanding', detail: `${formatNumber(overdueDocumentRequests)} overdue`, count: openDocumentRequests, tone: openDocumentRequests ? 'red' : 'slate', icon: FileText, to: '/commercial/documents' },
+    { key: 'expiry', label: mode === 'sales' ? 'Listings expiring' : 'Vacancies expiring', detail: 'Within 45 days', count: mode === 'sales' ? expiringListings : expiringVacancies, tone: (mode === 'sales' ? expiringListings : expiringVacancies) ? 'amber' : 'slate', icon: CalendarDays, to: mode === 'sales' ? '/commercial/sales/listings' : '/commercial/vacancies' },
+  ].filter((row) => row.count || row.tone !== 'slate').slice(0, 6)
+}
+
+function toneClass(tone) {
+  if (tone === 'red') return 'bg-[#fff2f0] text-[#b42318]'
+  if (tone === 'amber') return 'bg-[#fff7ea] text-[#9a5b13]'
+  return 'bg-[#f1f5f9] text-[#52657a]'
+}
+
+function CommercialAttentionRequired({ rows = [], loading = false }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-[24px] border border-[rgba(45,110,207,0.14)] bg-[linear-gradient(180deg,rgba(243,248,255,1)_0%,rgba(236,248,242,0.92)_100%)] px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.03)]">
-      <div className="flex min-w-0 items-start gap-3">
-        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#2ab673] shadow-sm">
-          <Sparkles size={18} />
-        </span>
-        <div className="min-w-0">
-          <p className="text-[16px] font-semibold tracking-[-0.02em] text-[#0f2748]">{title}</p>
-          <p className="mt-1.5 max-w-4xl text-[13px] leading-6 text-[#60758d]">{description}</p>
-        </div>
+    <section className={`${PANEL_CLASS} p-5`}>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[16px] font-semibold text-[#0f2748]">Attention Required</h2>
+        <Link to="/commercial/reports" className="text-[12px] font-semibold text-[#1f6dd5]">View all</Link>
       </div>
-      <Link to={to} className="inline-flex h-[40px] shrink-0 items-center rounded-[12px] border border-[#cfe2d9] bg-white px-4 text-[13px] font-semibold text-[#1d9c62] transition hover:border-[#b9d8cb] hover:text-[#168253]">
-        {actionLabel}
-      </Link>
-    </div>
+      <div className="mt-4 grid gap-2">
+        {rows.length ? rows.map((row) => {
+          const Icon = row.icon
+          return (
+            <Link key={row.key} to={row.to} className="grid grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-3 rounded-[13px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
+              <span className={`grid h-8 w-8 place-items-center rounded-[10px] ${toneClass(row.tone)}`}><Icon size={15} /></span>
+              <span className="min-w-0">
+                <span className="block truncate text-[12px] font-semibold text-[#203247]">{row.label}</span>
+                <span className="block truncate text-[11px] text-[#66768a]">{row.detail}</span>
+              </span>
+              <span className="text-[13px] font-semibold text-[#0f2748]">{loading ? '...' : row.count}</span>
+            </Link>
+          )
+        }) : !loading ? (
+          <InlineEmptyPanel title="No priority items" description="No commercial operating risks are currently visible." />
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function buildTopPerformers(mode, slices = {}, brokerRows = [], brokerActivityRows = []) {
+  const activityMap = new Map(brokerActivityRows.map((row) => [row.id, row.delta]))
+  return brokerRows.map((broker) => {
+    const id = normalizeText(broker.id)
+    const transactions = slices.transactions.filter((row) => getBrokerId(row) === id)
+    const deals = slices.deals.filter((row) => getBrokerId(row) === id)
+    const listings = slices.listings.filter((row) => getBrokerId(row) === id)
+    const pipeline = [...transactions.filter(isOpenTransaction), ...deals, ...listings].reduce((sum, row) => sum + getTransactionValue(row), 0)
+    const commission = [...transactions, ...deals, ...(broker.commissions || [])].reduce((sum, row) => sum + getCommissionValue(row), 0) || toNumber(broker.expectedCommission || broker.projectedCommission)
+    return {
+      ...broker,
+      pipeline,
+      dealsCount: transactions.filter(isOpenTransaction).length + deals.length + listings.length,
+      commission,
+      trend: activityMap.get(id) || 0,
+    }
+  }).filter((row) => row.pipeline || row.dealsCount || row.commission || mode === 'leasing')
+    .sort((left, right) => right.pipeline - left.pipeline || right.commission - left.commission || right.dealsCount - left.dealsCount)
+    .slice(0, 5)
+}
+
+function CommercialTopPerformers({ rows = [], loading = false }) {
+  return (
+    <section className={`${PANEL_CLASS} p-5`}>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[16px] font-semibold text-[#0f2748]">Top Performers</h2>
+        <Link to="/commercial/brokers" className="text-[12px] font-semibold text-[#1f6dd5]">View all</Link>
+      </div>
+      <div className="mt-4 overflow-hidden rounded-[14px] border border-[#edf2f7]">
+        {rows.length ? (
+          <table className="w-full text-left text-[12px]">
+            <thead className="bg-[#fbfdff] text-[10px] uppercase tracking-[0.08em] text-[#7b8ca2]">
+              <tr>
+                <th className="px-3 py-2">Broker</th>
+                <th className="px-2 py-2 text-right">Pipeline</th>
+                <th className="px-2 py-2 text-right">Deals</th>
+                <th className="px-2 py-2 text-right">Commission</th>
+                <th className="px-3 py-2 text-right">Trend</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf2f7]">
+              {rows.map((row) => (
+                <tr key={row.id || row.name}>
+                  <td className="px-3 py-2.5">
+                    <span className="block truncate font-semibold text-[#203247]">{row.name || 'Broker'}</span>
+                  </td>
+                  <td className="px-2 py-2.5 text-right font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.pipeline)}</td>
+                  <td className="px-2 py-2.5 text-right font-semibold text-[#0f2748]">{loading ? '...' : formatNumber(row.dealsCount)}</td>
+                  <td className="px-2 py-2.5 text-right font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.commission)}</td>
+                  <td className="px-3 py-2.5 text-right"><TrendPill delta={row.trend} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : !loading ? (
+          <InlineEmptyPanel title="No performer data yet" description="Broker performance appears once deals, listings, or commissions are assigned." />
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function buildForecastMetrics(slices = {}) {
+  const today = new Date()
+  const monthStart = startOfMonth(today)
+  const quarterStart = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1)
+  const yearStart = new Date(today.getFullYear(), 0, 1)
+  const rows = [...(slices.transactions || []), ...(slices.deals || []), ...(slices.commissions || [])]
+  const sumSince = (start) => rows.reduce((sum, row) => {
+    const date = asDate(row.expectedCloseDate || row.actualCloseDate || row.updatedAt || row.updated_at || row.createdAt || row.created_at)
+    if (!date || date < start) return sum
+    return sum + getCommissionValue(row)
+  }, 0)
+  return {
+    month: sumSince(monthStart),
+    quarter: sumSince(quarterStart),
+    ytd: sumSince(yearStart),
+    series: buildMonthlyValueSeries(rows, getCommissionValue),
+  }
+}
+
+function CommercialCommissionForecast({ metrics, loading = false }) {
+  return (
+    <section className={`${PANEL_CLASS} p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[16px] font-semibold text-[#0f2748]">Commission Forecast</h2>
+          <p className="mt-1 text-[12px] text-[#66768a]">Commercial revenue visibility.</p>
+        </div>
+        <Link to="/commercial/reports" className="text-[12px] font-semibold text-[#1f6dd5]">View report</Link>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {[
+          ['This Month', metrics.month],
+          ['This Quarter', metrics.quarter],
+          ['YTD', metrics.ytd],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-[13px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{label}</p>
+            <p className="mt-1 text-[15px] font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(value)}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] p-2">
+        <LineChartBox points={metrics.series} loading={loading} valueFormatter={formatCompactCurrency} />
+      </div>
+    </section>
+  )
+}
+
+function buildUpcomingAppointments(mode, slices = {}, intelligence = {}) {
+  const viewings = (intelligence.upcomingViewings || []).map((row) => ({
+    id: row.id,
+    time: row.time || '',
+    type: 'Viewing',
+    property: row.property || 'Property pending',
+    broker: row.broker || 'Broker pending',
+    client: row.company || 'Client pending',
+    to: row.to || '/commercial/viewings',
+  }))
+  const hotMeetings = mode === 'leasing' ? slices.headsOfTerms.slice(0, 4).map((row) => ({
+    id: `hot-${row.id}`,
+    time: '',
+    type: 'HOT Meeting',
+    property: getPropertyName(row),
+    broker: getBrokerName(row),
+    client: getClientName(row),
+    to: '/commercial/heads-of-terms',
+  })) : []
+  return [...viewings, ...hotMeetings].slice(0, 8)
+}
+
+function CommercialAppointments({ rows = [], loading = false }) {
+  return (
+    <section className={`${PANEL_CLASS} p-5`}>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#0f2748]">Appointments</h2>
+        <Link to="/commercial/calendar" className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f6dd5]">View calendar <ChevronRight size={14} /></Link>
+      </div>
+      {rows.length ? (
+        <div className="mt-4 flex snap-x gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {rows.map((row) => (
+            <Link key={row.id} to={row.to} className="grid min-h-[92px] w-[246px] shrink-0 snap-start grid-cols-[54px_minmax(0,1fr)] gap-3 rounded-[15px] border border-[#e3ebf4] bg-[#fbfdff] p-3">
+              <span className="text-[15px] font-semibold leading-tight text-[#0f2748]">{row.time || '--:--'}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-[12px] font-semibold text-[#203247]">{row.type}</span>
+                <span className="mt-1 block truncate text-[11px] text-[#66768a]">{row.property}</span>
+                <span className="mt-2 block truncate text-[11px] font-medium text-[#52657a]">{row.broker} · {row.client}</span>
+              </span>
+            </Link>
+          ))}
+        </div>
+      ) : !loading ? (
+        <InlineEmptyPanel title="No upcoming appointments" description="Future viewings, negotiations, and client meetings will appear here." />
+      ) : null}
+    </section>
   )
 }
 
@@ -1079,37 +1217,6 @@ function InlineEmptyPanel({ title, description, actionLabel = '', onAction = nul
   )
 }
 
-function SectionTitle({ title, action = null }) {
-  return (
-    <div className="mb-3 flex items-center justify-between gap-4">
-      <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">{title}</h2>
-      {action}
-    </div>
-  )
-}
-
-function StageBadge({ stage }) {
-  const normalized = normalizeLower(stage)
-  const tone = normalized.includes('require')
-    ? 'bg-blue-50 text-blue-700 ring-blue-100'
-    : normalized.includes('view')
-      ? 'bg-sky-50 text-sky-700 ring-sky-100'
-      : normalized.includes('head') || normalized.includes('terms')
-        ? 'bg-orange-50 text-orange-700 ring-orange-100'
-        : normalized.includes('negotiat')
-          ? 'bg-amber-50 text-amber-700 ring-amber-100'
-          : normalized.includes('draft')
-            ? 'bg-violet-50 text-violet-700 ring-violet-100'
-            : normalized.includes('signed') || normalized.includes('complete')
-              ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
-              : 'bg-slate-100 text-slate-600 ring-slate-200'
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${tone}`}>
-      {stage || 'Requirements'}
-    </span>
-  )
-}
-
 export default function CommercialExecutiveCommandCenter({
   data = null,
   loading = true,
@@ -1117,6 +1224,7 @@ export default function CommercialExecutiveCommandCenter({
   organisationId = '',
   profile = null,
 }) {
+  const [dashboardMode, setDashboardMode] = useState('leasing')
   const summary = useMemo(() => data?.summary || EMPTY_OBJECT, [data?.summary])
   const intelligence = useMemo(() => data?.intelligence || EMPTY_OBJECT, [data?.intelligence])
   const financialSummary = useMemo(
@@ -1154,99 +1262,8 @@ export default function CommercialExecutiveCommandCenter({
       : financialSummary),
     [financialSummary, isFreshCommercialWorkspace],
   )
-  const pipelineStages = useMemo(() => buildExecutivePipelineStages(data || {}, displaySummary, displayFinancialSummary), [data, displayFinancialSummary, displaySummary])
-  const weeklyActivity = useMemo(() => buildWeeklyActivity(data || {}), [data])
-  const openDeals = useMemo(() => buildOpenDeals(data || {}), [data])
-  const riskWatch = useMemo(() => buildRiskWatch(data || {}, displaySummary, intelligence), [data, displaySummary, intelligence])
   const brokerLeaderboard = useMemo(() => (intelligence.brokerScorecards || []).slice(0, 10), [intelligence.brokerScorecards])
   const brokerActivityRows = useMemo(() => buildBrokerActivityRows(data || {}, intelligence.brokerScorecards || []), [data, intelligence.brokerScorecards])
-  const portfolioCards = useMemo(() => buildPortfolioCards(data || {}), [data])
-  const trendPoints = useMemo(() => buildRevenueTrend(data || {}), [data])
-  const pipelineTrend = useMemo(() => buildPipelineTrendPoints(data || {}), [data])
-  const occupancyTrend = useMemo(() => data?.charts?.occupancyTrend || [], [data?.charts?.occupancyTrend])
-  const commissionSeries = useMemo(
-    () => buildMonthlyValueSeries(
-      (data?.commissions || []).filter((row) => !['archived', 'cancelled'].includes(normalizeLower(row.status))),
-      (row) => row.commission_amount || 0,
-      (row) => row.updated_at || row.updatedAt || row.created_at || row.createdAt,
-    ),
-    [data?.commissions],
-  )
-  const listingSeries = useMemo(
-    () => buildMonthlyCountSeries((data?.listings || []).filter(isActiveListing)),
-    [data?.listings],
-  )
-  const requirementSeries = useMemo(
-    () => buildMonthlyCountSeries((data?.requirements || []).filter(isActiveRequirement)),
-    [data?.requirements],
-  )
-  const dashboardMetrics = useMemo(
-    () => deriveCommercialDashboardMetrics({
-      summary: displaySummary,
-      financialSummary: displayFinancialSummary,
-      pipelineTrend,
-      occupancyTrend,
-      listingSeries,
-      requirementSeries,
-      loading,
-      isFreshCommercialWorkspace,
-    }),
-    [
-      displayFinancialSummary,
-      displaySummary,
-      isFreshCommercialWorkspace,
-      listingSeries,
-      loading,
-      occupancyTrend,
-      pipelineTrend,
-      commissionSeries,
-      requirementSeries,
-    ],
-  )
-  const stageBreakdown = useMemo(
-    () => deriveCommercialStageBreakdown({
-      summary: displaySummary,
-      financialSummary: displayFinancialSummary,
-      requirements: data?.requirements || [],
-      viewings: data?.viewings || [],
-      deals: data?.deals || [],
-      headsOfTerms: data?.headsOfTerms || [],
-      commercialTransactions: data?.commercialTransactions || [],
-    }),
-    [data, displayFinancialSummary, displaySummary],
-  )
-  const compactPipelineStages = useMemo(
-    () => pipelineStages.filter((stage) => ['requirements', 'viewings', 'hot', 'negotiation', 'signed'].includes(stage.key)),
-    [pipelineStages],
-  )
-  const latestActivity = useMemo(() => buildLatestActivityFeed((data?.latestActivity || data?.activity || []).slice(0, 5)), [data?.activity, data?.latestActivity])
-  const insightBanner = useMemo(() => {
-    const hasSignals = pipelineTrend.some((point) => toNumber(point.value) > 0) || toNumber(occupancyTrend.at(-1)?.occupancy || occupancyTrend.at(-1)?.value || displaySummary.occupancyRate) > 0
-
-    if (loading) {
-      return {
-        title: 'Refreshing commercial insights…',
-        description: 'We are updating the latest pipeline and occupancy signals.',
-      }
-    }
-
-    if (isFreshCommercialWorkspace || !hasSignals) {
-      return {
-        title: 'Your commercial dashboard is ready.',
-        description: 'Add your first listing, requirement or deal to start seeing insights here.',
-      }
-    }
-
-    const pipelineDelta = calculateMonthDelta(pipelineTrend.at(-1)?.value || 0, pipelineTrend.at(-2)?.value || 0)
-    const occupancyDelta = calculateMonthDelta(occupancyTrend.at(-1)?.occupancy || occupancyTrend.at(-1)?.value || 0, occupancyTrend.at(-2)?.occupancy || occupancyTrend.at(-2)?.value || 0, 'points')
-    const pipelineDirection = pipelineDelta.delta >= 0 ? 'up' : 'down'
-    const occupancyDirection = occupancyDelta.delta >= 0 ? 'improved' : 'softened'
-
-    return {
-      title: 'Great progress!',
-      description: `Your pipeline value is ${pipelineDirection} ${Math.abs(pipelineDelta.delta).toFixed(0)}% and occupancy has ${occupancyDirection} by ${Math.abs(occupancyDelta.delta).toFixed(0)}pp this month.`,
-    }
-  }, [displaySummary.occupancyRate, isFreshCommercialWorkspace, loading, occupancyTrend, pipelineTrend])
   const topBrokerRows = useMemo(() => {
     const activityMap = new Map(brokerActivityRows.map((row) => [row.id, row.delta]))
     return brokerLeaderboard.slice(0, 5).map((row) => ({
@@ -1254,371 +1271,60 @@ export default function CommercialExecutiveCommandCenter({
       trend: activityMap.get(row.id) || 0,
     }))
   }, [brokerActivityRows, brokerLeaderboard])
+  const modeSlices = useMemo(() => buildModeSlices(data || {}, dashboardMode), [dashboardMode, data])
+  const modeSeries = useMemo(() => buildModeSeries(modeSlices), [modeSlices])
+  const modeKpis = useMemo(
+    () => buildCommercialKpis({
+      mode: dashboardMode,
+      slices: modeSlices,
+      summary: displaySummary,
+      financialSummary: displayFinancialSummary,
+      series: modeSeries,
+    }),
+    [dashboardMode, displayFinancialSummary, displaySummary, modeSeries, modeSlices],
+  )
+  const modeStages = useMemo(() => buildModeStageBreakdown(dashboardMode, modeSlices), [dashboardMode, modeSlices])
+  const modeConversionSeries = useMemo(() => buildConversionSeries(dashboardMode, modeSlices), [dashboardMode, modeSlices])
+  const activeDealCards = useMemo(() => buildActiveDealCards(dashboardMode, modeSlices), [dashboardMode, modeSlices])
+  const attentionRows = useMemo(() => buildAttentionRows(dashboardMode, modeSlices, displaySummary, intelligence), [dashboardMode, displaySummary, intelligence, modeSlices])
+  const modeTopPerformers = useMemo(
+    () => buildTopPerformers(dashboardMode, modeSlices, intelligence.brokerScorecards || topBrokerRows, brokerActivityRows),
+    [brokerActivityRows, dashboardMode, intelligence.brokerScorecards, modeSlices, topBrokerRows],
+  )
+  const forecastMetrics = useMemo(() => buildForecastMetrics(modeSlices), [modeSlices])
+  const upcomingAppointments = useMemo(() => buildUpcomingAppointments(dashboardMode, modeSlices, intelligence), [dashboardMode, intelligence, modeSlices])
 
   if (error) {
     return (
       <div className="space-y-6 pb-8">
-        <DashboardHeader profile={profile} />
+        <DashboardHeader profile={profile} mode={dashboardMode} onModeChange={setDashboardMode} />
         <CommercialEmptyState title="Commercial dashboard data could not be loaded" description={error} />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6 pb-8">
-      <DashboardHeader profile={profile} />
+    <div className="space-y-4 pb-8">
+      <DashboardHeader profile={profile} mode={dashboardMode} onModeChange={setDashboardMode} />
 
-      <section>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          {Object.entries(dashboardMetrics).map(([key, card], index) => {
-            const series = key === 'pipelineValue'
-              ? pipelineTrend.map((point) => point.value)
-              : key === 'expectedCommission'
-                ? commissionSeries.map((point) => point.value)
-                : key === 'activeListings'
-                  ? listingSeries.map((point) => point.value)
-                  : key === 'activeRequirements'
-                    ? requirementSeries.map((point) => point.value)
-                    : []
+      <CommercialKpiRow items={modeKpis} loading={loading} />
 
-            const visual = key === 'occupancy'
-              ? <MiniProgress value={displaySummary.occupancyRate || 0} label={loading ? 'Updating occupancy…' : (displaySummary.occupancyRate ? 'Excellent' : 'No active vacancies yet')} tone="#2ab673" />
-              : key === 'activeListings' || key === 'activeRequirements'
-                ? <MiniBars values={series} tone={index === 2 ? '#3773f5' : '#8b5cf6'} />
-                : <MiniSparkline values={series} tone={index === 0 ? '#3773f5' : '#2ab673'} />
-
-            return (
-              <CommercialMetricCard
-                key={key}
-                label={
-                  key === 'pipelineValue'
-                    ? 'Pipeline Value'
-                    : key === 'expectedCommission'
-                      ? 'Expected Commission'
-                      : key === 'activeListings'
-                        ? 'Active Listings'
-                        : key === 'activeRequirements'
-                          ? 'Active Requirements'
-                          : 'Occupancy'
-                }
-                value={card.value}
-                comparison={card.comparison}
-                icon={
-                  key === 'pipelineValue'
-                    ? LineChart
-                    : key === 'expectedCommission'
-                      ? TrendingUp
-                      : key === 'activeListings'
-                        ? Warehouse
-                        : key === 'activeRequirements'
-                          ? Users
-                          : Building2
-                }
-                loading={loading}
-                visual={visual}
-              />
-            )
-          })}
-        </div>
+      <section className="grid gap-4 xl:grid-cols-2">
+        <CommercialTransactionHealth mode={dashboardMode} stages={modeStages} loading={loading} />
+        <CommercialAgencyPerformance mode={dashboardMode} conversionSeries={modeConversionSeries} loading={loading} />
       </section>
 
-      <section>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)_minmax(0,0.85fr)]">
-          <CommercialTrendCard points={pipelineTrend} loading={loading} />
-          <CommercialPipelineStageCard
-            stages={stageBreakdown.stages}
-            totalValue={stageBreakdown.totalValue}
-            loading={loading}
-            hasData={stageBreakdown.hasData}
-          />
-          <CommercialRecentActivityCard items={latestActivity} loading={loading} />
-        </div>
+      <CommercialTransactionFlow stages={modeStages} mode={dashboardMode} loading={loading} />
+
+      <CommercialActiveDealsCarousel mode={dashboardMode} rows={activeDealCards} loading={loading} />
+
+      <section className="grid gap-4 xl:grid-cols-3">
+        <CommercialAttentionRequired rows={attentionRows} loading={loading} />
+        <CommercialTopPerformers rows={modeTopPerformers} loading={loading} />
+        <CommercialCommissionForecast metrics={forecastMetrics} loading={loading} />
       </section>
 
-      <section>
-        <CommercialInsightBanner title={insightBanner.title} description={insightBanner.description} />
-      </section>
-
-      <section id="transactions">
-        <article className={`${PANEL_CLASS} overflow-hidden`}>
-          <div className="flex items-center justify-between gap-4 border-b border-[#edf2f7] px-6 py-4">
-            <h2 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Active Deals</h2>
-            <Link to="/commercial/deals" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
-              View all deals
-              <ChevronRight size={15} />
-            </Link>
-          </div>
-          {openDeals.length ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-[980px] w-full text-left text-sm">
-                <thead className="bg-[#fbfdff] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#7a8798]">
-                  <tr>
-                    <th className="px-6 py-3.5">Deal</th>
-                    <th className="px-4 py-3.5">Property</th>
-                    <th className="px-4 py-3.5">Broker</th>
-                    <th className="px-4 py-3.5">Stage</th>
-                    <th className="px-4 py-3.5">Value</th>
-                    <th className="px-4 py-3.5">Last Activity</th>
-                    <th className="px-4 py-3.5 text-right">Days Open</th>
-                    <th className="px-4 py-3.5" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#edf2f7]">
-                  {openDeals.map((row) => (
-                    <tr key={row.id} className="bg-white transition hover:bg-[#fbfdff]">
-                      <td className="px-6 py-3.5 font-semibold text-[#0f2748]">
-                        <Link to={row.to} className="hover:text-[#1f6dd5]">{row.deal}</Link>
-                      </td>
-                      <td className="px-4 py-3.5 text-[#304159]">{row.property}</td>
-                      <td className="px-4 py-3.5 text-[#304159]">{row.broker}</td>
-                      <td className="px-4 py-3.5"><StageBadge stage={row.stage} /></td>
-                      <td className="px-4 py-3.5 font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.value)}</td>
-                      <td className="px-4 py-3.5 text-[#526276]">{relativeTime(row.lastActivity)}</td>
-                      <td className="px-4 py-3.5 text-right font-semibold text-[#0f2748]">{row.daysOpen ?? '-'}</td>
-                      <td className="px-4 py-3.5 text-right">
-                        <Link to={row.to} className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#6b7c91] hover:bg-[#eef5fb] hover:text-[#123b61]" aria-label={`Open ${row.deal}`}>
-                          <MoreVertical size={16} />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : !loading ? (
-            <div className="p-6">
-              <div className="rounded-[22px] border border-dashed border-[#d9e5f0] bg-[#fbfdff] px-5 py-5 text-[#60758d]">
-                <p className="text-[15px] font-semibold text-[#102236]">No active deals.</p>
-                <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[#60758d]">Create your first leasing or sales deal.</p>
-                <Link to="/commercial/deals" className="mt-4 inline-flex h-[44px] items-center justify-center rounded-[12px] bg-[#123b61] px-4 text-sm font-medium text-white transition hover:bg-[#102f4d]">
-                  + Create Deal
-                </Link>
-              </div>
-            </div>
-          ) : null}
-        </article>
-      </section>
-
-      <section>
-        <article className={`${PANEL_CLASS} p-6`}>
-          <SectionTitle title="Pipeline Flow" />
-          <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="flex min-w-max items-center gap-4 xl:min-w-0">
-              {compactPipelineStages.map((stage, index) => {
-                const Icon = stage.icon
-                return (
-                  <div key={stage.key} className="flex items-center gap-4">
-                    <article className="w-[210px] rounded-[24px] border border-[#e8eef4] bg-[#fbfdff] p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-[14px] bg-white text-[#1f6dd5] shadow-sm">
-                          <Icon size={17} />
-                        </span>
-                        <span className="text-xs font-semibold text-[#6b7c91]">{index === 0 ? 'Base' : `${stage.conversion.toFixed(0)}%`}</span>
-                      </div>
-                      <p className="mt-3 text-[14px] font-semibold text-[#0f2748]">{stage.label}</p>
-                      <div className="mt-3 flex items-end justify-between gap-3">
-                        <p className="text-[28px] font-semibold leading-none text-[#0f2748]">{loading ? '...' : formatNumber(stage.count)}</p>
-                        <p className="text-[13px] font-medium text-[#526276]">{loading ? '...' : formatCompactCurrency(stage.value)}</p>
-                      </div>
-                    </article>
-                    {index < compactPipelineStages.length - 1 ? <ArrowRight size={18} className="shrink-0 text-[#97a8ba]" /> : null}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {weeklyActivity.map((item) => {
-            const Icon = item.icon
-            return (
-              <article key={item.key} className={`${PANEL_CLASS} flex min-h-[108px] items-center justify-between gap-4 p-5`}>
-                <div>
-                  <p className="text-[14px] font-semibold text-[#0f2748]">{item.label === 'Leases Signed' ? 'Deals Signed' : item.label}</p>
-                  <p className="mt-2.5 text-[30px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{loading ? '...' : formatNumber(item.value)}</p>
-                  <p className="mt-2 text-[12px] font-normal text-[#7b899a]">0% vs last week</p>
-                </div>
-                <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] ${item.tone}`}>
-                  <Icon size={19} />
-                </span>
-              </article>
-            )
-          })}
-        </div>
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
-        <article className={`${PANEL_CLASS} p-6`}>
-          <SectionTitle title="Revenue Forecast" />
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.7fr)_minmax(260px,0.3fr)]">
-            <RevenueTrendChart points={trendPoints} loading={loading} />
-            <div className="grid gap-4">
-              {[
-                ['This Month', formatMoney(displayFinancialSummary.projectedRevenue || displaySummary.expectedRevenue || 0)],
-                ['This Quarter', formatMoney(displayFinancialSummary.expectedCommission || displaySummary.expectedRevenue || 0)],
-                ['YTD', formatMoney(displayFinancialSummary.paidRevenue || 0)],
-                ['Forecast', formatMoney(displayFinancialSummary.pipelineValue || displaySummary.pipelineValue || 0)],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-[24px] border border-[#ebf1f6] bg-[#fbfdff] px-4 py-4">
-                  <p className="text-[13px] font-medium text-[#60758d]">{label}</p>
-                  <p className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.03em] text-[#0f2748]">{loading ? '...' : value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </article>
-
-        <article className={`${PANEL_CLASS} p-6`}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Risk Watch</h2>
-            </div>
-            <Link to="/commercial/lease-expiry-watch" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
-              View all
-              <ChevronRight size={15} />
-            </Link>
-          </div>
-          <div className="mt-5 space-y-4">
-            <div className="rounded-[24px] border border-[rgba(255,59,48,0.14)] bg-[rgba(255,59,48,0.05)] p-4">
-              <div className="flex items-center gap-2 text-rose-700">
-                <AlertTriangle size={16} />
-                <p className="text-[14px] font-semibold">Attention Required</p>
-              </div>
-              <div className="mt-4 space-y-3">
-                {riskWatch.critical.map((item) => (
-                  <div key={item.label} className="flex items-center justify-between gap-3">
-                    <p className="text-[13px] text-[#5d4950]">{item.label}</p>
-                    <strong className="text-[44px] font-semibold leading-none tracking-[-0.04em] text-rose-700">{loading ? '...' : formatNumber(item.value)}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-[24px] border border-[rgba(255,149,0,0.14)] bg-[rgba(255,149,0,0.05)] p-4">
-              <div className="flex items-center gap-2 text-amber-700">
-                <ShieldAlert size={16} />
-                <p className="text-[14px] font-semibold">Monitor</p>
-              </div>
-              <div className="mt-4 space-y-3">
-                {riskWatch.warning.map((item) => (
-                  <div key={item.label} className="flex items-center justify-between gap-3">
-                    <p className="text-[13px] text-[#6a5843]">{item.label}</p>
-                    <strong className="text-[44px] font-semibold leading-none tracking-[-0.04em] text-amber-700">{loading ? '...' : formatNumber(item.value)}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-[24px] border border-[rgba(52,199,89,0.14)] bg-[rgba(52,199,89,0.05)] p-4">
-              <div className="flex items-center gap-2 text-emerald-700">
-                <CheckCircle2 size={16} />
-                <p className="text-[14px] font-semibold">Healthy</p>
-              </div>
-              <div className="mt-4 flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-[44px] font-semibold leading-none tracking-[-0.04em] text-emerald-700">{loading ? '...' : formatPercentValue(riskWatch.healthy)}</p>
-                  <p className="mt-1 text-[13px] text-[#547567]">Portfolio occupancy</p>
-                </div>
-                <div className="rounded-full bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700 ring-1 ring-inset ring-emerald-200">
-                  Stable
-                </div>
-              </div>
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section>
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
-          <article className={`${PANEL_CLASS} overflow-hidden`}>
-            <div className="flex items-center justify-between gap-4 border-b border-[#edf2f7] px-6 py-4">
-              <h3 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Top Brokers</h3>
-              <Link to="/commercial/brokers" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
-                View All Brokers
-                <ChevronRight size={15} />
-              </Link>
-            </div>
-            <div className="overflow-x-auto">
-              {topBrokerRows.length ? (
-                <table className="min-w-[680px] w-full text-left text-sm">
-                  <thead className="bg-[#fbfdff] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#7a8798]">
-                    <tr>
-                      <th className="px-6 py-3.5">Broker</th>
-                      <th className="px-4 py-3.5">Pipeline</th>
-                      <th className="px-4 py-3.5">Deals</th>
-                      <th className="px-4 py-3.5">Commission</th>
-                      <th className="px-4 py-3.5 text-right">Trend</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#edf2f7]">
-                    {topBrokerRows.map((row) => (
-                      <tr key={row.id || row.name} className="bg-white">
-                        <td className="px-6 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[linear-gradient(180deg,#eff5fb_0%,#dfeaf7_100%)] text-[#123b61]">
-                              <UserRound size={16} />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate font-semibold text-[#102236]">{row.name || 'Broker'}</p>
-                              <p className="truncate text-xs text-[#7b899a]">{titleize(row.role || 'broker')}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5 font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.pipelineValue || 0)}</td>
-                        <td className="px-4 py-3.5 font-semibold text-[#0f2748]">{loading ? '...' : formatNumber(row.activeDeals || 0)}</td>
-                        <td className="px-4 py-3.5 font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.expectedCommission || row.projectedCommission || row.commissionValue || 0)}</td>
-                        <td className="px-4 py-3.5 text-right"><TrendPill delta={row.trend} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : !loading ? (
-                <div className="p-5">
-                  <InlineEmptyPanel title="No broker pipeline yet." description="Once brokers are assigned to commercial opportunities, their ranked pipeline value and active deal counts will appear here." />
-                </div>
-              ) : null}
-            </div>
-          </article>
-
-          <article className={`${PANEL_CLASS} p-6`}>
-            <div className="flex items-center justify-between gap-4">
-              <h3 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Properties Requiring Attention</h3>
-              <Link to="/commercial/properties" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
-                View all
-                <ChevronRight size={15} />
-              </Link>
-            </div>
-            <div className="mt-4 grid gap-4">
-              {portfolioCards.map((card) => (
-                <article key={card.id} className="flex items-center justify-between gap-4 rounded-[24px] border border-[#ebf1f6] bg-[#fbfdff] p-4">
-                  <div className="flex min-w-0 items-center gap-4">
-                    <span className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,var(--tw-gradient-stops))] ${card.accent} text-[#123b61]`}>
-                        <Building2 size={18} />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-[14px] font-semibold text-[#0f2748]">{card.name}</p>
-                      <p className="mt-1 truncate text-[13px] text-[#6b7c91]">{card.location}</p>
-                    </div>
-                  </div>
-                  <div className="grid shrink-0 grid-cols-[minmax(120px,1fr)_72px] items-center gap-4 text-right">
-                    <p className={`text-[13px] font-semibold ${card.risk === 'High' ? 'text-rose-700' : card.risk === 'Medium' ? 'text-orange-700' : 'text-emerald-700'}`}>{card.attentionLabel}</p>
-                    <div>
-                      <p className="text-[14px] font-bold text-[#0f2748]">{formatPercentValue(card.occupancy)}</p>
-                      <p className="text-[10px] font-semibold text-[#6b7c91]">Occupied</p>
-                    </div>
-                  </div>
-                </article>
-              ))}
-              {!portfolioCards.length && !loading ? (
-                <InlineEmptyPanel title="No properties requiring attention." description="Properties with vacancies, lease expiries, or strong demand will appear here." />
-              ) : null}
-            </div>
-          </article>
-        </div>
-      </section>
+      <CommercialAppointments rows={upcomingAppointments} loading={loading} />
 
       {!organisationId && !loading ? (
         <CommercialEmptyState title="Commercial organisation context is missing" description="Select an active commercial workspace to load the overview." />

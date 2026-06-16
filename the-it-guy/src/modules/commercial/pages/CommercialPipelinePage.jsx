@@ -121,16 +121,20 @@ function CommercialPipelinePage() {
             <p className="mt-3 max-w-3xl text-[20px] font-medium text-[#526276]">Track commercial demand, deal movement, and follow-up work in one place.</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <Link to="/commercial/requirements/pipeline" className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#0e335f] px-[18px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.18)] transition hover:bg-[#0b294e]">
-              Requirements
+            <Link to="/commercial/leasing/leads" className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#0e335f] px-[18px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.18)] transition hover:bg-[#0b294e]">
+              Leasing Leads
               <ArrowUpRight size={15} />
             </Link>
-            <Link to="/commercial/deals/pipeline" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
-              Deals
+            <Link to="/commercial/sales/leads" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
+              Sales Leads
               <ArrowUpRight size={15} />
             </Link>
-            <Link to="/commercial/viewings" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
-              Viewings
+            <Link to="/commercial/leasing/canvassing" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
+              Leasing Canvassing
+              <ArrowUpRight size={15} />
+            </Link>
+            <Link to="/commercial/sales/canvassing" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
+              Sales Canvassing
               <ArrowUpRight size={15} />
             </Link>
           </div>
@@ -148,7 +152,7 @@ function CommercialPipelinePage() {
           title="Requirements Pipeline"
           subtitle="Commercial demand moving through qualification and matching."
           stages={requirementsPipeline}
-          ctaTo="/commercial/requirements/pipeline"
+          ctaTo="/commercial/leasing/leads"
           ctaLabel="Open requirements"
           showValue
         />
@@ -157,7 +161,7 @@ function CommercialPipelinePage() {
           title="Deals Pipeline"
           subtitle="Leasing and sales opportunities progressing through negotiation."
           stages={dealsPipeline}
-          ctaTo="/commercial/deals/pipeline"
+          ctaTo="/commercial/deals"
           ctaLabel="Open deals"
           showValue
         />
@@ -168,7 +172,7 @@ function CommercialPipelinePage() {
           title="Stock Pipeline"
           subtitle="Listings moving from draft to market-ready and active."
           stages={listingPipeline}
-          ctaTo="/commercial/listings"
+          ctaTo="/commercial/sales/listings"
           ctaLabel="Open listings"
           showValue
         />
@@ -187,35 +191,47 @@ function CommercialPipelinePage() {
 
           <div className="mt-5 grid gap-3">
             <PipelineActionLink
-              to="/commercial/leads"
-              label="Leads"
-              description="Open the commercial lead and requirement workspace."
+              to="/commercial/leasing/leads"
+              label="Leasing Leads"
+              description="Open landlord and tenant leads."
               icon={ClipboardList}
               primary
             />
             <PipelineActionLink
-              to="/commercial/canvassing"
-              label="Canvassing"
-              description="Track outbound prospecting and follow-up."
+              to="/commercial/sales/leads"
+              label="Sales Leads"
+              description="Open seller and buyer leads."
+              icon={ClipboardList}
+            />
+            <PipelineActionLink
+              to="/commercial/leasing/canvassing"
+              label="Leasing Canvassing"
+              description="Track landlord and tenant prospecting."
               icon={Radar}
             />
             <PipelineActionLink
-              to="/commercial/deals"
-              label="Deals"
-              description="Review active leasing and sales opportunities."
+              to="/commercial/sales/canvassing"
+              label="Sales Canvassing"
+              description="Track seller and buyer prospecting."
+              icon={Radar}
+            />
+            <PipelineActionLink
+              to="/commercial/leasing/deals"
+              label="Leasing Deals"
+              description="Review active leasing opportunities."
               icon={TrendingUp}
             />
             <PipelineActionLink
-              to="/commercial/leasing"
-              label="Leasing"
-              description="Track heads of terms, leases, and occupier movement."
-              icon={Warehouse}
+              to="/commercial/sales/deals"
+              label="Sales Deals"
+              description="Review active sales opportunities."
+              icon={TrendingUp}
             />
             <PipelineActionLink
-              to="/commercial/viewings"
-              label="Viewings"
-              description="Manage scheduled inspections and follow-up."
-              icon={CalendarDays}
+              to="/commercial/leasing/vacancies"
+              label="Vacancies"
+              description="Manage lease opportunities and available space."
+              icon={Warehouse}
             />
             <PipelineActionLink
               to="/commercial/reports"

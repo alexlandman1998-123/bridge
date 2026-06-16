@@ -38,7 +38,8 @@ import {
   validateMandateGenerationData,
 } from '../../core/documents/mandateValidation'
 import {
-  mandateRequiresSpouseSignature,
+  getMandateSignerRoleLabel,
+  resolveMandateSecondarySignerConfig,
   resolveMandateSpouseRequirementFromFields,
 } from '../../lib/mandateSignatureRules'
 import { templateIsUsableForGeneration } from '../../core/documents/structuredTemplateRenderer'
@@ -478,8 +479,15 @@ function buildSignerDefaultsFromContext({ sourceContext = {}, latestVersion = nu
 
   const sellerFirstName = firstNonEmptyText(placeholders.seller_first_name, lead.sellerName, onboardingFormData.sellerFirstName, onboardingFormData.firstName)
   const sellerSurname = firstNonEmptyText(placeholders.seller_surname, lead.sellerSurname, onboardingFormData.sellerSurname, onboardingFormData.lastName, onboardingFormData.surname)
-  const spouseFirstName = firstNonEmptyText(placeholders.seller_spouse_first_name, onboardingFormData.spouseFirstName, onboardingFormData.spouse_first_name)
-  const spouseSurname = firstNonEmptyText(placeholders.seller_spouse_surname, onboardingFormData.spouseSurname, onboardingFormData.spouseLastName, onboardingFormData.spouse_surname)
+  const secondaryMandateSigner = resolveMandateSecondarySignerConfig({
+    sourceContext: {
+      ...sourceContext,
+      sellerOnboarding,
+      onboardingFormData,
+    },
+    latestVersion,
+    placeholders,
+  })
 
   return {
     agent: {
@@ -499,16 +507,8 @@ function buildSignerDefaultsFromContext({ sourceContext = {}, latestVersion = nu
       signerEmail: firstNonEmptyText(placeholders.seller_email, lead.sellerEmail, sourceContext.sellerEmail, nestedSource.sellerEmail, onboardingFormData.sellerEmail, onboardingFormData.email).toLowerCase(),
     },
     purchaser_2: {
-      signerName: firstNonEmptyText(
-        placeholders.seller_spouse_name,
-        sourceContext.spouseName,
-        nestedSource.spouseName,
-        onboardingFormData.spouseName,
-        onboardingFormData.spouseFullName,
-        onboardingFormData.spouse_full_name,
-        fullNameFromParts(spouseFirstName, spouseSurname),
-      ),
-      signerEmail: firstNonEmptyText(placeholders.seller_spouse_email, sourceContext.spouseEmail, nestedSource.spouseEmail, onboardingFormData.spouseEmail, onboardingFormData.spouse_email).toLowerCase(),
+      signerName: normalizeText(secondaryMandateSigner?.signerName || ''),
+      signerEmail: normalizeText(secondaryMandateSigner?.signerEmail || '').toLowerCase(),
     },
   }
 }
@@ -536,7 +536,7 @@ function resolveSignerStatusTone(status = '', statusState = '') {
   return 'border-[#dfe6ef] bg-[#f5f8fb] text-[#60758d]'
 }
 
-function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSpouseRequired = false, signerDefaults = {} } = {}) {
+function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSecondarySignerRequired = false, secondarySignerLabel = 'Co-signer', signerDefaults = {} } = {}) {
   const rows = Array.isArray(signers) ? signers : []
   const byRole = new Map()
   for (const row of rows) {
@@ -548,8 +548,8 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSpou
   const normalizedPacketType = normalizeKey(packetType)
   const blueprint = [
     ...resolveSignerBlueprint(packetType),
-    ...(normalizedPacketType === 'mandate' && mandateSpouseRequired
-      ? [{ role: 'purchaser_2', label: 'Spouse', required: true }]
+    ...(normalizedPacketType === 'mandate' && mandateSecondarySignerRequired
+      ? [{ role: 'purchaser_2', label: secondarySignerLabel, required: true }]
       : []),
   ]
 
@@ -574,11 +574,11 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSpou
   for (const row of rows) {
     const role = normalizeKey(row?.signer_role || row?.role)
     if (!role || configured.has(role)) continue
-    if (normalizedPacketType === 'mandate' && role === 'purchaser_2' && !mandateSpouseRequired) continue
+    if (normalizedPacketType === 'mandate' && role === 'purchaser_2' && !mandateSecondarySignerRequired) continue
     const defaults = signerDefaults?.[role] || {}
     roster.push({
       role,
-      label: role.replace(/_/g, ' '),
+      label: role === 'purchaser_2' ? secondarySignerLabel : role.replace(/_/g, ' '),
       required: false,
       signer: row,
       signerName: normalizeText(row?.signer_name || defaults.signerName || ''),
@@ -1118,18 +1118,18 @@ function getMandateNextAction(status = 'draft', signingMethod = 'not_selected') 
   const method = normalizeSigningMethod(signingMethod)
   if (normalized === 'draft') return 'Generate the mandate PDF.'
   if (normalized === 'generated' && method === 'not_selected') return 'Choose digital signing or physical signature.'
-  if (normalized === 'generated' && method === 'digital') return 'Send the mandate to the seller for digital signing.'
+  if (normalized === 'generated' && method === 'digital') return 'Send the mandate to the required signers for digital signing.'
   if (normalized === 'generated' && method === 'physical') return 'Download the mandate for physical signature.'
-  if (normalized === 'generated_for_physical_signature') return 'Upload the signed PDF once the seller has signed the printed document.'
+  if (normalized === 'generated_for_physical_signature') return 'Upload the signed PDF once the required signers have signed the printed document.'
   if (normalized === 'sent_for_signature') return 'Monitor signing progress or resend the signing link if needed.'
   if (normalized === 'sent_to_agent') return 'Wait for the agency representative to sign first.'
   if (normalized === 'agent_signed') return 'Agent has signed. Seller invitation is being prepared.'
-  if (normalized === 'sent_to_seller') return 'Agent has signed. Wait for the seller to sign.'
+  if (normalized === 'sent_to_seller') return 'Agent has signed. Wait for the remaining seller-side signers to sign.'
   if (normalized === 'seller_signed' || normalized === 'completed') return 'All required signatures are complete.'
-  if (normalized === 'viewed') return 'Seller has viewed the mandate. Wait for signature or follow up.'
+  if (normalized === 'viewed') return 'A signer has viewed the mandate. Wait for signature or follow up.'
   if (normalized === 'uploaded_signed') return 'Signed PDF is stored against this mandate.'
   if (normalized === 'signed') return 'Mandate is signed and stored.'
-  if (normalized === 'declined') return 'Review the seller response and decide whether to resend or cancel.'
+  if (normalized === 'declined') return 'Review the signer response and decide whether to resend or cancel.'
   if (normalized === 'failed') return 'Review the latest failure and retry after fixing the issue.'
   if (normalized === 'cancelled') return 'No further signing action is available on this mandate.'
   return 'Review mandate status.'
@@ -1556,8 +1556,8 @@ function MergeChecklistPanel({ packetType = 'mandate', placeholders = {}, compac
   )
 }
 
-function SignerChecklistPanel({ packetType = 'mandate', signers = [], statusState, mandateSpouseRequired = false }) {
-  const signerRows = resolveSignerRoster({ packetType, signers, mandateSpouseRequired })
+function SignerChecklistPanel({ packetType = 'mandate', signers = [], statusState, mandateSecondarySignerRequired = false, secondarySignerLabel = 'Co-signer' }) {
+  const signerRows = resolveSignerRoster({ packetType, signers, mandateSecondarySignerRequired, secondarySignerLabel })
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
       <h4 className="text-sm font-semibold text-[#1a2f45]">Signer Checklist</h4>
@@ -1914,7 +1914,7 @@ function SigningMethodPanel({
     {
       key: 'digital',
       title: 'Digital Signing',
-      description: 'Send the mandate to the seller to review and sign online.',
+      description: 'Send the mandate to the required seller-side signers to review and sign online.',
       Icon: Link2,
       next: 'Next step: prepare signers and send secure signing links.',
     },
@@ -2375,12 +2375,27 @@ export default function LegalDocumentWorkspace({
       ? statusState.packet.source_context_json
       : {}
   ), [statusState?.packet?.source_context_json])
-  const mandateSpouseRequired = useMemo(
+  const mandateSecondarySignerConfig = useMemo(
     () => {
-      if (!isMandatePacket) return false
+      if (!isMandatePacket) {
+        return {
+          role: 'purchaser_2',
+          kind: '',
+          label: 'Co-signer',
+          required: false,
+          signerName: '',
+          signerEmail: '',
+        }
+      }
       const signingRequirement = resolveMandateSpouseRequirementFromSigningSummary(statusState?.signingSummary)
-      if (signingRequirement !== null) return signingRequirement
-      return mandateRequiresSpouseSignature({ sourceContext, latestVersion })
+      const resolved = resolveMandateSecondarySignerConfig({ sourceContext, latestVersion })
+      if (signingRequirement !== null) {
+        return {
+          ...resolved,
+          required: signingRequirement,
+        }
+      }
+      return resolved
     },
     [isMandatePacket, latestVersion, sourceContext, statusState?.signingSummary],
   )
@@ -2394,10 +2409,11 @@ export default function LegalDocumentWorkspace({
     return resolveSignerRoster({
       packetType,
       signers: statusState?.signingSummary?.signers || [],
-      mandateSpouseRequired,
+      mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
+      secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
       signerDefaults,
     })
-  }, [mandateSpouseRequired, packetType, signerDefaults, statusState?.signingSummary?.signers])
+  }, [mandateSecondarySignerConfig?.label, mandateSecondarySignerConfig?.required, packetType, signerDefaults, statusState?.signingSummary?.signers])
 
   const signerValidation = useMemo(() => {
     const rosterWithDraft = signerRoster.map((row) => {
@@ -2538,8 +2554,8 @@ export default function LegalDocumentWorkspace({
   }, [
     signerProgressMeta.signedRequired,
     signerProgressMeta.totalRequired,
-    signerValidation.blockers.length,
-    signerValidation.warnings.length,
+    signerValidation.blockers,
+    signerValidation.warnings,
   ])
 
   const editablePreviewHtml = useMemo(() => {
@@ -3322,7 +3338,8 @@ export default function LegalDocumentWorkspace({
     let latestRoster = resolveSignerRoster({
       packetType,
       signers: workingStatus?.signingSummary?.signers || [],
-      mandateSpouseRequired,
+      mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
+      secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
       signerDefaults,
     }).map((row) => {
       const draft = signerDraftByRole[row.role] || null
@@ -3344,7 +3361,8 @@ export default function LegalDocumentWorkspace({
       latestRoster = resolveSignerRoster({
         packetType,
         signers: workingStatus?.signingSummary?.signers || [],
-        mandateSpouseRequired,
+        mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
+        secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
         signerDefaults,
       }).map((row) => {
         const draft = signerDraftByRole[row.role] || null
@@ -4004,13 +4022,17 @@ export default function LegalDocumentWorkspace({
     const currentRoster = resolveSignerRoster({
       packetType,
       signers: currentStatus?.signingSummary?.signers || [],
-      mandateSpouseRequired,
+      mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
+      secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
       signerDefaults,
     })
     const currentAgentSigner = currentRoster.find((row) => normalizeKey(row.role) === 'agent') || null
     const agentHasSigned = Boolean(currentAgentSigner?.signedAt) || normalizeKey(currentAgentSigner?.statusRaw || currentAgentSigner?.status) === 'signed'
     const normalizedTargetSignerRole = normalizeKey(targetSignerRole) || (isMandatePacket && !resend && !agentHasSigned ? 'agent' : '')
-    setActionProgressMessage(resend ? `Refreshing ${normalizedTargetSignerRole ? normalizedTargetSignerRole.replace(/_/g, ' ') : 'signer'} link…` : 'Preparing signer links…')
+    const targetSignerLabel = normalizedTargetSignerRole
+      ? getMandateSignerRoleLabel(normalizedTargetSignerRole, { secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer' }).toLowerCase()
+      : 'signer'
+    setActionProgressMessage(resend ? `Refreshing ${targetSignerLabel} link…` : 'Preparing signer links…')
     const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend, targetSignerRole: normalizedTargetSignerRole })
     if (!Array.isArray(linkResult?.signers) || !linkResult.signers.some((signer) => normalizeText(signer?.signing_link))) {
       throw createWorkspaceError('SIGNING_LINK_FAILED', 'The signing link could not be created. Please try again.')
@@ -4823,7 +4845,7 @@ export default function LegalDocumentWorkspace({
     : 'min-h-0 flex-1 overflow-y-auto px-4 pb-20 pt-4 sm:px-5 sm:pb-24 sm:pt-5'
   const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(700px,calc(100vh-14rem),880px)]'
   const mainGridClassName = `grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[340px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
-  const secondaryGridClassName = 'mt-5 grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[380px_minmax(0,1fr)]'
+  const secondaryGridClassName = 'mt-5 grid gap-5 xl:grid-cols-[minmax(430px,1.15fr)_minmax(320px,0.85fr)] xl:items-stretch 2xl:grid-cols-[minmax(480px,1.2fr)_minmax(360px,0.8fr)]'
 
   return (
     <>
@@ -5235,7 +5257,7 @@ export default function LegalDocumentWorkspace({
                     onOpenSignaturePrep={() => setSignerPrepOpen(true)}
                     signaturePrepSummary={signaturePrepSummary}
                     busy={actionBusy || loading}
-                    className="xl:min-h-[360px]"
+                    className="xl:h-[420px]"
                   />
                 ) : null}
 
@@ -5270,7 +5292,7 @@ export default function LegalDocumentWorkspace({
                   templateLabel={normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot)}
                   templateKey={normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot)}
                   templateStoragePath={normalizeText(templateDetail?.template_storage_path)}
-                  className="xl:h-[360px]"
+                  className="xl:h-[420px]"
                 />
               </aside>
             </div>
@@ -5425,7 +5447,7 @@ export default function LegalDocumentWorkspace({
         open={signerPrepOpen}
         onClose={() => setSignerPrepOpen(false)}
         title="Prepare for Signature"
-        subtitle="Confirm agent, seller, and spouse signer details before sending secure links."
+        subtitle="Confirm the agent and all required seller-side signers before sending secure links."
         widthClassName="max-w-[760px]"
       >
         <SignerPreparationPanel

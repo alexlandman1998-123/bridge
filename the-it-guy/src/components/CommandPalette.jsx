@@ -1,5 +1,5 @@
 import { Building2, Command, FileText, Handshake, Home, Layers, Search, Workflow } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 function CommandPalette({ onNewTransaction, onNewDevelopment }) {
@@ -7,6 +7,11 @@ function CommandPalette({ onNewTransaction, onNewDevelopment }) {
   const location = useLocation()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+
+  const closePalette = useCallback(() => {
+    setOpen(false)
+    setQuery('')
+  }, [])
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -16,13 +21,13 @@ function CommandPalette({ onNewTransaction, onNewDevelopment }) {
       }
 
       if (event.key === 'Escape') {
-        setOpen(false)
+        closePalette()
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [closePalette])
 
   useEffect(() => {
     function onOpenRequested() {
@@ -32,12 +37,6 @@ function CommandPalette({ onNewTransaction, onNewDevelopment }) {
     window.addEventListener('itg:open-command-palette', onOpenRequested)
     return () => window.removeEventListener('itg:open-command-palette', onOpenRequested)
   }, [])
-
-  useEffect(() => {
-    if (!open) {
-      setQuery('')
-    }
-  }, [open])
 
   const commands = useMemo(() => {
     const items = [
@@ -75,13 +74,13 @@ function CommandPalette({ onNewTransaction, onNewDevelopment }) {
         id: 'commercial-dashboard',
         label: 'Go to Commercial Dashboard',
         icon: <Building2 size={14} />,
-        run: () => navigate('/commercial/dashboard'),
+        run: () => navigate('/commercial'),
       },
       {
         id: 'commercial-transactions',
         label: 'Go to Commercial Transactions',
         icon: <Handshake size={14} />,
-        run: () => navigate('/commercial/dashboard#transactions'),
+        run: () => navigate('/commercial/pipeline'),
       },
       {
         id: 'commercial-documents',
@@ -143,7 +142,7 @@ function CommandPalette({ onNewTransaction, onNewDevelopment }) {
       aria-label="Command palette"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
-          setOpen(false)
+          closePalette()
         }
       }}
     >
@@ -165,7 +164,7 @@ function CommandPalette({ onNewTransaction, onNewDevelopment }) {
                 type="button"
                 onClick={() => {
                   item.run()
-                  setOpen(false)
+                  closePalette()
                 }}
               >
                 {item.icon}

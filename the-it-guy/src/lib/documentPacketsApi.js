@@ -1,7 +1,8 @@
 import { isOrganisationAdminMembershipRole, normalizeOrganisationMembershipRole } from './organisationAccess'
 import {
   filterMandateSigningRows,
-  mandateRequiresSpouseSignature,
+  getMandateSignerRoleLabel,
+  resolveMandateSecondarySignerConfig,
   resolveMandateSpouseRequirementFromFields,
 } from './mandateSignatureRules'
 import { DOCUMENTS_BUCKET_CANDIDATES, supabase } from './supabaseClient'
@@ -2196,7 +2197,7 @@ export async function getDocumentPacketSigningSummary({ packetId, packetVersionI
     : []
   const requiresSpouse = spouseFields.length
     ? resolveMandateSpouseRequirementFromFields(spouseFields)
-    : mandateRequiresSpouseSignature({ packet })
+    : resolveMandateSecondarySignerConfig({ packet }).required
   const fields = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
     ? filterMandateSigningRows(rawFields, { requiresSpouse })
     : rawFields
@@ -2310,10 +2311,13 @@ export async function generateDocumentPacketSigningLinks({
       })
     : []
   const spouseFields = signingFields.filter((field) => normalizeText(field?.signer_role || field?.signerRole).toLowerCase() === 'purchaser_2')
+  const mandateSecondarySigner = isMandatePacket
+    ? resolveMandateSecondarySignerConfig({ packet })
+    : null
   const mandateSpouseRequired = isMandatePacket && (
     spouseFields.length
       ? resolveMandateSpouseRequirementFromFields(spouseFields)
-      : mandateRequiresSpouseSignature({ packet })
+      : Boolean(mandateSecondarySigner?.required)
   )
   const relevantSigners = isMandatePacket
     ? signers.filter((signer) => {
@@ -2344,14 +2348,14 @@ export async function generateDocumentPacketSigningLinks({
     : null
 
   if (isMandatePacket && normalizedTargetSignerRole) {
-    if (!['agent', 'seller'].includes(normalizedTargetSignerRole)) {
-      throw new Error('Mandate signing links can only be resent to the agent or seller.')
-    }
+    const targetRoleLabel = getMandateSignerRoleLabel(normalizedTargetSignerRole, {
+      secondarySignerLabel: mandateSecondarySigner?.label || 'Co-signer',
+    })
     if (!targetedMandateSigner) {
-      throw new Error(`${normalizedTargetSignerRole === 'agent' ? 'Agent' : 'Seller'} has already completed signing or is not configured.`)
+      throw new Error(`${targetRoleLabel} has already completed signing or is not configured.`)
     }
-    if (normalizedTargetSignerRole === 'seller' && !signedMandateAgent) {
-      throw new Error('The agent must sign the mandate before the seller signing link can be sent.')
+    if (normalizedTargetSignerRole !== 'agent' && !signedMandateAgent) {
+      throw new Error('The agent must sign the mandate before seller-side signing links can be sent.')
     }
   }
 
@@ -2458,7 +2462,7 @@ export async function generateDocumentPacketSigningLinks({
   const linkSigner = updates.find((item) => normalizeText(item?.signing_link)) || null
   const linkSignerRole = normalizeText(linkSigner?.signer_role).toLowerCase()
   const signingStatus = isMandatePacket
-    ? (linkSignerRole === 'seller' ? 'sent_to_seller' : 'sent_to_agent')
+    ? (linkSignerRole === 'agent' ? 'sent_to_agent' : linkSignerRole === 'seller' ? 'sent_to_seller' : 'sent_for_signature')
     : 'sent_for_signature'
   const packetUpdate = {
     status: 'sent',

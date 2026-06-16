@@ -43,7 +43,7 @@ import {
 import { FEATURE_FLAGS } from '../../lib/featureFlags'
 import {
   filterMandateSigningRows,
-  mandateRequiresSpouseSignature,
+  resolveMandateSecondarySignerConfig,
   resolveMandateSpouseRequirementFromFields,
 } from '../../lib/mandateSignatureRules'
 import {
@@ -691,10 +691,12 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     onboarding?.spouse_email,
   )
   const isMandatePacket = normalizeText(context?.packetType || context?.packet_type || placeholders.packet_type).toLowerCase() === 'mandate'
-  const sellerRequiresSpouseSignature = isMandatePacket && mandateRequiresSpouseSignature({
-    sourceContext: context,
-    placeholders,
-  })
+  const secondaryMandateSigner = isMandatePacket
+    ? resolveMandateSecondarySignerConfig({
+        sourceContext: context,
+        placeholders,
+      })
+    : null
 
   const candidates = {
     purchaser_1: {
@@ -710,7 +712,7 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
     },
     purchaser_2: {
       name: isMandatePacket
-        ? [spouseName]
+        ? [secondaryMandateSigner?.signerName]
         : [
             placeholders['buyer2.display_name'],
             placeholders['buyer_2.display_name'],
@@ -719,10 +721,10 @@ function resolveSignerSeed({ role, placeholders = {}, context = {} } = {}) {
             spouseName,
           ],
       email: isMandatePacket
-        ? [spouseEmail]
+        ? [secondaryMandateSigner?.signerEmail]
         : [placeholders['buyer2.email'], placeholders['buyer_2.email'], onboarding?.co_buyer_email, onboarding?.coBuyerEmail, spouseEmail],
-      required: sellerRequiresSpouseSignature,
-      conditional: !sellerRequiresSpouseSignature,
+      required: isMandatePacket ? Boolean(secondaryMandateSigner?.required) : false,
+      conditional: isMandatePacket ? !secondaryMandateSigner?.required : true,
     },
     seller: {
       name: [
@@ -2118,7 +2120,7 @@ export async function generateFinalSignedPacketDocument({
     (() => {
       const spouseRequirement = resolveMandateSpouseRequirementFromFields(signingSummary.fields || [])
       if (spouseRequirement !== null) return spouseRequirement
-      return mandateRequiresSpouseSignature({ packet })
+      return resolveMandateSecondarySignerConfig({ packet }).required
     })()
   const relevantSigners = normalizeText(packet?.packet_type).toLowerCase() === 'mandate'
     ? filterMandateSigningRows(signingSummary.signers || [], { requiresSpouse: mandateSpouseRequired })

@@ -1237,7 +1237,7 @@ function AppRoutes() {
               <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
               <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
               <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout onLogout={logout} user={session?.user || null} /></AppErrorBoundary></RoleRoute>}>
-                <Route index element={<Navigate to="/commercial/dashboard" replace />} />
+                <Route index element={<CommercialDashboard />} />
                 <Route path="dashboard" element={<CommercialDashboard />} />
                 <Route path="principal" element={<Navigate to="/commercial/performance" replace />} />
                 <Route path="companies" element={<Navigate to="/commercial/clients?tab=companies" replace />} />
@@ -1248,8 +1248,10 @@ function AppRoutes() {
                 <Route path="clients" element={<CommercialClientsPage />} />
                 <Route path="expiring-occupiers" element={<CommercialExpiringOccupiersPage />} />
                 <Route path="vacancies" element={<CommercialVacanciesPage />} />
+                <Route path="leasing/vacancies" element={<CommercialVacanciesPage />} />
                 <Route path="vacancies/:vacancyId" element={<CommercialVacancyWorkspacePage />} />
                 <Route path="listings" element={<CommercialListingsPage />} />
+                <Route path="sales/listings" element={<CommercialSalesListingsPage />} />
                 <Route path="listings/:listingId" element={<CommercialListingWorkspacePage />} />
                 <Route path="landlords" element={<CommercialLandlordsPage />} />
                 <Route path="landlords/:landlordId" element={<CommercialLandlordWorkspacePage />} />
@@ -1257,18 +1259,24 @@ function AppRoutes() {
                 <Route path="properties/:propertyId" element={<CommercialPropertyWorkspacePage />} />
                 <Route path="leads" element={<CommercialLeadsPage />} />
                 <Route path="canvassing" element={<CommercialCanvassingPage />} />
+                <Route path="leasing/leads" element={<CommercialLeadsPage dealType="lease" />} />
+                <Route path="leasing/canvassing" element={<CommercialCanvassingPage dealType="lease" />} />
+                <Route path="sales/leads" element={<CommercialLeadsPage dealType="sale" />} />
+                <Route path="sales/canvassing" element={<CommercialCanvassingPage dealType="sale" />} />
                 <Route path="calendar" element={<CommercialCalendarPage />} />
-                <Route path="requirements" element={<Navigate to="/commercial/leads" replace />} />
+                <Route path="requirements" element={<Navigate to="/commercial/pipeline" replace />} />
                 <Route path="pipeline" element={<CommercialPipelinePage />} />
                 <Route path="requirements/pipeline" element={<CommercialRequirementsPipelinePage />} />
                 <Route path="leasing" element={<CommercialLeasingPage />} />
                 <Route path="sales" element={<CommercialSalesPage />} />
                 <Route path="sales-listings" element={<CommercialSalesListingsPage />} />
+                <Route path="leasing/deals" element={<CommercialDealsPage dealType="lease" pageTitle="Leasing Deals" pageDescription="Track heads of terms, lease negotiations and signed lease deals." />} />
+                <Route path="sales/deals" element={<CommercialDealsPage dealType="sale" pageTitle="Sales Deals" pageDescription="Track offers, negotiations and commercial sale transactions." />} />
                 <Route path="deals" element={<CommercialDealsPage />} />
                 <Route path="deals/pipeline" element={<CommercialDealsPipelinePage />} />
                 <Route path="deals/overview" element={<CommercialDealsPage />} />
-                <Route path="deals/leasing" element={<Navigate to="/commercial/leasing?tab=opportunities" replace />} />
-                <Route path="deals/sales" element={<Navigate to="/commercial/sales?tab=opportunities" replace />} />
+                <Route path="deals/leasing" element={<Navigate to="/commercial/leasing/deals" replace />} />
+                <Route path="deals/sales" element={<Navigate to="/commercial/sales/deals" replace />} />
                 <Route path="deals/leasing/pipeline" element={<Navigate to="/commercial/leasing" replace />} />
                 <Route path="transactions" element={<Navigate to="/commercial/sales?tab=transactions" replace />} />
                 <Route path="transactions/:transactionId" element={<CommercialTransactionWorkspacePage />} />
@@ -1307,7 +1315,7 @@ function AppRoutes() {
                     />
                   }
                 />
-                <Route path="*" element={<Navigate to="/commercial/dashboard" replace />} />
+                <Route path="*" element={<Navigate to="/commercial" replace />} />
               </Route>
               <Route path="/setup" element={<PostDashboardSetup />} />
               <Route path="/setup/recovery" element={<PostDashboardSetup />} />

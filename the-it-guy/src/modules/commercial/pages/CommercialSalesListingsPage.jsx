@@ -6,9 +6,9 @@ function CommercialSalesListingsPage() {
     <CommercialCrudPage
       config={{
         ...commercialCrudConfigs.listings,
-        title: 'Sales Listings',
-        description: 'Market-facing commercial sales and investment listings linked to landlords, properties, brokers, teams, and branches.',
-        emptyTitle: 'No sales listings yet',
+        title: 'Listings',
+        description: 'Manage commercial properties listed for sale.',
+        emptyTitle: 'No listings yet',
         emptyDescription: 'Create a sale or investment listing to market commercial stock for acquisition.',
       }}
       presentation="cards"

@@ -72,15 +72,6 @@ import {
 } from '../services/commercialCanvassingApi'
 import { getCommercialLookupData, resolveCommercialOrganisationContext } from '../services/commercialApi'
 
-const LEAD_TABS = [
-  { id: 'all', label: 'All Leads' },
-  { id: 'sales', label: 'Sales' },
-  { id: 'leases', label: 'Leases' },
-  { id: 'unclassified', label: 'Unclassified' },
-  { id: 'qualified', label: 'Qualified' },
-  { id: 'converted', label: 'Converted' },
-]
-
 const LEAD_STAGE_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'discovery', label: 'Discovery' },
@@ -99,6 +90,31 @@ const BUDGET_BANDS = [
   { value: '500k_1m', label: 'R500K - R1M' },
   { value: '1m_5m', label: 'R1M - R5M' },
   { value: '5m_plus', label: 'R5M+' },
+]
+
+const ALL_LEAD_TABS = [
+  { id: 'all', label: 'All Leads', matches: (lead) => leadTabMatches(lead, 'all') },
+  { id: 'sales', label: 'Sales', matches: (lead) => leadTabMatches(lead, 'sales') },
+  { id: 'leases', label: 'Leases', matches: (lead) => leadTabMatches(lead, 'leases') },
+  { id: 'unclassified', label: 'Unclassified', matches: (lead) => leadTabMatches(lead, 'unclassified') },
+  { id: 'qualified', label: 'Qualified', matches: (lead) => leadTabMatches(lead, 'qualified') },
+  { id: 'converted', label: 'Converted', matches: (lead) => leadTabMatches(lead, 'converted') },
+]
+
+const LEASE_LEAD_TABS = [
+  { id: 'all', label: 'All Lease Leads', matches: () => true },
+  { id: 'landlords', label: 'Landlords', matches: (lead) => normalizeLeadRole(lead) === 'landlord' },
+  { id: 'tenants', label: 'Tenants', matches: (lead) => normalizeLeadRole(lead) === 'tenant' },
+  { id: 'qualified', label: 'Qualified', matches: (lead) => ['qualified', 'proposal', 'negotiation'].includes(normalizeLeadStatus(lead.status)) },
+  { id: 'converted', label: 'Converted', matches: (lead) => normalizeLeadStatus(lead.status) === 'converted' },
+]
+
+const SALE_LEAD_TABS = [
+  { id: 'all', label: 'All Sales Leads', matches: () => true },
+  { id: 'sellers', label: 'Sellers', matches: (lead) => normalizeLeadRole(lead) === 'seller' },
+  { id: 'buyers', label: 'Buyers', matches: (lead) => normalizeLeadRole(lead) === 'buyer' },
+  { id: 'qualified', label: 'Qualified', matches: (lead) => ['qualified', 'proposal', 'negotiation'].includes(normalizeLeadStatus(lead.status)) },
+  { id: 'converted', label: 'Converted', matches: (lead) => normalizeLeadStatus(lead.status) === 'converted' },
 ]
 
 const EMPTY_LEAD_COPY = {
@@ -126,6 +142,114 @@ const EMPTY_LEAD_COPY = {
     title: 'No converted leads yet',
     description: 'Converted leads will appear here after they move into requirements, listings or deals.',
   },
+  leaseDepartment: {
+    all: {
+      title: 'No lease leads yet',
+      description: 'Track landlords and tenants active in the leasing pipeline.',
+    },
+    landlords: {
+      title: 'No landlord leads yet',
+      description: 'Landlord opportunities will appear here once canvassing and referrals start landing.',
+    },
+    tenants: {
+      title: 'No tenant leads yet',
+      description: 'Tenant opportunities will appear here once the leasing team starts qualifying demand.',
+    },
+    qualified: {
+      title: 'No qualified lease leads yet',
+      description: 'Qualified lease leads will appear here once they are ready for vacancy matching or lease deals.',
+    },
+    converted: {
+      title: 'No converted lease leads yet',
+      description: 'Converted lease leads will appear here after they move into vacancies or lease deals.',
+    },
+  },
+  saleDepartment: {
+    all: {
+      title: 'No sales leads yet',
+      description: 'Track sellers and buyers active in the commercial sales pipeline.',
+    },
+    sellers: {
+      title: 'No seller leads yet',
+      description: 'Seller opportunities will appear here once canvassing and referrals start landing.',
+    },
+    buyers: {
+      title: 'No buyer leads yet',
+      description: 'Buyer opportunities will appear here once the sales team starts qualifying demand.',
+    },
+    qualified: {
+      title: 'No qualified sales leads yet',
+      description: 'Qualified sales leads will appear here once they are ready for listings or deals.',
+    },
+    converted: {
+      title: 'No converted sales leads yet',
+      description: 'Converted sales leads will appear here after they move into listings or deals.',
+    },
+  },
+}
+
+function getLeadPageViewConfig(dealType = '') {
+  const normalizedDealType = normalizeLower(dealType)
+  if (normalizedDealType === 'lease') {
+    const roleOptions = COMMERCIAL_ROLE_OPTIONS.filter((option) => ['landlord', 'tenant'].includes(option.value))
+    return {
+      key: 'lease',
+      title: 'Leasing Leads',
+      description: 'Qualify landlord and tenant opportunities before converting them into vacancies, requirements or lease deals.',
+      createLabel: '+ Add Lease Lead',
+      searchPlaceholder: 'Search lease leads, companies, brokers...',
+      tabs: LEASE_LEAD_TABS,
+      baseDealType: 'lease',
+      showRoleFilters: false,
+      roleFilters: roleOptions.map((option) => ({ value: option.value, label: option.label })),
+      roleOptions,
+      allowedRoles: ['landlord', 'tenant'],
+      defaultCreateRole: 'landlord',
+      emptyCopy: EMPTY_LEAD_COPY.leaseDepartment,
+    }
+  }
+
+  if (normalizedDealType === 'sale') {
+    const roleOptions = COMMERCIAL_ROLE_OPTIONS.filter((option) => ['seller', 'buyer'].includes(option.value))
+    return {
+      key: 'sale',
+      title: 'Sales Leads',
+      description: 'Qualify seller and buyer opportunities before converting them into listings, requirements or sales deals.',
+      createLabel: '+ Add Sales Lead',
+      searchPlaceholder: 'Search sales leads, companies, brokers...',
+      tabs: SALE_LEAD_TABS,
+      baseDealType: 'sale',
+      showRoleFilters: false,
+      roleFilters: roleOptions.map((option) => ({ value: option.value, label: option.label })),
+      roleOptions,
+      allowedRoles: ['seller', 'buyer'],
+      defaultCreateRole: 'seller',
+      emptyCopy: EMPTY_LEAD_COPY.saleDepartment,
+    }
+  }
+
+  const roleOptions = COMMERCIAL_ROLE_OPTIONS.filter((option) => ['seller', 'buyer', 'landlord', 'tenant'].includes(option.value))
+  return {
+    key: 'all',
+    title: 'Prospects',
+    description: 'Unified commercial prospect register and follow-up state.',
+    createLabel: '+ Add Lead',
+    searchPlaceholder: 'Search leads, companies, requirements, areas, brokers...',
+    tabs: ALL_LEAD_TABS,
+    baseDealType: 'all',
+    showRoleFilters: true,
+    roleFilters: [
+      { value: 'all', label: 'All' },
+      { value: 'seller', label: 'Sellers' },
+      { value: 'buyer', label: 'Buyers' },
+      { value: 'landlord', label: 'Landlords' },
+      { value: 'tenant', label: 'Tenants' },
+    ],
+    roleOptions,
+    allowedRoles: ['seller', 'buyer', 'landlord', 'tenant'],
+    defaultCreateRole: 'seller',
+    emptyCopy: EMPTY_LEAD_COPY,
+  }
 }
 
 function toneClass(tone = 'slate') {
@@ -1081,13 +1205,15 @@ function NewCommercialLeadModal({
   mode = 'create',
   record = null,
   lookups = {},
+  defaultRole = 'seller',
+  roleOptions = COMMERCIAL_ROLE_OPTIONS,
   onClose,
   onSave,
 }) {
   const brokerOptions = useMemo(() => toLookupOptions(lookups).brokers || [], [lookups])
   const defaultBroker = useMemo(() => getDefaultBroker(lookups), [lookups])
   const [step, setStep] = useState(2)
-  const [selectedRole, setSelectedRole] = useState('seller')
+  const [selectedRole, setSelectedRole] = useState(defaultRole)
   const [draft, setDraft] = useState(() => buildInitialDraft(record, defaultBroker))
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState({})
@@ -1096,14 +1222,15 @@ function NewCommercialLeadModal({
   useEffect(() => {
     if (!open) return
     const nextDraft = buildInitialDraft(record, defaultBroker)
-    setSelectedRole(nextDraft.prospectRole)
+    const nextRole = normalizeKey(record?.prospectRole || (mode === 'edit' ? nextDraft.prospectRole : defaultRole) || defaultRole) || defaultRole
+    setSelectedRole(nextRole)
+    nextDraft.prospectRole = nextRole
+    nextDraft.dealType = getDealTypeFromRole(nextRole)
     setDraft(nextDraft)
     setStep(2)
     setErrors({})
     setSaveError('')
-  }, [open, record, defaultBroker])
-
-  const roleOptions = useMemo(() => COMMERCIAL_ROLE_OPTIONS, [])
+  }, [defaultBroker, defaultRole, mode, open, record])
   const categoryOptions = useMemo(() => COMMERCIAL_CATEGORY_OPTIONS, [])
 
   const selectedBroker = useMemo(() => brokerOptions.find((item) => item.value === draft.assignedBrokerId) || brokerOptions[0] || defaultBroker, [brokerOptions, defaultBroker, draft.assignedBrokerId])
@@ -1474,8 +1601,9 @@ function deriveSummaryStats(leads = [], activities = []) {
   return { ...metrics, qualifiedLeads, activeLeads }
 }
 
-function CommercialLeadsPage() {
+function CommercialLeadsPage({ dealType = '' }) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const pageView = useMemo(() => getLeadPageViewConfig(dealType), [dealType])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [organisationId, setOrganisationId] = useState('')
@@ -1483,7 +1611,7 @@ function CommercialLeadsPage() {
   const [lookups, setLookups] = useState({})
   const [activeTab, setActiveTab] = useState(() => {
     const initial = normalizeKey(searchParams.get('tab'))
-    return LEAD_TABS.some((tab) => tab.id === initial) ? initial : 'all'
+    return pageView.tabs.some((tab) => tab.id === initial) ? initial : pageView.tabs[0]?.id || 'all'
   })
   const [roleFilter, setRoleFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
@@ -1500,7 +1628,7 @@ function CommercialLeadsPage() {
     budget: 'all',
   })
   const [drawerLead, setDrawerLead] = useState(null)
-  const [modalState, setModalState] = useState({ open: false, mode: 'create', record: null })
+  const [modalState, setModalState] = useState({ open: false, mode: 'create', record: null, role: pageView.defaultCreateRole })
   const [openMenuId, setOpenMenuId] = useState('')
 
   const loadData = useCallback(async () => {
@@ -1529,6 +1657,13 @@ function CommercialLeadsPage() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (!pageView.tabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(pageView.tabs[0]?.id || 'all')
+      setRoleFilter('all')
+    }
+  }, [activeTab, pageView.tabs])
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams)
@@ -1590,11 +1725,15 @@ function CommercialLeadsPage() {
   }, [brokerChoices, lookups.branches, workspace.activities, workspace.prospects])
 
   const leadMap = useMemo(() => new Map(normalizedLeads.map((lead) => [lead.id, lead])), [normalizedLeads])
+  const activeTabConfig = useMemo(
+    () => pageView.tabs.find((tab) => tab.id === activeTab) || pageView.tabs[0] || ALL_LEAD_TABS[0],
+    [activeTab, pageView.tabs],
+  )
   const visibleLeads = useMemo(() => {
     const coreFilters = {
       search: searchTerm,
-      dealType: activeTab,
-      role: roleFilter,
+      dealType: pageView.baseDealType,
+      role: pageView.showRoleFilters ? roleFilter : 'all',
       category: categoryFilter,
       branch: advancedFilters.branch,
       team: advancedFilters.team,
@@ -1604,6 +1743,7 @@ function CommercialLeadsPage() {
     }
     let rows = filterCommercialProspects(normalizedLeads, coreFilters)
     rows = rows.filter((lead) => {
+      if (!activeTabConfig.matches(lead)) return false
       if (advancedFilters.propertyType !== 'all' && normalizeLower(lead.propertyCategory) !== normalizeLower(advancedFilters.propertyType)) return false
       if (advancedFilters.budget !== 'all' && !matchesBudgetBand(getLeadValue(lead), advancedFilters.budget)) return false
       return true
@@ -1626,7 +1766,7 @@ function CommercialLeadsPage() {
       return sortDirection === 'desc' ? -comparison : comparison
     })
     return rows
-  }, [activeTab, advancedFilters.assigned, advancedFilters.budget, advancedFilters.branch, advancedFilters.propertyType, advancedFilters.stage, advancedFilters.status, advancedFilters.team, categoryFilter, normalizedLeads, roleFilter, searchTerm, sortDirection, sortKey])
+  }, [activeTabConfig, advancedFilters.assigned, advancedFilters.budget, advancedFilters.branch, advancedFilters.propertyType, advancedFilters.stage, advancedFilters.status, advancedFilters.team, categoryFilter, normalizedLeads, pageView.baseDealType, pageView.showRoleFilters, roleFilter, searchTerm, sortDirection, sortKey])
 
   const metrics = useMemo(() => deriveSummaryStats(normalizedLeads, workspace.activities || []), [normalizedLeads, workspace.activities])
   const trendSeries = useMemo(() => buildTrendSeries(normalizedLeads), [normalizedLeads])
@@ -1640,12 +1780,12 @@ function CommercialLeadsPage() {
     if (!visibleLeads.length) setDrawerLead(null)
   }, [visibleLeads.length])
 
-  function openCreateLead() {
-    setModalState({ open: true, mode: 'create', record: null })
+  function openCreateLead(nextRole = pageView.defaultCreateRole) {
+    setModalState({ open: true, mode: 'create', record: null, role: nextRole })
   }
 
   function openEditLead(lead) {
-    setModalState({ open: true, mode: 'edit', record: lead })
+    setModalState({ open: true, mode: 'edit', record: lead, role: lead?.prospectRole || pageView.defaultCreateRole })
     setOpenMenuId('')
   }
 
@@ -1701,38 +1841,16 @@ function CommercialLeadsPage() {
   }
 
   function renderEmptyState() {
-    const copy = EMPTY_LEAD_COPY[activeTab] || EMPTY_LEAD_COPY.all
+    const copy = pageView.emptyCopy[activeTab] || pageView.emptyCopy.all || EMPTY_LEAD_COPY.all
     return (
       <CommercialEmptyState
         title={copy.title}
         description={copy.description}
-        primaryActionLabel="+ Add Lead"
-        onPrimaryAction={openCreateLead}
+        primaryActionLabel={pageView.createLabel}
+        onPrimaryAction={() => openCreateLead(pageView.defaultCreateRole)}
       />
     )
   }
-
-  const categoryPills = COMMERCIAL_CATEGORY_OPTIONS
-
-  const roleFilters = activeTab === 'sales'
-    ? [
-      { value: 'all', label: 'All Sales' },
-      { value: 'seller', label: 'Sellers' },
-      { value: 'buyer', label: 'Buyers' },
-    ]
-    : activeTab === 'leases'
-      ? [
-        { value: 'all', label: 'All Leases' },
-        { value: 'landlord', label: 'Landlords' },
-        { value: 'tenant', label: 'Tenants' },
-      ]
-      : [
-        { value: 'all', label: 'All' },
-        { value: 'seller', label: 'Sellers' },
-        { value: 'buyer', label: 'Buyers' },
-        { value: 'landlord', label: 'Landlords' },
-        { value: 'tenant', label: 'Tenants' },
-      ]
 
   const advancedFilterConfigs = useMemo(() => ([
     { key: 'branch', label: 'Branch', options: (lookups.branches || []).map((row) => ({ value: row.id, label: row.name || row.branch_name || 'Branch' })) },
@@ -1789,9 +1907,13 @@ function CommercialLeadsPage() {
 
       <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.04)]">
         <div className="border-b border-slate-200 px-5 pt-5">
+          <div className="mb-4 flex flex-col gap-1">
+            <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h2>
+            <p className="text-sm leading-6 text-[#63768b]">{pageView.description}</p>
+          </div>
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="flex flex-wrap gap-1.5">
-              {LEAD_TABS.map((tab) => (
+              {pageView.tabs.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
@@ -1811,29 +1933,31 @@ function CommercialLeadsPage() {
             </div>
             <Button variant="primary" size="md" className="rounded-xl self-start xl:self-auto" onClick={openCreateLead}>
               <Plus size={16} />
-              Add Lead
+              {pageView.createLabel.replace(/^\+\s*/, '')}
             </Button>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
-            {roleFilters.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setRoleFilter(option.value)}
-                className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
-                  roleFilter === option.value
-                    ? 'bg-blue-50 text-[#1267a3]'
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-[#102236]'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          {pageView.showRoleFilters ? (
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
+              {pageView.roleFilters.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setRoleFilter(option.value)}
+                  className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
+                    roleFilter === option.value
+                      ? 'bg-blue-50 text-[#1267a3]'
+                      : 'text-slate-500 hover:bg-slate-50 hover:text-[#102236]'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
-            {categoryPills.map((option) => (
+            {COMMERCIAL_CATEGORY_OPTIONS.map((option) => (
               <button
                 key={option.value}
                 type="button"
@@ -1857,7 +1981,7 @@ function CommercialLeadsPage() {
                 <input
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Search leads, companies, requirements, areas, brokers..."
+                  placeholder={pageView.searchPlaceholder}
                   className="w-full border-0 bg-transparent text-sm font-medium text-[#102236] outline-none placeholder:text-slate-400"
                 />
               </label>
@@ -2003,7 +2127,9 @@ function CommercialLeadsPage() {
         mode={modalState.mode}
         record={modalState.record}
         lookups={lookups}
-        onClose={() => setModalState({ open: false, mode: 'create', record: null })}
+        defaultRole={modalState.role || pageView.defaultCreateRole}
+        roleOptions={pageView.roleOptions}
+        onClose={() => setModalState({ open: false, mode: 'create', record: null, role: pageView.defaultCreateRole })}
         onSave={handleSaveLead}
       />
 

@@ -74,6 +74,90 @@ const FILTER_DEAL_TABS = [
   { value: 'lease', label: 'Leases' },
 ]
 
+function isFollowUpDue(prospect = {}) {
+  const due = new Date(prospect.nextFollowUpDate || prospect.followUpDate || prospect.next_follow_up_date || prospect.follow_up_date || '')
+  if (Number.isNaN(due.getTime())) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  due.setHours(0, 0, 0, 0)
+  return due.getTime() <= today.getTime()
+}
+
+function isConvertedProspect(prospect = {}) {
+  return normalizeKey(getProspectStatus(prospect)).includes('converted')
+}
+
+function isCanvassingFollowUp(prospect = {}) {
+  return isOpenProspect(prospect) && (normalizeKey(getProspectStatus(prospect)).includes('follow') || isFollowUpDue(prospect))
+}
+
+function getCanvassingPageViewConfig(dealType = '') {
+  const normalizedDealType = normalizeKey(dealType)
+  if (normalizedDealType === 'lease') {
+    const roleOptions = COMMERCIAL_ROLE_OPTIONS.filter((option) => ['landlord', 'tenant'].includes(option.value))
+    return {
+      key: 'lease',
+      title: 'Leasing Canvassing',
+      description: 'Track landlord and tenant prospecting before converting them into lease leads.',
+      createLabel: '+ Add Lease Prospect',
+      searchPlaceholder: 'Search lease prospects, companies, brokers...',
+      tabs: [
+        { id: 'all', label: 'All Lease Prospects', matches: () => true },
+        { id: 'landlords', label: 'Landlords', matches: (prospect) => normalizeKey(prospect.prospectRole) === 'landlord' },
+        { id: 'tenants', label: 'Tenants', matches: (prospect) => normalizeKey(prospect.prospectRole) === 'tenant' },
+        { id: 'converted', label: 'Converted', matches: isConvertedProspect },
+        { id: 'followups', label: 'Follow Ups', matches: isCanvassingFollowUp },
+      ],
+      baseDealType: 'lease',
+      showDepartmentTabs: true,
+      showRoleFilters: false,
+      roleOptions,
+      allowedRoles: ['landlord', 'tenant'],
+      defaultCreateRole: 'landlord',
+    }
+  }
+
+  if (normalizedDealType === 'sale') {
+    const roleOptions = COMMERCIAL_ROLE_OPTIONS.filter((option) => ['seller', 'buyer'].includes(option.value))
+    return {
+      key: 'sale',
+      title: 'Sales Canvassing',
+      description: 'Track seller and buyer prospecting before converting them into sales leads.',
+      createLabel: '+ Add Sales Prospect',
+      searchPlaceholder: 'Search sales prospects, companies, brokers...',
+      tabs: [
+        { id: 'all', label: 'All Sales Prospects', matches: () => true },
+        { id: 'sellers', label: 'Sellers', matches: (prospect) => normalizeKey(prospect.prospectRole) === 'seller' },
+        { id: 'buyers', label: 'Buyers', matches: (prospect) => normalizeKey(prospect.prospectRole) === 'buyer' },
+        { id: 'converted', label: 'Converted', matches: isConvertedProspect },
+        { id: 'followups', label: 'Follow Ups', matches: isCanvassingFollowUp },
+      ],
+      baseDealType: 'sale',
+      showDepartmentTabs: true,
+      showRoleFilters: false,
+      roleOptions,
+      allowedRoles: ['seller', 'buyer'],
+      defaultCreateRole: 'seller',
+    }
+  }
+
+  const roleOptions = COMMERCIAL_ROLE_OPTIONS.filter((option) => ['seller', 'buyer', 'landlord', 'tenant'].includes(option.value))
+  return {
+    key: 'all',
+    title: 'Prospects',
+    description: 'Unified commercial prospect register and follow-up state.',
+    createLabel: '+ Add Prospect',
+    searchPlaceholder: 'Search prospects, companies, brokers...',
+    tabs: FILTER_DEAL_TABS,
+    baseDealType: 'all',
+    showDepartmentTabs: false,
+    showRoleFilters: true,
+    roleOptions,
+    allowedRoles: ['seller', 'buyer', 'landlord', 'tenant'],
+    defaultCreateRole: 'seller',
+  }
+}
+
 const SELL_REASON_OPTIONS = [
   'Relocating',
   'Scaling down',
@@ -736,8 +820,9 @@ function renderTenantFields({ createDraft, createErrors, updateCreateDraftField,
   )
 }
 
-function CommercialCanvassingPage() {
+function CommercialCanvassingPage({ dealType = '' }) {
   const [searchParams] = useSearchParams()
+  const pageView = useMemo(() => getCanvassingPageViewConfig(dealType), [dealType])
   const [organisationId, setOrganisationId] = useState('')
   const [prospects, setProspects] = useState([])
   const [activities, setActivities] = useState([])
@@ -748,7 +833,8 @@ function CommercialCanvassingPage() {
   const [message, setMessage] = useState('')
   const [canvassingEnabled, setCanvassingEnabled] = useState(true)
   const [search, setSearch] = useState('')
-  const [dealFilter, setDealFilter] = useState('all')
+  const [dealFilter, setDealFilter] = useState(pageView.baseDealType || 'all')
+  const [activeTab, setActiveTab] = useState(pageView.tabs[0]?.id || 'all')
   const [roleFilter, setRoleFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -810,6 +896,19 @@ function CommercialCanvassingPage() {
     void loadData()
   }, [loadData])
 
+  useEffect(() => {
+    if (!pageView.showDepartmentTabs || !pageView.baseDealType) return
+    if (dealFilter !== pageView.baseDealType) {
+      setDealFilter(pageView.baseDealType)
+    }
+  }, [dealFilter, pageView.baseDealType, pageView.showDepartmentTabs])
+
+  useEffect(() => {
+    if (!pageView.tabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(pageView.tabs[0]?.id || 'all')
+    }
+  }, [activeTab, pageView.tabs])
+
   const lookupOptions = useMemo(() => toLookupOptions(lookups), [lookups])
   const brokerOptions = useMemo(() => lookupOptions.brokers || [], [lookupOptions])
 
@@ -823,12 +922,16 @@ function CommercialCanvassingPage() {
   useEffect(() => {
     if (!hasCreatePrefillParams || createPrefillAppliedRef.current === createPrefillKey) return
     const nextDraft = buildDraftFromSearchParams(searchParams, brokerOptions[0]?.value || '')
+    if (pageView.showDepartmentTabs && !normalizeText(searchParams.get('role')) && !normalizeText(searchParams.get('prospectRole'))) {
+      nextDraft.prospectRole = pageView.defaultCreateRole
+      nextDraft.dealType = getDealTypeFromRole(pageView.defaultCreateRole)
+    }
     setCreateDraft(nextDraft)
     setCreateOpen(true)
     setCreateStep(2)
     setCreateErrors({})
     createPrefillAppliedRef.current = createPrefillKey
-  }, [brokerOptions, createPrefillKey, hasCreatePrefillParams, searchParams])
+  }, [brokerOptions, createPrefillKey, hasCreatePrefillParams, pageView.defaultCreateRole, pageView.showDepartmentTabs, searchParams])
 
   useEffect(() => {
     if (selectedProspectId || !prospects.length) return
@@ -883,16 +986,23 @@ function CommercialCanvassingPage() {
     [activities, selectedProspect],
   )
 
+  const activeTabConfig = useMemo(
+    () => pageView.tabs.find((tab) => tab.id === activeTab) || pageView.tabs[0] || FILTER_DEAL_TABS[0],
+    [activeTab, pageView.tabs],
+  )
+
   const roleFilterOptions = useMemo(
-    () => [
-      { value: 'all', label: 'All' },
-      ...(dealFilter === 'lease'
-        ? [{ value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]
-        : dealFilter === 'sale'
-          ? [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }]
-          : [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }, { value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]),
-    ],
-    [dealFilter],
+    () => pageView.showRoleFilters
+      ? [
+        { value: 'all', label: 'All' },
+        ...(dealFilter === 'lease'
+          ? [{ value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]
+          : dealFilter === 'sale'
+            ? [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }]
+            : [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }, { value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]),
+      ]
+      : pageView.roleOptions,
+    [dealFilter, pageView.roleOptions, pageView.showRoleFilters],
   )
 
   const categoryFilterOptions = useMemo(
@@ -900,19 +1010,25 @@ function CommercialCanvassingPage() {
     [],
   )
 
-  const filteredProspects = useMemo(() => filterCommercialProspects(normalizedProspects, {
-    search,
-    dealType: dealFilter,
-    role: roleFilter,
-    category: categoryFilter,
-    assigned: brokerFilter,
-  })
-    .filter((prospect) => statusFilter === 'all' || normalizeKey(prospect.stageLabel || prospect.status) === normalizeKey(statusFilter))
-    .filter((prospect) => methodFilter === 'all' || normalizeKey(prospect.sourceLabel || prospect.canvassingMethod || prospect.source) === normalizeKey(methodFilter)), [brokerFilter, categoryFilter, dealFilter, methodFilter, normalizedProspects, roleFilter, search, statusFilter])
+  const filteredProspects = useMemo(() => {
+    const rows = filterCommercialProspects(normalizedProspects, {
+      search,
+      dealType: pageView.showDepartmentTabs ? pageView.baseDealType : dealFilter,
+      role: pageView.showDepartmentTabs ? 'all' : roleFilter,
+      category: categoryFilter,
+      assigned: brokerFilter,
+    })
+      .filter((prospect) => statusFilter === 'all' || normalizeKey(prospect.stageLabel || prospect.status) === normalizeKey(statusFilter))
+      .filter((prospect) => methodFilter === 'all' || normalizeKey(prospect.sourceLabel || prospect.canvassingMethod || prospect.source) === normalizeKey(methodFilter))
+
+    return pageView.showDepartmentTabs
+      ? rows.filter((prospect) => activeTabConfig.matches(prospect))
+      : rows
+  }, [activeTabConfig, brokerFilter, categoryFilter, dealFilter, methodFilter, normalizedProspects, pageView.baseDealType, pageView.showDepartmentTabs, roleFilter, search, statusFilter])
 
   const metrics = useMemo(() => deriveCommercialCanvassingMetrics(normalizedProspects, activities), [activities, normalizedProspects])
 
-  function resetCreateDraft(nextRole = 'seller') {
+  function resetCreateDraft(nextRole = pageView.defaultCreateRole) {
     setCreateDraft(buildInitialDraft(brokerOptions[0]?.value || '', {
       prospectRole: nextRole,
       dealType: getDealTypeFromRole(nextRole),
@@ -923,7 +1039,7 @@ function CommercialCanvassingPage() {
     setCreateStep(2)
   }
 
-  function openCreateModal(nextRole = 'seller') {
+  function openCreateModal(nextRole = pageView.defaultCreateRole) {
     resetCreateDraft(nextRole)
     setCreateOpen(true)
   }
@@ -1380,8 +1496,8 @@ function CommercialCanvassingPage() {
     setCreateStep(3)
   }
 
-  const createRole = normalizeKey(createDraft.prospectRole) || 'seller'
-  const createRoleOption = COMMERCIAL_ROLE_OPTIONS.find((option) => option.value === createRole) || COMMERCIAL_ROLE_OPTIONS[0]
+  const createRole = normalizeKey(createDraft.prospectRole) || pageView.defaultCreateRole
+  const createRoleOption = pageView.roleOptions.find((option) => option.value === createRole) || pageView.roleOptions[0] || COMMERCIAL_ROLE_OPTIONS[0]
   const createDealLabel = getDealTypeLabel(getDealTypeFromRole(createRole))
   const createCategoryLabel = getPropertyCategoryLabel(createDraft.propertyCategory)
   const createSummaryLines = [
@@ -1391,12 +1507,12 @@ function CommercialCanvassingPage() {
   ]
 
   const createModal = (
-    <Modal
-      open={createOpen}
-      onClose={() => setCreateOpen(false)}
-      title="New prospect"
-      subtitle="Capture the company, contact, or asset you want to work with through the commercial pipeline."
-      className="max-w-[1120px]"
+      <Modal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title={pageView.showDepartmentTabs ? `New ${pageView.key === 'lease' ? 'lease' : 'sales'} prospect` : 'New prospect'}
+        subtitle={pageView.showDepartmentTabs ? `Capture the company, contact, or asset you want to work with through ${pageView.title.toLowerCase()}.` : 'Capture the company, contact, or asset you want to work with through the commercial pipeline.'}
+        className="max-w-[1120px]"
       footer={(
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-xs text-[#7b899a]">
@@ -1440,7 +1556,7 @@ function CommercialCanvassingPage() {
             <p className="mt-2 text-sm leading-6 text-[#63768b]">Choose the best fit so we can show the right commercial fields.</p>
 
             <div className="mt-5 grid gap-3">
-              {COMMERCIAL_ROLE_OPTIONS.map((option) => {
+              {pageView.roleOptions.map((option) => {
                 const selected = createRole === option.value
                 return (
                   <button
@@ -1562,27 +1678,33 @@ function CommercialCanvassingPage() {
       <section className="flex justify-end">
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-[14px] border border-[#dce6f0] bg-white p-1 shadow-sm">
-            {FILTER_DEAL_TABS.map((tab) => {
-              const active = dealFilter === tab.value
+            {(pageView.showDepartmentTabs ? pageView.tabs : FILTER_DEAL_TABS).map((tab) => {
+              const active = pageView.showDepartmentTabs ? activeTab === tab.id : dealFilter === tab.value
               return (
                 <button
-                  key={tab.value}
+                  key={tab.id || tab.value}
                   type="button"
-                  onClick={() => setDealFilter(tab.value)}
+                  onClick={() => {
+                    if (pageView.showDepartmentTabs) {
+                      setActiveTab(tab.id)
+                      return
+                    }
+                    setDealFilter(tab.value)
+                  }}
                   className={`h-10 rounded-[12px] px-4 text-sm font-medium transition ${
                     active
                       ? 'bg-[#eff5ff] text-[#1f4f78] shadow-[0_1px_2px_rgba(15,35,55,0.08)]'
                       : 'text-[#62758b] hover:bg-[#f8fbff] hover:text-[#0f2748]'
                   }`}
                 >
-                  {tab.value === 'all' ? 'All' : tab.label}
+                  {pageView.showDepartmentTabs ? tab.label : (tab.value === 'all' ? 'All' : tab.label)}
                 </button>
               )
             })}
           </div>
-          <Button type="button" onClick={() => openCreateModal(createRole)}>
+          <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)}>
             <Plus size={16} />
-            Prospect
+            {pageView.createLabel.replace(/^\+\s*/, '')}
           </Button>
         </div>
       </section>
@@ -1613,38 +1735,42 @@ function CommercialCanvassingPage() {
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div>
-                  <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#102236]">Prospects</h2>
-                  <p className="mt-1 text-sm leading-6 text-[#63768b]">Unified commercial prospect register and follow-up state.</p>
+                  <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h2>
+                  <p className="mt-1 text-sm leading-6 text-[#63768b]">{pageView.description}</p>
                 </div>
-                <SearchField value={search} onChange={setSearch} placeholder="Search prospects, companies, brokers..." className="w-full xl:w-[380px]" />
+                <SearchField value={search} onChange={setSearch} placeholder={pageView.searchPlaceholder} className="w-full xl:w-[380px]" />
               </div>
 
-              <div className="border-b border-[#eef3f7]">
-                <div className="flex gap-8 overflow-x-auto">
-                  {FILTER_DEAL_TABS.map((tab) => (
-                    <RegisterTab
-                      key={tab.value}
-                      active={dealFilter === tab.value}
-                      onClick={() => setDealFilter(tab.value)}
-                    >
-                      {tab.label}
-                    </RegisterTab>
-                  ))}
+              {pageView.showDepartmentTabs ? (
+                <div className="border-b border-[#eef3f7]">
+                  <div className="flex gap-8 overflow-x-auto">
+                    {pageView.tabs.map((tab) => (
+                      <RegisterTab
+                        key={tab.id}
+                        active={activeTab === tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                      >
+                        {tab.label}
+                      </RegisterTab>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex gap-1.5 overflow-x-auto">
-                  {roleFilterOptions.map((item) => (
-                    <FilterChip
-                      key={item.value}
-                      active={roleFilter === item.value}
-                      onClick={() => setRoleFilter(item.value)}
-                    >
-                      {item.label}
-                    </FilterChip>
-                  ))}
-                </div>
+                {pageView.showRoleFilters ? (
+                  <div className="flex gap-1.5 overflow-x-auto">
+                    {roleFilterOptions.map((item) => (
+                      <FilterChip
+                        key={item.value}
+                        active={roleFilter === item.value}
+                        onClick={() => setRoleFilter(item.value)}
+                      >
+                        {item.label}
+                      </FilterChip>
+                    ))}
+                  </div>
+                ) : <div />}
                 <div className="flex items-center gap-2 overflow-x-auto xl:justify-end">
                   {categoryFilterOptions.map((item) => (
                     <FilterChip
@@ -1894,13 +2020,13 @@ function CommercialCanvassingPage() {
                   description={
                     hasAnyProspects
                       ? 'Try widening the role, category, or advanced filters to bring more prospects back into view.'
-                      : dealFilter === 'sale'
+                      : pageView.showDepartmentTabs && pageView.baseDealType === 'sale'
                         ? 'Track property owners and buyers ready to move through the sales pipeline.'
-                        : dealFilter === 'lease'
+                        : pageView.showDepartmentTabs && pageView.baseDealType === 'lease'
                           ? 'Track landlords and tenants for the leasing pipeline.'
                           : 'Add your first seller, buyer, landlord or tenant prospect to start building your commercial pipeline.'
                   }
-                  primaryActionLabel={hasAnyProspects ? 'Clear Filters' : '+ Add Prospect'}
+                  primaryActionLabel={hasAnyProspects ? 'Clear Filters' : pageView.createLabel}
                   onPrimaryAction={hasAnyProspects
                     ? () => {
                       setSearch('')
@@ -1911,7 +2037,7 @@ function CommercialCanvassingPage() {
                       setBrokerFilter('all')
                       setShowAdvancedFilters(false)
                     }
-                    : () => openCreateModal(createRole)}
+                    : () => openCreateModal(pageView.defaultCreateRole)}
                 />
               </div>
             )}

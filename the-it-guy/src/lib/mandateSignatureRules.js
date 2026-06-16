@@ -6,6 +6,25 @@ function normalizeKey(value) {
   return normalizeText(value).toLowerCase().replace(/[\s.-]+/g, '_')
 }
 
+function toArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function toTitleCase(value = '') {
+  return normalizeText(value)
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text) return text
+  }
+  return ''
+}
+
 function normalizeBooleanSignal(value) {
   if (typeof value === 'boolean') return value
   const normalized = normalizeKey(value)
@@ -52,15 +71,42 @@ function collectCanonicalSellerFacts(sourceContext = {}, generatedSnapshot = {},
   ].filter((value) => value && typeof value === 'object')
 }
 
-export function resolveMandateSpouseRequirementFromFields(fields = []) {
-  const spouseFields = (Array.isArray(fields) ? fields : []).filter(
-    (field) => normalizeKey(field?.signer_role || field?.signerRole) === 'purchaser_2',
-  )
-  if (!spouseFields.length) return null
-  return spouseFields.some((field) => Boolean(field?.required))
+function collectOwnerRows(sourceContext = {}, generatedSnapshot = {}, nestedSource = {}, sellerOnboarding = {}, onboardingFormData = {}, canonicalSellerFacts = []) {
+  return [
+    ...toArray(sourceContext?.multipleOwners),
+    ...toArray(sourceContext?.owners),
+    ...toArray(generatedSnapshot?.multipleOwners),
+    ...toArray(generatedSnapshot?.owners),
+    ...toArray(nestedSource?.multipleOwners),
+    ...toArray(nestedSource?.owners),
+    ...toArray(sellerOnboarding?.multipleOwners),
+    ...toArray(sellerOnboarding?.owners),
+    ...toArray(sellerOnboarding?.formData?.multipleOwners),
+    ...toArray(sellerOnboarding?.formData?.owners),
+    ...toArray(onboardingFormData?.multipleOwners),
+    ...toArray(onboardingFormData?.owners),
+    ...canonicalSellerFacts.flatMap((facts) => toArray(facts?.owners)),
+  ]
 }
 
-export function mandateRequiresSpouseSignature({ packet = null, sourceContext = {}, latestVersion = null, placeholders: placeholderOverrides = null } = {}) {
+function normalizeOwnerRecord(owner = {}, index = 0) {
+  const fullName = firstText(
+    owner?.name,
+    owner?.full_name,
+    owner?.fullName,
+    [owner?.first_name, owner?.firstName, owner?.name].map(normalizeText).filter(Boolean).join(' '),
+    [owner?.surname, owner?.last_name, owner?.lastName].map(normalizeText).filter(Boolean).length
+      ? [owner?.first_name || owner?.firstName || owner?.name, owner?.surname || owner?.last_name || owner?.lastName].map(normalizeText).filter(Boolean).join(' ')
+      : '',
+  )
+  return {
+    id: normalizeText(owner?.id || `owner_${index + 1}`),
+    signerName: fullName,
+    signerEmail: firstText(owner?.email, owner?.owner_email, owner?.signer_email).toLowerCase(),
+  }
+}
+
+function resolveMandateSourceParts({ packet = null, sourceContext = {}, latestVersion = null, placeholders: placeholderOverrides = null } = {}) {
   const resolvedSourceContext = sourceContext && typeof sourceContext === 'object'
     ? sourceContext
     : packet?.source_context_json && typeof packet.source_context_json === 'object'
@@ -95,6 +141,34 @@ export function mandateRequiresSpouseSignature({ packet = null, sourceContext = 
     sellerOnboarding,
     onboardingFormData,
   )
+  return {
+    resolvedSourceContext,
+    generatedSnapshot,
+    placeholders,
+    nestedSource,
+    sellerOnboarding,
+    onboardingFormData,
+    canonicalSellerFacts,
+  }
+}
+
+export function resolveMandateSpouseRequirementFromFields(fields = []) {
+  const spouseFields = (Array.isArray(fields) ? fields : []).filter(
+    (field) => normalizeKey(field?.signer_role || field?.signerRole) === 'purchaser_2',
+  )
+  if (!spouseFields.length) return null
+  return spouseFields.some((field) => Boolean(field?.required))
+}
+
+export function mandateRequiresSpouseSignature({ packet = null, sourceContext = {}, latestVersion = null, placeholders: placeholderOverrides = null } = {}) {
+  const {
+    resolvedSourceContext,
+    placeholders,
+    nestedSource,
+    sellerOnboarding,
+    onboardingFormData,
+    canonicalSellerFacts,
+  } = resolveMandateSourceParts({ packet, sourceContext, latestVersion, placeholders: placeholderOverrides })
 
   const explicitSignals = [
     placeholders.seller_spouse_consent_required,
@@ -166,6 +240,125 @@ export function mandateRequiresSpouseSignature({ packet = null, sourceContext = 
   ]
 
   return maritalSignals.some((value) => normalizeMandateMaritalRegime(value) === 'in_community')
+}
+
+export function resolveMandateSecondarySignerConfig({ packet = null, sourceContext = {}, latestVersion = null, placeholders: placeholderOverrides = null } = {}) {
+  const sourceParts = resolveMandateSourceParts({ packet, sourceContext, latestVersion, placeholders: placeholderOverrides })
+  const {
+    resolvedSourceContext,
+    generatedSnapshot,
+    placeholders,
+    nestedSource,
+    sellerOnboarding,
+    onboardingFormData,
+    canonicalSellerFacts,
+  } = sourceParts
+
+  const spouseRequired = mandateRequiresSpouseSignature({ packet, sourceContext, latestVersion, placeholders: placeholderOverrides })
+  if (spouseRequired) {
+    return {
+      role: 'purchaser_2',
+      kind: 'spouse',
+      label: 'Spouse',
+      required: true,
+      signerName: firstText(
+        placeholders.seller_spouse_name,
+        resolvedSourceContext?.spouseName,
+        nestedSource?.spouseName,
+        onboardingFormData?.spouseName,
+        onboardingFormData?.spouseFullName,
+        onboardingFormData?.spouse_full_name,
+        ...canonicalSellerFacts.map((facts) => facts?.spouse?.name),
+      ),
+      signerEmail: firstText(
+        placeholders.seller_spouse_email,
+        resolvedSourceContext?.spouseEmail,
+        nestedSource?.spouseEmail,
+        onboardingFormData?.spouseEmail,
+        onboardingFormData?.spouse_email,
+        ...canonicalSellerFacts.map((facts) => facts?.spouse?.email),
+      ).toLowerCase(),
+    }
+  }
+
+  const ownerRows = collectOwnerRows(
+    resolvedSourceContext,
+    generatedSnapshot,
+    nestedSource,
+    sellerOnboarding,
+    onboardingFormData,
+    canonicalSellerFacts,
+  )
+    .map(normalizeOwnerRecord)
+    .filter((owner) => owner.signerName || owner.signerEmail)
+
+  const multipleOwnerSignals = [
+    resolvedSourceContext?.sellerBranch,
+    resolvedSourceContext?.seller_branch,
+    resolvedSourceContext?.ownershipType,
+    resolvedSourceContext?.ownership_type,
+    sellerOnboarding?.sellerBranch,
+    sellerOnboarding?.seller_branch,
+    onboardingFormData?.sellerBranch,
+    onboardingFormData?.ownershipType,
+    onboardingFormData?.ownership_type,
+    ...canonicalSellerFacts.flatMap((facts) => [facts?.branch, facts?.ownership_type]),
+  ]
+  const multipleOwnerRequired = ownerRows.length >= 2 || multipleOwnerSignals.some((value) => {
+    const normalized = normalizeKey(value)
+    return normalized.includes('multiple') || normalized.includes('joint')
+  })
+
+  if (!multipleOwnerRequired) {
+    return {
+      role: 'purchaser_2',
+      kind: '',
+      label: 'Co-signer',
+      required: false,
+      signerName: '',
+      signerEmail: '',
+    }
+  }
+
+  const primarySellerName = firstText(
+    placeholders.seller_full_name,
+    resolvedSourceContext?.sellerName,
+    resolvedSourceContext?.seller?.name,
+    onboardingFormData?.sellerFullName,
+    onboardingFormData?.fullName,
+    ...canonicalSellerFacts.map((facts) => facts?.name),
+  )
+  const primarySellerEmail = firstText(
+    placeholders.seller_email,
+    resolvedSourceContext?.sellerEmail,
+    resolvedSourceContext?.seller?.email,
+    onboardingFormData?.sellerEmail,
+    onboardingFormData?.email,
+    ...canonicalSellerFacts.map((facts) => facts?.email),
+  ).toLowerCase()
+  const secondaryOwner =
+    ownerRows.find((owner) => owner.signerEmail && owner.signerEmail !== primarySellerEmail) ||
+    ownerRows.find((owner) => owner.signerName && normalizeKey(owner.signerName) !== normalizeKey(primarySellerName)) ||
+    ownerRows[1] ||
+    ownerRows[0] ||
+    null
+
+  return {
+    role: 'purchaser_2',
+    kind: 'co_owner',
+    label: 'Co-owner',
+    required: true,
+    signerName: normalizeText(secondaryOwner?.signerName),
+    signerEmail: normalizeText(secondaryOwner?.signerEmail).toLowerCase(),
+  }
+}
+
+export function getMandateSignerRoleLabel(role = '', { secondarySignerLabel = 'Co-signer' } = {}) {
+  const normalized = normalizeKey(role)
+  if (normalized === 'agent') return 'Agent'
+  if (normalized === 'seller') return 'Seller'
+  if (normalized === 'purchaser_2') return normalizeText(secondarySignerLabel) || 'Co-signer'
+  return toTitleCase(normalized || 'signer')
 }
 
 export function filterMandateSigningRows(rows = [], { requiresSpouse = false } = {}) {

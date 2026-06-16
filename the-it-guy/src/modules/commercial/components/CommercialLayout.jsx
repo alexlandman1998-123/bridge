@@ -166,7 +166,7 @@ function CommercialLayout({ onLogout = null, user = null }) {
   function handleSearchKeyDown(event) {
     if (event.key !== 'Enter') return
     const query = searchTerm.trim()
-    navigate(query ? `/commercial/listings?search=${encodeURIComponent(query)}` : '/commercial/listings')
+    navigate(query ? `/commercial/sales/listings?search=${encodeURIComponent(query)}` : '/commercial/sales/listings')
   }
 
   const userInitials = getUserInitials(user)

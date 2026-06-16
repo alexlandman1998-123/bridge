@@ -47,7 +47,7 @@ function getStoredResidentialRoute() {
 }
 
 function getWorkspacePath(workspaceKey) {
-  return workspaceKey === 'commercial' ? '/commercial/dashboard' : getStoredResidentialRoute()
+  return workspaceKey === 'commercial' ? '/commercial' : getStoredResidentialRoute()
 }
 
 function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace }) {

@@ -428,7 +428,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
       setActionState({ saving: false, error: '', completion: null, selfActivating: true })
       const scope = await activateCommercialWorkspaceForCurrentUser()
       onAccessGranted?.(scope)
-      navigate('/commercial/dashboard')
+      navigate('/commercial')
     } catch (error) {
       setActionState({
         saving: false,
@@ -572,7 +572,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
               type="button"
               onClick={() => {
                 onAccessGranted?.(actionState.completion.scope)
-                navigate('/commercial/dashboard')
+                navigate('/commercial')
               }}
               className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#163a5b]"
             >

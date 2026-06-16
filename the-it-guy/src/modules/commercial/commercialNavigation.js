@@ -17,7 +17,7 @@ import {
 
 export const COMMERCIAL_DASHBOARD_NAV_ITEM = {
   label: 'Overview',
-  to: '/commercial/dashboard',
+  to: '/commercial',
   exact: true,
   icon: LayoutDashboard,
   activePaths: ['/commercial', '/commercial/dashboard'],
@@ -29,9 +29,7 @@ export const COMMERCIAL_NAV_SECTIONS = [
     label: 'Pipeline',
     icon: Workflow,
     items: [
-      { label: 'Leads', to: '/commercial/leads', icon: ClipboardList, activePaths: ['/commercial/leads', '/commercial/requirements'] },
-      { label: 'Canvassing', to: '/commercial/canvassing', icon: Radar },
-      { label: 'Calendar', to: '/commercial/calendar', icon: CalendarDays },
+      { label: 'Overview', to: '/commercial/pipeline', icon: LayoutDashboard, activePaths: ['/commercial/pipeline', '/commercial/leads', '/commercial/canvassing', '/commercial/requirements'] },
     ],
   },
   {
@@ -39,8 +37,10 @@ export const COMMERCIAL_NAV_SECTIONS = [
     label: 'Leasing',
     icon: KeyRound,
     items: [
-      { label: 'Vacancies', to: '/commercial/vacancies', icon: Building2 },
-      { label: 'Leasing Deals', to: '/commercial/leasing', icon: FileText, activePaths: ['/commercial/leasing', '/commercial/deals/leasing', '/commercial/heads-of-terms', '/commercial/hot', '/commercial/leases'] },
+      { label: 'Canvassing', to: '/commercial/leasing/canvassing', icon: Radar, activePaths: ['/commercial/leasing/canvassing', '/commercial/canvassing'] },
+      { label: 'Leads', to: '/commercial/leasing/leads', icon: ClipboardList, activePaths: ['/commercial/leasing/leads', '/commercial/leads', '/commercial/requirements'] },
+      { label: 'Vacancies', to: '/commercial/leasing/vacancies', icon: Building2, activePaths: ['/commercial/leasing/vacancies', '/commercial/vacancies'] },
+      { label: 'Deals', to: '/commercial/leasing/deals', icon: FileText, activePaths: ['/commercial/leasing/deals', '/commercial/deals/leasing', '/commercial/heads-of-terms', '/commercial/hot', '/commercial/leases'] },
     ],
   },
   {
@@ -48,8 +48,10 @@ export const COMMERCIAL_NAV_SECTIONS = [
     label: 'Sales',
     icon: TrendingUp,
     items: [
-      { label: 'Listings', to: '/commercial/listings', icon: BadgeDollarSign, activePaths: ['/commercial/listings', '/commercial/sales-listings'] },
-      { label: 'Sales Deals', to: '/commercial/sales', icon: FileText, activePaths: ['/commercial/sales', '/commercial/deals/sales', '/commercial/transactions'] },
+      { label: 'Canvassing', to: '/commercial/sales/canvassing', icon: Radar, activePaths: ['/commercial/sales/canvassing', '/commercial/canvassing'] },
+      { label: 'Leads', to: '/commercial/sales/leads', icon: ClipboardList, activePaths: ['/commercial/sales/leads', '/commercial/leads', '/commercial/requirements'] },
+      { label: 'Listings', to: '/commercial/sales/listings', icon: BadgeDollarSign, activePaths: ['/commercial/sales/listings', '/commercial/listings', '/commercial/sales-listings'] },
+      { label: 'Deals', to: '/commercial/sales/deals', icon: FileText, activePaths: ['/commercial/sales/deals', '/commercial/deals/sales', '/commercial/transactions'] },
     ],
   },
   {
@@ -85,13 +87,18 @@ export const COMMERCIAL_NAV_ITEMS = [
 export const COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS = [
   COMMERCIAL_DASHBOARD_NAV_ITEM,
   COMMERCIAL_NAV_SECTIONS[0].items[0],
-  COMMERCIAL_NAV_SECTIONS[0].items[1],
-  COMMERCIAL_NAV_SECTIONS[1].items[0],
+  COMMERCIAL_NAV_SECTIONS[1].items[1],
+  COMMERCIAL_NAV_SECTIONS[2].items[1],
 ]
 
 export const COMMERCIAL_MOBILE_MORE_NAV_ITEMS = [
-  COMMERCIAL_NAV_SECTIONS[0].items[2],
-  ...COMMERCIAL_NAV_SECTIONS.slice(1).flatMap((section) => section.items.slice()),
+  COMMERCIAL_NAV_SECTIONS[1].items[0],
+  COMMERCIAL_NAV_SECTIONS[1].items[2],
+  COMMERCIAL_NAV_SECTIONS[1].items[3],
+  COMMERCIAL_NAV_SECTIONS[2].items[0],
+  COMMERCIAL_NAV_SECTIONS[2].items[2],
+  COMMERCIAL_NAV_SECTIONS[2].items[3],
+  ...COMMERCIAL_NAV_SECTIONS.slice(3).flatMap((section) => section.items.slice()),
   ...COMMERCIAL_BOTTOM_NAV_ITEMS,
 ]
 
@@ -116,7 +123,7 @@ export function isCommercialNavItemActive(pathname, item = {}) {
 }
 
 export function isCommercialNavItemAvailable(item = {}, scope = null) {
-  if (item.to === '/commercial/canvassing' && scope?.commercialCanvassingEnabled === false) {
+  if ((item.to === '/commercial/canvassing' || item.to === '/commercial/leasing/canvassing' || item.to === '/commercial/sales/canvassing') && scope?.commercialCanvassingEnabled === false) {
     return false
   }
   return true
