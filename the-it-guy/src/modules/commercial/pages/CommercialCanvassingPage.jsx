@@ -5,10 +5,12 @@ import {
   CalendarDays,
   CheckCircle2,
   ClipboardList,
+  Clock3,
   ChevronLeft,
   ChevronRight,
   DollarSign,
   Mail,
+  MapPin,
   MessageCircle,
   MoreHorizontal,
   Phone,
@@ -17,14 +19,17 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  Upload,
   UserPlus,
+  Users,
+  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import CommercialEmptyState from '../components/CommercialEmptyState'
-import { formatCurrency, formatDate, titleize } from '../commercialFormatters'
+import { formatDate, titleize } from '../commercialFormatters'
 import { toLookupOptions } from '../commercialPipelineHelpers'
-import { formatCurrencyZAR, formatRelativeTime, formatShortDate } from '../commercialProspectFormatters'
+import { formatRelativeTime, formatShortDate } from '../commercialProspectFormatters'
 import {
   COMMERCIAL_CANVASSING_METHODS,
   COMMERCIAL_CATEGORY_OPTIONS,
@@ -72,6 +77,19 @@ const FILTER_DEAL_TABS = [
   { value: 'all', label: 'All Prospects' },
   { value: 'sale', label: 'Sales' },
   { value: 'lease', label: 'Leases' },
+]
+const LEASE_QUEUE_OPTIONS = [
+  { value: 'all', label: 'All Prospects' },
+  { value: 'followups', label: 'Follow Ups Due' },
+  { value: 'converted', label: 'Converted' },
+]
+const SORT_OPTIONS = [
+  { value: 'updatedAt:desc', label: 'Newest Updated' },
+  { value: 'createdAt:desc', label: 'Newest Created' },
+  { value: 'createdAt:asc', label: 'Oldest Created' },
+  { value: 'followUpDate:asc', label: 'Follow-Up Date' },
+  { value: 'value:desc', label: 'Highest Value' },
+  { value: 'value:asc', label: 'Lowest Value' },
 ]
 
 function isFollowUpDue(prospect = {}) {
@@ -269,10 +287,6 @@ function getProspectDisplayName(prospect = {}) {
     || 'Commercial prospect'
 }
 
-function getProspectSource(prospect = {}) {
-  return normalizeText(prospect.canvassingMethod) || 'Other'
-}
-
 function getProspectStatus(prospect = {}) {
   return normalizeText(prospect.status) || 'New'
 }
@@ -415,10 +429,6 @@ function isConvertedStatus(status = '') {
   return normalizeKey(status).startsWith('converted to ')
 }
 
-function isArchivedStatus(status = '') {
-  return normalizeKey(status) === 'archived'
-}
-
 function isOpenProspect(prospect = {}) {
   const status = getProspectStatus(prospect)
   return !['lost', 'archived'].includes(normalizeKey(status)) && !isConvertedStatus(status)
@@ -446,19 +456,49 @@ function inferDealType(prospect = {}) {
   return type === 'purchase' || type === 'investment' ? 'sale' : 'lease'
 }
 
-function ProspectStat({ label, value, detail, icon: Icon }) {
+function buildSparklinePath(series = []) {
+  const values = (Array.isArray(series) ? series : []).map((value) => Number(value || 0))
+  if (!values.length) return ''
+  const max = Math.max(1, ...values)
+  const min = Math.min(...values)
+  const span = Math.max(1, max - min)
+  return values.map((value, index) => {
+    const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100
+    const y = 28 - (((value - min) / span) * 20)
+    return `${index === 0 ? 'M' : 'L'} ${x} ${y}`
+  }).join(' ')
+}
+
+function MetricSparkline({ series = [], color = '#2d6ecf' }) {
+  const path = buildSparklinePath(series)
+  if (!path) return <div className="h-8 w-full rounded-full bg-[#f4f7fb]" />
   return (
-    <article className={`${CARD_CLASS} flex min-h-[154px] flex-col justify-between p-6`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[14px] font-medium text-[#60758d]">{label}</p>
-          <p className="mt-5 text-[38px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{value}</p>
+    <svg viewBox="0 0 100 32" className="h-8 w-full" role="img" aria-hidden="true">
+      <path d={path} fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ProspectStat({ label, value, detail, icon, trendLabel = '', series = [], color = '#2d6ecf' }) {
+  const IconComponent = icon
+  return (
+    <article className={`${CARD_CLASS} flex min-h-[126px] flex-col justify-between p-4`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7b899a]">{label}</p>
+          <p className="mt-3 text-[1.8rem] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{value}</p>
+          <p className="mt-2 text-[12px] text-[#6b7f95]">{detail}</p>
         </div>
-        <span className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-[#eef5fb] text-[#2d6ecf]">
-          <Icon size={20} />
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] bg-[#eef5fb] text-[#2d6ecf]">
+          {IconComponent ? <IconComponent size={18} /> : null}
         </span>
       </div>
-      <p className="text-[13px] font-normal text-[#7b899a]">{detail}</p>
+      <div className="mt-3 flex items-end justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <MetricSparkline series={series} color={color} />
+        </div>
+        <p className="shrink-0 text-[11px] font-semibold text-[#7b899a]">{trendLabel || 'Current snapshot'}</p>
+      </div>
     </article>
   )
 }
@@ -506,6 +546,41 @@ function FilterChip({ active = false, onClick, children }) {
     >
       {children}
     </button>
+  )
+}
+
+function FilterSelect({ value, onChange, options = [], placeholder, className = '' }) {
+  return (
+    <Field as="select" value={value} onChange={(event) => onChange(event.target.value)} className={`h-11 min-w-[136px] rounded-[14px] bg-white text-sm ${className}`.trim()}>
+      <option value="all">{placeholder}</option>
+      {options.map((option) => (
+        <option key={option.value || option} value={option.value || option}>
+          {option.label || option}
+        </option>
+      ))}
+    </Field>
+  )
+}
+
+function InlineTableEmptyState({ icon, title, description, actionLabel, onAction }) {
+  const IconComponent = icon || ClipboardList
+  return (
+    <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-10 text-center">
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-[#eef5fb] text-[#2d6ecf]">
+        <IconComponent size={22} />
+      </span>
+      <p className="mt-4 text-base font-semibold text-[#102236]">{title}</p>
+      <p className="mt-2 max-w-[420px] text-sm leading-6 text-[#60758d]">{description}</p>
+      {actionLabel && onAction ? (
+        <button
+          type="button"
+          onClick={onAction}
+          className="mt-5 inline-flex h-10 items-center rounded-[12px] border border-[#dce6f0] bg-white px-4 text-sm font-semibold text-[#0f2748] transition hover:border-[#bfd2e6] hover:bg-[#f8fbff]"
+        >
+          {actionLabel}
+        </button>
+      ) : null}
+    </div>
   )
 }
 
@@ -827,7 +902,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
   const [prospects, setProspects] = useState([])
   const [activities, setActivities] = useState([])
   const [lookups, setLookups] = useState({})
-  const [pipeline, setPipeline] = useState(null)
+  const [, setPipeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -840,8 +915,11 @@ function CommercialCanvassingPage({ dealType = '' }) {
   const [statusFilter, setStatusFilter] = useState('all')
   const [methodFilter, setMethodFilter] = useState('all')
   const [brokerFilter, setBrokerFilter] = useState('all')
+  const [sortKey, setSortKey] = useState('updatedAt')
+  const [sortDirection, setSortDirection] = useState('desc')
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [selectedProspectId, setSelectedProspectId] = useState('')
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [createStep, setCreateStep] = useState(2)
   const [createErrors, setCreateErrors] = useState({})
@@ -934,11 +1012,6 @@ function CommercialCanvassingPage({ dealType = '' }) {
   }, [brokerOptions, createPrefillKey, hasCreatePrefillParams, pageView.defaultCreateRole, pageView.showDepartmentTabs, searchParams])
 
   useEffect(() => {
-    if (selectedProspectId || !prospects.length) return
-    setSelectedProspectId(prospects[0].id)
-  }, [prospects, selectedProspectId])
-
-  useEffect(() => {
     if (dealFilter === 'sale' && ['landlord', 'tenant'].includes(normalizeKey(roleFilter))) {
       setRoleFilter('all')
     }
@@ -969,19 +1042,9 @@ function CommercialCanvassingPage({ dealType = '' }) {
     [prospects, selectedProspectId],
   )
 
-  const selectedProspectView = useMemo(
-    () => (selectedProspect
-      ? normaliseCommercialProspect(selectedProspect, {
-        lastActivity: activitiesByProspectId.get(normalizeText(selectedProspect.id)) || null,
-        assignedBrokerName: pickLookupLabel(brokerOptions, selectedProspect.assignedBrokerId, selectedProspect.assignedBrokerName || ''),
-      })
-      : null),
-    [activitiesByProspectId, brokerOptions, selectedProspect],
-  )
-
   const selectedActivities = useMemo(
     () => activities
-      .filter((activityRow) => normalizeText(activityRow.prospectId) === normalizeText(selectedProspect?.id))
+      .filter((activityRow) => normalizeText(activityRow.prospectId || activityRow.prospect_id) === normalizeText(selectedProspect?.id))
       .sort((left, right) => new Date(right.activityDate || right.createdAt || 0) - new Date(left.activityDate || left.createdAt || 0)),
     [activities, selectedProspect],
   )
@@ -1005,28 +1068,127 @@ function CommercialCanvassingPage({ dealType = '' }) {
     [dealFilter, pageView.roleOptions, pageView.showRoleFilters],
   )
 
-  const categoryFilterOptions = useMemo(
-    () => [{ value: 'all', label: 'All Categories' }, ...COMMERCIAL_CATEGORY_OPTIONS],
-    [],
-  )
-
   const filteredProspects = useMemo(() => {
     const rows = filterCommercialProspects(normalizedProspects, {
       search,
       dealType: pageView.showDepartmentTabs ? pageView.baseDealType : dealFilter,
-      role: pageView.showDepartmentTabs ? 'all' : roleFilter,
+      role: pageView.key === 'lease' ? roleFilter : pageView.showDepartmentTabs ? 'all' : roleFilter,
       category: categoryFilter,
       assigned: brokerFilter,
     })
       .filter((prospect) => statusFilter === 'all' || normalizeKey(prospect.stageLabel || prospect.status) === normalizeKey(statusFilter))
       .filter((prospect) => methodFilter === 'all' || normalizeKey(prospect.sourceLabel || prospect.canvassingMethod || prospect.source) === normalizeKey(methodFilter))
 
+    if (pageView.key === 'lease') {
+      if (activeTab === 'followups') return rows.filter((prospect) => isCanvassingFollowUp(prospect))
+      if (activeTab === 'converted') return rows.filter((prospect) => isConvertedProspect(prospect))
+      return rows
+    }
+
     return pageView.showDepartmentTabs
       ? rows.filter((prospect) => activeTabConfig.matches(prospect))
       : rows
-  }, [activeTabConfig, brokerFilter, categoryFilter, dealFilter, methodFilter, normalizedProspects, pageView.baseDealType, pageView.showDepartmentTabs, roleFilter, search, statusFilter])
+  }, [activeTab, activeTabConfig, brokerFilter, categoryFilter, dealFilter, methodFilter, normalizedProspects, pageView.baseDealType, pageView.key, pageView.showDepartmentTabs, roleFilter, search, statusFilter])
+
+  const sortedProspects = useMemo(() => {
+    const rows = [...filteredProspects]
+
+    rows.sort((left, right) => {
+      const leftValue = sortKey === 'value'
+        ? Number(left.estimatedValue || left.estimated_value || 0)
+        : sortKey === 'followUpDate'
+          ? left.nextFollowUpDate || left.next_follow_up_date || ''
+          : sortKey === 'lastActivityAt'
+            ? left.lastActivity?.activityDate || left.lastActivity?.createdAt || ''
+            : left?.[sortKey] || left?.updatedAt || left?.createdAt || ''
+      const rightValue = sortKey === 'value'
+        ? Number(right.estimatedValue || right.estimated_value || 0)
+        : sortKey === 'followUpDate'
+          ? right.nextFollowUpDate || right.next_follow_up_date || ''
+          : sortKey === 'lastActivityAt'
+            ? right.lastActivity?.activityDate || right.lastActivity?.createdAt || ''
+            : right?.[sortKey] || right?.updatedAt || right?.createdAt || ''
+
+      let comparison = 0
+      if (sortKey === 'value') {
+        comparison = leftValue - rightValue
+      } else if (['updatedAt', 'createdAt', 'followUpDate', 'lastActivityAt'].includes(sortKey)) {
+        const leftDate = new Date(leftValue)
+        const rightDate = new Date(rightValue)
+        const leftTime = Number.isNaN(leftDate.getTime()) ? 0 : leftDate.getTime()
+        const rightTime = Number.isNaN(rightDate.getTime()) ? 0 : rightDate.getTime()
+        comparison = leftTime - rightTime
+      } else {
+        comparison = String(leftValue).localeCompare(String(rightValue))
+      }
+
+      return sortDirection === 'desc' ? -comparison : comparison
+    })
+
+    return rows
+  }, [filteredProspects, sortDirection, sortKey])
 
   const metrics = useMemo(() => deriveCommercialCanvassingMetrics(normalizedProspects, activities), [activities, normalizedProspects])
+  const leaseRoleCounts = useMemo(() => {
+    const activeLeaseProspects = normalizedProspects.filter((prospect) => !['archived', 'lost', 'closed'].includes(normalizeKey(prospect.status)))
+    return {
+      landlords: activeLeaseProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'landlord').length,
+      tenants: activeLeaseProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'tenant').length,
+    }
+  }, [normalizedProspects])
+
+  const kpiSeries = useMemo(() => {
+    const buildSeries = (resolver) => {
+      const buckets = Array.from({ length: 6 }, (_, index) => ({
+        start: new Date(Date.now() - (5 - index) * 7 * 24 * 60 * 60 * 1000),
+        value: 0,
+      }))
+      buckets.forEach((bucket) => bucket.start.setHours(0, 0, 0, 0))
+      for (const row of normalizedProspects) {
+        const date = new Date(row.createdAt || row.created_at || row.updatedAt || row.updated_at || 0)
+        if (Number.isNaN(date.getTime()) || !resolver(row)) continue
+        const index = buckets.findIndex((bucket, bucketIndex) => {
+          const start = bucket.start.getTime()
+          const end = bucketIndex === buckets.length - 1 ? Number.POSITIVE_INFINITY : buckets[bucketIndex + 1].start.getTime()
+          return date.getTime() >= start && date.getTime() < end
+        })
+        if (index >= 0) buckets[index].value += 1
+      }
+      return buckets.map((bucket) => bucket.value)
+    }
+    const buildFollowUpSeries = () => {
+      const buckets = Array.from({ length: 6 }, (_, index) => ({
+        start: new Date(Date.now() - (5 - index) * 7 * 24 * 60 * 60 * 1000),
+        value: 0,
+      }))
+      buckets.forEach((bucket) => bucket.start.setHours(0, 0, 0, 0))
+      for (const row of normalizedProspects) {
+        const date = new Date(row.nextFollowUpDate || row.next_follow_up_date || 0)
+        if (Number.isNaN(date.getTime()) || !isOpenProspect(row)) continue
+        const index = buckets.findIndex((bucket, bucketIndex) => {
+          const start = bucket.start.getTime()
+          const end = bucketIndex === buckets.length - 1 ? Number.POSITIVE_INFINITY : buckets[bucketIndex + 1].start.getTime()
+          return date.getTime() >= start && date.getTime() < end
+        })
+        if (index >= 0) buckets[index].value += 1
+      }
+      return buckets.map((bucket) => bucket.value)
+    }
+    return {
+      total: buildSeries((row) => isOpenProspect(row)),
+      landlords: buildSeries((row) => normalizeKey(row.prospectRole) === 'landlord' && isOpenProspect(row)),
+      tenants: buildSeries((row) => normalizeKey(row.prospectRole) === 'tenant' && isOpenProspect(row)),
+      followUps: buildFollowUpSeries(),
+      converted: buildSeries((row) => normalizeKey(row.status).includes('converted')),
+    }
+  }, [normalizedProspects])
+
+  const tabCounts = useMemo(() => {
+    return pageView.tabs.reduce((accumulator, tab) => {
+      accumulator[tab.id] = normalizedProspects.filter((prospect) => tab.matches(prospect)).length
+      return accumulator
+    }, {})
+  }, [normalizedProspects, pageView.tabs])
 
   function resetCreateDraft(nextRole = pageView.defaultCreateRole) {
     setCreateDraft(buildInitialDraft(brokerOptions[0]?.value || '', {
@@ -1043,6 +1205,13 @@ function CommercialCanvassingPage({ dealType = '' }) {
     resetCreateDraft(nextRole)
     setCreateOpen(true)
   }
+
+  useEffect(() => {
+    if (selectedProspectId && !selectedProspect) {
+      setDrawerOpen(false)
+      setSelectedProspectId('')
+    }
+  }, [selectedProspect, selectedProspectId])
 
   function updateSelectedProspectField(field, value) {
     setProspects((current) => current.map((row) => (
@@ -1668,44 +1837,91 @@ function CommercialCanvassingPage({ dealType = '' }) {
     </Modal>
   )
 
-  const selectedBrokerLabel = selectedProspectView?.assignedBrokerDisplay || pickLookupLabel(brokerOptions, selectedProspect?.assignedBrokerId, selectedProspect?.assignedBrokerName || 'Unassigned')
-  const advancedFilterCount = [statusFilter, brokerFilter, methodFilter].filter((value) => value !== 'all').length
+  const advancedFilterCount = [categoryFilter, statusFilter, brokerFilter, methodFilter, search, roleFilter, activeTab].filter((value) => normalizeText(value) && value !== 'all').length
   const shouldShowAdvancedFilters = showAdvancedFilters || advancedFilterCount > 0
   const hasAnyProspects = normalizedProspects.length > 0
+  const tableTotalCount = sortedProspects.length
+  const tableStart = tableTotalCount ? 1 : 0
+  const tableEnd = tableTotalCount
+  const emptyStateConfig = (() => {
+    if (activeTab === 'followups') {
+      return {
+        icon: Clock3,
+        title: 'No follow-ups due.',
+        description: 'Lease prospect follow-ups will appear here when a next action date is scheduled.',
+        actionLabel: 'View All Lease Prospects',
+        onAction: () => {
+          setActiveTab('all')
+          setSearch('')
+          setCategoryFilter('all')
+          setStatusFilter('all')
+          setMethodFilter('all')
+          setBrokerFilter('all')
+        },
+      }
+    }
+    if (hasAnyProspects) {
+      return {
+        icon: SlidersHorizontal,
+        title: 'No prospects match these filters.',
+        description: 'Try widening the category, broker, status, source, or search filters to bring more lease prospects back into view.',
+        actionLabel: 'Clear Filters',
+        onAction: () => {
+          setSearch('')
+          setCategoryFilter('all')
+          setStatusFilter('all')
+          setMethodFilter('all')
+          setBrokerFilter('all')
+          setShowAdvancedFilters(false)
+          if (pageView.showDepartmentTabs) setActiveTab('all')
+        },
+      }
+    }
+    return {
+      icon: ClipboardList,
+      title: 'No active lease prospects yet.',
+      description: 'Lease prospects will appear here once landlord and tenant prospecting begins moving through the platform.',
+      actionLabel: pageView.createLabel.replace(/^\+\s*/, ''),
+      onAction: () => openCreateModal(pageView.defaultCreateRole),
+    }
+  })()
+
+  const getProspectInitials = (prospect = {}) => {
+    return getProspectDisplayName(prospect)
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join('') || 'P'
+  }
+
+  const getAreaLine = (prospect = {}) => {
+    return normalizeText(prospect.area || prospect.propertyAddress || prospect.preferredArea) || 'Area pending'
+  }
+
+  const getAssetLine = (prospect = {}) => {
+    return normalizeText(prospect.propertyName || prospect.portfolioName || prospect.vacancyName || prospect.lookingFor || prospect.spaceRequirement) || 'Asset pending'
+  }
 
   return (
-    <div className="space-y-8 pb-10">
-      <section className="flex justify-end">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex rounded-[14px] border border-[#dce6f0] bg-white p-1 shadow-sm">
-            {(pageView.showDepartmentTabs ? pageView.tabs : FILTER_DEAL_TABS).map((tab) => {
-              const active = pageView.showDepartmentTabs ? activeTab === tab.id : dealFilter === tab.value
-              return (
-                <button
-                  key={tab.id || tab.value}
-                  type="button"
-                  onClick={() => {
-                    if (pageView.showDepartmentTabs) {
-                      setActiveTab(tab.id)
-                      return
-                    }
-                    setDealFilter(tab.value)
-                  }}
-                  className={`h-10 rounded-[12px] px-4 text-sm font-medium transition ${
-                    active
-                      ? 'bg-[#eff5ff] text-[#1f4f78] shadow-[0_1px_2px_rgba(15,35,55,0.08)]'
-                      : 'text-[#62758b] hover:bg-[#f8fbff] hover:text-[#0f2748]'
-                  }`}
-                >
-                  {pageView.showDepartmentTabs ? tab.label : (tab.value === 'all' ? 'All' : tab.label)}
-                </button>
-              )
-            })}
-          </div>
-          <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)}>
-            <Plus size={16} />
-            {pageView.createLabel.replace(/^\+\s*/, '')}
+    <div className="space-y-5 pb-10">
+      <section className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h1 className="text-[1.6rem] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h1>
+          <p className="mt-1 text-sm leading-6 text-[#63768b]">{pageView.description}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="secondary" className="rounded-[14px]" disabled title="Import is coming soon">
+            <Upload size={16} />
+            Import
           </Button>
+          <button
+            type="button"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white text-[#62758b] shadow-sm transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
+            aria-label="More page actions"
+          >
+            <MoreHorizontal size={16} />
+          </button>
         </div>
       </section>
 
@@ -1718,73 +1934,57 @@ function CommercialCanvassingPage({ dealType = '' }) {
 
       {!canvassingEnabled ? null : (
         <>
-      {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
-      {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
+          {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
+          {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <ProspectStat label="Prospects" value={loading ? '...' : metrics.prospects} detail="All active prospects" icon={ClipboardList} />
-        <ProspectStat label="Activities" value={loading ? '...' : metrics.activities} detail="This month" icon={CalendarDays} />
-        <ProspectStat label="Follow Ups" value={loading ? '...' : metrics.followUpsDue} detail={loading ? 'Due this week' : `${metrics.overdueFollowUps} overdue`} icon={CheckCircle2} />
-        <ProspectStat label="Converted" value={loading ? '...' : metrics.converted} detail="This month" icon={DollarSign} />
-        <ProspectStat label="Pipeline Value" value={loading ? '...' : formatCurrencyZAR(metrics.pipelineValue)} detail="Opportunity value in motion" icon={DollarSign} />
-      </section>
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <ProspectStat label="Total Prospects" value={loading ? '...' : metrics.prospects} detail="All active lease prospects" icon={ClipboardList} trendLabel="Open book" series={kpiSeries.total} color="#2d6ecf" />
+            <ProspectStat label="Landlords" value={loading ? '...' : leaseRoleCounts.landlords} detail="Owner-side prospects" icon={Building2} trendLabel="Current mix" series={kpiSeries.landlords} color="#16a34a" />
+            <ProspectStat label="Tenants" value={loading ? '...' : leaseRoleCounts.tenants} detail="Occupier-side prospects" icon={Users} trendLabel="Current mix" series={kpiSeries.tenants} color="#8b5cf6" />
+            <ProspectStat label="Follow Ups Due" value={loading ? '...' : metrics.followUpsDue} detail={loading ? 'Scheduled work' : `${metrics.overdueFollowUps} overdue`} icon={CalendarDays} trendLabel="Next actions" series={kpiSeries.followUps} color="#f59e0b" />
+            <ProspectStat label="Converted" value={loading ? '...' : metrics.converted} detail="Moved into pipeline" icon={CheckCircle2} trendLabel="Converted" series={kpiSeries.converted} color="#0f766e" />
+          </section>
 
-      <section className="space-y-6">
-        <article className={`${CARD_CLASS} overflow-hidden`}>
-          <div className="border-b border-[#e6edf4] p-5 sm:p-6">
-            <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div>
-                  <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h2>
-                  <p className="mt-1 text-sm leading-6 text-[#63768b]">{pageView.description}</p>
-                </div>
-                <SearchField value={search} onChange={setSearch} placeholder={pageView.searchPlaceholder} className="w-full xl:w-[380px]" />
-              </div>
-
-              {pageView.showDepartmentTabs ? (
-                <div className="border-b border-[#eef3f7]">
-                  <div className="flex gap-8 overflow-x-auto">
-                    {pageView.tabs.map((tab) => (
-                      <RegisterTab
-                        key={tab.id}
-                        active={activeTab === tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                      >
-                        {tab.label}
-                      </RegisterTab>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                {pageView.showRoleFilters ? (
-                  <div className="flex gap-1.5 overflow-x-auto">
-                    {roleFilterOptions.map((item) => (
-                      <FilterChip
-                        key={item.value}
-                        active={roleFilter === item.value}
-                        onClick={() => setRoleFilter(item.value)}
-                      >
-                        {item.label}
-                      </FilterChip>
-                    ))}
-                  </div>
-                ) : <div />}
-                <div className="flex items-center gap-2 overflow-x-auto xl:justify-end">
-                  {categoryFilterOptions.map((item) => (
-                    <FilterChip
-                      key={item.value}
-                      active={categoryFilter === item.value}
-                      onClick={() => setCategoryFilter(item.value)}
-                    >
-                      {item.label}
-                    </FilterChip>
+          <article className={`${CARD_CLASS} overflow-hidden`}>
+            {pageView.showDepartmentTabs && pageView.key !== 'lease' ? (
+              <div className="border-b border-[#e8eef5] px-5 pt-4">
+                <div className="flex gap-6 overflow-x-auto">
+                  {pageView.tabs.map((tab) => (
+                    <RegisterTab key={tab.id} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
+                      {tab.label} <span className="ml-1 text-[#8aa0b6]">{tabCounts[tab.id] || 0}</span>
+                    </RegisterTab>
                   ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="border-b border-[#e8eef5] px-5 py-4">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <SearchField value={search} onChange={setSearch} placeholder={pageView.searchPlaceholder} className="w-full xl:max-w-[44%] xl:flex-1" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Category" />
+                  <FilterSelect value={brokerFilter} onChange={setBrokerFilter} options={brokerOptions} placeholder="Broker" />
+                  <FilterSelect value={statusFilter} onChange={setStatusFilter} options={PROSPECT_STATUSES.map((value) => ({ value, label: value }))} placeholder="Status" />
+                  <FilterSelect value={methodFilter} onChange={setMethodFilter} options={CANVASSING_METHODS.map((value) => ({ value, label: value }))} placeholder="Source" />
+                  <Field
+                    as="select"
+                    value={`${sortKey}:${sortDirection}`}
+                    onChange={(event) => {
+                      const [nextKey, nextDirection] = String(event.target.value || '').split(':')
+                      if (!nextKey) return
+                      setSortDirection(nextDirection || 'desc')
+                      setSortKey(nextKey)
+                    }}
+                    className="h-11 min-w-[136px] rounded-[14px] bg-white text-sm"
+                  >
+                    {SORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </Field>
                   <button
                     type="button"
                     onClick={() => setShowAdvancedFilters((current) => !current)}
-                    className={`inline-flex h-10 items-center gap-2 rounded-[12px] border px-4 text-sm font-semibold transition ${
+                    className={`inline-flex h-11 items-center gap-2 rounded-[14px] border px-4 text-sm font-semibold transition ${
                       shouldShowAdvancedFilters
                         ? 'border-[#d7e3f4] bg-[#f5f8fc] text-[#0f2748]'
                         : 'border-[#e2eaf3] bg-white text-[#63768b] hover:border-[#d0dceb] hover:text-[#0f2748]'
@@ -1798,109 +1998,131 @@ function CommercialCanvassingPage({ dealType = '' }) {
                       </span>
                     ) : null}
                   </button>
+                  <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)} className="rounded-[14px]">
+                    <Plus size={16} />
+                    {pageView.createLabel.replace(/^\+\s*/, '')}
+                  </Button>
                 </div>
               </div>
 
               {shouldShowAdvancedFilters ? (
-                <div className="grid gap-3 rounded-[20px] border border-[#e6edf4] bg-[#fbfdff] p-4 md:grid-cols-3">
-                  <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-[14px] bg-white">
-                    <option value="all">All stages</option>
-                    {PROSPECT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </Field>
-                  <Field as="select" value={brokerFilter} onChange={(event) => setBrokerFilter(event.target.value)} className="h-11 rounded-[14px] bg-white">
-                    <option value="all">All brokers</option>
-                    {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </Field>
-                  <Field as="select" value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)} className="h-11 rounded-[14px] bg-white">
-                    <option value="all">All methods</option>
-                    {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </Field>
+                <div className="mt-3 flex flex-col gap-3 rounded-[16px] border border-[#e6edf4] bg-[#fbfdff] px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-[#60758d]">{advancedFilterCount || 0} active filter{advancedFilterCount === 1 ? '' : 's'}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearch('')
+                        setRoleFilter('all')
+                        setCategoryFilter('all')
+                        setStatusFilter('all')
+                        setMethodFilter('all')
+                        setBrokerFilter('all')
+                        setActiveTab('all')
+                        setShowAdvancedFilters(false)
+                        if (!pageView.showDepartmentTabs) setDealFilter('all')
+                      }}
+                      className="text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]"
+                    >
+                      Clear filters
+                    </button>
+                  </div>
+                  {pageView.key === 'lease' ? (
+                    <div className="grid gap-3 xl:grid-cols-[minmax(0,180px)_minmax(0,180px)]">
+                      <FilterSelect value={roleFilter} onChange={setRoleFilter} options={pageView.roleOptions} placeholder="Type" className="min-w-0" />
+                      <FilterSelect value={activeTab} onChange={setActiveTab} options={LEASE_QUEUE_OPTIONS} placeholder="View" className="min-w-0" />
+                    </div>
+                  ) : null}
+                  {pageView.showRoleFilters ? (
+                    <div className="flex flex-wrap gap-2">
+                      {roleFilterOptions.map((item) => (
+                        <FilterChip key={item.value} active={roleFilter === item.value} onClick={() => setRoleFilter(item.value)}>
+                          {item.label}
+                        </FilterChip>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
-          </div>
 
-          <div className="overflow-hidden">
-            {loading ? (
-              <div className="p-6 text-sm text-[#60758d]">Loading commercial canvassing workspace...</div>
-            ) : filteredProspects.length ? (
-              <>
-                <div className="hidden max-h-[780px] overflow-auto md:block">
-                  <table className="min-w-[1240px] border-separate border-spacing-0">
-                    <thead className="sticky top-0 z-10 bg-white">
-                      <tr className="text-left text-[12px] uppercase tracking-[0.14em] text-[#7b899a]">
-                        <th className="border-b border-[#eef3f7] px-6 py-4 font-semibold">Prospect</th>
-                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Type</th>
-                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Category</th>
-                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Source / Method</th>
-                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Area / Asset</th>
-                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Stage / Next Step</th>
-                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Assigned</th>
-                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Last Activity</th>
-                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Actions</th>
+            <div className="overflow-hidden">
+              <div className="hidden md:block">
+                <div className="max-h-[760px] overflow-auto">
+                  <table className="min-w-[1260px] w-full border-separate border-spacing-0">
+                    <thead className="sticky top-0 z-10 bg-[#f7fafc] text-left text-[12px] font-semibold uppercase tracking-[0.12em] text-[#61758b]">
+                      <tr>
+                        {['Prospect', 'Type', 'Category', 'Source', 'Area / Asset', 'Stage / Next Step', 'Broker', 'Last Activity', 'Actions'].map((label) => (
+                          <th key={label} className="border-b border-[#e7edf4] px-5 py-3">{label}</th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredProspects.map((prospect) => {
-                        const selected = normalizeText(prospect.id) === normalizeText(selectedProspectId)
+                      {loading ? Array.from({ length: 6 }).map((_, index) => (
+                        <tr key={`loading-${index}`}>
+                          <td colSpan={9} className="border-b border-[#eef3f7] px-5 py-4">
+                            <div className="h-16 animate-pulse rounded-[16px] bg-slate-100" />
+                          </td>
+                        </tr>
+                      )) : sortedProspects.length ? sortedProspects.map((prospect) => {
                         const brokerLabel = prospect.assignedBrokerDisplay || pickLookupLabel(brokerOptions, prospect.assignedBrokerId, prospect.assignedBrokerName || 'Unassigned')
                         const roleTone = getProspectBadgeVariant(prospect.prospectRole)
                         const categoryTone = getCategoryBadgeVariant(prospect.propertyCategory)
                         const showMenu = openActionMenuId === prospect.id
-                        const initials = prospect.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('') || 'P'
                         const lastActivity = prospect.lastActivity || null
-                        const conversionActions = prospect.prospectRole === 'seller'
-                          ? ['Convert to Seller Lead', 'Create Sales Listing']
-                          : prospect.prospectRole === 'buyer'
-                            ? ['Convert to Buyer Lead', 'Create Buyer Requirement']
-                            : prospect.prospectRole === 'landlord'
-                              ? ['Convert to Landlord', 'Create Vacancy', 'Create Lease Listing']
-                              : ['Convert to Tenant Requirement', 'Create Lease Lead']
-
                         return (
                           <tr
                             key={prospect.id}
-                            className={`cursor-pointer border-b border-[#eef3f7] transition ${selected ? 'bg-[#f4f8fc]' : 'hover:bg-[#fbfdff]'}`}
+                            className="cursor-pointer border-b border-[#eef3f7] transition hover:bg-[#fbfdff]"
                             onClick={() => {
                               setSelectedProspectId(prospect.id)
+                              setDrawerOpen(true)
                               setOpenActionMenuId('')
                             }}
                           >
-                            <td className="px-6 py-4 align-top">
+                            <td className="border-b border-[#eef3f7] px-5 py-4 align-top">
                               <div className="flex items-start gap-3">
                                 <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#eef5fb] text-sm font-semibold text-[#2d6ecf]">
-                                  {initials}
+                                  {getProspectInitials(prospect)}
                                 </span>
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-[#102236]">{prospect.displayName}</p>
-                                  <p className="mt-1 truncate text-xs text-[#6d839b]">{prospect.secondaryLine || 'No contact captured'}</p>
+                                  <p className="truncate text-sm font-semibold text-[#102236]">{getProspectDisplayName(prospect)}</p>
+                                  <p className="mt-1 truncate text-xs text-[#6d839b]">{normalizeText(prospect.contactName) || prospect.secondaryLine || 'No contact captured'}</p>
                                   <p className="mt-1 truncate text-xs text-[#6d839b]">{normalizeText(prospect.phone) || 'No phone captured'}</p>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-4 py-4 align-top">
+                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <div className="space-y-2">
                                 <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(roleTone)}`}>{prospect.roleLabel}</span>
-                                <p className="text-sm text-[#63768b]">{prospect.dealTypeLabel}</p>
+                                <p className="text-xs text-[#63768b]">{prospect.dealTypeLabel}</p>
                               </div>
                             </td>
-                            <td className="px-4 py-4 align-top">
+                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(categoryTone)}`}>{prospect.categoryLabel}</span>
                             </td>
-                            <td className="px-4 py-4 align-top">
+                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <span className="inline-flex rounded-full border border-[#e0e8f2] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#38506a]">
                                 {titleize(prospect.sourceLabel)}
                               </span>
                             </td>
-                            <td className="px-4 py-4 align-top text-sm text-[#102236]">{prospect.areaLabel || 'Area pending'}</td>
-                            <td className="px-4 py-4 align-top">
+                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
+                              <div className="space-y-1">
+                                <p className="text-sm font-semibold text-[#102236]">{getAssetLine(prospect)}</p>
+                                <div className="inline-flex items-center gap-1.5 text-xs text-[#63768b]">
+                                  <MapPin size={12} className="text-[#9cb0c4]" />
+                                  <span>{getAreaLine(prospect)}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <div className="space-y-2">
                                 <ProspectTonePill value={prospect.stageLabel} />
-                                <p className="line-clamp-1 text-sm font-medium text-[#63768b]">{prospect.nextStepLabel}</p>
+                                <p className="line-clamp-1 text-sm font-medium text-[#4f6176]">{prospect.nextStepLabel}</p>
                                 <p className="text-xs text-[#8a96a8]">{prospect.nextFollowUpDate ? formatShortDate(prospect.nextFollowUpDate) : 'No follow-up date'}</p>
                               </div>
                             </td>
-                            <td className="px-4 py-4 align-top">
+                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <div className="inline-flex items-center gap-2">
                                 <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#2b4f71]">
                                   {brokerLabel === 'Unassigned' ? 'U' : brokerLabel.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')}
@@ -1908,39 +2130,25 @@ function CommercialCanvassingPage({ dealType = '' }) {
                                 <span className="text-sm font-semibold text-[#102236]">{brokerLabel}</span>
                               </div>
                             </td>
-                            <td className="px-4 py-4 align-top">
-                              <p className="text-sm font-medium text-[#63768b]">{formatRelativeTime(lastActivity?.activityDate || lastActivity?.createdAt)}</p>
-                              <p className="mt-1 text-xs text-[#8a96a8]">{lastActivity?.activityType || 'No activity yet'}</p>
+                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
+                              <p className="text-sm font-medium text-[#4f6176]">{formatRelativeTime(lastActivity?.activityDate || lastActivity?.createdAt)}</p>
+                              <p className="mt-1 line-clamp-1 text-xs text-[#8a96a8]">{lastActivity?.activityNote || lastActivity?.outcome || lastActivity?.activityType || 'No activity yet'}</p>
                             </td>
-                            <td className="px-4 py-4 align-top">
+                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <div className="relative inline-flex" onClick={(event) => event.stopPropagation()}>
                                 <button
                                   type="button"
                                   className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#dce6f0] bg-white text-[#62758b] transition hover:border-[#bfd2e6] hover:bg-[#f8fbff]"
-                                  aria-label={`Open actions for ${prospect.displayName}`}
+                                  aria-label={`Open actions for ${getProspectDisplayName(prospect)}`}
                                   onClick={() => setOpenActionMenuId((current) => (current === prospect.id ? '' : prospect.id))}
                                 >
                                   <MoreHorizontal size={16} />
                                 </button>
                                 {showMenu ? (
-                                  <div className="absolute right-0 top-10 z-20 w-52 overflow-hidden rounded-[14px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
-                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setOpenActionMenuId('') }}>Open</button>
-                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setOpenActionMenuId('') }}>Edit</button>
-                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setMessage('Use the activity panel to add a note.'); setOpenActionMenuId('') }}>Add note</button>
-                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setMessage('Use the activity panel to log a call.'); setOpenActionMenuId('') }}>Log call</button>
-                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setMessage('Follow-up scheduling coming soon.'); setOpenActionMenuId('') }}>Schedule follow-up</button>
-                                    <div className="my-1 border-t border-[#eef3f7]" />
-                                    {conversionActions.map((actionLabel) => (
-                                      <button
-                                        key={actionLabel}
-                                        type="button"
-                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#9d5a13] transition hover:bg-[#fff8ee]"
-                                        title="Conversion workflow coming soon"
-                                        disabled
-                                      >
-                                        {actionLabel}
-                                      </button>
-                                    ))}
+                                  <div className="absolute right-0 top-10 z-20 w-48 overflow-hidden rounded-[14px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setOpenActionMenuId('') }}>Open details</button>
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setMessage('Edit the prospect in the detail drawer.'); setOpenActionMenuId('') }}>Edit</button>
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setMessage('Use the detail drawer to log a call or add notes.'); setOpenActionMenuId('') }}>Log activity</button>
                                     <div className="my-1 border-t border-[#eef3f7]" />
                                     <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#a13b35] transition hover:bg-[#fff5f5]" onClick={() => { setSelectedProspectId(prospect.id); setArchiveOpen(true); setOpenActionMenuId('') }}>Archive</button>
                                   </div>
@@ -1949,410 +2157,313 @@ function CommercialCanvassingPage({ dealType = '' }) {
                             </td>
                           </tr>
                         )
-                      })}
+                      }) : (
+                        <tr>
+                          <td colSpan={9} className="px-0 py-0">
+                            <InlineTableEmptyState
+                              icon={emptyStateConfig.icon}
+                              title={emptyStateConfig.title}
+                              description={emptyStateConfig.description}
+                              actionLabel={emptyStateConfig.actionLabel}
+                              onAction={emptyStateConfig.onAction}
+                            />
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
+              </div>
 
-                <div className="divide-y divide-[#eef3f7] md:hidden">
-                  {filteredProspects.map((prospect) => {
-                    const lastActivity = prospect.lastActivity || null
-                    const brokerLabel = prospect.assignedBrokerDisplay || pickLookupLabel(brokerOptions, prospect.assignedBrokerId, prospect.assignedBrokerName || 'Unassigned')
-                    const initials = prospect.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('') || 'P'
-                    return (
-                      <div
-                        key={prospect.id}
-                        className="cursor-pointer px-4 py-4 transition hover:bg-[#fbfdff]"
-                        onClick={() => {
-                          setSelectedProspectId(prospect.id)
-                          setOpenActionMenuId('')
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-start gap-3">
-                              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#eef5fb] text-sm font-semibold text-[#2d6ecf]">
-                                {initials}
-                              </span>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-[#102236]">{prospect.displayName}</p>
-                                <p className="mt-1 text-xs text-[#6d839b]">{prospect.secondaryLine || 'No contact captured'}</p>
-                                <p className="mt-1 text-xs text-[#6d839b]">{normalizeText(prospect.phone) || 'No phone captured'}</p>
-                              </div>
+              <div className="divide-y divide-[#eef3f7] md:hidden">
+                {loading ? Array.from({ length: 3 }).map((_, index) => (
+                  <div key={`mobile-loading-${index}`} className="px-4 py-4">
+                    <div className="h-24 animate-pulse rounded-[18px] bg-slate-100" />
+                  </div>
+                )) : sortedProspects.length ? sortedProspects.map((prospect) => {
+                  const lastActivity = prospect.lastActivity || null
+                  const brokerLabel = prospect.assignedBrokerDisplay || pickLookupLabel(brokerOptions, prospect.assignedBrokerId, prospect.assignedBrokerName || 'Unassigned')
+                  return (
+                    <div
+                      key={prospect.id}
+                      className="cursor-pointer px-4 py-4 transition hover:bg-[#fbfdff]"
+                      onClick={() => {
+                        setSelectedProspectId(prospect.id)
+                        setDrawerOpen(true)
+                        setOpenActionMenuId('')
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-start gap-3">
+                            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#eef5fb] text-sm font-semibold text-[#2d6ecf]">
+                              {getProspectInitials(prospect)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#102236]">{getProspectDisplayName(prospect)}</p>
+                              <p className="mt-1 text-xs text-[#6d839b]">{normalizeText(prospect.contactName) || prospect.secondaryLine || 'No contact captured'}</p>
+                              <p className="mt-1 text-xs text-[#6d839b]">{normalizeText(prospect.phone) || 'No phone captured'}</p>
                             </div>
                           </div>
-                          <button
-                            type="button"
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#dce6f0] bg-white text-[#62758b]"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setOpenActionMenuId((current) => (current === prospect.id ? '' : prospect.id))
-                            }}
-                          >
-                            <MoreHorizontal size={16} />
-                          </button>
                         </div>
-                        <div className="mt-3 grid gap-2 text-xs text-[#63768b]">
-                          <div className="flex flex-wrap gap-2">
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${toneClass(getProspectBadgeVariant(prospect.prospectRole))}`}>{prospect.roleLabel}</span>
-                            <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${toneClass(getCategoryBadgeVariant(prospect.propertyCategory))}`}>{prospect.categoryLabel}</span>
-                            <span className="inline-flex rounded-full border border-[#e0e8f2] bg-[#f8fbff] px-2.5 py-1 font-semibold text-[#38506a]">{titleize(prospect.sourceLabel)}</span>
-                          </div>
-                          <p>{prospect.areaLabel || 'Area pending'}</p>
-                          <p>{prospect.stageLabel} · {prospect.nextStepLabel}</p>
-                          <p>Assigned: {brokerLabel}</p>
-                          <p>{formatRelativeTime(lastActivity?.activityDate || lastActivity?.createdAt)} · {lastActivity?.activityType || 'No activity yet'}</p>
-                        </div>
+                        <button
+                          type="button"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#dce6f0] bg-white text-[#62758b]"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setSelectedProspectId(prospect.id)
+                            setDrawerOpen(true)
+                          }}
+                        >
+                          <MoreHorizontal size={16} />
+                        </button>
                       </div>
-                    )
-                  })}
-                </div>
-
-                <div className="flex flex-col gap-3 border-t border-[#eef3f7] px-5 py-4 text-sm text-[#63768b] sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                  <p>Showing {filteredProspects.length} of {normalizedProspects.length} prospects</p>
-                  <p>{selectedProspect ? `Selected: ${getProspectDisplayName(selectedProspect)}` : 'Select a row to open its workspace below.'}</p>
-                </div>
-              </>
-            ) : (
-              <div className="p-6">
-                <CommercialEmptyState
-                  title={hasAnyProspects ? 'No prospects match these filters.' : 'No commercial prospects yet.'}
-                  description={
-                    hasAnyProspects
-                      ? 'Try widening the role, category, or advanced filters to bring more prospects back into view.'
-                      : pageView.showDepartmentTabs && pageView.baseDealType === 'sale'
-                        ? 'Track property owners and buyers ready to move through the sales pipeline.'
-                        : pageView.showDepartmentTabs && pageView.baseDealType === 'lease'
-                          ? 'Track landlords and tenants for the leasing pipeline.'
-                          : 'Add your first seller, buyer, landlord or tenant prospect to start building your commercial pipeline.'
-                  }
-                  primaryActionLabel={hasAnyProspects ? 'Clear Filters' : pageView.createLabel}
-                  onPrimaryAction={hasAnyProspects
-                    ? () => {
-                      setSearch('')
-                      setRoleFilter('all')
-                      setCategoryFilter('all')
-                      setStatusFilter('all')
-                      setMethodFilter('all')
-                      setBrokerFilter('all')
-                      setShowAdvancedFilters(false)
-                    }
-                    : () => openCreateModal(pageView.defaultCreateRole)}
-                />
+                      <div className="mt-3 grid gap-2 text-xs text-[#63768b]">
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${toneClass(getProspectBadgeVariant(prospect.prospectRole))}`}>{prospect.roleLabel}</span>
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${toneClass(getCategoryBadgeVariant(prospect.propertyCategory))}`}>{prospect.categoryLabel}</span>
+                          <span className="inline-flex rounded-full border border-[#e0e8f2] bg-[#f8fbff] px-2.5 py-1 font-semibold text-[#38506a]">{titleize(prospect.sourceLabel)}</span>
+                        </div>
+                        <p>{getAssetLine(prospect)} · {getAreaLine(prospect)}</p>
+                        <p>{prospect.stageLabel} · {prospect.nextStepLabel}</p>
+                        <p>Assigned: {brokerLabel}</p>
+                        <p>{formatRelativeTime(lastActivity?.activityDate || lastActivity?.createdAt)} · {lastActivity?.activityNote || lastActivity?.activityType || 'No activity yet'}</p>
+                      </div>
+                    </div>
+                  )
+                }) : (
+                  <InlineTableEmptyState
+                    icon={emptyStateConfig.icon}
+                    title={emptyStateConfig.title}
+                    description={emptyStateConfig.description}
+                    actionLabel={emptyStateConfig.actionLabel}
+                    onAction={emptyStateConfig.onAction}
+                  />
+                )}
               </div>
-            )}
-          </div>
-        </article>
 
-        {selectedProspect ? (
-          <section className="grid gap-6 2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-            <div className="space-y-6">
-              <article className={`${CARD_CLASS} p-6`}>
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Selected prospect</p>
-                    <h2 className="mt-2 text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">{getProspectDisplayName(selectedProspect)}</h2>
-                    <p className="mt-2 text-sm leading-6 text-[#60758d]">{normalizeText(selectedProspect.area) || 'No area captured yet'}</p>
-                  </div>
-                  <ProspectTonePill value={selectedProspect.status} />
-                </div>
-
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-[18px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b899a]">Estimated value</p>
-                    <p className="mt-2 text-[28px] font-semibold tracking-[-0.04em] text-[#0f2748]">{formatCurrency(selectedProspect.estimatedValue)}</p>
-                  </div>
-                  <div className="rounded-[18px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b899a]">Follow-up</p>
-                    <p className="mt-2 text-sm font-semibold text-[#0f2748]">{formatRelativeDate(selectedProspect.nextFollowUpDate)}</p>
-                  </div>
-                  <div className="rounded-[18px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b899a]">Broker</p>
-                    <p className="mt-2 text-sm font-semibold text-[#0f2748]">{selectedBrokerLabel}</p>
-                  </div>
-                  <div className="rounded-[18px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b899a]">Source</p>
-                    <p className="mt-2 text-sm font-semibold text-[#0f2748]">{titleize(getProspectSource(selectedProspect))}</p>
-                  </div>
-                </div>
-              </article>
-
-              <article className={`${CARD_CLASS} p-6`}>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-[28px] font-semibold tracking-[-0.03em] text-[#0f2748]">Edit prospect</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#60758d]">Keep the commercial canvass record current as the conversation moves.</p>
-                  </div>
-                  <Button type="button" onClick={handleSaveProspect} disabled={busyAction === 'save'}>
-                    <Save size={16} />
-                    {busyAction === 'save' ? 'Saving...' : 'Save'}
-                  </Button>
-                </div>
-
-                <div className="mt-5 grid gap-4">
-                  <label className="grid gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Company</span>
-                    <Field value={selectedProspect.companyName || ''} onChange={(event) => updateSelectedProspectField('companyName', event.target.value)} />
-                  </label>
-                  <label className="grid gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Contact</span>
-                    <Field value={selectedProspect.contactName || ''} onChange={(event) => updateSelectedProspectField('contactName', event.target.value)} />
-                  </label>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Phone</span>
-                      <Field value={selectedProspect.phone || ''} onChange={(event) => updateSelectedProspectField('phone', event.target.value)} />
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Email</span>
-                      <Field value={selectedProspect.email || ''} onChange={(event) => updateSelectedProspectField('email', event.target.value)} />
-                    </label>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Prospect type</span>
-                      <Field as="select" value={selectedProspect.prospectType || 'Landlord Prospect'} onChange={(event) => updateSelectedProspectField('prospectType', event.target.value)}>
-                        {PROSPECT_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </Field>
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Canvassing method</span>
-                      <Field as="select" value={selectedProspect.canvassingMethod || 'Cold Call'} onChange={(event) => updateSelectedProspectField('canvassingMethod', event.target.value)}>
-                        {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </Field>
-                    </label>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Property type</span>
-                      <Field as="select" value={selectedProspect.propertyType || ''} onChange={(event) => updateSelectedProspectField('propertyType', event.target.value)}>
-                        <option value="">Select type</option>
-                        {PROSPECT_PROPERTY_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </Field>
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Area</span>
-                      <Field value={selectedProspect.area || ''} onChange={(event) => updateSelectedProspectField('area', event.target.value)} />
-                    </label>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Broker owner</span>
-                      <Field as="select" value={selectedProspect.assignedBrokerId || ''} onChange={(event) => updateSelectedProspectField('assignedBrokerId', event.target.value)}>
-                        <option value="">Unassigned</option>
-                        {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Field>
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Status</span>
-                      <Field as="select" value={selectedProspect.status || 'New'} onChange={(event) => updateSelectedProspectField('status', event.target.value)}>
-                        {PROSPECT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </Field>
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Priority</span>
-                      <Field as="select" value={selectedProspect.followUpPriority || 'Medium'} onChange={(event) => updateSelectedProspectField('followUpPriority', event.target.value)}>
-                        {FOLLOW_UP_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </Field>
-                    </label>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up date</span>
-                      <Field as="input" type="date" value={selectedProspect.nextFollowUpDate || ''} onChange={(event) => updateSelectedProspectField('nextFollowUpDate', event.target.value)} />
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Estimated value</span>
-                      <Field as="input" type="number" value={selectedProspect.estimatedValue || ''} onChange={(event) => updateSelectedProspectField('estimatedValue', event.target.value)} />
-                    </label>
-                  </div>
-                  <label className="grid gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up note</span>
-                    <Field value={selectedProspect.followUpNote || ''} onChange={(event) => updateSelectedProspectField('followUpNote', event.target.value)} />
-                  </label>
-                  <label className="grid gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Notes</span>
-                    <Field as="textarea" value={selectedProspect.notes || ''} onChange={(event) => updateSelectedProspectField('notes', event.target.value)} />
-                  </label>
-                </div>
-              </article>
-
+              <div className="flex flex-col gap-3 border-t border-[#eef3f7] px-5 py-4 text-sm text-[#63768b] sm:flex-row sm:items-center sm:justify-between">
+                <p>
+                  Showing <span className="font-semibold text-[#102236]">{tableStart}</span>-
+                  <span className="font-semibold text-[#102236]">{tableEnd}</span> of{' '}
+                  <span className="font-semibold text-[#102236]">{normalizedProspects.length}</span> prospects
+                </p>
+                <p>{drawerOpen && selectedProspect ? `Viewing ${getProspectDisplayName(selectedProspect)}` : 'Select a row to open the prospect drawer.'}</p>
+              </div>
             </div>
+          </article>
 
-            <div className="space-y-6">
-              <article className={`${CARD_CLASS} p-6`}>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-[28px] font-semibold tracking-[-0.03em] text-[#0f2748]">Conversion</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#60758d]">Move the prospect into the next commercial record when the outcome is clear.</p>
+          {drawerOpen && selectedProspect ? (
+            <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/20">
+              <button type="button" className="flex-1 cursor-default" aria-label="Close drawer backdrop" onClick={() => setDrawerOpen(false)} />
+              <aside className="h-full w-full max-w-[560px] overflow-y-auto border-l border-[#dce6f0] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+                <div className="sticky top-0 z-10 border-b border-[#e8eef5] bg-white/95 px-5 py-4 backdrop-blur">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b899a]">Prospect Detail</p>
+                      <h2 className="mt-2 truncate text-[1.3rem] font-semibold tracking-[-0.03em] text-[#102236]">{getProspectDisplayName(selectedProspect)}</h2>
+                      <p className="mt-1 text-sm text-[#63768b]">{getAreaLine(selectedProspect)} · {getAssetLine(selectedProspect)}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" onClick={handleSaveProspect} disabled={busyAction === 'save'} className="rounded-[12px]">
+                        <Save size={16} />
+                        {busyAction === 'save' ? 'Saving...' : 'Save'}
+                      </Button>
+                      <button
+                        type="button"
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dce6f0] bg-white text-[#62758b] transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
+                        onClick={() => setDrawerOpen(false)}
+                        aria-label="Close prospect drawer"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <Button type="button" variant="secondary" onClick={() => void handleConvert('requirement')} disabled={busyAction.startsWith('convert-')}>
-                    <ClipboardList size={16} />
-                    {busyAction === 'convert-requirement' ? 'Creating...' : 'Requirement'}
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => void handleConvert('deal')} disabled={busyAction.startsWith('convert-')}>
-                    <DollarSign size={16} />
-                    {busyAction === 'convert-deal' ? 'Creating...' : 'Deal'}
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => void handleConvert('contact')} disabled={busyAction.startsWith('convert-')}>
-                    <UserPlus size={16} />
-                    {busyAction === 'convert-contact' ? 'Creating...' : 'Contact'}
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => setArchiveOpen(true)} disabled={busyAction.startsWith('convert-')}>
-                    <Archive size={16} />
-                    Archive
-                  </Button>
-                </div>
-              </article>
 
-              <article className={`${CARD_CLASS} p-6`}>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-[28px] font-semibold tracking-[-0.03em] text-[#0f2748]">Activity</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#60758d]">{selectedActivities.length} logged touchpoints</p>
-                  </div>
-                </div>
-                <div className="mt-5 grid gap-3">
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <Button type="button" variant="secondary" onClick={() => handleLogActivity('Call')} disabled={busyAction.startsWith('activity-')}>
-                      <Phone size={16} />
-                      Call
+                <div className="space-y-6 px-5 py-5">
+                  <section className="space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Overview</h3>
+                      <ProspectTonePill value={selectedProspect.status} />
+                    </div>
+                    <div className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] px-4 py-3 text-sm text-[#60758d]">
+                      Assigned broker: <span className="font-semibold text-[#102236]">{pickLookupLabel(brokerOptions, selectedProspect.assignedBrokerId, selectedProspect.assignedBrokerName || 'Unassigned')}</span>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Company</span>
+                        <Field value={selectedProspect.companyName || ''} onChange={(event) => updateSelectedProspectField('companyName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Contact</span>
+                        <Field value={selectedProspect.contactName || ''} onChange={(event) => updateSelectedProspectField('contactName', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Phone</span>
+                        <Field value={selectedProspect.phone || ''} onChange={(event) => updateSelectedProspectField('phone', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Email</span>
+                        <Field value={selectedProspect.email || ''} onChange={(event) => updateSelectedProspectField('email', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Category</span>
+                        <Field as="select" value={selectedProspect.propertyType || ''} onChange={(event) => updateSelectedProspectField('propertyType', event.target.value)}>
+                          <option value="">Select type</option>
+                          {PROSPECT_PROPERTY_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </Field>
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Area</span>
+                        <Field value={selectedProspect.area || ''} onChange={(event) => updateSelectedProspectField('area', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Broker</span>
+                        <Field as="select" value={selectedProspect.assignedBrokerId || ''} onChange={(event) => updateSelectedProspectField('assignedBrokerId', event.target.value)}>
+                          <option value="">Unassigned</option>
+                          {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </Field>
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Status</span>
+                        <Field as="select" value={selectedProspect.status || 'New'} onChange={(event) => updateSelectedProspectField('status', event.target.value)}>
+                          {PROSPECT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </Field>
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Activity</h3>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <Button type="button" variant="secondary" onClick={() => handleLogActivity('Call')} disabled={busyAction.startsWith('activity-')}>
+                        <Phone size={16} />
+                        Call
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => handleLogActivity('WhatsApp')} disabled={busyAction.startsWith('activity-')}>
+                        <MessageCircle size={16} />
+                        WhatsApp
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => handleLogActivity('Email')} disabled={busyAction.startsWith('activity-')}>
+                        <Mail size={16} />
+                        Email
+                      </Button>
+                    </div>
+                    <label className="grid gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Activity note</span>
+                      <Field as="textarea" value={activityDraft.activityNote} onChange={(event) => setActivityDraft((current) => ({ ...current, activityNote: event.target.value }))} placeholder="What happened in the latest touchpoint?" />
+                    </label>
+                    <label className="grid gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Outcome</span>
+                      <Field value={activityDraft.outcome} onChange={(event) => setActivityDraft((current) => ({ ...current, outcome: event.target.value }))} placeholder="Next step or outcome" />
+                    </label>
+                    <Button type="button" onClick={() => handleLogActivity('Note')} disabled={busyAction.startsWith('activity-')}>
+                      <Save size={16} />
+                      Log activity
                     </Button>
-                    <Button type="button" variant="secondary" onClick={() => handleLogActivity('WhatsApp')} disabled={busyAction.startsWith('activity-')}>
-                      <MessageCircle size={16} />
-                      WhatsApp
-                    </Button>
-                    <Button type="button" variant="secondary" onClick={() => handleLogActivity('Email')} disabled={busyAction.startsWith('activity-')}>
-                      <Mail size={16} />
-                      Email
-                    </Button>
-                  </div>
-                  <label className="grid gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Note</span>
-                    <Field as="textarea" value={activityDraft.activityNote} onChange={(event) => setActivityDraft((current) => ({ ...current, activityNote: event.target.value }))} placeholder="What happened on the call or visit?" />
-                  </label>
-                  <label className="grid gap-1.5">
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Outcome</span>
-                    <Field value={activityDraft.outcome} onChange={(event) => setActivityDraft((current) => ({ ...current, outcome: event.target.value }))} placeholder="Next step or outcome" />
-                  </label>
-                  <Button type="button" onClick={() => handleLogActivity('Note')} disabled={busyAction.startsWith('activity-')}>
-                    <Save size={16} />
-                    Log activity
-                  </Button>
-                </div>
-                <div className="mt-6 space-y-3">
-                  {selectedActivities.length ? selectedActivities.map((activityRow) => (
-                    <div key={activityRow.id} className="rounded-[18px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-semibold text-[#102236]">{titleize(activityRow.activityType)}</p>
-                          <p className="mt-1 text-sm leading-6 text-[#60758d]">{activityRow.activityNote || 'No note recorded'}</p>
+                    <div className="space-y-3">
+                      {selectedActivities.length ? selectedActivities.map((activityRow) => (
+                        <div key={activityRow.id} className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-[#102236]">{titleize(activityRow.activityType)}</p>
+                              <p className="mt-1 text-sm leading-6 text-[#60758d]">{activityRow.activityNote || 'No note recorded'}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-[#7b899a]">{formatDate(activityRow.activityDate || activityRow.createdAt)}</span>
+                          </div>
+                          {activityRow.outcome ? <p className="mt-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a6e3a]">{activityRow.outcome}</p> : null}
                         </div>
-                        <span className="text-xs font-semibold text-[#7b899a]">{formatDate(activityRow.activityDate || activityRow.createdAt)}</span>
-                      </div>
-                      {activityRow.outcome ? <p className="mt-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a6e3a]">{activityRow.outcome}</p> : null}
+                      )) : (
+                        <InlineTableEmptyState icon={CalendarDays} title="No activity yet." description="Calls, emails, WhatsApp notes, and follow-up touchpoints will appear here." />
+                      )}
                     </div>
-                  )) : (
-                    <CommercialEmptyState
-                      title="No activities yet"
-                      description="Log calls, emails, WhatsApp notes, and follow-up steps against this prospect."
-                    />
-                  )}
-                </div>
-              </article>
+                  </section>
 
-              <article className={`${CARD_CLASS} p-6`}>
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-[28px] font-semibold tracking-[-0.03em] text-[#0f2748]">Linked records</h3>
-                    <p className="mt-1 text-sm leading-6 text-[#60758d]">Commercial records already connected to this prospect.</p>
-                  </div>
-                </div>
-                <div className="mt-5 grid gap-3">
-                  <div className="rounded-[18px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Company</p>
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-[#102236]">{pickLookupLabel(lookupOptions.companies, selectedProspect.companyId, selectedProspect.companyName || 'Not linked')}</p>
-                      {getWorkspaceLink('commercial_company', selectedProspect.companyId) ? (
-                        <Link to={getWorkspaceLink('commercial_company', selectedProspect.companyId)} className="text-xs font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
-                          Open
-                        </Link>
-                      ) : null}
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Notes</h3>
+                    <label className="grid gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up note</span>
+                      <Field value={selectedProspect.followUpNote || ''} onChange={(event) => updateSelectedProspectField('followUpNote', event.target.value)} />
+                    </label>
+                    <label className="grid gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Notes</span>
+                      <Field as="textarea" value={selectedProspect.notes || ''} onChange={(event) => updateSelectedProspectField('notes', event.target.value)} />
+                    </label>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Tasks</h3>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up date</span>
+                        <Field as="input" type="date" value={selectedProspect.nextFollowUpDate || ''} onChange={(event) => updateSelectedProspectField('nextFollowUpDate', event.target.value)} />
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Priority</span>
+                        <Field as="select" value={selectedProspect.followUpPriority || 'Medium'} onChange={(event) => updateSelectedProspectField('followUpPriority', event.target.value)}>
+                          {FOLLOW_UP_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
+                        </Field>
+                      </label>
+                      <label className="grid gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Estimated value</span>
+                        <Field as="input" type="number" value={selectedProspect.estimatedValue || ''} onChange={(event) => updateSelectedProspectField('estimatedValue', event.target.value)} />
+                      </label>
                     </div>
-                  </div>
-                  <div className="rounded-[18px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Contact</p>
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-[#102236]">{pickLookupLabel(lookupOptions.contacts, selectedProspect.contactId, selectedProspect.contactName || 'Not linked')}</p>
-                      {getWorkspaceLink('commercial_contact', selectedProspect.contactId) ? (
-                        <Link to={getWorkspaceLink('commercial_contact', selectedProspect.contactId)} className="text-xs font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
-                          Open
-                        </Link>
-                      ) : null}
+                    <div className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] p-4 text-sm text-[#60758d]">
+                      {selectedProspect.nextFollowUpDate ? `Next follow-up ${formatRelativeDate(selectedProspect.nextFollowUpDate)}.` : 'No scheduled follow-up yet.'}
                     </div>
-                  </div>
-                  <div className="rounded-[18px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Property / vacancy / listing</p>
-                    <div className="mt-2 flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[#102236]">
-                          {[pickLookupLabel(lookupOptions.properties, selectedProspect.propertyId, ''), pickLookupLabel(lookupOptions.vacancies, selectedProspect.vacancyId, ''), pickLookupLabel(lookupOptions.listings, selectedProspect.listingId, '')]
-                            .filter((value) => normalizeText(value))
-                            .join(' · ') || 'Not linked'}
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {getWorkspaceLink('commercial_property', selectedProspect.propertyId) ? (
-                            <Link to={getWorkspaceLink('commercial_property', selectedProspect.propertyId)} className="inline-flex items-center gap-1 rounded-full border border-[#dce6f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#0f2748] transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
-                              Open property
-                            </Link>
-                          ) : null}
-                          {getWorkspaceLink('commercial_vacancy', selectedProspect.vacancyId) ? (
-                            <Link to={getWorkspaceLink('commercial_vacancy', selectedProspect.vacancyId)} className="inline-flex items-center gap-1 rounded-full border border-[#dce6f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#0f2748] transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
-                              Open vacancy
-                            </Link>
-                          ) : null}
-                          {getWorkspaceLink('commercial_listing', selectedProspect.listingId) ? (
-                            <Link to={getWorkspaceLink('commercial_listing', selectedProspect.listingId)} className="inline-flex items-center gap-1 rounded-full border border-[#dce6f0] bg-white px-3 py-1.5 text-xs font-semibold text-[#0f2748] transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
-                              Open listing
-                            </Link>
-                          ) : null}
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Conversion History</h3>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Button type="button" variant="secondary" onClick={() => void handleConvert('requirement')} disabled={busyAction.startsWith('convert-')}>
+                        <ClipboardList size={16} />
+                        {busyAction === 'convert-requirement' ? 'Creating...' : 'Requirement'}
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => void handleConvert('deal')} disabled={busyAction.startsWith('convert-')}>
+                        <DollarSign size={16} />
+                        {busyAction === 'convert-deal' ? 'Creating...' : 'Deal'}
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => void handleConvert('contact')} disabled={busyAction.startsWith('convert-')}>
+                        <UserPlus size={16} />
+                        {busyAction === 'convert-contact' ? 'Creating...' : 'Contact'}
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => setArchiveOpen(true)}>
+                        <Archive size={16} />
+                        Archive
+                      </Button>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Linked company</p>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-[#102236]">{pickLookupLabel(lookupOptions.companies, selectedProspect.companyId, selectedProspect.companyName || 'Not linked')}</p>
+                          {getWorkspaceLink('commercial_company', selectedProspect.companyId) ? <Link to={getWorkspaceLink('commercial_company', selectedProspect.companyId)} className="text-xs font-semibold text-[#1f6dd5]">Open</Link> : null}
+                        </div>
+                      </div>
+                      <div className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Workflow link</p>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-[#102236]">{selectedProspect.linkedEntityType ? `${titleize(selectedProspect.linkedEntityType)} ${selectedProspect.linkedEntityId || ''}`.trim() : 'Not linked'}</p>
+                          {getWorkspaceLink(selectedProspect.linkedEntityType, selectedProspect.linkedEntityId) ? <Link to={getWorkspaceLink(selectedProspect.linkedEntityType, selectedProspect.linkedEntityId)} className="text-xs font-semibold text-[#1f6dd5]">Open</Link> : null}
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="rounded-[18px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Workflow link</p>
-                    <div className="mt-2 flex items-start justify-between gap-3">
-                      <p className="text-sm font-semibold text-[#102236]">
-                        {selectedProspect.linkedEntityType ? `${titleize(selectedProspect.linkedEntityType)} ${selectedProspect.linkedEntityId || ''}`.trim() : 'Not linked'}
-                      </p>
-                      {getWorkspaceLink(selectedProspect.linkedEntityType, selectedProspect.linkedEntityId) ? (
-                        <Link to={getWorkspaceLink(selectedProspect.linkedEntityType, selectedProspect.linkedEntityId)} className="text-xs font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
-                          Open
-                        </Link>
-                      ) : null}
+                    <div className="flex flex-wrap gap-3">
+                      <Button type="button" variant="secondary" onClick={() => setDeleteOpen(true)}>
+                        <Trash2 size={16} />
+                        Delete
+                      </Button>
                     </div>
-                  </div>
+                  </section>
                 </div>
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <Button type="button" variant="secondary" onClick={() => setArchiveOpen(true)}>
-                    <Archive size={16} />
-                    Archive
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => setDeleteOpen(true)}>
-                    <Trash2 size={16} />
-                    Delete
-                  </Button>
-                </div>
-              </article>
+              </aside>
             </div>
-          </section>
-        ) : null}
-      </section>
+          ) : null}
 
-      {createModal}
+          {createModal}
 
       <Modal
         open={archiveOpen}

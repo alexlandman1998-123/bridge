@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Clock3,
   FileText,
+  Info,
   Landmark,
   LineChart,
   Sparkles,
@@ -18,6 +19,7 @@ import { formatCurrencyCompactZAR } from '../../services/residentialDashboardSer
 const shellClass = 'space-y-4'
 const cardClass = 'rounded-[20px] border border-[#dfe7f0] bg-white shadow-[0_16px_36px_rgba(15,23,42,0.055)]'
 const sectionClass = 'rounded-[20px] border border-[#dfe7f0] bg-white shadow-[0_16px_36px_rgba(15,23,42,0.055)]'
+const countFormat = new Intl.NumberFormat('en-ZA')
 
 const toneStyles = {
   blue: { bubble: 'bg-[#edf5ff] text-[#1769d1]', stroke: '#4f86e8', soft: 'bg-[#edf5ff] text-[#1769d1]' },
@@ -35,6 +37,10 @@ function toNumber(value) {
 
 function clamp(value, min = 0, max = 100) {
   return Math.min(max, Math.max(min, value))
+}
+
+function formatCount(value) {
+  return countFormat.format(Math.max(0, Math.round(toNumber(value))))
 }
 
 function buildSparklinePath(points = []) {
@@ -301,51 +307,66 @@ export function ResidentialTransactionFlow({ data, scope = 'principal' }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-[1rem] font-semibold text-[#101828]">{data.title}</h3>
-            <p className="mt-1 text-sm text-[#667085]">Residential leasing dashboard is ready.</p>
+            <p className="mt-1 text-sm text-[#667085]">{data.emptyTitle || 'No active transactions yet.'}</p>
           </div>
         </div>
         <div className="mt-5">
-          <EmptyState title="Residential leasing dashboard is ready." copy={data.emptyCopy} />
+          <EmptyState title={data.emptyTitle || 'No active transactions yet.'} copy={data.emptyCopy} />
         </div>
       </section>
     )
   }
 
   const stages = Array.isArray(data?.stages) ? data.stages : []
-  const total = Math.max(1, stages.reduce((sum, item) => sum + toNumber(item.count), 0))
 
   return (
     <section className={`${sectionClass} p-4 sm:p-5`}>
       <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || (scope === 'agent' ? 'My Transaction Flow' : 'Transaction Flow')}</h3>
-          <p className="mt-1 text-sm text-[#667085]">Sales flow from new listings through settlement and registration.</p>
+          <p className="mt-1 text-sm text-[#667085]">Track where active transactions are sitting and where pipeline value is bunching up.</p>
         </div>
-        <div className="rounded-full border border-[#dde4ee] bg-[#f8fafc] px-3 py-1 text-xs font-semibold text-[#52657a]">
-          Overall conversion {data?.overallConversionRate === null || data?.overallConversionRate === undefined ? 'No trend yet' : `${Math.round(data.overallConversionRate)}%`}
+        <div className="rounded-[16px] border border-[#dde4ee] bg-[#f8fafc] px-3.5 py-2 text-right">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{data?.summaryLabel || 'Active Pipeline Overview'}</p>
+          <p className="mt-1 text-sm font-semibold text-[#101828]">{data?.activeTransactionLabel || '0 Active Transactions'}</p>
+          <p className="mt-0.5 text-xs text-[#667085]">{data?.pipelineValueLabel || 'R0 Pipeline Value'}</p>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 xl:grid-cols-5">
-        {stages.map((stage, index) => {
+      <div className="mt-5 grid grid-flow-col auto-cols-[minmax(220px,1fr)] gap-3 overflow-x-auto pb-1 md:grid-flow-row md:auto-cols-auto md:grid-cols-2 xl:grid-cols-5 xl:overflow-visible xl:pb-0">
+        {stages.map((stage) => {
           const tone = toneStyles[stage.tone] || toneStyles.blue
           return (
-            <div key={stage.key} className="flex min-h-[140px] flex-col rounded-[18px] border border-[#dfe7f0] bg-[#fbfdff] p-4">
+            <div key={stage.key} className="flex min-h-[170px] snap-start flex-col rounded-[18px] border border-[#dfe7f0] bg-[#fbfdff] p-4">
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{stage.label}</p>
-                  <p className="mt-2 text-[1.35rem] font-semibold tracking-[-0.03em] text-[#101828] tabular-nums">{Math.max(0, Math.round(stage.count || 0))}</p>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{stage.label}</p>
+                    <span
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[#dde4ee] bg-white text-[#7b8ca2]"
+                      title={stage.description || ''}
+                      aria-label={stage.description || stage.label}
+                    >
+                      <Info size={11} />
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[1.3rem] font-semibold tracking-[-0.03em] text-[#101828] tabular-nums">
+                    {formatCount(stage.count)} Transaction{Number(stage.count || 0) === 1 ? '' : 's'}
+                  </p>
+                  <p className="mt-2 text-[1.02rem] font-semibold text-[#203247]">{stage.formattedValue || formatCurrencyCompactZAR(stage.value || 0)}</p>
                 </div>
-                <span className={`inline-flex h-8 w-8 items-center justify-center rounded-[12px] ${tone.bubble}`}>
-                  {index < 2 ? <Sparkles size={16} /> : <LineChart size={16} />}
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-[0.72rem] font-semibold ${tone.soft}`}>
+                  {Math.max(0, Math.round(stage.percentage || 0))}%
                 </span>
               </div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-[#edf2f7]">
-                <div className="h-full rounded-full" style={{ width: `${clamp((stage.count / total) * 100, 6, 100)}%`, background: tone.stroke }} />
+
+              <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#edf2f7]">
+                <div className="h-full rounded-full" style={{ width: `${clamp(toNumber(stage.percentage), 0, 100)}%`, background: tone.stroke }} />
               </div>
+
               <div className="mt-3 flex items-center justify-between gap-2 text-xs text-[#667085]">
-                <span>{Math.max(0, Math.round(stage.percentage || 0))}%</span>
-                <span>R{formatCurrencyCompactZAR(stage.value || stage.totalValue || 0).replace(/^R/, '')}</span>
+                <span>Share of active pipeline</span>
+                <span className="font-semibold text-[#203247]">{Math.max(0, Math.round(stage.percentage || 0))}%</span>
               </div>
             </div>
           )

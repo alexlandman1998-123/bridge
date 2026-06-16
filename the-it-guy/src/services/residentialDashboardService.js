@@ -16,6 +16,10 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function normalizeKey(value) {
+  return normalizeText(value).toLowerCase()
+}
+
 function toNumber(value) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : 0
@@ -67,6 +71,275 @@ function getTitlePrefix(scope = 'principal') {
 
 function getModeLabel(mode = 'sales') {
   return mode === 'leasing' ? 'leasing' : 'sales'
+}
+
+const RESIDENTIAL_TRANSACTION_FLOW_STAGES = [
+  {
+    key: 'buyer_onboarding',
+    label: 'Buyer Onboarding',
+    tone: 'blue',
+    description: 'Transactions where onboarding is in progress and OTP has not yet been finalised.',
+    aliases: ['buyer_onboarding', 'buyer onboarding', 'onboarding', 'buyer'],
+  },
+  {
+    key: 'otp_signed',
+    label: 'OTP Signed',
+    tone: 'green',
+    description: 'Transactions where the Offer to Purchase has been fully executed.',
+    aliases: ['otp_signed', 'otp signed', 'otp', 'signed'],
+  },
+  {
+    key: 'finance',
+    label: 'Finance',
+    tone: 'orange',
+    description: 'Transactions currently within finance approval workflows.',
+    aliases: ['finance', 'bond', 'bank'],
+  },
+  {
+    key: 'transfer',
+    label: 'Transfer',
+    tone: 'purple',
+    description: 'Transactions currently progressing through attorney transfer workflows.',
+    aliases: ['transfer', 'attorney', 'conveyancing', 'bond registration', 'bond cancellation'],
+  },
+  {
+    key: 'ready_for_registration',
+    label: 'Ready For Registration',
+    tone: 'slate',
+    description: 'Transactions awaiting final registration.',
+    aliases: ['ready_for_registration', 'ready for registration', 'awaiting registration', 'ready to register', 'lodged', 'registration'],
+  },
+]
+
+function getTransactionValue(row = {}) {
+  return getFirstNumber(
+    row?.valueRaw,
+    row?.rawValue,
+    row?.value,
+    row?.dealValue,
+    row?.transactionValue,
+    row?.price,
+    row?.salesPrice,
+    row?.sales_price,
+    row?.purchase_price,
+    row?.purchasePrice,
+    row?.contractValue,
+    row?.contract_value,
+    row?.salePrice,
+    row?.sale_price,
+  )
+}
+
+function getResidentialTransactionFinanceType(row = {}) {
+  const raw = normalizeKey(
+    row?.financeType ||
+    row?.finance_type ||
+    row?.paymentType ||
+    row?.payment_type,
+  )
+  const cashAmount = toNumber(row?.cashAmount ?? row?.cash_amount)
+  const bondAmount = toNumber(row?.bondAmount ?? row?.bond_amount)
+  if (raw.includes('cash')) return 'cash'
+  if (raw.includes('bond')) return 'bond'
+  if (raw.includes('combination') || raw.includes('hybrid')) return 'bond'
+  if (cashAmount > 0 && bondAmount <= 0) return 'cash'
+  if (bondAmount > 0) return 'bond'
+  return 'unknown'
+}
+
+function isResidentialTransactionClosed(row = {}) {
+  const text = normalizeKey([
+    row?.status,
+    row?.stage,
+    row?.stageLabel,
+    row?.current_main_stage,
+    row?.current_sub_stage_summary,
+    row?.operational_state,
+    row?.lifecycle_state,
+    row?.next_action,
+    row?.attorney_stage,
+  ].join(' '))
+  return (
+    text.includes('registered') ||
+    text.includes('cancelled') ||
+    text.includes('canceled') ||
+    text.includes('lost') ||
+    text.includes('archived') ||
+    text.includes('closed')
+  )
+}
+
+function getResidentialTransactionFlowStageKey(row = {}) {
+  if (isResidentialTransactionClosed(row)) return null
+
+  const text = normalizeKey([
+    row?.status,
+    row?.stage,
+    row?.stageKey,
+    row?.stageLabel,
+    row?.label,
+    row?.current_main_stage,
+    row?.current_sub_stage_summary,
+    row?.operational_state,
+    row?.lifecycle_state,
+    row?.next_action,
+    row?.attorney_stage,
+    row?.finance_status,
+    row?.onboarding_status,
+    row?.workflow_stage,
+    row?.waiting_on_role,
+  ].join(' '))
+  const financeType = getResidentialTransactionFinanceType(row)
+
+  if (
+    text.includes('ready to register') ||
+    text.includes('ready for registration') ||
+    text.includes('awaiting registration') ||
+    text.includes('lodged') ||
+    text.includes('lodgement')
+  ) {
+    return 'ready_for_registration'
+  }
+
+  if (
+    text.includes('transfer in progress') ||
+    text.includes('bond registration') ||
+    text.includes('bond cancellation') ||
+    text.includes('transfer') ||
+    text.includes('attorney') ||
+    text.includes('convey')
+  ) {
+    return 'transfer'
+  }
+
+  if (
+    financeType !== 'cash' &&
+    (
+      text.includes('bond application') ||
+      text.includes('bond processing') ||
+      text.includes('bond approval') ||
+      text.includes('finance') ||
+      text.includes('bond') ||
+      text.includes('bank')
+    )
+  ) {
+    return 'finance'
+  }
+
+  if (
+    text.includes('otp signed') ||
+    text.includes('otp fully signed') ||
+    text.includes('offer to purchase') ||
+    text.includes('fully executed') ||
+    text.includes('accepted otp') ||
+    text.includes('signed')
+  ) {
+    return 'otp_signed'
+  }
+
+  return 'buyer_onboarding'
+}
+
+function findResidentialTransactionFlowRow(rows = [], stage) {
+  return (Array.isArray(rows) ? rows : []).find((row) => {
+    const key = normalizeKey(row?.key || row?.label || row?.stage)
+    return stage.aliases.some((alias) => key.includes(alias))
+  }) || null
+}
+
+function buildResidentialTransactionFlowBucketsFromRows(rows = []) {
+  const buckets = new Map(
+    RESIDENTIAL_TRANSACTION_FLOW_STAGES.map((stage) => [
+      stage.key,
+      { key: stage.key, label: stage.label, tone: stage.tone, description: stage.description, count: 0, value: 0 },
+    ]),
+  )
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const stageKey = getResidentialTransactionFlowStageKey(row)
+    if (!stageKey || !buckets.has(stageKey)) continue
+    const bucket = buckets.get(stageKey)
+    bucket.count += 1
+    bucket.value += getTransactionValue(row)
+  }
+
+  return buckets
+}
+
+function buildResidentialTransactionFlowBucketsFromAggregates(rows = [], { totalCount = 0, totalValue = 0 } = {}) {
+  const buckets = new Map()
+  let countedTotal = 0
+  let valuedTotal = 0
+
+  for (const stage of RESIDENTIAL_TRANSACTION_FLOW_STAGES) {
+    const row = findResidentialTransactionFlowRow(rows, stage)
+    const count = toNumber(row?.count)
+    const value = getTransactionValue(row)
+    countedTotal += count
+    valuedTotal += value
+    buckets.set(stage.key, {
+      key: stage.key,
+      label: stage.label,
+      tone: stage.tone,
+      description: row?.description || stage.description,
+      count,
+      value,
+    })
+  }
+
+  const buyerBucket = buckets.get('buyer_onboarding')
+  if (buyerBucket) {
+    const resolvedTotalCount = Math.max(0, toNumber(totalCount))
+    const resolvedTotalValue = Math.max(0, toNumber(totalValue))
+    if (!buyerBucket.count && resolvedTotalCount > countedTotal) {
+      buyerBucket.count = Math.max(0, resolvedTotalCount - (countedTotal - buyerBucket.count))
+    }
+    if (!buyerBucket.value && resolvedTotalValue > valuedTotal) {
+      buyerBucket.value = Math.max(0, resolvedTotalValue - (valuedTotal - buyerBucket.value))
+    }
+  }
+
+  return buckets
+}
+
+function serializeResidentialTransactionFlowBuckets(buckets = new Map(), { scope = 'principal', totalValue = 0, totalCount = 0 } = {}) {
+  const safeTotalValue = Math.max(0, toNumber(totalValue))
+  const safeTotalCount = Math.max(0, toNumber(totalCount))
+  const stages = RESIDENTIAL_TRANSACTION_FLOW_STAGES.map((stage, index) => {
+    const bucket = buckets.get(stage.key) || {}
+    const value = Math.max(0, toNumber(bucket.value))
+    return {
+      key: stage.key,
+      label: stage.label,
+      count: Math.max(0, toNumber(bucket.count)),
+      value,
+      percentage: safeTotalValue > 0 ? Math.round((value / safeTotalValue) * 100) : 0,
+      formattedValue: formatCurrencyCompactZAR(value),
+      tone: stage.tone,
+      description: bucket.description || stage.description,
+      order: index,
+    }
+  })
+
+  const [buyerOnboarding, otpSigned, finance, transfer, readyForRegistration] = stages
+
+  return {
+    title: scope === 'agent' ? 'My Transaction Flow' : 'Transaction Flow',
+    summaryLabel: 'Active Pipeline Overview',
+    activeTransactionCount: safeTotalCount,
+    activeTransactionLabel: `${formatCount(safeTotalCount)} Active Transaction${safeTotalCount === 1 ? '' : 's'}`,
+    pipelineValue: safeTotalValue,
+    pipelineValueLabel: `${formatCurrencyCompactZAR(safeTotalValue)} Pipeline Value`,
+    stages,
+    buyerOnboarding,
+    otpSigned,
+    finance,
+    transfer,
+    readyForRegistration,
+    emptyState: !safeTotalCount,
+    emptyTitle: 'No active transactions yet.',
+    emptyCopy: 'Transaction flow will appear once buyer onboarding and transactions begin moving through the platform.',
+  }
 }
 
 function formatCount(value, empty = '0') {
@@ -181,7 +454,16 @@ function deriveTransactionHealth(source = {}, { mode = 'sales' } = {}) {
   }
 
   const healthSource = source.transactionHealth || source.transactions?.health || source.health || {}
-  const segments = getFirstArray(healthSource.flow, source.transactions?.flow, source.flowStages).map((row) => ({
+  const flowRows = getFirstArray(
+    healthSource.flow,
+    source.residentialTransactionFlow,
+    source.transactions?.dashboardFlow,
+    source.transactions?.residentialFlow,
+    source.transactionFlow,
+    source.transactions?.flow,
+    source.flowStages,
+  )
+  const segments = flowRows.map((row) => ({
     key: normalizeText(row?.key || row?.label).toLowerCase(),
     label: row?.label || row?.key || 'Stage',
     count: toNumber(row?.count || row?.value),
@@ -246,26 +528,39 @@ function deriveResidentialTransactionFlow(source = {}, { mode = 'sales', scope =
     return {
       title: scope === 'agent' ? 'My Transaction Flow' : 'Transaction Flow',
       stages: [],
-      overallConversionRate: null,
+      summaryLabel: 'Active Pipeline Overview',
+      activeTransactionCount: 0,
+      activeTransactionLabel: '0 Active Transactions',
+      pipelineValue: 0,
+      pipelineValueLabel: 'R0 Pipeline Value',
       emptyState: true,
+      emptyTitle: 'Residential leasing dashboard is ready.',
       emptyCopy: 'Residential leasing dashboard is ready. Rental mandates and lease deals will appear here once leasing is enabled.',
     }
   }
 
-  const stages = deriveSalesStages(source)
-  const total = stages.reduce((sum, item) => sum + item.count, 0)
-  return {
-    title: scope === 'agent' ? 'My Transaction Flow' : 'Transaction Flow',
-    stages: stages.map((stage, index) => ({
-      ...stage,
-      trend: Number.isFinite(Number(stage.trend)) ? Number(stage.trend) : null,
-      totalValue: getFirstNumber(stage.value),
-      order: index,
-    })),
-    overallConversionRate: total ? Math.round(((stages.at(-1)?.count || 0) / Math.max(1, total)) * 100) : null,
-    emptyState: false,
-    emptyCopy: '',
-  }
+  const activeRows = getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions)
+  const totalCount = getFirstNumber(source.transactions?.totalActive, source.kpis?.activeTransactions, activeRows.length)
+  const totalValue = getFirstNumber(
+    derivePipelineValue(source),
+    source.transactions?.pipelineSnapshot?.value,
+    activeRows.reduce((sum, row) => sum + getTransactionValue(row), 0),
+  )
+  const aggregateRows = getFirstArray(
+    source.residentialTransactionFlow,
+    source.transactions?.dashboardFlow,
+    source.transactions?.residentialFlow,
+    source.transactionFlow,
+    source.transactions?.flow,
+  )
+  const hasFullActiveRows = activeRows.length > 0 && activeRows.length >= totalCount
+  const buckets = hasFullActiveRows
+    ? buildResidentialTransactionFlowBucketsFromRows(activeRows)
+    : aggregateRows.length
+      ? buildResidentialTransactionFlowBucketsFromAggregates(aggregateRows, { totalCount, totalValue })
+      : buildResidentialTransactionFlowBucketsFromRows(activeRows)
+
+  return serializeResidentialTransactionFlowBuckets(buckets, { scope, totalValue, totalCount })
 }
 
 function deriveResidentialAttentionItems(source = {}, { scope = 'principal', mode = 'sales' } = {}) {

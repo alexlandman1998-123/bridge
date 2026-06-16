@@ -36,11 +36,12 @@ import {
         ],
       },
       transactions: {
-        flow: [
-          { key: 'otp', label: 'OTP', count: 6, percentage: 50 },
-          { key: 'finance', label: 'Finance', count: 3, percentage: 25 },
-          { key: 'transfer', label: 'Transfer', count: 2, percentage: 17 },
-          { key: 'registration', label: 'Registration', count: 1, percentage: 8 },
+        dashboardFlow: [
+          { key: 'buyer_onboarding', label: 'Buyer Onboarding', count: 2, value: 18000000, percentage: 14 },
+          { key: 'otp_signed', label: 'OTP Signed', count: 6, value: 56200000, percentage: 45 },
+          { key: 'finance', label: 'Finance', count: 2, value: 24000000, percentage: 19 },
+          { key: 'transfer', label: 'Transfer', count: 1, value: 15200000, percentage: 12 },
+          { key: 'ready_for_registration', label: 'Ready For Registration', count: 1, value: 12000000, percentage: 10 },
         ],
         totalActive: 12,
       },
@@ -63,6 +64,9 @@ import {
   assert.equal(model.kpis[0].label, 'Active Transactions', 'principal KPI labels should use agency scope')
   assert.equal(model.kpis[1].label, 'Active Listings / Mandates', 'principal KPI labels should include listings and mandates')
   assert.equal(model.transactionFlow.stages.length, 5, 'sales flow should expose five stages')
+  assert.equal(model.transactionFlow.stages[0].label, 'Buyer Onboarding', 'transaction flow should start with buyer onboarding')
+  assert.equal(model.transactionFlow.buyerOnboarding.count, 2, 'buyer onboarding stage should preserve count')
+  assert.equal(model.transactionFlow.otpSigned.formattedValue.startsWith('R'), true, 'transaction flow should format stage values')
   assert.equal(model.transactionHealth.total, 12, 'transaction health should pick up the active transaction count')
   assert.equal(model.topPerformers.hidden, false, 'principal scope should show top performers')
   assert.equal(model.appointments.title, 'Appointments', 'principal scope should title the appointments section generically')

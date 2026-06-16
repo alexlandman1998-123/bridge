@@ -782,33 +782,107 @@ function buildTransferWorkflowSteps(mainStage, signalText) {
 }
 
 function buildPremiumAgentFlowStages({ agentPerformanceMetrics = {}, agentPipeline = [] } = {}) {
-  const pipelineByKey = new Map((Array.isArray(agentPipeline) ? agentPipeline : []).map((stage) => [stage.key, stage]))
-  const buyerFunnel = agentPerformanceMetrics.conversionFunnel?.buyer || []
-  const sellerFunnel = agentPerformanceMetrics.conversionFunnel?.seller || []
-  const buyerByKey = new Map(buyerFunnel.map((stage) => [stage.key, stage]))
-  const sellerByKey = new Map(sellerFunnel.map((stage) => [stage.key, stage]))
-  const leadCount = Number(buyerByKey.get('leads')?.count || 0) + Number(sellerByKey.get('leads')?.count || 0)
-  const totalBase = Math.max(1, leadCount || agentPerformanceMetrics.totalDeals || 0)
+  const rowByTransactionId = new Map(
+    (Array.isArray(agentPipeline) ? agentPipeline : [])
+      .filter((row) => row?.transaction?.id)
+      .map((row) => [row.transaction.id, row]),
+  )
+  const activeCards = Array.isArray(agentPerformanceMetrics.activeTransactionCards) ? agentPerformanceMetrics.activeTransactionCards : []
   const stageRows = [
-    { key: 'lead', label: 'Lead', count: leadCount, tone: 'blue', icon: Users },
-    { key: 'mandate', label: 'Mandate', count: Number(sellerByKey.get('mandate_signed')?.count || 0), tone: 'blue', icon: FileCheck2 },
-    { key: 'viewing', label: 'Viewing', count: Number(buyerByKey.get('viewings')?.count || 0), tone: 'slate', icon: CalendarDays },
-    { key: 'offer', label: 'Offer', count: Number(buyerByKey.get('offers')?.count || 0), tone: 'orange', icon: Banknote },
-    { key: 'otp', label: 'OTP', count: Number(pipelineByKey.get('OTP')?.count || 0), tone: 'green', icon: FileCheck2 },
-    { key: 'finance', label: 'Finance', count: Number(pipelineByKey.get('FIN')?.count || 0), tone: 'slate', icon: Banknote },
-    { key: 'transfer', label: 'Transfer', count: Number(pipelineByKey.get('ATTY')?.count || 0) + Number(pipelineByKey.get('XFER')?.count || 0), tone: 'purple', icon: ArrowRightLeft },
-    { key: 'registration', label: 'Registration', count: Number(pipelineByKey.get('REG')?.count || 0), tone: 'green', icon: FileCheck2 },
-  ]
+    {
+      key: 'buyer_onboarding',
+      label: 'Buyer Onboarding',
+      description: 'Transactions where onboarding is in progress and OTP has not yet been finalised.',
+    },
+    {
+      key: 'otp_signed',
+      label: 'OTP Signed',
+      description: 'Transactions where the Offer to Purchase has been fully executed.',
+    },
+    {
+      key: 'finance',
+      label: 'Finance',
+      description: 'Transactions currently within finance approval workflows.',
+    },
+    {
+      key: 'transfer',
+      label: 'Transfer',
+      description: 'Transactions currently progressing through attorney transfer workflows.',
+    },
+    {
+      key: 'ready_for_registration',
+      label: 'Ready For Registration',
+      description: 'Transactions awaiting final registration.',
+    },
+  ].map((stage) => ({ ...stage, count: 0, value: 0 }))
 
-  return stageRows.map((stage, index) => {
-    const rawPercentage = index === 0 ? 100 : Math.round((Number(stage.count || 0) / totalBase) * 100)
-    return {
-      ...stage,
-      count: formatKpiCount(stage.count),
-      percentage: `${rawPercentage}%`,
-      rawPercentage,
+  const stageMap = new Map(stageRows.map((stage) => [stage.key, stage]))
+
+  const getAgentResidentialFlowStageKey = (row = null, card = null) => {
+    const mainStage = row ? getRowMainStage(row) : ''
+    const signalText = row ? toSignalText(row) : ''
+    const financeType = normalizeFinanceType(row?.transaction?.finance_type || row?.transaction?.financeType || card?.financeType || '')
+    const statusText = `${signalText} ${row?.transaction?.stage || ''} ${card?.stage || ''}`.toLowerCase()
+
+    if (
+      statusText.includes('registered') ||
+      statusText.includes('cancelled') ||
+      statusText.includes('canceled') ||
+      statusText.includes('lost') ||
+      statusText.includes('archived')
+    ) {
+      return null
     }
-  })
+
+    if (
+      mainStage === 'REG' ||
+      /(ready to register|ready for registration|awaiting registration|lodged|lodgement|deeds office)/i.test(statusText)
+    ) {
+      return 'ready_for_registration'
+    }
+
+    if (
+      mainStage === 'ATTY' ||
+      mainStage === 'XFER' ||
+      /(transfer in progress|bond registration|bond cancellation|transfer|attorney|convey|guarantees|clearance)/i.test(statusText)
+    ) {
+      return 'transfer'
+    }
+
+    if (
+      financeType !== 'cash' &&
+      (
+        mainStage === 'FIN' ||
+        /(bond application|bond processing|bond approval|finance|bond|bank)/i.test(statusText)
+      )
+    ) {
+      return 'finance'
+    }
+
+    if (
+      mainStage === 'OTP' ||
+      /(otp signed|offer to purchase|fully executed|accepted otp|otp|signed)/i.test(statusText)
+    ) {
+      return 'otp_signed'
+    }
+
+    return 'buyer_onboarding'
+  }
+
+  for (const card of activeCards) {
+    const row = rowByTransactionId.get(card.transactionId) || null
+    const stageKey = getAgentResidentialFlowStageKey(row, card)
+    if (!stageKey || !stageMap.has(stageKey)) continue
+    const stage = stageMap.get(stageKey)
+    stage.count += 1
+    stage.value += Number(card?.dealValue || 0)
+  }
+
+  const totalValue = stageRows.reduce((sum, stage) => sum + Number(stage.value || 0), 0)
+  return stageRows.map((stage) => ({
+    ...stage,
+    percentage: totalValue ? Math.round((Number(stage.value || 0) / totalValue) * 100) : 0,
+  }))
 }
 
 function buildPremiumAgentForecast(rows = []) {
@@ -2872,7 +2946,7 @@ function Dashboard() {
           icon: FileCheck2,
         },
       ],
-      flow: buildPremiumAgentFlowStages({ agentPerformanceMetrics, agentPipeline: agentPipelineStages }),
+      flow: buildPremiumAgentFlowStages({ agentPerformanceMetrics: { ...agentPerformanceMetrics, activeTransactionCards }, agentPipeline: agentDashboardPipelineRows }),
       forecastRows,
       forecastValues,
       recentTransactions,

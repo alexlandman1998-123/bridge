@@ -676,6 +676,111 @@ function getCommandStage(row = {}) {
   return 'otp'
 }
 
+const RESIDENTIAL_DASHBOARD_FLOW_STAGES = [
+  {
+    key: 'buyer_onboarding',
+    label: 'Buyer Onboarding',
+    description: 'Transactions where onboarding is in progress and OTP has not yet been finalised.',
+  },
+  {
+    key: 'otp_signed',
+    label: 'OTP Signed',
+    description: 'Transactions where the Offer to Purchase has been fully executed.',
+  },
+  {
+    key: 'finance',
+    label: 'Finance',
+    description: 'Transactions currently within finance approval workflows.',
+  },
+  {
+    key: 'transfer',
+    label: 'Transfer',
+    description: 'Transactions currently progressing through attorney transfer workflows.',
+  },
+  {
+    key: 'ready_for_registration',
+    label: 'Ready For Registration',
+    description: 'Transactions awaiting final registration.',
+  },
+]
+
+function getResidentialDashboardFlowStage(row = {}) {
+  const status = getTransactionStatusText(row)
+  const financeType = getFinanceBucket(row)
+
+  if (
+    isRegisteredTransaction(row) ||
+    status.includes('cancel') ||
+    status.includes('lost') ||
+    status.includes('archived')
+  ) {
+    return null
+  }
+
+  if (
+    status.includes('ready to register') ||
+    status.includes('ready for registration') ||
+    status.includes('awaiting registration') ||
+    status.includes('lodg')
+  ) {
+    return 'ready_for_registration'
+  }
+
+  if (
+    status.includes('transfer in progress') ||
+    status.includes('bond registration') ||
+    status.includes('bond cancellation') ||
+    status.includes('transfer') ||
+    status.includes('attorney') ||
+    status.includes('convey')
+  ) {
+    return 'transfer'
+  }
+
+  if (
+    financeType !== 'cash' &&
+    (
+      status.includes('bond application') ||
+      status.includes('bond processing') ||
+      status.includes('bond approval') ||
+      status.includes('finance') ||
+      status.includes('bond') ||
+      status.includes('bank')
+    )
+  ) {
+    return 'finance'
+  }
+
+  if (
+    status.includes('otp signed') ||
+    status.includes('offer to purchase') ||
+    status.includes('fully executed') ||
+    status.includes('accepted otp') ||
+    status.includes('otp') ||
+    status.includes('signed')
+  ) {
+    return 'otp_signed'
+  }
+
+  return 'buyer_onboarding'
+}
+
+function buildResidentialDashboardFlow(activeTransactions = []) {
+  const totalValue = sumBy(activeTransactions, getDealValue)
+  return RESIDENTIAL_DASHBOARD_FLOW_STAGES.map((stage) => {
+    const rows = activeTransactions.filter((row) => getResidentialDashboardFlowStage(row) === stage.key)
+    const value = sumBy(rows, getDealValue)
+    return {
+      key: stage.key,
+      label: stage.label,
+      description: stage.description,
+      count: rows.length,
+      value,
+      percentage: totalValue ? Math.round((value / totalValue) * 100) : 0,
+    }
+  })
+}
+
 function getStageEnteredAt(row = {}) {
   return (
     row.entered_stage_at ||
@@ -1125,6 +1230,7 @@ export function getResidentialDashboardMetrics({
       percentage: percentage(rows.length, Math.max(1, activeTransactions.length)),
     }
   })
+  const residentialDashboardFlow = buildResidentialDashboardFlow(activeTransactions)
   const salesFunnel = buildSalesFunnelMetrics(funnel, {
     previousFunnel,
     currentAcceptedOtpRows: acceptedOtpRows,
@@ -1225,6 +1331,7 @@ export function getResidentialDashboardMetrics({
     transactions: {
       commandCentre,
       flow: transactionFlow,
+      dashboardFlow: residentialDashboardFlow,
       health: transactionHealth,
       alerts: transactionAlerts,
     },
