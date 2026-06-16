@@ -63,6 +63,26 @@ function CommercialSidebar({ scope = null }) {
           <div>
             {visibleSections.map((section) => {
               const SectionIcon = section.icon
+              if (section.items.length === 1) {
+                const item = section.items[0]
+                const active = isCommercialNavItemActive(currentFullPath, item)
+                return (
+                  <Link
+                    key={section.id}
+                    to={item.to}
+                    aria-current={active ? 'page' : undefined}
+                    className={[
+                      navItemClass,
+                      'mt-3',
+                      active ? activeItemClass : inactiveItemClass,
+                    ].join(' ')}
+                  >
+                    <SectionIcon size={17} />
+                    <span>{section.label}</span>
+                  </Link>
+                )
+              }
+
               return (
                 <div key={section.id}>
                   <button
