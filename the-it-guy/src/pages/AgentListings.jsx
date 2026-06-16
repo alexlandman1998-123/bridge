@@ -408,6 +408,31 @@ function mergePrivateListingRows(dbRows = [], runtimeRows = [], deletedIds = new
   return Array.from(map.values())
 }
 
+function resolveAgentAssignmentIds(profile = {}, organisationUsers = []) {
+  const profileId = normalizeText(profile?.id)
+  const profileEmail = normalizeContact(profile?.email)
+  const ids = new Set([profileId].filter(Boolean))
+
+  for (const user of Array.isArray(organisationUsers) ? organisationUsers : []) {
+    const userIds = [
+      user?.id,
+      user?.userId,
+      user?.user_id,
+      user?.organisationUserId,
+      user?.organisation_user_id,
+    ].map(normalizeText).filter(Boolean)
+    const userEmail = normalizeContact(user?.email)
+    const matchesProfile =
+      (profileId && userIds.includes(profileId)) ||
+      (profileEmail && userEmail === profileEmail)
+
+    if (!matchesProfile) continue
+    userIds.forEach((id) => ids.add(id))
+  }
+
+  return Array.from(ids)
+}
+
 function ListingCardImage({ src = '', alt = '' }) {
   if (src) {
     return <img src={src} alt={alt} className="h-full w-full object-cover" />
@@ -824,8 +849,11 @@ function AgentListings({ initialTab = null } = {}) {
 
         const canUseDbFirstPrivateListings = !MOCK_DATA_ENABLED && Boolean(resolvedOrganisationId && profile?.id)
         if (canUseDbFirstPrivateListings) {
+          const agentAssignmentIds = resolveAgentAssignmentIds(profile, userRows)
           dbPrivateListings = await getAgentPrivateListings(profile.id, {
             organisationId: resolvedOrganisationId,
+            assignedAgentEmail: profile?.email || '',
+            assignedAgentIds: agentAssignmentIds,
             includeAllOrganisationListings:
               agencyWorkflowMode === 'principal' ||
               ['principal', 'owner', 'admin', 'hq', 'branch_manager', 'manager', 'team_lead'].includes(

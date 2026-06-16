@@ -2302,24 +2302,25 @@ export async function getAgentPrivateListings(
     organisationId = null,
     includeAllOrganisationListings = false,
     assignedAgentEmail = '',
+    assignedAgentIds = [],
   } = {},
 ) {
   const client = requireClient()
   const normalizedAgentId = normalizeUuid(agentId)
   const normalizedOrgId = normalizeUuid(organisationId)
   const normalizedAgentEmail = normalizeText(assignedAgentEmail).toLowerCase()
-  if (!includeAllOrganisationListings && !normalizedAgentId && !normalizedAgentEmail) return []
+  const normalizedAgentIds = normalizeUuidList([normalizedAgentId, ...assignedAgentIds])
+  if (!includeAllOrganisationListings && !normalizedAgentIds.length && !normalizedAgentEmail) return []
   const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
 
   if (normalizedOrgId) {
     queryBuilder.eq('organisation_id', normalizedOrgId)
   }
   if (!includeAllOrganisationListings) {
-    if (normalizedAgentId && normalizedAgentEmail) {
-      const escapedEmail = String(normalizedAgentEmail).replace(/"/g, '\\"')
-      queryBuilder.or(`assigned_agent_id.eq.${normalizedAgentId},assigned_agent_email.eq."${escapedEmail}"`)
-    } else if (normalizedAgentId) {
-      queryBuilder.eq('assigned_agent_id', normalizedAgentId)
+    if (normalizedAgentIds.length > 1) {
+      queryBuilder.in('assigned_agent_id', normalizedAgentIds)
+    } else if (normalizedAgentIds.length === 1) {
+      queryBuilder.eq('assigned_agent_id', normalizedAgentIds[0])
     } else {
       queryBuilder.eq('assigned_agent_email', normalizedAgentEmail)
     }
@@ -2327,11 +2328,15 @@ export async function getAgentPrivateListings(
 
   const query = await queryBuilder.order('updated_at', { ascending: false })
   if (query.error) {
-    if (isMissingColumnError(query.error, 'assigned_agent_email') && normalizedOrgId && normalizedAgentId) {
+    if (isMissingColumnError(query.error, 'assigned_agent_email') && normalizedOrgId && normalizedAgentIds.length) {
       const retryQuery = await applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
         .eq('organisation_id', normalizedOrgId)
-        .eq('assigned_agent_id', normalizedAgentId)
         .order('updated_at', { ascending: false })
+      if (normalizedAgentIds.length > 1) {
+        retryQuery.in('assigned_agent_id', normalizedAgentIds)
+      } else {
+        retryQuery.eq('assigned_agent_id', normalizedAgentIds[0])
+      }
       if (retryQuery.error) {
         if (isMissingTableError(retryQuery.error, 'private_listings')) return []
         throw retryQuery.error
