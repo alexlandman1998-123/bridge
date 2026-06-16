@@ -312,7 +312,7 @@ function PrincipalDashboardHeader({
           <h1 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#101828]">
             Principal Dashboard · Agency Overview
           </h1>
-          <p className="mt-1 text-sm text-[#667085]">Agency-wide residential sales and leasing performance.</p>
+          <p className="mt-1 text-sm text-[#667085]">Agency-wide residential sales performance.</p>
         </div>
 
         <div className="flex flex-col items-start gap-3 xl:items-end">
@@ -2283,7 +2283,7 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', profile, dateRang
               trend={item.trend}
               sparkline={item.sparkline}
               tone={item.tone}
-              emptyCopy={mode === 'leasing' ? 'Leasing metrics will appear once leasing is enabled.' : ''}
+              emptyCopy=""
             />
           )
         })}
@@ -2294,40 +2294,38 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', profile, dateRang
         <ResidentialPerformanceChart data={model.performance} scope="principal" mode={mode} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <ResidentialTransactionFlow data={model.transactionFlow} scope="principal" mode={mode} />
-        <ResidentialActiveTransactionsCarousel
-          title={model.activeTransactions.title}
-          rows={model.activeTransactions.rows}
-          scope="principal"
-          onViewAll={onViewTransactions}
-          onOpenRecord={onOpenTransaction}
-        />
-      </div>
+      <ResidentialTransactionFlow data={model.transactionFlow} scope="principal" mode={mode} />
+
+      <ResidentialActiveTransactionsCarousel
+        title={model.activeTransactions.title}
+        rows={model.activeTransactions.rows}
+        scope="principal"
+        onViewAll={onViewTransactions}
+        onOpenRecord={onOpenTransaction}
+      />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <ResidentialAttentionRequired data={model.attention} scope="principal" />
         <ResidentialCommissionForecast data={model.commissionForecast} scope="principal" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <ResidentialTopPerformers data={model.topPerformers} scope="principal" />
-        <ResidentialAppointments
-          module="principal"
-          organisationId={data?.meta?.agencyId || ''}
-          userId={profile?.id || profile?.userId || ''}
-          userEmail={profile?.email || ''}
-          includeAll
-          canManage
-          refreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}`}
-          scope="principal"
-          onViewCalendar={onViewCalendar}
-          onOpenCalendar={onOpenCalendar}
-          onManageAppointment={onManageAppointment}
-          onOpenAppointment={onOpenAppointment}
-          onScheduleAppointment={onScheduleAppointment}
-        />
-      </div>
+      <ResidentialTopPerformers data={model.topPerformers} scope="principal" />
+
+      <ResidentialAppointments
+        module="principal"
+        organisationId={data?.meta?.agencyId || ''}
+        userId={profile?.id || profile?.userId || ''}
+        userEmail={profile?.email || ''}
+        includeAll
+        canManage
+        refreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}`}
+        scope="principal"
+        onViewCalendar={onViewCalendar}
+        onOpenCalendar={onOpenCalendar}
+        onManageAppointment={onManageAppointment}
+        onOpenAppointment={onOpenAppointment}
+        onScheduleAppointment={onScheduleAppointment}
+      />
     </ResidentialDashboardShell>
   )
 }

@@ -3692,7 +3692,7 @@ function renderActiveTransactionsBlock({
                         <h1 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#101828]">
                           Agent Dashboard · My Performance
                         </h1>
-                        <p className="mt-1 text-sm text-[#667085]">Your personal residential sales and leasing performance.</p>
+                        <p className="mt-1 text-sm text-[#667085]">Your personal residential sales performance.</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2.5">
                         <ResidentialDashboardModeToggle value={residentialMode} onChange={setResidentialMode} />
@@ -3722,7 +3722,7 @@ function renderActiveTransactionsBlock({
                             trend={item.trend}
                             sparkline={item.sparkline}
                             tone={item.tone}
-                            emptyCopy={residentialMode === 'leasing' ? 'Leasing metrics will appear once leasing is enabled.' : ''}
+                            emptyCopy=""
                           />
                         )
                       })}

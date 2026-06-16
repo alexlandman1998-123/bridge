@@ -86,8 +86,9 @@ export function ResidentialDashboardShell({ children, className = '' }) {
 export function ResidentialDashboardModeToggle({ value = 'sales', onChange }) {
   const options = [
     { key: 'sales', label: 'Residential Sales' },
-    { key: 'leasing', label: 'Residential Leasing' },
   ]
+
+  if (options.length <= 1) return null
 
   return (
     <div className="inline-flex items-center rounded-full border border-[#d6dfeb] bg-[#f7f9fc] p-1 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
