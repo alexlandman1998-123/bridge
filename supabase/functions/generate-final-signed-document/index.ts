@@ -888,7 +888,7 @@ async function syncListingPublicationDraftFromSellerOnboarding({
 function resolveSignedMandateListingStatus(current: unknown) {
   const status = lower(current);
   if (["active", "under_offer", "transaction_created", "sold", "withdrawn"].includes(status)) return status;
-  return "mandate_signed";
+  return "active";
 }
 
 function listingAlreadyOwnsOperationalFields(status: unknown) {
@@ -896,7 +896,7 @@ function listingAlreadyOwnsOperationalFields(status: unknown) {
 }
 
 const SIGNED_MANDATE_LISTING_SELECT =
-  "id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value";
+  "id, assigned_agent_id, seller_lead_id, originating_crm_lead_id, listing_status, listing_visibility, mandate_status, seller_onboarding_status, is_active, title, address_line_1, property_type, suburb, city, province, asking_price, estimated_value";
 
 function isUniqueViolation(error: unknown) {
   const details = asRecord(error);
@@ -1118,8 +1118,8 @@ async function updateLeadConversionLink({
 }) {
   if (!organisationId || !leadId || !listingId) return false;
   const fullPayload = {
-    stage: "Mandate Signed",
-    status: "Mandate Signed",
+    stage: "Listing Live",
+    status: "Live",
     listing_id: listingId,
     mandate_packet_id: packetId || null,
     updated_at: new Date().toISOString(),
@@ -1136,8 +1136,8 @@ async function updateLeadConversionLink({
   result = await supabase
     .from("leads")
     .update({
-      stage: "Mandate Signed",
-      status: "Mandate Signed",
+      stage: "Listing Live",
+      status: "Live",
       updated_at: fullPayload.updated_at,
     })
     .eq("organisation_id", organisationId)
@@ -1248,6 +1248,8 @@ async function ensureListingFromSignedMandate({
 
   if (listing?.id) {
     const existingSellerOnboardingStatus = lower(listing.seller_onboarding_status);
+    const nextListingStatus = resolveSignedMandateListingStatus(listing.listing_status);
+    const autoActivated = nextListingStatus === "active";
     const listingOwnsOperationalFields = listingAlreadyOwnsOperationalFields(listing.listing_status);
     await supabase
       .from("private_listings")
@@ -1260,13 +1262,16 @@ async function ensureListingFromSignedMandate({
           : normalizeNullableUuid(listing.assigned_agent_id || lead?.assigned_agent_id || sourceContext.assignedAgentId || sourceContext.assigned_agent_id || sourceLead.assignedAgentId || sourceLead.assigned_agent_id),
         seller_lead_id: normalizeText(listing.seller_lead_id) || leadId || null,
         originating_crm_lead_id: normalizeText(listing.originating_crm_lead_id) || leadId || null,
-        listing_status: resolveSignedMandateListingStatus(listing.listing_status),
-        listing_visibility: normalizeText(listing.listing_visibility) || "internal",
+        listing_status: nextListingStatus,
+        listing_visibility: autoActivated
+          ? normalizeText(listing.listing_visibility) || "active_market"
+          : normalizeText(listing.listing_visibility) || "internal",
         mandate_status: "signed",
         mandate_packet_id: normalizeText(packet.id) || null,
         seller_onboarding_status: sellerOnboardingStatus === "completed" || !existingSellerOnboardingStatus || existingSellerOnboardingStatus === "not_started"
           ? sellerOnboardingStatus
           : existingSellerOnboardingStatus,
+        is_active: autoActivated ? true : Boolean(listing.is_active),
         title: listingOwnsOperationalFields ? normalizeText(listing.title) || null : firstMissingText(listing.title, title),
         address_line_1: listingOwnsOperationalFields ? normalizeText(listing.address_line_1) || null : firstMissingText(listing.address_line_1, address),
         property_type: listingOwnsOperationalFields ? normalizeText(listing.property_type) || null : firstMissingText(listing.property_type, placeholders.property_type, placeholders["property.property_type"]),
@@ -1285,8 +1290,8 @@ async function ensureListingFromSignedMandate({
       seller_lead_id: leadId || null,
       originating_crm_lead_id: leadId || null,
       listing_reference: createListingReference(),
-      listing_status: "mandate_signed",
-      listing_visibility: "internal",
+      listing_status: "active",
+      listing_visibility: "active_market",
       property_type: firstValue(placeholders.property_type, placeholders["property.property_type"]) || null,
       listing_category: "private_sale",
       title: title || null,
@@ -1302,7 +1307,7 @@ async function ensureListingFromSignedMandate({
       mandate_status: "signed",
       mandate_packet_id: normalizeText(packet.id) || null,
       seller_onboarding_status: sellerOnboardingStatus,
-      is_active: false,
+      is_active: true,
       created_by: null,
     };
     const insert = await supabase
@@ -1369,7 +1374,7 @@ async function ensureListingFromSignedMandate({
       private_listing_id: listingId,
       activity_type: "mandate_signed",
       activity_title: "Mandate signed",
-      activity_description: "All required mandate signers completed. Listing shell is ready for agent completion.",
+      activity_description: "All required mandate signers completed. The linked listing was created or promoted to live automatically.",
       performed_by: null,
       visibility: "client_visible",
       metadata: {

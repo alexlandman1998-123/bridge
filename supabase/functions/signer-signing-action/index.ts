@@ -22,6 +22,10 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function lower(value: unknown) {
+  return normalizeText(value).toLowerCase();
+}
+
 function valueIndicatesMarried(value: unknown) {
   const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, "_");
   if (!normalized) return false;
@@ -436,9 +440,9 @@ async function syncSellerMandateCompletion({
     : {};
   const leadIds = collectMandateLeadIds(packet, sourceContext);
   const syncedListingIds = new Set<string>();
+  const syncedListingStatuses = new Map<string, { status: string; visibility: string; isActive: boolean }>();
 
   const listingPatch = {
-    listing_status: "mandate_signed",
     mandate_status: "signed",
     mandate_packet_id: packetId,
     updated_at: nowIso,
@@ -448,6 +452,13 @@ async function syncSellerMandateCompletion({
     for (const row of rows || []) {
       const id = normalizeText(row?.id);
       if (id) syncedListingIds.add(id);
+      if (id) {
+        syncedListingStatuses.set(id, {
+          status: lower(row?.listing_status),
+          visibility: lower(row?.listing_visibility),
+          isActive: Boolean(row?.is_active),
+        });
+      }
     }
   };
 
@@ -456,7 +467,7 @@ async function syncSellerMandateCompletion({
     .update(listingPatch)
     .eq("organisation_id", organisationId)
     .eq("mandate_packet_id", packetId)
-    .select("id");
+    .select("id, listing_status, listing_visibility, is_active");
   if (byPacket.error) console.error("[mandate-signing] listing mandate packet sync failed", byPacket.error);
   else collectListings(byPacket.data as Record<string, unknown>[]);
 
@@ -466,7 +477,7 @@ async function syncSellerMandateCompletion({
       .update(listingPatch)
       .eq("organisation_id", organisationId)
       .eq("seller_lead_id", leadId)
-      .select("id");
+      .select("id, listing_status, listing_visibility, is_active");
     if (bySellerLead.error) console.error("[mandate-signing] listing seller lead sync failed", bySellerLead.error);
     else collectListings(bySellerLead.data as Record<string, unknown>[]);
 
@@ -475,17 +486,25 @@ async function syncSellerMandateCompletion({
       .update(listingPatch)
       .eq("organisation_id", organisationId)
       .eq("originating_crm_lead_id", leadId)
-      .select("id");
+      .select("id, listing_status, listing_visibility, is_active");
     if (byOriginatingLead.error) console.error("[mandate-signing] listing originating lead sync failed", byOriginatingLead.error);
     else collectListings(byOriginatingLead.data as Record<string, unknown>[]);
   }
 
   if (leadIds.length) {
+    const anyListingLive = Array.from(syncedListingStatuses.values()).some((listing) =>
+      listing.status === "active" ||
+      listing.status === "under_offer" ||
+      listing.status === "transaction_created" ||
+      listing.status === "sold" ||
+      listing.visibility === "active_market" ||
+      listing.isActive,
+    );
     const leadUpdate = await supabase
       .from("leads")
       .update({
-        stage: "Mandate Signed",
-        status: "Mandate Signed",
+        stage: anyListingLive ? "Listing Live" : "Mandate Signed",
+        status: anyListingLive ? "Live" : "Signed",
         mandate_packet_id: packetId,
         updated_at: nowIso,
       })

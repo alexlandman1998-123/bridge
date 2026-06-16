@@ -397,6 +397,7 @@ function isListingLive(listing = {}) {
   return Boolean(
     status === 'active' ||
     status === 'listing_active' ||
+    status === 'listing_live' ||
     status === 'active_market' ||
     status === 'live' ||
     visibility === 'active_market' ||

@@ -30,7 +30,7 @@ import { fetchTransactionById, updateOtpDocumentWorkflowState } from '../lib/api
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { fetchAgencyOnboardingSettings } from '../lib/settingsApi'
-import { getSellerOnboardingByToken } from '../services/privateListingService'
+import { createPrivateListingActivity, getSellerOnboardingByToken, updatePrivateListing } from '../services/privateListingService'
 import { getMandateSignerRoleLabel, resolveMandateSecondarySignerConfig } from '../lib/mandateSignatureRules'
 
 function normalizeText(value) {
@@ -1781,10 +1781,46 @@ export default function LegalDocumentWorkspacePage() {
       }
       const nextMandateStatus = normalizeText(signingStatus) || (signerRole === 'agent' ? 'sent_to_agent' : signerRole === 'seller' ? 'sent_to_seller' : 'sent_for_signature')
       void syncLeadMandateState({
+        stage: 'Mandate Sent',
+        status: 'Sent',
         mandateStatus: nextMandateStatus,
         mandateSentAt: new Date().toISOString(),
         mandateSigningLink: signingLink,
       }, { reason: 'persist the mandate send state' })
+      const linkedListingId = normalizeText(
+        leadContext?.lead?.listingId ||
+        leadContext?.lead?.listing_id ||
+        leadContext?.lead?.privateListingId ||
+        leadContext?.lead?.private_listing_id,
+      )
+      if (isSupabaseConfigured && isUuidLike(linkedListingId)) {
+        try {
+          await updatePrivateListing(
+            linkedListingId,
+            {
+              listingStatus: 'mandate_sent',
+              mandateStatus: 'sent',
+            },
+            { includeRequirementsAndDocuments: false },
+          )
+          await createPrivateListingActivity({
+            privateListingId: linkedListingId,
+            activityType: 'mandate_sent',
+            activityTitle: 'Mandate sent for digital signing',
+            activityDescription: `Mandate was sent to the ${recipientLabelLower} for digital signing.`,
+            performedBy: normalizeText(actor.id),
+            visibility: 'internal',
+            metadata: {
+              leadId: normalizeText(leadContext?.lead?.leadId),
+              packetId: normalizeText(status?.packet?.id || latestVersion?.packet_id || sentPacketId),
+              signingMethod: 'digital',
+              recipientRole: signerRole || null,
+            },
+          })
+        } catch (listingUpdateError) {
+          console.warn('[LegalDocumentWorkspacePage] linked listing mandate send sync skipped.', listingUpdateError)
+        }
+      }
       void recordLeadMandateActivity({
         agent: { id: actor.id, name: normalizeText(profile?.full_name || profile?.fullName || profile?.email || actor.name), email: actor.email },
         activityType: 'Mandate Sent',
