@@ -570,6 +570,15 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     hasValue(onboarding?.commissionRate) ||
     hasValue(onboarding?.commissionTerms) ||
     hasValue(onboarding?.mandateCommissionTerms) ||
+    hasValue(onboarding?.commissionPercentage) ||
+    hasValue(onboarding?.commissionPercent) ||
+    hasValue(onboarding?.commission_percent) ||
+    hasValue(onboarding?.mandateCommissionPercentage) ||
+    hasValue(onboarding?.mandateCommissionPercent) ||
+    hasValue(onboarding?.commissionAmount) ||
+    hasValue(onboarding?.commission_amount) ||
+    hasValue(onboarding?.mandateCommissionAmount) ||
+    hasValue(onboarding?.mandateTerms) ||
     hasValue(listing?.commission?.commission_percentage) ||
     hasValue(listing?.commission?.commission_amount)
   const sellerName = resolveSellerDisplayName({
@@ -1356,12 +1365,17 @@ export function getListingReadinessSummary(listing = {}) {
   const requirements = toArray(listing?.documentRequirements).length ? toArray(listing?.documentRequirements) : derivedRequirements
   const documents = toArray(listing?.documents)
   const mandateReadiness = getMandateReadiness(requirementProfile)
+  const mandateSigned = MANDATE_SIGNED_STATUSES.has(normalizeKey(requirementProfile?.mandateStatus))
+  const requirementSatisfied = (row) => {
+    const key = normalizeKey(row?.requirement_key || row?.key)
+    if (key === 'signed_mandate' && mandateSigned) return true
+    return isSellerRequirementSatisfied(row, documents)
+  }
 
   const requiredRows = requirements.filter((row) => row?.is_required !== false && normalizeKey(row?.status) !== 'not_applicable')
-  const completedRows = requiredRows.filter((row) => isSellerRequirementSatisfied(row, documents))
-  const missingRows = requiredRows.filter((row) => !isSellerRequirementSatisfied(row, documents))
+  const completedRows = requiredRows.filter((row) => requirementSatisfied(row))
+  const missingRows = requiredRows.filter((row) => !requirementSatisfied(row))
   const completionPct = requiredRows.length ? Math.round((completedRows.length / requiredRows.length) * 100) : 0
-  const mandateSigned = MANDATE_SIGNED_STATUSES.has(normalizeKey(requirementProfile?.mandateStatus))
   const activeReady = Boolean(mandateReadiness.ready && mandateSigned && missingRows.length === 0)
   const blockedBy = [
     ...mandateReadiness.blockers,

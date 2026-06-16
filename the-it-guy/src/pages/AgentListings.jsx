@@ -37,7 +37,7 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, updatePrivateListing, uploadPrivateListingDocument } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, transitionPrivateListingStatus, updatePrivateListing, uploadPrivateListingDocument } from '../services/privateListingService'
 import { getListingPartnerShareOptions, shareListingWithPartner, unshareListingWithPartner } from '../services/partnerListingSharingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import {
@@ -287,26 +287,84 @@ function getListingDocuments(listing = {}) {
 function listingHasDocumentSignal(listing, matchers = []) {
   const normalizedMatchers = matchers.map(normalizeKey)
   return getListingDocuments(listing).some((document) => {
-    const key = normalizeKey([document.key, document.documentType, document.document_type, document.documentCategory, document.category, document.name, document.document_name].filter(Boolean).join(' '))
+    const key = normalizeKey([
+      document.key,
+      document.requirementKey,
+      document.requirement_key,
+      document.documentType,
+      document.document_type,
+      document.documentCategory,
+      document.category,
+      document.name,
+      document.document_name,
+      document.fileName,
+      document.file_name,
+    ].filter(Boolean).join(' '))
     const status = normalizeKey(document.status || document.documentStatus || document.document_status)
     const statusReady = !status || ['uploaded', 'approved', 'verified', 'completed', 'signed'].includes(status)
     return statusReady && normalizedMatchers.some((matcher) => key.includes(matcher))
   })
 }
 
+function listingHasFicaDocuments(listing = {}) {
+  const hasBundledFica = listingHasDocumentSignal(listing, ['fica'])
+  const hasIdentity = listingHasDocumentSignal(listing, [
+    'seller id',
+    'id document',
+    'id_document',
+    'identity',
+    'identity_documents',
+    'passport',
+  ])
+  const hasProofOfAddress = listingHasDocumentSignal(listing, [
+    'proof of address',
+    'proof_of_address',
+    'residential address',
+    'residence',
+  ])
+  return hasBundledFica || (hasIdentity && hasProofOfAddress)
+}
+
 function getListingComplianceWarnings(listing = {}, completeness = null) {
   const embedded = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description) || {}
   const seller = getListingSeller(listing)
+  const sellerFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : listing?.seller_onboarding?.form_data && typeof listing.seller_onboarding.form_data === 'object'
+      ? listing.seller_onboarding.form_data
+      : {}
   const commission = listing.commission || embedded.commission || {}
   const property = embedded.property || {}
   const mandateStatus = normalizeKey(listing.mandateStatus || listing.mandate_status || embedded.mandateStatus)
   const missingItems = new Set([...(completeness?.missingItems || []), ...(listing.missingFollowUpItems || [])].map(normalizeKey))
-  const hasCommission = Boolean(normalizeText(commission.value || commission.amount || commission.percentage || embedded.commissionStatus) || normalizeText(embedded?.commission?.value))
+  const hasCommission = Boolean(
+    normalizeText(
+      commission.value ||
+        commission.amount ||
+        commission.commission_amount ||
+        commission.percentage ||
+        commission.commission_percentage ||
+        commission.mandate_terms ||
+        embedded.commissionStatus,
+    ) ||
+      normalizeText(embedded?.commission?.value) ||
+      normalizeText(
+        sellerFormData.commissionPercentage ||
+          sellerFormData.commissionPercent ||
+          sellerFormData.commission_percent ||
+          sellerFormData.mandateCommissionPercentage ||
+          sellerFormData.mandateCommissionPercent ||
+          sellerFormData.commissionAmount ||
+          sellerFormData.commission_amount ||
+          sellerFormData.mandateCommissionAmount ||
+          sellerFormData.mandateTerms,
+      )
+  )
   const hasPhotos = listingHasDocumentSignal(listing, ['property photo', 'property photos', 'photos']) || Boolean(Array.isArray(listing.images) && listing.images.length)
   const hasMandate = ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(mandateStatus) || listingHasDocumentSignal(listing, ['mandate', 'signed_mandate'])
   const warnings = []
   if (!hasMandate || missingItems.has('signed mandate')) warnings.push('Mandate missing')
-  if (!seller.registrationNumber && !listingHasDocumentSignal(listing, ['seller id', 'fica'])) warnings.push('Seller FICA missing')
+  if (!seller.registrationNumber && !listingHasFicaDocuments(listing)) warnings.push('Seller FICA missing')
   if (!seller.email || !seller.phone) warnings.push('Seller contact incomplete')
   if (!hasCommission || missingItems.has('commission structure')) warnings.push('Commission missing')
   if (!hasPhotos || missingItems.has('property photos')) warnings.push('Photos missing')
@@ -794,6 +852,7 @@ function AgentListings({ initialTab = null } = {}) {
   const [deletedListingIds, setDeletedListingIds] = useState(() => readDeletedListingIds())
   const [organisationId, setOrganisationId] = useState('')
   const [deletingListingId, setDeletingListingId] = useState('')
+  const [publishingListingId, setPublishingListingId] = useState('')
   const [openListingMenuId, setOpenListingMenuId] = useState('')
   const [shareModalListing, setShareModalListing] = useState(null)
   const [shareOptions, setShareOptions] = useState([])
@@ -1544,6 +1603,44 @@ function AgentListings({ initialTab = null } = {}) {
     return listingIdentityKeys.find((value) => isUuidLike(value)) || ''
   }
 
+  async function handlePublishListing(card, event) {
+    event?.stopPropagation?.()
+    const remoteListingId = getRemoteListingIdForCard(card)
+    if (!remoteListingId) {
+      setError('Open the listing detail before publishing this locally saved listing.')
+      return
+    }
+
+    setPublishingListingId(card.id)
+    setOpenListingMenuId('')
+    setError('')
+    setWorkflowMessage('')
+
+    try {
+      const result = await transitionPrivateListingStatus(remoteListingId, 'active', {
+        metadata: {
+          source: 'agent_listings_publish_action',
+          triggeredFrom: 'listings_page',
+        },
+      })
+      const publishedListing = result?.listing || null
+      if (publishedListing?.id) {
+        setPrivateListings((rows) => rows.map((row) => {
+          const rowKeys = getListingIdentityKeys(row)
+          return rowKeys.some((key) => key === publishedListing.id || key === remoteListingId)
+            ? { ...row, ...publishedListing }
+            : row
+        }))
+      }
+      await loadData({ showLoading: false })
+      setWorkflowMessage(`"${card.title || 'Listing'}" is now live.`)
+    } catch (publishError) {
+      setError(publishError?.message || 'Unable to publish this listing yet.')
+    } finally {
+      setPublishingListingId('')
+    }
+  }
+
   async function openPartnerShareModal(card, event) {
     event.stopPropagation()
     const remoteListingId = getRemoteListingIdForCard(card)
@@ -1663,6 +1760,7 @@ function AgentListings({ initialTab = null } = {}) {
         inventoryStatusKey: inventoryStatus.key,
         inventoryFilterKey: inventoryStatus.filterKey,
         inventoryStatusLabel: inventoryStatus.label,
+        canPublish: statusKey === 'mandate_signed' || inventoryStatus.key === 'ready_to_publish' || inventoryStatus.filterKey === 'ready_to_publish',
         attentionLine: '',
         mandateStatusLabel: getMandateStatus(listing),
         completenessScore: completeness.score,
@@ -2082,6 +2180,17 @@ function AgentListings({ initialTab = null } = {}) {
                                 Share With Partners
                               </button>
                             ) : null}
+                            {card.canPublish ? (
+                              <button
+                                type="button"
+                                onClick={(event) => handlePublishListing(card, event)}
+                                disabled={publishingListingId === card.id}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f7d44] transition hover:bg-[#f2fbf5] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {publishingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                                Make Listing Live
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               onClick={(event) => {
@@ -2123,11 +2232,22 @@ function AgentListings({ initialTab = null } = {}) {
                       </div>
                     )}
 
-                    <div className="mt-auto flex items-center justify-between gap-3 border-t border-[#eef3f8] pt-3 text-[0.82rem] text-[#53687f]">
+                    <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[#eef3f8] pt-3 text-[0.82rem] text-[#53687f]">
                       <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold">
                         <UserRound size={14} className="shrink-0 text-[#1f4f78]" />
                         <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
                       </span>
+                      {card.canPublish ? (
+                        <button
+                          type="button"
+                          onClick={(event) => handlePublishListing(card, event)}
+                          disabled={publishingListingId === card.id}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#bde7cc] bg-[#1f7d44] px-3 py-1.5 font-semibold text-white shadow-[0_8px_16px_rgba(31,125,68,0.18)] transition hover:bg-[#176337] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {publishingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                          Make Live
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={(event) => {

@@ -936,6 +936,39 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     primaryMandateDocument?.fileUrl,
     primaryMandateDocument?.file_url,
   )
+  const commissionTerms = {
+    commission_type: pickFirstText(onboardingFormData.commissionType, onboardingFormData.commissionStructure),
+    commission_structure: pickFirstText(onboardingFormData.commissionStructure, onboardingFormData.commissionType),
+    commission_percentage: pickFirstText(
+      onboardingFormData.commissionPercentage,
+      onboardingFormData.commissionPercent,
+      onboardingFormData.commission_percent,
+      onboardingFormData.mandateCommissionPercentage,
+      onboardingFormData.mandateCommissionPercent,
+    ),
+    commission_amount: pickFirstText(
+      onboardingFormData.commissionAmount,
+      onboardingFormData.commission_amount,
+      onboardingFormData.mandateCommissionAmount,
+    ),
+    vat_handling: pickFirstText(onboardingFormData.vatHandling),
+    payment_responsibility: pickFirstText(onboardingFormData.paymentResponsibility),
+    mandate_terms: pickFirstText(onboardingFormData.mandateTerms, onboardingFormData.mandateCommissionTerms),
+    commission_notes: pickFirstText(onboardingFormData.commissionNotes),
+    commission_split: pickFirstText(
+      onboardingFormData.agencyCommissionStructureName,
+      onboardingFormData.agency_commission_structure_name,
+      onboardingFormData.commissionStructureName,
+    ),
+    commission_split_id: pickFirstText(
+      onboardingFormData.agencyCommissionStructureId,
+      onboardingFormData.agency_commission_structure_id,
+      onboardingFormData.commissionStructureId,
+    ),
+    updated_at: pickFirstText(onboardingFormData.commissionUpdatedAt),
+    updated_by: pickFirstText(onboardingFormData.commissionUpdatedBy),
+    source: pickFirstText(onboardingFormData.commissionSource),
+  }
 
   const mapped = {
     id: row.id,
@@ -1085,6 +1118,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     mandateSignedUrl: mandateDocumentUrl,
     mandateUrl: mandateDocumentUrl,
     mandate: {
+      type: row.mandate_type || onboardingFormData.mandateType || 'sole',
       status: normalizeStatus(row.mandate_status, MANDATE_STATUSES, 'not_started'),
       packetId: row.mandate_packet_id || null,
       signedAt: mandateSignedDate || null,
@@ -1094,6 +1128,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       documentUrl: mandateDocumentUrl,
       updatedAt: primaryMandateDocument?.uploaded_at || row.updated_at || row.created_at || null,
     },
+    commission: commissionTerms,
     seller: {
       name: '',
       email: '',

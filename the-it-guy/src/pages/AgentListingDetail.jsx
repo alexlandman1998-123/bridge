@@ -93,6 +93,7 @@ import {
   deletePrivateListing,
   sendSellerOnboarding,
   syncPrivateListingDistributionData,
+  transitionPrivateListingStatus,
   updatePrivateListing,
   updatePrivateListingOnboardingFormData,
   uploadPrivateListingDocument,
@@ -1205,6 +1206,7 @@ function AgentListingDetail() {
   const [detailError, setDetailError] = useState('')
   const [deletingListing, setDeletingListing] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
+  const [publishingListing, setPublishingListing] = useState(false)
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
   const [showFullGallery, setShowFullGallery] = useState(false)
@@ -2965,12 +2967,13 @@ function AgentListingDetail() {
     const sourceRequirements = Array.isArray(dynamicSellerRequirements) ? dynamicSellerRequirements : []
     const uploadedDocuments = Array.isArray(listingRecord?.documents) ? listingRecord.documents : []
     const suggested = [
-      { key: 'id_document', label: 'ID Document', match: /id|identity|seller/i },
-      { key: 'proof_of_address', label: 'Proof of Address', match: /address|residence|proof/i },
-      { key: 'title_deed', label: 'Title Deed / Reference', match: /title|deed/i },
-      { key: 'rates_account', label: 'Rates Account', match: /rates/i },
-      { key: 'fica_documents', label: 'FICA Documents', match: /fica/i },
-      { key: 'mandate_signed', label: 'Signed Mandate', match: /mandate|mandate_signature|signed_mandate/i },
+      { key: 'id_document', label: 'ID Document / Passport', match: /id_document|identity_documents|identity|seller_id|id document|passport/i },
+      { key: 'proof_of_address', label: 'Proof of Address', match: /proof_of_address|proof of address|residential_address|residence|address/i },
+      { key: 'title_deed_copy', label: 'Title Deed / Reference', match: /title_deed_copy|title_deed|title deed|deed/i },
+      { key: 'rates_account', label: 'Rates Account', match: /rates_account|rates account|rates/i },
+      { key: 'property_condition_disclosure', label: 'Property Condition Disclosure', match: /property_condition_disclosure|condition disclosure|disclosure|defects/i },
+      { key: 'solar_compliance_documents', label: 'Solar Compliance Documents', match: /solar_compliance_documents|solar compliance|solar/i, defaultRequired: false },
+      { key: 'signed_mandate', label: 'Signed Mandate', match: /signed_mandate|mandate_signature|mandate/i },
     ]
     return suggested.map((item) => {
       const requirement = sourceRequirements.find((row) =>
@@ -2993,7 +2996,14 @@ function AgentListingDetail() {
           document?.requirementKey,
         ].filter(Boolean).join(' '))
         return item.match.test(searchable) || (requirementKey && searchable.includes(requirementKey))
-      }) || null
+      }) || (item.key === 'signed_mandate' && mandateWorkspace.isSigned
+        ? {
+            status: 'signed',
+            uploadedAt: mandateWorkspace.signedDate || listingRecord?.updatedAt || listingRecord?.createdAt || '',
+            document_name: 'Signed mandate',
+            url: mandateWorkspace.signedUrl || mandateWorkspace.viewUrl || '',
+          }
+        : null)
       const status = String(upload?.status || requirement?.status || '').trim().toLowerCase()
       const hasUpload = Boolean(
         upload?.storage_path ||
@@ -3005,9 +3015,10 @@ function AgentListingDetail() {
           upload?.uploaded_at ||
           upload?.uploadedAt,
       )
+      const required = requirement ? requirement.is_required !== false : item.defaultRequired !== false
       return {
         ...item,
-        required: requirement?.is_required !== false,
+        required,
         uploaded: hasUpload,
         status: hasUpload ? (status || 'uploaded') : status || 'missing',
         uploadedOn: upload?.uploadedAt || upload?.uploaded_at || upload?.createdAt || upload?.created_at || '',
@@ -3015,7 +3026,7 @@ function AgentListingDetail() {
         url: upload?.url || upload?.fileUrl || upload?.file_url || upload?.signedUrl || '',
       }
     })
-  }, [dynamicSellerRequirements, listingRecord?.documents])
+  }, [dynamicSellerRequirements, listingRecord?.createdAt, listingRecord?.documents, listingRecord?.updatedAt, mandateWorkspace.isSigned, mandateWorkspace.signedDate, mandateWorkspace.signedUrl, mandateWorkspace.viewUrl])
 
   const listingReadinessItems = useMemo(() => {
     const requiredSellerDocuments = sellerDocumentTrackerRows.filter((doc) => doc.required)
@@ -3039,6 +3050,12 @@ function AgentListingDetail() {
   const listingReadinessPercent = listingReadinessItems.length
     ? Math.round((listingReadinessCompleted / listingReadinessItems.length) * 100)
     : 0
+  const listingIsLive = useMemo(() => {
+    const status = normalizeKey(listingRecord?.listingStatus || listingRecord?.status || marketingDraft.listingStatus)
+    const visibility = normalizeKey(listingRecord?.listingVisibility || listingRecord?.listing_visibility)
+    const bridgeStatus = normalizeKey(listingRecord?.bridgeListingStatus || marketingDraft.bridgeListingStatus)
+    return Boolean(listingRecord?.isActive) || ['active', 'published', 'live'].includes(status) || visibility === 'active_market' || bridgeStatus === 'published'
+  }, [listingRecord, marketingDraft.bridgeListingStatus, marketingDraft.listingStatus])
 
   const sellerFormData = useMemo(() => getListingSellerFormData(listingRecord), [listingRecord])
 
@@ -3095,7 +3112,26 @@ function AgentListingDetail() {
         field('Asking price', [askingPrice], 'currency'),
         field('Mandate start date', [valueFor('mandateStartDate', 'startDate'), marketingDraft.listingDate, listingRecord?.mandateStartDate], 'date'),
         field('Expiry date', [valueFor('expiryDate', 'mandateEndDate'), mandateWorkspace.expiryDate], 'date'),
-        field('Commission preference', [valueFor('commissionPreference', 'commissionPercentage', 'commission_percent'), listingRecord?.commission?.percentage, listingRecord?.commission?.commission_percentage]),
+        field('Commission preference', [
+          valueFor(
+            'commissionPreference',
+            'commissionType',
+            'commissionStructure',
+            'commissionPercentage',
+            'commissionPercent',
+            'commission_percent',
+            'mandateCommissionPercentage',
+            'mandateCommissionPercent',
+            'commissionAmount',
+            'commission_amount',
+            'mandateCommissionAmount',
+          ),
+          listingRecord?.commission?.percentage,
+          listingRecord?.commission?.commission_percentage,
+          listingRecord?.commission?.amount,
+          listingRecord?.commission?.commission_amount,
+        ]),
+        field('Mandate terms', [valueFor('mandateTerms', 'mandateCommissionTerms'), listingRecord?.commission?.mandateTerms, listingRecord?.commission?.mandate_terms]),
         field('POPI consent', [popiConsent]),
       ]),
       section('Compliance', ShieldCheck, [
@@ -3153,8 +3189,10 @@ function AgentListingDetail() {
       commission?.commission_percentage,
       commission?.percentage,
       sellerFormData?.commissionPercentage,
+      sellerFormData?.commissionPercent,
       sellerFormData?.commission_percent,
       sellerFormData?.mandateCommissionPercentage,
+      sellerFormData?.mandateCommissionPercent,
       0,
     )) || 0
     const amount = Number(firstDraftValue(
@@ -3162,6 +3200,7 @@ function AgentListingDetail() {
       commission?.amount,
       sellerFormData?.commissionAmount,
       sellerFormData?.commission_amount,
+      sellerFormData?.mandateCommissionAmount,
       0,
     )) || 0
     const price = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
@@ -3169,7 +3208,7 @@ function AgentListingDetail() {
     const vatHandling = String(firstDraftValue(commission?.vat, commission?.vat_handling, sellerFormData?.vatHandling, sellerFormData?.vatApplicable, '')).trim()
     const vatIncluded = vatHandling.toLowerCase().includes('incl') || vatHandling.toLowerCase() === 'yes'
     const estimatedInclVat = vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0
-    const mandateTerms = firstDraftValue(commission?.mandate_terms, commission?.mandateTerms, sellerFormData?.mandateTerms, sellerFormData?.specialConditions)
+    const mandateTerms = firstDraftValue(commission?.mandate_terms, commission?.mandateTerms, sellerFormData?.mandateTerms, sellerFormData?.mandateCommissionTerms, sellerFormData?.specialConditions)
     const paymentResponsibility = firstDraftValue(commission?.payment_responsibility, commission?.paymentResponsibility, sellerFormData?.paymentResponsibility)
     const notes = firstDraftValue(commission?.commission_notes, commission?.notes, sellerFormData?.commissionNotes, sellerFormData?.notes, '')
     const lastUpdated = firstDraftValue(commission?.updated_at, commission?.updatedAt, listingRecord?.mandate?.updatedAt, listingRecord?.updatedAt)
@@ -3183,7 +3222,7 @@ function AgentListingDetail() {
       estimatedExVat,
       vatHandling: vatHandling || 'Not captured',
       vatIncluded,
-      split: commission?.commission_split || commission?.split || 'Not captured',
+      split: firstDraftValue(commission?.commission_split, commission?.split, sellerFormData?.agencyCommissionStructureName, sellerFormData?.agency_commission_structure_name, sellerFormData?.commissionStructureName) || 'Not captured',
       coAgentSplit: commission?.co_agent_split || commission?.coAgentSplit || 'Not captured',
       referralSplit: commission?.referral_split || commission?.referralSplit || 'Not captured',
       mandateTerms: mandateTerms || '',
@@ -3914,6 +3953,60 @@ function AgentListingDetail() {
       }),
       { message: 'Listing marked ready for publishing.' },
     )
+  }
+
+  async function publishListing() {
+    if (!listingRecord?.id) return
+    setPublishingListing(true)
+    setDetailMessage('')
+    setDetailError('')
+    try {
+      const localPatch = {
+        ...listingRecord,
+        listingStatus: 'active',
+        status: 'active',
+        listingVisibility: 'active_market',
+        isActive: true,
+        bridgeListingStatus: 'published',
+        propertyDetails: {
+          ...(listingRecord?.propertyDetails || {}),
+          listingStatus: 'active',
+          publicationStatus: 'Published',
+        },
+      }
+
+      if (!isSupabaseConfigured) {
+        patchListing((row) => ({ ...row, ...localPatch }))
+        setMarketingDraft((previous) => ({
+          ...previous,
+          listingStatus: 'active',
+          publicationStatus: 'Published',
+          bridgeListingStatus: 'published',
+        }))
+        setDetailMessage('Listing is now live locally.')
+        return
+      }
+
+      const result = await transitionPrivateListingStatus(listingRecord.id, 'active', {
+        metadata: {
+          source: 'agent_listing_detail_publish_action',
+          triggeredFrom: 'listing_detail',
+        },
+      })
+      const publishedListing = result?.listing || localPatch
+      setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(localPatch, publishedListing)))
+      setMarketingDraft((previous) => ({
+        ...previous,
+        listingStatus: 'active',
+        publicationStatus: 'Published',
+        bridgeListingStatus: 'published',
+      }))
+      setDetailMessage('Listing is now live.')
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to make this listing live yet.')
+    } finally {
+      setPublishingListing(false)
+    }
   }
 
   async function applyMarketingDraftAndPersist(updater, { message = '', showSaving = false } = {}) {
@@ -6602,6 +6695,10 @@ function AgentListingDetail() {
                       <CheckCircle2 size={15} />
                       Mark Ready for Publishing
                     </Button>
+                    <Button size="sm" onClick={publishListing} disabled={publishingListing || listingIsLive}>
+                      {publishingListing ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+                      {listingIsLive ? 'Listing Live' : 'Make Listing Live'}
+                    </Button>
                   </div>
                 </article>
 
@@ -6725,7 +6822,7 @@ function AgentListingDetail() {
                   <Button size="sm" onClick={saveMarketingDraft}>Save Link Changes</Button>
                 </div>
 
-                <form onSubmit={addExternalListingLink} className="mt-5 grid gap-3 rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-3 lg:grid-cols-[170px_minmax(220px,1fr)_140px_150px_150px_minmax(180px,1fr)_auto]">
+                <form onSubmit={addExternalListingLink} className="mt-5 grid min-w-0 gap-3 rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[minmax(150px,0.9fr)_minmax(220px,1.4fr)_minmax(130px,0.8fr)_minmax(140px,0.8fr)_minmax(140px,0.8fr)_minmax(160px,1fr)]">
                   <Field as="select" value={externalLinkDraft.platform} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, platform: event.target.value }))}>
                     {EXTERNAL_LINK_PLATFORM_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                   </Field>
@@ -6736,10 +6833,12 @@ function AgentListingDetail() {
                   <Field type="date" value={externalLinkDraft.publishedAt} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, publishedAt: event.target.value }))} />
                   <Field type="date" value={externalLinkDraft.lastCheckedAt} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, lastCheckedAt: event.target.value }))} />
                   <Field value={externalLinkDraft.notes} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Notes" />
-                  <Button type="submit" size="sm">
-                    <Plus size={15} />
-                    Add Listing Link
-                  </Button>
+                  <div className="flex justify-end sm:col-span-2 xl:col-span-3 2xl:col-span-6">
+                    <Button type="submit" size="sm">
+                      <Plus size={15} />
+                      Add Listing Link
+                    </Button>
+                  </div>
                 </form>
 
                 <div className="mt-5 overflow-x-auto">
