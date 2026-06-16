@@ -5,9 +5,12 @@ import {
   CalendarDays,
   CheckCircle2,
   ClipboardList,
+  ChevronLeft,
+  ChevronRight,
   DollarSign,
   Mail,
   MessageCircle,
+  MoreHorizontal,
   Phone,
   Plus,
   Save,
@@ -20,6 +23,22 @@ import { Link, useSearchParams } from 'react-router-dom'
 import CommercialEmptyState from '../components/CommercialEmptyState'
 import { formatCurrency, formatDate, titleize } from '../commercialFormatters'
 import { toLookupOptions } from '../commercialPipelineHelpers'
+import { formatCurrencyZAR, formatRelativeTime, formatShortDate } from '../commercialProspectFormatters'
+import {
+  COMMERCIAL_CANVASSING_METHODS,
+  COMMERCIAL_CATEGORY_OPTIONS,
+  COMMERCIAL_PRIORITY_OPTIONS,
+  COMMERCIAL_PROSPECT_STATUSES,
+  COMMERCIAL_ROLE_OPTIONS,
+  getDealTypeFromRole,
+  getDealTypeLabel,
+  getPropertyCategoryLabel,
+  getProspectBadgeVariant,
+  getCategoryBadgeVariant,
+  getRoleLabel,
+} from '../commercialProspectTypes'
+import { deriveCommercialCanvassingMetrics, filterCommercialProspects, normaliseCommercialProspect } from '../commercialProspectFilters'
+import { validateCommercialProspectDraft } from '../commercialProspectValidation'
 import Button from '../../../components/ui/Button'
 import Field from '../../../components/ui/Field'
 import Modal from '../../../components/ui/Modal'
@@ -34,57 +53,50 @@ import { getCommercialCanvassingContext, listCommercialCanvassingWorkspace, crea
 import { getCommercialPipelineData } from '../services/commercialPipelineApi'
 
 const CARD_CLASS = 'rounded-[24px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.06)]'
-
+const FOLLOW_UP_PRIORITIES = COMMERCIAL_PRIORITY_OPTIONS
+const PROSPECT_STATUSES = COMMERCIAL_PROSPECT_STATUSES
+const CANVASSING_METHODS = COMMERCIAL_CANVASSING_METHODS
+const PROSPECT_PROPERTY_TYPES = COMMERCIAL_CATEGORY_OPTIONS.map((option) => option.label)
 const PROSPECT_TYPES = [
+  'Seller Prospect',
+  'Buyer Prospect',
   'Landlord Prospect',
   'Tenant Prospect',
   'Investor Prospect',
-  'Buyer Prospect',
   'Occupier Prospect',
   'Developer Prospect',
   'Other',
 ]
+const FILTER_DEAL_TABS = [
+  { value: 'all', label: 'All Prospects' },
+  { value: 'sale', label: 'Sales' },
+  { value: 'lease', label: 'Leases' },
+]
 
-const CANVASSING_METHODS = [
-  'Cold Call',
-  'Door Knock',
-  'Area Farming',
-  'Expired Listing',
-  'Lease Expiry Watch',
-  'Database Reactivation',
-  'WhatsApp Outreach',
-  'Email Outreach',
-  'Referral Follow-Up',
-  'Valuation Campaign',
+const SELL_REASON_OPTIONS = [
+  'Relocating',
+  'Scaling down',
+  'Portfolio optimisation',
+  'Owner-occupier exit',
+  'Investment disposal',
+  'Development opportunity',
+  'Unknown',
   'Other',
 ]
 
-const PROSPECT_STATUSES = [
-  'New',
-  'Contacted',
-  'Interested',
-  'Follow-Up Later',
-  'Qualified',
-  'Converted to Requirement',
-  'Converted to Deal',
-  'Converted to Contact',
-  'Lost',
-  'Archived',
-]
-
-const FOLLOW_UP_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
-
-const PROSPECT_PROPERTY_TYPES = [
-  'Office',
-  'Industrial',
-  'Retail',
-  'Mixed Use',
-  'Development Land',
-  'Agricultural',
-  'Warehouse',
-  'Commercial',
+const BUY_LOOKING_FOR_OPTIONS = [
+  'Owner-occupier premises',
+  'Investment property',
+  'Development land',
+  'Warehouse / industrial facility',
+  'Retail premises',
+  'Office premises',
+  'Agricultural asset',
   'Other',
 ]
+
+const PURCHASE_TIMELINE_OPTIONS = ['Immediately', '0–3 months', '3–6 months', '6–12 months', '12+ months', 'Unknown']
+const LEASE_TIMELINE_OPTIONS = ['Immediately', '0–3 months', '3–6 months', '6–12 months', '12+ months', 'Unknown']
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -131,10 +143,14 @@ function toneForStatus(status = '') {
 
 function toneClass(tone = 'slate') {
   switch (tone) {
+    case 'green':
     case 'emerald':
       return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    case 'purple':
     case 'violet':
       return 'border-violet-200 bg-violet-50 text-violet-700'
+    case 'pink':
+      return 'border-pink-200 bg-pink-50 text-pink-700'
     case 'amber':
       return 'border-amber-200 bg-amber-50 text-amber-700'
     case 'rose':
@@ -178,21 +194,33 @@ function getProspectStatus(prospect = {}) {
 
 function buildInitialDraft(defaultBrokerId = '', defaults = {}) {
   return {
+    prospectRole: 'seller',
+    dealType: 'sale',
+    propertyCategory: 'retail',
     companyName: '',
     contactName: '',
-    firstName: '',
-    lastName: '',
     phone: '',
     email: '',
-    prospectType: 'Landlord Prospect',
+    propertyAddress: '',
+    propertyName: '',
+    portfolioName: '',
+    lookingFor: '',
+    preferredArea: '',
+    spaceRequirement: '',
+    sizeRange: '',
+    budgetRange: '',
+    reasonForSelling: '',
+    targetPurchaseTimeline: '',
+    leaseTimeline: '',
+    vacancyDetails: '',
+    estimatedSaleValue: '',
+    estimatedMonthlyRental: '',
+    estimatedAnnualRental: '',
     canvassingMethod: 'Cold Call',
-    propertyType: '',
-    area: '',
     status: 'New',
     nextFollowUpDate: '',
     followUpPriority: 'Medium',
     followUpNote: '',
-    estimatedValue: '',
     notes: '',
     assignedBrokerId: defaultBrokerId,
     companyId: '',
@@ -208,9 +236,28 @@ function buildInitialDraft(defaultBrokerId = '', defaults = {}) {
 
 function buildDraftFromSearchParams(searchParams, defaultBrokerId = '') {
   const getParam = (key) => normalizeText(searchParams?.get(key))
+  const role = getParam('role') || getParam('prospectRole') || 'seller'
   return buildInitialDraft(defaultBrokerId, {
     companyName: getParam('companyName'),
     contactName: getParam('contactName'),
+    prospectRole: role,
+    dealType: getParam('deal') || getDealTypeFromRole(role),
+    propertyCategory: getParam('category') || getParam('propertyCategory') || 'retail',
+    propertyAddress: getParam('propertyAddress') || getParam('area'),
+    propertyName: getParam('propertyName') || getParam('portfolioName'),
+    portfolioName: getParam('portfolioName'),
+    lookingFor: getParam('lookingFor'),
+    preferredArea: getParam('preferredArea') || getParam('area'),
+    spaceRequirement: getParam('spaceRequirement'),
+    sizeRange: getParam('sizeRange'),
+    budgetRange: getParam('budgetRange'),
+    reasonForSelling: getParam('reasonForSelling'),
+    targetPurchaseTimeline: getParam('targetPurchaseTimeline'),
+    leaseTimeline: getParam('leaseTimeline'),
+    vacancyDetails: getParam('vacancyDetails'),
+    estimatedSaleValue: getParam('estimatedSaleValue'),
+    estimatedMonthlyRental: getParam('estimatedMonthlyRental'),
+    estimatedAnnualRental: getParam('estimatedAnnualRental'),
     propertyType: getParam('propertyType'),
     area: getParam('area'),
     status: getParam('status') || 'New',
@@ -232,7 +279,23 @@ function buildDraftFromSearchParams(searchParams, defaultBrokerId = '') {
 }
 
 function hasCreatePrefill(searchParams) {
-  return ['companyName', 'contactName', 'area', 'propertyId', 'vacancyId', 'listingId', 'linkedEntityType', 'linkedEntityId'].some((key) => Boolean(normalizeText(searchParams?.get(key))))
+  return [
+    'companyName',
+    'contactName',
+    'area',
+    'propertyAddress',
+    'propertyName',
+    'portfolioName',
+    'preferredArea',
+    'propertyId',
+    'vacancyId',
+    'listingId',
+    'linkedEntityType',
+    'linkedEntityId',
+    'role',
+    'deal',
+    'category',
+  ].some((key) => Boolean(normalizeText(searchParams?.get(key))))
 }
 
 function getWorkspaceLink(entityType = '', entityId = '') {
@@ -315,9 +378,9 @@ function ProspectStat({ label, value, detail, icon: Icon }) {
   )
 }
 
-function SearchField({ value, onChange, placeholder = 'Search canvassing prospects...' }) {
+function SearchField({ value, onChange, placeholder = 'Search canvassing prospects...', className = '' }) {
   return (
-    <label className="relative block">
+    <label className={`relative block ${className}`.trim()}>
       <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#7d8ea3]" />
       <Field
         value={value}
@@ -338,6 +401,317 @@ function EmptyDetailState() {
   )
 }
 
+function FieldError({ error }) {
+  if (!error) return null
+  return <p className="text-xs font-medium text-rose-600">{error}</p>
+}
+
+function ReviewCard({ title, lines = [] }) {
+  return (
+    <div className="rounded-[18px] border border-[#dfe8f3] bg-[#fbfdff] p-4">
+      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8293aa]">{title}</p>
+      <div className="mt-2 space-y-1 text-sm text-[#102236]">
+        {lines.filter(Boolean).map((line, index) => (
+          <p key={`${title}-${index}-${line}`} className="leading-6">
+            {line}
+          </p>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CreateLabel({ label, error, children, className = '' }) {
+  return (
+    <label className={`grid gap-1.5 ${className}`.trim()}>
+      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</span>
+      {children}
+      <FieldError error={error} />
+    </label>
+  )
+}
+
+function renderSellerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+  return (
+    <>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Owner / Company Name *" error={createErrors.companyName}>
+          <Field value={createDraft.companyName} onChange={(event) => updateCreateDraftField('companyName', event.target.value)} placeholder="Owner or company name" />
+        </CreateLabel>
+        <CreateLabel label="Contact Person">
+          <Field value={createDraft.contactName} onChange={(event) => updateCreateDraftField('contactName', event.target.value)} placeholder="Decision maker or main contact" />
+        </CreateLabel>
+        <CreateLabel label="Phone">
+          <Field value={createDraft.phone} onChange={(event) => updateCreateDraftField('phone', event.target.value)} placeholder="Phone number" />
+        </CreateLabel>
+        <CreateLabel label="Email">
+          <Field value={createDraft.email} onChange={(event) => updateCreateDraftField('email', event.target.value)} placeholder="Email address" />
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Property / Asset Address or Area *" error={createErrors.propertyAddress}>
+          <Field value={createDraft.propertyAddress} onChange={(event) => updateCreateDraftField('propertyAddress', event.target.value)} placeholder="Suburb, node, street address or area" />
+        </CreateLabel>
+        <CreateLabel label="Property Category *" error={createErrors.propertyCategory}>
+          <Field as="select" value={createDraft.propertyCategory} onChange={(event) => updateCreateDraftField('propertyCategory', event.target.value)}>
+            {COMMERCIAL_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Field>
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Estimated Sale Value">
+          <Field as="input" type="number" value={createDraft.estimatedSaleValue} onChange={(event) => updateCreateDraftField('estimatedSaleValue', event.target.value)} placeholder="e.g. R5 000 000" />
+        </CreateLabel>
+        <CreateLabel label="Reason for Selling">
+          <Field as="select" value={createDraft.reasonForSelling} onChange={(event) => updateCreateDraftField('reasonForSelling', event.target.value)}>
+            <option value="">Select reason</option>
+            {SELL_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <CreateLabel label="Follow-up Date">
+          <Field as="input" type="date" value={createDraft.nextFollowUpDate} onChange={(event) => updateCreateDraftField('nextFollowUpDate', event.target.value)} />
+        </CreateLabel>
+        <CreateLabel label="Priority">
+          <Field as="select" value={createDraft.followUpPriority} onChange={(event) => updateCreateDraftField('followUpPriority', event.target.value)}>
+            {FOLLOW_UP_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Assigned Broker" error={createErrors.assignedBrokerId}>
+          <Field as="select" value={createDraft.assignedBrokerId} onChange={(event) => updateCreateDraftField('assignedBrokerId', event.target.value)}>
+            <option value="">Unassigned</option>
+            {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Field>
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Canvassing Method">
+          <Field as="select" value={createDraft.canvassingMethod} onChange={(event) => updateCreateDraftField('canvassingMethod', event.target.value)}>
+            {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Notes">
+          <Field as="textarea" value={createDraft.notes} onChange={(event) => updateCreateDraftField('notes', event.target.value)} placeholder="Context, objections, next step..." />
+        </CreateLabel>
+      </div>
+    </>
+  )
+}
+
+function renderBuyerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+  return (
+    <>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Buyer / Company Name *" error={createErrors.companyName}>
+          <Field value={createDraft.companyName} onChange={(event) => updateCreateDraftField('companyName', event.target.value)} placeholder="Buyer or company name" />
+        </CreateLabel>
+        <CreateLabel label="Contact Person">
+          <Field value={createDraft.contactName} onChange={(event) => updateCreateDraftField('contactName', event.target.value)} placeholder="Decision maker or main contact" />
+        </CreateLabel>
+        <CreateLabel label="Phone">
+          <Field value={createDraft.phone} onChange={(event) => updateCreateDraftField('phone', event.target.value)} placeholder="Phone number" />
+        </CreateLabel>
+        <CreateLabel label="Email">
+          <Field value={createDraft.email} onChange={(event) => updateCreateDraftField('email', event.target.value)} placeholder="Email address" />
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Looking For *" error={createErrors.lookingFor}>
+          <Field as="select" value={createDraft.lookingFor} onChange={(event) => updateCreateDraftField('lookingFor', event.target.value)}>
+            <option value="">Select requirement</option>
+            {BUY_LOOKING_FOR_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Property Category *" error={createErrors.propertyCategory}>
+          <Field as="select" value={createDraft.propertyCategory} onChange={(event) => updateCreateDraftField('propertyCategory', event.target.value)}>
+            {COMMERCIAL_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Preferred Area *" error={createErrors.preferredArea}>
+          <Field value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} placeholder="Preferred area or node" />
+        </CreateLabel>
+        <CreateLabel label="Budget Range">
+          <Field value={createDraft.budgetRange} onChange={(event) => updateCreateDraftField('budgetRange', event.target.value)} placeholder="e.g. R100 000 - R150 000" />
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <CreateLabel label="Target Purchase Timeline">
+          <Field as="select" value={createDraft.targetPurchaseTimeline} onChange={(event) => updateCreateDraftField('targetPurchaseTimeline', event.target.value)}>
+            <option value="">Select timeline</option>
+            {PURCHASE_TIMELINE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Follow-up Date">
+          <Field as="input" type="date" value={createDraft.nextFollowUpDate} onChange={(event) => updateCreateDraftField('nextFollowUpDate', event.target.value)} />
+        </CreateLabel>
+        <CreateLabel label="Priority">
+          <Field as="select" value={createDraft.followUpPriority} onChange={(event) => updateCreateDraftField('followUpPriority', event.target.value)}>
+            {FOLLOW_UP_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Assigned Broker" error={createErrors.assignedBrokerId}>
+          <Field as="select" value={createDraft.assignedBrokerId} onChange={(event) => updateCreateDraftField('assignedBrokerId', event.target.value)}>
+            <option value="">Unassigned</option>
+            {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Canvassing Method">
+          <Field as="select" value={createDraft.canvassingMethod} onChange={(event) => updateCreateDraftField('canvassingMethod', event.target.value)}>
+            {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+      </div>
+      <CreateLabel label="Notes">
+        <Field as="textarea" value={createDraft.notes} onChange={(event) => updateCreateDraftField('notes', event.target.value)} placeholder="Context, objections, next step..." />
+      </CreateLabel>
+    </>
+  )
+}
+
+function renderLandlordFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+  return (
+    <>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Landlord / Company Name *" error={createErrors.companyName}>
+          <Field value={createDraft.companyName} onChange={(event) => updateCreateDraftField('companyName', event.target.value)} placeholder="Landlord or company name" />
+        </CreateLabel>
+        <CreateLabel label="Asset Manager">
+          <Field value={createDraft.contactName} onChange={(event) => updateCreateDraftField('contactName', event.target.value)} placeholder="Asset manager or authorised signatory" />
+        </CreateLabel>
+        <CreateLabel label="Phone">
+          <Field value={createDraft.phone} onChange={(event) => updateCreateDraftField('phone', event.target.value)} placeholder="Phone number" />
+        </CreateLabel>
+        <CreateLabel label="Email">
+          <Field value={createDraft.email} onChange={(event) => updateCreateDraftField('email', event.target.value)} placeholder="Email address" />
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Property / Portfolio Name *" error={createErrors.propertyName}>
+          <Field value={createDraft.propertyName} onChange={(event) => updateCreateDraftField('propertyName', event.target.value)} placeholder="Rosebank Mall, Route 21 Business Park, owner portfolio" />
+        </CreateLabel>
+        <CreateLabel label="Property Category *" error={createErrors.propertyCategory}>
+          <Field as="select" value={createDraft.propertyCategory} onChange={(event) => updateCreateDraftField('propertyCategory', event.target.value)}>
+            {COMMERCIAL_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Vacancy Details">
+          <Field value={createDraft.vacancyDetails} onChange={(event) => updateCreateDraftField('vacancyDetails', event.target.value)} placeholder="e.g. 500 sqm office vacancy from August" />
+        </CreateLabel>
+        <CreateLabel label="Preferred Area">
+          <Field value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} placeholder="Location or node" />
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <CreateLabel label="Estimated Monthly Rental">
+          <Field as="input" type="number" value={createDraft.estimatedMonthlyRental} onChange={(event) => updateCreateDraftField('estimatedMonthlyRental', event.target.value)} placeholder="0" />
+        </CreateLabel>
+        <CreateLabel label="Estimated Annual Rental">
+          <Field as="input" type="number" value={createDraft.estimatedAnnualRental} onChange={(event) => updateCreateDraftField('estimatedAnnualRental', event.target.value)} placeholder="0" />
+        </CreateLabel>
+        <CreateLabel label="Follow-up Date">
+          <Field as="input" type="date" value={createDraft.nextFollowUpDate} onChange={(event) => updateCreateDraftField('nextFollowUpDate', event.target.value)} />
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <CreateLabel label="Priority">
+          <Field as="select" value={createDraft.followUpPriority} onChange={(event) => updateCreateDraftField('followUpPriority', event.target.value)}>
+            {FOLLOW_UP_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Assigned Broker" error={createErrors.assignedBrokerId}>
+          <Field as="select" value={createDraft.assignedBrokerId} onChange={(event) => updateCreateDraftField('assignedBrokerId', event.target.value)}>
+            <option value="">Unassigned</option>
+            {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Canvassing Method">
+          <Field as="select" value={createDraft.canvassingMethod} onChange={(event) => updateCreateDraftField('canvassingMethod', event.target.value)}>
+            {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+      </div>
+      <CreateLabel label="Notes">
+        <Field as="textarea" value={createDraft.notes} onChange={(event) => updateCreateDraftField('notes', event.target.value)} placeholder="Context, objections, next step..." />
+      </CreateLabel>
+    </>
+  )
+}
+
+function renderTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+  return (
+    <>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Tenant / Company Name *" error={createErrors.companyName}>
+          <Field value={createDraft.companyName} onChange={(event) => updateCreateDraftField('companyName', event.target.value)} placeholder="Tenant or company name" />
+        </CreateLabel>
+        <CreateLabel label="Contact Person">
+          <Field value={createDraft.contactName} onChange={(event) => updateCreateDraftField('contactName', event.target.value)} placeholder="Decision maker or main contact" />
+        </CreateLabel>
+        <CreateLabel label="Phone">
+          <Field value={createDraft.phone} onChange={(event) => updateCreateDraftField('phone', event.target.value)} placeholder="Phone number" />
+        </CreateLabel>
+        <CreateLabel label="Email">
+          <Field value={createDraft.email} onChange={(event) => updateCreateDraftField('email', event.target.value)} placeholder="Email address" />
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <CreateLabel label="Space Requirement *" error={createErrors.spaceRequirement}>
+          <Field value={createDraft.spaceRequirement} onChange={(event) => updateCreateDraftField('spaceRequirement', event.target.value)} placeholder="e.g. 800-1,200 sqm warehouse with yard" />
+        </CreateLabel>
+        <CreateLabel label="Property Category *" error={createErrors.propertyCategory}>
+          <Field as="select" value={createDraft.propertyCategory} onChange={(event) => updateCreateDraftField('propertyCategory', event.target.value)}>
+            {COMMERCIAL_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Preferred Area *" error={createErrors.preferredArea}>
+          <Field value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} placeholder="Preferred area or node" />
+        </CreateLabel>
+        <CreateLabel label="Size Range">
+          <Field value={createDraft.sizeRange} onChange={(event) => updateCreateDraftField('sizeRange', event.target.value)} placeholder="e.g. 500 - 800 sqm" />
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <CreateLabel label="Budget / Rental Range">
+          <Field value={createDraft.budgetRange} onChange={(event) => updateCreateDraftField('budgetRange', event.target.value)} placeholder="e.g. R80 000 - R120 000" />
+        </CreateLabel>
+        <CreateLabel label="Lease Timeline">
+          <Field as="select" value={createDraft.leaseTimeline} onChange={(event) => updateCreateDraftField('leaseTimeline', event.target.value)}>
+            <option value="">Select timeline</option>
+            {LEASE_TIMELINE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Follow-up Date">
+          <Field as="input" type="date" value={createDraft.nextFollowUpDate} onChange={(event) => updateCreateDraftField('nextFollowUpDate', event.target.value)} />
+        </CreateLabel>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        <CreateLabel label="Priority">
+          <Field as="select" value={createDraft.followUpPriority} onChange={(event) => updateCreateDraftField('followUpPriority', event.target.value)}>
+            {FOLLOW_UP_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Assigned Broker" error={createErrors.assignedBrokerId}>
+          <Field as="select" value={createDraft.assignedBrokerId} onChange={(event) => updateCreateDraftField('assignedBrokerId', event.target.value)}>
+            <option value="">Unassigned</option>
+            {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Canvassing Method">
+          <Field as="select" value={createDraft.canvassingMethod} onChange={(event) => updateCreateDraftField('canvassingMethod', event.target.value)}>
+            {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+      </div>
+      <CreateLabel label="Notes">
+        <Field as="textarea" value={createDraft.notes} onChange={(event) => updateCreateDraftField('notes', event.target.value)} placeholder="Context, objections, next step..." />
+      </CreateLabel>
+    </>
+  )
+}
+
 function CommercialCanvassingPage() {
   const [searchParams] = useSearchParams()
   const [organisationId, setOrganisationId] = useState('')
@@ -351,17 +725,22 @@ function CommercialCanvassingPage() {
   const [message, setMessage] = useState('')
   const [canvassingEnabled, setCanvassingEnabled] = useState(true)
   const [search, setSearch] = useState('')
+  const [dealFilter, setDealFilter] = useState('all')
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [typeFilter, setTypeFilter] = useState('all')
   const [methodFilter, setMethodFilter] = useState('all')
   const [brokerFilter, setBrokerFilter] = useState('all')
   const [selectedProspectId, setSelectedProspectId] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [createStep, setCreateStep] = useState(2)
+  const [createErrors, setCreateErrors] = useState({})
   const [createDraft, setCreateDraft] = useState(buildInitialDraft())
   const [activityDraft, setActivityDraft] = useState(buildInitialActivityDraft())
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [busyAction, setBusyAction] = useState('')
+  const [openActionMenuId, setOpenActionMenuId] = useState('')
   const createPrefillAppliedRef = useRef('')
   const createPrefillKey = searchParams.toString()
   const hasCreatePrefillParams = hasCreatePrefill(searchParams)
@@ -424,6 +803,8 @@ function CommercialCanvassingPage() {
     const nextDraft = buildDraftFromSearchParams(searchParams, brokerOptions[0]?.value || '')
     setCreateDraft(nextDraft)
     setCreateOpen(true)
+    setCreateStep(2)
+    setCreateErrors({})
     createPrefillAppliedRef.current = createPrefillKey
   }, [brokerOptions, createPrefillKey, hasCreatePrefillParams, searchParams])
 
@@ -432,9 +813,28 @@ function CommercialCanvassingPage() {
     setSelectedProspectId(prospects[0].id)
   }, [prospects, selectedProspectId])
 
+  useEffect(() => {
+    if (dealFilter === 'sale' && ['landlord', 'tenant'].includes(normalizeKey(roleFilter))) {
+      setRoleFilter('all')
+    }
+    if (dealFilter === 'lease' && ['seller', 'buyer'].includes(normalizeKey(roleFilter))) {
+      setRoleFilter('all')
+    }
+  }, [dealFilter, roleFilter])
+
   const selectedProspect = useMemo(
     () => prospects.find((prospect) => normalizeText(prospect.id) === normalizeText(selectedProspectId)) || null,
     [prospects, selectedProspectId],
+  )
+
+  const selectedProspectView = useMemo(
+    () => (selectedProspect
+      ? normaliseCommercialProspect(selectedProspect, {
+        lastActivity: activitiesByProspectId.get(normalizeText(selectedProspect.id)) || null,
+        assignedBrokerName: pickLookupLabel(brokerOptions, selectedProspect.assignedBrokerId, selectedProspect.assignedBrokerName || ''),
+      })
+      : null),
+    [activitiesByProspectId, brokerOptions, selectedProspect],
   )
 
   const selectedActivities = useMemo(
@@ -444,64 +844,29 @@ function CommercialCanvassingPage() {
     [activities, selectedProspect],
   )
 
-  const filteredProspects = useMemo(() => {
-    const searchValue = normalizeKey(search)
-    return prospects.filter((prospect) => {
-      const assignedBrokerId = normalizeText(prospect.assignedBrokerId)
-      const assignedBrokerName = normalizeText(prospect.assignedBrokerName)
-      const assignedBrokerEmail = normalizeText(prospect.assignedBrokerEmail)
-      const matchesSearch = !searchValue || [
-        prospect.companyName,
-        prospect.contactName,
-        prospect.firstName,
-        prospect.lastName,
-        prospect.phone,
-        prospect.email,
-        prospect.area,
-        prospect.propertyType,
-        prospect.canvassingMethod,
-        prospect.status,
-        prospect.notes,
-      ].join(' ').toLowerCase().includes(searchValue)
-      const matchesStatus = statusFilter === 'all' || normalizeKey(prospect.status) === normalizeKey(statusFilter)
-      const matchesType = typeFilter === 'all' || normalizeKey(prospect.prospectType) === normalizeKey(typeFilter)
-      const matchesMethod = methodFilter === 'all' || normalizeKey(prospect.canvassingMethod) === normalizeKey(methodFilter)
-      const matchesBroker = brokerFilter === 'all'
-        || normalizeText(brokerFilter) === assignedBrokerId
-        || normalizeKey(brokerFilter) === normalizeKey(assignedBrokerEmail)
-        || normalizeKey(brokerFilter) === normalizeKey(assignedBrokerName)
-      return matchesSearch && matchesStatus && matchesType && matchesMethod && matchesBroker
-    })
-  }, [brokerFilter, methodFilter, prospects, search, statusFilter, typeFilter])
+  const filteredProspects = useMemo(() => filterCommercialProspects(normalizedProspects, {
+    search,
+    dealType: dealFilter,
+    role: roleFilter,
+    category: categoryFilter,
+    assigned: brokerFilter,
+  }).filter((prospect) => statusFilter === 'all' || normalizeKey(prospect.stageLabel || prospect.status) === normalizeKey(statusFilter)), [brokerFilter, categoryFilter, dealFilter, normalizedProspects, roleFilter, search, statusFilter])
 
-  const metrics = useMemo(() => {
-    const openProspects = prospects.filter(isOpenProspect).length
-    const followUpsDue = prospects.filter((prospect) => {
-      const due = new Date(prospect.nextFollowUpDate || '')
-      if (Number.isNaN(due.getTime())) return false
-      due.setHours(0, 0, 0, 0)
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      return due.getTime() <= today.getTime() && isOpenProspect(prospect)
-    }).length
-    const converted = prospects.filter((prospect) => isConvertedStatus(prospect.status)).length
-    const pipelineValue = Number(pipeline?.summary?.pipelineValue || 0) || prospects.reduce((sum, prospect) => sum + Number(prospect.estimatedValue || 0), 0)
-    const activitiesCount = activities.length
-    return {
-      openProspects,
-      followUpsDue,
-      converted,
-      pipelineValue,
-      activitiesCount,
-    }
-  }, [activities.length, pipeline?.summary?.pipelineValue, prospects])
+  const metrics = useMemo(() => deriveCommercialCanvassingMetrics(normalizedProspects, activities), [activities, normalizedProspects])
 
-  function resetCreateDraft() {
-    setCreateDraft(buildInitialDraft(brokerOptions[0]?.value || ''))
+  function resetCreateDraft(nextRole = 'seller') {
+    setCreateDraft(buildInitialDraft(brokerOptions[0]?.value || '', {
+      prospectRole: nextRole,
+      dealType: getDealTypeFromRole(nextRole),
+      propertyCategory: 'retail',
+      assignedBrokerId: brokerOptions[0]?.value || '',
+    }))
+    setCreateErrors({})
+    setCreateStep(2)
   }
 
-  function openCreateModal() {
-    resetCreateDraft()
+  function openCreateModal(nextRole = 'seller') {
+    resetCreateDraft(nextRole)
     setCreateOpen(true)
   }
 
@@ -514,49 +879,175 @@ function CommercialCanvassingPage() {
   }
 
   function updateCreateDraftField(field, value) {
-    setCreateDraft((current) => ({ ...current, [field]: value }))
+    setCreateDraft((current) => {
+      const next = { ...current, [field]: value }
+      if (field === 'prospectRole') {
+        next.dealType = getDealTypeFromRole(value)
+        next.propertyCategory = current.propertyCategory || 'retail'
+      }
+      if (field === 'propertyCategory' && !normalizeText(value)) {
+        next.propertyCategory = 'retail'
+      }
+      return next
+    })
+    setCreateErrors((current) => ({ ...current, [field]: '' }))
+  }
+
+  function updateCreateRole(nextRole) {
+    setCreateDraft((current) => {
+      const cleared = {
+        ...current,
+        prospectRole: nextRole,
+        dealType: getDealTypeFromRole(nextRole),
+      }
+      if (nextRole === 'seller') {
+        return {
+          ...cleared,
+          lookingFor: '',
+          preferredArea: '',
+          spaceRequirement: '',
+          sizeRange: '',
+          budgetRange: '',
+          reasonForSelling: current.reasonForSelling || '',
+          targetPurchaseTimeline: '',
+          leaseTimeline: '',
+          vacancyDetails: '',
+          estimatedMonthlyRental: '',
+          estimatedAnnualRental: '',
+        }
+      }
+      if (nextRole === 'buyer') {
+        return {
+          ...cleared,
+          propertyAddress: '',
+          propertyName: '',
+          portfolioName: '',
+          spaceRequirement: '',
+          sizeRange: '',
+          estimatedMonthlyRental: '',
+          estimatedAnnualRental: '',
+          leaseTimeline: '',
+          reasonForSelling: '',
+          vacancyDetails: '',
+        }
+      }
+      if (nextRole === 'landlord') {
+        return {
+          ...cleared,
+          propertyAddress: '',
+          lookingFor: '',
+          targetPurchaseTimeline: '',
+          reasonForSelling: '',
+          estimatedSaleValue: '',
+          estimatedMonthlyRental: current.estimatedMonthlyRental || '',
+        }
+      }
+      return {
+        ...cleared,
+        propertyAddress: '',
+        propertyName: '',
+        portfolioName: '',
+        lookingFor: '',
+        targetPurchaseTimeline: '',
+        reasonForSelling: '',
+        estimatedSaleValue: '',
+      }
+    })
+    setCreateErrors({})
+    setCreateStep(2)
+  }
+
+  function validateCreateDraft() {
+    const errors = validateCommercialProspectDraft(createDraft)
+    setCreateErrors(errors)
+    return errors
+  }
+
+  function buildCreatePayloadFromDraft() {
+    const role = normalizeKey(createDraft.prospectRole)
+    const dealType = getDealTypeFromRole(role)
+    const propertyCategory = normalizeKey(createDraft.propertyCategory) || 'other'
+    const companyName = normalizeText(createDraft.companyName)
+    const contactName = normalizeText(createDraft.contactName)
+    const followUpValue = normalizeText(createDraft.followUpNote || createDraft.notes)
+    const estimatedValue = role === 'landlord'
+      ? Number(createDraft.estimatedAnnualRental || createDraft.estimatedMonthlyRental || 0) || 0
+      : Number(createDraft.estimatedSaleValue || 0) || 0
+    const areaValue = role === 'seller'
+      ? normalizeText(createDraft.propertyAddress)
+      : role === 'buyer'
+        ? normalizeText(createDraft.preferredArea)
+        : role === 'landlord'
+          ? normalizeText(createDraft.propertyName || createDraft.portfolioName)
+          : normalizeText(createDraft.preferredArea)
+
+    return {
+      companyName,
+      contactName,
+      phone: normalizeText(createDraft.phone),
+      email: normalizeText(createDraft.email),
+      prospectType: `${getRoleLabel(role)} Prospect`,
+      canvassingMethod: normalizeText(createDraft.canvassingMethod) || 'Cold Call',
+      propertyType: getPropertyCategoryLabel(propertyCategory),
+      area: areaValue,
+      status: normalizeText(createDraft.status) || 'New',
+      nextFollowUpDate: normalizeText(createDraft.nextFollowUpDate),
+      followUpPriority: normalizeText(createDraft.followUpPriority) || 'Medium',
+      followUpNote: followUpValue,
+      estimatedValue,
+      notes: normalizeText(createDraft.notes || createDraft.vacancyDetails),
+      assignedBrokerId: normalizeText(createDraft.assignedBrokerId),
+      companyId: normalizeText(createDraft.companyId),
+      contactId: normalizeText(createDraft.contactId),
+      propertyId: normalizeText(createDraft.propertyId),
+      vacancyId: normalizeText(createDraft.vacancyId),
+      listingId: normalizeText(createDraft.listingId),
+      linkedEntityType: normalizeText(createDraft.linkedEntityType),
+      linkedEntityId: normalizeText(createDraft.linkedEntityId),
+      dealType,
+      prospectRole: role,
+      propertyCategory,
+      roleSpecific: {
+        propertyAddress: normalizeText(createDraft.propertyAddress),
+        propertyName: normalizeText(createDraft.propertyName),
+        portfolioName: normalizeText(createDraft.portfolioName),
+        lookingFor: normalizeText(createDraft.lookingFor),
+        preferredArea: normalizeText(createDraft.preferredArea),
+        spaceRequirement: normalizeText(createDraft.spaceRequirement),
+        sizeRange: normalizeText(createDraft.sizeRange),
+        budgetRange: normalizeText(createDraft.budgetRange),
+        reasonForSelling: normalizeText(createDraft.reasonForSelling),
+        targetPurchaseTimeline: normalizeText(createDraft.targetPurchaseTimeline),
+        leaseTimeline: normalizeText(createDraft.leaseTimeline),
+        vacancyDetails: normalizeText(createDraft.vacancyDetails),
+        estimatedSaleValue: normalizeText(createDraft.estimatedSaleValue),
+        estimatedMonthlyRental: normalizeText(createDraft.estimatedMonthlyRental),
+        estimatedAnnualRental: normalizeText(createDraft.estimatedAnnualRental),
+      },
+    }
   }
 
   async function handleCreateProspect(event) {
     event.preventDefault()
     if (!organisationId) return
-    if (!normalizeText(createDraft.companyName) && !normalizeText(createDraft.contactName) && !normalizeText(createDraft.area)) {
-      setError('Add a company, contact, or area before saving a canvassing prospect.')
+    const errors = validateCreateDraft()
+    if (Object.keys(errors).length > 0) {
+      setCreateStep(2)
+      setError('Please complete the missing commercial prospect details.')
       return
     }
 
     setBusyAction('create')
     setError('')
     try {
-      const created = await createCommercialCanvassingProspect(organisationId, {
-        ...createDraft,
-        companyName: normalizeText(createDraft.companyName),
-        contactName: normalizeText(createDraft.contactName),
-        phone: normalizeText(createDraft.phone),
-        email: normalizeText(createDraft.email),
-        prospectType: normalizeText(createDraft.prospectType) || 'Other',
-        canvassingMethod: normalizeText(createDraft.canvassingMethod) || 'Cold Call',
-        propertyType: normalizeText(createDraft.propertyType),
-        area: normalizeText(createDraft.area),
-        status: normalizeText(createDraft.status) || 'New',
-        nextFollowUpDate: normalizeText(createDraft.nextFollowUpDate),
-        followUpPriority: normalizeText(createDraft.followUpPriority) || 'Medium',
-        followUpNote: normalizeText(createDraft.followUpNote),
-        estimatedValue: Number(createDraft.estimatedValue || 0) || 0,
-        notes: normalizeText(createDraft.notes),
-        assignedBrokerId: normalizeText(createDraft.assignedBrokerId),
-        companyId: normalizeText(createDraft.companyId),
-        contactId: normalizeText(createDraft.contactId),
-        propertyId: normalizeText(createDraft.propertyId),
-        vacancyId: normalizeText(createDraft.vacancyId),
-        listingId: normalizeText(createDraft.listingId),
-        linkedEntityType: normalizeText(createDraft.linkedEntityType),
-        linkedEntityId: normalizeText(createDraft.linkedEntityId),
-      })
+      const payload = buildCreatePayloadFromDraft()
+      const created = await createCommercialCanvassingProspect(organisationId, payload)
       setProspects((current) => [created, ...current.filter((row) => normalizeText(row.id) !== normalizeText(created.id))])
       setSelectedProspectId(created.id)
       setCreateOpen(false)
-      setMessage('Canvassing prospect created.')
+      setCreateStep(2)
+      setCreateErrors({})
+      setMessage(`${getRoleLabel(payload.prospectRole)} prospect added.`)
       await loadData()
     } catch (createError) {
       setError(createError?.message || 'Commercial canvassing prospect could not be created.')
@@ -820,172 +1311,185 @@ function CommercialCanvassingPage() {
     }
   }
 
+  function handleCreateReviewNext() {
+    const errors = validateCreateDraft()
+    if (Object.keys(errors).length > 0) {
+      setCreateStep(2)
+      setError('Please complete the missing commercial prospect details.')
+      return
+    }
+    setError('')
+    setCreateStep(3)
+  }
+
+  const createRole = normalizeKey(createDraft.prospectRole) || 'seller'
+  const createRoleOption = COMMERCIAL_ROLE_OPTIONS.find((option) => option.value === createRole) || COMMERCIAL_ROLE_OPTIONS[0]
+  const createDealLabel = getDealTypeLabel(getDealTypeFromRole(createRole))
+  const createCategoryLabel = getPropertyCategoryLabel(createDraft.propertyCategory)
+  const createSummaryLines = [
+    createDraft.companyName || createDraft.contactName || 'No company captured',
+    createDraft.propertyAddress || createDraft.propertyName || createDraft.portfolioName || createDraft.preferredArea || 'No property captured',
+    createDraft.nextFollowUpDate ? formatShortDate(createDraft.nextFollowUpDate) : 'No follow-up date',
+  ]
+
   const createModal = (
     <Modal
       open={createOpen}
       onClose={() => setCreateOpen(false)}
-      title="New canvassing prospect"
-      subtitle="Capture the company, contact, or asset you want to work through the commercial pipeline."
-      className="max-w-4xl"
+      title="New prospect"
+      subtitle="Capture the company, contact, or asset you want to work with through the commercial pipeline."
+      className="max-w-[1120px]"
       footer={(
-        <div className="flex flex-wrap justify-end gap-3">
-          <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button type="submit" form="commercial-canvassing-create-form" disabled={busyAction === 'create'}>
-            {busyAction === 'create' ? 'Saving...' : 'Save Prospect'}
-          </Button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs text-[#7b899a]">
+            {createStep === 3 ? 'Review and save this prospect.' : 'Shared fields are preserved when you change type.'}
+          </div>
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                if (createStep === 3) {
+                  setCreateStep(2)
+                  return
+                }
+                setCreateOpen(false)
+              }}
+            >
+              {createStep === 3 ? <ChevronLeft size={16} /> : null}
+              {createStep === 3 ? 'Back' : 'Cancel'}
+            </Button>
+            {createStep === 3 ? (
+              <Button type="submit" form="commercial-canvassing-create-form" disabled={busyAction === 'create'}>
+                <Save size={16} />
+                {busyAction === 'create' ? 'Saving...' : 'Save Prospect'}
+              </Button>
+            ) : (
+              <Button type="button" onClick={handleCreateReviewNext}>
+                Next: Review & Save
+                <ChevronRight size={16} />
+              </Button>
+            )}
+          </div>
         </div>
       )}
     >
-      <form id="commercial-canvassing-create-form" onSubmit={handleCreateProspect} className="grid gap-5">
-        <section className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Company</span>
-            <Field value={createDraft.companyName} onChange={(event) => updateCreateDraftField('companyName', event.target.value)} placeholder="Company or landlord name" />
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Contact</span>
-            <Field value={createDraft.contactName} onChange={(event) => updateCreateDraftField('contactName', event.target.value)} placeholder="Decision maker or contact" />
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Phone</span>
-            <Field value={createDraft.phone} onChange={(event) => updateCreateDraftField('phone', event.target.value)} placeholder="Phone number" />
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Email</span>
-            <Field value={createDraft.email} onChange={(event) => updateCreateDraftField('email', event.target.value)} placeholder="Email address" />
-          </label>
-        </section>
+      <form id="commercial-canvassing-create-form" onSubmit={handleCreateProspect} className="overflow-hidden">
+        <div className="grid max-h-[calc(100vh-220px)] gap-0 overflow-hidden lg:grid-cols-[340px_minmax(0,1fr)]">
+          <aside className="border-b border-[#e6edf4] bg-[#fbfdff] p-5 lg:border-b-0 lg:border-r">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#8a96a8]">Step 1 of 3</p>
+            <h4 className="mt-2 text-[1.1rem] font-semibold tracking-[-0.02em] text-[#102236]">What type of prospect is this?</h4>
+            <p className="mt-2 text-sm leading-6 text-[#63768b]">Choose the best fit so we can show the right commercial fields.</p>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Prospect type</span>
-            <Field as="select" value={createDraft.prospectType} onChange={(event) => updateCreateDraftField('prospectType', event.target.value)}>
-              {PROSPECT_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-            </Field>
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Canvassing method</span>
-            <Field as="select" value={createDraft.canvassingMethod} onChange={(event) => updateCreateDraftField('canvassingMethod', event.target.value)}>
-              {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
-            </Field>
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Property type</span>
-            <Field as="select" value={createDraft.propertyType} onChange={(event) => updateCreateDraftField('propertyType', event.target.value)}>
-              <option value="">Select type</option>
-              {PROSPECT_PROPERTY_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-            </Field>
-          </label>
-        </section>
+            <div className="mt-5 grid gap-3">
+              {COMMERCIAL_ROLE_OPTIONS.map((option) => {
+                const selected = createRole === option.value
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => updateCreateRole(option.value)}
+                    className={`rounded-[18px] border p-4 text-left transition ${
+                      selected
+                        ? 'border-[#2c6cf0] bg-[#eff5ff] shadow-[0_0_0_1px_rgba(44,108,240,0.08)]'
+                        : 'border-[#e1e9f3] bg-white hover:border-[#bfd2ea] hover:bg-[#fbfdff]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-[#102236]">{option.label} ({getDealTypeLabel(option.dealType)})</p>
+                        <p className="mt-1 text-sm leading-6 text-[#63768b]">{option.description}</p>
+                      </div>
+                      <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border ${selected ? 'border-[#2c6cf0] bg-[#2c6cf0] text-white' : 'border-[#c9d7e8] bg-white text-transparent'}`}>
+                        <CheckCircle2 size={12} />
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <label className="grid gap-1.5 md:col-span-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Area / location</span>
-            <Field value={createDraft.area} onChange={(event) => updateCreateDraftField('area', event.target.value)} placeholder="Suburb, precinct, or node" />
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Broker owner</span>
-            <Field as="select" value={createDraft.assignedBrokerId} onChange={(event) => updateCreateDraftField('assignedBrokerId', event.target.value)}>
-              <option value="">Unassigned</option>
-              {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </Field>
-          </label>
-        </section>
+            <p className="mt-4 text-xs leading-5 text-[#71859b]">
+              {createRoleOption.description}
+            </p>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Status</span>
-            <Field as="select" value={createDraft.status} onChange={(event) => updateCreateDraftField('status', event.target.value)}>
-              {PROSPECT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
-            </Field>
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up date</span>
-            <Field as="input" type="date" value={createDraft.nextFollowUpDate} onChange={(event) => updateCreateDraftField('nextFollowUpDate', event.target.value)} />
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up priority</span>
-            <Field as="select" value={createDraft.followUpPriority} onChange={(event) => updateCreateDraftField('followUpPriority', event.target.value)}>
-              {FOLLOW_UP_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
-            </Field>
-          </label>
-        </section>
+            <div className="mt-5 rounded-[16px] border border-dashed border-[#d8e3f0] bg-white px-4 py-3 text-xs leading-5 text-[#71859b]">
+              Switching type keeps shared fields and clears role-specific details that do not apply.
+            </div>
 
-        <section className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Estimated value</span>
-            <Field as="input" type="number" value={createDraft.estimatedValue} onChange={(event) => updateCreateDraftField('estimatedValue', event.target.value)} placeholder="0" />
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Notes</span>
-            <Field as="input" value={createDraft.followUpNote} onChange={(event) => updateCreateDraftField('followUpNote', event.target.value)} placeholder="Next action or objection" />
-          </label>
-        </section>
+            <button
+              type="button"
+              onClick={() => setCreateStep(2)}
+              className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]"
+            >
+              Change type
+              <ArrowRight size={14} />
+            </button>
+          </aside>
 
-        <section className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Company link</span>
-            <Field as="select" value={createDraft.companyId} onChange={(event) => updateCreateDraftField('companyId', event.target.value)}>
-              <option value="">No company link</option>
-              {(lookupOptions.companies || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </Field>
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Contact link</span>
-            <Field as="select" value={createDraft.contactId} onChange={(event) => updateCreateDraftField('contactId', event.target.value)}>
-              <option value="">No contact link</option>
-              {(lookupOptions.contacts || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </Field>
-          </label>
-        </section>
+          <div className="overflow-y-auto bg-white">
+            {createStep === 3 ? (
+              <section className="p-5 sm:p-6">
+                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#8a96a8]">Step 3 of 3</p>
+                <h4 className="mt-2 text-[1.1rem] font-semibold tracking-[-0.02em] text-[#102236]">Review prospect</h4>
+                <p className="mt-2 text-sm leading-6 text-[#63768b]">Confirm the details before adding this prospect to commercial canvassing.</p>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Property link</span>
-            <Field as="select" value={createDraft.propertyId} onChange={(event) => updateCreateDraftField('propertyId', event.target.value)}>
-              <option value="">No property link</option>
-              {(lookupOptions.properties || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </Field>
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Vacancy link</span>
-            <Field as="select" value={createDraft.vacancyId} onChange={(event) => updateCreateDraftField('vacancyId', event.target.value)}>
-              <option value="">No vacancy link</option>
-              {(lookupOptions.vacancies || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </Field>
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Listing link</span>
-            <Field as="select" value={createDraft.listingId} onChange={(event) => updateCreateDraftField('listingId', event.target.value)}>
-              <option value="">No listing link</option>
-              {(lookupOptions.listings || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </Field>
-          </label>
-        </section>
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <ReviewCard title="Prospect type" lines={[`${getRoleLabel(createRole)} (${createDealLabel})`, createCategoryLabel]} />
+                  <ReviewCard title="Company / Contact" lines={[createDraft.companyName || 'No company captured', createDraft.contactName || 'No contact captured', createDraft.phone || 'No phone captured', createDraft.email || 'No email captured']} />
+                  <ReviewCard title="Commercial details" lines={[
+                    createDraft.propertyAddress || createDraft.propertyName || createDraft.portfolioName || createDraft.preferredArea || 'No property context captured',
+                    createDraft.lookingFor || createDraft.spaceRequirement || createDraft.reasonForSelling || createDraft.vacancyDetails || 'No detail captured',
+                    createDraft.propertyCategory ? `Category: ${createCategoryLabel}` : 'No category selected',
+                  ]} />
+                  <ReviewCard title="Follow-up" lines={[
+                    createDraft.nextFollowUpDate ? `Due ${formatShortDate(createDraft.nextFollowUpDate)}` : 'No follow-up date',
+                    `Priority: ${normalizeText(createDraft.followUpPriority) || 'Medium'}`,
+                    `Source: ${normalizeText(createDraft.canvassingMethod) || 'Cold Call'}`,
+                  ]} />
+                  <ReviewCard title="Assignment" lines={[
+                    pickLookupLabel(brokerOptions, createDraft.assignedBrokerId, 'Unassigned'),
+                    createDraft.assignedBrokerId ? 'Assigned broker captured' : 'No broker assigned',
+                  ]} />
+                  <ReviewCard title="Notes" lines={[normalizeText(createDraft.notes) || normalizeText(createDraft.followUpNote) || 'No notes captured']} />
+                </div>
 
-        <section className="grid gap-4">
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Linked record type</span>
-            <Field as="select" value={createDraft.linkedEntityType} onChange={(event) => updateCreateDraftField('linkedEntityType', event.target.value)}>
-              <option value="">Not linked</option>
-              <option value="commercial_company">Company</option>
-              <option value="commercial_contact">Contact</option>
-              <option value="commercial_property">Property</option>
-              <option value="commercial_vacancy">Vacancy</option>
-              <option value="commercial_listing">Listing</option>
-              <option value="commercial_requirement">Requirement</option>
-              <option value="commercial_deal">Deal</option>
-            </Field>
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Linked record id</span>
-            <Field value={createDraft.linkedEntityId} onChange={(event) => updateCreateDraftField('linkedEntityId', event.target.value)} placeholder="Linked record id" />
-          </label>
-          <label className="grid gap-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Notes</span>
-            <Field as="textarea" value={createDraft.notes} onChange={(event) => updateCreateDraftField('notes', event.target.value)} placeholder="Context, objections, next step..." />
-          </label>
-        </section>
+                <div className="mt-6 rounded-[18px] border border-[#dfe8f3] bg-[#f8fbff] p-4 text-sm text-[#63768b]">
+                  {createSummaryLines.map((line) => line).join(' · ')}
+                </div>
+              </section>
+            ) : (
+              <section className="p-5 sm:p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#8a96a8]">Step 2 of 3</p>
+                    <h4 className="mt-2 text-[1.1rem] font-semibold tracking-[-0.02em] text-[#102236]">
+                      {createRole === 'seller' ? 'About the seller' : createRole === 'buyer' ? 'About the buyer' : createRole === 'landlord' ? 'About the landlord' : 'About the tenant'}
+                    </h4>
+                    <p className="mt-2 text-sm leading-6 text-[#63768b]">
+                      {createRole === 'seller' ? 'Capture key details about the property owner.' : createRole === 'buyer' ? 'Capture what the buyer is looking for.' : createRole === 'landlord' ? 'Capture the landlord, asset manager and vacancy opportunity.' : 'Capture the tenant space requirement.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCreateStep(1)}
+                    className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-3 text-sm font-medium text-[#0f2748] transition hover:border-[#bfd2e6] hover:text-[#0e335f]"
+                  >
+                    <ChevronLeft size={15} />
+                    Change type
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-4">
+                  {createRole === 'seller' ? renderSellerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
+                  {createRole === 'buyer' ? renderBuyerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
+                  {createRole === 'landlord' ? renderLandlordFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
+                  {createRole === 'tenant' ? renderTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
+                </div>
+              </section>
+            )}
+          </div>
+        </div>
       </form>
     </Modal>
   )
@@ -994,26 +1498,38 @@ function CommercialCanvassingPage() {
 
   return (
     <div className="space-y-8 pb-10">
-      <section className={`${CARD_CLASS} p-6`}>
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Commercial canvassing</p>
-            <p className="mt-2 text-sm font-semibold text-[#60758d]">{organisationName}</p>
-            <h1 className="mt-3 text-[46px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">Prospecting</h1>
-            <p className="mt-3 max-w-3xl text-[20px] font-medium text-[#526276]">
-              Track outbound prospecting, follow-up work, and the records that should move into the commercial pipeline next.
-            </p>
+      <section className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#8a96a8]">{organisationName}</p>
+          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.04em] text-[#102236] lg:text-[36px]">Canvassing</h1>
+          <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[#63768b]">
+            Track prospecting activity and convert interested prospects into commercial leads.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-[14px] border border-[#dce6f0] bg-white p-1 shadow-sm">
+            {FILTER_DEAL_TABS.map((tab) => {
+              const active = dealFilter === tab.value
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => setDealFilter(tab.value)}
+                  className={`h-10 rounded-[12px] px-4 text-sm font-medium transition ${
+                    active
+                      ? 'bg-[#eff5ff] text-[#1f4f78] shadow-[0_1px_2px_rgba(15,35,55,0.08)]'
+                      : 'text-[#62758b] hover:bg-[#f8fbff] hover:text-[#0f2748]'
+                  }`}
+                >
+                  {tab.value === 'all' ? 'All' : tab.label}
+                </button>
+              )
+            })}
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Link to="/commercial/pipeline" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
-              Pipeline
-              <ArrowRight size={15} />
-            </Link>
-            <Button type="button" onClick={openCreateModal}>
-              <Plus size={16} />
-              Prospect
-            </Button>
-          </div>
+          <Button type="button" onClick={() => openCreateModal(createRole)}>
+            <Plus size={16} />
+            Prospect
+          </Button>
         </div>
       </section>
 
@@ -1029,39 +1545,108 @@ function CommercialCanvassingPage() {
       {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
       {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <ProspectStat label="Open Prospects" value={loading ? '...' : metrics.openProspects} detail="Active canvassing records" icon={ClipboardList} />
-        <ProspectStat label="Follow-Ups Due" value={loading ? '...' : metrics.followUpsDue} detail="Needs a next touchpoint" icon={CalendarDays} />
-        <ProspectStat label="Converted" value={loading ? '...' : metrics.converted} detail="Moved into commercial work" icon={CheckCircle2} />
-        <ProspectStat label="Pipeline Value" value={loading ? '...' : formatCurrency(metrics.pipelineValue)} detail="Opportunity value in motion" icon={DollarSign} />
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <ProspectStat label="Prospects" value={loading ? '...' : metrics.prospects} detail="All active prospects" icon={ClipboardList} />
+        <ProspectStat label="Activities" value={loading ? '...' : metrics.activities} detail="This month" icon={CalendarDays} />
+        <ProspectStat label="Follow Ups" value={loading ? '...' : metrics.followUpsDue} detail={loading ? 'Due this week' : `${metrics.overdueFollowUps} overdue`} icon={CheckCircle2} />
+        <ProspectStat label="Converted" value={loading ? '...' : metrics.converted} detail="This month" icon={DollarSign} />
+        <ProspectStat label="Pipeline Value" value={loading ? '...' : formatCurrencyZAR(metrics.pipelineValue)} detail="Opportunity value in motion" icon={DollarSign} />
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
         <article className={`${CARD_CLASS} overflow-hidden`}>
-          <div className="border-b border-[#e6edf4] p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="border-b border-[#e6edf4] p-5 sm:p-6">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#0f2748]">Prospects</h2>
-                <p className="mt-1 text-sm leading-6 text-[#60758d]">Commercial canvassing records and their current follow-up state.</p>
+                <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#102236]">Prospects</h2>
+                <p className="mt-1 text-sm leading-6 text-[#63768b]">Unified commercial prospect register and follow-up state.</p>
               </div>
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,260px)_repeat(3,minmax(0,180px))]">
-                <SearchField value={search} onChange={setSearch} />
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,260px)_repeat(3,minmax(0,180px))]">
+                <SearchField value={search} onChange={setSearch} placeholder="Search prospects, areas, brokers..." />
                 <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-[14px]">
-                  <option value="all">All statuses</option>
+                  <option value="all">All stages</option>
                   {PROSPECT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
-                </Field>
-                <Field as="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-11 rounded-[14px]">
-                  <option value="all">All types</option>
-                  {PROSPECT_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-                </Field>
-                <Field as="select" value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)} className="h-11 rounded-[14px]">
-                  <option value="all">All methods</option>
-                  {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
                 </Field>
                 <Field as="select" value={brokerFilter} onChange={(event) => setBrokerFilter(event.target.value)} className="h-11 rounded-[14px]">
                   <option value="all">All brokers</option>
                   {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </Field>
+                <Field as="select" value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)} className="h-11 rounded-[14px]">
+                  <option value="all">All methods</option>
+                  {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
+                </Field>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {FILTER_DEAL_TABS.map((tab) => {
+                  const active = dealFilter === tab.value
+                  return (
+                    <button
+                      key={tab.value}
+                      type="button"
+                      onClick={() => setDealFilter(tab.value)}
+                      className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition ${
+                        active
+                          ? 'border-[#2c6cf0] bg-[#eff5ff] text-[#1f4f78]'
+                          : 'border-[#dce6f0] bg-white text-[#63768b] hover:border-[#bfd2e6] hover:text-[#0f2748]'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {[
+                  { value: 'all', label: 'All' },
+                  ...(dealFilter === 'lease'
+                    ? [{ value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]
+                    : dealFilter === 'sale'
+                      ? [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }]
+                      : [{ value: 'seller', label: 'Sellers' }, { value: 'buyer', label: 'Buyers' }, { value: 'landlord', label: 'Landlords' }, { value: 'tenant', label: 'Tenants' }]),
+                ].map((item) => {
+                  const active = roleFilter === item.value
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setRoleFilter(item.value)}
+                      className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition ${
+                        active
+                          ? 'border-[#2c6cf0] bg-[#eff5ff] text-[#1f4f78]'
+                          : 'border-[#dce6f0] bg-white text-[#63768b] hover:border-[#bfd2e6] hover:text-[#0f2748]'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {[
+                  { value: 'all', label: 'All Categories' },
+                  ...COMMERCIAL_CATEGORY_OPTIONS,
+                ].map((item) => {
+                  const active = categoryFilter === item.value
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setCategoryFilter(item.value)}
+                      className={`whitespace-nowrap rounded-full border px-4 py-2 text-sm font-medium transition ${
+                        active
+                          ? 'border-[#2c6cf0] bg-[#eff5ff] text-[#1f4f78]'
+                          : 'border-[#dce6f0] bg-white text-[#63768b] hover:border-[#bfd2e6] hover:text-[#0f2748]'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -1070,61 +1655,203 @@ function CommercialCanvassingPage() {
             {loading ? (
               <div className="p-6 text-sm text-[#60758d]">Loading commercial canvassing workspace...</div>
             ) : filteredProspects.length ? (
-              <div className="max-h-[760px] overflow-auto">
-                <table className="min-w-full border-separate border-spacing-0">
-                  <thead className="sticky top-0 z-10 bg-white">
-                    <tr className="text-left text-[12px] uppercase tracking-[0.14em] text-[#7b899a]">
-                      <th className="border-b border-[#eef3f7] px-6 py-4 font-semibold">Prospect</th>
-                      <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Company</th>
-                      <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Broker</th>
-                      <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Method</th>
-                      <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Status</th>
-                      <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Follow-up</th>
-                      <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredProspects.map((prospect) => {
-                      const selected = normalizeText(prospect.id) === normalizeText(selectedProspectId)
-                      const brokerLabel = pickLookupLabel(brokerOptions, prospect.assignedBrokerId, prospect.assignedBrokerName || 'Unassigned')
-                      return (
-                        <tr
-                          key={prospect.id}
-                          className={`cursor-pointer border-b border-[#eef3f7] transition ${selected ? 'bg-[#f4f8fc]' : 'hover:bg-[#fbfdff]'}`}
-                          onClick={() => setSelectedProspectId(prospect.id)}
-                        >
-                          <td className="px-6 py-4">
+              <>
+                <div className="hidden max-h-[780px] overflow-auto md:block">
+                  <table className="min-w-[1240px] border-separate border-spacing-0">
+                    <thead className="sticky top-0 z-10 bg-white">
+                      <tr className="text-left text-[12px] uppercase tracking-[0.14em] text-[#7b899a]">
+                        <th className="border-b border-[#eef3f7] px-6 py-4 font-semibold">Prospect</th>
+                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Type</th>
+                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Category</th>
+                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Source / Method</th>
+                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Area / Asset</th>
+                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Stage / Next Step</th>
+                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Assigned</th>
+                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Last Activity</th>
+                        <th className="border-b border-[#eef3f7] px-4 py-4 font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredProspects.map((prospect) => {
+                        const selected = normalizeText(prospect.id) === normalizeText(selectedProspectId)
+                        const brokerLabel = prospect.assignedBrokerDisplay || pickLookupLabel(brokerOptions, prospect.assignedBrokerId, prospect.assignedBrokerName || 'Unassigned')
+                        const roleTone = getProspectBadgeVariant(prospect.prospectRole)
+                        const categoryTone = getCategoryBadgeVariant(prospect.propertyCategory)
+                        const showMenu = openActionMenuId === prospect.id
+                        const initials = prospect.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('') || 'P'
+                        const lastActivity = prospect.lastActivity || null
+                        const conversionActions = prospect.prospectRole === 'seller'
+                          ? ['Convert to Seller Lead', 'Create Sales Listing']
+                          : prospect.prospectRole === 'buyer'
+                            ? ['Convert to Buyer Lead', 'Create Buyer Requirement']
+                            : prospect.prospectRole === 'landlord'
+                              ? ['Convert to Landlord', 'Create Vacancy', 'Create Lease Listing']
+                              : ['Convert to Tenant Requirement', 'Create Lease Lead']
+
+                        return (
+                          <tr
+                            key={prospect.id}
+                            className={`cursor-pointer border-b border-[#eef3f7] transition ${selected ? 'bg-[#f4f8fc]' : 'hover:bg-[#fbfdff]'}`}
+                            onClick={() => {
+                              setSelectedProspectId(prospect.id)
+                              setOpenActionMenuId('')
+                            }}
+                          >
+                            <td className="px-6 py-4 align-top">
+                              <div className="flex items-start gap-3">
+                                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#eef5fb] text-sm font-semibold text-[#2d6ecf]">
+                                  {initials}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-[#102236]">{prospect.displayName}</p>
+                                  <p className="mt-1 truncate text-xs text-[#6d839b]">{prospect.secondaryLine || 'No contact captured'}</p>
+                                  <p className="mt-1 truncate text-xs text-[#6d839b]">{normalizeText(prospect.phone) || 'No phone captured'}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                              <div className="space-y-2">
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(roleTone)}`}>{prospect.roleLabel}</span>
+                                <p className="text-sm text-[#63768b]">{prospect.dealTypeLabel}</p>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(categoryTone)}`}>{prospect.categoryLabel}</span>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                              <span className="inline-flex rounded-full border border-[#e0e8f2] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#38506a]">
+                                {titleize(prospect.sourceLabel)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4 align-top text-sm text-[#102236]">{prospect.areaLabel || 'Area pending'}</td>
+                            <td className="px-4 py-4 align-top">
+                              <div className="space-y-2">
+                                <ProspectTonePill value={prospect.stageLabel} />
+                                <p className="line-clamp-1 text-sm font-medium text-[#63768b]">{prospect.nextStepLabel}</p>
+                                <p className="text-xs text-[#8a96a8]">{prospect.nextFollowUpDate ? formatShortDate(prospect.nextFollowUpDate) : 'No follow-up date'}</p>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                              <div className="inline-flex items-center gap-2">
+                                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#2b4f71]">
+                                  {brokerLabel === 'Unassigned' ? 'U' : brokerLabel.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')}
+                                </span>
+                                <span className="text-sm font-semibold text-[#102236]">{brokerLabel}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                              <p className="text-sm font-medium text-[#63768b]">{formatRelativeTime(lastActivity?.activityDate || lastActivity?.createdAt)}</p>
+                              <p className="mt-1 text-xs text-[#8a96a8]">{lastActivity?.activityType || 'No activity yet'}</p>
+                            </td>
+                            <td className="px-4 py-4 align-top">
+                              <div className="relative inline-flex" onClick={(event) => event.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#dce6f0] bg-white text-[#62758b] transition hover:border-[#bfd2e6] hover:bg-[#f8fbff]"
+                                  aria-label={`Open actions for ${prospect.displayName}`}
+                                  onClick={() => setOpenActionMenuId((current) => (current === prospect.id ? '' : prospect.id))}
+                                >
+                                  <MoreHorizontal size={16} />
+                                </button>
+                                {showMenu ? (
+                                  <div className="absolute right-0 top-10 z-20 w-52 overflow-hidden rounded-[14px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setOpenActionMenuId('') }}>Open</button>
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setOpenActionMenuId('') }}>Edit</button>
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setMessage('Use the activity panel to add a note.'); setOpenActionMenuId('') }}>Add note</button>
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setMessage('Use the activity panel to log a call.'); setOpenActionMenuId('') }}>Log call</button>
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setMessage('Follow-up scheduling coming soon.'); setOpenActionMenuId('') }}>Schedule follow-up</button>
+                                    <div className="my-1 border-t border-[#eef3f7]" />
+                                    {conversionActions.map((actionLabel) => (
+                                      <button
+                                        key={actionLabel}
+                                        type="button"
+                                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#9d5a13] transition hover:bg-[#fff8ee]"
+                                        title="Conversion workflow coming soon"
+                                        disabled
+                                      >
+                                        {actionLabel}
+                                      </button>
+                                    ))}
+                                    <div className="my-1 border-t border-[#eef3f7]" />
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#a13b35] transition hover:bg-[#fff5f5]" onClick={() => { setSelectedProspectId(prospect.id); setArchiveOpen(true); setOpenActionMenuId('') }}>Archive</button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="divide-y divide-[#eef3f7] md:hidden">
+                  {filteredProspects.map((prospect) => {
+                    const lastActivity = prospect.lastActivity || null
+                    const brokerLabel = prospect.assignedBrokerDisplay || pickLookupLabel(brokerOptions, prospect.assignedBrokerId, prospect.assignedBrokerName || 'Unassigned')
+                    const initials = prospect.displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('') || 'P'
+                    return (
+                      <div
+                        key={prospect.id}
+                        className="cursor-pointer px-4 py-4 transition hover:bg-[#fbfdff]"
+                        onClick={() => {
+                          setSelectedProspectId(prospect.id)
+                          setOpenActionMenuId('')
+                        }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
                             <div className="flex items-start gap-3">
                               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#eef5fb] text-sm font-semibold text-[#2d6ecf]">
-                                <Building2 size={16} />
+                                {initials}
                               </span>
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-[#102236]">{getProspectDisplayName(prospect)}</p>
-                                <p className="mt-1 truncate text-xs text-[#6d839b]">
-                                  {normalizeText(prospect.area) || 'Area pending'}
-                                </p>
+                                <p className="truncate text-sm font-semibold text-[#102236]">{prospect.displayName}</p>
+                                <p className="mt-1 text-xs text-[#6d839b]">{prospect.secondaryLine || 'No contact captured'}</p>
+                                <p className="mt-1 text-xs text-[#6d839b]">{normalizeText(prospect.phone) || 'No phone captured'}</p>
                               </div>
                             </div>
-                          </td>
-                          <td className="px-4 py-4 text-sm text-[#102236]">{normalizeText(prospect.companyName) || 'No company set'}</td>
-                          <td className="px-4 py-4 text-sm text-[#102236]">{brokerLabel}</td>
-                          <td className="px-4 py-4 text-sm text-[#102236]">{titleize(prospect.canvassingMethod)}</td>
-                          <td className="px-4 py-4"><ProspectTonePill value={prospect.status} /></td>
-                          <td className="px-4 py-4 text-sm text-[#102236]">{formatRelativeDate(prospect.nextFollowUpDate)}</td>
-                          <td className="px-4 py-4 text-sm font-semibold text-[#102236]">{formatCurrency(prospect.estimatedValue)}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#dce6f0] bg-white text-[#62758b]"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setOpenActionMenuId((current) => (current === prospect.id ? '' : prospect.id))
+                            }}
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+                        </div>
+                        <div className="mt-3 grid gap-2 text-xs text-[#63768b]">
+                          <div className="flex flex-wrap gap-2">
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${toneClass(getProspectBadgeVariant(prospect.prospectRole))}`}>{prospect.roleLabel}</span>
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 font-semibold ${toneClass(getCategoryBadgeVariant(prospect.propertyCategory))}`}>{prospect.categoryLabel}</span>
+                            <span className="inline-flex rounded-full border border-[#e0e8f2] bg-[#f8fbff] px-2.5 py-1 font-semibold text-[#38506a]">{titleize(prospect.sourceLabel)}</span>
+                          </div>
+                          <p>{prospect.areaLabel || 'Area pending'}</p>
+                          <p>{prospect.stageLabel} · {prospect.nextStepLabel}</p>
+                          <p>Assigned: {brokerLabel}</p>
+                          <p>{formatRelativeTime(lastActivity?.activityDate || lastActivity?.createdAt)} · {lastActivity?.activityType || 'No activity yet'}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
             ) : (
               <div className="p-6">
                 <CommercialEmptyState
-                  title="No canvassing prospects"
-                  description="Create the first commercial canvassing record to start tracking follow-ups and conversion opportunities."
-                  primaryActionLabel="Create Prospect"
-                  onPrimaryAction={openCreateModal}
+                  title="No commercial prospects yet."
+                  description={
+                    dealFilter === 'sale'
+                      ? 'Track property owners and buyers ready to move through the sales pipeline.'
+                      : dealFilter === 'lease'
+                        ? 'Track landlords and tenants for the leasing pipeline.'
+                        : 'Add your first seller, buyer, landlord or tenant prospect to start building your commercial pipeline.'
+                  }
+                  primaryActionLabel="+ Add Prospect"
+                  onPrimaryAction={() => openCreateModal(createRole)}
                 />
               </div>
             )}
