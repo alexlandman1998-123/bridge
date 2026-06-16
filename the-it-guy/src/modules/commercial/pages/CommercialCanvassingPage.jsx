@@ -739,7 +739,6 @@ function renderTenantFields({ createDraft, createErrors, updateCreateDraftField,
 function CommercialCanvassingPage() {
   const [searchParams] = useSearchParams()
   const [organisationId, setOrganisationId] = useState('')
-  const [organisationName, setOrganisationName] = useState('')
   const [prospects, setProspects] = useState([])
   const [activities, setActivities] = useState([])
   const [lookups, setLookups] = useState({})
@@ -780,7 +779,6 @@ function CommercialCanvassingPage() {
       setCanvassingEnabled(nextCanvassingEnabled)
       if (!nextCanvassingEnabled) {
         setOrganisationId(nextOrganisationId)
-        setOrganisationName(context.organisation?.name || 'Commercial workspace')
         setProspects([])
         setActivities([])
         setLookups({})
@@ -793,7 +791,6 @@ function CommercialCanvassingPage() {
         nextOrganisationId ? getCommercialPipelineData(nextOrganisationId) : Promise.resolve(null),
       ])
       setOrganisationId(nextOrganisationId)
-      setOrganisationName(context.organisation?.name || 'Commercial workspace')
       setProspects(Array.isArray(workspace?.prospects) ? workspace.prospects : [])
       setActivities(Array.isArray(workspace?.activities) ? workspace.activities : [])
       setLookups(nextLookups || {})
@@ -1562,14 +1559,7 @@ function CommercialCanvassingPage() {
 
   return (
     <div className="space-y-8 pb-10">
-      <section className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#8a96a8]">{organisationName}</p>
-          <h1 className="mt-2 text-[34px] font-semibold tracking-[-0.04em] text-[#102236] lg:text-[36px]">Canvassing</h1>
-          <p className="mt-2 max-w-3xl text-[15px] leading-6 text-[#63768b]">
-            Track prospecting activity and convert interested prospects into commercial leads.
-          </p>
-        </div>
+      <section className="flex justify-end">
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-[14px] border border-[#dce6f0] bg-white p-1 shadow-sm">
             {FILTER_DEAL_TABS.map((tab) => {

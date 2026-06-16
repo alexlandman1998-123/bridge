@@ -29,7 +29,9 @@ function CommercialSidebar({ scope = null }) {
     [currentFullPath, visibleSections],
   )
   const [manualExpandedSectionId, setManualExpandedSectionId] = useState(null)
-  const expandedSectionId = activeSectionId || (visibleSections.some((section) => section.id === manualExpandedSectionId) ? manualExpandedSectionId : null)
+  const expandedSectionId = visibleSections.some((section) => section.id === manualExpandedSectionId)
+    ? manualExpandedSectionId
+    : activeSectionId
 
   return (
     <aside className="hidden h-screen w-[268px] shrink-0 border-r border-slate-200 bg-white shadow-[12px_0_32px_rgba(15,23,42,0.03)] lg:flex">

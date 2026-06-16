@@ -1746,25 +1746,6 @@ function CommercialLeadsPage() {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-[28px] border border-slate-200 bg-white px-5 py-4 shadow-[0_12px_34px_rgba(15,23,42,0.04)] sm:px-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Leads</p>
-            <h1 className="mt-2 text-[clamp(2.1rem,3vw,2.9rem)] font-semibold tracking-[-0.04em] text-[#102236]">Leads</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Capture, qualify and convert commercial sales and leasing enquiries.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="primary" size="md" className="rounded-xl" onClick={openCreateLead}>
-              <Plus size={16} />
-              Add Lead
-            </Button>
-            <Button variant="secondary" size="md" className="rounded-xl" onClick={() => window.alert('Lead import is not wired into Commercial yet.')}>
-              Import Leads
-            </Button>
-          </div>
-        </div>
-      </section>
-
       <section className="grid gap-4 xl:grid-cols-5">
         <CommercialMetricCard
           label="Total Leads"
