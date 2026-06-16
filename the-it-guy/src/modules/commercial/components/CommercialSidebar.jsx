@@ -29,9 +29,10 @@ function CommercialSidebar({ scope = null }) {
     [currentFullPath, visibleSections],
   )
   const [manualExpandedSectionId, setManualExpandedSectionId] = useState(null)
+  const [manualCollapsedSectionId, setManualCollapsedSectionId] = useState(null)
   const expandedSectionId = visibleSections.some((section) => section.id === manualExpandedSectionId)
     ? manualExpandedSectionId
-    : activeSectionId
+    : (activeSectionId && manualCollapsedSectionId !== activeSectionId ? activeSectionId : null)
 
   return (
     <aside className="hidden h-screen w-[268px] shrink-0 border-r border-slate-200 bg-white shadow-[12px_0_32px_rgba(15,23,42,0.03)] lg:flex">
@@ -65,7 +66,16 @@ function CommercialSidebar({ scope = null }) {
                 <div key={section.id}>
                   <button
                     type="button"
-                    onClick={() => setManualExpandedSectionId((current) => (current === section.id ? null : section.id))}
+                    onClick={() => {
+                      if (expandedSectionId === section.id) {
+                        setManualExpandedSectionId(null)
+                        setManualCollapsedSectionId(section.id)
+                        return
+                      }
+
+                      setManualCollapsedSectionId(null)
+                      setManualExpandedSectionId(section.id)
+                    }}
                     className={[
                       navItemClass,
                       'mt-3 w-full justify-between',
@@ -88,6 +98,10 @@ function CommercialSidebar({ scope = null }) {
                           <Link
                             key={item.to}
                             to={item.to}
+                            onClick={() => {
+                              setManualExpandedSectionId(null)
+                              setManualCollapsedSectionId(null)
+                            }}
                             aria-current={active ? 'page' : undefined}
                             className={[
                               navItemClass,
