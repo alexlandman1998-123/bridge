@@ -264,6 +264,7 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const propertyType = normalizeCanonicalPropertyType(form)
   const occupancyStatus = normalizeOccupancyStatus(form)
   const features = Array.isArray(form.features) ? form.features.map(normalizeKey) : []
+  const vatEligibleSeller = flow.seller_branch === 'company' || flow.seller_branch === 'trust'
   const estateOrHoa = normalizeBoolean(form.estateOrHoa, false) || propertyType === 'estate' || Boolean(normalizeText(form.estateName || form.estateComplexName))
   const sectionalTitle = normalizeBoolean(form.sectionalTitle, false) || propertyType === 'sectional_title'
   const shareBlock = normalizeBoolean(form.shareBlock, false) || propertyType === 'share_block'
@@ -365,8 +366,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       residential_address: normalizeText(form.residentialAddress),
       authorised_representative: normalizeText(form.authorisedRepresentative || form.companyDirectorName || form.trusteeName),
       tax_number: normalizeText(form.sellerTaxNumber),
-      vat_registered: normalizeBoolean(form.vatRegistered, false),
-      vat_number: normalizeText(form.vatNumber),
+      vat_registered: vatEligibleSeller ? normalizeBoolean(form.vatRegistered, false) : false,
+      vat_number: vatEligibleSeller ? normalizeText(form.vatNumber) : '',
       existing_bond: existingBond,
       marital_status: normalizeKey(form.maritalStatus || (maritalRegime === 'not_applicable' ? 'not_married' : 'married')),
       marital_regime: maritalRegime,
@@ -610,6 +611,23 @@ function resolvePropertyBranch(facts = {}) {
   )
 }
 
+function resolveSellerBranchForValidation(facts = {}) {
+  const ownershipType = normalizeKey(
+    facts.seller?.ownership_type ||
+      facts.seller?.ownershipType ||
+      facts.ownership_type,
+  )
+
+  if (ownershipType === 'individual' || ownershipType === 'other') return ownershipType
+  if (ownershipType === 'multiple') return 'multiple_owners'
+  if (ownershipType === 'poa') return 'power_of_attorney'
+  if (ownershipType === 'deceased' || ownershipType === 'estate_late') return 'deceased_estate'
+  if (ownershipType === 'married_cop' || ownershipType === 'married_anc' || ownershipType === 'married') return 'married'
+  if (SELLER_LEGAL_TYPES.includes(ownershipType)) return ownershipType
+
+  return resolveSellerBranch(facts)
+}
+
 export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}) {
   const required = []
   const recommended = []
@@ -620,7 +638,7 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
     }
   }
 
-  const sellerBranch = resolveSellerBranch(facts)
+  const sellerBranch = resolveSellerBranchForValidation(facts)
   const propertyBranch = resolvePropertyBranch(facts)
 
   push(missingIf(!facts.seller?.first_name, 'seller_first_name_missing', 'Seller name is required.'))
@@ -693,7 +711,7 @@ function sectionScore(items = []) {
 }
 
 export function calculateSellerFactReadiness(facts = {}) {
-  const sellerBranch = resolveSellerBranch(facts)
+  const sellerBranch = resolveSellerBranchForValidation(facts)
   const propertyBranch = resolvePropertyBranch(facts)
 
   const sections = {

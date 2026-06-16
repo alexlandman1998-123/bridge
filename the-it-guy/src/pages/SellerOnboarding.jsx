@@ -82,53 +82,6 @@ const PROPERTY_FEATURES = [
   { key: 'staff_quarters', label: 'Staff Quarters' },
 ]
 
-const PRIMARY_COMPLIANCE_SIGNALS = [
-  {
-    key: 'gasInstallation',
-    label: 'Gas installation',
-    description: 'Adds a gas compliance certificate task.',
-  },
-  {
-    key: 'solarInstallation',
-    label: 'Solar installation',
-    description: 'Adds solar compliance documents to the task list.',
-  },
-  {
-    key: 'boreholeInstallation',
-    label: 'Borehole / water source',
-    description: 'Adds a borehole certificate or water-source task.',
-  },
-]
-
-const SECONDARY_COMPLIANCE_SIGNALS = [
-  { key: 'electricFence', label: 'Electric fence', description: 'Adds an electric fence certificate task.' },
-  { key: 'generatorInstallation', label: 'Generator', description: 'Captured as an installation note for the agent.' },
-  { key: 'swimmingPool', label: 'Swimming pool', description: 'Captured as a property feature and condition note.' },
-  { key: 'beetleCertificateRegion', label: 'Beetle region', description: 'Marks beetle certificate sensitivity for the property.' },
-  { key: 'plumbingCertificateRequired', label: 'Plumbing certificate', description: 'Marks plumbing certificate follow-up where needed.' },
-  { key: 'occupationCertificateAvailable', label: 'Occupation certificate available', description: 'Confirms an occupation certificate is already on hand.' },
-  { key: 'electricalCocAvailable', label: 'Electrical COC available', description: 'Confirms an electrical certificate is already on hand.' },
-  { key: 'gasCocAvailable', label: 'Gas COC available', description: 'Confirms a gas certificate is already on hand.' },
-  { key: 'electricFenceCertificateAvailable', label: 'Electric fence certificate available', description: 'Confirms the electric fence certificate is already on hand.' },
-  { key: 'plumbingCertificateAvailable', label: 'Plumbing certificate available', description: 'Confirms the plumbing certificate is already on hand.' },
-  { key: 'solarComplianceAvailable', label: 'Solar compliance available', description: 'Confirms the solar compliance paperwork is already on hand.' },
-]
-
-const COMPLIANCE_GROUP_ORDER = [
-  'financial',
-  'property_finance_existing_bond',
-  'tenant_occupancy',
-  'occupancy',
-  'property_compliance',
-  'sectional_title_body_corporate',
-  'estate_hoa',
-  'property',
-  'seller_authority',
-  'seller_identity_fica',
-  'compliance',
-  'other',
-]
-
 const COMPLIANCE_GROUP_LABELS = {
   financial: 'Bond & finance',
   property_finance_existing_bond: 'Bond & finance',
@@ -403,14 +356,6 @@ function parsePropertyAddressQuery(query = '', fallback = {}) {
   }
 }
 
-function getRequirementStatus(requirement = {}) {
-  const status = String(requirement?.status || requirement?.documentStatus || 'required').trim().toLowerCase()
-  if (['approved', 'accepted', 'completed'].includes(status)) return { label: 'Accepted', tone: 'success' }
-  if (['uploaded', 'under_review', 'pending_review'].includes(status)) return { label: 'Pending Review', tone: 'info' }
-  if (status === 'rejected') return { label: 'Rejected', tone: 'danger' }
-  return { label: 'Required', tone: 'muted' }
-}
-
 function buildComplianceDocuments(listing = {}, fallbackRequirements = []) {
   const rows = [
     ...(Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []),
@@ -458,50 +403,6 @@ function getComplianceGroupLabel(group = '') {
   const normalized = String(group || '').trim().toLowerCase()
   if (!normalized) return ''
   return COMPLIANCE_GROUP_LABELS[normalized] || formatValue(normalized, normalized)
-}
-
-function buildComplianceDocumentSections(documents = []) {
-  const grouped = new Map()
-  for (const document of Array.isArray(documents) ? documents : []) {
-    const key = String(document?.group || 'other').trim().toLowerCase() || 'other'
-    if (!grouped.has(key)) {
-      grouped.set(key, [])
-    }
-    grouped.get(key).push(document)
-  }
-
-  return COMPLIANCE_GROUP_ORDER
-    .filter((group) => grouped.has(group))
-    .map((group) => ({
-      key: group,
-      label: getComplianceGroupLabel(group),
-      documents: grouped.get(group) || [],
-    }))
-    .concat(
-      Array.from(grouped.entries())
-        .filter(([group]) => !COMPLIANCE_GROUP_ORDER.includes(group))
-        .map(([group, documentsList]) => ({
-          key: group,
-          label: getComplianceGroupLabel(group),
-          documents: documentsList,
-        })),
-    )
-}
-
-function buildComplianceSignalStates(form = {}) {
-  return PRIMARY_COMPLIANCE_SIGNALS.map((signal) => ({
-    ...signal,
-    active: signal.key === 'boreholeInstallation'
-      ? Boolean(form.boreholeInstallation || form.borehole)
-      : Boolean(form[signal.key]),
-  }))
-}
-
-function buildAdditionalComplianceSignalStates(form = {}) {
-  return SECONDARY_COMPLIANCE_SIGNALS.map((signal) => ({
-    ...signal,
-    active: Boolean(form[signal.key]),
-  }))
 }
 
 function buildBondComplianceSummary(form = {}) {
@@ -564,7 +465,11 @@ function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null)
   const explicit = String(existing.ownershipType || existing.sellerLegalType || existing.legalType || existing.sellerType || '').toLowerCase()
   const flowBranch = String(flow?.seller_branch || canonicalFacts?.flow?.seller_branch || '').toLowerCase()
 
-  if (explicit && !['individual', 'other', 'legal_entity'].includes(explicit)) {
+  if (explicit === 'individual' || explicit === 'other') {
+    return explicit
+  }
+
+  if (explicit && explicit !== 'legal_entity') {
     if (explicit === 'married') {
       return String(existing.marriageRegime || existing.maritalRegime || canonicalFacts?.seller?.marital_regime || '').toLowerCase().includes('cop') ? 'married_cop' : 'married_anc'
     }
@@ -828,6 +733,9 @@ function normalizeFormData(listing) {
     estateName: existing.estateName || canonicalFacts?.property?.estate_name || existing.estateComplexName,
     estateComplexName: existing.estateComplexName || canonicalFacts?.property?.estate_name,
   })
+  const ownershipType = normalizeOwnershipType(existing, canonicalFacts, flow)
+  const ownershipBranch = getOwnershipBranch(ownershipType)
+  const isVatEligibleOwnership = ['company', 'trust'].includes(ownershipBranch)
 
   return {
     sellerFirstName: existing.sellerFirstName || canonicalFacts?.seller?.first_name || split.firstName,
@@ -837,18 +745,18 @@ function normalizeFormData(listing) {
     phone: existing.phone || canonicalFacts?.seller?.phone || seller.phone || '',
     residentialAddress: resolveAddress(),
 
-    ownershipType: normalizeOwnershipType(existing, canonicalFacts, flow),
-    sellerLegalType: existing.sellerLegalType || existing.legalType || canonicalFacts?.seller?.legal_type || normalizeOwnershipType(existing, canonicalFacts, flow),
+    ownershipType,
+    sellerLegalType: ownershipType,
     sellerTaxNumber: existing.sellerTaxNumber || canonicalFacts?.seller?.tax_number || existing.taxNumber || '',
-    vatRegistered: Boolean(existing.vatRegistered),
-    vatNumber: existing.vatNumber || '',
-    maritalStatus: existing.maritalStatus || canonicalFacts?.seller?.marital_status || (String(normalizeOwnershipType(existing, canonicalFacts, flow)).includes('married') ? 'married' : 'not_married'),
-    maritalRegime: existing.maritalRegime || canonicalFacts?.seller?.marital_regime || (normalizeOwnershipType(existing, canonicalFacts, flow) === 'married_cop' ? 'in_community' : normalizeOwnershipType(existing, canonicalFacts, flow) === 'married_anc' ? 'anc' : 'not_applicable'),
+    vatRegistered: isVatEligibleOwnership ? Boolean(existing.vatRegistered) : false,
+    vatNumber: isVatEligibleOwnership ? (existing.vatNumber || '') : '',
+    maritalStatus: ownershipBranch === 'married' ? (existing.maritalStatus || canonicalFacts?.seller?.marital_status || 'married') : 'not_married',
+    maritalRegime: ownershipBranch === 'married' ? (existing.maritalRegime || canonicalFacts?.seller?.marital_regime || (ownershipType === 'married_cop' ? 'in_community' : ownershipType === 'married_anc' ? 'anc' : 'unknown')) : 'not_applicable',
     authorisedRepresentative: existing.authorisedRepresentative || canonicalFacts?.seller?.authorised_representative || '',
-    spouseName: existing.spouseName || canonicalFacts?.seller?.spouse?.name || '',
-    spouseIdNumber: existing.spouseIdNumber || canonicalFacts?.seller?.spouse?.id_number || '',
-    spouseEmail: existing.spouseEmail || canonicalFacts?.seller?.spouse?.email || '',
-    spousePhone: existing.spousePhone || canonicalFacts?.seller?.spouse?.phone || '',
+    spouseName: ownershipBranch === 'married' ? (existing.spouseName || canonicalFacts?.seller?.spouse?.name || '') : '',
+    spouseIdNumber: ownershipBranch === 'married' ? (existing.spouseIdNumber || canonicalFacts?.seller?.spouse?.id_number || '') : '',
+    spouseEmail: ownershipBranch === 'married' ? (existing.spouseEmail || canonicalFacts?.seller?.spouse?.email || '') : '',
+    spousePhone: ownershipBranch === 'married' ? (existing.spousePhone || canonicalFacts?.seller?.spouse?.phone || '') : '',
 
     companyName: existing.companyName || canonicalFacts?.seller?.company?.name || existing.entityName || '',
     companyRegistrationNumber: existing.companyRegistrationNumber || canonicalFacts?.seller?.company?.registration_number || existing.entityRegistrationNumber || '',
@@ -1073,11 +981,7 @@ function SellerOnboardingHero({ brand, listing, form, statusLabel }) {
       <SellerBrandBar brand={brand} />
       <div className="mt-5 grid gap-5 sm:mt-6 lg:mt-7 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
         <div>
-          <p className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/72 sm:text-xs">
-            <ShieldCheck size={14} />
-            Secure client portal
-          </p>
-          <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-[1.05] tracking-[-0.03em] text-white sm:mt-5 sm:text-4xl lg:text-5xl lg:tracking-[-0.04em]">
+          <h1 className="max-w-3xl text-3xl font-semibold leading-[1.05] tracking-[-0.03em] text-white sm:text-4xl lg:text-5xl lg:tracking-[-0.04em]">
             Complete your seller onboarding
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-6 text-[#c8d4e3] sm:text-base lg:text-[1.05rem]">
@@ -1234,56 +1138,63 @@ function ChoiceCard({ active, title, description, onClick }) {
   )
 }
 
-function DocumentCard({ document }) {
-  const status = getRequirementStatus(document)
-  const toneClass = {
-    success: 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]',
-    info: 'border-[#dbe6f2] bg-[#f7fbff] text-[#35546c]',
-    danger: 'border-[#f6d4d4] bg-[#fff5f5] text-[#b42318]',
-    muted: 'border-[#dbe6f2] bg-white text-[#35546c]',
-  }[status.tone] || 'border-[#dbe6f2] bg-white text-[#35546c]'
-
-  return (
-    <article className="flex flex-col gap-3 rounded-[18px] border border-[#dfe8f2] bg-white/96 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)] sm:flex-row sm:items-start sm:justify-between sm:rounded-[20px] sm:p-4">
-      <div className="flex items-start gap-3">
-        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#f2f6fb] text-[#35546c]">
-          <FileCheck2 size={18} />
-        </span>
-        <div>
-          {document.groupLabel ? <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8a9ab0]">{document.groupLabel}</p> : null}
-          <p className="font-semibold text-[#172334]">{document.label}</p>
-          <p className="mt-1 text-sm leading-5 text-[#6b7d93]">{document.fileName || document.description}</p>
-        </div>
+function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, defaultOpen = false }) {
+  const header = (
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">{title}</p>
+        {missing.length ? (
+          <p className="mt-1 text-xs font-semibold text-[#b45309]">{missing.length} item{missing.length === 1 ? '' : 's'} need attention</p>
+        ) : null}
       </div>
-      <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${toneClass}`}>{status.label}</span>
-    </article>
-  )
-}
-
-function ReviewCard({ title, items, onEdit, missing = [] }) {
-  return (
-    <article className="rounded-[20px] border border-[#dfe8f2] bg-white/96 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[22px] sm:p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">{title}</p>
-          {missing.length ? (
-            <p className="mt-1 text-xs font-semibold text-[#b45309]">{missing.length} item{missing.length === 1 ? '' : 's'} need attention</p>
-          ) : null}
-        </div>
+      <div className="flex shrink-0 items-center gap-2">
         {typeof onEdit === 'function' ? (
-          <button type="button" onClick={onEdit} className="min-h-[38px] shrink-0 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1.5 text-xs font-semibold text-[#35546c]">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              onEdit()
+            }}
+            className="min-h-[38px] rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-1.5 text-xs font-semibold text-[#35546c]"
+          >
             Edit
           </button>
         ) : null}
+        {collapsible ? (
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] text-[#35546c] transition-transform duration-200 group-open:rotate-90">
+            <ChevronRight size={15} />
+          </span>
+        ) : null}
       </div>
-      <dl className="mt-4 grid gap-3">
-        {items.map((item) => (
-          <div key={item.label} className="grid gap-1.5 border-t border-[#eef3f8] pt-3.5 first:border-t-0 first:pt-0">
-            <dt className="text-xs font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">{item.label}</dt>
-            <dd className="text-sm font-semibold text-[#172334]">{item.value || 'Not provided'}</dd>
-          </div>
-        ))}
-      </dl>
+    </div>
+  )
+
+  const body = (
+    <dl className="mt-4 grid gap-3">
+      {items.map((item) => (
+        <div key={item.label} className="grid gap-1.5 border-t border-[#eef3f8] pt-3.5 first:border-t-0 first:pt-0">
+          <dt className="text-xs font-semibold uppercase tracking-[0.1em] text-[#8a9ab0]">{item.label}</dt>
+          <dd className="text-sm font-semibold text-[#172334]">{item.value || 'Not provided'}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+
+  if (collapsible) {
+    return (
+      <details className="group rounded-[20px] border border-[#dfe8f2] bg-white/96 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[22px] sm:p-5" {...(defaultOpen ? { open: true } : {})}>
+        <summary className="cursor-pointer list-none">
+          {header}
+        </summary>
+        {body}
+      </details>
+    )
+  }
+
+  return (
+    <article className="rounded-[20px] border border-[#dfe8f2] bg-white/96 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:rounded-[22px] sm:p-5">
+      {header}
+      {body}
     </article>
   )
 }
@@ -1354,7 +1265,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
-  const [showFicaInfo, setShowFicaInfo] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -1527,14 +1437,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     () => buildComplianceDocuments(listing || {}, complianceRequirementDocuments),
     [complianceRequirementDocuments, listing],
   )
-  const complianceDocumentSections = useMemo(
-    () => buildComplianceDocumentSections(complianceDocuments),
-    [complianceDocuments],
-  )
   const bondComplianceSummary = useMemo(() => buildBondComplianceSummary(form || {}), [form])
   const tenantComplianceSummary = useMemo(() => buildTenantComplianceSummary(form || {}), [form])
-  const primaryComplianceSignals = useMemo(() => buildComplianceSignalStates(form || {}), [form])
-  const secondaryComplianceSignals = useMemo(() => buildAdditionalComplianceSignalStates(form || {}), [form])
 
   function buildCanonicalPayload(nextForm = form, options = {}) {
     if (!areCanonicalSellerFactsEnabled()) return {}
@@ -1660,6 +1564,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const branch = getOwnershipBranch(value)
       next.maritalStatus = branch === 'married' ? 'married' : 'not_married'
       next.maritalRegime = value === 'married_cop' ? 'in_community' : value === 'married_anc' ? 'anc' : branch === 'married' ? (next.maritalRegime || 'unknown') : 'not_applicable'
+      if (branch !== 'married') {
+        next.spouseName = ''
+        next.spouseIdNumber = ''
+        next.spouseEmail = ''
+        next.spousePhone = ''
+        next.spouseInvolved = false
+      }
+      if (!['company', 'trust'].includes(branch)) {
+        next.vatRegistered = false
+        next.vatNumber = ''
+      }
       if (branch === 'company' && !(next.companyDirectors || []).length) {
         next.companyDirectors = [createBlankPersonRecord('Director')]
       }
@@ -2063,6 +1978,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const isDeceasedEstateOwnership = ownershipBranch === 'deceased_estate'
   const isPowerOfAttorneyOwnership = ownershipBranch === 'power_of_attorney'
   const isMultipleOwners = ownershipBranch === 'multiple_owners'
+  const showVatFields = ['company', 'trust'].includes(ownershipBranch)
   const showSectionalTitleDetails = propertyBranch === 'sectional_title'
   const hasEstateSignals = Boolean(form.estateOrHoa || form.estateName || form.estateComplexName)
   const showEstateDetails = propertyBranch === 'estate_hoa' || hasEstateSignals
@@ -2228,11 +2144,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     Tax Number (optional)
                     <input className={DETAIL_INPUT_CLASS} value={form.sellerTaxNumber} onChange={(event) => handleFormUpdate('sellerTaxNumber', event.target.value)} />
                   </label>
-                  <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
-                    <input type="checkbox" checked={form.vatRegistered} onChange={(event) => handleFormUpdate('vatRegistered', event.target.checked)} />
-                    VAT registered
-                  </label>
-                  {form.vatRegistered ? (
+                  {showVatFields ? (
+                    <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057]">
+                      <input type="checkbox" checked={Boolean(form.vatRegistered)} onChange={(event) => handleFormUpdate('vatRegistered', event.target.checked)} />
+                      VAT registered
+                    </label>
+                  ) : null}
+                  {showVatFields && form.vatRegistered ? (
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                       VAT Number
                       <input className={DETAIL_INPUT_CLASS} value={form.vatNumber} onChange={(event) => handleFormUpdate('vatNumber', event.target.value)} />
@@ -3233,45 +3151,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   </div>
                 </FormSection>
 
-                <FormSection
-                  icon={Circle}
-                  title="Condition notes"
-                  description="Share anything else your agent should know."
-                >
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Property Condition
-                      <select className={DETAIL_INPUT_CLASS} value={form.propertyCondition} onChange={(event) => handleFormUpdate('propertyCondition', event.target.value)}>
-                        <option value="needs_renovation">Needs renovation</option>
-                        <option value="average">Average</option>
-                        <option value="good">Good</option>
-                        <option value="recently_renovated">Recently renovated</option>
-                      </select>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Kitchen Condition
-                      <select className={DETAIL_INPUT_CLASS} value={form.kitchenCondition} onChange={(event) => handleFormUpdate('kitchenCondition', event.target.value)}>
-                        <option value="needs_renovation">Needs renovation</option>
-                        <option value="average">Average</option>
-                        <option value="good">Good</option>
-                        <option value="recently_renovated">Recently renovated</option>
-                      </select>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      Bathroom Condition
-                      <select className={DETAIL_INPUT_CLASS} value={form.bathroomCondition} onChange={(event) => handleFormUpdate('bathroomCondition', event.target.value)}>
-                        <option value="needs_renovation">Needs renovation</option>
-                        <option value="average">Average</option>
-                        <option value="good">Good</option>
-                        <option value="recently_renovated">Recently renovated</option>
-                      </select>
-                    </label>
-                    <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
-                      Notes (optional)
-                      <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={form.propertyNotes} onChange={(event) => handleFormUpdate('propertyNotes', event.target.value)} placeholder="Anything your agent should know about condition, upgrades, or pricing" />
-                    </label>
-                  </div>
-                </FormSection>
               </div>
             </StepShell>
           ) : null}
@@ -3279,64 +3158,40 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           {currentStep === 2 ? (
             <StepShell
               eyebrow="FICA & Compliance"
-              title="Compliance follows the branch you selected"
-              description="We only surface the tasks triggered by your ownership, property, occupancy, and installation choices."
+              title="Documents are uploaded later"
+              description="Your agent will review this onboarding first. FICA and compliance uploads happen securely inside the seller portal."
             >
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.02fr_0.98fr]">
-                <div className="space-y-4">
-                  <FormSection
-                    icon={ShieldCheck}
-                    title="Installation signals"
-                    description="Switch these on when they exist. Each selection adds the matching certificate task."
-                  >
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                      {primaryComplianceSignals.map((signal) => (
-                        <ChoiceCard
-                          key={signal.key}
-                          active={signal.active}
-                          title={signal.label}
-                          description={signal.description}
-                          onClick={() => {
-                            const nextValue = !signal.active
-                            if (signal.key === 'boreholeInstallation') {
-                              handleFormUpdate('boreholeInstallation', nextValue)
-                              handleFormUpdate('borehole', nextValue)
-                              return
-                            }
-                            handleFormUpdate(signal.key, nextValue)
-                          }}
-                        />
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+                <FormSection
+                  icon={ShieldCheck}
+                  title="Upload FICA and compliance documents in the seller portal"
+                  description="You do not need to upload documents during this onboarding step."
+                >
+                  <div className="rounded-[18px] border border-[#dbe6f2] bg-[#f7fbff] p-4 sm:p-5">
+                    <p className="text-sm leading-6 text-[#35546c]">
+                      After you submit this onboarding, your agent will open the seller portal for document uploads. You’ll be asked there for FICA, ownership, mandate, and property compliance documents that match your seller file.
+                    </p>
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      {['Submit onboarding', 'Agent reviews file', 'Upload documents in portal'].map((item, index) => (
+                        <div key={item} className="rounded-[16px] border border-[#dbe6f2] bg-white px-3 py-3">
+                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#172334] text-xs font-semibold text-white">{index + 1}</span>
+                          <p className="mt-2 text-sm font-semibold text-[#22364a]">{item}</p>
+                        </div>
                       ))}
                     </div>
-                    <p className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-[#f8fbff] px-3 py-3 text-sm leading-6 text-[#60748b]">
-                      These switches drive the seller portal. Selecting one adds the right upload task, instead of exposing a long compliance checklist.
-                    </p>
+                  </div>
+                </FormSection>
 
-                    <details className="mt-4 rounded-[18px] border border-[#dbe6f2] bg-white p-3 sm:p-4">
-                      <summary className="cursor-pointer list-none text-sm font-semibold text-[#22364a]">
-                        More signals and available certificates
-                      </summary>
-                      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {secondaryComplianceSignals.map((signal) => (
-                          <label
-                            key={signal.key}
-                            className="flex min-h-[44px] items-start gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 py-2 text-sm font-medium text-[#2a4057]"
-                          >
-                            <input
-                              className="mt-1"
-                              type="checkbox"
-                              checked={Boolean(form[signal.key])}
-                              onChange={(event) => handleFormUpdate(signal.key, event.target.checked)}
-                            />
-                            <span className="grid gap-0.5">
-                              <span>{signal.label}</span>
-                              <span className="text-xs font-normal leading-5 text-[#6b7d93]">{signal.description}</span>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </details>
-                  </FormSection>
+                <div className="space-y-4">
+                  <article className="rounded-[22px] border border-[#dbe6f2] bg-white/96 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-5">
+                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-[15px] bg-[#eefbf3] text-[#1f7d44]">
+                      <FileCheck2 size={20} />
+                    </span>
+                    <h3 className="mt-4 text-lg font-semibold tracking-[-0.02em] text-[#172334]">Nothing to upload here</h3>
+                    <p className="mt-2 text-sm leading-6 text-[#60748b]">
+                      This page only captures the seller and property facts. The seller portal handles secure file uploads later, so this step stays quick and uncluttered.
+                    </p>
+                  </article>
 
                   {bondComplianceSummary ? (
                     <ReviewCard
@@ -3356,87 +3211,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     />
                   ) : null}
                 </div>
-
-                <div className="space-y-4">
-                  <article className="rounded-[22px] border border-[#dbe6f2] bg-[#f7fbff] p-4 sm:p-5">
-                    <span className="inline-flex h-11 w-11 items-center justify-center rounded-[15px] bg-white text-[#35546c] shadow-[0_10px_22px_rgba(15,23,42,0.06)]">
-                      <ShieldCheck size={20} />
-                    </span>
-                    <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Why this appears</p>
-                    <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#172334]">
-                      {flow.seller_branch_label || 'Seller'} and {flow.property_branch_label || 'property'} branch
-                    </h3>
-                    <p className="mt-3 text-sm leading-6 text-[#60748b]">
-                      Bridge9 now asks for the practical compliance tasks that match the property, occupancy, and ownership path you selected.
-                    </p>
-                    <button
-                      type="button"
-                      className="mt-4 rounded-full border border-[#dce6f2] bg-white px-3 py-2 text-xs font-semibold text-[#35546c]"
-                      onClick={() => setShowFicaInfo((current) => !current)}
-                    >
-                      {showFicaInfo ? 'Hide explanation' : 'What counts as a trigger?'}
-                    </button>
-                    {showFicaInfo ? (
-                      <div className="mt-3 rounded-[16px] border border-[#dbe6f2] bg-white p-3 text-sm leading-6 text-[#60748b]">
-                        <p className="font-semibold text-[#22364a]">Typical triggers</p>
-                        <ul className="mt-2 list-disc space-y-1 pl-5">
-                          {Array.from(
-                            new Set(
-                              (flow.document_triggers || [])
-                                .filter((trigger) => [
-                                  'bond_statement',
-                                  'bond_bank_details',
-                                  'bond_cancellation_attorney_details',
-                                  'settlement_figure',
-                                  'lease_agreement',
-                                  'tenant_details',
-                                  'gas_compliance_certificate',
-                                  'solar_compliance_documents',
-                                  'electric_fence_certificate',
-                                  'borehole_certificate',
-                                ].includes(trigger)),
-                            ),
-                          ).map((trigger) => (
-                            <li key={trigger}>{formatValue(trigger)}</li>
-                          ))}
-                        </ul>
-                        <p className="mt-3">
-                          The seller sees the task, not the legal jargon. The agent and conveyancer still receive the structured branch data behind the scenes.
-                        </p>
-                      </div>
-                    ) : null}
-                  </article>
-
-                  <FormSection
-                    icon={FileCheck2}
-                    title="Document tasks"
-                    description="These uploads and follow-up items are generated from the same branch contract used everywhere else."
-                  >
-                    <div className="space-y-4">
-                      {complianceDocumentSections.length ? (
-                        complianceDocumentSections.map((section) => (
-                          <div key={section.key} className="space-y-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <h4 className="text-sm font-semibold text-[#22364a]">{section.label}</h4>
-                              <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7890a8]">
-                                {section.documents.length}
-                              </span>
-                            </div>
-                            <div className="grid gap-3">
-                              {section.documents.map((document) => (
-                                <DocumentCard key={document.key} document={document} />
-                              ))}
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm leading-6 text-[#60748b]">
-                          No branch-driven document tasks were triggered yet.
-                        </p>
-                      )}
-                    </div>
-                  </FormSection>
-                </div>
               </div>
             </StepShell>
           ) : null}
@@ -3447,11 +3221,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               title="Check your seller file"
               description="Once submitted, your agent will review the information and prepare the next step in your selling journey."
             >
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3">
                 <ReviewCard
                   title="Seller Summary"
                   missing={sellerMissing}
                   onEdit={() => setCurrentStep(0)}
+                  collapsible
+                  defaultOpen
                   items={[
                     { label: 'Seller', value: `${form.sellerFirstName} ${form.sellerSurname}`.trim() },
                     { label: 'Email', value: form.email },
@@ -3463,6 +3239,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   title="Property Summary"
                   missing={propertyMissing}
                   onEdit={() => setCurrentStep(1)}
+                  collapsible
                   items={[
                     { label: 'Category', value: getPropertyCategoryLabel(form.propertyCategory) },
                     { label: 'Property Type', value: propertyTypeLabel },
@@ -3475,6 +3252,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <ReviewCard
                   title="Occupancy & Finance"
                   onEdit={() => setCurrentStep(1)}
+                  collapsible
                   items={[
                     { label: 'Occupancy', value: formatValue(form.occupancyStatus) },
                     { label: 'Lease', value: form.leaseExists ? `Exists${form.leaseExpiryDate ? ` until ${form.leaseExpiryDate}` : ''}` : 'Not indicated' },
@@ -3485,6 +3263,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <ReviewCard
                   title="Selling Context"
                   onEdit={() => setCurrentStep(0)}
+                  collapsible
                   items={[
                     { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
                     { label: 'Timeline', value: formatValue(form.sellingTimeline) },
@@ -3494,6 +3273,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <ReviewCard
                   title="Compliance Summary"
                   onEdit={() => setCurrentStep(2)}
+                  collapsible
                   items={[
                     { label: 'Seller Profile', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
                     { label: 'Branch Tasks', value: `${complianceDocuments.length} item${complianceDocuments.length === 1 ? '' : 's'} identified` },

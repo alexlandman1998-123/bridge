@@ -676,11 +676,15 @@ function mapPropertyBranchToLegacyPropertyType(branch, category = '', structureT
 
 export function resolveSellerBranch(form = {}, listing = {}, facts = {}) {
   const source = normalizeFactsSource(form, listing, facts)
+  const explicitOwnershipBranch = resolveBranchFromRules(form?.ownershipType, SELLER_BRANCH_RULES, '')
+  if (explicitOwnershipBranch) {
+    return explicitOwnershipBranch
+  }
+
   const directCandidates = [
     source?.flow?.seller_branch,
     source?.seller?.branch,
     form?.sellerBranch,
-    form?.ownershipType,
     form?.sellerLegalType,
     form?.sellerType,
     listing?.sellerBranch,
