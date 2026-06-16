@@ -647,6 +647,12 @@ function readSellerOnboardingFormData(listing = {}, row = {}) {
     const canonicalProperty = isPlainObject(canonicalFacts?.property) ? canonicalFacts.property : {}
     const canonicalTransaction = isPlainObject(canonicalFacts?.transaction) ? canonicalFacts.transaction : {}
     const canonicalSeller = isPlainObject(canonicalFacts?.seller) ? canonicalFacts.seller : {}
+    const propertyDetails = isPlainObject(record?.propertyDetails)
+      ? record.propertyDetails
+      : isPlainObject(record?.property_details)
+        ? record.property_details
+        : {}
+    const marketing = isPlainObject(record?.marketing) ? record.marketing : {}
 
     const candidates = [
       record?.onboardingDataSnapshot,
@@ -676,12 +682,40 @@ function readSellerOnboardingFormData(listing = {}, row = {}) {
         askingPrice: canonicalTransaction.asking_price,
         mandateType: canonicalTransaction.mandate_type,
       },
+      {
+        propertyAddress: propertyDetails.propertyAddress || propertyDetails.address || propertyDetails.formattedAddress,
+        propertyAddressLine1: propertyDetails.addressLine1 || propertyDetails.address_line_1,
+        propertyAddressLine2: propertyDetails.addressLine2 || propertyDetails.address_line_2,
+        suburb: propertyDetails.suburb,
+        city: propertyDetails.city,
+        province: propertyDetails.province,
+        postalCode: propertyDetails.postalCode || propertyDetails.postal_code,
+        propertyType: propertyDetails.propertyType || propertyDetails.property_type,
+        bedrooms: propertyDetails.bedrooms,
+        bathrooms: propertyDetails.bathrooms,
+        garages: propertyDetails.garages,
+        erfSize: propertyDetails.erfSize || propertyDetails.erf_size,
+        floorSize: propertyDetails.floorSize || propertyDetails.floor_size,
+        askingPrice: propertyDetails.price || propertyDetails.askingPrice || propertyDetails.asking_price,
+        levies: propertyDetails.levies,
+        ratesTaxes: propertyDetails.ratesTaxes || propertyDetails.rates_taxes,
+        saleType: propertyDetails.saleType || propertyDetails.sale_type,
+        features: propertyDetails.selectedFeatures || propertyDetails.features || marketing.selectedFeatures,
+        propertyNotes: propertyDetails.description || propertyDetails.notes || marketing.description,
+        listingPreviewDescription: propertyDetails.listingPreviewDescription || marketing.listingPreviewDescription,
+      },
     ]
 
     for (const candidate of candidates) {
       const unwrapped = unwrapCandidate(candidate)
       if (!isPlainObject(unwrapped)) continue
-      Object.assign(merged, clonePlainObject(unwrapped))
+      const cloned = clonePlainObject(unwrapped)
+      for (const [key, value] of Object.entries(cloned)) {
+        if (!key || value === undefined || value === null) continue
+        if (typeof value === 'string' && !value.trim() && hasValue(merged[key])) continue
+        if (Array.isArray(value) && !value.length && hasValue(merged[key])) continue
+        merged[key] = value
+      }
     }
   }
 
@@ -7130,9 +7164,17 @@ function getSellerMandateMeta(row = {}, listing = null, journey = null) {
 
 function getSellerPropertySummary(row = {}, listing = null) {
   const formData = readSellerOnboardingFormData(listing || {}, row || {})
+  const propertyDetails = isPlainObject(listing?.propertyDetails)
+    ? listing.propertyDetails
+    : isPlainObject(row?.propertyDetails)
+      ? row.propertyDetails
+      : {}
   const address = normalizeText(
     formData?.propertyAddress ||
       formData?.propertyAddressLine1 ||
+      propertyDetails?.propertyAddress ||
+      propertyDetails?.address ||
+      propertyDetails?.addressLine1 ||
       listing?.propertyAddress ||
       listing?.property_address ||
       listing?.address ||
@@ -7145,20 +7187,20 @@ function getSellerPropertySummary(row = {}, listing = null) {
       row?.areaInterest ||
       row?.area_interest,
   )
-  const suburb = normalizeText(formData?.suburb || listing?.suburb || row?.suburb || row?.areaInterest || row?.area_interest)
-  const city = normalizeText(formData?.city || listing?.city || row?.city)
+  const suburb = normalizeText(formData?.suburb || propertyDetails?.suburb || listing?.suburb || row?.suburb || row?.areaInterest || row?.area_interest)
+  const city = normalizeText(formData?.city || propertyDetails?.city || listing?.city || row?.city)
   const lowerAddress = address.toLowerCase()
   const addressParts = [address]
   if (suburb && !lowerAddress.includes(suburb.toLowerCase())) addressParts.push(suburb)
   if (city && !lowerAddress.includes(city.toLowerCase())) addressParts.push(city)
   return {
     address: addressParts.filter(Boolean).join(', ') || 'Property address pending',
-    propertyType: normalizeText(formData?.propertyType || listing?.propertyType || listing?.property_type || row?.propertyType || row?.property_type) || 'Property type pending',
-    estimatedValue: Number(formData?.askingPrice || listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || row?.estimatedValue || row?.estimated_value || row?.budget || 0) || 0,
-    bedrooms: normalizeText(formData?.bedrooms || listing?.bedrooms || listing?.propertyDetails?.bedrooms || row?.bedrooms),
-    bathrooms: normalizeText(formData?.bathrooms || listing?.bathrooms || listing?.propertyDetails?.bathrooms || row?.bathrooms),
-    erfSize: normalizeText(formData?.erfSize || listing?.erfSize || listing?.erf_size || listing?.propertyDetails?.erfSize || row?.erfSize || row?.erf_size),
-    description: normalizeText(formData?.propertyDescription || formData?.description || listing?.description || listing?.propertyDescription || listing?.property_description || row?.notes),
+    propertyType: normalizeText(formData?.propertyType || propertyDetails?.propertyType || propertyDetails?.property_type || listing?.propertyType || listing?.property_type || row?.propertyType || row?.property_type) || 'Property type pending',
+    estimatedValue: Number(formData?.askingPrice || propertyDetails?.price || propertyDetails?.askingPrice || propertyDetails?.asking_price || listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || row?.estimatedValue || row?.estimated_value || row?.budget || 0) || 0,
+    bedrooms: normalizeText(formData?.bedrooms || propertyDetails?.bedrooms || listing?.bedrooms || listing?.propertyDetails?.bedrooms || row?.bedrooms),
+    bathrooms: normalizeText(formData?.bathrooms || propertyDetails?.bathrooms || listing?.bathrooms || listing?.propertyDetails?.bathrooms || row?.bathrooms),
+    erfSize: normalizeText(formData?.erfSize || propertyDetails?.erfSize || propertyDetails?.erf_size || listing?.erfSize || listing?.erf_size || listing?.propertyDetails?.erfSize || row?.erfSize || row?.erf_size),
+    description: normalizeText(formData?.propertyDescription || formData?.propertyNotes || formData?.description || propertyDetails?.description || propertyDetails?.notes || listing?.marketing?.description || listing?.description || listing?.propertyDescription || listing?.property_description || row?.notes),
   }
 }
 
@@ -7683,6 +7725,106 @@ function getSellerDocumentStatusSummary(documents = []) {
 function getSellerDocumentCountForTab(documents = [], tabKey = 'all') {
   const rows = (Array.isArray(documents) ? documents : []).filter((document) => document?.required !== false && document?.applicable !== false)
   return rows.filter((document) => normalizeText(document.category).toLowerCase() === tabKey).length
+}
+
+function getSellerDocumentCategoryFromRequirement(requirement = {}) {
+  const group = normalizeText(requirement?.requirement_group || requirement?.group || requirement?.category).toLowerCase()
+  if (group === 'property' || group === 'occupancy' || group === 'financial') return 'property'
+  if (['seller_identity', 'marital', 'fica', 'compliance', 'property_compliance', 'company', 'trust', 'deceased_estate', 'power_of_attorney'].includes(group)) return 'fica'
+  return 'additional'
+}
+
+function getSellerRequirementDocumentKey(requirement = {}) {
+  return normalizeText(
+    requirement?.requirement_key ||
+      requirement?.requirementKey ||
+      requirement?.key ||
+      requirement?.canonical_requirement_instance_id ||
+      requirement?.id ||
+      requirement?.requirement_name ||
+      requirement?.label,
+  ).toLowerCase()
+}
+
+function findSellerUploadedDocumentForRequirement(requirement = {}, documents = []) {
+  const requirementId = normalizeText(requirement?.id)
+  const canonicalRequirementId = normalizeText(requirement?.canonical_requirement_instance_id || requirement?.canonicalRequirementInstanceId)
+  const requirementKey = getSellerRequirementDocumentKey(requirement)
+  return (Array.isArray(documents) ? documents : []).find((document) => {
+    const documentRequirementId = normalizeText(document?.requirement_id || document?.requirementId)
+    const documentCanonicalId = normalizeText(document?.canonical_requirement_instance_id || document?.canonicalRequirementInstanceId)
+    const documentType = normalizeText(document?.document_type || document?.documentType || document?.category).toLowerCase()
+    const documentName = normalizeText(document?.document_name || document?.documentName || document?.fileName || document?.file_name).toLowerCase()
+    return (
+      (requirementId && documentRequirementId === requirementId) ||
+      (canonicalRequirementId && documentCanonicalId === canonicalRequirementId) ||
+      (requirementKey && (documentType === requirementKey || documentName.includes(requirementKey.replace(/_/g, ' '))))
+    )
+  }) || null
+}
+
+function buildSellerDocumentRowsFromListing(listing = null, row = {}) {
+  const requirements = Array.isArray(listing?.documentRequirements)
+    ? listing.documentRequirements
+    : Array.isArray(row?.documentRequirements)
+      ? row.documentRequirements
+      : []
+  const documents = Array.isArray(listing?.documents)
+    ? listing.documents
+    : Array.isArray(row?.documents)
+      ? row.documents
+      : []
+
+  return requirements.map((requirement) => {
+    const uploadedDocument = findSellerUploadedDocumentForRequirement(requirement, documents)
+    const label = normalizeText(requirement?.requirement_name || requirement?.requirementName || requirement?.label || requirement?.name || requirement?.requirement_key || requirement?.key)
+    const uploadedUrl = normalizeText(uploadedDocument?.url || uploadedDocument?.fileUrl || uploadedDocument?.file_url || uploadedDocument?.signedUrl || uploadedDocument?.signed_url)
+    const uploadedName = normalizeText(uploadedDocument?.fileName || uploadedDocument?.file_name || uploadedDocument?.document_name || uploadedDocument?.documentName)
+    return {
+      id: normalizeText(requirement?.id || requirement?.canonical_requirement_instance_id || requirement?.requirement_key || label),
+      key: getSellerRequirementDocumentKey(requirement),
+      title: label,
+      label,
+      description: normalizeText(requirement?.requirement_description || requirement?.description),
+      whyNeeded: normalizeText(requirement?.whyNeeded || requirement?.why_needed),
+      category: getSellerDocumentCategoryFromRequirement(requirement),
+      status: uploadedDocument ? normalizeText(uploadedDocument?.status || 'uploaded') || 'uploaded' : normalizeText(requirement?.status || 'required') || 'required',
+      required: requirement?.is_required !== false,
+      applicable: requirement?.applicable !== false,
+      url: uploadedUrl,
+      uploadedFileName: uploadedName,
+      uploadedAt: uploadedDocument?.uploadedAt || uploadedDocument?.uploaded_at || uploadedDocument?.createdAt || uploadedDocument?.created_at || null,
+      uploadedBy: uploadedDocument?.uploadedBy || uploadedDocument?.uploaded_by || '',
+      original: {
+        requirement,
+        document: uploadedDocument,
+      },
+    }
+  }).filter((document) => document.id || document.key || document.label)
+}
+
+function mergeSellerDocumentRows(primaryRows = [], fallbackRows = []) {
+  const merged = new Map()
+  for (const document of [...fallbackRows, ...primaryRows]) {
+    const key = normalizeText(document?.key || document?.id || document?.title || document?.label).toLowerCase()
+    if (!key) continue
+    const previous = merged.get(key)
+    if (!previous) {
+      merged.set(key, document)
+      continue
+    }
+    const previousHasUrl = Boolean(previous.url || previous.documentUrl || previous.document_url)
+    const nextHasUrl = Boolean(document.url || document.documentUrl || document.document_url)
+    merged.set(key, {
+      ...previous,
+      ...document,
+      url: nextHasUrl ? (document.url || document.documentUrl || document.document_url) : previous.url,
+      uploadedFileName: document.uploadedFileName || previous.uploadedFileName,
+      uploadedAt: document.uploadedAt || previous.uploadedAt,
+      status: nextHasUrl && !previousHasUrl ? document.status : (document.status || previous.status),
+    })
+  }
+  return Array.from(merged.values())
 }
 
 function SellerWorkspaceCard({ title, action, children, className = '', id = '', density = 'regular' }) {
@@ -10041,8 +10183,12 @@ function SellerMandateTab({
   )
 }
 
-function SellerDocumentsTab({ journey }) {
-  const documents = useMemo(() => (Array.isArray(journey?.documents) ? journey.documents : []), [journey])
+function SellerDocumentsTab({ journey, listing = null, row = {} }) {
+  const documents = useMemo(() => {
+    const journeyDocuments = Array.isArray(journey?.documents) ? journey.documents : []
+    const listingDocuments = buildSellerDocumentRowsFromListing(listing, row)
+    return mergeSellerDocumentRows(journeyDocuments, listingDocuments)
+  }, [journey, listing, row])
   const completion = getSellerDocumentCompletion(documents)
   const summary = useMemo(() => getSellerDocumentStatusSummary(documents), [documents])
   const [activeTab, setActiveTab] = useState('property')
@@ -10552,7 +10698,7 @@ function SellerTabContent({
       />
     )
   }
-  if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} />
+  if (activeTab === 'documents') return <SellerDocumentsTab journey={journey} listing={listing} row={row} />
   if (activeTab === 'activity') return <SellerActivityTab timeline={timeline} row={row} listing={listing} journey={journey} readiness={readiness} onTabChange={onTabChange} />
   return (
     <SellerOverviewTab

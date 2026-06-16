@@ -291,6 +291,12 @@ function normalizeTransaction(row = {}) {
 function normalizeListing(row = {}) {
   const listingId = getListingId(row) || readId(row, ['id'])
   const propertyAddress = normalizeText(row?.title || row?.property_address || row?.propertyAddress || row?.address || row?.addressLine1 || row?.address_line_1)
+  const sellerOnboarding = row?.sellerOnboarding || row?.seller_onboarding || null
+  const sellerOnboardingStatus = normalizeText(
+    row?.sellerOnboardingStatus ||
+      row?.seller_onboarding_status ||
+      sellerOnboarding?.status,
+  )
   return {
     ...row,
     id: listingId,
@@ -302,7 +308,7 @@ function normalizeListing(row = {}) {
     listingVisibility: normalizeText(row?.listingVisibility || row?.listing_visibility),
     mandateStatus: normalizeText(row?.mandateStatus || row?.mandate_status),
     mandatePacketId: readId(row, ['mandatePacketId', 'mandate_packet_id']),
-    sellerOnboardingStatus: normalizeText(row?.sellerOnboardingStatus || row?.seller_onboarding_status),
+    sellerOnboardingStatus,
     status: normalizeText(row?.listingStatus || row?.listing_status || row?.status),
     title: propertyAddress || normalizeText(row?.suburb),
     propertyAddress,
@@ -496,6 +502,14 @@ export function buildAgentLeadRows({
     const enquiryListingId = readId(lead, ['enquiredListingId', 'enquired_listing_id'])
     const enquiryListing = enquiryListingId ? relatedListings.find((listing) => getListingId(listing) === enquiryListingId) || null : null
     const sellerListing = relatedListings[0] || null
+    const sellerOnboarding = lead?.sellerOnboarding || lead?.seller_onboarding || sellerListing?.sellerOnboarding || sellerListing?.seller_onboarding || null
+    const sellerOnboardingStatus = normalizeText(
+      lead?.sellerOnboardingStatus ||
+        lead?.seller_onboarding_status ||
+        sellerOnboarding?.status ||
+        sellerListing?.sellerOnboardingStatus ||
+        sellerListing?.seller_onboarding_status,
+    )
     const sellerAddressParts = [
       normalizeText(lead?.sellerPropertyAddress || lead?.seller_property_address || sellerListing?.propertyAddress),
       normalizeText(lead?.sellerPropertyAddress || sellerListing?.suburb || sellerListing?.suburb || lead?.areaInterest || lead?.area_interest),
@@ -545,7 +559,21 @@ export function buildAgentLeadRows({
       assignmentHistory: relatedAssignmentHistory,
       createdAt: lead?.createdAt || lead?.created_at || null,
       updatedAt: lead?.updatedAt || lead?.updated_at || null,
-      listingId,
+      listingId: listingId || expandedContext.listingId,
+      privateListingId: listingId || expandedContext.listingId,
+      mandatePacketId: lead?.mandatePacketId || lead?.mandate_packet_id || sellerListing?.mandatePacketId || sellerListing?.mandate_packet_id,
+      sellerOnboarding,
+      sellerOnboardingStatus,
+      seller_onboarding_status: sellerOnboardingStatus,
+      sellerOnboardingToken: lead?.sellerOnboardingToken || lead?.seller_onboarding_token || sellerOnboarding?.token || sellerListing?.sellerOnboardingToken || sellerListing?.seller_onboarding_token,
+      sellerOnboardingLink: lead?.sellerOnboardingLink || lead?.seller_onboarding_link || sellerOnboarding?.link || sellerListing?.sellerOnboardingLink || sellerListing?.seller_onboarding_link,
+      sellerOnboardingSubmittedAt: lead?.sellerOnboardingSubmittedAt || lead?.seller_onboarding_submitted_at || sellerOnboarding?.submittedAt || sellerOnboarding?.submitted_at || sellerOnboarding?.completedAt,
+      sellerOnboardingCompletedAt: lead?.sellerOnboardingCompletedAt || lead?.seller_onboarding_completed_at || sellerOnboarding?.completedAt || sellerOnboarding?.submittedAt || sellerOnboarding?.submitted_at,
+      sellerCanonicalFacts: lead?.sellerCanonicalFacts || lead?.seller_canonical_facts_json || sellerListing?.sellerCanonicalFacts || sellerListing?.seller_canonical_facts_json,
+      sellerCanonicalFactReadiness: lead?.sellerCanonicalFactReadiness || lead?.seller_canonical_fact_readiness_json || sellerListing?.sellerCanonicalFactReadiness || sellerListing?.seller_canonical_fact_readiness_json,
+      propertyDetails: lead?.propertyDetails || sellerListing?.propertyDetails || sellerListing?.property_details,
+      documentRequirements: Array.isArray(lead?.documentRequirements) ? lead.documentRequirements : Array.isArray(sellerListing?.documentRequirements) ? sellerListing.documentRequirements : [],
+      documents: Array.isArray(lead?.documents) ? lead.documents : Array.isArray(sellerListing?.documents) ? sellerListing.documents : [],
       convertedTransactionId,
       latestActivity,
       nextTask,
@@ -914,12 +942,28 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
   const directoryLookup = buildAgentDirectoryLookup(directory)
   const normalizedListings = listings.map(normalizeListing)
   const linkedListing = normalizedListings.find((listing) => matchesLeadContext(listing, context)) || null
-  const hydratedLinkedListing = await safeReadHydratedPrivateListing(context.listingId || linkedListing?.id || linkedListing?.listingId)
+  const normalizedDocumentPackets = documentPackets.map(normalizeDocumentPacket)
+  const packetListingIds = normalizedDocumentPackets
+    .filter((packet) => packetMatchesLeadContext(packet, context))
+    .map((packet) => packet.listingId)
+    .filter(Boolean)
+  const candidateListingIds = [
+    context.listingId,
+    linkedListing?.id,
+    linkedListing?.listingId,
+    ...packetListingIds,
+  ].map(normalizeText).filter(Boolean)
+  let hydratedLinkedListing = null
+  for (const candidateListingId of [...new Set(candidateListingIds)]) {
+    hydratedLinkedListing = await safeReadHydratedPrivateListing(candidateListingId)
+    if (hydratedLinkedListing) break
+  }
   const hydratedListing = hydratedLinkedListing ? normalizeListing(hydratedLinkedListing) : null
   const hydratedListingId = getNormalizedListingId(hydratedListing)
+  const candidateListingIdSet = new Set(candidateListingIds)
   const workspaceListings = normalizedListings
     .map((listing) => (hydratedListingId && getNormalizedListingId(listing) === hydratedListingId ? hydratedListing : listing))
-    .filter((listing) => matchesLeadContext(listing, context))
+    .filter((listing) => matchesLeadContext(listing, context) || candidateListingIdSet.has(getNormalizedListingId(listing)))
   if (hydratedListing && !workspaceListings.some((listing) => getNormalizedListingId(listing) === hydratedListingId)) {
     workspaceListings.push(hydratedListing)
   }
