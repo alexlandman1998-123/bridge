@@ -146,8 +146,12 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
   const propertyTitle = normalizeText(payload.propertyTitle) || "your property";
   const propertyType = normalizeText(payload.propertyType);
   const transactionReference = normalizeText(payload.transactionReference);
-  const onboardingLink = normalizeText(payload.onboardingLink);
   const emailKind = normalizeText(payload.emailKind) || "onboarding";
+  const portalDocumentsMode = emailKind.toLowerCase() === "portal_documents" ||
+    normalizeText(payload.type).toLowerCase() === "seller_portal_link";
+  const onboardingLink = portalDocumentsMode
+    ? normalizeText(payload.portalLink) || normalizeText(payload.onboardingLink)
+    : normalizeText(payload.onboardingLink);
   const agentName = normalizeText(payload.agentName);
   const organisationName = normalizeText(payload.organisationName) || "Bridge";
   const organisationId = normalizeText(payload.organisationId);
@@ -242,7 +246,7 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
 
   return jsonResponse(200, {
     ok: true,
-    type: "seller_onboarding",
+    type: portalDocumentsMode ? "seller_portal_link" : "seller_onboarding",
     emailId: emailResult.data?.id || null,
   });
 }

@@ -7546,7 +7546,7 @@ function getSellerJourneyStepDate(row = {}, listing = null, journey = null, step
   return journey?.currentStageStartedAt || row?.updatedAt || row?.updated_at
 }
 
-function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboarding = {}, organisationId = '', actor = {}, workspaceName = '', emailKind = 'onboarding' } = {}) {
+function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboarding = {}, organisationId = '', actor = {}, workspaceName = '', emailKind = 'onboarding', portalLink = '' } = {}) {
   const propertyTitle = normalizeText(
     row?.sellerPropertyAddress ||
       row?.seller_property_address ||
@@ -7561,15 +7561,19 @@ function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboardin
       row?.area_interest ||
       'your property',
   )
+  const normalizedEmailKind = normalizeText(emailKind) || 'onboarding'
+  const normalizedPortalLink = normalizeText(portalLink || onboarding?.portalLink || onboarding?.clientPortalLink)
+  const normalizedOnboardingLink = normalizeText(onboarding?.link)
   return {
-    type: 'seller_onboarding_link',
-    emailKind: normalizeText(emailKind) || 'onboarding',
+    type: normalizedEmailKind === 'portal_documents' ? 'seller_portal_link' : 'seller_onboarding_link',
+    emailKind: normalizedEmailKind,
     to: normalizeText(row.email || row.contact?.email).toLowerCase(),
     organisationId: normalizeText(organisationId),
     sellerName: normalizeText(row.name || row.contact?.name || 'Seller'),
     propertyTitle,
     propertyType: normalizeText(row?.propertyType || row?.property_type || listing?.propertyType || listing?.property_type),
-    onboardingLink: normalizeText(onboarding?.link),
+    onboardingLink: normalizedEmailKind === 'portal_documents' ? normalizedPortalLink : normalizedOnboardingLink,
+    portalLink: normalizedPortalLink,
     transactionReference: getLeadDisplayReference(row),
     agentName: normalizeText(row.assignedAgentName || actor.fullName || actor.name || actor.email),
     organisationName: normalizeText(workspaceName),
@@ -9651,7 +9655,7 @@ function SellerProfileTab({
             className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             disabled={!onResendSellerPortalLink || !portalLink}
           >
-            Resend onboarding
+            Resend seller portal link
           </button>
           <button
             type="button"
@@ -9795,7 +9799,7 @@ function SellerProfileTab({
                   className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                   disabled={!onResendSellerPortalLink || !portalLink}
                 >
-                  Resend onboarding
+                  Resend seller portal link
                 </button>
                 <button
                   type="button"
@@ -9886,7 +9890,7 @@ function SellerProfileTab({
                 className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 disabled={!onResendSellerPortalLink || !portalLink}
               >
-                Resend onboarding
+                Resend seller portal link
               </button>
               <button
                 type="button"
@@ -11432,7 +11436,8 @@ function AgentLeadWorkspace() {
         body: buildSellerOnboardingEmailPayload({
           row,
           listing: linkedSellerListing,
-          onboarding: { link: portalLink },
+          onboarding: { portalLink },
+          portalLink,
           organisationId,
           actor,
           workspaceName,

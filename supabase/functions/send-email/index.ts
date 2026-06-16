@@ -199,13 +199,17 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (["seller_onboarding", "seller_onboarding_link"].includes(type)) {
+    if (["seller_onboarding", "seller_onboarding_link", "seller_portal_link"].includes(type)) {
       console.log("[send-email] routing template", {
-        route: "seller_onboarding",
+        route: type === "seller_portal_link" ? "seller_portal_link" : "seller_onboarding",
         recipient: recipient || null,
       });
       return await handleSellerOnboardingEmail(
-        payload as SendSellerOnboardingPayload,
+        {
+          ...(payload as SendSellerOnboardingPayload),
+          type: type === "seller_portal_link" ? "seller_portal_link" : (payload as SendSellerOnboardingPayload).type,
+          emailKind: type === "seller_portal_link" ? "portal_documents" : (payload as SendSellerOnboardingPayload).emailKind,
+        },
       );
     }
 
@@ -225,6 +229,7 @@ Deno.serve(async (req: Request) => {
         recipient: recipient || null,
       });
       return await handleSellerOnboardingSubmittedEmail(
+        req,
         payload as SendSellerOnboardingSubmittedPayload,
       );
     }

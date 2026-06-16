@@ -1992,17 +1992,16 @@ function AgentListingDetail() {
       const agent = getCanonicalOfferActor()
       const emailResponse = await invokeEdgeFunction('send-email', {
         body: {
-          type: 'seller_mandate_sent',
+          type: 'seller_portal_link',
+          emailKind: 'portal_documents',
           to: sellerEmail,
           organisationId: listingOrganisationId,
           recipientRole: 'seller',
           recipientName: sellerName,
           sellerName,
           propertyTitle: listingRecord?.listingTitle || listingRecord?.title || listingRecord?.propertyAddress || 'your property',
-          mandateType: 'Mandate',
-          mandateStartDate: marketingDraft.listingDate || '',
-          mandateEndDate: marketingDraft.expiryDate || '',
-          askingPrice: formatCurrency(marketingDraft.price || listingRecord?.askingPrice || listingRecord?.estimatedValue),
+          propertyType: listingRecord?.propertyType || listingRecord?.property_type || '',
+          onboardingLink: portalLink,
           portalLink,
           agentName: agent.name,
         },
