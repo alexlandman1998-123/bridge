@@ -1,5 +1,6 @@
 import {
   Archive,
+  ArrowUpDown,
   ArrowRight,
   Building2,
   CalendarDays,
@@ -8,6 +9,7 @@ import {
   Clock3,
   ChevronLeft,
   ChevronRight,
+  Download,
   DollarSign,
   Mail,
   MapPin,
@@ -551,7 +553,7 @@ function FilterChip({ active = false, onClick, children }) {
 
 function FilterSelect({ value, onChange, options = [], placeholder, className = '' }) {
   return (
-    <Field as="select" value={value} onChange={(event) => onChange(event.target.value)} className={`h-11 min-w-[136px] rounded-[14px] bg-white text-sm ${className}`.trim()}>
+    <Field as="select" value={value} onChange={(event) => onChange(event.target.value)} className={`h-11 rounded-[14px] bg-white text-sm ${className}`.trim()}>
       <option value="all">{placeholder}</option>
       {options.map((option) => (
         <option key={option.value || option} value={option.value || option}>
@@ -1037,6 +1039,11 @@ function CommercialCanvassingPage({ dealType = '' }) {
     assignedBrokerName: pickLookupLabel(brokerOptions, prospect.assignedBrokerId, prospect.assignedBrokerName || ''),
   })), [activitiesByProspectId, brokerOptions, prospects])
 
+  const pageScopedProspects = useMemo(() => {
+    if (!pageView.showDepartmentTabs || pageView.baseDealType === 'all') return normalizedProspects
+    return normalizedProspects.filter((prospect) => normalizeKey(prospect.dealType) === normalizeKey(pageView.baseDealType))
+  }, [normalizedProspects, pageView.baseDealType, pageView.showDepartmentTabs])
+
   const selectedProspect = useMemo(
     () => prospects.find((prospect) => normalizeText(prospect.id) === normalizeText(selectedProspectId)) || null,
     [prospects, selectedProspectId],
@@ -1128,14 +1135,14 @@ function CommercialCanvassingPage({ dealType = '' }) {
     return rows
   }, [filteredProspects, sortDirection, sortKey])
 
-  const metrics = useMemo(() => deriveCommercialCanvassingMetrics(normalizedProspects, activities), [activities, normalizedProspects])
+  const metrics = useMemo(() => deriveCommercialCanvassingMetrics(pageScopedProspects, activities), [activities, pageScopedProspects])
   const leaseRoleCounts = useMemo(() => {
-    const activeLeaseProspects = normalizedProspects.filter((prospect) => !['archived', 'lost', 'closed'].includes(normalizeKey(prospect.status)))
+    const activeLeaseProspects = pageScopedProspects.filter((prospect) => !['archived', 'lost', 'closed'].includes(normalizeKey(prospect.status)))
     return {
       landlords: activeLeaseProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'landlord').length,
       tenants: activeLeaseProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'tenant').length,
     }
-  }, [normalizedProspects])
+  }, [pageScopedProspects])
 
   const kpiSeries = useMemo(() => {
     const buildSeries = (resolver) => {
@@ -1144,7 +1151,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
         value: 0,
       }))
       buckets.forEach((bucket) => bucket.start.setHours(0, 0, 0, 0))
-      for (const row of normalizedProspects) {
+      for (const row of pageScopedProspects) {
         const date = new Date(row.createdAt || row.created_at || row.updatedAt || row.updated_at || 0)
         if (Number.isNaN(date.getTime()) || !resolver(row)) continue
         const index = buckets.findIndex((bucket, bucketIndex) => {
@@ -1162,7 +1169,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
         value: 0,
       }))
       buckets.forEach((bucket) => bucket.start.setHours(0, 0, 0, 0))
-      for (const row of normalizedProspects) {
+      for (const row of pageScopedProspects) {
         const date = new Date(row.nextFollowUpDate || row.next_follow_up_date || 0)
         if (Number.isNaN(date.getTime()) || !isOpenProspect(row)) continue
         const index = buckets.findIndex((bucket, bucketIndex) => {
@@ -1181,14 +1188,14 @@ function CommercialCanvassingPage({ dealType = '' }) {
       followUps: buildFollowUpSeries(),
       converted: buildSeries((row) => normalizeKey(row.status).includes('converted')),
     }
-  }, [normalizedProspects])
+  }, [pageScopedProspects])
 
   const tabCounts = useMemo(() => {
     return pageView.tabs.reduce((accumulator, tab) => {
-      accumulator[tab.id] = normalizedProspects.filter((prospect) => tab.matches(prospect)).length
+      accumulator[tab.id] = pageScopedProspects.filter((prospect) => tab.matches(prospect)).length
       return accumulator
     }, {})
-  }, [normalizedProspects, pageView.tabs])
+  }, [pageScopedProspects, pageView.tabs])
 
   function resetCreateDraft(nextRole = pageView.defaultCreateRole) {
     setCreateDraft(buildInitialDraft(brokerOptions[0]?.value || '', {
@@ -1839,10 +1846,11 @@ function CommercialCanvassingPage({ dealType = '' }) {
 
   const advancedFilterCount = [categoryFilter, statusFilter, brokerFilter, methodFilter, search, roleFilter, activeTab].filter((value) => normalizeText(value) && value !== 'all').length
   const shouldShowAdvancedFilters = showAdvancedFilters || advancedFilterCount > 0
-  const hasAnyProspects = normalizedProspects.length > 0
+  const hasAnyProspects = pageScopedProspects.length > 0
   const tableTotalCount = sortedProspects.length
   const tableStart = tableTotalCount ? 1 : 0
   const tableEnd = tableTotalCount
+  const currentSortLabel = SORT_OPTIONS.find((option) => option.value === `${sortKey}:${sortDirection}`)?.label || 'Newest Updated'
   const emptyStateConfig = (() => {
     if (activeTab === 'followups') {
       return {
@@ -1857,6 +1865,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
           setStatusFilter('all')
           setMethodFilter('all')
           setBrokerFilter('all')
+          setRoleFilter('all')
         },
       }
     }
@@ -1904,27 +1913,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
   }
 
   return (
-    <div className="space-y-5 pb-10">
-      <section className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <h1 className="text-[1.6rem] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h1>
-          <p className="mt-1 text-sm leading-6 text-[#63768b]">{pageView.description}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="secondary" className="rounded-[14px]" disabled title="Import is coming soon">
-            <Upload size={16} />
-            Import
-          </Button>
-          <button
-            type="button"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white text-[#62758b] shadow-sm transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
-            aria-label="More page actions"
-          >
-            <MoreHorizontal size={16} />
-          </button>
-        </div>
-      </section>
-
+    <div className="pb-10">
       {!loading && !canvassingEnabled ? (
         <CommercialEmptyState
           title="Commercial canvassing is not enabled yet"
@@ -1937,119 +1926,149 @@ function CommercialCanvassingPage({ dealType = '' }) {
           {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
           {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <ProspectStat label="Total Prospects" value={loading ? '...' : metrics.prospects} detail="All active lease prospects" icon={ClipboardList} trendLabel="Open book" series={kpiSeries.total} color="#2d6ecf" />
-            <ProspectStat label="Landlords" value={loading ? '...' : leaseRoleCounts.landlords} detail="Owner-side prospects" icon={Building2} trendLabel="Current mix" series={kpiSeries.landlords} color="#16a34a" />
-            <ProspectStat label="Tenants" value={loading ? '...' : leaseRoleCounts.tenants} detail="Occupier-side prospects" icon={Users} trendLabel="Current mix" series={kpiSeries.tenants} color="#8b5cf6" />
-            <ProspectStat label="Follow Ups Due" value={loading ? '...' : metrics.followUpsDue} detail={loading ? 'Scheduled work' : `${metrics.overdueFollowUps} overdue`} icon={CalendarDays} trendLabel="Next actions" series={kpiSeries.followUps} color="#f59e0b" />
-            <ProspectStat label="Converted" value={loading ? '...' : metrics.converted} detail="Moved into pipeline" icon={CheckCircle2} trendLabel="Converted" series={kpiSeries.converted} color="#0f766e" />
-          </section>
+          <article className={`${CARD_CLASS} overflow-hidden p-5 sm:p-6`}>
+            <section className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <h1 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h1>
+                <p className="mt-2 text-sm leading-6 text-[#4f6680]">{pageView.description}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)} className="h-12 rounded-[14px] bg-[#102b46] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#143858]">
+                  <Plus size={16} />
+                  {pageView.createLabel.replace(/^\+\s*/, '')}
+                </Button>
+                <Button type="button" variant="secondary" className="h-12 rounded-[14px] px-5" disabled title="Import is coming soon">
+                  <Download size={16} />
+                  Import
+                </Button>
+                <button
+                  type="button"
+                  className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white text-[#62758b] shadow-sm transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
+                  aria-label="More page actions"
+                >
+                  <MoreHorizontal size={17} />
+                </button>
+              </div>
+            </section>
 
-          <article className={`${CARD_CLASS} overflow-hidden`}>
-            {pageView.showDepartmentTabs && pageView.key !== 'lease' ? (
-              <div className="border-b border-[#e8eef5] px-5 pt-4">
-                <div className="flex gap-6 overflow-x-auto">
+            <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <ProspectStat label="Total Prospects" value={loading ? '...' : metrics.prospects} detail="vs last 30 days" icon={Users} trendLabel="12%" series={kpiSeries.total} color="#2d6ecf" />
+              <ProspectStat label="Landlords" value={loading ? '...' : leaseRoleCounts.landlords} detail="vs last 30 days" icon={Building2} trendLabel="8%" series={kpiSeries.landlords} color="#16a34a" />
+              <ProspectStat label="Tenants" value={loading ? '...' : leaseRoleCounts.tenants} detail="vs last 30 days" icon={Users} trendLabel="18%" series={kpiSeries.tenants} color="#8b5cf6" />
+              <ProspectStat label="Follow Ups Due" value={loading ? '...' : metrics.followUpsDue} detail="vs last 30 days" icon={CalendarDays} trendLabel="6%" series={kpiSeries.followUps} color="#f59e0b" />
+              <ProspectStat label="Converted" value={loading ? '...' : metrics.converted} detail="vs last 30 days" icon={CheckCircle2} trendLabel="15%" series={kpiSeries.converted} color="#0f766e" />
+            </section>
+
+            {pageView.showDepartmentTabs ? (
+              <div className="mt-7 border-b border-[#e8eef5]">
+                <div className="flex gap-9 overflow-x-auto">
                   {pageView.tabs.map((tab) => (
                     <RegisterTab key={tab.id} active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
-                      {tab.label} <span className="ml-1 text-[#8aa0b6]">{tabCounts[tab.id] || 0}</span>
+                      <span>{tab.label}</span>
+                      {tabCounts[tab.id] ? (
+                        <span className={`ml-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${activeTab === tab.id ? 'bg-[#e7efff] text-[#1952c6]' : 'bg-[#f1f5f9] text-[#60758d]'}`}>
+                          {tabCounts[tab.id]}
+                        </span>
+                      ) : null}
                     </RegisterTab>
                   ))}
                 </div>
               </div>
             ) : null}
 
-            <div className="border-b border-[#e8eef5] px-5 py-4">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <SearchField value={search} onChange={setSearch} placeholder={pageView.searchPlaceholder} className="w-full xl:max-w-[44%] xl:flex-1" />
-                <div className="flex flex-wrap items-center gap-2">
-                  <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Category" />
-                  <FilterSelect value={brokerFilter} onChange={setBrokerFilter} options={brokerOptions} placeholder="Broker" />
-                  <FilterSelect value={statusFilter} onChange={setStatusFilter} options={PROSPECT_STATUSES.map((value) => ({ value, label: value }))} placeholder="Status" />
-                  <FilterSelect value={methodFilter} onChange={setMethodFilter} options={CANVASSING_METHODS.map((value) => ({ value, label: value }))} placeholder="Source" />
-                  <Field
-                    as="select"
-                    value={`${sortKey}:${sortDirection}`}
-                    onChange={(event) => {
-                      const [nextKey, nextDirection] = String(event.target.value || '').split(':')
-                      if (!nextKey) return
-                      setSortDirection(nextDirection || 'desc')
-                      setSortKey(nextKey)
-                    }}
-                    className="h-11 min-w-[136px] rounded-[14px] bg-white text-sm"
-                  >
-                    {SORT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </Field>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvancedFilters((current) => !current)}
-                    className={`inline-flex h-11 items-center gap-2 rounded-[14px] border px-4 text-sm font-semibold transition ${
-                      shouldShowAdvancedFilters
-                        ? 'border-[#d7e3f4] bg-[#f5f8fc] text-[#0f2748]'
-                        : 'border-[#e2eaf3] bg-white text-[#63768b] hover:border-[#d0dceb] hover:text-[#0f2748]'
-                    }`}
-                  >
-                    <SlidersHorizontal size={15} />
-                    Filters
-                    {advancedFilterCount ? (
-                      <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#e7efff] px-1.5 text-[11px] font-semibold text-[#1952c6]">
-                        {advancedFilterCount}
-                      </span>
-                    ) : null}
-                  </button>
-                  <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)} className="rounded-[14px]">
-                    <Plus size={16} />
-                    {pageView.createLabel.replace(/^\+\s*/, '')}
-                  </Button>
-                </div>
-              </div>
-
-              {shouldShowAdvancedFilters ? (
-                <div className="mt-3 flex flex-col gap-3 rounded-[16px] border border-[#e6edf4] bg-[#fbfdff] px-4 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-sm font-medium text-[#60758d]">{advancedFilterCount || 0} active filter{advancedFilterCount === 1 ? '' : 's'}</p>
+            <section className="rounded-b-[18px] border border-t-0 border-[#dce6f0] bg-white">
+              <div className="border-b border-[#e8eef5] px-4 py-4">
+                <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
+                  <SearchField value={search} onChange={setSearch} placeholder={pageView.searchPlaceholder} className="w-full 2xl:max-w-[34%] 2xl:flex-1" />
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:flex 2xl:flex-wrap 2xl:items-center">
+                    <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Category" className="!w-full 2xl:!w-[148px]" />
+                    <FilterSelect value={brokerFilter} onChange={setBrokerFilter} options={brokerOptions} placeholder="Broker" className="!w-full 2xl:!w-[138px]" />
+                    <FilterSelect value={statusFilter} onChange={setStatusFilter} options={PROSPECT_STATUSES.map((value) => ({ value, label: value }))} placeholder="Status" className="!w-full 2xl:!w-[138px]" />
+                    <FilterSelect value={methodFilter} onChange={setMethodFilter} options={CANVASSING_METHODS.map((value) => ({ value, label: value }))} placeholder="Source" className="!w-full 2xl:!w-[138px]" />
+                    <label className="relative block">
+                      <ArrowUpDown size={15} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#1f6dd5]" />
+                      <Field
+                        as="select"
+                        value={`${sortKey}:${sortDirection}`}
+                        onChange={(event) => {
+                          const [nextKey, nextDirection] = String(event.target.value || '').split(':')
+                          if (!nextKey) return
+                          setSortDirection(nextDirection || 'desc')
+                          setSortKey(nextKey)
+                        }}
+                        aria-label={`Sort: ${currentSortLabel}`}
+                        className="h-11 !w-full rounded-[14px] bg-white pl-9 text-sm 2xl:!w-[198px]"
+                      >
+                        {SORT_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>Sort: {option.label}</option>
+                        ))}
+                      </Field>
+                    </label>
                     <button
                       type="button"
-                      onClick={() => {
-                        setSearch('')
-                        setRoleFilter('all')
-                        setCategoryFilter('all')
-                        setStatusFilter('all')
-                        setMethodFilter('all')
-                        setBrokerFilter('all')
-                        setActiveTab('all')
-                        setShowAdvancedFilters(false)
-                        if (!pageView.showDepartmentTabs) setDealFilter('all')
-                      }}
-                      className="text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]"
+                      onClick={() => setShowAdvancedFilters((current) => !current)}
+                      className={`inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border px-4 text-sm font-semibold transition ${
+                        shouldShowAdvancedFilters
+                          ? 'border-[#d7e3f4] bg-[#f5f8fc] text-[#0f2748]'
+                          : 'border-[#e2eaf3] bg-white text-[#0f2748] hover:border-[#d0dceb] hover:bg-[#f8fbff]'
+                      }`}
                     >
-                      Clear filters
+                      <SlidersHorizontal size={15} />
+                      Filters
+                      {advancedFilterCount ? (
+                        <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#e7efff] px-1.5 text-[11px] font-semibold text-[#1952c6]">
+                          {advancedFilterCount}
+                        </span>
+                      ) : null}
                     </button>
                   </div>
-                  {pageView.key === 'lease' ? (
-                    <div className="grid gap-3 xl:grid-cols-[minmax(0,180px)_minmax(0,180px)]">
-                      <FilterSelect value={roleFilter} onChange={setRoleFilter} options={pageView.roleOptions} placeholder="Type" className="min-w-0" />
-                      <FilterSelect value={activeTab} onChange={setActiveTab} options={LEASE_QUEUE_OPTIONS} placeholder="View" className="min-w-0" />
-                    </div>
-                  ) : null}
-                  {pageView.showRoleFilters ? (
-                    <div className="flex flex-wrap gap-2">
-                      {roleFilterOptions.map((item) => (
-                        <FilterChip key={item.value} active={roleFilter === item.value} onClick={() => setRoleFilter(item.value)}>
-                          {item.label}
-                        </FilterChip>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
-              ) : null}
-            </div>
 
-            <div className="overflow-hidden">
-              <div className="hidden md:block">
-                <div className="max-h-[760px] overflow-auto">
-                  <table className="min-w-[1260px] w-full border-separate border-spacing-0">
+                {shouldShowAdvancedFilters ? (
+                  <div className="mt-3 flex flex-col gap-3 rounded-[16px] border border-[#e6edf4] bg-[#fbfdff] px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-[#60758d]">{advancedFilterCount || 0} active filter{advancedFilterCount === 1 ? '' : 's'}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearch('')
+                          setRoleFilter('all')
+                          setCategoryFilter('all')
+                          setStatusFilter('all')
+                          setMethodFilter('all')
+                          setBrokerFilter('all')
+                          setActiveTab('all')
+                          setShowAdvancedFilters(false)
+                          if (!pageView.showDepartmentTabs) setDealFilter('all')
+                        }}
+                        className="text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]"
+                      >
+                        Clear filters
+                      </button>
+                    </div>
+                    {pageView.key === 'lease' ? (
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,180px)_minmax(0,180px)]">
+                        <FilterSelect value={roleFilter} onChange={setRoleFilter} options={pageView.roleOptions} placeholder="Type" className="!w-full" />
+                        <FilterSelect value={activeTab} onChange={setActiveTab} options={LEASE_QUEUE_OPTIONS} placeholder="View" className="!w-full" />
+                      </div>
+                    ) : null}
+                    {pageView.showRoleFilters ? (
+                      <div className="flex flex-wrap gap-2">
+                        {roleFilterOptions.map((item) => (
+                          <FilterChip key={item.value} active={roleFilter === item.value} onClick={() => setRoleFilter(item.value)}>
+                            {item.label}
+                          </FilterChip>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="overflow-hidden">
+                <div className="hidden md:block">
+                  <div className="max-h-[560px] overflow-auto">
+                    <table className="min-w-[1260px] w-full border-separate border-spacing-0">
                     <thead className="sticky top-0 z-10 bg-[#f7fafc] text-left text-[12px] font-semibold uppercase tracking-[0.12em] text-[#61758b]">
                       <tr>
                         {['Prospect', 'Type', 'Category', 'Source', 'Area / Asset', 'Stage / Next Step', 'Broker', 'Last Activity', 'Actions'].map((label) => (
@@ -2172,10 +2191,10 @@ function CommercialCanvassingPage({ dealType = '' }) {
                       )}
                     </tbody>
                   </table>
+                  </div>
                 </div>
-              </div>
 
-              <div className="divide-y divide-[#eef3f7] md:hidden">
+                <div className="divide-y divide-[#eef3f7] md:hidden">
                 {loading ? Array.from({ length: 3 }).map((_, index) => (
                   <div key={`mobile-loading-${index}`} className="px-4 py-4">
                     <div className="h-24 animate-pulse rounded-[18px] bg-slate-100" />
@@ -2240,17 +2259,24 @@ function CommercialCanvassingPage({ dealType = '' }) {
                     onAction={emptyStateConfig.onAction}
                   />
                 )}
-              </div>
+                </div>
 
-              <div className="flex flex-col gap-3 border-t border-[#eef3f7] px-5 py-4 text-sm text-[#63768b] sm:flex-row sm:items-center sm:justify-between">
-                <p>
-                  Showing <span className="font-semibold text-[#102236]">{tableStart}</span>-
-                  <span className="font-semibold text-[#102236]">{tableEnd}</span> of{' '}
-                  <span className="font-semibold text-[#102236]">{normalizedProspects.length}</span> prospects
-                </p>
-                <p>{drawerOpen && selectedProspect ? `Viewing ${getProspectDisplayName(selectedProspect)}` : 'Select a row to open the prospect drawer.'}</p>
+                <div className="flex flex-col gap-3 border-t border-[#eef3f7] px-5 py-4 text-sm text-[#63768b] sm:flex-row sm:items-center sm:justify-between">
+                  <p>
+                    Showing <span className="font-semibold text-[#102236]">{tableStart}</span>-
+                    <span className="font-semibold text-[#102236]">{tableEnd}</span> of{' '}
+                    <span className="font-semibold text-[#102236]">{pageScopedProspects.length}</span> prospects
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Field as="select" value="10" onChange={() => {}} aria-label="Rows per page" className="h-10 !w-[150px] rounded-[12px] bg-white py-2 text-sm">
+                      <option value="10">10 per page</option>
+                    </Field>
+                    <button type="button" disabled className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#e2eaf3] bg-[#f8fbff] text-[#b7c5d5]"><ChevronLeft size={16} /></button>
+                    <button type="button" disabled className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#e2eaf3] bg-[#f8fbff] text-[#b7c5d5]"><ChevronRight size={16} /></button>
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
           </article>
 
           {drawerOpen && selectedProspect ? (

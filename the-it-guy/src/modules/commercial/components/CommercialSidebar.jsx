@@ -12,6 +12,7 @@ function CommercialSidebar({ scope = null }) {
   const currentWorkspacePath = `${location.pathname}${location.search || ''}`
   const DashboardIcon = COMMERCIAL_DASHBOARD_NAV_ITEM.icon
   const activeItemClass = 'bg-[rgba(0,102,204,0.08)] text-[#0B3A5B] shadow-[inset_0_0_0_1px_rgba(0,102,204,0.12)]'
+  const sectionOpenClass = 'bg-slate-50 text-[#0B3A5B] shadow-[inset_0_0_0_1px_rgba(15,23,42,0.04)]'
   const inactiveItemClass = 'text-slate-600 hover:bg-slate-50 hover:text-[#0B3A5B]'
   const navItemClass = 'flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150'
   const childItemClass = 'ml-4 min-h-9 rounded-lg pr-3 pl-9 text-[0.94rem]'
@@ -79,7 +80,7 @@ function CommercialSidebar({ scope = null }) {
                     className={[
                       navItemClass,
                       'mt-3 w-full justify-between',
-                      activeSectionId === section.id ? activeItemClass : inactiveItemClass,
+                      expandedSectionId === section.id ? sectionOpenClass : inactiveItemClass,
                     ].join(' ')}
                     aria-expanded={expandedSectionId === section.id}
                   >
