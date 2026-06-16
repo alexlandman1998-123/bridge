@@ -943,6 +943,7 @@ export default function LegalDocumentWorkspacePage() {
   const [workspaceSettings, setWorkspaceSettings] = useState(null)
   const [leadContext, setLeadContext] = useState({ lead: null, contact: null, linkedTransaction: null })
   const [contextHydrated, setContextHydrated] = useState(false)
+  const [routeContextSettled, setRouteContextSettled] = useState(false)
   const [initialStatus, setInitialStatus] = useState(null)
   const [validatedRoutePacketId, setValidatedRoutePacketId] = useState('')
   const [mandateDraftOverrides, setMandateDraftOverrides] = useState({})
@@ -996,7 +997,12 @@ export default function LegalDocumentWorkspacePage() {
     }),
     [mandateDraftDefaults, mandateDraftOverrides],
   )
-  const showMandateDraftPanel = packetType === 'mandate' && mode === 'generate' && !validatedRoutePacketId && !initialStatus?.packet?.id
+  const showMandateDraftPanel =
+    routeContextSettled &&
+    packetType === 'mandate' &&
+    mode === 'generate' &&
+    !validatedRoutePacketId &&
+    !initialStatus?.packet?.id
   const updateMandateDraftField = useCallback((field, value) => {
     setMandateDraftOverrides((previous) => ({
       ...previous,
@@ -1009,6 +1015,7 @@ export default function LegalDocumentWorkspacePage() {
 
   const loadRouteContext = useCallback(async () => {
     setContextHydrated(false)
+    setRouteContextSettled(hasRenderedContextRef.current)
     setLoadingContext(!hasRenderedContextRef.current)
     setPageError('')
     setValidatedRoutePacketId('')
@@ -1278,6 +1285,7 @@ export default function LegalDocumentWorkspacePage() {
         setPageError(toFriendlyPageError(error))
       }
     } finally {
+      setRouteContextSettled(true)
       if (!renderedFallback) setLoadingContext(false)
     }
   }, [actor, requestedPacketType, role, routeLeadId, routePacketId, routeTransactionId])

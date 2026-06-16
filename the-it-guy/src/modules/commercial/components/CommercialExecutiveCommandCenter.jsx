@@ -18,9 +18,10 @@ import {
   Users,
   Warehouse,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import CommercialEmptyState from './CommercialEmptyState'
-import { formatNumber, titleize } from '../commercialFormatters'
+import ActivePipelineCarousel from '../../../components/pipeline/ActivePipelineCarousel'
+import { formatNumber } from '../commercialFormatters'
 
 const PANEL_CLASS = 'rounded-[24px] border border-[rgba(15,23,42,0.07)] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]'
 const GLASS_CARD_CLASS = 'rounded-[24px] border border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] shadow-[0_8px_24px_rgba(15,23,42,0.04)] backdrop-blur-xl'
@@ -876,6 +877,83 @@ function getPropertyImage(row = {}) {
   return normalizeText(row.property?.image_url || row.property?.hero_image_url || row.property?.photo_url || row.listing?.image_url || row.listing?.hero_image_url || row.image_url || row.photo_url)
 }
 
+function formatWholeCurrency(value) {
+  const amount = toNumber(value)
+  if (!amount) return 'R0'
+  return new Intl.NumberFormat('en-ZA', {
+    style: 'currency',
+    currency: 'ZAR',
+    maximumFractionDigits: 0,
+  }).format(amount).replace('ZAR', 'R')
+}
+
+function getCommercialStageKey(mode, row = {}) {
+  const value = normalizeLower(row.status || row.stage || row.currentStage || row.current_stage || row.listing_status)
+  if (mode === 'sales') {
+    if (value.includes('sold') || value.includes('completed')) return 'sold'
+    if (value.includes('diligence')) return 'due_diligence'
+    if (value.includes('under offer')) return 'under_offer'
+    if (value.includes('offer') || value.includes('proposal')) return 'offer'
+    return 'listing'
+  }
+  if (value.includes('signed') || value.includes('ready_for_lease')) return 'signed'
+  if (value.includes('negotiat') || value.includes('proposal')) return 'negotiation'
+  if (value.includes('head') || value.includes('hot')) return 'heads_of_terms'
+  if (value.includes('view')) return 'viewing'
+  return 'requirement'
+}
+
+function getCommercialStageLabel(mode, stageKey) {
+  if (mode === 'sales') {
+    return {
+      listing: 'Listing',
+      offer: 'Offer',
+      under_offer: 'Under Offer',
+      due_diligence: 'Due Diligence',
+      sold: 'Sold',
+    }[stageKey] || 'Listing'
+  }
+  return {
+    requirement: 'Requirement',
+    viewing: 'Viewing',
+    heads_of_terms: 'Heads of Terms',
+    negotiation: 'Negotiation',
+    signed: 'Signed',
+  }[stageKey] || 'Requirement'
+}
+
+function getCommercialClientDetails(mode, row = {}) {
+  const roleValue = normalizeLower(row.client_role || row.party_role || row.company?.role || row.role || row.requirement_type || row.listing_type)
+  if (mode === 'sales') {
+    const sellerName = normalizeText(row.seller?.name || row.owner?.name || row.landlord?.name)
+    const buyerName = normalizeText(row.buyer?.name || row.company?.name || row.company?.company_name)
+    if (roleValue.includes('buyer') || roleValue.includes('purchaser')) return { label: 'Buyer', name: buyerName || 'Buyer pending' }
+    if (roleValue.includes('seller') || roleValue.includes('vendor') || roleValue.includes('owner')) return { label: 'Seller', name: sellerName || getClientName(row) }
+    if (sellerName) return { label: 'Seller', name: sellerName }
+    if (buyerName) return { label: 'Buyer', name: buyerName }
+    return { label: 'Client', name: getClientName(row) }
+  }
+
+  const landlordName = normalizeText(row.landlord?.name || row.owner?.name)
+  const tenantName = normalizeText(row.tenant?.name || row.company?.name || row.company?.company_name)
+  if (roleValue.includes('landlord') || roleValue.includes('owner')) return { label: 'Landlord', name: landlordName || getClientName(row) }
+  if (roleValue.includes('tenant') || roleValue.includes('occupier')) return { label: 'Tenant', name: tenantName || 'Tenant pending' }
+  if (tenantName) return { label: 'Tenant', name: tenantName }
+  if (landlordName) return { label: 'Landlord', name: landlordName }
+  return { label: 'Client', name: getClientName(row) }
+}
+
+function getCommercialValueLabel(mode, row = {}) {
+  const value = getTransactionValue(row)
+  if (mode === 'sales') return formatCompactCurrency(value)
+
+  const monthlyRental = toNumber(row.monthly_rental || row.asking_rental || row.hot?.monthly_rental || row.deal?.monthly_rental)
+  const annualRental = toNumber(row.annual_rental || row.total_value || row.deal_value || row.target_value)
+  if (monthlyRental > 0) return `${formatWholeCurrency(monthlyRental)} pm`
+  if (annualRental > 0) return `${formatCompactCurrency(annualRental)} pa`
+  return formatCompactCurrency(value)
+}
+
 function buildActiveDealCards(mode, slices = {}) {
   const rows = mode === 'sales'
     ? [...slices.openTransactions, ...slices.deals, ...slices.listings]
@@ -889,62 +967,75 @@ function buildActiveDealCards(mode, slices = {}) {
       return true
     })
     .sort((left, right) => (asDate(right.updatedAt || right.updated_at || right.createdAt || right.created_at || 0)?.getTime() || 0) - (asDate(left.updatedAt || left.updated_at || left.createdAt || left.created_at || 0)?.getTime() || 0))
-    .slice(0, 10)
-    .map((row) => ({
-      id: row.id,
-      property: getPropertyName(row),
-      area: getAreaName(row),
-      client: getClientName(row),
-      broker: getBrokerName(row),
-      stage: titleize(row.status || row.stage || row.currentStage || row.listing_status || (mode === 'sales' ? 'listing' : 'requirement')),
-      value: getTransactionValue(row),
-      image: getPropertyImage(row),
-      daysInStage: daysBetween(row.updatedAt || row.updated_at || row.createdAt || row.created_at, startOfToday()),
-      to: row.id && String(row.id).startsWith('ctx-') ? '/commercial/deals' : `/commercial/transactions/${row.id}`,
-    }))
+    .map((row) => {
+      const stageKey = getCommercialStageKey(mode, row)
+      const client = getCommercialClientDetails(mode, row)
+      return {
+        id: row.id,
+        property: getPropertyName(row),
+        area: getAreaName(row),
+        client: getClientName(row),
+        clientLabel: client.label,
+        clientName: client.name,
+        broker: getBrokerName(row),
+        stage: getCommercialStageLabel(mode, stageKey),
+        stageKey,
+        value: getTransactionValue(row),
+        valueLabel: getCommercialValueLabel(mode, row),
+        image: getPropertyImage(row),
+        daysInStage: daysBetween(row.updatedAt || row.updated_at || row.createdAt || row.created_at, startOfToday()),
+        to: row.id && String(row.id).startsWith('ctx-') ? '/commercial/deals' : `/commercial/transactions/${row.id}`,
+      }
+    })
 }
 
 function CommercialActiveDealsCarousel({ mode, rows = [], loading = false }) {
+  const navigate = useNavigate()
   const title = mode === 'sales' ? 'Active Sales Deals' : 'Active Lease Deals'
+  const records = rows.map((row) => ({
+    id: row.id,
+    title: row.property,
+    subtitle: row.area,
+    value: row.value,
+    valueLabel: row.valueLabel,
+    ownerName: row.broker,
+    ownerRoleLabel: 'Broker',
+    daysInStage: row.daysInStage,
+    stageKey: row.stageKey,
+    statusLabel: row.stage,
+    clientLabel: row.clientLabel,
+    clientName: row.clientName,
+    imageUrl: row.image,
+  }))
+  const totalValue = rows.reduce((sum, row) => sum + toNumber(row.value), 0)
+
   return (
     <section className={`${PANEL_CLASS} p-5`}>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#0f2748]">{title}</h2>
-        <Link to={mode === 'sales' ? '/commercial/sales/deals' : '/commercial/leasing/deals'} className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f6dd5]">
-          View all
-          <ChevronRight size={14} />
-        </Link>
-      </div>
-      {rows.length ? (
-        <div className="mt-4 flex snap-x gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {rows.map((row) => (
-            <Link key={row.id} to={row.to} className="w-[254px] shrink-0 snap-start overflow-hidden rounded-[16px] border border-[#e3ebf4] bg-white shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(15,23,42,0.07)]">
-              <div className="relative h-[112px] bg-[#edf2f7]">
-                {row.image ? (
-                  <img src={row.image} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="grid h-full place-items-center bg-[linear-gradient(135deg,#f4f8fc_0%,#e7eef7_100%)] text-[#8a9aac]">
-                    <Building2 size={28} />
-                  </div>
-                )}
-                <span className="absolute right-2 top-2 max-w-[140px] truncate rounded-full bg-white/92 px-2.5 py-1 text-[10px] font-bold text-[#123b61] shadow-sm">{row.stage}</span>
-              </div>
-              <div className="p-3">
-                <p className="truncate text-[13px] font-semibold text-[#102236]">{row.property}</p>
-                <p className="mt-1 truncate text-[11px] font-medium text-[#66768a]">{row.area}</p>
-                <p className="mt-2 text-[16px] font-semibold leading-none text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.value)}</p>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] text-[#66768a]">
-                  <span className="min-w-0"><strong className="block truncate text-[#203247]">{row.client}</strong>Client</span>
-                  <span className="min-w-0 text-right"><strong className="block truncate text-[#203247]">{row.broker}</strong>Broker</span>
-                </div>
-                <p className="mt-2 text-[10px] font-semibold text-[#7b8ca2]">{row.daysInStage ?? '-'} days in stage</p>
-              </div>
-            </Link>
-          ))}
-        </div>
-      ) : !loading ? (
-        <InlineEmptyPanel title={`No active ${mode} deals yet`} description="Live transactions will appear here once commercial work is opened." />
-      ) : null}
+      <ActivePipelineCarousel
+        title={title}
+        subtitle={mode === 'sales' ? 'Track commercial sale opportunities through to sold.' : 'Track lease opportunities from requirement to signed.'}
+        mode={mode === 'sales' ? 'commercial_sales' : 'commercial_leasing'}
+        records={records}
+        onViewAll={() => navigate(mode === 'sales' ? '/commercial/sales/deals' : '/commercial/leasing/deals')}
+        onOpenRecord={(id) => {
+          const target = rows.find((row) => String(row.id) === String(id))
+          if (target?.to) navigate(target.to)
+        }}
+        summary={{
+          primary:
+            mode === 'sales'
+              ? `${rows.length} sales deal${rows.length === 1 ? '' : 's'} in progress`
+              : `${rows.length} lease deal${rows.length === 1 ? '' : 's'} in progress`,
+          secondary:
+            mode === 'sales'
+              ? `Total pipeline value: ${formatCompactCurrency(totalValue)}`
+              : `Forecast rental pipeline: ${formatCompactCurrency(totalValue)}`,
+          actionLabel: 'View all pipeline',
+          onAction: () => navigate(mode === 'sales' ? '/commercial/sales/deals' : '/commercial/leasing/deals'),
+        }}
+        viewAllLabel="View all deals"
+        emptyState={!loading ? <InlineEmptyPanel title={`No active ${mode} deals yet`} description="Live transactions will appear here once commercial work is opened." /> : null}
+      />
     </section>
   )
 }

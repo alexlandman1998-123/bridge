@@ -35,10 +35,10 @@ const REVENUE_FORECAST_WEIGHTS = {
 }
 
 export const PRINCIPAL_DASHBOARD_DATE_PRESETS = [
-  { key: 'this_month', label: 'This Month' },
-  { key: 'last_month', label: 'Last Month' },
   { key: 'last_30_days', label: 'Last 30 Days' },
-  { key: 'this_year', label: 'This Year' },
+  { key: 'this_month', label: 'This Month' },
+  { key: 'last_90_days', label: 'Last 90 Days' },
+  { key: 'ytd', label: 'YTD' },
 ]
 
 function normalizeText(value) {
@@ -122,12 +122,17 @@ export function getDateRangeFromPreset(preset = 'this_month', { now = new Date()
     end = addDays(today, 1)
     previousStart = addDays(start, -30)
     previousEnd = start
+  } else if (key === 'last_90_days') {
+    start = addDays(today, -89)
+    end = addDays(today, 1)
+    previousStart = addDays(start, -90)
+    previousEnd = start
   } else if (key === 'last_month') {
     end = startOfMonth(baseDate)
     start = addMonths(end, -1)
     previousStart = addMonths(start, -1)
     previousEnd = start
-  } else if (key === 'this_year') {
+  } else if (key === 'ytd' || key === 'this_year') {
     start = startOfYear(baseDate)
     end = new Date(baseDate.getFullYear() + 1, 0, 1)
     previousStart = new Date(baseDate.getFullYear() - 1, 0, 1)
@@ -390,6 +395,35 @@ function getTransactionHealth(row = {}) {
   return { key: 'on_track', label: 'On Track' }
 }
 
+function getResidentialPipelineStageKey(row = {}) {
+  const status = getTransactionStatusText(row)
+  if (status.includes('registered') || status.includes('pending reg') || status.includes('lodg')) return 'settled_pending_registration'
+  if (status.includes('transfer') || status.includes('attorney') || status.includes('guarantee') || status.includes('unconditional')) return 'unconditional'
+  if (status.includes('finance') || status.includes('bond') || status.includes('conditional') || status.includes('condition')) return 'conditional'
+  if (status.includes('under offer') || status.includes('offer') || status.includes('otp') || status.includes('signed')) return 'under_offer'
+  return 'new_listing'
+}
+
+function getResidentialClientDetails(row = {}) {
+  const sellerName =
+    normalizeText(row.seller_name || row.seller_names || row.owner_name || row.owner_names || row.landlord_name)
+  const buyerName = normalizeText(row.buyer_name || row.purchaser_name || row.client_name || row.tenant_name)
+  if (sellerName) return { clientLabel: 'Seller', clientName: sellerName }
+  if (buyerName) return { clientLabel: 'Buyer', clientName: buyerName }
+  return { clientLabel: 'Buyer', clientName: 'Buyer pending' }
+}
+
+function getResidentialPipelineImage(row = {}) {
+  return normalizeText(
+    row.property_image_url ||
+    row.listing_image_url ||
+    row.primary_image_url ||
+    row.cover_image_url ||
+    row.image_url ||
+    row.photo_url,
+  )
+}
+
 function buildActiveTransactionCard(row = {}, usersByKey = new Map()) {
   const progressPercent = getActiveTransactionStageProgress(row)
   const stage = normalizeText(row.current_main_stage || row.stage || row.lifecycle_state || row.operational_state) || 'Transaction opened'
@@ -397,6 +431,7 @@ function buildActiveTransactionCard(row = {}, usersByKey = new Map()) {
   const developmentName = normalizeText(row.development_name || row.suburb || row.city || row.transaction_type) || 'Listing'
   const financeKey = getFinanceBucket(row)
   const nextAction = normalizeText(row.next_action || row.waiting_on_role || row.operational_state || row.attorney_stage || stage)
+  const clientDetails = getResidentialClientDetails(row)
   const stageStartedAt =
     row.current_stage_entered_at ||
     row.stage_entered_at ||
@@ -415,7 +450,12 @@ function buildActiveTransactionCard(row = {}, usersByKey = new Map()) {
     buyerName: normalizeText(row.buyer_name || row.purchaser_name || row.client_name) || 'Buyer pending',
     assignedAgent: getAgentName(row, usersByKey),
     stage,
+    stageKey: getResidentialPipelineStageKey(row),
     financeType: financeKey === 'bond' ? 'Bond' : financeKey === 'cash' ? 'Cash' : 'Finance TBC',
+    dealValue: getDealValue(row),
+    imageUrl: getResidentialPipelineImage(row),
+    clientLabel: clientDetails.clientLabel,
+    clientName: clientDetails.clientName,
     daysActive: daysBetween(row.created_at),
     daysInStage: daysBetween(stageStartedAt),
     progressPercent,
@@ -1408,8 +1448,8 @@ export async function getPrincipalDashboardData({
   assertResolvedWorkspaceContext({ organisationId: resolvedAgencyId, appRole: 'agent' }, { service: 'principalDashboardService.getPrincipalDashboardData' })
   const range = resolveDateRange(dateRangePreset || dateRange, new Date(), { startDate, endDate })
   const transactionFields = [
-    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, waiting_on_role, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, entered_stage_at, stage_entered_at, current_stage_entered_at, stage_changed_at, last_stage_changed_at, last_meaningful_activity_at, updated_at, created_at, is_active',
-    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, lifecycle_state, operational_state, risk_status, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, sales_price, purchase_price, finance_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, assigned_attorney_email, assigned_bond_originator_email, bank, next_action, waiting_on_role, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, deleted_at, entered_stage_at, stage_entered_at, current_stage_entered_at, stage_changed_at, last_stage_changed_at, last_meaningful_activity_at, updated_at, created_at, is_active',
+    'id, organisation_id, development_id, unit_id, buyer_id, assigned_user_id, assigned_agent_id, owner_user_id, created_by, finance_type, stage, current_main_stage, assigned_agent, assigned_agent_email, next_action, seller_name, seller_names, owner_name, owner_names, tenant_name, landlord_name, property_image_url, listing_image_url, primary_image_url, cover_image_url, image_url, photo_url, expected_transfer_date, registration_date, registered_at, completed_at, archived_at, cancelled_at, updated_at, created_at, is_active',
   ]
 
   const [

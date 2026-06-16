@@ -1928,7 +1928,7 @@ function SigningMethodPanel({
   ]
 
   return (
-    <section className={`flex h-full flex-col rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] ${className}`}>
+    <section className={`flex h-full flex-col overflow-hidden rounded-[24px] border border-[#e5edf7] bg-white p-5 shadow-[0_16px_40px_rgba(16,32,51,0.05)] ${className}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h4 className="text-[1rem] font-semibold text-[#102033]">Signing Method</h4>
@@ -1939,87 +1939,89 @@ function SigningMethodPanel({
         </span>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {options.map(({ key, title, description, Icon, next }) => {
-          const selected = normalizeSigningMethod(method) === key
-          const OptionIcon = Icon
-          const detailLine = key === 'digital' ? 'Fastest · ±2 mins average' : 'Download, print, sign, upload PDF.'
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => onSelect?.(key)}
-              disabled={busy || (!canChange && !selected)}
-              className={`flex h-full min-h-[150px] flex-col rounded-[20px] border p-4 text-left transition ${
-                selected
-                  ? 'border-[#0a66ff] bg-[#f4f8ff] shadow-[0_18px_44px_rgba(10,102,255,0.08)]'
-                  : 'border-[#e7eef7] bg-[#fbfdff] hover:border-[#c7d8eb] hover:bg-white'
-              } ${busy || (!canChange && !selected) ? 'cursor-not-allowed opacity-70' : ''}`}
-            >
-              <div className="flex min-h-0 flex-1 items-start gap-3">
-                <span className={`mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border ${
-                  selected ? 'border-[#cfe1ff] bg-white text-[#0a66ff]' : 'border-[#dce6f2] bg-white text-[#6d8299]'
-                }`}>
-                  <OptionIcon size={18} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-[1rem] font-semibold text-[#102033]">{title}</span>
-                    {selected ? (
-                      <span className="rounded-full border border-[#cfe1ff] bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-[#0a66ff]">
-                        Selected
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="mt-1 block text-sm leading-6 text-[#6b7c93]">{description}</span>
-                  <span className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[0.72rem] font-semibold ${
-                    key === 'digital' ? 'bg-[#eef5ff] text-[#0a66ff]' : 'bg-[#f5f7fb] text-[#6b7c93]'
+      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {options.map(({ key, title, description, Icon, next }) => {
+            const selected = normalizeSigningMethod(method) === key
+            const OptionIcon = Icon
+            const detailLine = key === 'digital' ? 'Fastest · ±2 mins average' : 'Download, print, sign, upload PDF.'
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onSelect?.(key)}
+                disabled={busy || (!canChange && !selected)}
+                className={`flex h-full min-h-[136px] flex-col rounded-[20px] border p-4 text-left transition ${
+                  selected
+                    ? 'border-[#0a66ff] bg-[#f4f8ff] shadow-[0_18px_44px_rgba(10,102,255,0.08)]'
+                    : 'border-[#e7eef7] bg-[#fbfdff] hover:border-[#c7d8eb] hover:bg-white'
+                } ${busy || (!canChange && !selected) ? 'cursor-not-allowed opacity-70' : ''}`}
+              >
+                <div className="flex min-h-0 flex-1 items-start gap-3">
+                  <span className={`mt-0.5 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border ${
+                    selected ? 'border-[#cfe1ff] bg-white text-[#0a66ff]' : 'border-[#dce6f2] bg-white text-[#6d8299]'
                   }`}>
-                    {detailLine}
+                    <OptionIcon size={18} />
                   </span>
-                  {selected ? <span className="mt-2 block text-[0.76rem] font-semibold text-[#0a66ff]">{next}</span> : null}
-                </span>
-              </div>
-            </button>
-          )
-        })}
-      </div>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-[1rem] font-semibold text-[#102033]">{title}</span>
+                      {selected ? (
+                        <span className="rounded-full border border-[#cfe1ff] bg-white px-2 py-0.5 text-[0.62rem] font-semibold text-[#0a66ff]">
+                          Selected
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-1 block text-sm leading-6 text-[#6b7c93]">{description}</span>
+                    <span className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[0.72rem] font-semibold ${
+                      key === 'digital' ? 'bg-[#eef5ff] text-[#0a66ff]' : 'bg-[#f5f7fb] text-[#6b7c93]'
+                    }`}>
+                      {detailLine}
+                    </span>
+                    {selected ? <span className="mt-2 block text-[0.76rem] font-semibold text-[#0a66ff]">{next}</span> : null}
+                  </span>
+                </div>
+              </button>
+            )
+          })}
+        </div>
 
-      <div className="mt-4 rounded-[20px] border border-[#edf3fa] bg-[#f8fbff] p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[#102033]">Prepare for Signature</p>
-            <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
-              Open signer details in a popup so this panel stays compact.
-            </p>
+        <div className="rounded-[20px] border border-[#edf3fa] bg-[#f8fbff] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#102033]">Prepare for Signature</p>
+              <p className="mt-1 text-xs leading-5 text-[#6b7c93]">
+                Open signer details in a popup so this panel stays compact.
+              </p>
+            </div>
+            <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+              signaturePrepSummary?.tone === 'amber'
+                ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
+                : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
+            }`}>
+              {signaturePrepSummary?.statusLabel || 'Ready to open'}
+            </span>
           </div>
-          <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
-            signaturePrepSummary?.tone === 'amber'
-              ? 'border-[#f4e2bf] bg-[#fff8ec] text-[#8a5b12]'
-              : 'border-[#cde8d6] bg-[#eef9f2] text-[#2e7b4f]'
-          }`}>
-            {signaturePrepSummary?.statusLabel || 'Ready to open'}
-          </span>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-            {resolveDocumentLabel(packetType)}
-          </span>
-          <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
-            {signaturePrepSummary?.readyLabel || 'Signer details ready'}
-          </span>
-        </div>
-        {lockedReason ? (
-          <p className="mt-3 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
-            {lockedReason}
-          </p>
-        ) : !canChange ? (
-          <p className="mt-3 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
-        ) : null}
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button type="button" size="sm" className="w-full" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
-            Open Signature Prep
-          </Button>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
+              {resolveDocumentLabel(packetType)}
+            </span>
+            <span className="inline-flex rounded-full border border-[#dce6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#5a738d]">
+              {signaturePrepSummary?.readyLabel || 'Signer details ready'}
+            </span>
+          </div>
+          {lockedReason ? (
+            <p className="mt-3 rounded-[16px] border border-[#f4e2bf] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5b12]">
+              {lockedReason}
+            </p>
+          ) : !canChange ? (
+            <p className="mt-3 text-sm text-[#6b7c93]">Generate the mandate before choosing a signing method.</p>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" size="sm" className="w-full" onClick={() => onOpenSignaturePrep?.()} disabled={busy}>
+              Open Signature Prep
+            </Button>
+          </div>
         </div>
       </div>
     </section>
@@ -4846,6 +4848,7 @@ export default function LegalDocumentWorkspace({
   const desktopWorkspaceRailHeightClassName = 'xl:h-[clamp(700px,calc(100vh-14rem),880px)]'
   const mainGridClassName = `grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-stretch 2xl:grid-cols-[340px_minmax(0,1fr)] ${desktopWorkspaceRailHeightClassName}`
   const secondaryGridClassName = 'mt-5 grid gap-5 xl:grid-cols-[minmax(430px,1.15fr)_minmax(320px,0.85fr)] xl:items-stretch 2xl:grid-cols-[minmax(480px,1.2fr)_minmax(360px,0.8fr)]'
+  const reviewRailPanelClassName = 'xl:h-[470px]'
 
   return (
     <>
@@ -5246,7 +5249,7 @@ export default function LegalDocumentWorkspace({
             </div>
 
             <div className={secondaryGridClassName}>
-              <aside className="space-y-5">
+              <aside className="h-full space-y-5">
                 {isMandatePacket ? (
                   <SigningMethodPanel
                     method={signingMethod}
@@ -5257,7 +5260,7 @@ export default function LegalDocumentWorkspace({
                     onOpenSignaturePrep={() => setSignerPrepOpen(true)}
                     signaturePrepSummary={signaturePrepSummary}
                     busy={actionBusy || loading}
-                    className="xl:h-[420px]"
+                    className={reviewRailPanelClassName}
                   />
                 ) : null}
 
@@ -5283,7 +5286,7 @@ export default function LegalDocumentWorkspace({
 
               </aside>
 
-              <aside className="space-y-5">
+              <aside className="h-full space-y-5">
                 <ActivityPanel
                   activeTab={activityTab}
                   onTabChange={setActivityTab}
@@ -5292,7 +5295,7 @@ export default function LegalDocumentWorkspace({
                   templateLabel={normalizeText(templateDetail?.template_label || statusState?.packet?.template_label_snapshot)}
                   templateKey={normalizeText(templateDetail?.template_key || statusState?.packet?.template_key_snapshot)}
                   templateStoragePath={normalizeText(templateDetail?.template_storage_path)}
-                  className="xl:h-[420px]"
+                  className={reviewRailPanelClassName}
                 />
               </aside>
             </div>

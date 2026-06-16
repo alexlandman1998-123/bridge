@@ -17,18 +17,20 @@ import QuickCreateDropdown from '../components/QuickCreateDropdown'
 import SummaryCards from '../components/SummaryCards'
 import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
 import BridgeCommandCenterDashboard from '../components/dashboard/BridgeCommandCenterDashboard'
-import {
-  AttentionRequiredCard,
-  CommissionForecastCard,
-  DashboardKpiStrip,
-  MobileDashboardShell,
-  RecentActivityCard,
-  RecentTransactionsCard,
-  TransactionFlow,
-  TransactionHealthCard,
-} from '../components/dashboard/PremiumDashboard'
-import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
+import ActivePipelineCarousel from '../components/pipeline/ActivePipelineCarousel'
 import { PillToggle } from '../components/ui/FilterBar'
+import {
+  ResidentialAppointments,
+  ResidentialAttentionRequired,
+  ResidentialActiveTransactionsCarousel,
+  ResidentialCommissionForecast,
+  ResidentialDashboardModeToggle,
+  ResidentialDashboardShell,
+  ResidentialKpiCard,
+  ResidentialPerformanceChart,
+  ResidentialTransactionFlow,
+  ResidentialTransactionHealth,
+} from '../components/residential/ResidentialDashboard'
 import {
   STAGE_AGING_BUCKETS,
   selectActiveTransactions,
@@ -69,6 +71,7 @@ import {
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import {
   getListingSourceLabel,
   getPropertyCategoryLabel,
@@ -140,6 +143,13 @@ function formatKpiCurrency(value) {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric) || numeric <= 0) return currency.format(0)
   return compactCurrency.format(numeric)
+}
+
+function getGreetingName(profile = {}) {
+  const value = String(profile?.fullName || profile?.name || '').trim()
+  if (!value) return 'Maya'
+  const firstToken = value.split(/\s+/)[0]
+  return firstToken ? firstToken.charAt(0).toUpperCase() + firstToken.slice(1) : 'Maya'
 }
 
 function PrincipalTrendBadge({ value, label = 'vs previous period', inverse = false }) {
@@ -875,6 +885,8 @@ function Dashboard() {
   const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
   const [organisationIdForAppointments, setOrganisationIdForAppointments] = useState('')
   const [principalTimeFilter, setPrincipalTimeFilter] = useState('this_week')
+  const [residentialMode, setResidentialMode] = useState('sales')
+  const [residentialDateRange, setResidentialDateRange] = useState('last_30_days')
   const [principalCrmSnapshot, setPrincipalCrmSnapshot] = useState({ leads: [], leadActivities: [] })
   const [principalCanvassingSnapshot, setPrincipalCanvassingSnapshot] = useState({ prospects: [], activities: [] })
 
@@ -2874,6 +2886,50 @@ function Dashboard() {
       })),
     }
   }, [AGENT_FOLLOW_UPS_DUE, AGENT_SUMMARY.activeTransactions, AGENT_SUMMARY.awaitingBuyerAction, AGENT_SUMMARY.missingDocuments, AGENT_SUMMARY.requiresAttention, activeTransactionCards, agentAttentionRows.length, agentDashboardPipelineRows, agentPerformanceMetrics, agentPipelineStages, agentRecentActivityRows, agentSharedData?.dashboard, isAgentRole, isPrincipalAgentView])
+  const agentResidentialModel = useMemo(() => {
+    if (!isAgentRole || isPrincipalAgentView || !agentPremiumModel) return null
+    const sellerStages = Array.isArray(agentPerformanceMetrics.conversionFunnel?.seller) ? agentPerformanceMetrics.conversionFunnel.seller : []
+    return deriveResidentialDashboardMetrics({
+      scope: 'agent',
+      mode: residentialMode,
+      dateRange: residentialDateRange,
+      branchId: workspace.id,
+      currentUserId: profile?.id || profile?.userId || '',
+      source: {
+        kpis: {
+          activeTransactions: Number(agentPremiumModel.health?.total || agentPerformanceMetrics.openDeals || AGENT_SUMMARY.activeTransactions || 0),
+          activeListings: Number(agentSharedData?.dashboard?.listingCount ?? agentPerformanceMetrics.listingCount ?? 0),
+          pipelineValue: Number(agentSharedData?.dashboard?.pipelineValue ?? agentPerformanceMetrics.activeDealValue ?? 0),
+          expectedCommission: Number(agentSharedData?.dashboard?.commissionEarned ?? agentSharedData?.dashboard?.estimatedCommission ?? agentPerformanceMetrics.commissionEarned ?? 0),
+          trends: {
+            activeTransactions: null,
+            activeListings: null,
+            pipelineValue: null,
+            expectedCommission: null,
+          },
+        },
+        health: agentPremiumModel.health,
+        performance: sellerStages,
+        transactionFlow: agentPremiumModel.flow,
+        activeTransactions: agentPremiumModel.recentTransactions,
+        attentionRows: agentPremiumModel.attention,
+        forecastRows: agentPremiumModel.forecastRows,
+        forecastValues: agentPremiumModel.forecastValues,
+        recentTransactions: agentPremiumModel.recentTransactions,
+        appointments: Array.isArray(appointmentSummary.rows) ? appointmentSummary.rows : [],
+        revenue: { forecast: { expectedCommission: agentPerformanceMetrics.commissionEarned || 0 } },
+        pipeline: {
+          salesFunnel: { stages: sellerStages },
+          totalValue: agentPerformanceMetrics.activeDealValue || 0,
+        },
+        transactions: {
+          totalActive: agentPerformanceMetrics.openDeals || 0,
+          flow: agentPremiumModel.flow,
+          health: agentPremiumModel.health,
+        },
+      },
+    })
+  }, [AGENT_SUMMARY.activeTransactions, agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.conversionFunnel?.seller, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPremiumModel, agentSharedData?.dashboard?.commissionEarned, agentSharedData?.dashboard?.estimatedCommission, agentSharedData?.dashboard?.listingCount, agentSharedData?.dashboard?.pipelineValue, appointmentSummary.rows, isAgentRole, isPrincipalAgentView, profile?.id, profile?.userId, residentialDateRange, residentialMode, workspace.id])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
     if (isBondRole) return '/bond/pipeline'
@@ -3021,6 +3077,176 @@ function renderActiveTransactionsBlock({
           </div>
         </article>
       </section>
+    )
+  }
+
+  if (isAgentRole && !isPrincipalAgentView) {
+    const sourceRows = Array.isArray(agentDashboardPipelineRows) ? agentDashboardPipelineRows : []
+    const sourceById = new Map()
+    for (const row of sourceRows) {
+      const transactionId = String(row?.transaction?.id || '').trim()
+      const unitId = String(row?.unit?.id || '').trim()
+      if (transactionId) sourceById.set(transactionId, row)
+      if (unitId) sourceById.set(unitId, row)
+    }
+
+    const extractImageUrl = (candidate) => {
+      if (!candidate) return ''
+      if (typeof candidate === 'string') return candidate.trim()
+      if (Array.isArray(candidate)) {
+        for (const item of candidate) {
+          const nested = extractImageUrl(item)
+          if (nested) return nested
+        }
+        return ''
+      }
+      if (typeof candidate === 'object') {
+        return String(
+          candidate.url ||
+          candidate.src ||
+          candidate.image_url ||
+          candidate.imageUrl ||
+          candidate.photo_url ||
+          candidate.photoUrl ||
+          candidate.cover_image_url ||
+          candidate.coverImageUrl ||
+          '',
+        ).trim()
+      }
+      return ''
+    }
+
+    const resolveResidentialImage = (row = {}) =>
+      extractImageUrl(
+        row?.unit?.image_url ||
+        row?.unit?.cover_image_url ||
+        row?.unit?.primary_image_url ||
+        row?.unit?.gallery_images ||
+        row?.development?.image_url ||
+        row?.development?.cover_image_url ||
+        row?.transaction?.property_image_url ||
+        row?.transaction?.listing_image_url,
+      )
+
+    const resolveResidentialStageKey = (row = {}, item = {}) => {
+      const haystack = [
+        item?.stageKey,
+        item?.stageLabel,
+        row?.transaction?.current_main_stage,
+        row?.transaction?.stage,
+        row?.stage,
+        row?.transaction?.current_sub_stage_summary,
+        row?.transaction?.operational_state,
+        row?.transaction?.attorney_stage,
+      ].map((value) => toLookupText(value)).join(' ')
+
+      if (haystack.includes('registered') || haystack.includes('pending reg') || haystack.includes('lodg')) return 'settled_pending_registration'
+      if (haystack.includes('transfer') || haystack.includes('attorney') || haystack.includes('guarantee') || haystack.includes('unconditional')) return 'unconditional'
+      if (haystack.includes('finance') || haystack.includes('bond') || haystack.includes('conditional') || haystack.includes('condition')) return 'conditional'
+      if (haystack.includes('under offer') || haystack.includes('offer') || haystack.includes('otp') || haystack.includes('signed')) return 'under_offer'
+      return 'new_listing'
+    }
+
+    const resolveResidentialStatusLabel = (stageKey) => ({
+      new_listing: 'New Listing',
+      under_offer: 'Under Offer',
+      conditional: 'Conditional',
+      unconditional: 'Unconditional',
+      settled_pending_registration: 'Pending Reg.',
+    }[stageKey] || 'Active')
+
+    const resolveClientDetails = (row = {}, item = {}) => {
+      const sellerName = String(
+        row?.seller?.name ||
+        row?.transaction?.seller_name ||
+        row?.transaction?.owner_name ||
+        '',
+      ).trim()
+      const buyerName = String(
+        row?.buyer?.name ||
+        row?.transaction?.buyer_name ||
+        item?.buyerName ||
+        '',
+      ).trim()
+      if (sellerName) return { label: 'Seller', name: sellerName }
+      if (buyerName) return { label: 'Buyer', name: buyerName }
+      return { label: 'Buyer', name: 'Buyer pending' }
+    }
+
+    const records = cards.map((item) => {
+      const sourceRow =
+        sourceById.get(String(item.transactionId || '').trim()) ||
+        sourceById.get(String(item.unitId || '').trim()) ||
+        null
+      const stageKey = resolveResidentialStageKey(sourceRow, item)
+      const client = resolveClientDetails(sourceRow, item)
+      const developmentName = String(sourceRow?.development?.name || item.developmentName || '').trim()
+      const locationLabel = [sourceRow?.unit?.suburb, sourceRow?.unit?.city, developmentName, item.phaseLabel ? `Phase ${item.phaseLabel}` : '', item.blockLabel ? `Block ${item.blockLabel}` : '']
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(' • ')
+      const recordId = item.unitId || item.transactionId || item.id
+
+      return {
+        id: recordId,
+        title: item.propertyIdentifier || (item.unitNumber ? `Unit ${item.unitNumber}` : 'Transaction'),
+        subtitle: locationLabel || developmentName || 'Residential active deal',
+        value: Number(item.dealValue || 0),
+        valueLabel: compactCurrency.format(Number(item.dealValue || 0)).replace('ZAR', 'R'),
+        ownerName: item.assignedAgentName || 'Unassigned',
+        ownerRoleLabel: 'Agent',
+        daysInStage: sourceRow ? getDaysSinceRowUpdate(sourceRow) : 0,
+        stageKey,
+        statusLabel: resolveResidentialStatusLabel(stageKey),
+        clientLabel: client.label,
+        clientName: client.name,
+        imageUrl: resolveResidentialImage(sourceRow),
+      }
+    })
+
+    const pipelineValue = activeTransactionCards.reduce((sum, item) => sum + Number(item?.dealValue || 0), 0)
+
+    return (
+      <ActivePipelineCarousel
+        title={title}
+        subtitle={description === 'Live deal execution progress by unit and stage.' ? 'Track your active deals and progress.' : description}
+        mode="residential_sales"
+        records={records}
+        onViewAll={() => navigateWithTrace(`${transactionsListPath}${transactionsListQuery}`, 'dashboard-to-transactions-list')}
+        onOpenRecord={(id) => {
+          const item = cards.find((card) => String(card.unitId || card.transactionId || card.id || '').trim() === String(id || '').trim())
+          if (!item?.unitId) return
+          startRouteTransitionTrace({
+            from: location.pathname,
+            to: `/units/${item.unitId}`,
+            label: 'dashboard-to-transaction-workspace',
+          })
+          navigate(`/units/${item.unitId}`, { state: { headerTitle: `Unit ${item.unitNumber}` } })
+        }}
+        summary={{
+          primary: `${activeTransactionCards.length} transaction${activeTransactionCards.length === 1 ? '' : 's'} in progress`,
+          secondary: `Total pipeline value: ${compactCurrency.format(pipelineValue).replace('ZAR', 'R')}`,
+          actionLabel: 'View all pipeline',
+          onAction: () => navigateWithTrace(`${transactionsListPath}${transactionsListQuery}`, 'dashboard-to-transactions-list'),
+        }}
+        viewAllLabel="View all transactions"
+        emptyState={(
+          <div className="rounded-[20px] border border-dashed border-[#d8e2ee] bg-white px-6 py-10 text-center">
+            <h4 className="text-[1rem] font-semibold tracking-[-0.02em] text-[#1d3146]">No active transactions yet.</h4>
+            <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{emptyText}</p>
+            {emptyActionLabel && typeof onEmptyAction === 'function' ? (
+              <button
+                type="button"
+                className="mt-4 inline-flex min-h-[40px] items-center justify-center rounded-[14px] border border-transparent bg-[#35546c] px-4 py-2 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(15,23,42,0.06)] transition duration-150 ease-out hover:bg-[#2e475c]"
+                onClick={onEmptyAction}
+              >
+                {emptyActionLabel}
+              </button>
+            ) : null}
+          </div>
+        )}
+      />
     )
   }
 
@@ -3457,49 +3683,89 @@ function renderActiveTransactionsBlock({
 
           {isAgentRole ? (
             <>
-              {!isPrincipalAgentView && agentPremiumModel ? (
+              {!isPrincipalAgentView && agentResidentialModel ? (
                 <section className="mt-6">
-                  <MobileDashboardShell>
-                    <DashboardKpiStrip items={agentPremiumModel.kpis} />
+                  <ResidentialDashboardShell className="space-y-5">
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[#667085]">Good morning, {getGreetingName(profile)}</p>
+                        <h1 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#101828]">
+                          Agent Dashboard · My Performance
+                        </h1>
+                        <p className="mt-1 text-sm text-[#667085]">Your personal residential sales and leasing performance.</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <ResidentialDashboardModeToggle value={residentialMode} onChange={setResidentialMode} />
+                        <PillToggle
+                          items={[
+                            { key: 'last_30_days', label: 'Last 30 Days' },
+                            { key: 'this_month', label: 'This Month' },
+                            { key: 'last_90_days', label: 'Last 90 Days' },
+                            { key: 'ytd', label: 'YTD' },
+                          ]}
+                          value={residentialDateRange}
+                          onChange={setResidentialDateRange}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                      {agentResidentialModel.kpis.map((item, index) => {
+                        const icons = [ArrowRightLeft, Building2, Banknote, TrendingUp]
+                        const Icon = icons[index] || ArrowRightLeft
+                        return (
+                          <ResidentialKpiCard
+                            key={item.key}
+                            icon={Icon}
+                            label={item.label}
+                            value={item.compactValue || item.value}
+                            trend={item.trend}
+                            sparkline={item.sparkline}
+                            tone={item.tone}
+                            emptyCopy={residentialMode === 'leasing' ? 'Leasing metrics will appear once leasing is enabled.' : ''}
+                          />
+                        )
+                      })}
+                    </div>
+
                     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                      <TransactionHealthCard
-                        {...agentPremiumModel.health}
+                      <ResidentialTransactionHealth data={agentResidentialModel.transactionHealth} scope="agent" mode={residentialMode} />
+                      <ResidentialPerformanceChart data={agentResidentialModel.performance} scope="agent" mode={residentialMode} />
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                      <ResidentialTransactionFlow data={agentResidentialModel.transactionFlow} scope="agent" mode={residentialMode} />
+                      <ResidentialActiveTransactionsCarousel
+                        title={agentResidentialModel.activeTransactions.title}
+                        rows={agentResidentialModel.activeTransactions.rows}
+                        scope="agent"
                         onViewAll={() => navigate('/transactions')}
-                      />
-                      <AttentionRequiredCard
-                        rows={agentPremiumModel.attention.map((row) => ({ ...row, onClick: () => navigate('/transactions') }))}
-                        title="Agent Attention Required"
-                        onViewAll={() => navigate('/transactions')}
+                        onOpenRecord={(record) => {
+                          if (record?.id) navigate(`/transactions/${record.id}`)
+                        }}
                       />
                     </div>
-                    <TransactionFlow
-                      stages={agentPremiumModel.flow}
-                      onViewPipeline={() => navigate('/pipeline')}
-                    />
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-                      <CommissionForecastCard
-                        title="Agent Commission Forecast"
-                        rows={agentPremiumModel.forecastRows}
-                        chartPoints={agentPremiumModel.forecastValues}
-                        onViewForecast={() => navigate('/reports')}
-                      />
-                      <RecentActivityCard
-                        title="Agent Recent Activity"
-                        rows={agentPremiumModel.recentActivity}
-                        onViewAll={() => navigate('/transactions')}
+
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                      <ResidentialAttentionRequired data={agentResidentialModel.attention} scope="agent" />
+                      <ResidentialCommissionForecast data={agentResidentialModel.commissionForecast} scope="agent" />
+                      <ResidentialAppointments
+                        module="agent"
+                        organisationId={organisationIdForAppointments}
+                        userId={String(profile?.id || '').trim()}
+                        userEmail={String(profile?.email || '').trim()}
+                        includeAll={false}
+                        canManage={false}
+                        scope="agent"
+                        refreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
+                        onViewCalendar={() => navigate('/pipeline/calendar')}
+                        onOpenCalendar={() => navigate('/pipeline/calendar')}
+                        onManageAppointment={() => navigate('/pipeline/calendar')}
+                        onOpenAppointment={() => navigate('/pipeline/calendar')}
+                        onScheduleAppointment={() => navigate('/pipeline/calendar')}
                       />
                     </div>
-                    <RecentTransactionsCard
-                      rows={agentPremiumModel.recentTransactions}
-                      onOpenTransaction={(item) => {
-                        if (item.unitId) {
-                          navigate(`/units/${item.unitId}`, { state: { headerTitle: 'Transaction' } })
-                        } else if (item.transactionId) {
-                          navigate(`/transactions/${item.transactionId}`)
-                        }
-                      }}
-                    />
-                  </MobileDashboardShell>
+                  </ResidentialDashboardShell>
                 </section>
               ) : null}
 
@@ -3853,25 +4119,6 @@ function renderActiveTransactionsBlock({
                   })}
                 </section>
               )}
-
-              <div className="mt-6">
-                <AppointmentDashboardSection
-                  module="agent"
-                  organisationId={organisationIdForAppointments}
-                  appointmentRows={agentAppointmentSummary.rows || []}
-                  userId={String(profile?.id || '').trim()}
-                  userEmail={String(profile?.email || '').trim()}
-                  includeAll={false}
-                  subheading="Track upcoming appointments, confirmations, and reschedules."
-                  variant="compact"
-                  onViewCalendar={() => navigate('/pipeline/calendar')}
-                  onOpenCalendar={() => navigate('/pipeline/calendar')}
-                  onManageAppointment={() => navigate('/pipeline/calendar')}
-                  onOpenAppointment={() => navigate('/pipeline/calendar')}
-                  onScheduleAppointment={() => navigate('/pipeline/calendar')}
-                  refreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}`}
-                />
-              </div>
 
               {!isPrincipalAgentView ? (
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>

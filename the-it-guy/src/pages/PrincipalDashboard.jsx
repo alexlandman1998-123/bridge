@@ -1,4 +1,5 @@
 import {
+  ArrowRightLeft,
   AlertTriangle,
   ArrowRight,
   BriefcaseBusiness,
@@ -30,23 +31,24 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import {
-  AttentionRequiredCard as PremiumAttentionRequiredCard,
-  CommissionForecastCard,
-  DashboardKpiStrip,
-  MobileDashboardShell,
-  PerformanceCard,
-  RecentActivityCard,
-  TopPerformersCard,
-  TransactionFlow,
-  TransactionHealthCard,
-  UpcomingRegistrationsCard,
-} from '../components/dashboard/PremiumDashboard'
+  ResidentialAppointments,
+  ResidentialAttentionRequired,
+  ResidentialActiveTransactionsCarousel,
+  ResidentialCommissionForecast,
+  ResidentialDashboardModeToggle,
+  ResidentialDashboardShell,
+  ResidentialKpiCard,
+  ResidentialPerformanceChart,
+  ResidentialTopPerformers,
+  ResidentialTransactionFlow,
+  ResidentialTransactionHealth,
+} from '../components/residential/ResidentialDashboard'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getPrincipalDashboardData, PRINCIPAL_DASHBOARD_DATE_PRESETS } from '../services/principalDashboardService'
+import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import { resolveWorkspaceRole } from '../services/roleResolutionService'
 
 const currency = new Intl.NumberFormat('en-ZA', {
@@ -297,6 +299,8 @@ function PrincipalDashboardHeader({
   onWorkspaceChange,
   workspaceOptions,
   profile,
+  residentialMode,
+  onResidentialModeChange,
 }) {
   return (
     <header className="rounded-[24px] border border-[#dfe8f2] bg-white/90 px-5 py-4 shadow-[0_16px_38px_rgba(15,23,42,0.065)]">
@@ -306,25 +310,29 @@ function PrincipalDashboardHeader({
             Good morning, {getGreetingName(profile)}
           </p>
           <h1 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#101828]">
-            Here&apos;s what&apos;s happening across your agency.
+            Principal Dashboard · Agency Overview
           </h1>
+          <p className="mt-1 text-sm text-[#667085]">Agency-wide residential sales and leasing performance.</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <FilterDropdown
-            icon={LayoutGrid}
-            value={selectedWorkspaceId}
-            options={workspaceOptions}
-            onChange={onWorkspaceChange}
-            ariaLabel="Filter dashboard by workspace"
-          />
-          <FilterDropdown
-            icon={CalendarDays}
-            value={dateRange}
-            options={PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label }))}
-            onChange={onDateRangeChange}
-            ariaLabel="Filter dashboard by date range"
-          />
+        <div className="flex flex-col items-start gap-3 xl:items-end">
+          <ResidentialDashboardModeToggle value={residentialMode} onChange={onResidentialModeChange} />
+          <div className="flex flex-wrap items-center gap-2.5">
+            <FilterDropdown
+              icon={LayoutGrid}
+              value={selectedWorkspaceId}
+              options={workspaceOptions}
+              onChange={onWorkspaceChange}
+              ariaLabel="Filter dashboard by workspace"
+            />
+            <FilterDropdown
+              icon={CalendarDays}
+              value={dateRange}
+              options={PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label }))}
+              onChange={onDateRangeChange}
+              ariaLabel="Filter dashboard by date range"
+            />
+          </div>
         </div>
       </div>
     </header>
@@ -399,16 +407,18 @@ function PipelineStageChart({ stages }) {
         </svg>
       </div>
       <div className="mt-auto grid gap-3 sm:grid-cols-5">
-        {stages.map((stage) => (
-          <div key={stage.key} className="min-w-0">
-            <p className="flex items-center gap-1.5 text-xs font-medium text-[#344054]">
-              <span className="h-2 w-2 rounded-full" style={{ background: STAGE_COLORS[stage.key] || '#3b82f6' }} />
-              <span className="truncate">{stage.label}</span>
-            </p>
-            <p className="mt-2 text-sm font-semibold text-[#101828]">{formatCurrency(stage.value, { compact: true })}</p>
-            <p className="text-xs text-[#667085]">{stage.percentage}%</p>
-          </div>
-        ))}
+        {stages.map((stage) => {
+          return (
+            <div key={stage.key} className="min-w-0">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-[#344054]">
+                <span className="h-2 w-2 rounded-full" style={{ background: STAGE_COLORS[stage.key] || '#3b82f6' }} />
+                <span className="truncate">{stage.label}</span>
+              </p>
+              <p className="mt-2 text-sm font-semibold text-[#101828]">{formatCurrency(stage.value, { compact: true })}</p>
+              <p className="text-xs text-[#667085]">{stage.percentage}%</p>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -2041,7 +2051,7 @@ function buildPrincipalTransactionFlow(data = {}) {
   })
 }
 
-function buildPrincipalPremiumModel(data = {}) {
+function _buildPrincipalPremiumModel(data = {}) {
   const kpis = data.kpis || {}
   const kpiTrends = kpis.trends || {}
   const forecastChart = Array.isArray(data.revenue?.forecastChart) ? data.revenue.forecastChart : []
@@ -2244,61 +2254,81 @@ function buildPrincipalPremiumModel(data = {}) {
   }
 }
 
-function PrincipalPremiumCommandCenter({ data, onNavigate }) {
-  const model = buildPrincipalPremiumModel(data)
-  const upcomingDays = (model.upcoming.dailyBreakdown || []).map((day) => ({
-    ...day,
-    initials: day.shortLabel || String(day.label || '').slice(0, 2),
-  }))
+function PrincipalPremiumCommandCenter({ data, mode = 'sales', profile, dateRange = 'last_30_days', branchId = '', onViewTransactions, onOpenTransaction, onViewCalendar, onOpenCalendar, onManageAppointment, onOpenAppointment, onScheduleAppointment }) {
+  const model = useMemo(
+    () =>
+      deriveResidentialDashboardMetrics({
+        scope: 'principal',
+        mode,
+        dateRange,
+        branchId,
+        currentUserId: profile?.id || profile?.userId || '',
+        source: data || {},
+      }),
+    [branchId, data, dateRange, mode, profile?.id, profile?.userId],
+  )
 
   return (
-    <MobileDashboardShell>
-      <DashboardKpiStrip items={model.kpiItems} />
+    <ResidentialDashboardShell className="space-y-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {model.kpis.map((item, index) => {
+          const icons = [ArrowRightLeft, BriefcaseBusiness, WalletCards, Landmark]
+          const Icon = icons[index] || FileText
+          return (
+            <ResidentialKpiCard
+              key={item.key}
+              icon={Icon}
+              label={item.label}
+              value={item.compactValue || item.value}
+              trend={item.trend}
+              sparkline={item.sparkline}
+              tone={item.tone}
+              emptyCopy={mode === 'leasing' ? 'Leasing metrics will appear once leasing is enabled.' : ''}
+            />
+          )
+        })}
+      </div>
+
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <TransactionHealthCard
-          {...model.health}
-          onViewAll={() => onNavigate('/transactions')}
-        />
-        <PerformanceCard
-          title="Agency Performance"
-          metrics={model.performance}
-          onViewReport={() => onNavigate('/reports')}
+        <ResidentialTransactionHealth data={model.transactionHealth} scope="principal" mode={mode} />
+        <ResidentialPerformanceChart data={model.performance} scope="principal" mode={mode} />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <ResidentialTransactionFlow data={model.transactionFlow} scope="principal" mode={mode} />
+        <ResidentialActiveTransactionsCarousel
+          title={model.activeTransactions.title}
+          rows={model.activeTransactions.rows}
+          scope="principal"
+          onViewAll={onViewTransactions}
+          onOpenRecord={onOpenTransaction}
         />
       </div>
-      <TransactionFlow
-        stages={model.flowStages}
-        onViewPipeline={() => onNavigate('/pipeline')}
-      />
-      <ActiveTransactionsRow rows={data.activeTransactions || []} onNavigate={onNavigate} />
-      <div className="grid gap-4 xl:grid-cols-3">
-        <PremiumAttentionRequiredCard
-          rows={model.attentionRows.map((row) => ({ ...row, onClick: () => onNavigate('/transactions') }))}
-          summary={model.attentionSummary}
-          onViewAll={() => onNavigate('/transactions')}
-        />
-        <TopPerformersCard
-          performers={model.performers}
-          onViewLeaderboard={() => onNavigate('/agents')}
-        />
-        <CommissionForecastCard
-          rows={model.forecastRows}
-          chartPoints={model.forecastValues}
-          onViewForecast={() => onNavigate('/reports')}
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        <ResidentialAttentionRequired data={model.attention} scope="principal" />
+        <ResidentialCommissionForecast data={model.commissionForecast} scope="principal" />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <ResidentialTopPerformers data={model.topPerformers} scope="principal" />
+        <ResidentialAppointments
+          module="principal"
+          organisationId={data?.meta?.agencyId || ''}
+          userId={profile?.id || profile?.userId || ''}
+          userEmail={profile?.email || ''}
+          includeAll
+          canManage
+          refreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}`}
+          scope="principal"
+          onViewCalendar={onViewCalendar}
+          onOpenCalendar={onOpenCalendar}
+          onManageAppointment={onManageAppointment}
+          onOpenAppointment={onOpenAppointment}
+          onScheduleAppointment={onScheduleAppointment}
         />
       </div>
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <UpcomingRegistrationsCard
-          count={model.upcoming.count || 0}
-          expectedCommission={formatCurrency(model.upcoming.expectedCommission, { compact: true })}
-          dailyBreakdown={upcomingDays}
-          onViewAll={() => onNavigate('/transactions')}
-        />
-        <RecentActivityCard
-          rows={model.recentActivity}
-          onViewAll={() => onNavigate('/transactions')}
-        />
-      </div>
-    </MobileDashboardShell>
+    </ResidentialDashboardShell>
   )
 }
 
@@ -2306,6 +2336,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   const { profile, currentMembership, workspaceRole, workspaceType } = useWorkspace()
   const navigate = useNavigate()
   const [dateRange, setDateRange] = useState('last_30_days')
+  const [residentialMode, setResidentialMode] = useState('sales')
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(() => String(workspaceId || 'all').trim() || 'all')
   const [overviewMode] = useState('overview')
   const [resolvedAgencyId, setResolvedAgencyId] = useState(agencyId)
@@ -2426,6 +2457,8 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
           onWorkspaceChange={setSelectedWorkspaceId}
           workspaceOptions={workspaceOptions}
           profile={profile}
+          residentialMode={residentialMode}
+          onResidentialModeChange={setResidentialMode}
         />
 
         {error ? (
@@ -2441,22 +2474,21 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
 
         {data ? (
           <div className={`space-y-5 transition-opacity ${isRefreshing ? 'opacity-60' : 'opacity-100'}`} aria-busy={isRefreshing}>
-            <PrincipalPremiumCommandCenter data={data} onNavigate={navigate} />
-            <AppointmentDashboardSection
-              module="principal"
-              organisationId={resolvedAgencyId}
-              userId={profile?.id || profile?.userId || ''}
-              userEmail={profile?.email || ''}
-              includeAll
-              canManage={canViewAllTransactions}
-              subheading="Track upcoming appointments, confirmations, and reschedules."
-              variant="compact"
+            <PrincipalPremiumCommandCenter
+              data={data}
+              mode={residentialMode}
+              profile={profile}
+              dateRange={dateRange}
+              branchId={selectedWorkspaceId}
+              onViewTransactions={() => navigate('/transactions')}
+              onOpenTransaction={(record) => {
+                if (record?.id) navigate(`/transactions/${record.id}`)
+              }}
               onViewCalendar={() => navigate('/pipeline/calendar')}
               onOpenCalendar={() => navigate('/pipeline/calendar')}
               onManageAppointment={() => navigate('/pipeline/calendar')}
               onOpenAppointment={() => navigate('/pipeline/calendar')}
               onScheduleAppointment={() => navigate('/pipeline/calendar')}
-              refreshKey={`${resolvedAgencyId}:${dateRange}:${selectedWorkspaceId}`}
             />
             <p className="pb-2 text-center text-xs text-[#667085]">
               <Loader2 size={12} className="mr-1 inline-block" />
