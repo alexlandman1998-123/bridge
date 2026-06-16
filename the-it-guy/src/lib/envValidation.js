@@ -18,6 +18,7 @@ export function getUnsafeEnvironmentFlags() {
     allowUnsafeLocalFallbacks: unsafeFlags.VITE_ALLOW_UNSAFE_LOCAL_FALLBACKS,
     enableDevAuthBypass: unsafeFlags.VITE_ENABLE_DEV_AUTH_BYPASS,
     enableMockData: unsafeFlags.VITE_ENABLE_MOCK_DATA,
+    enableMissionControlMocks: unsafeFlags.VITE_ENABLE_MISSION_CONTROL_MOCKS,
     disableRoleRestrictions: unsafeFlags.VITE_FEATURE_DISABLE_ROLE_RESTRICTIONS,
   }
 }

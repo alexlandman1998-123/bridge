@@ -11,8 +11,22 @@ import {
   MiniMetricCard,
   MissionControlCarousel,
 } from '../components/mission-control/MissionControlUi'
+import {
+  MissionControlActivityFeed,
+  MissionControlBottomNav,
+  MissionControlCompactBanner,
+  MissionControlHeroCarousel,
+  MissionControlMetricTile,
+  MissionControlMobileHeader,
+  MissionControlSectionHeading,
+} from '../components/mission-control/MissionControlMobileUi'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { fetchMissionControlSnapshot } from '../services/hqMissionControlApi'
+import {
+  getMissionControlMockSnapshot,
+  normalizeMissionControlSnapshot,
+  shouldUseMissionControlMockSnapshot,
+} from '../services/missionControlSnapshotModel'
 import { cn } from '../lib/utils'
 
 const COUNT_FORMATTER = new Intl.NumberFormat('en-ZA')
@@ -216,12 +230,41 @@ function getSnapshotStatusLabel({ showSkeleton, refreshing, error }) {
   return 'Live data'
 }
 
+function useIsMobileViewport(breakpoint = 768) {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
+    return window.matchMedia(`(max-width: ${breakpoint - 1}px)`).matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
+    const mediaQuery = window.matchMedia(`(max-width: ${breakpoint - 1}px)`)
+
+    const handleChange = (event) => {
+      setMatches(event.matches)
+    }
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange)
+      return () => mediaQuery.removeEventListener('change', handleChange)
+    }
+
+    mediaQuery.addListener(handleChange)
+    return () => mediaQuery.removeListener(handleChange)
+  }, [breakpoint])
+
+  return matches
+}
+
 export default function CommandCenterPage() {
   const { profile } = useWorkspace()
   const [snapshot, setSnapshot] = useState(null)
+  const [mobileSnapshot, setMobileSnapshot] = useState(null)
+  const [mobileSnapshotSource, setMobileSnapshotSource] = useState('loading')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const isMobileViewport = useIsMobileViewport()
 
   const displayName = getProfileDisplayName(profile)
   const initials = getProfileInitials(profile)
@@ -240,9 +283,25 @@ export default function CommandCenterPage() {
         const nextSnapshot = await fetchMissionControlSnapshot({ signal: controller.signal })
         if (!active) return
         setSnapshot(nextSnapshot)
+        if (shouldUseMissionControlMockSnapshot({ liveSnapshot: nextSnapshot })) {
+          setMobileSnapshot(getMissionControlMockSnapshot())
+          setMobileSnapshotSource('mock')
+        } else {
+          setMobileSnapshot(normalizeMissionControlSnapshot(nextSnapshot))
+          setMobileSnapshotSource('live')
+        }
       } catch (nextError) {
         if (!active || nextError?.name === 'AbortError') return
-        setError(nextError)
+        setSnapshot(null)
+        if (shouldUseMissionControlMockSnapshot({ error: nextError })) {
+          setMobileSnapshot(getMissionControlMockSnapshot())
+          setMobileSnapshotSource('mock')
+          setError(nextError)
+        } else {
+          setMobileSnapshot(null)
+          setMobileSnapshotSource('error')
+          setError(nextError)
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -296,6 +355,78 @@ export default function CommandCenterPage() {
   const delayedRegistrationsValue = formatMetricValue(snapshot?.transactionHealth?.delayedRegistrations)
   const generatedAtLabel = snapshot?.generatedAt ? formatDateTime(snapshot.generatedAt) : ''
   const snapshotStatus = getSnapshotStatusLabel({ showSkeleton, refreshing, error })
+  const shouldRenderMobileBanner = Boolean(isMobileViewport && error && mobileSnapshotSource !== 'mock' && !showSkeleton)
+
+  if (isMobileViewport) {
+    return (
+      <section className="-mx-4 min-h-screen bg-[linear-gradient(180deg,#fbfcff_0%,#f4f7fb_100%)] px-4 pb-[108px] pt-4 md:hidden">
+        <div className="mx-auto w-full max-w-[480px] space-y-7">
+          <MissionControlMobileHeader
+            displayName={displayName}
+            initials={initials}
+            avatarUrl={avatarUrl}
+            alertsCount={mobileSnapshot?.alertsCount || 0}
+          />
+
+          <div className="space-y-2">
+            <h1 className="text-[2rem] font-semibold tracking-[-0.07em] text-[#0f172a]">Mission Control</h1>
+            <p className="max-w-[320px] text-[0.98rem] leading-6 text-[#667085]">Real-time overview of Arch9 platform performance</p>
+          </div>
+
+          {shouldRenderMobileBanner ? (
+            <MissionControlCompactBanner message={error?.message || 'The live HQ snapshot is unavailable in this environment.'} />
+          ) : null}
+
+          {showSkeleton ? (
+            <div className="space-y-6">
+              <div className="animate-pulse rounded-[24px] border border-[#e7edf5] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.05)]">
+                <div className="h-4 w-28 rounded-full bg-[#edf2f7]" />
+                <div className="mt-4 h-12 w-32 rounded-[16px] bg-[#edf2f7]" />
+                <div className="mt-4 h-[88px] rounded-[18px] bg-[#f5f7fb]" />
+                <div className="mt-4 grid grid-cols-3 gap-3">
+                  <div className="h-16 rounded-[18px] bg-[#f5f7fb]" />
+                  <div className="h-16 rounded-[18px] bg-[#f5f7fb]" />
+                  <div className="h-16 rounded-[18px] bg-[#f5f7fb]" />
+                </div>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {[1, 2, 3, 4].map((item) => (
+                  <div key={item} className="h-[156px] min-w-[144px] animate-pulse rounded-[22px] border border-[#e7edf5] bg-white shadow-[0_14px_32px_rgba(15,23,42,0.05)]" />
+                ))}
+              </div>
+              <div className="animate-pulse rounded-[22px] border border-[#e7edf5] bg-white p-4 shadow-[0_14px_32px_rgba(15,23,42,0.05)]">
+                {[1, 2, 3, 4].map((item) => (
+                  <div key={item} className={cn('h-16 rounded-[18px] bg-[#f5f7fb]', item === 1 ? '' : 'mt-3')} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {!showSkeleton && mobileSnapshot ? (
+            <>
+              <MissionControlHeroCarousel snapshot={mobileSnapshot} />
+
+              <section className="space-y-4">
+                <MissionControlSectionHeading title="At a Glance" actionLabel="View all" actionTo="/reports" />
+                <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {mobileSnapshot.atAGlance.map((item) => (
+                    <MissionControlMetricTile key={item.key} item={item} />
+                  ))}
+                </div>
+              </section>
+
+              <section id="live-activity" className="space-y-4">
+                <MissionControlSectionHeading title="Live Activity" actionLabel="View all" actionTo="/transactions" />
+                <MissionControlActivityFeed items={mobileSnapshot.liveActivity} />
+              </section>
+            </>
+          ) : null}
+        </div>
+
+        <MissionControlBottomNav alertsCount={mobileSnapshot?.alertsCount || 0} />
+      </section>
+    )
+  }
 
   return (
     <section className="space-y-8 pb-8">

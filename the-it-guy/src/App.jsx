@@ -312,7 +312,10 @@ function AppLayout({ onLogout, session = null, user }) {
   const isCommercialRoute = location.pathname.startsWith('/commercial')
   const isBondRoute = location.pathname.startsWith('/bond')
   const routeContentKey = isBondRoute ? location.pathname : `${location.pathname}${location.search}`
-  const hideSharedHeader = isLegalWorkspaceRoute || (role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/'))
+  const hideSharedHeader =
+    isLegalWorkspaceRoute ||
+    location.pathname === '/command-center' ||
+    (role === 'developer' && (location.pathname === '/dashboard' || location.pathname === '/'))
   const isAttorneyDashboardRoute = role === 'attorney' && location.pathname === '/attorney/dashboard'
   const isDashboardRoute = location.pathname === '/dashboard' || location.pathname === '/'
   const defaultDevelopmentId = workspace.id === 'all' ? '' : workspace.id
