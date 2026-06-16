@@ -100,6 +100,10 @@ function isActiveDeal(row = {}) {
   return !['converted', 'lost', 'archived', 'inactive', 'completed', 'cancelled'].includes(normalizeLower(row.stage || row.status || 'new'))
 }
 
+function isActiveListing(row = {}) {
+  return !['draft', 'internal_review', 'withdrawn', 'expired', 'archived', 'closed'].includes(normalizeLower(row.listing_status || row.status || 'draft'))
+}
+
 function isActiveLease(row = {}) {
   return !['archived', 'terminated', 'cancelled'].includes(normalizeLower(row.status || 'active'))
 }
