@@ -33,7 +33,7 @@ import {
   isBuyerLifecycleAppointment,
 } from './buyerLifecycleService'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
-import { buildSellerJourneyProgressPatch, isSellerValuationAppointment } from '../services/sellerJourneyService.js'
+import { isSellerValuationAppointment } from '../services/sellerJourneyService.js'
 
 const STORAGE_PREFIX = 'itg:agency-crm:v1'
 const CRM_UPDATED_EVENT = 'itg:agency-crm-updated'
@@ -2226,51 +2226,11 @@ async function fetchAppointmentByIdFromSupabase(organisationId, appointmentId, o
   return rows.find((row) => normalizeText(row?.appointmentId) === normalizeText(appointmentId)) || null
 }
 
-function getSellerAppointmentJourneyStatus(appointment = {}) {
-  const status = normalizeLowerText(appointment?.status)
-  if (status.includes('complete')) return 'Completed'
-  if (status.includes('cancel') || status.includes('declin')) return ''
-  return 'Scheduled'
-}
-
 async function syncSellerJourneyStageFromAppointment(organisationId, leadId, appointment = {}) {
   const scopedOrganisationId = normalizeText(organisationId)
   const scopedLeadId = toNullableUuid(leadId)
   if (!scopedOrganisationId || !scopedLeadId || !isSellerValuationAppointment(appointment)) return false
-
-  const targetStatus = getSellerAppointmentJourneyStatus(appointment)
-  if (!targetStatus) return false
-
-  const leadQuery = await supabase
-    .from('leads')
-    .select('lead_id, organisation_id, lead_category, stage, status')
-    .eq('organisation_id', scopedOrganisationId)
-    .eq('lead_id', scopedLeadId)
-    .maybeSingle()
-  if (leadQuery.error || !leadQuery.data) return false
-  if (inferLeadCategoryFromRecord(leadQuery.data, 'other') !== 'seller') return false
-
-  const patch = buildSellerJourneyProgressPatch({
-    lead: leadQuery.data,
-    targetStage: 'Appointment / Valuation',
-    targetStatus,
-  })
-  if (!patch) return false
-
-  const { error } = await supabase
-    .from('leads')
-    .update({
-      stage: patch.stage,
-      status: patch.status,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('organisation_id', scopedOrganisationId)
-    .eq('lead_id', scopedLeadId)
-  if (error) {
-    console.warn('[agencyPipelineService] non-blocking seller appointment journey sync failed', error)
-    return false
-  }
-  return true
+  return false
 }
 
 export function createLeadTask(organisationId, leadId, payload = {}, { actor = null } = {}) {

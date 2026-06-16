@@ -143,7 +143,6 @@ const SELLER_PROPERTY_CONDITION_LABELS = {
 
 const SELLER_PROGRESS_STEPS = [
   { key: 'contacted', label: 'Contacted' },
-  { key: 'valuation', label: 'Valuation' },
   { key: 'onboarding', label: 'Onboarding' },
   { key: 'submitted', label: 'Submitted' },
   { key: 'mandate_sent', label: 'Mandate Sent' },
@@ -251,7 +250,6 @@ function buildSellerPortalStatusChip(status = '') {
 
 function buildSellerPortalProgressModel({
   hasSellingContext = false,
-  hasAppointment = false,
   hasOnboardingStarted = false,
   hasOnboardingSubmitted = false,
   hasMandatePacket = false,
@@ -263,8 +261,8 @@ function buildSellerPortalProgressModel({
 
   if (!hasSellingContext) {
     currentKey = 'contacted'
-  } else if (!hasAppointment && !hasOnboardingStarted) {
-    currentKey = 'valuation'
+  } else if (!hasOnboardingStarted) {
+    currentKey = 'contacted'
   } else if (!hasOnboardingSubmitted) {
     currentKey = 'onboarding'
   } else if (!hasMandatePacket) {
@@ -292,7 +290,6 @@ function buildSellerPortalProgressModel({
   const percent = Math.round((currentIndex / Math.max(SELLER_PROGRESS_STEPS.length - 1, 1)) * 100)
   const helperMessageByKey = {
     contacted: 'Your seller workspace is active and your agent will guide the next milestone.',
-    valuation: 'Your valuation appointment is the next milestone before the sale moves ahead.',
     onboarding: 'Your onboarding details are the next step before your agent can prepare the file.',
     submitted: 'Your seller onboarding has been submitted and is under review by your agent.',
     mandate_sent: 'Your onboarding is complete and your mandate is being prepared for review.',
@@ -312,7 +309,7 @@ function buildSellerPortalProgressModel({
 
 const SELLER_PROGRESS_PORTAL_KEY_BY_JOURNEY_KEY = {
   contacted: 'contacted',
-  appointment_valuation: 'valuation',
+  appointment_valuation: 'contacted',
   seller_onboarding_sent: 'onboarding',
   seller_onboarding_submitted: 'submitted',
   mandate_sent: 'mandate_sent',
@@ -2718,6 +2715,7 @@ function SellerProgressJourney({ progressModel, token, workspaceNavigationScope 
   const currentIndex = Math.max(Number(progressModel?.currentIndex || 0), 0)
   const lineInset = `calc(100% / ${stepCount * 2})`
   const lineProgressRatio = currentIndex / Math.max(stepCount - 1, 1)
+  const minRailWidth = Math.max(stepCount * 120, 720)
 
   return (
     <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
@@ -2732,10 +2730,10 @@ function SellerProgressJourney({ progressModel, token, workspaceNavigationScope 
       </div>
 
       <div className="mt-7 overflow-x-auto pb-2">
-        <div className="relative min-w-[860px] px-2 pb-1">
+        <div className="relative px-2 pb-1" style={{ minWidth: `${minRailWidth}px` }}>
           <div className="absolute top-5 h-[2px] rounded-full bg-[#dce6f1]" style={{ left: lineInset, right: lineInset }} />
           <div className="absolute top-5 h-[2px] rounded-full bg-[#16a34a]" style={{ left: lineInset, width: `calc((100% - (${lineInset} * 2)) * ${lineProgressRatio})` }} />
-          <div className="grid grid-cols-8 gap-2">
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${stepCount}, minmax(120px, 1fr))` }}>
             {steps.map((stage) => {
               const isComplete = stage.state === 'completed'
               const isCurrent = stage.state === 'current'

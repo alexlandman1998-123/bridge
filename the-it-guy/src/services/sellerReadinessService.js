@@ -38,14 +38,6 @@ function propertyAddress({ lead = {}, listing = {} } = {}) {
   )
 }
 
-function appointmentScheduled(journey = {}) {
-  return Boolean(journey?.valuationAppointment) || ['Scheduled', 'Completed'].includes(normalizeText(journey?.valuationStatus))
-}
-
-function appointmentCompleted(journey = {}) {
-  return normalizeText(journey?.valuationStatus) === 'Completed'
-}
-
 function onboardingSent(journey = {}) {
   return journey?.onboardingSent === true
 }
@@ -182,14 +174,8 @@ export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], 
   const blockers = []
   const contactReady = hasContact({ lead, contact })
   const addressReady = Boolean(propertyAddress({ lead, listing: listing || {} }))
-  if (!contactReady) blockers.push(blocker('missing_seller_contact', 'Missing Seller Contact', 'valuation', 'contact_seller', 'blocked', 'Your agent needs seller contact details.'))
-  if (!addressReady) blockers.push(blocker('missing_property_address', 'Missing Property Address', 'valuation', 'capture_property_address', 'blocked', 'Your agent needs the property address.'))
-
-  if (resolvedJourney.mandateStatus !== 'not_started' && resolvedJourney.mandateStatus !== 'signed') {
-    if (!appointmentScheduled(resolvedJourney)) {
-      blockers.push(blocker('valuation_not_scheduled', 'Appointment / Valuation Not Scheduled', 'mandate', 'schedule_valuation', 'blocked', 'Your appointment or valuation still needs to be scheduled.'))
-    }
-  }
+  if (!contactReady) blockers.push(blocker('missing_seller_contact', 'Missing Seller Contact', 'seller', 'contact_seller', 'blocked', 'Your agent needs seller contact details.'))
+  if (!addressReady) blockers.push(blocker('missing_property_address', 'Missing Property Address', 'seller', 'capture_property_address', 'blocked', 'Your agent needs the property address.'))
 
   if (onboardingSent(resolvedJourney) && !onboardingSubmitted(resolvedJourney) && resolvedJourney.mandateStatus === 'not_started') {
     blockers.push(blocker('seller_onboarding_not_submitted', 'Seller Onboarding Not Submitted', 'onboarding', 'open_seller_portal', 'action_required', 'Seller onboarding is still waiting to be submitted.'))
@@ -228,7 +214,7 @@ export function canScheduleValuation(args = {}) {
 export function canSendMandate(args = {}) {
   const journey = args.journey || buildSellerJourney(args)
   const blockers = getSellerBlockers({ ...args, journey })
-  return journey.mandateStatus === 'draft' && appointmentScheduled(journey) && onboardingSubmitted(journey) && !blockers.some((item) => item.category === 'valuation' || item.category === 'onboarding')
+  return journey.mandateStatus === 'draft' && onboardingSubmitted(journey) && !blockers.some((item) => item.category === 'onboarding' || item.category === 'seller')
 }
 
 export function canCreateListing(args = {}) {
@@ -262,19 +248,17 @@ export function getNextSellerAction(args = {}) {
   if (blocking?.id === 'missing_seller_contact') return action('contact_seller', 'Contact Seller', true, '', { blocker: blocking })
   if (blocking?.id === 'missing_property_address') return action('capture_property_address', 'Capture Property Address', true, '', { blocker: blocking })
   if (blocking?.id === 'seller_onboarding_not_submitted') return action('open_seller_portal', 'Track Seller Onboarding', true, '', { blocker: blocking })
-  if (blocking?.id === 'valuation_not_scheduled') return action('schedule_valuation', 'Schedule Valuation', true, '', { blocker: blocking })
   if (blocking?.id === 'required_documents_missing') return action('open_documents', 'Open Documents', true, '', { blocker: blocking })
   if (blocking?.category === 'listing_live') return action(blocking.actionId || 'complete_listing', blocking.actionId === 'activate_listing' ? 'Activate Listing' : 'Complete Listing', true, '', { blocker: blocking })
   if (journey.listingLive) return action('monitor_performance', 'Monitor Performance')
   if (journey.listingCreated) return action('activate_listing', 'Activate Listing', canActivateListing({ ...args, journey }), blockers.find((item) => item.category === 'listing_live')?.label || '', { blocker: blockers.find((item) => item.category === 'listing_live') || null })
   if (journey.mandateStatus === 'signed') return action('create_listing', 'Create Listing', canCreateListing({ ...args, journey }), blocking?.label || '', { blocker: blocking })
   if (journey.mandateStatus === 'sent') return action('check_signature_status', 'Track Signature', true, '', { blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || null })
-  if (appointmentScheduled(journey) && !onboardingSent(journey)) return action('open_seller_portal', 'Send Seller Onboarding')
-  if (appointmentScheduled(journey) && !onboardingSubmitted(journey)) return action('open_seller_portal', 'Track Seller Onboarding')
+  if (!onboardingSent(journey)) return action('open_seller_portal', 'Send Seller Onboarding')
+  if (!onboardingSubmitted(journey)) return action('open_seller_portal', 'Track Seller Onboarding')
   if (journey.mandateStatus === 'draft') return action('send_mandate', 'Send Mandate', canSendMandate({ ...args, journey }), blocking?.label || '', { blocker: blocking })
-  if (appointmentScheduled(journey)) return action('generate_mandate', 'Generate Mandate')
-  if (journey.valuationAppointment && !appointmentCompleted(journey)) return action('mark_valuation_complete', 'Mark as Completed')
-  return action('schedule_valuation', 'Schedule Valuation', canScheduleValuation({ ...args, journey }), blocking?.label || '', { blocker: blocking })
+  if (onboardingSubmitted(journey)) return action('generate_mandate', 'Generate Mandate')
+  return action('open_seller_portal', 'Send Seller Onboarding', true, blocking?.label || '', { blocker: blocking })
 }
 
 export function getSellerReadiness(args = {}) {
@@ -325,14 +309,8 @@ export function getStageAwareSellerActions({ lead = {}, contact = {}, appointmen
   ]
   const stageKey = resolvedJourney.stage?.key || 'contacted'
   const stageActions = stageKey === 'contacted'
-    ? [make('schedule_valuation', 'Schedule Valuation', canScheduleValuation({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents, journey: resolvedJourney })), ...always]
-    : stageKey === 'appointment_valuation'
-      ? [
-        make('open_appointment', 'Open Appointment', Boolean(resolvedJourney.valuationAppointment)),
-        !appointmentCompleted(resolvedJourney) ? make('mark_valuation_complete', 'Mark as Completed', Boolean(resolvedJourney.valuationAppointment)) : null,
-        make('generate_mandate', 'Generate Mandate', appointmentScheduled(resolvedJourney)),
-      ].filter(Boolean)
-      : stageKey === 'seller_onboarding_sent'
+    ? [make('open_seller_portal', 'Send Seller Onboarding', true), ...always]
+    : stageKey === 'seller_onboarding_sent'
         ? [
           make('open_seller_portal', 'Open Seller Portal', true),
           make('contact_seller', 'Contact Seller', hasContact({ lead, contact })),

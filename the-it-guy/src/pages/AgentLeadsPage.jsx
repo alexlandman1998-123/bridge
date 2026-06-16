@@ -168,7 +168,7 @@ const LEAD_APPOINTMENT_TYPES = [
   { value: 'other', label: 'Other Appointment' },
 ]
 const SELLER_APPOINTMENT_TYPES = [
-  { value: 'seller_consultation', label: 'Appointment / Valuation' },
+  { value: 'seller_consultation', label: 'Seller Consultation' },
   { value: 'other', label: 'Seller Appointment' },
   { value: 'mandate_signing', label: 'Mandate Signing' },
   { value: 'client_meeting', label: 'Client Meeting' },
@@ -582,7 +582,7 @@ function formatCleanValue(value, fallback = '—') {
 
 function getSellerAppointmentDefaultTitle(appointmentType = 'seller_consultation', contactName = '', leadName = '') {
   const personName = contactName || leadName || 'Seller'
-  if (appointmentType === 'seller_consultation') return `Appointment / Valuation - ${personName}`
+  if (appointmentType === 'seller_consultation') return `Seller Consultation - ${personName}`
   if (appointmentType === 'mandate_signing') return `Mandate Signing - ${personName}`
   if (appointmentType === 'client_meeting') return `Client Meeting - ${personName}`
   return `Seller appointment - ${personName}`
@@ -5666,8 +5666,8 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
       const linkedWorkflow = journeyAppointment ? 'seller_listing' : 'seller_lead_add_on'
       const linkedWorkflowStage = journeyAppointment ? 'seller_consultation' : 'optional_appointment'
       const appointmentInstructions = journeyAppointment
-        ? 'Seller consultation / valuation appointment. This should advance the seller journey once scheduled.'
-        : 'Supplemental seller appointment. This does not change the seller journey milestones.'
+        ? 'Seller consultation appointment for this lead.'
+        : 'Supplemental seller appointment for this lead.'
       const sellerParticipant = {
         name: contact.name || lead.name || 'Seller',
         email: contact.email,
@@ -5730,12 +5730,12 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
           <p className="text-sm font-semibold text-slate-950">Seller appointment</p>
           <p className="mt-1 text-sm text-slate-500">
             {draft.appointmentType === 'seller_consultation'
-              ? `Linked to this seller lead${listingId ? ' and listing' : ''}; a scheduled appointment / valuation updates the seller journey automatically.`
+              ? `Linked to this seller lead${listingId ? ' and listing' : ''}; use this for seller consultations when needed.`
               : `Linked to this seller lead${listingId ? ' and listing' : ''}; supplemental appointment types stay outside the main seller journey.`}
           </p>
         </div>
         <StatusPill tone={draft.appointmentType === 'seller_consultation' ? 'green' : 'blue'}>
-          {draft.appointmentType === 'seller_consultation' ? 'Journey milestone' : 'Add-on'}
+          {draft.appointmentType === 'seller_consultation' ? 'Primary appointment' : 'Add-on'}
         </StatusPill>
       </div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -7403,14 +7403,6 @@ function getSellerNextBestActionMeta({ row = {}, listing = null, journey = null,
 function getSellerJourneyStepDate(row = {}, listing = null, journey = null, step = {}) {
   if (!step.completed && !step.current) return ''
   if (step.key === 'contacted') return row?.firstContactedAt || row?.first_contacted_at || row?.createdAt || row?.created_at
-  if (step.key === 'appointment_valuation') {
-    return journey?.valuationAppointment?.completedAt ||
-      journey?.valuationAppointment?.completed_at ||
-      journey?.valuationAppointment?.dateTime ||
-      journey?.valuationAppointment?.date_time ||
-      journey?.valuationAppointment?.startTime ||
-      journey?.valuationAppointment?.start_time
-  }
   if (step.key === 'seller_onboarding_sent') {
     return listing?.sellerOnboarding?.sentAt ||
       listing?.sellerOnboarding?.sent_at ||
@@ -7912,6 +7904,7 @@ function SellerLeadHeader({
 
 function SellerJourneyRail({ journey = null, row = {}, listing = null }) {
   if (!journey) return <EmptyState title="Seller journey unavailable" copy="This seller lead could not be mapped to the existing seller journey service." />
+  const stepCount = Math.max(Array.isArray(journey.steps) ? journey.steps.length : 0, 1)
   return (
     <section id="seller-journey" className={`${panelClass} scroll-mt-6 flex h-full min-h-[220px] flex-col p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]`}>
       <div className="flex items-start justify-between gap-4">
@@ -7921,7 +7914,10 @@ function SellerJourneyRail({ journey = null, row = {}, listing = null }) {
         </div>
         <StatusPill tone={journey.listingLive ? 'green' : journey.listingCreated ? 'amber' : 'blue'}>{journey.stage?.status || journey.status?.status || 'Active'}</StatusPill>
       </div>
-      <ol className="mt-7 grid min-w-0 grid-cols-2 gap-x-4 gap-y-6 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-4 lg:px-3 xl:grid-cols-9">
+      <ol
+        className="mt-7 grid min-w-0 grid-cols-2 gap-x-4 gap-y-6 px-1 sm:grid-cols-3 sm:px-2 lg:grid-cols-4 lg:px-3 xl:gap-x-3 xl:[grid-template-columns:repeat(var(--seller-step-count),minmax(0,1fr))]"
+        style={{ '--seller-step-count': stepCount }}
+      >
         {(journey.steps || []).map((step, index, steps) => {
           const date = getSellerJourneyStepDate(row, listing, journey, step)
           const isLast = index === steps.length - 1

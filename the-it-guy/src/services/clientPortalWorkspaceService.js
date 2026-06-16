@@ -205,7 +205,6 @@ function sellerPortalStageMessage(journey = {}) {
   const key = journey?.stage?.key || 'contacted'
   const messages = {
     contacted: 'Your agent has your seller details and will coordinate the next step with you.',
-    appointment_valuation: 'Your valuation appointment is the next milestone for preparing your sale.',
     seller_onboarding_sent: 'Your seller onboarding link has been sent and is ready for you to complete.',
     seller_onboarding_submitted: 'Your seller onboarding has been submitted and is under review by your agent.',
     mandate_sent: 'Your mandate has been prepared and is ready for review or signing.',
@@ -227,11 +226,6 @@ function sellerPortalStatusCards({ journey = null, documentCenter = null, requir
   const uploadedCount = (Array.isArray(uploadedRows) ? uploadedRows : []).length
   const activeOffers = (Array.isArray(offers) ? offers : []).filter((offer) => !['rejected', 'withdrawn', 'expired'].includes(normalizeValue(offer?.status || offer?.workflowStatus || offer?.workflow_status)))
   return [
-    {
-      key: 'appointment',
-      label: 'Appointment / Valuation',
-      value: journey?.valuationStatus || 'Not scheduled',
-    },
     {
       key: 'mandate',
       label: 'Mandate',

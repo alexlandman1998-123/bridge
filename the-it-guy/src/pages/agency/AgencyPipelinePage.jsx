@@ -1143,21 +1143,53 @@ function buildAppointmentParticipant({ name = '', email = '', phone = '', role =
   }
 }
 
-function getLeadStageTone(value = '') {
-  const stage = normalizeText(value).toLowerCase()
-  if (stage.includes('converted') || stage.includes('deal') || stage.includes('signed')) return 'border-[#cde8d8] bg-[#effaf3] text-[#26724c]'
-  if (stage.includes('offer') || stage.includes('negotiat')) return 'border-[#f1dfb8] bg-[#fff8e8] text-[#8a641d]'
-  if (stage.includes('view') || stage.includes('appointment')) return 'border-[#d4e5fb] bg-[#f1f7ff] text-[#2d659a]'
-  if (stage.includes('contact') || stage.includes('qualif') || stage.includes('follow')) return 'border-[#d8e2f0] bg-[#f5f8fc] text-[#405c78]'
-  if (stage.includes('lost') || stage.includes('archive')) return 'border-[#ead4d1] bg-[#fff5f4] text-[#9a4038]'
-  return 'border-[#dce7f2] bg-[#f8fbff] text-[#35546c]'
+function getLeadSourceChipTone(value = '') {
+  const source = normalizeText(value).toLowerCase()
+  if (source.includes('property24') || source.includes('private property')) return 'border-[#d9e8ff] bg-[#eef5ff] text-[#2d63aa]'
+  if (source.includes('referral')) return 'border-[#d6ecde] bg-[#eef9f2] text-[#2d7a52]'
+  if (source.includes('website') || source.includes('facebook') || source.includes('instagram')) return 'border-[#eadcfb] bg-[#f7f0ff] text-[#7b4ab0]'
+  if (source.includes('manual')) return 'border-[#f4e1bf] bg-[#fff6e7] text-[#9a6a1c]'
+  return 'border-[#dbe6f1] bg-[#f8fbff] text-[#4f6b86]'
 }
 
-function getLeadCategoryMeta(lead = {}, contact = {}) {
-  const category = resolveLeadCategoryView({ ...lead, contactType: contact?.contactType })
-  if (category === 'seller') return { label: 'Seller', className: 'border-[#f0dfb8] bg-[#fff8eb] text-[#8a641d]' }
-  if (category === 'other') return { label: 'Other', className: 'border-[#ded8f6] bg-[#f5f2ff] text-[#5f4a9b]' }
-  return { label: 'Buyer', className: 'border-[#cfe8dc] bg-[#effaf3] text-[#2d6b4a]' }
+function getLeadStagePresentation(value = '') {
+  const stage = normalizeText(value).toLowerCase()
+  if (stage.includes('appointment') || stage.includes('valuation') || stage.includes('viewing')) {
+    return { Icon: CalendarDays, className: 'border-[#f4dfcb] bg-[#fff4ea] text-[#c4681f]' }
+  }
+  if (stage.includes('document')) {
+    return { Icon: Paperclip, className: 'border-[#eadbf8] bg-[#f7f1ff] text-[#7c4bd9]' }
+  }
+  if (stage.includes('follow')) {
+    return { Icon: Clock3, className: 'border-[#f7e7bf] bg-[#fff9eb] text-[#b67b13]' }
+  }
+  if (stage.includes('submit') || stage.includes('onboarding')) {
+    return { Icon: CheckCircle2, className: 'border-[#d7e6fb] bg-[#eef5ff] text-[#2f69dc]' }
+  }
+  if (stage.includes('complete') || stage.includes('qualified') || stage.includes('signed') || stage.includes('listing')) {
+    return { Icon: CheckCircle2, className: 'border-[#d5ebdb] bg-[#eef9f1] text-[#23834f]' }
+  }
+  return { Icon: Tag, className: 'border-[#dce7f2] bg-[#f8fbff] text-[#35546c]' }
+}
+
+function splitPropertyLines(primary = '', secondary = '') {
+  const first = normalizeText(primary)
+  const second = normalizeText(secondary)
+  if (!first && !second) {
+    return { title: 'No property address yet', subtitle: '' }
+  }
+  if (first.includes(',')) {
+    const [title, ...rest] = first.split(',').map((part) => normalizeText(part)).filter(Boolean)
+    const subtitle = rest.join(', ') || (second && second !== title ? second : '')
+    return {
+      title: title || second || 'No property address yet',
+      subtitle,
+    }
+  }
+  return {
+    title: first || second || 'No property address yet',
+    subtitle: second && second !== first ? second : '',
+  }
 }
 
 function getLeadStatusMeta(lead = {}, funnelStage = '') {
@@ -1280,21 +1312,6 @@ function getLeadNextActionMeta(lead = {}, tasks = [], linkedAppointment = null, 
     detail,
     className: 'border-[#d7e7d8] bg-[#f4fbf6] text-[#2d6b4a]',
   }
-}
-
-function getNextStepStatus(tasks = []) {
-  const openTask = (Array.isArray(tasks) ? tasks : [])
-    .filter((task) => normalizeText(task?.status) !== 'Completed')
-    .sort((a, b) => new Date(a?.dueDate || a?.createdAt || 0) - new Date(b?.dueDate || b?.createdAt || 0))[0]
-  if (!openTask?.dueDate) return { label: 'No due date', tone: 'bg-[#d7e2ed]', text: 'text-[#60758b]' }
-  const due = new Date(openTask.dueDate)
-  if (Number.isNaN(due.getTime())) return { label: 'No due date', tone: 'bg-[#d7e2ed]', text: 'text-[#60758b]' }
-  const today = new Date()
-  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate()).getTime()
-  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
-  if (dueDay < todayDay) return { label: 'Overdue', tone: 'bg-[#df6d5f]', text: 'text-[#a33a30]' }
-  if (dueDay === todayDay) return { label: 'Due today', tone: 'bg-[#d79d3f]', text: 'text-[#8a641d]' }
-  return { label: formatDateShort(openTask.dueDate), tone: 'bg-[#4f82b8]', text: 'text-[#315f8f]' }
 }
 
 function formatPercent(value) {
@@ -3071,6 +3088,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [filteredLeads, leadTableCurrentPage])
   const leadTableStart = filteredLeads.length ? (leadTableCurrentPage - 1) * LEAD_TABLE_PAGE_SIZE + 1 : 0
   const leadTableEnd = Math.min(filteredLeads.length, leadTableCurrentPage * LEAD_TABLE_PAGE_SIZE)
+  const leadTableVisiblePages = useMemo(() => {
+    const pages = []
+    const startPage = Math.max(1, leadTableCurrentPage - 2)
+    const endPage = Math.min(leadTableTotalPages, startPage + 4)
+    const normalizedStart = Math.max(1, endPage - 4)
+    for (let page = normalizedStart; page <= endPage; page += 1) {
+      pages.push(page)
+    }
+    return pages
+  }, [leadTableCurrentPage, leadTableTotalPages])
 
   const availableLeadSources = useMemo(() => {
     return Array.from(
@@ -8881,78 +8908,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleSendBuyerOnboardingFromLeadRow(lead, linkedTransaction = null) {
-    const leadId = normalizeLeadIdentityKey(lead?.leadId)
-    if (!organisationId || !leadId || resolveLeadCategoryView(lead) === 'seller') return
-    const transactionId = normalizeText(
-      linkedTransaction?.transactionId ||
-        linkedTransaction?.transaction_id ||
-        linkedTransaction?.id ||
-        lead?.convertedTransactionId ||
-        lead?.converted_transaction_id ||
-        lead?.transactionId ||
-        lead?.transaction_id,
-    )
-
-    if (!transactionId) {
-      setSelectedLeadId(leadId)
-      setLeadWorkspaceTab('offers')
-      setMessage('Open this buyer lead, accept or create an offer, then Bridge can create the transaction and send buyer onboarding.')
-      navigate(`/pipeline/leads/${leadId}`)
-      return
-    }
-
-    const leadActionId = `lead:${leadId}:buyer-onboarding`
-    try {
-      setCanonicalOfferActionId(leadActionId)
-      const onboardingEmail = await invokeEdgeFunction('send-email', {
-        body: {
-          type: 'client_onboarding',
-          transactionId,
-          source: 'buyer_lead_table',
-          deliveryMode: normalizeClientIntakePreference(
-            lead?.clientIntakePreference ||
-            linkedTransaction?.transaction?.client_intake_preference ||
-            linkedTransaction?.transaction?.routing_profile_json?.clientIntakePreference,
-          ),
-        },
-      })
-      const onboardingEmailError = onboardingEmail?.error || onboardingEmail?.data?.error
-      if (onboardingEmailError) {
-        throw typeof onboardingEmailError === 'string'
-          ? new Error(onboardingEmailError)
-          : onboardingEmailError
-      }
-      await recordBuyerLeadActivity({
-        organisationId,
-        leadId,
-        activityType: 'Buyer Onboarding Sent',
-        activityNote: onboardingEmail?.data?.manualHandoff
-          ? `Buyer onboarding prepared for transaction ${transactionId} using ${getClientIntakePreferenceLabel(
-              lead?.clientIntakePreference ||
-              linkedTransaction?.transaction?.client_intake_preference ||
-              linkedTransaction?.transaction?.routing_profile_json?.clientIntakePreference,
-            )}.`
-          : `Buyer onboarding sent for transaction ${transactionId}.`,
-        outcome: 'Sent',
-        actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      }).catch(() => null)
-      setMessage(onboardingEmail?.data?.manualHandoff
-        ? `${getClientIntakePreferenceLabel(
-            lead?.clientIntakePreference ||
-            linkedTransaction?.transaction?.client_intake_preference ||
-            linkedTransaction?.transaction?.routing_profile_json?.clientIntakePreference,
-          )} onboarding was prepared.`
-        : 'Buyer onboarding was sent.')
-      setError('')
-      await reloadRecords(organisationId)
-    } catch (sendError) {
-      setError(sendError?.message || 'Unable to send buyer onboarding right now.')
-    } finally {
-      setCanonicalOfferActionId('')
-    }
-  }
-
   function updateFinanceReadinessField(field, value) {
     setFinanceReadinessForm((previous) => ({ ...previous, [field]: value }))
   }
@@ -9602,7 +9557,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ) : (
         <>
           {!isLeadWorkspaceRoute ? (
-          <section className="min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
+          <section id="agency-lead-filters" className="min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
             <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
               <label className="flex min-h-[38px] min-w-0 flex-1 items-center gap-2.5 rounded-[12px] border border-[#dbe6f1] bg-[#f8fbfe] px-3 transition focus-within:border-[#9db7cf] focus-within:bg-white">
                 <Search size={16} className="shrink-0 text-[#7f92a6]" />
@@ -9669,62 +9624,70 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <section className="grid gap-4">
             {!isLeadWorkspaceRoute ? (
             <article className="flex max-h-[calc(100dvh-15rem)] min-h-[520px] min-w-0 flex-col overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
-              <div className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-3 py-3 sm:px-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5 sm:py-5">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div className="min-w-0">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Lead Pipeline</p>
-                    <h3 className="mt-0.5 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">
-                      {leadTypeViewTitle}
-                    </h3>
-                    <p className="mt-0.5 text-[0.78rem] font-medium text-[#60758b]">
-                      {leadPageSummary.filtered} visible · {metrics.followUpsDueToday} follow-ups today
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">
+                        {leadTypeViewTitle}
+                      </h3>
+                      <span className="inline-flex h-8 items-center rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 text-sm font-semibold text-[#35546c]">
+                        {leadPageSummary.filtered}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-sm font-medium text-[#60758b]">
+                      Track and manage your buyer and seller leads.
                     </p>
                   </div>
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <div className="inline-flex items-center rounded-[12px] border border-[#dbe4ee] bg-[#f6f9fc] p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-                    <button
-                      type="button"
-                      onClick={() => setPipelineViewMode('table')}
-                      className={`inline-flex min-h-[30px] items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold transition ${
-                        pipelineViewMode === 'table' ? 'bg-white text-[#163247] shadow-[0_8px_18px_rgba(24,45,68,0.12)]' : 'text-[#51667f] hover:text-[#1f4f78]'
-                      }`}
-                    >
-                      <Table2 size={13} />
-                      Table
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPipelineViewMode('kanban')}
-                      className={`inline-flex min-h-[30px] items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-semibold transition ${
-                        pipelineViewMode === 'kanban' ? 'bg-white text-[#163247] shadow-[0_8px_18px_rgba(24,45,68,0.12)]' : 'text-[#51667f] hover:text-[#1f4f78]'
-                      }`}
-                    >
-                      <Columns3 size={13} />
-                      Kanban
-                    </button>
-                  </div>
-                  <div className="inline-flex items-center rounded-[12px] border border-[#dbe4ee] bg-white p-0.5 shadow-[0_8px_18px_rgba(24,45,68,0.045)]">
-                    {[
-                      ['all', 'All Leads', leadCategoryCounts.all],
-                      ['buyer', 'Buyer Leads', leadCategoryCounts.buyer],
-                      ['seller', 'Seller Leads', leadCategoryCounts.seller],
-                      ['other', 'Other', leadCategoryCounts.other],
-                    ].map(([key, label, count]) => (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                    <div className="inline-flex items-center rounded-[14px] border border-[#dbe4ee] bg-[#f6f9fc] p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
                       <button
-                        key={key}
                         type="button"
-                        onClick={() => setLeadTypeView(key)}
-                        className={`rounded-[10px] px-3 py-1.5 text-xs font-semibold transition ${
-                          leadTypeView === key ? 'bg-[#163247] text-white shadow-[0_8px_18px_rgba(22,50,71,0.18)]' : 'text-[#51667f] hover:text-[#1f4f78]'
+                        onClick={() => setPipelineViewMode('table')}
+                        className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold transition ${
+                          pipelineViewMode === 'table' ? 'bg-white text-[#163247] shadow-[0_8px_18px_rgba(24,45,68,0.12)]' : 'text-[#51667f] hover:text-[#1f4f78]'
                         }`}
                       >
-                        {label} <span className="tabular-nums opacity-75">{count}</span>
+                        <Table2 size={13} />
+                        Table
                       </button>
-                    ))}
-                  </div>
-                  <button type="button" className="inline-flex min-h-[34px] items-center justify-center rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]" aria-label="More lead actions">
-                    <MoreHorizontal size={17} />
-                  </button>
+                      <button
+                        type="button"
+                        onClick={() => setPipelineViewMode('kanban')}
+                        className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold transition ${
+                          pipelineViewMode === 'kanban' ? 'bg-white text-[#163247] shadow-[0_8px_18px_rgba(24,45,68,0.12)]' : 'text-[#51667f] hover:text-[#1f4f78]'
+                        }`}
+                      >
+                        <Columns3 size={13} />
+                        Kanban
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#35546c] shadow-[0_10px_20px_rgba(24,45,68,0.04)] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe]"
+                      onClick={() => document.getElementById('agency-lead-filters')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    >
+                      <Filter size={15} />
+                      Filter
+                    </button>
+                    <select
+                      className="min-h-[42px] rounded-[14px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#20364c] outline-none transition hover:border-[#c7d6e5]"
+                      value={leadTypeView}
+                      onChange={(event) => setLeadTypeView(event.target.value)}
+                    >
+                      <option value="all">All Leads ({leadCategoryCounts.all})</option>
+                      <option value="buyer">Buyer Leads ({leadCategoryCounts.buyer})</option>
+                      <option value="seller">Seller Leads ({leadCategoryCounts.seller})</option>
+                      <option value="other">Other ({leadCategoryCounts.other})</option>
+                    </select>
+                    <button
+                      type="button"
+                      className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,39,67,0.18)] transition hover:bg-[#0b223b]"
+                      onClick={() => openLeadForm(leadTypeView)}
+                    >
+                      <Plus size={16} />
+                      Add Lead
+                    </button>
                   </div>
                 </div>
               </div>
@@ -9908,17 +9871,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               ) : (
               <>
               <div className="hidden min-h-0 max-w-full flex-1 overflow-auto overscroll-contain lg:block">
-                <table className="w-full min-w-[1040px] text-sm">
-                  <thead className="sticky top-0 z-[1] h-[42px] border-b border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                    <tr>
-                      <th className="w-[42px] px-3 py-3"><span className="sr-only">Select</span></th>
-                      <th className="w-[31%] px-3 py-3">Lead</th>
-                      <th className="w-[23%] px-3 py-3">Opportunity</th>
-                      <th className="w-[20%] px-3 py-3">Pipeline</th>
-                      <th className="w-[26%] px-3 py-3">Owner & Activity</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[rgba(15,23,42,0.06)] bg-white">
+                <div className="min-w-[1120px] px-4 py-4">
+                  <div
+                    className="grid items-center gap-6 px-2 text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]"
+                    style={{ gridTemplateColumns: 'minmax(300px,1.5fr) minmax(260px,1.1fr) minmax(220px,0.9fr) minmax(200px,0.8fr) auto' }}
+                  >
+                    <span>Lead</span>
+                    <span>Property</span>
+                    <span>Stage</span>
+                    <span>Last Activity</span>
+                    <span className="sr-only">Actions</span>
+                  </div>
+                  <div className="mt-3 space-y-3">
                     {leadTableRows.length ? (
                       leadTableRows.map((lead) => {
                         const leadProspect = canvassingProspectById.get(normalizeText(lead?.canvassingProspectId))
@@ -9948,7 +9912,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
                         const leadName = resolveLeadDisplayName(lead, leadContact, leadProspect, 'Unnamed lead')
                         const isActive = normalizeLeadIdentityKey(selectedLeadId) === leadId && isLeadWorkspaceRoute
-                        const categoryMeta = getLeadCategoryMeta(lead, leadContact)
                         const statusMeta = getLeadStatusMeta(lead, funnelStage)
                         const linkedListing = resolveLeadLinkedListing(lead)
                         const sellerAppointments = isSeller
@@ -9961,335 +9924,162 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           ? buildSellerReadinessSummary({ lead, contact: leadContact || {}, appointments: sellerAppointments, listing: linkedListing, journey: sellerJourney })
                           : null
                         const sellerStageLabel = sellerJourney?.status?.summary || sellerJourney?.stage?.label || 'Contacted'
-                        const sellerPropertyLabel = sellerJourney?.kpis?.find((item) => item.key === 'property')?.value || normalizeText(lead?.sellerPropertyAddress || lead?.propertyInterest) || 'Property not captured'
-                        const sellerEstimatedValue = sellerJourney?.kpis?.find((item) => item.key === 'estimated_value')?.value || 0
-                        const sellerEstimatedLabel = sellerEstimatedValue ? formatCurrency(sellerEstimatedValue) : 'Value not captured'
-                        const sellerValuationLabel = sellerJourney?.valuationStatus || 'Not scheduled'
-                        const sellerMandateLabel = sellerJourney?.kpis?.find((item) => item.key === 'mandate')?.value || 'Not started'
-                        const sellerListingLabel = sellerJourney?.kpis?.find((item) => item.key === 'listing')?.value || 'Not created'
-                        const sellerDaysInStageLabel = `${sellerJourney?.daysInCurrentStage || 0} days`
-                        const sellerReadinessLabel = sellerReadiness?.readinessLabel || 'Review seller'
-                        const sellerNextActionLabel = sellerReadiness?.nextAction?.label || 'Review seller journey'
+                        const sellerPropertyLabel = sellerJourney?.kpis?.find((item) => item.key === 'property')?.value || normalizeText(lead?.sellerPropertyAddress || lead?.propertyInterest)
                         const opportunity = getLeadOpportunityPreview(lead, linkedTransaction, isSeller, linkedListing)
                         const actionMeta = getLeadNextActionMeta(lead, leadTasks, linkedAppointment, nextStep)
                         const latestActivityTitle = normalizeText(latestActivity?.activityType || latestActivity?.activityNote || linkedAppointment?.title)
                         const leadPhone = normalizeText(leadContact?.phone || lead?.phone)
                         const leadEmail = normalizeText(leadContact?.email || lead?.email)
-                        const whatsappPhone = leadPhone.replace(/[^\d+]/g, '').replace(/^\+/, '')
+                        const propertyLines = isSeller
+                          ? splitPropertyLines(sellerPropertyLabel, opportunity.subtitle)
+                          : opportunity.hasListing
+                            ? splitPropertyLines(opportunity.title, opportunity.subtitle || opportunity.specs)
+                            : splitPropertyLines('', '')
+                        const stageLabel = isSeller ? sellerStageLabel : normalizeText(funnelStage || lead?.stage || statusMeta.label) || 'Lead'
+                        const stagePresentation = getLeadStagePresentation(stageLabel)
                         const activityTimeLabel = formatRelativeTime(activityReference)
-                        const quickActionButtonClass = 'inline-flex h-7 w-7 items-center justify-center rounded-[9px] border border-transparent bg-transparent text-slate-400 transition hover:border-slate-200 hover:bg-white hover:text-slate-800'
+                        const activitySummary = latestActivityTitle || lastActivityLabel || 'No recent activity'
 
                         return (
-                          <tr
+                          <article
                             key={lead.leadId}
-                            className={`group min-h-[112px] cursor-pointer text-slate-700 transition-all duration-200 hover:bg-[#f8fbff] hover:shadow-[0_8px_22px_rgba(15,23,42,0.035)] ${isActive ? 'bg-[#f2f7ff]' : 'bg-white'}`}
+                            className={`cursor-pointer rounded-[20px] border px-6 py-5 shadow-[0_10px_24px_rgba(24,45,68,0.04)] transition hover:-translate-y-[1px] hover:border-[#cfdeeb] hover:shadow-[0_18px_36px_rgba(24,45,68,0.08)] ${
+                              isActive ? 'border-[#bfd5ea] bg-[#f7fbff]' : 'border-[#e2e8f0] bg-white'
+                            }`}
                             onClick={() => {
                               setSelectedLeadId(lead.leadId)
                               navigate(`/pipeline/leads/${lead.leadId}`)
                             }}
                           >
-                            <td className="px-3 py-4 align-top" onClick={(event) => event.stopPropagation()}>
-                              <input type="checkbox" className="h-4 w-4 rounded-[5px] border-slate-300 text-[#2563eb] shadow-sm focus:ring-2 focus:ring-[#dbeafe]" aria-label={`Select ${leadName}`} />
-                            </td>
-                            <td className="px-3 py-4 align-top">
-                              <div className="flex min-w-0 items-start gap-3">
-                                <span
-                                  className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.72rem] font-bold text-white shadow-[0_8px_18px_rgba(24,45,68,0.12)] ring-1 ring-white/70"
-                                  style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}, #1f4f78)` }}
-                                >
-                                  {getInitials(leadName)}
-                                </span>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                    <p className="min-w-0 break-words text-[14px] font-semibold leading-5 text-slate-950">{leadName}</p>
-                                    <span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[0.58rem] font-bold uppercase tracking-[0.08em] ${categoryMeta.className}`}>
-                                      {categoryMeta.label}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 grid min-w-0 gap-1 text-[12px] font-medium text-slate-500">
-                                    <span className="flex min-w-0 items-center gap-1.5">
-                                      <Phone size={12} className="shrink-0 text-slate-400" />
-                                      <span className="min-w-0 break-all">{leadPhone || 'No phone'}</span>
-                                    </span>
-                                    <span className="flex min-w-0 items-center gap-1.5">
-                                      <Mail size={12} className="shrink-0 text-slate-400" />
-                                      <span className="min-w-0 break-all">{leadEmail || 'No email'}</span>
-                                    </span>
-                                  </div>
-                                  <p className="mt-2 text-[0.7rem] font-medium leading-4 text-slate-400">
-                                    {lead.leadSource || 'Manual'} • {formatDateShort(lead?.createdAt)}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-4 align-top">
-                              {isSeller ? (
-                                <div className="grid min-w-0 gap-2">
-                                  <div className="flex min-w-0 items-start gap-2.5">
-                                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-[#edf7f0] text-[#2d7a52]">
-                                      <Home size={16} />
-                                    </span>
-                                    <div className="min-w-0">
-                                      <p className="break-words text-[13px] font-semibold leading-5 text-slate-950">{sellerPropertyLabel}</p>
-                                      <p className="mt-0.5 text-[12px] font-semibold text-[#1f4f78]">{sellerStageLabel}</p>
-                                      <p className="mt-0.5 text-[12px] font-medium text-slate-500">{sellerEstimatedLabel}</p>
+                            <div
+                              className="grid items-center gap-6"
+                              style={{ gridTemplateColumns: 'minmax(300px,1.5fr) minmax(260px,1.1fr) minmax(220px,0.9fr) minmax(200px,0.8fr) auto' }}
+                            >
+                              <div className="min-w-0">
+                                <div className="flex min-w-0 items-start gap-4">
+                                  <span
+                                    className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-[0.95rem] font-bold text-white shadow-[0_10px_22px_rgba(24,45,68,0.12)]"
+                                    style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}, #173e63)` }}
+                                  >
+                                    {getInitials(leadName)}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-[1rem] font-semibold tracking-[-0.02em] text-[#142132]">{leadName}</p>
+                                    <div className="mt-2 grid gap-1 text-[0.82rem] font-medium text-[#60758b]">
+                                      <span className="flex min-w-0 items-center gap-2">
+                                        <Phone size={13} className="shrink-0 text-[#8ba0b4]" />
+                                        <span className="min-w-0 truncate">{leadPhone || 'No phone number'}</span>
+                                      </span>
+                                      <span className="flex min-w-0 items-center gap-2">
+                                        <Mail size={13} className="shrink-0 text-[#8ba0b4]" />
+                                        <span className="min-w-0 truncate">{leadEmail || 'No email address'}</span>
+                                      </span>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${getLeadSourceChipTone(lead.leadSource || 'Unknown source')}`}>
+                                        {lead.leadSource || 'Unknown source'}
+                                      </span>
+                                      <span className="inline-flex items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#4d6782]">
+                                        {assignedAgent === 'Unassigned' ? 'Unassigned' : `Assigned to ${assignedAgent}`}
+                                      </span>
                                     </div>
                                   </div>
-                                  <div className="grid gap-1 text-[11px] font-semibold text-slate-500">
-                                    <span>Valuation: <span className="text-slate-800">{sellerValuationLabel}</span></span>
-                                    <span>Mandate: <span className="text-slate-800">{sellerMandateLabel}</span></span>
-                                    <span>Listing: <span className="text-slate-800">{sellerListingLabel}</span></span>
-                                  </div>
                                 </div>
-                              ) : opportunity.hasListing ? (
-                                <div className="flex min-w-0 items-start gap-2.5">
-                                  <div className="relative grid h-12 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-slate-200 bg-slate-100" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}1f, #f8fafc 72%)` }}>
-                                    <Home size={16} className="text-slate-400" />
-                                    {opportunity.thumbnailUrl ? (
-                                      <img
-                                        src={opportunity.thumbnailUrl}
-                                        alt=""
-                                        loading="lazy"
-                                        className="absolute inset-0 h-full w-full object-cover"
-                                        onError={(event) => {
-                                          event.currentTarget.style.display = 'none'
-                                        }}
-                                      />
-                                    ) : null}
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <p className="break-words text-[13px] font-semibold leading-5 text-slate-950">{opportunity.title}</p>
-                                    {opportunity.price ? <p className="mt-0.5 text-[12px] font-semibold text-[#1f4f78]">{opportunity.price}</p> : null}
-                                    <p className="mt-0.5 break-words text-[12px] font-medium leading-4 text-slate-500">{opportunity.specs || 'Property details pending'}</p>
-                                    <p className="mt-0.5 break-words text-[11px] font-medium leading-4 text-slate-400">{opportunity.subtitle}</p>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="flex min-w-0 items-start gap-2.5">
-                                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-slate-100 text-slate-400">
-                                    <ImageIcon size={15} />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex min-w-0 items-start gap-3">
+                                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] border border-[#e1e8f0] bg-[#f8fbff] text-[#5c7894]">
+                                    <Home size={17} />
                                   </span>
                                   <div className="min-w-0">
-                                    <p className="break-words text-[13px] font-semibold text-slate-700">No listing assigned</p>
-                                    <p className="mt-0.5 inline-flex items-center gap-1 text-[12px] font-semibold text-[#1f4f78]">Assign listing <ArrowUpRight size={12} /></p>
-                                  </div>
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-3 py-4 align-top">
-                              {isSeller ? (
-                                <div className="grid min-w-0 gap-3">
-                                  <div>
-                                    <span className="inline-flex rounded-full border border-[#cfe4d8] bg-[#edf8f1] px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#237348]">
-                                      {sellerStageLabel}
-                                    </span>
-                                    <p className="mt-1.5 text-[11px] font-medium leading-4 text-slate-400">
-                                      Next: {sellerNextActionLabel}
+                                    <p className={`truncate text-[0.96rem] font-semibold tracking-[-0.02em] ${propertyLines.title === 'No property address yet' ? 'text-[#8aa0b5]' : 'text-[#142132]'}`}>
+                                      {propertyLines.title}
+                                    </p>
+                                    <p className="mt-1 truncate text-[0.84rem] font-medium text-[#60758b]">
+                                      {propertyLines.subtitle || (isSeller ? (sellerReadiness?.nextAction?.label || 'Seller journey in progress') : (opportunity.specs || 'Property details pending'))}
                                     </p>
                                   </div>
-                                  <div className="rounded-[14px] border border-[#dbe7f2] bg-[#fbfdff] px-3 py-2.5">
-                                    <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-slate-400">Seller readiness</p>
-                                    <div className="mt-2 grid gap-1.5">
-                                      {[
-                                        ['Readiness', sellerReadinessLabel],
-                                        ['Property', sellerPropertyLabel],
-                                        ['Estimated', sellerEstimatedLabel],
-                                        ['Valuation', sellerValuationLabel],
-                                        ['Mandate', sellerMandateLabel],
-                                        ['Listing', sellerListingLabel],
-                                        ['Days in stage', sellerDaysInStageLabel],
-                                      ].map(([label, value]) => (
-                                        <div key={label} className="flex min-w-0 items-center justify-between gap-2 text-[12px]">
-                                          <span className="font-medium text-slate-500">{label}</span>
-                                          <span className="min-w-0 truncate font-semibold text-slate-800" title={String(value)}>{value}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                              <div className="grid min-w-0 gap-3">
-                                <div>
-                                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.64rem] font-bold uppercase tracking-[0.08em] ${statusMeta.className}`}>{statusMeta.label}</span>
-                                  <div className="mt-1.5 flex items-center gap-1" aria-label={`${statusMeta.label} lead score ${statusMeta.score} out of 5`}>
-                                    {Array.from({ length: 5 }).map((_, dotIndex) => (
-                                      <span key={`${lead.leadId}:score:${dotIndex}`} className={`h-1.5 w-1.5 rounded-full ${dotIndex < statusMeta.score ? statusMeta.dotClassName : 'bg-slate-200'}`} />
-                                    ))}
-                                  </div>
-                                  <p className="mt-1 text-[11px] font-medium leading-4 text-slate-400">Stage {statusMeta.score}/5 · {funnelStage}</p>
-                                </div>
-                                <div className="rounded-[14px] border border-[#dbe7f2] bg-[#fbfdff] px-3 py-2.5">
-                                  <p className="text-[0.64rem] font-semibold uppercase tracking-[0.1em] text-slate-400">Next action</p>
-                                  <p className="mt-1 break-words text-[13px] font-semibold leading-5 text-slate-950">{actionMeta.title}</p>
-                                  <div className="mt-1 flex min-w-0 items-center gap-2">
-                                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${actionMeta.meta.toLowerCase().includes('overdue') ? 'bg-[#d96b5f]' : actionMeta.meta.toLowerCase().includes('today') ? 'bg-[#d79d3f]' : 'bg-[#35a66d]'}`} />
-                                    <p className="min-w-0 break-words text-[12px] font-semibold text-slate-500">{actionMeta.meta}</p>
-                                  </div>
                                 </div>
                               </div>
-                              )}
-                            </td>
-                            <td className="px-3 py-4 align-top">
-                              <div className="grid min-w-0 gap-3">
-                                <div className="flex min-w-0 items-start gap-2.5">
-                                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[0.68rem] font-bold text-white shadow-sm" style={{ backgroundColor: agentColor }}>{getInitials(assignedAgent)}</span>
-                                  <div className="min-w-0">
-                                    <p className="break-words text-[13px] font-semibold leading-5 text-slate-800">{assignedAgent}</p>
-                                    <p className="text-[11px] font-medium text-slate-400">Agent</p>
-                                  </div>
-                                </div>
-                                <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5">
-                                  <p className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-800">
-                                    <Clock3 size={12} className="shrink-0 text-slate-400" />
-                                    {activityTimeLabel}
-                                  </p>
-                                  <p className="mt-1 break-words text-[12px] font-medium leading-4 text-slate-500">{latestActivityTitle || lastActivityLabel}</p>
-                                </div>
-                                <div className="flex flex-wrap items-center gap-1" onClick={(event) => event.stopPropagation()}>
-                                  {leadPhone ? (
-                                    <a href={`tel:${leadPhone}`} className={quickActionButtonClass} aria-label={`Call ${leadName}`} title="Call">
-                                      <Phone size={14} />
-                                    </a>
-                                  ) : null}
-                                  {whatsappPhone ? (
-                                    <a href={`https://wa.me/${whatsappPhone}`} target="_blank" rel="noreferrer" className={quickActionButtonClass} aria-label={`WhatsApp ${leadName}`} title="WhatsApp">
-                                      <MessageCircle size={14} />
-                                    </a>
-                                  ) : null}
-                                  {leadEmail ? (
-                                    <a href={`mailto:${leadEmail}`} className={quickActionButtonClass} aria-label={`Email ${leadName}`} title="Email">
-                                      <Mail size={14} />
-                                    </a>
-                                  ) : null}
-                                  <button
-                                    type="button"
-                                    className={quickActionButtonClass}
-                                    aria-label={`${isSeller ? 'Open seller journey' : 'Book viewing'} for ${leadName}`}
-                                    title={isSeller ? 'Open Seller Journey' : 'Book Viewing'}
-                                    onClick={() => {
-                                      setSelectedLeadId(lead.leadId)
-                                      setLeadWorkspaceTab(isSeller ? 'listing_journey' : 'appointments')
-                                      navigate(`/pipeline/leads/${lead.leadId}`)
-                                    }}
-                                  >
-                                    <CalendarDays size={14} />
-                                  </button>
-                                  {!isSeller ? (
-                                    <button
-                                      type="button"
-                                      className={quickActionButtonClass}
-                                      aria-label={`Generate OTP for ${leadName}`}
-                                      title="Generate OTP"
-                                      onClick={() => {
-                                        setSelectedLeadId(lead.leadId)
-                                        setLeadWorkspaceTab('offers')
-                                        navigate(`/pipeline/leads/${lead.leadId}`)
-                                      }}
-                                    >
-                                      <CheckSquare size={14} />
-                                    </button>
-                                  ) : null}
-                                  {!isSeller ? (
-                                    <button
-                                      type="button"
-                                      className="inline-flex min-h-7 items-center justify-center rounded-[9px] border border-[#cfe0ef] bg-white px-2 text-[0.68rem] font-semibold text-[#1f4f78] transition hover:border-[#9fc0dd] hover:bg-[#f2f8fd] disabled:cursor-not-allowed disabled:opacity-55"
-                                      disabled={canonicalOfferActionId === `lead:${leadId}:buyer-onboarding`}
-                                      aria-label={`Send buyer onboarding for ${leadName}`}
-                                      title="Send Buyer Onboarding"
-                                      onClick={() => void handleSendBuyerOnboardingFromLeadRow(lead, linkedTransaction)}
-                                    >
-                                      Buyer Onboarding
-                                    </button>
-                                  ) : null}
-                                  <button
-                                    type="button"
-                                    className={quickActionButtonClass}
-                                    aria-label={`Open ${leadName}`}
-                                    title="Open Lead"
-                                    onClick={() => {
-                                      setSelectedLeadId(lead.leadId)
-                                      navigate(`/pipeline/leads/${lead.leadId}`)
-                                    }}
-                                  >
-                                    <ArrowUpRight size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={quickActionButtonClass}
-                                    aria-label={`More actions for ${leadName}`}
-                                    title="More"
-                                    onClick={() => openArchiveLeadModal(lead.leadId)}
-                                  >
-                                    <MoreHorizontal size={15} />
-                                  </button>
-                                </div>
+                              <div className="min-w-0">
+                                <span className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-2 text-[0.82rem] font-semibold ${stagePresentation.className}`}>
+                                  {createElement(stagePresentation.Icon, { className: 'h-4 w-4 shrink-0' })}
+                                  <span className="line-clamp-2">{stageLabel}</span>
+                                </span>
+                                <p className="mt-2 line-clamp-2 text-[0.8rem] font-medium text-[#60758b]">
+                                  {isSeller ? (sellerReadiness?.nextAction?.label || 'Review seller journey') : actionMeta.title}
+                                </p>
                               </div>
-                            </td>
-                          </tr>
+                              <div className="min-w-0">
+                                <p className="text-[0.95rem] font-semibold tracking-[-0.02em] text-[#142132]">
+                                  {activityTimeLabel || 'No recent activity'}
+                                </p>
+                                <p className="mt-1 line-clamp-2 text-[0.84rem] font-medium leading-5 text-[#60758b]">
+                                  {activitySummary}
+                                </p>
+                              </div>
+                              <div className="flex items-center justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(15,39,67,0.16)] transition hover:bg-[#0b223b]"
+                                  onClick={() => {
+                                    setSelectedLeadId(lead.leadId)
+                                    navigate(`/pipeline/leads/${lead.leadId}`)
+                                  }}
+                                >
+                                  Open
+                                  <ArrowUpRight size={15} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-[14px] border border-[#dbe4ee] bg-white text-[#5b7289] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] hover:text-[#20364c]"
+                                  aria-label={`More actions for ${leadName}`}
+                                  onClick={() => openArchiveLeadModal(lead.leadId)}
+                                >
+                                  <MoreHorizontal size={18} />
+                                </button>
+                              </div>
+                            </div>
+                          </article>
                         )
                       })
                     ) : (
-                      <tr>
-                        <td className="px-6 py-12" colSpan={5}>
-                          <div className="mx-auto max-w-md rounded-[18px] border border-dashed border-slate-200 bg-[#fbfdff] px-6 py-8 text-center">
-                            <div className="mx-auto grid h-12 w-12 place-items-center rounded-[14px] bg-[#edf4fb] text-[#35546c]">
-                              <UserRound size={21} />
-                            </div>
-                            <h4 className="mt-4 text-[1rem] font-semibold tracking-[-0.02em] text-slate-900">
-                              {leadPageSummary.total > 0
-                                ? 'No leads match these filters'
-                                : `No ${leadTypeViewTitle.toLowerCase()} yet`}
-                            </h4>
-                            <p className="mt-2 text-sm leading-6 text-slate-500">
-                              {leadPageSummary.total > 0
-                                ? 'Clear the search or filters to show the leads already in this pipeline.'
-                                : leadTypeView === 'seller'
-                                ? 'Create your first seller lead manually or convert a canvassing prospect when they are ready to sell.'
-                                : leadTypeView === 'buyer'
-                                  ? 'Create your first buyer lead manually or connect listings to start capturing enquiries automatically.'
-                                  : leadTypeView === 'other'
-                                    ? 'Leads that cannot be classified as buyer or seller will appear here.'
-                                    : 'Create your first lead manually or connect enquiry sources to start capturing leads automatically.'}
-                            </p>
-                            <button
-                              type="button"
-                              className="mt-5 inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] bg-[#163247] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(22,50,71,0.16)]"
-                              onClick={() => openLeadForm(leadTypeView)}
-                            >
-                              <Plus size={15} />
-                              Create Lead
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                      <div className="mx-auto max-w-md rounded-[18px] border border-dashed border-slate-200 bg-[#fbfdff] px-6 py-8 text-center">
+                        <div className="mx-auto grid h-12 w-12 place-items-center rounded-[14px] bg-[#edf4fb] text-[#35546c]">
+                          <UserRound size={21} />
+                        </div>
+                        <h4 className="mt-4 text-[1rem] font-semibold tracking-[-0.02em] text-slate-900">
+                          {leadPageSummary.total > 0
+                            ? 'No leads match these filters'
+                            : `No ${leadTypeViewTitle.toLowerCase()} yet`}
+                        </h4>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                          {leadPageSummary.total > 0
+                            ? 'Clear the search or filters to show the leads already in this pipeline.'
+                            : leadTypeView === 'seller'
+                            ? 'Create your first seller lead manually or convert a canvassing prospect when they are ready to sell.'
+                            : leadTypeView === 'buyer'
+                              ? 'Create your first buyer lead manually or connect listings to start capturing enquiries automatically.'
+                              : leadTypeView === 'other'
+                                ? 'Leads that cannot be classified as buyer or seller will appear here.'
+                                : 'Create your first lead manually or connect enquiry sources to start capturing leads automatically.'}
+                        </p>
+                        <button
+                          type="button"
+                          className="mt-5 inline-flex min-h-[38px] items-center justify-center gap-2 rounded-[12px] bg-[#163247] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(22,50,71,0.16)]"
+                          onClick={() => openLeadForm(leadTypeView)}
+                        >
+                          <Plus size={15} />
+                          Create Lead
+                        </button>
+                      </div>
                     )}
-                  </tbody>
-                </table>
-              </div>
-              <div className="hidden items-center justify-center gap-3 border-t border-[rgba(15,23,42,0.06)] bg-[#FCFCFD] px-5 py-4 lg:flex">
-                <button
-                  type="button"
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
-                  disabled={leadTableCurrentPage <= 1}
-                  onClick={() => setLeadTablePage((page) => Math.max(1, page - 1))}
-                >
-                  Previous
-                </button>
-                <p className="min-w-[220px] text-center text-sm font-medium text-slate-500">
-                  {leadTableStart}-{leadTableEnd} of {filteredLeads.length} leads
-                </p>
-                <button
-                  type="button"
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-45"
-                  disabled={leadTableCurrentPage >= leadTableTotalPages}
-                  onClick={() => setLeadTablePage((page) => Math.min(leadTableTotalPages, page + 1))}
-                >
-                  Next
-                </button>
+                  </div>
+                </div>
               </div>
               <div className="space-y-3 p-4 lg:hidden">
-                {filteredLeads.length ? (
-                  filteredLeads.map((lead) => {
+                {leadTableRows.length ? (
+                  leadTableRows.map((lead) => {
                     const leadProspect = canvassingProspectById.get(normalizeText(lead?.canvassingProspectId))
                     const leadContact =
                       resolveLeadContactSnapshot(
@@ -10309,22 +10099,37 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       .filter((row) => normalizeLeadIdentityKey(row?.leadId) === leadId)
                       .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))[0]
                     const isSeller = resolveLeadCategoryView(lead) === 'seller'
-                    const linkedListingLabel = normalizeText(lead?.listingId || lead?.propertyInterest || lead?.sellerPropertyAddress)
-                    const interestedListing = isSeller
-                      ? linkedListingLabel || 'Property not linked yet'
-                      : linkedListingLabel || normalizeText(linkedTransaction?.title) || 'No listing selected yet'
                     const funnelStage = resolveLeadFunnelStage(lead)
                     const nextStep = resolveLeadNextStep(lead, leadTasks)
                     const activityReference = latestActivity?.activityDate || latestActivity?.createdAt || linkedAppointment?.updatedAt || linkedAppointment?.dateTime || lead?.updatedAt || lead?.createdAt
                     const assignedAgent = normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail || 'Unassigned')
                     const agentColor = getAgentKanbanColor(lead?.assignedAgentId || lead?.assignedAgentEmail || assignedAgent)
                     const leadName = resolveLeadDisplayName(lead, leadContact, leadProspect, 'Unnamed lead')
-                    const nextStepStatus = getNextStepStatus(leadTasks)
+                    const linkedListing = resolveLeadLinkedListing(lead)
+                    const sellerAppointments = isSeller
+                      ? records.appointments.filter((row) => normalizeLeadIdentityKey(row?.leadId || row?.relatedEntityId) === leadId)
+                      : []
+                    const sellerJourney = isSeller
+                      ? buildSellerJourney({ lead, contact: leadContact || {}, appointments: sellerAppointments, listing: linkedListing })
+                      : null
+                    const opportunity = getLeadOpportunityPreview(lead, linkedTransaction, isSeller, linkedListing)
+                    const propertyLines = isSeller
+                      ? splitPropertyLines(sellerJourney?.kpis?.find((item) => item.key === 'property')?.value || normalizeText(lead?.sellerPropertyAddress || lead?.propertyInterest), opportunity.subtitle)
+                      : opportunity.hasListing
+                        ? splitPropertyLines(opportunity.title, opportunity.subtitle || opportunity.specs)
+                        : splitPropertyLines('', '')
+                    const stageLabel = isSeller
+                      ? sellerJourney?.status?.summary || sellerJourney?.stage?.label || 'Contacted'
+                      : normalizeText(funnelStage || lead?.stage || 'Lead')
+                    const stagePresentation = getLeadStagePresentation(stageLabel)
+                    const latestActivityTitle = normalizeText(latestActivity?.activityType || latestActivity?.activityNote || linkedAppointment?.title)
+                    const leadPhone = normalizeText(leadContact?.phone || lead?.phone)
+                    const leadEmail = normalizeText(leadContact?.email || lead?.email)
 
                     return (
                       <article
                         key={`mobile-${lead.leadId}`}
-                        className="rounded-[16px] border border-[#e1e8f0] bg-white p-3 shadow-[0_10px_24px_rgba(24,45,68,0.055)]"
+                        className="rounded-[18px] border border-[#e1e8f0] bg-white p-4 shadow-[0_10px_24px_rgba(24,45,68,0.055)]"
                         onClick={() => {
                           setSelectedLeadId(lead.leadId)
                           navigate(`/pipeline/leads/${lead.leadId}`)
@@ -10332,35 +10137,68 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex min-w-0 items-center gap-3">
-                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[0.78rem] font-bold text-white" style={{ backgroundColor: agentColor }}>
+                            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-[0.85rem] font-bold text-white" style={{ backgroundImage: `linear-gradient(135deg, ${agentColor}, #173e63)` }}>
                               {getInitials(leadName)}
                             </span>
                             <div className="min-w-0">
-                              <h4 className="truncate text-[0.95rem] font-semibold text-[#142132]">{leadName}</h4>
-                              <p className="mt-0.5 truncate text-[0.8rem] font-medium text-[#60758b]">{interestedListing}</p>
+                              <h4 className="truncate text-[0.98rem] font-semibold text-[#142132]">{leadName}</h4>
+                              <p className="mt-1 truncate text-[0.8rem] font-medium text-[#60758b]">{leadPhone || leadEmail || 'No contact details yet'}</p>
                             </div>
                           </div>
-                          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.66rem] font-semibold ${getLeadStageTone(funnelStage)}`}>
-                            {funnelStage}
+                          <span className={`inline-flex max-w-[12rem] items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${stagePresentation.className}`}>
+                            {createElement(stagePresentation.Icon, { className: 'h-3.5 w-3.5 shrink-0' })}
+                            <span className="line-clamp-2">{stageLabel}</span>
                           </span>
                         </div>
-                        <div className="mt-3 grid gap-2 border-l-2 border-[#dbe7f2] pl-3">
-                          <div>
-                            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Next Action</p>
-                            <p className="mt-0.5 truncate text-[0.86rem] font-semibold text-[#2d4560]">{nextStep}</p>
-                            <span className={`mt-0.5 inline-flex items-center gap-1.5 text-[0.7rem] font-semibold ${nextStepStatus.text}`}>
-                              <span className={`h-1.5 w-1.5 rounded-full ${nextStepStatus.tone}`} />
-                              {nextStepStatus.label}
+                        <div className="mt-3 grid gap-3 text-[0.82rem]">
+                          <div className="grid gap-1 text-[#60758b]">
+                            <span className="flex items-center gap-2">
+                              <Mail size={13} className="shrink-0 text-[#8ba0b4]" />
+                              <span className="min-w-0 truncate">{leadEmail || 'No email address'}</span>
+                            </span>
+                            <span className="flex items-start gap-2">
+                              <Home size={13} className="mt-0.5 shrink-0 text-[#8ba0b4]" />
+                              <span className="min-w-0">
+                                <span className={`block truncate font-semibold ${propertyLines.title === 'No property address yet' ? 'text-[#8aa0b5]' : 'text-[#20364c]'}`}>{propertyLines.title}</span>
+                                <span className="mt-0.5 block truncate text-[0.78rem]">{propertyLines.subtitle || 'Property details pending'}</span>
+                              </span>
                             </span>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            <div>
-                              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Owner</p>
-                              <p className="mt-0.5 truncate text-[0.78rem] font-medium text-[#2d4560]">{assignedAgent}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${getLeadSourceChipTone(lead.leadSource || 'Unknown source')}`}>
+                              {lead.leadSource || 'Unknown source'}
+                            </span>
+                            <span className="inline-flex items-center rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-2.5 py-1 text-[0.7rem] font-semibold text-[#4d6782]">
+                              {assignedAgent === 'Unassigned' ? 'Unassigned' : assignedAgent}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 border-t border-[#edf2f7] pt-3">
+                            <div className="min-w-0">
+                              <p className="text-[0.9rem] font-semibold text-[#142132]">{formatRelativeTime(activityReference)}</p>
+                              <p className="mt-0.5 line-clamp-2 text-[0.78rem] font-medium text-[#60758b]">
+                                {latestActivityTitle || nextStep || 'No recent activity'}
+                              </p>
                             </div>
-                            <div>
-                              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Activity</p>
-                              <p className="mt-0.5 truncate text-[0.78rem] font-medium text-[#2d4560]">{formatRelativeTime(activityReference)}</p>
+                            <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
+                              <button
+                                type="button"
+                                className="inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white"
+                                onClick={() => {
+                                  setSelectedLeadId(lead.leadId)
+                                  navigate(`/pipeline/leads/${lead.leadId}`)
+                                }}
+                              >
+                                Open
+                                <ArrowUpRight size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-[14px] border border-[#dbe4ee] bg-white text-[#5b7289]"
+                                aria-label={`More actions for ${leadName}`}
+                                onClick={() => openArchiveLeadModal(lead.leadId)}
+                              >
+                                <MoreHorizontal size={17} />
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -10382,6 +10220,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </p>
                   </div>
                 )}
+              </div>
+              <div className="border-t border-[rgba(15,23,42,0.06)] bg-[#fcfdff] px-4 py-4 sm:px-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm font-medium text-[#60758b]">
+                    Showing {leadTableStart} to {leadTableEnd} of {filteredLeads.length} leads
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] disabled:cursor-not-allowed disabled:opacity-45"
+                      disabled={leadTableCurrentPage <= 1}
+                      onClick={() => setLeadTablePage((page) => Math.max(1, page - 1))}
+                    >
+                      Previous
+                    </button>
+                    {leadTableVisiblePages.map((page) => (
+                      <button
+                        key={`lead-page-${page}`}
+                        type="button"
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-[12px] border text-sm font-semibold transition ${
+                          page === leadTableCurrentPage
+                            ? 'border-[#0f2743] bg-[#0f2743] text-white shadow-[0_10px_20px_rgba(15,39,67,0.18)]'
+                            : 'border-[#dbe4ee] bg-white text-[#405b75] hover:border-[#c7d6e5] hover:bg-[#f8fbfe]'
+                        }`}
+                        onClick={() => setLeadTablePage(page)}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#405b75] transition hover:border-[#c7d6e5] hover:bg-[#f8fbfe] disabled:cursor-not-allowed disabled:opacity-45"
+                      disabled={leadTableCurrentPage >= leadTableTotalPages}
+                      onClick={() => setLeadTablePage((page) => Math.min(leadTableTotalPages, page + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
               </>
               )}
