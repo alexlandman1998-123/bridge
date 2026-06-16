@@ -4,14 +4,20 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import CommercialFilterBar from './CommercialFilterBar'
 import CommercialFormModal from './CommercialFormModal'
 import CommercialRecordDrawer from './CommercialRecordDrawer'
+import CommercialOnboardingSendModal from './CommercialOnboardingSendModal'
 import CommercialTable from './CommercialTable'
 import CommercialWorkspaceTabs from './CommercialWorkspaceTabs'
+import { formatDate } from '../commercialFormatters'
 import {
   createDealFromRequirement,
   createCommercialTransaction,
   getCommercialLookupData,
   resolveCommercialOrganisationContext,
 } from '../services/commercialApi'
+import {
+  buildCommercialOnboardingInviteDraft,
+  createCommercialOnboardingInvitation,
+} from '../services/commercialOnboardingApi'
 
 function friendlyError(error, fallback = 'Something went wrong. Please try again.') {
   const message = String(error?.message || error || '').trim()
@@ -84,6 +90,11 @@ function compareValues(left, right, direction = 'asc') {
   return String(left ?? '').localeCompare(String(right ?? ''), undefined, { numeric: true, sensitivity: 'base' }) * multiplier
 }
 
+function renderCardValue(column, row) {
+  if (!column) return null
+  return column.render ? column.render(row) : (row?.[column.key] ?? '-')
+}
+
 function CommercialCrudPage({
   config,
   pageTitle = '',
@@ -99,6 +110,7 @@ function CommercialCrudPage({
   extraFilter = null,
   drawerPrimaryActionLabel = '',
   onDrawerPrimaryAction = null,
+  presentation = 'table',
 }) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -115,6 +127,7 @@ function CommercialCrudPage({
   const pageSize = config.pageSize || 25
   const [modalState, setModalState] = useState({ open: false, mode: 'create', record: null })
   const [drawerRecord, setDrawerRecord] = useState(null)
+  const [onboardingModalState, setOnboardingModalState] = useState({ open: false, record: null })
   const CreateModal = modalState.mode === 'create' ? config.createModal : null
   const resolvedPageTitle = pageTitle || config.title
   const resolvedPageDescription = pageDescription || config.description
@@ -123,6 +136,7 @@ function CommercialCrudPage({
   const resolvedEmptyTitle = emptyTitle || config.emptyTitle
   const resolvedEmptyDescription = emptyDescription || config.emptyDescription
   const resolvedSearchPlaceholder = searchPlaceholder || `Search ${resolvedPageTitle.toLowerCase()}...`
+  const useCardView = presentation === 'cards'
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -155,7 +169,7 @@ function CommercialCrudPage({
 
   useEffect(() => {
     if (!location.state?.openCommercialCreate) return
-    setModalState({ open: true, mode: 'create', record: null })
+    setModalState({ open: true, mode: 'create', record: location.state?.commercialCreateDraft || null })
     navigate(location.pathname, { replace: true, state: {} })
   }, [location.pathname, location.state, navigate])
 
@@ -193,6 +207,10 @@ function CommercialCrudPage({
     })),
     [config.fields, lookupOptions],
   )
+  const drawerOnboardingDraft = useMemo(
+    () => (drawerRecord ? buildCommercialOnboardingInviteDraft({ kind: config.kind, record: drawerRecord, lookups: lookupOptions }) : null),
+    [config.kind, drawerRecord, lookupOptions],
+  )
   const searchableFields = useMemo(() => {
     const configured = Array.isArray(config.searchFields) ? config.searchFields : []
     if (configured.length) return configured
@@ -201,6 +219,11 @@ function CommercialCrudPage({
       ...(config.fields || []).map((field) => field.name).filter(Boolean),
     ])]
   }, [config.columns, config.fields, config.searchFields])
+  const cardColumns = useMemo(() => (
+    useCardView
+      ? columns.filter((column) => column.key && !['title'].includes(column.key) && column.sortable !== false && column.key !== 'actions')
+      : []
+  ), [columns, useCardView])
   const visibleRecords = useMemo(() => {
     const query = normalizeSearch(searchTerm)
     return records
@@ -240,11 +263,14 @@ function CommercialCrudPage({
     if (!organisationId) throw new Error('Commercial organisation context is not available.')
     const record = modalState.record
     if (modalState.mode === 'edit' && record?.id) {
-      await config.updateRecord(record.id, payload)
+      const updated = await config.updateRecord(record.id, payload)
+      await loadData()
+      return updated
     } else {
-      await config.createRecord({ ...payload, organisation_id: organisationId })
+      const created = await config.createRecord({ ...payload, organisation_id: organisationId })
+      await loadData()
+      return created
     }
-    await loadData()
   }
 
   async function handleArchive(record) {
@@ -323,6 +349,23 @@ function CommercialCrudPage({
     } catch (createError) {
       setActionError(friendlyError(createError, 'The commercial transaction could not be created.'))
     }
+  }
+
+  async function handleSendOnboarding(draft = {}) {
+    if (!organisationId) throw new Error('Commercial organisation context is not available.')
+    const onboardingContact = draft.contact || {}
+    const sourceRecord = draft.sourceRecord || drawerRecord || {}
+    const invitation = await createCommercialOnboardingInvitation({
+      organisationId,
+      clientType: draft.clientType || 'tenant',
+      transactionType: draft.transactionType || 'lease',
+      assetCategory: draft.assetCategory || 'office',
+      sourceRecord,
+      contact: onboardingContact,
+      expiryDays: 30,
+    })
+    await loadData()
+    return invitation
   }
 
   return (
@@ -418,23 +461,110 @@ function CommercialCrudPage({
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{actionError}</div>
       ) : null}
 
-      <CommercialTable
-        columns={columns}
-        rows={paginatedRecords}
-        loading={loading}
-        error={error}
-        emptyTitle={resolvedEmptyTitle}
-        emptyDescription={resolvedEmptyDescription}
-        sortKey={sortState.key}
-        sortDirection={sortState.direction}
-        pagination={pagination}
-        onSort={handleSort}
-        createLabel={resolvedCreateLabel}
-        onCreate={() => setModalState({ open: true, mode: 'create', record: null })}
-        onView={setDrawerRecord}
-        onEdit={(record) => setModalState({ open: true, mode: 'edit', record })}
-        onArchive={handleArchive}
-      />
+      {useCardView ? (
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {loading ? (
+              <>
+                {[0, 1, 2, 3, 4, 5].map((item) => (
+                  <div key={item} className="h-64 animate-pulse rounded-3xl bg-slate-100" />
+                ))}
+              </>
+            ) : error ? (
+              <div className="md:col-span-2 xl:col-span-3">
+                <CommercialEmptyState title="Commercial data could not be loaded" description={error} />
+              </div>
+            ) : paginatedRecords.length ? (
+              paginatedRecords.map((row) => (
+                <article key={row.id} className="grid gap-4 rounded-3xl border border-slate-200 bg-[#fbfcfe] p-5 shadow-[0_14px_34px_rgba(15,23,42,0.035)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="min-w-0 text-sm font-semibold text-[#102236]">
+                        {renderCardValue(columns[0], row)}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {row.listing_type ? (
+                          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                            {String(row.listing_type).replace(/_/g, ' ')}
+                          </span>
+                        ) : null}
+                        {row.listing_category ? (
+                          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                            {String(row.listing_category).replace(/_/g, ' ')}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">
+                        {row.description || row.notes || 'Commercial listing'}
+                      </p>
+                    </div>
+                    {row.featured ? (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                        Featured
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {cardColumns.slice(0, 6).map((column) => (
+                      <div key={column.key} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-slate-400">{column.label}</p>
+                        <div className="mt-1 text-sm font-semibold text-[#102236]">
+                          {renderCardValue(column, row)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                      {row.updated_at || row.created_at ? `Updated ${formatDate(row.updated_at || row.created_at)}` : ' '}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => setDrawerRecord(row)} className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-[#102236] transition hover:bg-slate-50">
+                        View
+                      </button>
+                      <button type="button" onClick={() => setModalState({ open: true, mode: 'edit', record: row })} className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-[#102236] transition hover:bg-slate-50">
+                        Edit
+                      </button>
+                      <button type="button" onClick={() => handleArchive(row)} className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100">
+                        Archive
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="md:col-span-2 xl:col-span-3">
+                <CommercialEmptyState
+                  title={resolvedEmptyTitle || 'No commercial records yet'}
+                  description={resolvedEmptyDescription || 'Create your first record to start building this commercial workspace.'}
+                  primaryActionLabel={resolvedCreateLabel}
+                  onPrimaryAction={() => setModalState({ open: true, mode: 'create', record: null })}
+                />
+              </div>
+            )}
+          </div>
+        </section>
+      ) : (
+        <CommercialTable
+          columns={columns}
+          rows={paginatedRecords}
+          loading={loading}
+          error={error}
+          emptyTitle={resolvedEmptyTitle}
+          emptyDescription={resolvedEmptyDescription}
+          sortKey={sortState.key}
+          sortDirection={sortState.direction}
+          pagination={pagination}
+          onSort={handleSort}
+          createLabel={resolvedCreateLabel}
+          onCreate={() => setModalState({ open: true, mode: 'create', record: null })}
+          onView={setDrawerRecord}
+          onEdit={(record) => setModalState({ open: true, mode: 'edit', record })}
+          onArchive={handleArchive}
+        />
+      )}
 
       {CreateModal ? (
         <CreateModal
@@ -443,6 +573,7 @@ function CommercialCrudPage({
           title={config.title}
           record={modalState.record}
           lookups={lookupOptions}
+          rawLookups={lookups}
           onClose={() => setModalState({ open: false, mode: 'create', record: null })}
           onSubmit={handleSave}
         />
@@ -473,6 +604,8 @@ function CommercialCrudPage({
         organisationId={organisationId}
         primaryActionLabel={drawerPrimaryActionLabel}
         onPrimaryAction={onDrawerPrimaryAction || (drawerPrimaryActionLabel ? (record) => void handleCreateTransaction(record) : null)}
+        secondaryActionLabel={drawerOnboardingDraft?.label || ''}
+        onSecondaryAction={drawerOnboardingDraft ? (record) => setOnboardingModalState({ open: true, record }) : null}
         onClose={() => setDrawerRecord(null)}
         onEdit={() => {
           setModalState({ open: true, mode: 'edit', record: drawerRecord })
@@ -480,6 +613,15 @@ function CommercialCrudPage({
         }}
         onArchive={() => handleArchive(drawerRecord)}
         onCreateTransaction={(record) => void handleCreateTransaction(record)}
+      />
+
+      <CommercialOnboardingSendModal
+        open={onboardingModalState.open}
+        kind={config.kind}
+        record={onboardingModalState.record}
+        lookups={lookupOptions}
+        onClose={() => setOnboardingModalState({ open: false, record: null })}
+        onSend={handleSendOnboarding}
       />
     </div>
   )

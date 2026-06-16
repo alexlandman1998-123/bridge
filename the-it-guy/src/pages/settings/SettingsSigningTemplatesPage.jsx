@@ -73,6 +73,20 @@ const SUPPORTED_PACKET_TYPES = [
     icon: FileText,
     subtitle: 'Template set for seller mandates and listing activation workflows.',
   },
+  {
+    key: 'commercial_lease',
+    label: 'Commercial Lease',
+    shortLabel: 'Lease',
+    icon: FileText,
+    subtitle: 'Template set for commercial leasing mandates and lease workflows.',
+  },
+  {
+    key: 'commercial_sale',
+    label: 'Commercial Sale',
+    shortLabel: 'Sale',
+    icon: FileSignature,
+    subtitle: 'Template set for commercial sales mandates and due diligence workflows.',
+  },
 ]
 
 const TEMPLATE_STATUS_OPTIONS = [
@@ -92,7 +106,8 @@ const TEMPLATE_RENDER_MODE_OPTIONS = [
 ]
 
 function getDefaultRenderMode(packetType = 'otp') {
-  return normalizeText(packetType).toLowerCase() === 'mandate'
+  const normalized = normalizeText(packetType).toLowerCase()
+  return normalized === 'mandate' || normalized.startsWith('commercial_')
     ? TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
     : TEMPLATE_RENDER_MODES.LEGACY_DOCX
 }
@@ -102,7 +117,8 @@ function getTemplateFormatForMode(renderMode = TEMPLATE_RENDER_MODES.LEGACY_DOCX
 }
 
 function createStarterSections(packetType = 'otp') {
-  if (normalizeText(packetType).toLowerCase() === 'mandate') {
+  const normalized = normalizeText(packetType).toLowerCase()
+  if (normalized === 'mandate') {
     return [
       {
         sectionKey: 'introduction_purpose',
@@ -146,6 +162,57 @@ function createStarterSections(packetType = 'otp') {
         sectionType: 'signature_zone',
         legalText: 'Signed by {{seller_full_name}} and {{agent_full_name}}',
         placeholderKeysText: 'seller_full_name, agent_full_name',
+        isRequired: true,
+        sortOrder: 4,
+      },
+    ]
+  }
+
+  if (normalized.startsWith('commercial_')) {
+    const familyLabel = normalized === 'commercial_sale' ? 'Commercial Sales' : 'Commercial Leasing'
+    return [
+      {
+        sectionKey: 'commercial_context',
+        sectionLabel: 'Commercial Context',
+        sectionType: 'dynamic_fields',
+        legalText: 'Transaction type: {{transaction_type}}\nAsset category: {{asset_category}}\nTemplate family: ' + familyLabel,
+        placeholderKeysText: 'transaction_type, asset_category',
+        isRequired: true,
+        sortOrder: 0,
+      },
+      {
+        sectionKey: 'parties',
+        sectionLabel: 'Parties',
+        sectionType: 'dynamic_fields',
+        legalText: 'Landlord / Owner Company: {{landlord_company_name}}\nAsset Manager: {{asset_manager_name}}\nBroker: {{broker_name}}',
+        placeholderKeysText: 'landlord_company_name, asset_manager_name, broker_name',
+        isRequired: true,
+        sortOrder: 1,
+      },
+      {
+        sectionKey: 'asset_details',
+        sectionLabel: 'Asset Details',
+        sectionType: 'dynamic_fields',
+        legalText: 'Property: {{property_name}}\nAddress: {{property_address}}\nGLA / Area: {{gla}}\nRental per m²: {{rental_per_m2}}\nOperating Costs: {{office_operating_costs}}\nSale Price: {{sale_price}}',
+        placeholderKeysText: 'property_name, property_address, gla, rental_per_m2, office_operating_costs, sale_price',
+        isRequired: true,
+        sortOrder: 2,
+      },
+      {
+        sectionKey: 'commercial_terms',
+        sectionLabel: 'Commercial Terms',
+        sectionType: 'legal_text',
+        legalText: 'Mandate type: {{mandate_type}}\nStart date: {{mandate_start_date}}\nExpiry date: {{mandate_expiry_date}}\nCommission: {{commission_percentage}}',
+        placeholderKeysText: 'mandate_type, mandate_start_date, mandate_expiry_date, commission_percentage',
+        isRequired: true,
+        sortOrder: 3,
+      },
+      {
+        sectionKey: 'signature_pages',
+        sectionLabel: 'Signature Pages',
+        sectionType: 'signature_zone',
+        legalText: 'Signed by {{landlord_company_name}} through {{asset_manager_name}} and {{broker_name}}',
+        placeholderKeysText: 'landlord_company_name, asset_manager_name, broker_name',
         isRequired: true,
         sortOrder: 4,
       },
@@ -591,7 +658,8 @@ function buildTemplateMetadata(form = {}, existingMetadata = {}, uploadMeta = nu
 }
 
 function buildSamplePreviewContext(packetType = 'otp') {
-  if (packetType === 'mandate') {
+  const normalized = normalizeText(packetType).toLowerCase()
+  if (normalized === 'mandate') {
     return {
       lead: {
         lead_name: 'Sample Seller',
@@ -604,6 +672,60 @@ function buildSamplePreviewContext(packetType = 'otp') {
         mandate_type: 'sole',
         special_conditions: 'No special conditions captured in sample mode.',
       },
+      generatedByName: 'Bridge Template Tester',
+      generatedByRole: 'principal',
+    }
+  }
+
+  if (normalized.startsWith('commercial_')) {
+    return {
+      packetType: normalized,
+      documentContextType: 'commercial',
+      commercialTransactionType: normalized === 'commercial_sale' ? 'sale' : 'lease',
+      assetCategory: 'office',
+      landlord: {
+        name: 'Harcourts Capital Properties',
+        registration_number: '2024/123456/07',
+        vat_number: '4123456789',
+        registered_address: '100 Main Road, Sandton',
+        postal_address: 'PO Box 1000, Sandton, 2196',
+        phone: '011 000 0000',
+        email: 'landlord@example.com',
+      },
+      assetManager: {
+        full_name: 'Jordan Parker',
+        position: 'Asset Manager',
+        email: 'manager@example.com',
+        mobile: '082 555 1234',
+        id_number: '8001015009087',
+        signing_capacity: 'Authorised Signatory',
+        authorityConfirmed: true,
+      },
+      property: {
+        property_name: 'Bridge Towers',
+        address: '100 Main Road, Sandton',
+        building_grade: 'A Grade',
+        gla_m2: 1250,
+        office_area_m2: 750,
+        parking_bays: 18,
+        asking_rental_per_m2: 165,
+        operating_costs: 22,
+        asking_sale_price: 12500000,
+        rates_and_taxes: 12400,
+        lease_term_months: 36,
+        escalation_percentage: 8,
+        availability_date: '2026-08-01',
+        occupation_date: '2026-09-01',
+      },
+      broker: {
+        full_name: 'Alex Broker',
+        email: 'broker@example.com',
+        mobile: '082 000 0000',
+      },
+      mandateType: normalized === 'commercial_sale' ? 'Sales Mandate' : 'Leasing Mandate',
+      commissionPercentage: '7.5%',
+      mandateStartDate: '2026-06-01',
+      mandateExpiryDate: '2026-12-31',
       generatedByName: 'Bridge Template Tester',
       generatedByRole: 'principal',
     }
@@ -661,7 +783,21 @@ const STUDIO_VARIABLE_GROUPS = [
   {
     key: 'more',
     label: 'More Variables',
-    categories: ['Agent / Agency', 'Developer', 'Attorney / Conveyancer', 'Signing', 'Branding', 'Document Metadata'],
+    categories: [
+      'Agent / Agency',
+      'Developer',
+      'Attorney / Conveyancer',
+      'Signing',
+      'Branding',
+      'Commercial Context',
+      'Landlord / Owner Company',
+      'Asset Manager / Signatory',
+      'Commercial / Office',
+      'Industrial',
+      'Retail',
+      'Agricultural',
+      'Document Metadata',
+    ],
   },
 ]
 
@@ -796,7 +932,13 @@ function TemplateStudioTabButton({ active, label, onClick }) {
   )
 }
 
-export default function SettingsSigningTemplatesPage() {
+export default function SettingsSigningTemplatesPage({
+  templateModuleType = 'agency',
+  allowedPacketTypes = ['otp', 'mandate'],
+  title = 'Template Studio',
+  eyebrow = 'Settings / Legal Templates',
+  description = 'Manage document templates, versions, merge fields, previews, and publishing.',
+} = {}) {
   const { role } = useWorkspace()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -810,9 +952,9 @@ export default function SettingsSigningTemplatesPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [membershipRole, setMembershipRole] = useState('viewer')
-  const [packetType, setPacketType] = useState('otp')
-  const [templatesByType, setTemplatesByType] = useState({ otp: [], mandate: [] })
-  const [placeholdersByType, setPlaceholdersByType] = useState({ otp: [], mandate: [] })
+  const [packetType, setPacketType] = useState(allowedPacketTypes[0] || 'otp')
+  const [templatesByType, setTemplatesByType] = useState({})
+  const [placeholdersByType, setPlaceholdersByType] = useState({})
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [templateDetail, setTemplateDetail] = useState(null)
   const [form, setForm] = useState(toTemplateForm(null))
@@ -834,28 +976,39 @@ export default function SettingsSigningTemplatesPage() {
   const clauseTextareaRef = useRef(null)
 
   const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole })
+  const visiblePacketTypes = useMemo(() => SUPPORTED_PACKET_TYPES.filter((item) => allowedPacketTypes.includes(item.key)), [allowedPacketTypes])
+  const normalizedModuleType = normalizeText(templateModuleType || 'agency').toLowerCase() || 'agency'
 
   const loadTemplatesAndRegistry = useCallback(async ({
-    targetPacketType = 'otp',
+    targetPacketType = allowedPacketTypes[0] || 'otp',
     preferredTemplateId = '',
   } = {}) => {
-    const [otpTemplates, mandateTemplates, otpRegistry, mandateRegistry] = await Promise.all([
-      listDocumentPacketTemplates({ packetType: 'otp', includeInactive: true }),
-      listDocumentPacketTemplates({ packetType: 'mandate', includeInactive: true }),
-      listDocumentPlaceholderDefinitions({ packetType: 'otp', includeInactive: true }).catch(() => []),
-      listDocumentPlaceholderDefinitions({ packetType: 'mandate', includeInactive: true }).catch(() => []),
-    ])
+    const templateRows = await Promise.all(allowedPacketTypes.map(async (type) => ([
+      type,
+      await listDocumentPacketTemplates({
+        packetType: type,
+        moduleType: normalizedModuleType,
+        includeInactive: true,
+      }),
+    ])))
+    const placeholderRows = await Promise.all(allowedPacketTypes.map(async (type) => ([
+      type,
+      await listDocumentPlaceholderDefinitions({
+        packetType: type,
+        includeInactive: true,
+      }).catch(() => []),
+    ])))
 
-    const nextByType = {
-      otp: [...(otpTemplates || [])].sort(templateSort),
-      mandate: [...(mandateTemplates || [])].sort(templateSort),
-    }
+    const nextByType = templateRows.reduce((accumulator, [type, rows]) => {
+      accumulator[type] = [...(rows || [])].sort(templateSort)
+      return accumulator
+    }, {})
 
     setTemplatesByType(nextByType)
-    setPlaceholdersByType({
-      otp: otpRegistry || [],
-      mandate: mandateRegistry || [],
-    })
+    setPlaceholdersByType(placeholderRows.reduce((accumulator, [type, rows]) => {
+      accumulator[type] = rows || []
+      return accumulator
+    }, {}))
 
     const selectedList = nextByType[targetPacketType] || []
     if (!selectedList.length) {
@@ -867,7 +1020,7 @@ export default function SettingsSigningTemplatesPage() {
 
     const currentStillExists = selectedList.some((item) => item.id === preferredTemplateId)
     setSelectedTemplateId(currentStillExists ? preferredTemplateId : selectedList[0].id)
-  }, [])
+  }, [allowedPacketTypes, normalizedModuleType])
 
   useEffect(() => {
     let active = true
@@ -880,7 +1033,7 @@ export default function SettingsSigningTemplatesPage() {
         if (!active) return
         setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
         await loadTemplatesAndRegistry({
-          targetPacketType: 'otp',
+          targetPacketType: allowedPacketTypes[0] || 'otp',
           preferredTemplateId: '',
         })
       } catch (loadError) {
@@ -897,7 +1050,7 @@ export default function SettingsSigningTemplatesPage() {
     return () => {
       active = false
     }
-  }, [loadTemplatesAndRegistry])
+  }, [allowedPacketTypes, loadTemplatesAndRegistry])
 
   useEffect(() => {
     const selectedList = templatesByType[packetType] || []
@@ -1203,7 +1356,7 @@ export default function SettingsSigningTemplatesPage() {
     }
   }, [form.isDefault, previewState.html, selectedIsOrgOwned, selectedTemplate])
 
-  const templateTypeConfig = SUPPORTED_PACKET_TYPES.find((item) => item.key === packetType) || SUPPORTED_PACKET_TYPES[0]
+  const templateTypeConfig = visiblePacketTypes.find((item) => item.key === packetType) || visiblePacketTypes[0] || SUPPORTED_PACKET_TYPES[0]
 
   async function refreshAll() {
     await loadTemplatesAndRegistry({
@@ -1261,6 +1414,7 @@ export default function SettingsSigningTemplatesPage() {
       const renderMode = getDefaultRenderMode(packetType)
       const created = await createDocumentPacketTemplate({
         packetType,
+        moduleType: normalizedModuleType,
         templateKey: `${packetType}_template_${timestamp}`,
         templateLabel: `${templateTypeConfig.shortLabel} Template ${new Date().toLocaleDateString()}`,
         description: 'Draft legal template',
@@ -1296,6 +1450,7 @@ export default function SettingsSigningTemplatesPage() {
 
       const cloned = await createDocumentPacketTemplate({
         packetType,
+        moduleType: normalizedModuleType,
         templateKey: `${normalizeText(templateDetail.template_key || packetType)}_org_${Date.now()}`,
         templateLabel: `${normalizeText(templateDetail.template_label || templateTypeConfig.label)} (Organisation)`,
         description: templateDetail.description || '',
@@ -1340,6 +1495,7 @@ export default function SettingsSigningTemplatesPage() {
       const nextVersion = incrementVersionTag(currentVersion)
       const cloned = await createDocumentPacketTemplate({
         packetType,
+        moduleType: normalizedModuleType,
         templateKey: `${normalizeText(selectedTemplate.template_key || packetType)}_${Date.now()}`,
         templateLabel: `${normalizeText(form.templateLabel || selectedTemplate.template_label || templateTypeConfig.label)} ${nextVersion.toUpperCase()}`,
         description: form.description,
@@ -1456,6 +1612,7 @@ export default function SettingsSigningTemplatesPage() {
       const uploaded = await uploadDocumentPacketTemplateAsset({
         file,
         packetType,
+        moduleType: normalizedModuleType,
         templateKey: normalizeText(selectedTemplate.template_key || selectedTemplateId),
       })
 
@@ -1769,12 +1926,10 @@ export default function SettingsSigningTemplatesPage() {
       <header className="space-y-6 border-b border-[#e3edf7] pb-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-3">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#7a8da6]">Settings / Legal Templates</p>
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.22em] text-[#7a8da6]">{eyebrow}</p>
             <div className="space-y-2">
-              <h1 className="text-[2rem] font-semibold tracking-[-0.02em] text-[#102033] sm:text-[2.15rem]">Template Studio</h1>
-              <p className="max-w-3xl text-[15px] leading-7 text-[#6b7c93]">
-                Manage document templates, versions, merge fields, previews, and publishing.
-              </p>
+              <h1 className="text-[2rem] font-semibold tracking-[-0.02em] text-[#102033] sm:text-[2.15rem]">{title}</h1>
+              <p className="max-w-3xl text-[15px] leading-7 text-[#6b7c93]">{description}</p>
             </div>
           </div>
 
@@ -1879,7 +2034,7 @@ export default function SettingsSigningTemplatesPage() {
         {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
         <div className="grid gap-4 xl:grid-cols-2">
-          {SUPPORTED_PACKET_TYPES.map((item) => {
+          {visiblePacketTypes.map((item) => {
             const active = packetType === item.key
             const Icon = item.icon
             return (
@@ -1909,7 +2064,11 @@ export default function SettingsSigningTemplatesPage() {
                 <p className="mt-2 text-sm leading-6 text-[#6b7c93]">
                   {item.key === 'otp'
                     ? 'Used for buyer offer drafting and signature flows.'
-                    : 'Used for seller mandates and listing activation flows.'}
+                    : item.key === 'mandate'
+                      ? 'Used for seller mandates and listing activation flows.'
+                      : item.key === 'commercial_sale'
+                        ? 'Used for commercial sales mandates and due diligence workflows.'
+                        : 'Used for commercial leasing mandates, heads of terms, and lease workflows.'}
                 </p>
               </button>
             )
@@ -2900,7 +3059,7 @@ export default function SettingsSigningTemplatesPage() {
                       })}
                     >
                       {TEMPLATE_RENDER_MODE_OPTIONS
-                        .filter((item) => packetType === 'mandate' || item.key === TEMPLATE_RENDER_MODES.LEGACY_DOCX)
+                        .filter((item) => packetType === 'mandate' || packetType.startsWith('commercial_') || item.key === TEMPLATE_RENDER_MODES.LEGACY_DOCX)
                         .map((item) => (
                           <option key={item.key} value={item.key}>
                             {item.key === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'Built in app' : 'File based (DOCX)'}

@@ -14,6 +14,7 @@ import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmit
 import { handleBondIntakeNotificationEmail } from "./handlers/bondIntakeNotification.ts";
 import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBuyerIntro.ts";
 import { handleCommercialAccessNotificationEmail } from "./handlers/commercialAccessNotification.ts";
+import { handleCommercialLandlordOnboardingEmail } from "./handlers/commercialLandlordOnboarding.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
 import { handleSellerOfferReviewEmail } from "./handlers/sellerOfferReview.ts";
 import {
@@ -29,6 +30,7 @@ import type {
   SendBuyerOfferSubmittedAgentPayload,
   SendClientOnboardingPayload,
   SendCommercialAccessNotificationPayload,
+  SendCommercialLandlordOnboardingPayload,
   SendLegacyTestPayload,
   SendOfferDecisionNotificationPayload,
   SendOnboardingSubmittedPayload,
@@ -204,6 +206,16 @@ Deno.serve(async (req: Request) => {
       });
       return await handleSellerOnboardingEmail(
         payload as SendSellerOnboardingPayload,
+      );
+    }
+
+    if (["commercial_landlord_onboarding"].includes(type)) {
+      console.log("[send-email] routing template", {
+        route: "commercial_landlord_onboarding",
+        recipient: recipient || null,
+      });
+      return await handleCommercialLandlordOnboardingEmail(
+        payload as SendCommercialLandlordOnboardingPayload,
       );
     }
 

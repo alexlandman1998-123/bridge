@@ -1,9 +1,13 @@
-import { Activity, ArrowLeft, CalendarClock, DoorOpen, Handshake, LayoutList, Sparkles } from 'lucide-react'
+import { Activity, ArrowLeft, CalendarClock, DoorOpen, FileText, Handshake, LayoutList, Radar, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import CommercialEmptyState from '../components/CommercialEmptyState'
+import CommercialLandlordOnboardingAction from '../components/CommercialLandlordOnboardingAction'
+import CommercialOnboardingSendAction from '../components/CommercialOnboardingSendAction'
 import CommercialStatusPill from '../components/CommercialStatusPill'
 import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
+import { buildCommercialCanvassingPath } from '../commercialCanvassingLinks'
+import { buildCommercialDocumentGeneratorPath } from '../../../services/documents/commercialDocumentAdapterService'
 import { useCommercialData } from '../hooks/useCommercialData'
 import { buildRequirementVacancyMatches } from '../services/commercialIntelligenceApi'
 import { getCommercialActivity, getCommercialLookupData } from '../services/commercialApi'
@@ -24,6 +28,14 @@ function daysBetween(startValue, endValue = new Date()) {
   const end = endValue ? new Date(endValue) : null
   if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
   return Math.max(0, Math.ceil((end.getTime() - start.getTime()) / 86400000))
+}
+
+function resolvePropertyAssetCategory(propertyType = '') {
+  const normalized = String(propertyType || '').toLowerCase()
+  if (normalized.includes('industrial')) return 'industrial'
+  if (normalized.includes('retail') || normalized.includes('centre') || normalized.includes('mall')) return 'retail'
+  if (normalized.includes('agricultural') || normalized.includes('farm')) return 'agricultural'
+  return 'office'
 }
 
 async function getVacancyWorkspaceData(organisationId, vacancyId) {
@@ -133,7 +145,7 @@ function CommercialVacancyWorkspacePage() {
   const { vacancyId } = useParams()
   const [activeTab, setActiveTab] = useState('overview')
   const fetcher = useMemo(() => (organisationId) => getVacancyWorkspaceData(organisationId, vacancyId), [vacancyId])
-  const { data, loading, error } = useCommercialData(fetcher, [fetcher])
+  const { data, loading, error, organisationId } = useCommercialData(fetcher, [fetcher])
   const vacancy = data?.vacancy || null
 
   if (error) return <CommercialEmptyState title="Commercial vacancy could not be loaded" description={error} />
@@ -141,6 +153,7 @@ function CommercialVacancyWorkspacePage() {
   if (!vacancy) return <CommercialEmptyState title="Vacancy not found" description="This commercial vacancy may have been archived or sits outside your current scope." />
 
   const property = (data?.lookups?.properties || []).find((row) => row.id === vacancy.property_id) || null
+  const landlord = (data?.lookups?.landlords || []).find((row) => row.id === vacancy.landlord_id || row.id === property?.landlord_id) || null
   const activeDeals = (data?.deals || []).filter((row) => !['converted', 'lost'].includes(String(row.stage || '').toLowerCase()))
   const activeTransactions = (data?.transactions || []).filter((row) => !['completed', 'lost', 'cancelled'].includes(String(row.status || '').toLowerCase()))
   const completedViewings = (data?.viewings || []).filter((row) => String(row.status || '').toLowerCase() === 'completed')
@@ -149,6 +162,16 @@ function CommercialVacancyWorkspacePage() {
   const dealsToTransactions = activeDeals.length ? Math.round((activeTransactions.length / activeDeals.length) * 100) : 0
   const completedTransactions = (data?.transactions || []).filter((row) => String(row.status || '').toLowerCase() === 'completed').length
   const transactionsToCompleted = (data?.transactions || []).length ? Math.round((completedTransactions / (data?.transactions || []).length) * 100) : 0
+  const canvassingPath = buildCommercialCanvassingPath({
+    companyName: property?.property_name || vacancy.vacancy_name,
+    area: [property?.suburb, property?.city].filter(Boolean).join(', ') || property?.address || vacancy.vacancy_name,
+    propertyType: property?.property_type,
+    propertyId: property?.id,
+    vacancyId: vacancy.id,
+    linkedEntityType: 'commercial_vacancy',
+    linkedEntityId: vacancy.id,
+    followUpNote: `Follow up from ${vacancy.vacancy_name}`,
+  })
   const matches = buildRequirementVacancyMatches({
     requirements: data?.lookups?.requirements || [],
     vacancies: [vacancy],
@@ -183,6 +206,36 @@ function CommercialVacancyWorkspacePage() {
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-[-0.055em] text-[#102236]">{vacancy.vacancy_name}</h1>
             <p className="mt-2 text-sm text-slate-500">{property?.property_name || 'Property pending'} · {vacancy.unit_or_floor || 'Unit pending'}</p>
+          </div>
+          <div className="grid gap-3">
+            <Link
+              to={buildCommercialDocumentGeneratorPath({
+                packetType: 'commercial_lease',
+                assetCategory: resolvePropertyAssetCategory(property?.property_type),
+                propertyId: property?.id || '',
+                vacancyId: vacancy.id,
+                landlordId: property?.landlord_id || '',
+              })}
+              className="inline-flex w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
+            >
+              <FileText size={16} />
+              Generate document
+            </Link>
+            <CommercialLandlordOnboardingAction
+              organisationId={organisationId}
+              landlord={landlord}
+            />
+            <CommercialOnboardingSendAction
+              organisationId={organisationId}
+              kind="vacancy"
+              record={vacancy}
+              lookups={data?.lookups || {}}
+              label="Send Tenant Onboarding"
+            />
+            <Link to={canvassingPath} className="inline-flex w-fit items-center gap-2 rounded-2xl bg-[#102b46] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#163a5b]">
+              <Radar size={16} />
+              Canvass follow-up
+            </Link>
           </div>
         </div>
       </section>

@@ -123,6 +123,8 @@ const CommercialBrokerOverviewPage = lazy(() => import('./modules/commercial/pag
 const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
 const CommercialBrokersPage = lazy(() => import('./modules/commercial/pages/CommercialBrokersPage'))
 const CommercialBrokerTeamsPage = lazy(() => import('./modules/commercial/pages/CommercialBrokerTeamsPage'))
+const CommercialCalendarPage = lazy(() => import('./modules/commercial/pages/CommercialCalendarPage'))
+const CommercialCanvassingPage = lazy(() => import('./modules/commercial/pages/CommercialCanvassingPage'))
 const CommercialCompanyWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialCompanyWorkspacePage'))
 const CommercialContactWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialContactWorkspacePage'))
 const CommercialClientsPage = lazy(() => import('./modules/commercial/pages/CommercialClientsPage'))
@@ -130,9 +132,13 @@ const CommercialDashboard = lazy(() => import('./modules/commercial/pages/Commer
 const CommercialDealsPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialDealsPipelinePage'))
 const CommercialDealsPage = lazy(() => import('./modules/commercial/pages/CommercialDealsPage'))
 const CommercialDocumentsPage = lazy(() => import('./modules/commercial/pages/CommercialDocumentsPage'))
+const CommercialDocumentGeneratorPage = lazy(() => import('./modules/commercial/pages/CommercialDocumentGeneratorPage'))
 const CommercialExpiringOccupiersPage = lazy(() => import('./modules/commercial/pages/CommercialExpiringOccupiersPage'))
 const CommercialExternalPortalPage = lazy(() => import('./modules/commercial/pages/CommercialExternalPortalPage'))
+const CommercialOnboardingPortalPage = lazy(() => import('./modules/commercial/pages/CommercialOnboardingPortalPage'))
 const CommercialLandlordsPage = lazy(() => import('./modules/commercial/pages/CommercialLandlordsPage'))
+const CommercialLandlordOnboardingPage = lazy(() => import('./modules/commercial/pages/CommercialLandlordOnboardingPage'))
+const CommercialLandlordWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialLandlordWorkspacePage'))
 const CommercialLeadsPage = lazy(() => import('./modules/commercial/pages/CommercialLeadsPage'))
 const CommercialLeaseExpiryWatchPage = lazy(() => import('./modules/commercial/pages/CommercialLeaseExpiryWatchPage'))
 const CommercialLeasingPage = lazy(() => import('./modules/commercial/pages/CommercialLeasingPage'))
@@ -141,7 +147,10 @@ const CommercialListingsPage = lazy(() => import('./modules/commercial/pages/Com
 const CommercialMarketIntelligencePage = lazy(() => import('./modules/commercial/pages/CommercialMarketIntelligencePage'))
 const CommercialPropertyWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialPropertyWorkspacePage'))
 const CommercialPropertiesPage = lazy(() => import('./modules/commercial/pages/CommercialPropertiesPage'))
+const CommercialRequirementsPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialRequirementsPipelinePage'))
+const CommercialPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialPipelinePage'))
 const CommercialReportsPage = lazy(() => import('./modules/commercial/pages/CommercialReportsPage'))
+const CommercialSalesListingsPage = lazy(() => import('./modules/commercial/pages/CommercialSalesListingsPage'))
 const CommercialSalesPage = lazy(() => import('./modules/commercial/pages/CommercialSalesPage'))
 const CommercialSettingsPage = lazy(() => import('./modules/commercial/pages/CommercialSettingsPage'))
 const CommercialTransactionWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialTransactionWorkspacePage'))
@@ -1243,14 +1252,18 @@ function AppRoutes() {
                 <Route path="listings" element={<CommercialListingsPage />} />
                 <Route path="listings/:listingId" element={<CommercialListingWorkspacePage />} />
                 <Route path="landlords" element={<CommercialLandlordsPage />} />
+                <Route path="landlords/:landlordId" element={<CommercialLandlordWorkspacePage />} />
                 <Route path="properties" element={<CommercialPropertiesPage />} />
                 <Route path="properties/:propertyId" element={<CommercialPropertyWorkspacePage />} />
                 <Route path="leads" element={<CommercialLeadsPage />} />
+                <Route path="canvassing" element={<CommercialCanvassingPage />} />
+                <Route path="calendar" element={<CommercialCalendarPage />} />
                 <Route path="requirements" element={<Navigate to="/commercial/leads" replace />} />
-                <Route path="pipeline" element={<Navigate to="/commercial/leads" replace />} />
-                <Route path="requirements/pipeline" element={<Navigate to="/commercial/leads?tab=qualified" replace />} />
+                <Route path="pipeline" element={<CommercialPipelinePage />} />
+                <Route path="requirements/pipeline" element={<CommercialRequirementsPipelinePage />} />
                 <Route path="leasing" element={<CommercialLeasingPage />} />
                 <Route path="sales" element={<CommercialSalesPage />} />
+                <Route path="sales-listings" element={<CommercialSalesListingsPage />} />
                 <Route path="deals" element={<CommercialDealsPage />} />
                 <Route path="deals/pipeline" element={<CommercialDealsPipelinePage />} />
                 <Route path="deals/overview" element={<CommercialDealsPage />} />
@@ -1278,8 +1291,22 @@ function AppRoutes() {
                 <Route path="brokers/:brokerId" element={<CommercialBrokersPage />} />
                 <Route path="docs" element={<CommercialDocumentsPage />} />
                 <Route path="documents" element={<CommercialDocumentsPage />} />
+                <Route path="documents/new" element={<CommercialDocumentGeneratorPage />} />
+                <Route path="document-generator" element={<CommercialDocumentGeneratorPage />} />
                 <Route path="activity" element={<CommercialActivityPage />} />
                 <Route path="settings" element={<CommercialSettingsPage />} />
+                <Route
+                  path="settings/document-templates"
+                  element={
+                    <SettingsSigningTemplatesPage
+                      templateModuleType="commercial"
+                      allowedPacketTypes={['commercial_sale', 'commercial_lease']}
+                      title="Commercial Template Studio"
+                      eyebrow="Commercial / Document Templates"
+                      description="Manage commercial sales and leasing templates, merge fields, previews, and publishing."
+                    />
+                  }
+                />
                 <Route path="*" element={<Navigate to="/commercial/dashboard" replace />} />
               </Route>
               <Route path="/setup" element={<PostDashboardSetup />} />
@@ -2496,6 +2523,8 @@ function AppRoutes() {
           <Route path="/partner-portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="partner-portal-route" title="Partner portal failed to load"><PartnerPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/partners/portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="partner-portal-route" title="Partner portal failed to load"><PartnerPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/commercial/portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-portal-route" title="Commercial portal failed to load"><CommercialExternalPortalPage /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/commercial/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-onboarding-route" title="Commercial onboarding failed to load"><CommercialOnboardingPortalPage /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/commercial/landlord-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-landlord-onboarding-route" title="Landlord onboarding failed to load"><CommercialLandlordOnboardingPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/sign/:token" element={<SignerPortal />} />
           <Route path="/appointment-rsvp/:token" element={<AppointmentRsvpPage />} />
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />

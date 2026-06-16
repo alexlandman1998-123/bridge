@@ -46,6 +46,10 @@ import {
   mandateRequiresSpouseSignature,
   resolveMandateSpouseRequirementFromFields,
 } from '../../lib/mandateSignatureRules'
+import {
+  COMMERCIAL_DOCUMENT_PACKET_TYPES,
+  resolveCommercialDocumentContext,
+} from '../../services/documents/commercialDocumentAdapterService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -383,6 +387,9 @@ function resolveTemplateRenderMode(template = null, packetType = '') {
 
 function shouldUseNativeGeneration(template = null, packetType = '') {
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)) {
+    return templateUsesNativeRenderer(template, normalizedPacketType)
+  }
   if (normalizedPacketType === 'mandate') {
     return FEATURE_FLAGS.enableNativeMandateRenderer && templateUsesNativeRenderer(template, normalizedPacketType)
   }
@@ -861,6 +868,9 @@ function buildDefaultSigningSeeds({
 }
 
 function buildPacketTitle(packetType, context = {}) {
+  if (COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizeText(packetType).toLowerCase())) {
+    return resolveCommercialDocumentContext({ packetType, context })?.documentTitle || 'Commercial Document'
+  }
   if (packetType === 'mandate') {
     const lead = context?.lead || {}
     const sellerName = [lead?.sellerName, lead?.sellerSurname].filter(Boolean).join(' ').trim() || lead?.name || 'Seller'
@@ -1038,6 +1048,12 @@ async function resolveSeededSectionManifest({ packetType, template = null, place
 
 function resolvePacketTypeContext(packetType, context = {}) {
   const normalized = normalizeText(packetType).toLowerCase()
+  if (COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalized)) {
+    return resolveCommercialDocumentContext({
+      packetType: normalized,
+      context,
+    })
+  }
   if (normalized === 'mandate') {
     return resolveMandatePacketPlaceholders({
       mandateData: context?.mandateData || null,
@@ -1153,6 +1169,7 @@ export async function validatePacket({
     sectionManifest,
   })
   const mandateValidationAction = validationAction || context?.validationAction || 'preview'
+  const isCommercialPacket = COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)
   const allowMandateGenerationGaps = normalizedPacketType === 'mandate' && mandateValidationAction !== 'upload_signed'
   const mandateValidation = normalizedPacketType === 'mandate'
     ? validateMandateGenerationData(
@@ -1171,6 +1188,14 @@ export async function validatePacket({
           hasTemplate: Boolean(template || sectionManifest.length),
         },
       )
+    : null
+  const commercialValidation = isCommercialPacket
+    ? {
+        canProceed: ruleValidation.isValidForGeneration,
+        blockingErrors: [],
+        warnings: ruleValidation.warnings || [],
+        missingRequiredFields: ruleValidation.missingPlaceholders || [],
+      }
     : null
   const registryValidation = await validateDocumentPacketPlaceholders({
     packetType: normalizedPacketType,
@@ -1206,9 +1231,12 @@ export async function validatePacket({
     missingPlaceholders: ruleValidation.missingPlaceholders,
     aliasHits: ruleValidation.aliasHits || [],
     unknownFields: ruleValidation.unknownFields || [],
-    isValidForGeneration: allowMandateGenerationGaps || (ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed)),
+    isValidForGeneration: isCommercialPacket
+      ? ruleValidation.isValidForGeneration
+      : allowMandateGenerationGaps || (ruleValidation.isValidForGeneration && (!mandateValidation || mandateValidation.canProceed)),
     registryValidation,
     mandateValidation,
+    commercialValidation,
     branding: packetBranding,
   }
 }
@@ -1432,13 +1460,21 @@ export async function generatePacketVersion({
     organisationId: packet.organisation_id,
     eventType: 'generation_started',
     eventPayload: {
-      activity_type: validation.packetType === 'mandate' ? 'mandate_generation_started' : 'generation_started',
+      activity_type: validation.packetType === 'mandate'
+        ? 'mandate_generation_started'
+        : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+          ? 'commercial_document_generation_started'
+          : 'generation_started',
       leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
       transactionId: context?.transaction?.id || context?.transactionId || null,
       packetType: validation.packetType,
       templateVersion,
       generatedAt,
-      message: validation.packetType === 'mandate' ? 'Mandate generation started.' : 'Document generation started.',
+      message: validation.packetType === 'mandate'
+        ? 'Mandate generation started.'
+        : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+          ? 'Commercial document generation started.'
+          : 'Document generation started.',
     },
   }).catch((eventError) => {
     console.warn('[PACKETS] generation_started event could not be recorded; continuing generation.', eventError)
@@ -1465,7 +1501,7 @@ export async function generatePacketVersion({
       }))
       artifact = extractGeneratedArtifact(otpResult)
       assertGenerationOutput(artifact, 'otp')
-    } else if (validation.packetType === 'mandate') {
+    } else if (validation.packetType === 'mandate' || COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)) {
       const templateConfig = resolveTemplateConfig(template)
       const renderMode = resolveTemplateRenderMode(template, validation.packetType)
       const useNativeRenderer = shouldUseNativeGeneration(template, validation.packetType)
@@ -1474,7 +1510,9 @@ export async function generatePacketVersion({
           useNativeRenderer ? 'NATIVE_TEMPLATE_NOT_RENDERABLE' : 'MISSING_TEMPLATE_FILE',
           useNativeRenderer
             ? 'The active legal template is not renderable yet. Complete the required sections and template fields before generating it.'
-            : 'The mandate template could not be rendered. Please check the template setup.',
+            : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+              ? 'The commercial template could not be rendered. Please check the template setup.'
+              : 'The mandate template could not be rendered. Please check the template setup.',
         )
       }
       const mandateResult = await withPacketTimeout(
@@ -1503,7 +1541,7 @@ export async function generatePacketVersion({
         'Mandate document rendering is taking too long.',
       )
       artifact = extractGeneratedArtifact(mandateResult)
-      assertGenerationOutput(artifact, 'mandate')
+      assertGenerationOutput(artifact, validation.packetType)
     }
   } catch (rawError) {
     const failureCode = inferGenerationFailureCode(rawError)
@@ -1636,7 +1674,11 @@ export async function generatePacketVersion({
     versionId: version.id,
     eventType: previewOnlyGeneration ? 'draft_preview_generated' : version.version_number > 1 ? 'packet_regenerated' : 'version_generated',
     eventPayload: {
-      activity_type: previewOnlyGeneration ? 'mandate_draft_preview_generated' : 'mandate_generated',
+      activity_type: previewOnlyGeneration
+        ? 'mandate_draft_preview_generated'
+        : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+          ? 'commercial_document_generated'
+          : 'mandate_generated',
       leadId: context?.lead?.lead_id || context?.lead?.id || context?.leadId || null,
       transactionId: context?.transaction?.id || context?.transactionId || null,
       versionNumber: version.version_number,
@@ -1645,11 +1687,15 @@ export async function generatePacketVersion({
       renderedFilePath: version.rendered_file_path,
       previewOnly: previewOnlyGeneration,
       previewOnlyReason: previewOnlyReason || null,
-      message: previewOnlyGeneration ? 'Mandate draft preview was generated.' : 'Mandate was generated successfully.',
+      message: previewOnlyGeneration
+        ? 'Mandate draft preview was generated.'
+        : COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+          ? 'Commercial document was generated successfully.'
+          : 'Mandate was generated successfully.',
     },
   })
 
-  if (validation.packetType === 'mandate' && !previewOnlyGeneration && version.rendered_file_path) {
+  if ((validation.packetType === 'mandate' || COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)) && !previewOnlyGeneration && version.rendered_file_path) {
     await addPacketEvent({
       packetId: packet.id,
       organisationId: packet.organisation_id,
@@ -1661,7 +1707,9 @@ export async function generatePacketVersion({
         transactionId: context?.transaction?.id || context?.transactionId || null,
         renderedFilePath: version.rendered_file_path,
         renderedFileName: version.rendered_file_name,
-        message: 'Mandate PDF was created.',
+        message: COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)
+          ? 'Commercial document PDF was created.'
+          : 'Mandate PDF was created.',
       },
     })
   }

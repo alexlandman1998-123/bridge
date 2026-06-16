@@ -1,9 +1,10 @@
 import { Eye, FileSignature, FileText, Handshake, TrendingUp } from 'lucide-react'
-import { useMemo } from 'react'
+import { isValidElement, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { commercialCrudConfigs } from '../commercialCrudConfig'
 import { formatCurrency, formatNumber } from '../commercialFormatters'
 import { useCommercialData } from '../hooks/useCommercialData'
+import CommercialOnboardingSendAction from './CommercialOnboardingSendAction'
 import CommercialHeadsOfTermsPage from '../pages/CommercialHeadsOfTermsPage'
 import CommercialViewingsPage from '../pages/CommercialViewingsPage'
 import { getCommercialAllHeadsOfTerms, getCommercialLookupData } from '../services/commercialApi'
@@ -96,14 +97,33 @@ function scopeTabs(mode = 'leasing') {
   ]
 }
 
-function WorkspaceHeader({ title, description, tabs = [], activeTab = '', onTabChange }) {
+function WorkspaceHeader({ title, description, tabs = [], activeTab = '', onTabChange, actions = [] }) {
   return (
     <>
-      <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
-        <div>
+      <section className="flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)] lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">{title}</h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</p>
         </div>
+        {actions.length ? (
+          <div className="flex flex-wrap gap-2">
+            {actions.map((action, index) => {
+              if (isValidElement(action)) {
+                return <div key={action.key || index}>{action}</div>
+              }
+              return (
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={action.onClick}
+                  className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
+                >
+                  {action.label}
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
       </section>
       <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
         <CommercialWorkspaceTabs tabs={tabs} activeTab={activeTab} onChange={onTabChange} />
@@ -223,7 +243,15 @@ function CommercialLifecycleWorkspacePage({ mode = 'leasing' }) {
   const activeTab = tabs.some((tab) => tab.id === searchParams.get('tab')) ? searchParams.get('tab') : 'overview'
   const title = scopeTitle(mode)
   const description = scopeDescription(mode)
-  const { data, loading, error } = useCommercialData(fetchWorkspaceData, [])
+  const { data, loading, error, organisationId } = useCommercialData(fetchWorkspaceData, [])
+  const onboardingLabel = mode === 'leasing' ? 'Send Tenant Onboarding' : 'Send Seller Onboarding'
+  const onboardingKind = mode === 'leasing' ? 'leasing-workspace' : 'sales-workspace'
+  const onboardingRecord = {
+    title: `${title} workspace`,
+    property_name: `${title} workspace`,
+    name: `${title} workspace`,
+    organisation_name: title,
+  }
 
   const activeDealsConfig = useMemo(() => ({
     ...commercialCrudConfigs.deals,
@@ -309,7 +337,23 @@ function CommercialLifecycleWorkspacePage({ mode = 'leasing' }) {
   if (activeTab === 'viewings') {
     return (
       <div className="grid gap-5">
-        <WorkspaceHeader title={title} description={description} tabs={tabs} activeTab={activeTab} onTabChange={recordTabChange} />
+        <WorkspaceHeader
+          title={title}
+          description={description}
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabChange={recordTabChange}
+          actions={[
+            <CommercialOnboardingSendAction
+              key="workspace-onboarding"
+              organisationId={organisationId}
+              kind={onboardingKind}
+              record={onboardingRecord}
+              lookups={{}}
+              label={onboardingLabel}
+            />,
+          ]}
+        />
         <CommercialViewingsPage hideHeader scope={mode} />
       </div>
     )
@@ -318,7 +362,23 @@ function CommercialLifecycleWorkspacePage({ mode = 'leasing' }) {
   if (activeTab === 'heads-of-terms') {
     return (
       <div className="grid gap-5">
-        <WorkspaceHeader title={title} description={description} tabs={tabs} activeTab={activeTab} onTabChange={recordTabChange} />
+        <WorkspaceHeader
+          title={title}
+          description={description}
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabChange={recordTabChange}
+          actions={[
+            <CommercialOnboardingSendAction
+              key="workspace-onboarding"
+              organisationId={organisationId}
+              kind={onboardingKind}
+              record={onboardingRecord}
+              lookups={{}}
+              label={onboardingLabel}
+            />,
+          ]}
+        />
         <CommercialHeadsOfTermsPage hideHeader />
       </div>
     )
@@ -326,7 +386,23 @@ function CommercialLifecycleWorkspacePage({ mode = 'leasing' }) {
 
   return (
     <div className="grid gap-5">
-      <WorkspaceHeader title={title} description={description} tabs={tabs} activeTab={activeTab} onTabChange={recordTabChange} />
+      <WorkspaceHeader
+        title={title}
+        description={description}
+        tabs={tabs}
+        activeTab={activeTab}
+        onTabChange={recordTabChange}
+        actions={[
+          <CommercialOnboardingSendAction
+            key="workspace-onboarding"
+            organisationId={organisationId}
+            kind={onboardingKind}
+            record={onboardingRecord}
+            lookups={{}}
+            label={onboardingLabel}
+          />,
+        ]}
+      />
       {error ? (
         <section className="rounded-3xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-700">
           {error}

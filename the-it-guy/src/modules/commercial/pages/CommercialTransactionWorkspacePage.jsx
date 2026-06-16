@@ -5,9 +5,12 @@ import AppointmentDashboardSection from '../../../components/appointments/dashbo
 import { formatCurrency, formatDate, titleize } from '../commercialFormatters'
 import CommercialDocumentLibrary from '../components/CommercialDocumentLibrary'
 import CommercialEmptyState from '../components/CommercialEmptyState'
+import CommercialLandlordOnboardingAction from '../components/CommercialLandlordOnboardingAction'
+import CommercialOnboardingSendAction from '../components/CommercialOnboardingSendAction'
 import CommercialStatusPill from '../components/CommercialStatusPill'
 import CommercialPortalControlsPanel from '../components/CommercialPortalControlsPanel'
 import { useCommercialData } from '../hooks/useCommercialData'
+import { buildCommercialDocumentGeneratorPath } from '../../../services/documents/commercialDocumentAdapterService'
 import { updateCommercialTransactionStatus } from '../services/commercialApi'
 import { getCommercialTransactionWorkspaceData, searchCommercialIndex } from '../services/commercialPlatformApi'
 
@@ -45,6 +48,14 @@ function transactionStatusOptions(transaction = {}) {
     return ['draft', 'negotiating', 'hot_in_progress', 'hot_signed', 'sale_pending', 'completed', 'lost', 'cancelled']
   }
   return ['draft', 'negotiating', 'hot_in_progress', 'hot_signed', 'lease_pending', 'completed', 'lost', 'cancelled']
+}
+
+function resolvePropertyAssetCategory(propertyType = '') {
+  const normalized = String(propertyType || '').toLowerCase()
+  if (normalized.includes('industrial')) return 'industrial'
+  if (normalized.includes('retail') || normalized.includes('centre') || normalized.includes('mall')) return 'retail'
+  if (normalized.includes('agricultural') || normalized.includes('farm')) return 'agricultural'
+  return 'office'
 }
 
 function ActivityList({ rows = [], emptyTitle, emptyDescription }) {
@@ -138,6 +149,31 @@ function CommercialTransactionWorkspacePage() {
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{companyLabel} · {propertyLabel} · {vacancyLabel}</p>
           </div>
           <div className="grid min-w-[280px] gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+            <Link
+              to={buildCommercialDocumentGeneratorPath({
+                packetType: String(transaction.transactionType || '').toLowerCase() === 'sale' ? 'commercial_sale' : 'commercial_lease',
+                assetCategory: resolvePropertyAssetCategory(transaction.property?.property_type),
+                transactionId: transaction.id,
+                dealId: transaction.deal_id || '',
+                propertyId: transaction.property_id || '',
+                vacancyId: transaction.vacancy_id || '',
+              })}
+              className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
+            >
+              <FileText size={16} />
+              Generate document
+            </Link>
+            <CommercialLandlordOnboardingAction
+              organisationId={organisationId}
+              landlord={transaction.landlord || null}
+            />
+            <CommercialOnboardingSendAction
+              organisationId={organisationId}
+              kind="transaction"
+              record={transaction}
+              lookups={data?.lookups || {}}
+              label={String(transaction.transactionType || '').toLowerCase() === 'sale' ? 'Send Seller Onboarding' : 'Send Tenant Onboarding'}
+            />
             <div>
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-slate-400">Value</p>
               <p className="mt-1 text-lg font-semibold text-[#102236]">{formatCurrency(transaction.value)}</p>

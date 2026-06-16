@@ -14,6 +14,7 @@ import {
   LineChart,
   MoreVertical,
   Plus,
+  Radar,
   ShieldAlert,
   TrendingUp,
   UserRound,
@@ -24,8 +25,8 @@ import { Link } from 'react-router-dom'
 import CommercialEmptyState from './CommercialEmptyState'
 import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
 
-const PANEL_CLASS = 'rounded-[24px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.06)]'
-const GLASS_CARD_CLASS = 'rounded-[24px] border border-white/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(247,250,253,0.92)_100%)] shadow-[0_8px_30px_rgba(0,0,0,0.06)] backdrop-blur-xl'
+const PANEL_CLASS = 'rounded-[24px] border border-[rgba(15,23,42,0.07)] bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]'
+const GLASS_CARD_CLASS = 'rounded-[24px] border border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.94)_100%)] shadow-[0_8px_24px_rgba(15,23,42,0.04)] backdrop-blur-xl'
 const EMPTY_OBJECT = Object.freeze({})
 
 function normalizeText(value) {
@@ -483,21 +484,21 @@ function buildFreshWorkspaceState(summary = {}, data = {}) {
 
 function DashboardHeader({ profile }) {
   return (
-    <header className="flex flex-col gap-5 pt-2 lg:flex-row lg:items-center lg:justify-between">
+    <header className="flex flex-col gap-4 pt-1 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
-        <h1 className="text-[46px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{getGreeting(profile)}</h1>
-        <p className="mt-2 text-[20px] font-medium text-[#526276]">Commercial Portfolio Overview</p>
+        <h1 className="text-[44px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{getGreeting(profile)}</h1>
+        <p className="mt-2 text-[19px] font-normal text-[#60758d]">Commercial Portfolio Overview</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Link to="/commercial/listings" className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#0e335f] px-[18px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.18)] transition hover:bg-[#0b294e]">
+        <Link to="/commercial/listings" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] bg-[#0e335f] px-[16px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.14)] transition hover:bg-[#0b294e]">
           <Plus size={16} />
           Listing
         </Link>
-        <Link to="/commercial/leads" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
+        <Link to="/commercial/leads" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[16px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
           <Plus size={16} />
           Requirement
         </Link>
-        <Link to="/commercial/deals" className="inline-flex h-11 items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[18px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
+        <Link to="/commercial/deals" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] border border-[#dce6f0] bg-white px-[16px] text-sm font-medium text-[#0f2748] shadow-sm transition hover:border-[#bfd2e6] hover:text-[#0e335f]">
           <Plus size={16} />
           Deal
         </Link>
@@ -508,17 +509,17 @@ function DashboardHeader({ profile }) {
 
 function KpiCard({ label, value, description, icon: Icon, loading = false }) {
   return (
-    <article className={`${GLASS_CARD_CLASS} flex min-h-[180px] min-w-[230px] flex-col justify-between p-8 lg:min-w-0`}>
+    <article className={`${GLASS_CARD_CLASS} flex min-h-[168px] min-w-[230px] flex-col justify-between p-7 lg:min-w-0`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[14px] font-medium text-[#60758d]">{label}</p>
-          <p className="mt-6 text-[52px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{loading ? '...' : value}</p>
+          <p className="text-[13px] font-medium text-[#6f7f92]">{label}</p>
+          <p className="mt-5 text-[48px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{loading ? '...' : value}</p>
         </div>
-        <span className="inline-flex h-11 w-11 items-center justify-center rounded-[16px] bg-white/90 text-[#2d6ecf] shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-white/90 text-[#2d6ecf] shadow-[0_8px_18px_rgba(15,23,42,0.05)]">
           {createElement(Icon, { size: 20 })}
         </span>
       </div>
-      <p className="text-[13px] font-normal text-[#7b899a]">{description}</p>
+      <p className="text-[12px] font-normal text-[#7b899a]">{description}</p>
     </article>
   )
 }
@@ -602,14 +603,14 @@ function InlineEmptyPanel({ title, description, actionLabel = '', onAction = nul
     : 'border-dashed border-[#d9e5f0] bg-[#fbfdff] text-[#60758d]'
 
   return (
-    <div className={`rounded-[24px] border px-5 py-6 ${toneClass}`}>
-      <p className={`text-sm font-semibold ${tone === 'dark' ? 'text-white' : 'text-[#102236]'}`}>{title}</p>
-      <p className={`mt-2 max-w-2xl text-sm leading-6 ${tone === 'dark' ? 'text-white/65' : 'text-[#60758d]'}`}>{description}</p>
+    <div className={`rounded-[24px] border px-5 py-5 ${toneClass}`}>
+      <p className={`text-[15px] font-semibold tracking-[-0.02em] ${tone === 'dark' ? 'text-white' : 'text-[#102236]'}`}>{title}</p>
+      <p className={`mt-2 max-w-2xl text-[13px] leading-6 ${tone === 'dark' ? 'text-white/65' : 'text-[#60758d]'}`}>{description}</p>
       {actionLabel && typeof onAction === 'function' ? (
         <button
           type="button"
           onClick={onAction}
-          className={`mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl px-4 text-sm font-semibold transition ${
+          className={`mt-4 inline-flex h-[44px] items-center justify-center rounded-[12px] px-4 text-sm font-medium transition ${
             tone === 'dark'
               ? 'bg-white text-[#102236] hover:bg-[#f5f8fb]'
               : 'bg-[#123b61] text-white hover:bg-[#102f4d]'
@@ -622,10 +623,33 @@ function InlineEmptyPanel({ title, description, actionLabel = '', onAction = nul
   )
 }
 
+function WorkflowShortcutCard({ to, title, description, icon: Icon, primary = false }) {
+  return (
+    <Link
+      to={to}
+      className={[
+        'flex h-full items-start gap-3 rounded-[24px] border p-4 transition hover:-translate-y-0.5 hover:shadow-[0_16px_30px_rgba(15,23,42,0.06)]',
+        primary
+          ? 'border-[#cfe0ef] bg-[#f4f8fc] text-[#102236]'
+          : 'border-[#e6edf4] bg-white text-[#102236]',
+      ].join(' ')}
+    >
+      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-white text-[#1f6dd5] shadow-sm">
+        <Icon size={17} />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold tracking-[-0.02em] text-[#102236]">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-[#6b7c91]">{description}</span>
+      </span>
+      <ArrowUpRight size={14} className="ml-auto shrink-0 text-[#8aa0b8]" />
+    </Link>
+  )
+}
+
 function SectionTitle({ title, action = null }) {
   return (
-    <div className="mb-4 flex items-center justify-between gap-4">
-      <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">{title}</h2>
+    <div className="mb-3 flex items-center justify-between gap-4">
+      <h2 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">{title}</h2>
       {action}
     </div>
   )
@@ -653,24 +677,33 @@ function StageBadge({ stage }) {
   )
 }
 
-function ActionStatusCard({ title, count, detail, icon: Icon, tone }) {
+function ActionStatusCard({ title, count, items = [], icon, tone }) {
   const styles = {
-    red: 'border-[rgba(255,59,48,0.15)] bg-[rgba(255,59,48,0.05)] text-rose-700',
-    amber: 'border-[rgba(255,149,0,0.15)] bg-[rgba(255,149,0,0.05)] text-amber-700',
-    green: 'border-[rgba(52,199,89,0.15)] bg-[rgba(52,199,89,0.05)] text-emerald-700',
+    red: 'border-[rgba(255,59,48,0.14)] bg-[rgba(255,59,48,0.05)] text-rose-700',
+    amber: 'border-[rgba(255,149,0,0.14)] bg-[rgba(255,149,0,0.05)] text-amber-700',
+    green: 'border-[rgba(52,199,89,0.14)] bg-[rgba(52,199,89,0.05)] text-emerald-700',
   }[tone]
   return (
-    <article className={`rounded-[24px] border p-6 ${styles}`}>
+    <article className={`rounded-[24px] border p-5 ${styles}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="inline-flex h-9 w-9 items-center justify-center rounded-[14px] bg-white/80 shadow-sm">
-              <Icon size={17} />
+              {createElement(icon, { size: 17 })}
             </span>
-            <p className="text-[16px] font-semibold tracking-[-0.02em] text-[#0f2748]">{title}</p>
+            <p className="text-[15px] font-semibold tracking-[-0.02em] text-[#0f2748]">{title}</p>
           </div>
-          <p className="mt-5 text-[48px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{count}</p>
-          <p className="mt-3 text-[13px] leading-6 text-[#526276]">{detail}</p>
+          <p className="mt-4 text-[46px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{count}</p>
+          {items.length ? (
+            <ul className="mt-3 space-y-1.5">
+              {items.map((item) => (
+                <li key={item} className="flex items-center gap-2 text-[13px] font-medium text-[#526276]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-current/60" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       </div>
     </article>
@@ -763,7 +796,7 @@ export default function CommercialExecutiveCommandCenter({
 
   if (error) {
     return (
-      <div className="space-y-8 pb-10">
+      <div className="space-y-6 pb-8">
         <DashboardHeader profile={profile} />
         <CommercialEmptyState title="Commercial dashboard data could not be loaded" description={error} />
       </div>
@@ -771,7 +804,7 @@ export default function CommercialExecutiveCommandCenter({
   }
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="space-y-6 pb-8">
       <DashboardHeader profile={profile} />
 
       <section>
@@ -786,32 +819,75 @@ export default function CommercialExecutiveCommandCenter({
 
       <section>
         <article className={`${PANEL_CLASS} p-6`}>
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Action Centre</h2>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Entry points</p>
+              <h2 className="mt-2 text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Workflow shortcuts</h2>
+              <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[#60758d]">Start canvassing from the overview, then move straight into requirements, deals, or vacancy follow-up without changing context.</p>
+            </div>
+            <Link to="/commercial/canvassing" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] bg-[#0e335f] px-[16px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.14)] transition hover:bg-[#0b294e]">
+              <Radar size={16} />
+              Open canvassing
+            </Link>
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <WorkflowShortcutCard
+              to="/commercial/canvassing"
+              title="Canvassing"
+              description="Capture prospects, log touchpoints, and launch the next commercial hand-off."
+              icon={Radar}
+              primary
+            />
+            <WorkflowShortcutCard
+              to="/commercial/requirements/pipeline"
+              title="Requirements"
+              description="Move demand into qualification, matching, and viewings."
+              icon={Users}
+            />
+            <WorkflowShortcutCard
+              to="/commercial/deals/pipeline"
+              title="Deals"
+              description="Review leasing and sales opportunities in motion."
+              icon={Handshake}
+            />
+            <WorkflowShortcutCard
+              to="/commercial/vacancies"
+              title="Vacancy follow-up"
+              description="Check open stock and start property-side follow-up work."
+              icon={Building2}
+            />
+          </div>
+        </article>
+      </section>
+
+      <section>
+        <article className={`${PANEL_CLASS} p-6`}>
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <h2 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Action Centre</h2>
             <Link to="/commercial/lease-expiry-watch" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
               View all
               <ArrowUpRight size={14} />
             </Link>
           </div>
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid gap-4 lg:grid-cols-3">
             <ActionStatusCard
               title="Attention Required"
               count={loading ? '...' : formatNumber(actionCentre.attentionCount)}
-              detail="Lease Expiries · Compliance · Stalled Deals"
+              items={['Lease Expiries', 'Compliance', 'Stalled Deals']}
               icon={AlertTriangle}
               tone="red"
             />
             <ActionStatusCard
               title="Monitor"
               count={loading ? '...' : formatNumber(actionCentre.monitorCount)}
-              detail="Vacancies > 60 Days · Overdue Items"
+              items={['Vacancies > 60 Days', 'Overdue Items']}
               icon={ShieldAlert}
               tone="amber"
             />
             <ActionStatusCard
               title="Healthy"
               count={loading ? '...' : actionCentre.healthyValue}
-              detail="Occupancy · Renewals"
+              items={['Occupancy', 'Renewals']}
               icon={CheckCircle2}
               tone="green"
             />
@@ -821,8 +897,8 @@ export default function CommercialExecutiveCommandCenter({
 
       <section id="transactions">
         <article className={`${PANEL_CLASS} overflow-hidden`}>
-          <div className="flex items-center justify-between gap-4 border-b border-[#edf2f7] px-6 py-5">
-            <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Active Deals</h2>
+          <div className="flex items-center justify-between gap-4 border-b border-[#edf2f7] px-6 py-4">
+            <h2 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Active Deals</h2>
             <Link to="/commercial/deals" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
               View all deals
               <ChevronRight size={15} />
@@ -831,31 +907,31 @@ export default function CommercialExecutiveCommandCenter({
           {openDeals.length ? (
             <div className="overflow-x-auto">
               <table className="min-w-[980px] w-full text-left text-sm">
-                <thead className="bg-[#fbfdff] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6f7f92]">
+                <thead className="bg-[#fbfdff] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#7a8798]">
                   <tr>
-                    <th className="px-6 py-4">Deal</th>
-                    <th className="px-4 py-4">Property</th>
-                    <th className="px-4 py-4">Broker</th>
-                    <th className="px-4 py-4">Stage</th>
-                    <th className="px-4 py-4">Value</th>
-                    <th className="px-4 py-4">Last Activity</th>
-                    <th className="px-4 py-4 text-right">Days Open</th>
-                    <th className="px-4 py-4" />
+                    <th className="px-6 py-3.5">Deal</th>
+                    <th className="px-4 py-3.5">Property</th>
+                    <th className="px-4 py-3.5">Broker</th>
+                    <th className="px-4 py-3.5">Stage</th>
+                    <th className="px-4 py-3.5">Value</th>
+                    <th className="px-4 py-3.5">Last Activity</th>
+                    <th className="px-4 py-3.5 text-right">Days Open</th>
+                    <th className="px-4 py-3.5" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#edf2f7]">
                   {openDeals.map((row) => (
                     <tr key={row.id} className="bg-white transition hover:bg-[#fbfdff]">
-                      <td className="px-6 py-4 font-semibold text-[#0f2748]">
+                      <td className="px-6 py-3.5 font-semibold text-[#0f2748]">
                         <Link to={row.to} className="hover:text-[#1f6dd5]">{row.deal}</Link>
                       </td>
-                      <td className="px-4 py-4 text-[#304159]">{row.property}</td>
-                      <td className="px-4 py-4 text-[#304159]">{row.broker}</td>
-                      <td className="px-4 py-4"><StageBadge stage={row.stage} /></td>
-                      <td className="px-4 py-4 font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.value)}</td>
-                      <td className="px-4 py-4 text-[#526276]">{relativeTime(row.lastActivity)}</td>
-                      <td className="px-4 py-4 text-right font-semibold text-[#0f2748]">{row.daysOpen ?? '-'}</td>
-                      <td className="px-4 py-4 text-right">
+                      <td className="px-4 py-3.5 text-[#304159]">{row.property}</td>
+                      <td className="px-4 py-3.5 text-[#304159]">{row.broker}</td>
+                      <td className="px-4 py-3.5"><StageBadge stage={row.stage} /></td>
+                      <td className="px-4 py-3.5 font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.value)}</td>
+                      <td className="px-4 py-3.5 text-[#526276]">{relativeTime(row.lastActivity)}</td>
+                      <td className="px-4 py-3.5 text-right font-semibold text-[#0f2748]">{row.daysOpen ?? '-'}</td>
+                      <td className="px-4 py-3.5 text-right">
                         <Link to={row.to} className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#6b7c91] hover:bg-[#eef5fb] hover:text-[#123b61]" aria-label={`Open ${row.deal}`}>
                           <MoreVertical size={16} />
                         </Link>
@@ -867,10 +943,10 @@ export default function CommercialExecutiveCommandCenter({
             </div>
           ) : !loading ? (
             <div className="p-6">
-              <div className="rounded-[22px] border border-dashed border-[#d9e5f0] bg-[#fbfdff] px-5 py-6 text-[#60758d]">
-                <p className="text-sm font-semibold text-[#102236]">No active deals.</p>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-[#60758d]">Create your first leasing or sales deal.</p>
-                <Link to="/commercial/deals" className="mt-4 inline-flex min-h-11 items-center justify-center rounded-2xl bg-[#123b61] px-4 text-sm font-semibold text-white transition hover:bg-[#102f4d]">
+              <div className="rounded-[22px] border border-dashed border-[#d9e5f0] bg-[#fbfdff] px-5 py-5 text-[#60758d]">
+                <p className="text-[15px] font-semibold text-[#102236]">No active deals.</p>
+                <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[#60758d]">Create your first leasing or sales deal.</p>
+                <Link to="/commercial/deals" className="mt-4 inline-flex h-[44px] items-center justify-center rounded-[12px] bg-[#123b61] px-4 text-sm font-medium text-white transition hover:bg-[#102f4d]">
                   + Create Deal
                 </Link>
               </div>
@@ -895,10 +971,10 @@ export default function CommercialExecutiveCommandCenter({
                         </span>
                         <span className="text-xs font-semibold text-[#6b7c91]">{index === 0 ? 'Base' : `${stage.conversion.toFixed(0)}%`}</span>
                       </div>
-                      <p className="mt-3 text-sm font-semibold text-[#0f2748]">{stage.label}</p>
+                      <p className="mt-3 text-[14px] font-semibold text-[#0f2748]">{stage.label}</p>
                       <div className="mt-3 flex items-end justify-between gap-3">
-                        <p className="text-[30px] font-bold leading-none text-[#0f2748]">{loading ? '...' : formatNumber(stage.count)}</p>
-                        <p className="text-sm font-semibold text-[#526276]">{loading ? '...' : formatCompactCurrency(stage.value)}</p>
+                        <p className="text-[28px] font-semibold leading-none text-[#0f2748]">{loading ? '...' : formatNumber(stage.count)}</p>
+                        <p className="text-[13px] font-medium text-[#526276]">{loading ? '...' : formatCompactCurrency(stage.value)}</p>
                       </div>
                     </article>
                     {index < compactPipelineStages.length - 1 ? <ArrowRight size={18} className="shrink-0 text-[#97a8ba]" /> : null}
@@ -911,17 +987,17 @@ export default function CommercialExecutiveCommandCenter({
       </section>
 
       <section>
-        <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {weeklyActivity.map((item) => {
             const Icon = item.icon
             return (
-              <article key={item.key} className={`${PANEL_CLASS} flex min-h-[118px] items-center justify-between gap-4 p-6`}>
+              <article key={item.key} className={`${PANEL_CLASS} flex min-h-[108px] items-center justify-between gap-4 p-5`}>
                 <div>
-                  <p className="text-sm font-semibold text-[#0f2748]">{item.label === 'Leases Signed' ? 'Deals Signed' : item.label}</p>
-                  <p className="mt-3 text-[32px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{loading ? '...' : formatNumber(item.value)}</p>
-                  <p className="mt-2 text-[13px] font-normal text-[#7b899a]">0% vs last week</p>
+                  <p className="text-[14px] font-semibold text-[#0f2748]">{item.label === 'Leases Signed' ? 'Deals Signed' : item.label}</p>
+                  <p className="mt-2.5 text-[30px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{loading ? '...' : formatNumber(item.value)}</p>
+                  <p className="mt-2 text-[12px] font-normal text-[#7b899a]">0% vs last week</p>
                 </div>
-                <span className={`inline-flex h-11 w-11 items-center justify-center rounded-[16px] ${item.tone}`}>
+                <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] ${item.tone}`}>
                   <Icon size={19} />
                 </span>
               </article>
@@ -943,8 +1019,8 @@ export default function CommercialExecutiveCommandCenter({
                 ['Forecast', formatMoney(displayFinancialSummary.pipelineValue || displaySummary.pipelineValue || 0)],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-[24px] border border-[#ebf1f6] bg-[#fbfdff] px-4 py-4">
-                  <p className="text-[14px] font-medium text-[#60758d]">{label}</p>
-                  <p className="mt-2 text-[24px] font-semibold leading-tight tracking-[-0.03em] text-[#0f2748]">{loading ? '...' : value}</p>
+                  <p className="text-[13px] font-medium text-[#60758d]">{label}</p>
+                  <p className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.03em] text-[#0f2748]">{loading ? '...' : value}</p>
                 </div>
               ))}
             </div>
@@ -954,55 +1030,55 @@ export default function CommercialExecutiveCommandCenter({
         <article className={`${PANEL_CLASS} p-6`}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Risk Watch</h2>
+              <h2 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Risk Watch</h2>
             </div>
             <Link to="/commercial/lease-expiry-watch" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
               View all
               <ChevronRight size={15} />
             </Link>
           </div>
-          <div className="mt-6 space-y-4">
-            <div className="rounded-[24px] border border-[rgba(255,59,48,0.15)] bg-[rgba(255,59,48,0.05)] p-4">
+          <div className="mt-5 space-y-4">
+            <div className="rounded-[24px] border border-[rgba(255,59,48,0.14)] bg-[rgba(255,59,48,0.05)] p-4">
               <div className="flex items-center gap-2 text-rose-700">
                 <AlertTriangle size={16} />
-                <p className="text-sm font-semibold">Attention Required</p>
+                <p className="text-[14px] font-semibold">Attention Required</p>
               </div>
               <div className="mt-4 space-y-3">
                 {riskWatch.critical.map((item) => (
                   <div key={item.label} className="flex items-center justify-between gap-3">
-                    <p className="text-sm text-[#5d4950]">{item.label}</p>
-                    <strong className="text-[48px] font-semibold leading-none tracking-[-0.04em] text-rose-700">{loading ? '...' : formatNumber(item.value)}</strong>
+                    <p className="text-[13px] text-[#5d4950]">{item.label}</p>
+                    <strong className="text-[44px] font-semibold leading-none tracking-[-0.04em] text-rose-700">{loading ? '...' : formatNumber(item.value)}</strong>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-[24px] border border-[rgba(255,149,0,0.15)] bg-[rgba(255,149,0,0.05)] p-4">
+            <div className="rounded-[24px] border border-[rgba(255,149,0,0.14)] bg-[rgba(255,149,0,0.05)] p-4">
               <div className="flex items-center gap-2 text-amber-700">
                 <ShieldAlert size={16} />
-                <p className="text-sm font-semibold">Monitor</p>
+                <p className="text-[14px] font-semibold">Monitor</p>
               </div>
               <div className="mt-4 space-y-3">
                 {riskWatch.warning.map((item) => (
                   <div key={item.label} className="flex items-center justify-between gap-3">
-                    <p className="text-sm text-[#6a5843]">{item.label}</p>
-                    <strong className="text-[48px] font-semibold leading-none tracking-[-0.04em] text-amber-700">{loading ? '...' : formatNumber(item.value)}</strong>
+                    <p className="text-[13px] text-[#6a5843]">{item.label}</p>
+                    <strong className="text-[44px] font-semibold leading-none tracking-[-0.04em] text-amber-700">{loading ? '...' : formatNumber(item.value)}</strong>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-[24px] border border-[rgba(52,199,89,0.15)] bg-[rgba(52,199,89,0.05)] p-4">
+            <div className="rounded-[24px] border border-[rgba(52,199,89,0.14)] bg-[rgba(52,199,89,0.05)] p-4">
               <div className="flex items-center gap-2 text-emerald-700">
                 <CheckCircle2 size={16} />
-                <p className="text-sm font-semibold">Healthy</p>
+                <p className="text-[14px] font-semibold">Healthy</p>
               </div>
               <div className="mt-4 flex items-end justify-between gap-4">
                 <div>
-                  <p className="text-[48px] font-semibold leading-none tracking-[-0.04em] text-emerald-700">{loading ? '...' : formatPercentValue(riskWatch.healthy)}</p>
-                  <p className="mt-1 text-sm text-[#547567]">Portfolio occupancy</p>
+                  <p className="text-[44px] font-semibold leading-none tracking-[-0.04em] text-emerald-700">{loading ? '...' : formatPercentValue(riskWatch.healthy)}</p>
+                  <p className="mt-1 text-[13px] text-[#547567]">Portfolio occupancy</p>
                 </div>
-                <div className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                <div className="rounded-full bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700 ring-1 ring-inset ring-emerald-200">
                   Stable
                 </div>
               </div>
@@ -1014,8 +1090,8 @@ export default function CommercialExecutiveCommandCenter({
       <section>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
           <article className={`${PANEL_CLASS} overflow-hidden`}>
-            <div className="flex items-center justify-between gap-4 border-b border-[#edf2f7] px-6 py-5">
-              <h3 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Top Brokers</h3>
+            <div className="flex items-center justify-between gap-4 border-b border-[#edf2f7] px-6 py-4">
+              <h3 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Top Brokers</h3>
               <Link to="/commercial/brokers" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
                 View All Brokers
                 <ChevronRight size={15} />
@@ -1024,19 +1100,19 @@ export default function CommercialExecutiveCommandCenter({
             <div className="overflow-x-auto">
               {topBrokerRows.length ? (
                 <table className="min-w-[680px] w-full text-left text-sm">
-                  <thead className="bg-[#fbfdff] text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6f7f92]">
+                  <thead className="bg-[#fbfdff] text-[10px] font-semibold uppercase tracking-[0.1em] text-[#7a8798]">
                     <tr>
-                      <th className="px-6 py-4">Broker</th>
-                      <th className="px-4 py-4">Pipeline</th>
-                      <th className="px-4 py-4">Deals</th>
-                      <th className="px-4 py-4">Commission</th>
-                      <th className="px-4 py-4 text-right">Trend</th>
+                      <th className="px-6 py-3.5">Broker</th>
+                      <th className="px-4 py-3.5">Pipeline</th>
+                      <th className="px-4 py-3.5">Deals</th>
+                      <th className="px-4 py-3.5">Commission</th>
+                      <th className="px-4 py-3.5 text-right">Trend</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#edf2f7]">
                     {topBrokerRows.map((row) => (
                       <tr key={row.id || row.name} className="bg-white">
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-3.5">
                           <div className="flex items-center gap-3">
                             <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[linear-gradient(180deg,#eff5fb_0%,#dfeaf7_100%)] text-[#123b61]">
                               <UserRound size={16} />
@@ -1047,10 +1123,10 @@ export default function CommercialExecutiveCommandCenter({
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-4 font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.pipelineValue || 0)}</td>
-                        <td className="px-4 py-4 font-semibold text-[#0f2748]">{loading ? '...' : formatNumber(row.activeDeals || 0)}</td>
-                        <td className="px-4 py-4 font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.expectedCommission || row.projectedCommission || row.commissionValue || 0)}</td>
-                        <td className="px-4 py-4 text-right"><TrendPill delta={row.trend} /></td>
+                        <td className="px-4 py-3.5 font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.pipelineValue || 0)}</td>
+                        <td className="px-4 py-3.5 font-semibold text-[#0f2748]">{loading ? '...' : formatNumber(row.activeDeals || 0)}</td>
+                        <td className="px-4 py-3.5 font-semibold text-[#0f2748]">{loading ? '...' : formatCompactCurrency(row.expectedCommission || row.projectedCommission || row.commissionValue || 0)}</td>
+                        <td className="px-4 py-3.5 text-right"><TrendPill delta={row.trend} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -1065,37 +1141,37 @@ export default function CommercialExecutiveCommandCenter({
 
           <article className={`${PANEL_CLASS} p-6`}>
             <div className="flex items-center justify-between gap-4">
-              <h3 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Properties Requiring Attention</h3>
+              <h3 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Properties Requiring Attention</h3>
               <Link to="/commercial/properties" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
                 View all
                 <ChevronRight size={15} />
               </Link>
             </div>
-            <div className="mt-5 grid gap-4">
-            {portfolioCards.map((card) => (
-              <article key={card.id} className="flex items-center justify-between gap-4 rounded-[24px] border border-[#ebf1f6] bg-[#fbfdff] p-4">
-                <div className="flex min-w-0 items-center gap-4">
-                  <span className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,var(--tw-gradient-stops))] ${card.accent} text-[#123b61]`}>
-                      <Building2 size={18} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#0f2748]">{card.name}</p>
-                    <p className="mt-1 truncate text-sm text-[#6b7c91]">{card.location}</p>
+            <div className="mt-4 grid gap-4">
+              {portfolioCards.map((card) => (
+                <article key={card.id} className="flex items-center justify-between gap-4 rounded-[24px] border border-[#ebf1f6] bg-[#fbfdff] p-4">
+                  <div className="flex min-w-0 items-center gap-4">
+                    <span className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(135deg,var(--tw-gradient-stops))] ${card.accent} text-[#123b61]`}>
+                        <Building2 size={18} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-[14px] font-semibold text-[#0f2748]">{card.name}</p>
+                      <p className="mt-1 truncate text-[13px] text-[#6b7c91]">{card.location}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="grid shrink-0 grid-cols-[minmax(120px,1fr)_72px] items-center gap-4 text-right">
-                  <p className={`text-sm font-semibold ${card.risk === 'High' ? 'text-rose-700' : card.risk === 'Medium' ? 'text-orange-700' : 'text-emerald-700'}`}>{card.attentionLabel}</p>
-                  <div>
-                    <p className="text-sm font-bold text-[#0f2748]">{formatPercentValue(card.occupancy)}</p>
-                    <p className="text-[11px] font-semibold text-[#6b7c91]">Occupied</p>
+                  <div className="grid shrink-0 grid-cols-[minmax(120px,1fr)_72px] items-center gap-4 text-right">
+                    <p className={`text-[13px] font-semibold ${card.risk === 'High' ? 'text-rose-700' : card.risk === 'Medium' ? 'text-orange-700' : 'text-emerald-700'}`}>{card.attentionLabel}</p>
+                    <div>
+                      <p className="text-[14px] font-bold text-[#0f2748]">{formatPercentValue(card.occupancy)}</p>
+                      <p className="text-[10px] font-semibold text-[#6b7c91]">Occupied</p>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
-            {!portfolioCards.length && !loading ? (
-              <InlineEmptyPanel title="No properties requiring attention." description="Properties with vacancies, lease expiries, or strong demand will appear here." />
-            ) : null}
-          </div>
+                </article>
+              ))}
+              {!portfolioCards.length && !loading ? (
+                <InlineEmptyPanel title="No properties requiring attention." description="Properties with vacancies, lease expiries, or strong demand will appear here." />
+              ) : null}
+            </div>
           </article>
         </div>
       </section>

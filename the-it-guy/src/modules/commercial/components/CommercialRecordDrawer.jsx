@@ -249,6 +249,8 @@ function CommercialRecordDrawer({
   organisationId = '',
   primaryActionLabel = '',
   onPrimaryAction,
+  secondaryActionLabel = '',
+  onSecondaryAction,
   onClose,
   onEdit,
   onArchive,
@@ -295,6 +297,12 @@ function CommercialRecordDrawer({
                 <p className="mt-1 text-base font-semibold text-[#102236]">{nextAction}</p>
               </div>
               <div className="flex flex-wrap gap-2">
+                {secondaryActionLabel && onSecondaryAction ? (
+                  <button type="button" onClick={() => onSecondaryAction(record)} className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] shadow-sm transition hover:bg-slate-50">
+                    {secondaryActionLabel}
+                    <ArrowRight size={15} />
+                  </button>
+                ) : null}
                 {resolvedPrimaryActionLabel && onPrimaryAction ? (
                   <button type="button" onClick={() => onPrimaryAction(record)} className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#163a5b]">
                     {resolvedPrimaryActionLabel}
@@ -360,6 +368,11 @@ function CommercialRecordDrawer({
           <button type="button" onClick={onArchive} className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100">
             Archive
           </button>
+          {secondaryActionLabel && onSecondaryAction ? (
+            <button type="button" onClick={() => onSecondaryAction(record)} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-[#102236] transition hover:bg-slate-50">
+              {secondaryActionLabel}
+            </button>
+          ) : null}
           <button type="button" onClick={onEdit} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-[#102236] transition hover:bg-slate-50">
             Edit
           </button>

@@ -17,6 +17,11 @@ import {
   resendCommercialPortalInvitation,
   revokeCommercialPortalAccess,
 } from '../services/commercialPortalApi'
+import {
+  buildCommercialOnboardingBrokerSummary,
+  listCommercialOnboardingAccessForOrganisation,
+  resendCommercialOnboardingInvitation,
+} from '../services/commercialOnboardingApi'
 
 const CARD_CLASS = 'rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]'
 const TABS = [
@@ -157,11 +162,18 @@ function CommercialPrincipalWorkspacePage() {
   const dashboard = useCommercialData(getCommercialPrincipalDashboardData, [reloadKey])
   const brokerage = useCommercialData(getCommercialBrokerageData, [reloadKey])
   const portals = useCommercialData(async (organisationId) => {
-    const [accessRows, auditRows] = await Promise.all([
+    const [accessRows, auditRows, onboardingRows] = await Promise.all([
       listCommercialPortalAccessForOrganisation(organisationId),
       listCommercialPortalAuditEvents(organisationId, 80),
+      listCommercialOnboardingAccessForOrganisation(organisationId),
     ])
-    return { accessRows, auditRows, adoption: buildCommercialPortalAdoption(accessRows, auditRows) }
+    return {
+      accessRows,
+      auditRows,
+      onboardingRows,
+      onboardingSummaries: onboardingRows.map(buildCommercialOnboardingBrokerSummary),
+      adoption: buildCommercialPortalAdoption(accessRows, auditRows),
+    }
   }, [reloadKey])
 
   const loading = dashboard.loading || brokerage.loading || portals.loading
@@ -180,6 +192,7 @@ function CommercialPrincipalWorkspacePage() {
   const managementAlerts = intelligence.managementAlerts || []
   const portalAccessRows = portals.data?.accessRows || []
   const portalAuditRows = portals.data?.auditRows || []
+  const onboardingRows = portals.data?.onboardingSummaries || []
   const portalAdoption = portals.data?.adoption || {}
 
   const commissionRows = useMemo(() => {
@@ -221,6 +234,24 @@ function CommercialPrincipalWorkspacePage() {
       setReloadKey((current) => current + 1)
     } catch (error) {
       setSaveError(error?.message || 'Portal access could not be updated.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleOnboardingAction(action, row) {
+    if (!row?.id) return
+    setSaving(true)
+    setSaveError('')
+    try {
+      if (action === 'resend') {
+        await resendCommercialOnboardingInvitation(row.id, 'reminder')
+        setReloadKey((current) => current + 1)
+      }
+      if (action === 'copy' && navigator?.clipboard?.writeText) await navigator.clipboard.writeText(row.portalUrl)
+      if (action === 'review' && row.portalUrl) window.open(row.portalUrl, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      setSaveError(error?.message || 'Commercial onboarding could not be updated.')
     } finally {
       setSaving(false)
     }
@@ -552,6 +583,41 @@ function CommercialPrincipalWorkspacePage() {
                 ]}
                 rows={portalAccessRows}
                 empty="No commercial portal access has been issued yet."
+              />
+            </div>
+          </section>
+          <section className={CARD_CLASS}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-[#102236]">Commercial Onboarding Review</h2>
+                <p className="mt-1 text-sm text-slate-500">Track tenant and seller onboarding progress, gaps, and follow-up actions from one place.</p>
+              </div>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">{formatNumber(onboardingRows.length)}</span>
+            </div>
+            {saveError ? <p className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{saveError}</p> : null}
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+              <Table
+                columns={[
+                  { key: 'contact', label: 'Contact', render: (row) => row.contactName || 'Commercial client' },
+                  { key: 'status', label: 'Status', render: (row) => <StatusPill value={row.status} /> },
+                  { key: 'completion', label: 'Completion', align: 'right', render: (row) => `${formatNumber(row.completionPercentage || 0)}%` },
+                  { key: 'missing', label: 'Missing', render: (row) => [
+                    ...(row.missingFields || []).slice(0, 2).map((item) => item?.label || item),
+                    ...(row.missingDocuments || []).slice(0, 2).map((item) => item?.label || item),
+                  ].filter(Boolean).join(' · ') || 'None' },
+                  { key: 'email', label: 'Last Email', render: (row) => formatDate(row.lastEmailSentAt) },
+                  { key: 'opened', label: 'Last Opened', render: (row) => formatDate(row.lastOpenedAt) },
+                  { key: 'submitted', label: 'Last Submitted', render: (row) => formatDate(row.lastSubmittedAt) },
+                  { key: 'actions', label: 'Actions', align: 'right', render: (row) => (
+                    <div className="flex justify-end gap-2">
+                      <button type="button" disabled={saving} onClick={() => void handleOnboardingAction('resend', row)} className="text-sm font-semibold text-blue-600 disabled:opacity-60">Resend Link</button>
+                      <button type="button" disabled={saving} onClick={() => void handleOnboardingAction('copy', row)} className="text-sm font-semibold text-blue-600 disabled:opacity-60">Copy Link</button>
+                      <button type="button" disabled={saving} onClick={() => void handleOnboardingAction('review', row)} className="text-sm font-semibold text-blue-600 disabled:opacity-60">Review Submission</button>
+                    </div>
+                  ) },
+                ]}
+                rows={onboardingRows}
+                empty="No commercial onboarding has been issued yet."
               />
             </div>
           </section>

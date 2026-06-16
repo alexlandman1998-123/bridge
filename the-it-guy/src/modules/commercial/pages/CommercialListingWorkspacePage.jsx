@@ -1,11 +1,14 @@
 import { ArrowLeft, Building2, CalendarClock, ClipboardList, DoorOpen, FileText, Handshake, ScrollText } from 'lucide-react'
 import { createElement, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
 import CommercialDocumentLibrary from '../components/CommercialDocumentLibrary'
 import CommercialEmptyState from '../components/CommercialEmptyState'
+import CommercialLandlordOnboardingAction from '../components/CommercialLandlordOnboardingAction'
+import CommercialOnboardingSendAction from '../components/CommercialOnboardingSendAction'
 import CommercialStatusPill from '../components/CommercialStatusPill'
 import { useCommercialData } from '../hooks/useCommercialData'
+import { buildCommercialDocumentGeneratorPath } from '../../../services/documents/commercialDocumentAdapterService'
 import {
   createCommercialTransaction,
   getCommercialActivity,
@@ -35,14 +38,37 @@ const TABS = [
 ]
 
 function metadataRows(metadata = {}) {
-  return Object.entries(metadata || {})
-    .filter(([, value]) => value !== null && value !== undefined && value !== '')
-    .map(([key, value]) => [titleize(key), typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)])
+  function visit(prefix, value, rows) {
+    if (value === null || value === undefined || value === '') return
+    if (Array.isArray(value)) {
+      if (value.length) rows.push([prefix, value.join(', ')])
+      return
+    }
+    if (typeof value === 'object') {
+      Object.entries(value).forEach(([key, entry]) => {
+        visit(prefix ? `${prefix} · ${titleize(key)}` : titleize(key), entry, rows)
+      })
+      return
+    }
+    rows.push([prefix, typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)])
+  }
+
+  const rows = []
+  visit('', metadata || {}, rows)
+  return rows
 }
 
 function lookupName(rows, id, field, fallback = '-') {
   if (!id) return fallback
   return rows.find((row) => row.id === id)?.[field] || fallback
+}
+
+function resolvePropertyAssetCategory(propertyType = '') {
+  const normalized = String(propertyType || '').toLowerCase()
+  if (normalized.includes('industrial')) return 'industrial'
+  if (normalized.includes('retail') || normalized.includes('centre') || normalized.includes('mall')) return 'retail'
+  if (normalized.includes('agricultural') || normalized.includes('farm')) return 'agricultural'
+  return 'office'
 }
 
 async function loadListingWorkspace(organisationId, listingId) {
@@ -102,11 +128,12 @@ function RelatedList({ rows = [], empty, render }) {
 function CommercialListingWorkspacePage() {
   const { listingId } = useParams()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('overview')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [actionError, setActionError] = useState('')
   const fetcher = useMemo(() => (organisationId) => loadListingWorkspace(organisationId, listingId), [listingId])
   const { data, loading, error, organisationId } = useCommercialData(fetcher, [fetcher])
   const listing = data?.listing || null
+  const activeTab = TABS.some((item) => item.id === searchParams.get('tab')) ? searchParams.get('tab') : 'overview'
 
   if (error) return <CommercialEmptyState title="Listing workspace could not be loaded" description={error} />
   if (loading) return <div className="h-64 animate-pulse rounded-3xl bg-slate-100" />
@@ -117,6 +144,7 @@ function CommercialListingWorkspacePage() {
   const vacancyName = lookupName(data?.vacancies || [], listing.vacancy_id, 'vacancy_name')
   const property = (data?.properties || []).find((row) => row.id === listing.property_id) || {}
   const vacancy = (data?.vacancies || []).find((row) => row.id === listing.vacancy_id) || {}
+  const landlord = (data?.landlords || []).find((row) => row.id === listing.landlord_id || row.id === property.landlord_id) || null
   const quality = scoreListingQuality(listing, { propertiesById: new Map([[property.id, property]].filter(([id]) => id)) })
   const upcomingViewings = (data?.viewings || []).filter((viewing) => !['completed', 'cancelled', 'no_show'].includes(String(viewing.status || '').toLowerCase()))
   const completedViewings = (data?.viewings || []).filter((viewing) => String(viewing.status || '').toLowerCase() === 'completed')
@@ -124,6 +152,13 @@ function CommercialListingWorkspacePage() {
   const completedTransactions = (data?.transactions || []).filter((transaction) => String(transaction.status || '').toLowerCase() === 'completed')
   const activeDeals = (data?.deals || []).filter((deal) => !['converted', 'lost'].includes(String(deal.stage || '').toLowerCase()))
   const conversionRate = completedViewings.length ? Math.round((activeDeals.length / completedViewings.length) * 100) : 0
+
+  function changeTab(tabId) {
+    const next = new URLSearchParams(searchParams)
+    if (tabId === 'overview') next.delete('tab')
+    else next.set('tab', tabId)
+    setSearchParams(next, { replace: true })
+  }
 
   async function handleCreateTransaction() {
     setActionError('')
@@ -168,6 +203,32 @@ function CommercialListingWorkspacePage() {
             <span className="text-slate-500">Available {formatDate(listing.available_from)}</span>
             <span className="text-slate-500">{titleize(listing.listing_type)} · {titleize(listing.listing_category)}</span>
             <Link
+              to={buildCommercialDocumentGeneratorPath({
+                packetType: String(listing.listing_type || '').toLowerCase() === 'sale' || String(listing.listing_type || '').toLowerCase() === 'investment' ? 'commercial_sale' : 'commercial_lease',
+                assetCategory: resolvePropertyAssetCategory(property.property_type),
+                listingId: listing.id,
+                propertyId: listing.property_id || '',
+                vacancyId: listing.vacancy_id || '',
+                landlordId: listing.landlord_id || '',
+              })}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
+            >
+              <FileText size={16} />
+              Generate document
+            </Link>
+            <CommercialLandlordOnboardingAction
+              organisationId={organisationId}
+              landlord={landlord}
+              buttonClassName="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50 disabled:opacity-60"
+            />
+            <CommercialOnboardingSendAction
+              organisationId={organisationId}
+              kind="listing"
+              record={listing}
+              lookups={data?.lookups || {}}
+              label={String(listing.listing_type || '').toLowerCase() === 'lease' ? 'Send Tenant Onboarding' : 'Send Seller Onboarding'}
+            />
+            <Link
               to="/commercial/viewings"
               state={{
                 openCommercialViewing: true,
@@ -192,7 +253,7 @@ function CommercialListingWorkspacePage() {
           <button
             key={tab.id}
             type="button"
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => changeTab(tab.id)}
             className={`inline-flex min-h-10 shrink-0 items-center gap-2 rounded-2xl px-4 text-sm font-semibold transition ${activeTab === tab.id ? 'bg-[#102b46] text-white' : 'text-slate-600 hover:bg-slate-50'}`}
           >
             {createElement(tab.icon, { size: 15 })}

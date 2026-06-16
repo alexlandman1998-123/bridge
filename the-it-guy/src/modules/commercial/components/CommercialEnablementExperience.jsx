@@ -22,6 +22,7 @@ const BUSINESS_MODEL_OPTIONS = [
 const FEATURE_LABELS = {
   commercialListings: 'Commercial Listings',
   commercialPipeline: 'Commercial Pipeline',
+  commercialCanvassing: 'Commercial Canvassing',
   brokerageReporting: 'Brokerage Reporting',
   commercialLeasing: 'Commercial Leasing',
   headsOfTerms: 'Heads of Terms',
@@ -143,6 +144,7 @@ function buildDefaultDraft({ context = null, users = [], branches = [] } = {}) {
   const defaultFeatures = {
     commercialListings: true,
     commercialPipeline: true,
+    commercialCanvassing: true,
     brokerageReporting: true,
     commercialLeasing: businessModel !== 'sales',
     headsOfTerms: businessModel !== 'sales',
@@ -158,11 +160,12 @@ function buildDefaultDraft({ context = null, users = [], branches = [] } = {}) {
     dedicatedBranches: Array.isArray(commercialWorkspace.branchNames) && commercialWorkspace.branchNames.length
       ? commercialWorkspace.branchNames.map((name) => createBranchDraft({ name }))
       : [createBranchDraft({ name: 'Commercial HQ' })],
-    featureSelections: {
+      featureSelections: {
       ...defaultFeatures,
       commercialLeasing: commercialWorkspace.leasingEnabled ?? defaultFeatures.commercialLeasing,
       headsOfTerms: commercialWorkspace.headsOfTermsEnabled ?? defaultFeatures.headsOfTerms,
       tenantManagement: commercialWorkspace.tenantManagementEnabled ?? defaultFeatures.tenantManagement,
+      commercialCanvassing: commercialWorkspace.canvassingEnabled ?? defaultFeatures.commercialCanvassing,
       commercialDocumentCentre: commercialWorkspace.documentCentreEnabled ?? defaultFeatures.commercialDocumentCentre,
     },
     availableBranches: branches.length ? branches : buildFallbackBranches(context),
@@ -318,6 +321,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
         ...(previous?.featureSelections || {}),
         commercialListings: true,
         commercialPipeline: true,
+        commercialCanvassing: true,
         brokerageReporting: true,
         commercialLeasing: value !== 'sales',
         headsOfTerms: value !== 'sales',
@@ -1210,6 +1214,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                         {[
                           { key: 'commercialListings', description: 'Keep stock, mandates, and marketing inventory structured.', locked: true },
                           { key: 'commercialPipeline', description: 'Run the commercial pipeline across listings, viewings, and deals.', locked: true },
+                          { key: 'commercialCanvassing', description: 'Track canvassing and prospecting work before records enter the pipeline.', locked: true },
                           { key: 'brokerageReporting', description: 'Measure brokerage performance, activity, and pipeline health.', locked: true },
                           { key: 'commercialLeasing', description: 'Capture leasing demand, occupiers, and vacancy journeys.' },
                           { key: 'headsOfTerms', description: 'Prepare and track Heads of Terms before lease finalisation.' },

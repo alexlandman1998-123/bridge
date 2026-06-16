@@ -1,10 +1,14 @@
-import { Activity, ArrowLeft, Building2, DoorOpen, FileText, Handshake, LayoutList, MapPinned } from 'lucide-react'
+import { Activity, ArrowLeft, Building2, DoorOpen, FileText, Handshake, LayoutList, MapPinned, Radar } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import CommercialDocumentLibrary from '../components/CommercialDocumentLibrary'
 import CommercialEmptyState from '../components/CommercialEmptyState'
+import CommercialLandlordOnboardingAction from '../components/CommercialLandlordOnboardingAction'
+import CommercialOnboardingSendAction from '../components/CommercialOnboardingSendAction'
 import CommercialStatusPill from '../components/CommercialStatusPill'
 import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
+import { buildCommercialCanvassingPath } from '../commercialCanvassingLinks'
+import { buildCommercialDocumentGeneratorPath } from '../../../services/documents/commercialDocumentAdapterService'
 import { useCommercialData } from '../hooks/useCommercialData'
 import { getCommercialActivity, getCommercialLookupData } from '../services/commercialApi'
 
@@ -22,6 +26,14 @@ const TABS = [
 function toNumber(value) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+function resolvePropertyAssetCategory(propertyType = '') {
+  const normalized = String(propertyType || '').toLowerCase()
+  if (normalized.includes('industrial')) return 'industrial'
+  if (normalized.includes('retail') || normalized.includes('centre') || normalized.includes('mall')) return 'retail'
+  if (normalized.includes('agricultural') || normalized.includes('farm')) return 'agricultural'
+  return 'office'
 }
 
 function daysBetween(startValue, endValue = new Date()) {
@@ -180,6 +192,15 @@ function CommercialPropertyWorkspacePage() {
   const leasingVelocity = activeVacancies.length
     ? Math.round(((data?.deals || []).filter((row) => row.property_id === property.id).length / activeVacancies.length) * 100)
     : 0
+  const canvassingPath = buildCommercialCanvassingPath({
+    companyName: landlord?.name || property.property_name,
+    area: [property.suburb, property.city].filter(Boolean).join(', ') || property.address || property.property_name,
+    propertyType: property.property_type,
+    propertyId: property.id,
+    linkedEntityType: 'commercial_property',
+    linkedEntityId: property.id,
+    followUpNote: `Follow up from ${property.property_name}`,
+  })
   const overviewRows = [
     ['Property Name', property.property_name],
     ['Property Type', titleize(property.property_type)],
@@ -210,6 +231,33 @@ function CommercialPropertyWorkspacePage() {
             <p className="mt-2 text-sm text-slate-500">{landlord?.name || 'Landlord pending'} · {[property.suburb, property.city].filter(Boolean).join(', ') || property.address || 'Location pending'}</p>
           </div>
           <div className="grid min-w-[260px] gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+            <CommercialLandlordOnboardingAction
+              organisationId={organisationId}
+              landlord={landlord}
+            />
+            <Link
+              to={buildCommercialDocumentGeneratorPath({
+                packetType: 'commercial_lease',
+                assetCategory: resolvePropertyAssetCategory(property.property_type),
+                propertyId: property.id,
+                landlordId: property.landlord_id || '',
+              })}
+              className="inline-flex w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
+            >
+              <FileText size={16} />
+              Generate document
+            </Link>
+            <CommercialOnboardingSendAction
+              organisationId={organisationId}
+              kind="property"
+              record={property}
+              lookups={data?.lookups || {}}
+              label="Send Seller Onboarding"
+            />
+            <Link to={canvassingPath} className="inline-flex w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#102236] transition hover:bg-slate-50">
+              <Radar size={16} />
+              Canvass follow-up
+            </Link>
             <div>
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-slate-400">Occupancy</p>
               <p className="mt-1 text-sm font-semibold text-[#102236]">{formatNumber(occupancyPct)}%</p>

@@ -102,6 +102,9 @@ const LIFECYCLE_ALIASES = {
   listings: {
     coming_soon: 'internal_review',
     active: 'published',
+    available: 'published',
+    under_negotiation: 'under_offer',
+    heads_of_terms: 'under_offer',
     leased: 'closed',
     sold: 'closed',
   },

@@ -7,7 +7,7 @@ import {
 import { DOCUMENTS_BUCKET_CANDIDATES, supabase } from './supabaseClient'
 import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
 
-export const DOCUMENT_PACKET_TYPES = ['otp', 'mandate', 'addendum', 'supporting_legal', 'custom']
+export const DOCUMENT_PACKET_TYPES = ['otp', 'mandate', 'addendum', 'supporting_legal', 'custom', 'commercial_sale', 'commercial_lease']
 export const DOCUMENT_PACKET_STATUSES = [
   'draft',
   'ready_for_generation',
@@ -736,6 +736,7 @@ export async function listDocumentPlaceholderDefinitions({
 export async function uploadDocumentPacketTemplateAsset({
   file,
   packetType = 'mandate',
+  moduleType = 'agency',
   templateKey = '',
   organisationId = null,
 } = {}) {
@@ -756,8 +757,9 @@ export async function uploadDocumentPacketTemplateAsset({
   }
 
   const normalizedPacketType = assertPacketType(packetType)
+  const normalizedModuleType = normalizeText(moduleType || 'agency').toLowerCase() || 'agency'
   const safeTemplateKey = normalizeTemplateKey(templateKey || `${normalizedPacketType}_template`, normalizedPacketType)
-  const objectPath = `legal-templates/${context.organisationId}/${normalizedPacketType}/${safeTemplateKey}/${Date.now()}-${normalizeStorageSafeName(selectedFile.name, `${normalizedPacketType}.docx`)}`
+  const objectPath = `legal-templates/${context.organisationId}/${normalizedModuleType}/${normalizedPacketType}/${safeTemplateKey}/${Date.now()}-${normalizeStorageSafeName(selectedFile.name, `${normalizedPacketType}.docx`)}`
 
   let uploadedBucket = ''
   let lastError = null
@@ -803,6 +805,7 @@ export async function uploadDocumentPacketTemplateAsset({
     resolvedUrl: signedUrl || publicUrl || null,
     fileName: selectedFile.name,
     packetType: normalizedPacketType,
+    moduleType: normalizedModuleType,
   }
 }
 

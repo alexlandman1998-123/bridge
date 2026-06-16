@@ -159,8 +159,34 @@ function recordDate(row = {}) {
   return row.updated_at || row.created_at || ''
 }
 
+function findNumericValue(source, keys = []) {
+  if (!source || typeof source !== 'object') return 0
+  for (const key of keys) {
+    const parsed = toNumber(source[key])
+    if (parsed) return parsed
+  }
+  for (const value of Object.values(source)) {
+    if (value && typeof value === 'object') {
+      const parsed = findNumericValue(value, keys)
+      if (parsed) return parsed
+    }
+  }
+  return 0
+}
+
 function metadataArea(metadata = {}) {
-  return toNumber(metadata.gla || metadata.gla_m2 || metadata.warehouse_size || metadata.shop_gla || metadata.land_size || metadata.farm_size)
+  return findNumericValue(metadata, [
+    'available_area',
+    'gross_lettable_area',
+    'building_size',
+    'erf_size',
+    'gla',
+    'gla_m2',
+    'warehouse_size',
+    'shop_gla',
+    'land_size',
+    'farm_size',
+  ])
 }
 
 function locationTextFor(property = {}, listing = {}) {
@@ -340,6 +366,16 @@ function mediaItems(listing = {}) {
   }
 }
 
+function countMetadataLeaves(value) {
+  if (value === null || value === undefined) return 0
+  if (typeof value === 'string') return normalizeText(value) ? 1 : 0
+  if (typeof value === 'number') return Number.isFinite(value) && value !== 0 ? 1 : 0
+  if (typeof value === 'boolean') return value ? 1 : 0
+  if (Array.isArray(value)) return value.filter(Boolean).length
+  if (typeof value === 'object') return Object.values(value).reduce((sum, entry) => sum + countMetadataLeaves(entry), 0)
+  return 0
+}
+
 export function scoreListingQuality(listing = {}, context = {}) {
   const property = context.propertiesById?.get(listing.property_id) || {}
   const metadata = listing.metadata_json || {}
@@ -366,7 +402,7 @@ export function scoreListingQuality(listing = {}, context = {}) {
   if (media.floorPlan) score += 6
   else missing.push('Floor Plan')
 
-  const categoryFieldCount = Object.values(metadata).filter((value) => value !== null && value !== undefined && value !== '').length
+  const categoryFieldCount = countMetadataLeaves(metadata)
   if (categoryFieldCount >= 6) score += 20
   else {
     score += Math.min(16, categoryFieldCount * 3)

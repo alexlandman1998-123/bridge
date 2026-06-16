@@ -168,6 +168,30 @@ export type SendSellerOnboardingPayload = {
   supportPhone?: string;
 };
 
+export type SendCommercialLandlordOnboardingPayload = {
+  type: "commercial_landlord_onboarding";
+  to: string;
+  recipientName?: string;
+  landlordName?: string;
+  brokerageName?: string;
+  brokerName?: string;
+  brokerEmail?: string;
+  brokerPhone?: string;
+  secureLink?: string;
+  onboardingLink?: string;
+  actionLink?: string;
+  messageKind?:
+    | "initial_request"
+    | "reminder"
+    | "missing_information"
+    | "completion_confirmation"
+    | string;
+  entityType?: string;
+  missingFields?: string[];
+  missingDocuments?: string[];
+  completionPercentage?: number;
+};
+
 export type SendSellerOnboardingSubmittedPayload = {
   type: "seller_onboarding_submitted";
   to: string;

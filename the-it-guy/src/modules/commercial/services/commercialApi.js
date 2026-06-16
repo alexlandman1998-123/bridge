@@ -31,11 +31,11 @@ const SELECTS = {
   contacts:
     'id, organisation_id, branch_id, team_id, broker_id, company_id, first_name, last_name, job_title, email, phone, mobile, preferred_contact_method, decision_maker, is_primary, notes, status, legacy_source_type, legacy_source_id, created_at, updated_at, created_by, updated_by',
   landlords:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, property_manager_name, property_manager_email, asset_manager_name, asset_manager_email, email, phone, website, landlord_type, portfolio_notes, preferred_contact_method',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, legal_name, trading_name, entity_type, registration_number, vat_number, vat_registered, registered_address, postal_address, main_email, main_phone, website, landlord_type, portfolio_type, total_gla_estimate, number_of_properties_estimate, onboarding_status, portfolio_notes, preferred_contact_method, contact_person, property_manager_name, property_manager_email, asset_manager_name, asset_manager_email, email, phone, metadata_json',
   tenants:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, email, phone, industry, company_size, current_location, current_lease_expiry, preferred_contact_method',
   properties:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_name, property_type, address, suburb, city, province, country, gla_m2, available_space_m2, vacancy_percentage, zoning, parking_ratio, loading_bays, power_supply, height_m, asking_rental_per_m2, asking_sale_price, number_of_units, building_grade, backup_power, generator, solar, fibre, number_of_lifts, amenities, yard_size_m2, eaves_height_m, roller_doors, truck_access, sprinklers, warehouse_area_m2, office_area_m2, frontage_m, anchor_tenants, foot_traffic, trading_hours, mall_type, visibility_rating, noi, cap_rate, wale_months, gross_yield, net_yield, annual_income, land_size_m2, bulk, coverage, services_available, environmental_status, farm_size_ha, water_rights, irrigation, crop_type, livestock_capacity',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, asset_manager_id, property_manager_id, property_name, property_type, address, suburb, city, province, country, gla_m2, available_space_m2, vacancy_percentage, zoning, parking_ratio, loading_bays, power_supply, height_m, asking_rental_per_m2, asking_sale_price, number_of_units, building_grade, backup_power, generator, solar, fibre, number_of_lifts, amenities, yard_size_m2, eaves_height_m, roller_doors, truck_access, sprinklers, warehouse_area_m2, office_area_m2, frontage_m, anchor_tenants, foot_traffic, trading_hours, mall_type, visibility_rating, noi, cap_rate, wale_months, gross_yield, net_yield, annual_income, land_size_m2, bulk, coverage, services_available, environmental_status, farm_size_ha, water_rights, irrigation, crop_type, livestock_capacity, metadata_json',
   requirements:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, requirement_type, client_type, tenant_id, company_id, contact_id, requirement_name, property_type, preferred_locations, min_size_m2, max_size_m2, budget_min, budget_max, target_occupation_date, lease_term_months, special_requirements, assigned_broker, stage',
   deals:
@@ -43,7 +43,7 @@ const SELECTS = {
   leases:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, deal_id, heads_of_terms_id, tenant_id, landlord_id, property_id, vacancy_id, lease_start_date, lease_end_date, occupation_date, lease_term_months, monthly_rental, rental_per_m2, escalation_percentage, deposit_amount, tenant_installation_allowance, rent_free_period_months, renewal_option, renewal_notice_date',
   vacancies:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, property_id, landlord_id, vacancy_name, unit_or_floor, available_area_m2, asking_rental, availability_date, broker_assignment, incentives, fit_out_allowance, marketed_at, occupied_at, withdrawn_at, suspended_at, archived_at',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, property_id, landlord_id, property_manager_id, vacancy_name, unit_or_floor, available_area_m2, asking_rental, availability_date, broker_assignment, incentives, fit_out_allowance, marketed_at, occupied_at, withdrawn_at, suspended_at, archived_at, metadata_json',
   listings:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_id, vacancy_id, listing_type, listing_category, listing_status, title, description, pricing, pricing_notes, featured, available_from, metadata_json, marketing_json, media_json, performance_json, internal_reviewed_at, approved_at, published_at, closed_at, expired_at, withdrawn_at',
   viewings:
@@ -55,9 +55,9 @@ const SELECTS = {
   activity:
     'id, organisation_id, branch_id, team_id, broker_id, entity_type, entity_id, activity_type, title, body, metadata, created_at, created_by',
   documents:
-    'id, organisation_id, branch_id, team_id, broker_id, entity_type, entity_id, document_name, category, status, notes, file_name, file_path, file_bucket, file_size, mime_type, uploaded_by, uploaded_at, archived_at, version_number, supersedes_document_id, expires_at, reviewed_by, reviewed_at, created_at, updated_at, created_by, updated_by',
+    'id, organisation_id, branch_id, team_id, broker_id, entity_type, entity_id, document_name, category, status, notes, file_name, file_path, file_bucket, file_size, mime_type, uploaded_by, uploaded_at, archived_at, version_number, supersedes_document_id, expires_at, reviewed_by, reviewed_at, created_at, updated_at, created_by, updated_by, metadata_json',
   documentRequests:
-    'id, organisation_id, branch_id, team_id, broker_id, entity_type, entity_id, document_name, category, requested_from, due_date, priority, requested_by, completed_document_id, notes, status, created_at, updated_at, created_by, updated_by',
+    'id, organisation_id, branch_id, team_id, broker_id, entity_type, entity_id, document_name, category, requested_from, due_date, priority, requested_by, completed_document_id, notes, status, created_at, updated_at, created_by, updated_by, metadata_json',
   headsOfTerms:
     'id, organisation_id, branch_id, team_id, broker_id, deal_id, tenant_id, landlord_id, property_id, vacancy_id, premises_description, lease_commencement_date, lease_term_months, monthly_rental, rental_per_m2, escalation_percentage, deposit_amount, tenant_installation_allowance, rent_free_period_months, beneficial_occupation_date, permitted_use, special_conditions, broker_commission_notes, status, sent_at, accepted_at, rejected_at, signed_at, converted_at, created_at, updated_at, created_by, updated_by',
 }
@@ -212,12 +212,20 @@ function normalizeCommercialWorkspaceFeatureSelections(input = {}) {
   return {
     commercialListings: true,
     commercialPipeline: true,
+    commercialCanvassing: source.commercialCanvassing !== false,
     brokerageReporting: true,
     commercialLeasing: source.commercialLeasing !== false,
     headsOfTerms: source.headsOfTerms !== false,
     tenantManagement: Boolean(source.tenantManagement),
     commercialDocumentCentre: source.commercialDocumentCentre !== false,
   }
+}
+
+function isCommercialWorkspaceFeatureEnabled(settings = {}, featureKey, fallback = true) {
+  const commercialWorkspace = parseJsonObject(parseJsonObject(settings).commercialWorkspace)
+  const featureSelections = normalizeCommercialWorkspaceFeatureSelections(commercialWorkspace.featureSelections)
+  if (!(featureKey in featureSelections)) return fallback
+  return Boolean(featureSelections[featureKey])
 }
 
 function resolveCommercialWorkspaceEnabledFeatureKeys(featureSelections = {}) {
@@ -1681,6 +1689,7 @@ export async function enableCommercialWorkspaceForCurrentUser(input = {}) {
     documentCentreEnabled: featureSelections.commercialDocumentCentre,
     listingsEnabled: featureSelections.commercialListings,
     pipelineEnabled: featureSelections.commercialPipeline,
+    canvassingEnabled: featureSelections.commercialCanvassing,
     brokerageReportingEnabled: featureSelections.brokerageReporting,
     enabledFeatures: enabledFeatureKeys,
     setup: {
@@ -2021,6 +2030,7 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
       commercialModuleStatus,
       organisationCommercialEnabled,
       organisationSettingsCommercialEnabled,
+      commercialCanvassingEnabled: organisationCommercialEnabled && isCommercialWorkspaceFeatureEnabled(context.organisationSettings, 'commercialCanvassing', true),
       memberHasCommercialAccess,
       membershipRole: isPlatformAdmin ? 'platform_admin' : role,
       branchId: normalizeText(membership?.primary_branch_id || membership?.branch_id),
@@ -2404,9 +2414,36 @@ function categoryToPropertyType(category) {
   return normalized || null
 }
 
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return 0
+}
+
 function getListingArea(payload = {}) {
   const metadata = payload.metadata_json && typeof payload.metadata_json === 'object' ? payload.metadata_json : {}
-  return toNumber(metadata.gla || metadata.gla_m2 || metadata.warehouse_size || metadata.shop_gla || metadata.land_size || metadata.farm_size)
+  return firstFiniteNumber(
+    payload.available_area,
+    payload.gross_lettable_area,
+    payload.building_size,
+    payload.erf_size,
+    metadata.available_area,
+    metadata.gross_lettable_area,
+    metadata.building_size,
+    metadata.erf_size,
+    metadata.gla,
+    metadata.gla_m2,
+    metadata.warehouse_size,
+    metadata.shop_gla,
+    metadata.land_size,
+    metadata.farm_size,
+    metadata.lease_terms?.available_area,
+    metadata.lease_terms?.gross_lettable_area,
+    metadata.sale_terms?.building_size,
+    metadata.sale_terms?.erf_size,
+  )
 }
 
 function stripListingCreationOnlyFields(payload = {}) {
@@ -2415,8 +2452,15 @@ function stripListingCreationOnlyFields(payload = {}) {
   delete next.new_landlord_contact
   delete next.new_property_name
   delete next.new_property_area
+  delete next.new_property_address
+  delete next.new_property_suburb
+  delete next.new_property_city
+  delete next.new_property_province
+  delete next.new_property_country
+  delete next.new_property_type
   delete next.new_vacancy_name
   delete next.new_vacancy_unit
+  delete next.new_vacancy_status
   return next
 }
 
@@ -2450,8 +2494,12 @@ export async function createCommercialListing(payload = {}) {
       ...hierarchyPayload,
       landlord_id: landlordId || null,
       property_name: normalizeText(payload.new_property_name),
-      property_type: categoryToPropertyType(payload.listing_category),
-      suburb: normalizeText(payload.new_property_area) || null,
+      property_type: categoryToPropertyType(payload.new_property_type || payload.listing_category),
+      address: normalizeText(payload.new_property_address) || null,
+      suburb: normalizeText(payload.new_property_suburb || payload.new_property_area) || null,
+      city: normalizeText(payload.new_property_city) || null,
+      province: normalizeText(payload.new_property_province) || null,
+      country: normalizeText(payload.new_property_country) || null,
       available_space_m2: getListingArea(payload) || null,
       broker_id: hierarchyPayload.broker_id || null,
       status: 'active',
@@ -2471,7 +2519,7 @@ export async function createCommercialListing(payload = {}) {
       availability_date: normalizeText(payload.available_from) || null,
       broker_assignment: payload.broker_id || null,
       broker_id: payload.broker_id || null,
-      status: requestedListingStatus === 'published' ? 'marketing' : 'draft',
+      status: normalizeCommercialVacancyStatus(payload.new_vacancy_status, requestedListingStatus === 'published' ? 'marketing' : 'draft'),
     }, { logActivity: false })
     vacancyId = vacancy?.id || ''
   }
@@ -3130,6 +3178,66 @@ export async function uploadCommercialDocument(payload = {}) {
     activityType: 'document_uploaded',
     title: 'Document uploaded',
     body: `${documentPayload.document_name} was uploaded.`,
+    metadata: { documentId: query.data?.id, category: documentPayload.category, versionNumber: documentPayload.version_number },
+  })
+
+  return query.data || null
+}
+
+export async function registerCommercialGeneratedDocument(payload = {}) {
+  const organisationId = await resolveOrganisationId(payload.organisationId || payload.organisation_id)
+  const entityType = normalizeText(payload.entityType || payload.entity_type)
+  const entityId = normalizeText(payload.entityId || payload.entity_id)
+  const filePath = normalizeText(payload.filePath || payload.file_path)
+
+  if (!organisationId) throw new Error('Commercial organisation context is not available.')
+  if (!entityType || !entityId) throw new Error('A valid commercial document link is required.')
+  if (!filePath) throw new Error('A generated file path is required.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured.')
+
+  const userId = await getCurrentUserId()
+  const scope = await resolveCommercialAccessContext()
+  if (!scope.hasCommercialAccess) throw new Error('Commercial workspace access is required.')
+
+  const documentPayload = applyDefaultCommercialHierarchy({
+    organisation_id: organisationId,
+    entity_type: entityType,
+    entity_id: entityId,
+    document_name: normalizeText(payload.documentName || payload.document_name || 'Commercial generated document'),
+    category: normalizeText(payload.category) || null,
+    status: normalizeText(payload.status || 'approved'),
+    notes: normalizeText(payload.notes) || 'Generated from the commercial document generator.',
+    file_name: normalizeText(payload.fileName || payload.file_name) || null,
+    file_path: filePath,
+    file_bucket: normalizeText(payload.fileBucket || payload.file_bucket || 'documents') || 'documents',
+    file_size: Number.isFinite(Number(payload.fileSize || payload.file_size)) ? Number(payload.fileSize || payload.file_size) : null,
+    mime_type: normalizeText(payload.mimeType || payload.mime_type || 'application/pdf') || 'application/pdf',
+    version_number: Number.isFinite(Number(payload.versionNumber || payload.version_number)) ? Math.max(1, Number(payload.versionNumber || payload.version_number)) : 1,
+    supersedes_document_id: normalizeText(payload.supersedesDocumentId || payload.supersedes_document_id) || null,
+    expires_at: normalizeText(payload.expiresAt || payload.expires_at) || null,
+    uploaded_by: userId,
+    uploaded_at: new Date().toISOString(),
+    created_by: userId,
+    updated_by: userId,
+  }, scope)
+
+  let query = await supabase.from(TABLES.documents).insert(documentPayload).select(SELECTS.documents).single()
+  if (query.error && isCommercialSchemaMismatchError(query.error)) {
+    query = await supabase
+      .from(TABLES.documents)
+      .insert(removeOptionalCommercialPayload(documentPayload))
+      .select(withoutSelectColumns(SELECTS.documents, [...COMMERCIAL_HIERARCHY_COLUMNS, ...COMMERCIAL_DOCUMENT_WORKFLOW_COLUMNS]))
+      .single()
+  }
+  if (query.error) throw query.error
+
+  await logCommercialActivity({
+    organisationId,
+    entityType,
+    entityId,
+    activityType: 'document_generated',
+    title: 'Document generated',
+    body: `${documentPayload.document_name} was generated.`,
     metadata: { documentId: query.data?.id, category: documentPayload.category, versionNumber: documentPayload.version_number },
   })
 

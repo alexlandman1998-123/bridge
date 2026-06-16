@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import CommercialDocumentLibrary from '../components/CommercialDocumentLibrary'
 import CommercialEmptyState from '../components/CommercialEmptyState'
+import CommercialOnboardingSendAction from '../components/CommercialOnboardingSendAction'
 import { formatDate, titleize } from '../commercialFormatters'
 import { useCommercialData } from '../hooks/useCommercialData'
 import { getCommercialActivity, getCommercialLookupData } from '../services/commercialApi'
@@ -114,6 +115,13 @@ function CommercialCompanyWorkspacePage() {
             <p className="mt-2 text-sm text-slate-500">{company.industry || 'Commercial CRM account'} · {brokerLabel}</p>
           </div>
           <div className="grid min-w-[260px] gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+            <CommercialOnboardingSendAction
+              organisationId={organisationId}
+              kind="sales-workspace"
+              record={company}
+              lookups={data?.lookups || {}}
+              label="Send Seller Onboarding"
+            />
             <div>
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-slate-400">Primary Contact</p>
               <p className="mt-1 text-sm font-semibold text-[#102236]">{primaryContact?.name || 'Not set'}</p>

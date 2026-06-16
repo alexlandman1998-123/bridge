@@ -102,7 +102,7 @@ export function normalizeTemplateRenderMode(template = null, packetType = '') {
   if (explicit === TEMPLATE_RENDER_MODES.LEGACY_DOCX) return TEMPLATE_RENDER_MODES.LEGACY_DOCX
 
   const normalizedPacketType = normalizeText(packetType || template?.packet_type || template?.packetType).toLowerCase()
-  if (normalizedPacketType === 'mandate' && normalizeText(template?.template_format || template?.templateFormat).toLowerCase() === 'html') {
+  if ((normalizedPacketType === 'mandate' || normalizedPacketType.startsWith('commercial_')) && normalizeText(template?.template_format || template?.templateFormat).toLowerCase() === 'html') {
     return TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
   }
 

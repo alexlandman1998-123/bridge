@@ -1,5 +1,6 @@
-import { AlertTriangle, Download, Eye, FileArchive, FileClock, Filter, Search } from 'lucide-react'
+import { AlertTriangle, Download, Eye, FileArchive, FileClock, Filter, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   COMMERCIAL_DOCUMENT_ENTITY_LABELS,
   COMMERCIAL_DOCUMENT_ENTITY_TYPES,
@@ -10,6 +11,7 @@ import CommercialEmptyState from '../components/CommercialEmptyState'
 import CommercialDocumentStatusPill from '../components/CommercialDocumentStatusPill'
 import { useCommercialData } from '../hooks/useCommercialData'
 import { getCommercialDocumentCentreData, getCommercialDocumentDownloadUrl } from '../services/commercialApi'
+import { buildCommercialDocumentGeneratorPath } from '../../../services/documents/commercialDocumentAdapterService'
 
 const VIEW_OPTIONS = [
   { value: 'all', label: 'All Documents' },
@@ -131,9 +133,18 @@ function CommercialDocumentsPage() {
           <h1 className="text-2xl font-semibold tracking-[-0.045em] text-[#102236]">Document Centre</h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">Commercial documents, requests, compliance exceptions, and broker follow-up work across the portfolio.</p>
         </div>
-        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-          <FileArchive size={14} /> Compliance workflow
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+            <FileArchive size={14} /> Compliance workflow
+          </span>
+          <Link
+            to={buildCommercialDocumentGeneratorPath()}
+            className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-[#102b46] px-4 text-sm font-semibold text-white transition hover:bg-[#163a5b]"
+          >
+            <Plus size={16} />
+            Generate Document
+          </Link>
+        </div>
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

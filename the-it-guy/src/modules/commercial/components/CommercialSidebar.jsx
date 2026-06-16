@@ -1,15 +1,18 @@
 import { memo } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import WorkspaceSwitcher from '../../../components/WorkspaceSwitcher'
-import { COMMERCIAL_BOTTOM_NAV_ITEMS, COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_SECTIONS, isCommercialNavItemActive } from '../commercialNavigation'
+import { COMMERCIAL_BOTTOM_NAV_ITEMS, COMMERCIAL_DASHBOARD_NAV_ITEM, COMMERCIAL_NAV_SECTIONS, isCommercialNavItemActive, isCommercialNavItemAvailable } from '../commercialNavigation'
 import CommercialBranding from './CommercialBranding'
 
-function CommercialSidebar() {
+function CommercialSidebar({ scope = null }) {
   const location = useLocation()
   const navigate = useNavigate()
   const currentFullPath = `${location.pathname}${location.hash || ''}`
   const currentWorkspacePath = `${location.pathname}${location.search || ''}`
   const DashboardIcon = COMMERCIAL_DASHBOARD_NAV_ITEM.icon
+  const activeItemClass = 'bg-[rgba(0,102,204,0.08)] text-[#0B3A5B] shadow-[inset_0_0_0_1px_rgba(0,102,204,0.12)]'
+  const inactiveItemClass = 'text-slate-600 hover:bg-slate-50 hover:text-[#0B3A5B]'
+  const navItemClass = 'flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150'
 
   return (
     <aside className="hidden h-screen w-[268px] shrink-0 border-r border-slate-200 bg-white shadow-[12px_0_32px_rgba(15,23,42,0.03)] lg:flex">
@@ -28,21 +31,25 @@ function CommercialSidebar() {
             to={COMMERCIAL_DASHBOARD_NAV_ITEM.to}
             aria-current={isCommercialNavItemActive(currentFullPath, COMMERCIAL_DASHBOARD_NAV_ITEM) ? 'page' : undefined}
             className={[
-              'flex min-h-11 items-center gap-3 rounded-[14px] px-3 text-sm font-semibold transition-colors duration-150',
-              isCommercialNavItemActive(currentFullPath, COMMERCIAL_DASHBOARD_NAV_ITEM)
-                ? 'border border-[#cfe0ef] bg-[#eef5fb] text-[#123b61] shadow-[0_10px_24px_rgba(17,58,107,0.08)]'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-[#123b61]',
+              navItemClass,
+              isCommercialNavItemActive(currentFullPath, COMMERCIAL_DASHBOARD_NAV_ITEM) ? activeItemClass : inactiveItemClass,
             ].join(' ')}
           >
             <DashboardIcon size={17} />
             <span>{COMMERCIAL_DASHBOARD_NAV_ITEM.label}</span>
           </Link>
 
-          <div className="space-y-4 pt-3">
-            {COMMERCIAL_NAV_SECTIONS.map((section, sectionIndex) => (
-              <div key={section.id} className={sectionIndex ? 'border-t border-slate-100 pt-4' : ''}>
+          <div>
+            {COMMERCIAL_NAV_SECTIONS.map((section) => (
+              <div key={section.id}>
+                <h2
+                  className="mb-2 mt-6 text-[11px] font-semibold uppercase leading-none tracking-[0.08em]"
+                  style={{ color: 'var(--text-tertiary, #94a3b8)' }}
+                >
+                  {section.label}
+                </h2>
                 <div className="grid gap-1">
-                  {section.items.map((item) => {
+                  {section.items.filter((item) => isCommercialNavItemAvailable(item, scope)).map((item) => {
                     const ItemIcon = item.icon
                     const active = isCommercialNavItemActive(currentFullPath, item)
                     return (
@@ -51,10 +58,8 @@ function CommercialSidebar() {
                         to={item.to}
                         aria-current={active ? 'page' : undefined}
                         className={[
-                          'flex min-h-11 items-center gap-3 rounded-[14px] px-3 text-sm font-semibold transition-colors duration-150',
-                          active
-                            ? 'border border-[#cfe0ef] bg-[#eef5fb] text-[#123b61] shadow-[0_10px_24px_rgba(17,58,107,0.08)]'
-                            : 'text-slate-600 hover:bg-slate-50 hover:text-[#123b61]',
+                          navItemClass,
+                          active ? activeItemClass : inactiveItemClass,
                         ].join(' ')}
                       >
                         <ItemIcon size={17} />
@@ -78,10 +83,8 @@ function CommercialSidebar() {
                 to={item.to}
                 aria-current={active ? 'page' : undefined}
                 className={[
-                  'flex min-h-11 items-center gap-3 rounded-[14px] px-3 text-sm font-semibold transition-colors duration-150',
-                  active
-                    ? 'border border-[#cfe0ef] bg-[#eef5fb] text-[#123b61] shadow-[0_10px_24px_rgba(17,58,107,0.08)]'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-[#123b61]',
+                  navItemClass,
+                  active ? activeItemClass : inactiveItemClass,
                 ].join(' ')}
               >
                 <Icon size={17} />

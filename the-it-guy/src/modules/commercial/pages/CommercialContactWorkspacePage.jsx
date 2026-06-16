@@ -2,6 +2,7 @@ import { BriefcaseBusiness, ClipboardList, Handshake, Link2, UserRound } from 'l
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import CommercialEmptyState from '../components/CommercialEmptyState'
+import CommercialOnboardingSendAction from '../components/CommercialOnboardingSendAction'
 import { formatDate, titleize } from '../commercialFormatters'
 import { useCommercialData } from '../hooks/useCommercialData'
 import { getCommercialActivity, getCommercialLookupData } from '../services/commercialApi'
@@ -67,7 +68,7 @@ function CommercialContactWorkspacePage() {
   const { contactId } = useParams()
   const [activeTab, setActiveTab] = useState('overview')
   const fetcher = useMemo(() => (organisationId) => getContactWorkspaceData(organisationId, contactId), [contactId])
-  const { data, loading, error } = useCommercialData(fetcher, [fetcher])
+  const { data, loading, error, organisationId } = useCommercialData(fetcher, [fetcher])
   const contact = data?.contact || null
   const company = (data?.lookups?.companies || []).find((row) => row.id === contact?.company_id) || null
 
@@ -90,6 +91,15 @@ function CommercialContactWorkspacePage() {
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-[-0.055em] text-[#102236]">{contact.name}</h1>
             <p className="mt-2 text-sm text-slate-500">{contact.job_title || 'Commercial contact'} · {company?.company_name || 'Company pending'}</p>
+          </div>
+          <div className="grid min-w-[260px] gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4">
+            <CommercialOnboardingSendAction
+              organisationId={organisationId}
+              kind="contact"
+              record={contact}
+              lookups={data?.lookups || {}}
+              label="Send Tenant Onboarding"
+            />
           </div>
         </div>
       </section>

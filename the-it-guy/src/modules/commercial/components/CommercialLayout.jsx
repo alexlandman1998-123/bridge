@@ -7,6 +7,7 @@ import {
   COMMERCIAL_MOBILE_MORE_NAV_ITEMS,
   COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS,
   isCommercialNavItemActive,
+  isCommercialNavItemAvailable,
 } from '../commercialNavigation'
 import { isCommercialPlatformInstallError, resolveCommercialAccessContext } from '../services/commercialApi'
 import CommercialBranding from './CommercialBranding'
@@ -37,6 +38,14 @@ function CommercialLayout() {
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const mobilePrimaryItems = useMemo(() => COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS, [])
   const mobileMoreItems = useMemo(() => COMMERCIAL_MOBILE_MORE_NAV_ITEMS, [])
+  const visibleMobilePrimaryItems = useMemo(
+    () => mobilePrimaryItems.filter((item) => isCommercialNavItemAvailable(item, accessState.scope)),
+    [accessState.scope, mobilePrimaryItems],
+  )
+  const visibleMobileMoreItems = useMemo(
+    () => mobileMoreItems.filter((item) => isCommercialNavItemAvailable(item, accessState.scope)),
+    [accessState.scope, mobileMoreItems],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -128,7 +137,7 @@ function CommercialLayout() {
 
   return (
     <div className="flex h-screen min-h-0 overflow-hidden bg-[#f6f8fb] text-[#102236]">
-      <CommercialSidebar />
+      <CommercialSidebar scope={accessState.scope} />
       <main ref={contentScrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3">
@@ -151,7 +160,7 @@ function CommercialLayout() {
             </div>
           </div>
           <nav className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Commercial mobile navigation">
-            {mobilePrimaryItems.map((item) => {
+            {visibleMobilePrimaryItems.map((item) => {
               const Icon = item.icon
               const active = isCommercialNavItemActive(`${location.pathname}${location.hash || ''}`, item)
               return (
@@ -183,7 +192,7 @@ function CommercialLayout() {
               {mobileMoreOpen ? (
                 <div className="absolute right-0 top-[calc(100%+8px)] z-30 min-w-[210px] rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_45px_rgba(15,23,42,0.14)]">
                   <div className="grid gap-1">
-                    {mobileMoreItems.map((item) => {
+                    {visibleMobileMoreItems.map((item) => {
                       const Icon = item.icon
                       const active = isCommercialNavItemActive(`${location.pathname}${location.hash || ''}`, item)
                       return (
