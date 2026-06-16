@@ -1,8 +1,7 @@
-import { createElement, useMemo } from 'react'
+import { createElement, useId, useMemo } from 'react'
 import {
   AlertTriangle,
   ArrowRight,
-  ArrowUpRight,
   Building2,
   CalendarDays,
   CheckCircle2,
@@ -14,8 +13,9 @@ import {
   LineChart,
   MoreVertical,
   Plus,
-  Radar,
+  PieChart,
   ShieldAlert,
+  Sparkles,
   TrendingUp,
   UserRound,
   Users,
@@ -132,6 +132,220 @@ function formatCompactCurrency(value) {
 function formatPercentValue(value, maximumFractionDigits = 0) {
   const amount = toNumber(value)
   return `${new Intl.NumberFormat('en-ZA', { maximumFractionDigits }).format(amount)}%`
+}
+
+function formatCurrencyZAR(value) {
+  return formatMoney(value)
+}
+
+function formatPercentage(value, maximumFractionDigits = 0) {
+  return formatPercentValue(value, maximumFractionDigits)
+}
+
+function calculateMonthDelta(current, previous, mode = 'percent') {
+  const currentValue = toNumber(current)
+  const previousValue = toNumber(previous)
+  if (!currentValue && !previousValue) {
+    return { delta: 0, direction: 'flat' }
+  }
+
+  if (mode === 'points') {
+    const delta = currentValue - previousValue
+    return { delta, direction: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat' }
+  }
+
+  if (!previousValue) {
+    const delta = currentValue ? 100 : 0
+    return { delta, direction: delta > 0 ? 'up' : 'flat' }
+  }
+
+  const delta = ((currentValue - previousValue) / previousValue) * 100
+  return { delta, direction: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat' }
+}
+
+function buildMonthWindows(months = 6, endDate = new Date()) {
+  const anchor = startOfMonth(endDate)
+  return Array.from({ length: months }, (_, index) => {
+    const monthDate = addMonths(anchor, index - (months - 1))
+    return {
+      key: `${monthDate.getFullYear()}-${monthDate.getMonth()}`,
+      label: new Intl.DateTimeFormat('en-ZA', { month: 'short' }).format(monthDate),
+      start: startOfMonth(monthDate),
+      end: endOfMonth(monthDate),
+    }
+  })
+}
+
+function buildMonthlyCountSeries(rows = [], dateAccessor = (row) => row.created_at || row.createdAt || row.updated_at || row.updatedAt, months = 6) {
+  return buildMonthWindows(months).map((window) => ({
+    label: window.label,
+    key: window.key,
+    value: rows.reduce((count, row) => {
+      const date = asDate(typeof dateAccessor === 'function' ? dateAccessor(row) : row?.[dateAccessor])
+      return date && date >= window.start && date <= window.end ? count + 1 : count
+    }, 0),
+  }))
+}
+
+function buildMonthlyValueSeries(rows = [], valueAccessor = (row) => row.value || row.targetValue || 0, dateAccessor = (row) => row.actualCloseDate || row.updatedAt || row.createdAt, months = 6) {
+  return buildMonthWindows(months).map((window) => ({
+    label: window.label,
+    key: window.key,
+    value: rows.reduce((total, row) => {
+      const date = asDate(typeof dateAccessor === 'function' ? dateAccessor(row) : row?.[dateAccessor])
+      if (!date || date < window.start || date > window.end) return total
+      const amount = typeof valueAccessor === 'function' ? valueAccessor(row) : row?.[valueAccessor]
+      return total + toNumber(amount)
+    }, 0),
+  }))
+}
+
+function buildPipelineTrendPoints(data = {}) {
+  return buildMonthlyValueSeries(
+    data.commercialTransactions || [],
+    (row) => row.value || row.targetValue || 0,
+    (row) => row.actualCloseDate || row.updatedAt || row.createdAt,
+    6,
+  )
+}
+
+function deriveCommercialStageBreakdown({
+  summary = {},
+  financialSummary = {},
+  requirements = [],
+  viewings = [],
+  deals = [],
+  headsOfTerms = [],
+  commercialTransactions = [],
+} = {}) {
+  const totalPipelineValue = toNumber(financialSummary.pipelineValue || summary.pipelineValue || 0)
+  const requirementsCount = requirements.filter(isActiveRequirement).length || toNumber(summary.activeRequirements)
+  const viewingsCount = viewings.filter((row) => !['cancelled', 'no_show'].includes(normalizeLower(row.status))).length
+  const proposalCount = headsOfTerms.filter((row) => !['converted', 'superseded', 'archived'].includes(normalizeLower(row.status))).length
+  const negotiationCount = [
+    ...deals.filter((row) => ['negotiation', 'proposal', 'hot_draft', 'hot_sent', 'hot_accepted', 'lease_pending'].includes(normalizeLower(row.stage || row.status))),
+    ...commercialTransactions.filter((row) => ['negotiating', 'proposal', 'heads_of_terms', 'lease_draft'].includes(normalizeLower(row.status))),
+  ].length
+
+  const stages = [
+    { key: 'prospecting', label: 'Prospecting', value: requirementsCount, color: '#3773f5', softClass: 'bg-blue-50 text-blue-700' },
+    { key: 'qualifying', label: 'Qualifying', value: viewingsCount, color: '#22b8cf', softClass: 'bg-cyan-50 text-cyan-700' },
+    { key: 'proposal', label: 'Proposal', value: proposalCount, color: '#8b5cf6', softClass: 'bg-violet-50 text-violet-700' },
+    { key: 'negotiation', label: 'Negotiation', value: negotiationCount, color: '#2ab673', softClass: 'bg-emerald-50 text-emerald-700' },
+  ]
+
+  const totalWeight = stages.reduce((sum, stage) => sum + stage.value, 0)
+  if (!totalWeight) {
+    return {
+      totalValue: totalPipelineValue,
+      hasData: false,
+      stages: stages.map((stage) => ({ ...stage, percent: 0, amount: 0 })),
+    }
+  }
+
+  return {
+    totalValue: totalPipelineValue,
+    hasData: true,
+    stages: stages.map((stage) => {
+      const percent = (stage.value / totalWeight) * 100
+      return {
+        ...stage,
+        percent,
+        amount: totalPipelineValue * (percent / 100),
+      }
+    }),
+  }
+}
+
+function deriveCommercialDashboardMetrics({
+  summary = {},
+  financialSummary = {},
+  pipelineTrend = [],
+  occupancyTrend = [],
+  listingSeries = [],
+  requirementSeries = [],
+  loading = false,
+  isFreshCommercialWorkspace = false,
+} = {}) {
+  const pipelineValue = toNumber(financialSummary.pipelineValue || summary.pipelineValue || 0)
+  const expectedCommission = toNumber(financialSummary.expectedCommission || summary.expectedRevenue || 0)
+  const activeListings = toNumber(summary.activeListings || 0)
+  const activeRequirements = toNumber(summary.activeRequirements || 0)
+  const occupancyRate = toNumber(summary.occupancyRate || 0)
+
+  const pipelineCurrent = pipelineTrend[pipelineTrend.length - 1]?.value || 0
+  const pipelinePrevious = pipelineTrend[pipelineTrend.length - 2]?.value || 0
+  const pipelineDelta = calculateMonthDelta(pipelineCurrent, pipelinePrevious)
+
+  const listingsCurrent = listingSeries[listingSeries.length - 1]?.value || 0
+  const listingsPrevious = listingSeries[listingSeries.length - 2]?.value || 0
+  const listingsDelta = calculateMonthDelta(listingsCurrent, listingsPrevious)
+
+  const requirementsCurrent = requirementSeries[requirementSeries.length - 1]?.value || 0
+  const requirementsPrevious = requirementSeries[requirementSeries.length - 2]?.value || 0
+  const requirementsDelta = calculateMonthDelta(requirementsCurrent, requirementsPrevious)
+
+  const occupancyCurrent = occupancyTrend[occupancyTrend.length - 1]?.occupancy ?? occupancyRate
+  const occupancyPrevious = occupancyTrend[occupancyTrend.length - 2]?.occupancy ?? occupancyCurrent
+  const occupancyDelta = calculateMonthDelta(occupancyCurrent, occupancyPrevious, 'points')
+
+  const buildComparison = (delta, emptyLabel, currentValue = 0, suffix = '%') => {
+    if (loading) return 'Updating…'
+    if (isFreshCommercialWorkspace) return emptyLabel
+    if (!currentValue) return emptyLabel
+    if (!delta && delta !== 0) return emptyLabel
+    if (delta === 0) return 'No movement yet'
+    const prefix = delta > 0 ? '+' : '−'
+    return `${prefix}${Math.abs(delta).toFixed(0)}${suffix} vs last month`
+  }
+
+  return {
+    pipelineValue: {
+      value: formatCurrencyZAR(pipelineValue),
+      comparison: buildComparison(pipelineDelta.delta, 'No pipeline activity yet', pipelineValue),
+      direction: pipelineDelta.direction,
+    },
+    expectedCommission: {
+      value: formatCurrencyZAR(expectedCommission),
+      comparison: expectedCommission ? 'Projected from active commercial work' : 'No expected commission yet',
+      direction: expectedCommission ? 'up' : 'flat',
+    },
+    activeListings: {
+      value: formatNumber(activeListings),
+      comparison: buildComparison(listingsDelta.delta, 'No listings live yet', activeListings),
+      direction: listingsDelta.direction,
+    },
+    activeRequirements: {
+      value: formatNumber(activeRequirements),
+      comparison: buildComparison(requirementsDelta.delta, 'No active requirements yet', activeRequirements),
+      direction: requirementsDelta.direction,
+    },
+    occupancy: {
+      value: formatPercentage(occupancyRate),
+      comparison: occupancyRate ? `${occupancyDelta.delta > 0 ? '+' : ''}${Math.abs(occupancyDelta.delta).toFixed(0)}pp vs last month` : 'No active vacancies yet',
+      direction: occupancyDelta.direction,
+    },
+  }
+}
+
+function activityIconForEntity(entity = '') {
+  const normalized = normalizeLower(entity)
+  if (normalized.includes('listing')) return Warehouse
+  if (normalized.includes('requirement')) return Users
+  if (normalized.includes('deal') || normalized.includes('transaction')) return Handshake
+  if (normalized.includes('vacancy')) return Building2
+  if (normalized.includes('heads')) return FileText
+  return Clock3
+}
+
+function buildLatestActivityFeed(items = []) {
+  return items.map((item) => ({
+    ...item,
+    icon: activityIconForEntity(item.entity),
+    timestampLabel: relativeTime(item.timestamp),
+    title: item.title || item.entity || 'Activity update',
+    body: item.body || item.detail || '',
+  }))
 }
 
 function relativeTime(value) {
@@ -409,69 +623,6 @@ function buildPortfolioCards(data = {}) {
     .slice(0, 4)
 }
 
-function buildActionItems(data = {}, intelligence = {}) {
-  const items = []
-  const overdueDocumentRequests = (data.documentRequests || []).filter((row) => {
-    const dueDate = asDate(row.due_date)
-    return dueDate && dueDate < startOfToday() && !['approved', 'completed', 'archived'].includes(normalizeLower(row.status))
-  })
-
-  ;(intelligence.managementAlerts || []).forEach((alert) => {
-    items.push({
-      id: alert.id,
-      title: alert.title,
-      detail: `${alert.type} · ${alert.detail}`,
-      severity: alert.priority === 'High' ? 'Critical' : alert.priority,
-      to: alert.to || '/commercial/dashboard',
-      dueLabel: alert.detail,
-    })
-  })
-
-  ;(data.headsOfTerms || [])
-    .filter((row) => ['sent', 'accepted'].includes(normalizeLower(row.status)))
-    .slice(0, 4)
-    .forEach((row) => {
-      items.push({
-        id: `hot-signature-${row.id}`,
-        title: row.premises_description || `Heads of Terms ${String(row.id).slice(0, 8)}`,
-        detail: 'Heads of Terms awaiting signature',
-        severity: 'High',
-        to: '/commercial/heads-of-terms',
-        dueLabel: relativeTime(row.updated_at || row.created_at),
-      })
-    })
-
-  overdueDocumentRequests.slice(0, 4).forEach((row) => {
-    items.push({
-      id: `document-request-${row.id}`,
-      title: row.document_name || row.category || 'Compliance document',
-      detail: 'Compliance document overdue',
-      severity: 'Critical',
-      to: '/commercial/documents',
-      dueLabel: formatDate(row.due_date),
-    })
-  })
-
-  ;(intelligence.renewalRisk || [])
-    .filter((row) => row.daysToExpiry <= 30)
-    .slice(0, 4)
-    .forEach((row) => {
-      items.push({
-        id: `renewal-${row.id}`,
-        title: row.property || row.title,
-        detail: `Lease expiring in ${row.daysToExpiry} days`,
-        severity: 'Critical',
-        to: '/commercial/lease-expiry-watch',
-        dueLabel: formatDate(row.expiryDate),
-      })
-    })
-
-  const severityOrder = { Critical: 4, High: 3, Medium: 2, Low: 1 }
-  return items
-    .sort((left, right) => (severityOrder[right.severity] || 0) - (severityOrder[left.severity] || 0) || left.title.localeCompare(right.title))
-    .slice(0, 10)
-}
-
 function buildFreshWorkspaceState(summary = {}, data = {}) {
   return !toNumber(summary.activeListings) &&
     !toNumber(summary.activeRequirements) &&
@@ -484,10 +635,10 @@ function buildFreshWorkspaceState(summary = {}, data = {}) {
 
 function DashboardHeader({ profile }) {
   return (
-    <header className="flex flex-col gap-4 pt-1 lg:flex-row lg:items-center lg:justify-between">
+    <header className="flex flex-col gap-3 pt-1 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
-        <h1 className="text-[44px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{getGreeting(profile)}</h1>
-        <p className="mt-2 text-[19px] font-normal text-[#60758d]">Commercial Portfolio Overview</p>
+        <h1 className="text-[46px] font-semibold leading-none tracking-[-0.045em] text-[#0f2748]">{getGreeting(profile)}</h1>
+        <p className="mt-1.5 text-[18px] font-normal text-[#60758d]">Commercial Portfolio Overview</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Link to="/commercial/listings" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] bg-[#0e335f] px-[16px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.14)] transition hover:bg-[#0b294e]">
@@ -586,6 +737,307 @@ function RevenueTrendChart({ points = [], loading = false }) {
   )
 }
 
+function MiniSparkline({ values = [], tone = '#2d6ecf' }) {
+  const uid = useId().replace(/:/g, '')
+  const width = 180
+  const height = 58
+  const padding = 4
+  const usableWidth = width - (padding * 2)
+  const usableHeight = height - (padding * 2)
+  const maxValue = Math.max(...values.map((value) => toNumber(value)), 1)
+  const step = values.length > 1 ? usableWidth / (values.length - 1) : 0
+  const points = values.map((value, index) => {
+    const x = padding + (index * step)
+    const y = padding + usableHeight - ((toNumber(value) / maxValue) * usableHeight)
+    return { x, y }
+  })
+
+  if (!values.length) {
+    return <div className="h-[58px] rounded-[18px] border border-dashed border-[#e4ebf2] bg-[#fbfdff]" />
+  }
+
+  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+  const area = `${path} L ${points[points.length - 1].x} ${height - padding} L ${points[0].x} ${height - padding} Z`
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-[58px] w-full" aria-hidden="true">
+      <defs>
+        <linearGradient id={`spark-${uid}`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={tone} stopOpacity="0.26" />
+          <stop offset="100%" stopColor={tone} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#spark-${uid})`} />
+      <path d={path} fill="none" stroke={tone} strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r="3.5" fill={tone} stroke="#ffffff" strokeWidth="2" />
+    </svg>
+  )
+}
+
+function MiniBars({ values = [], tone = '#2d6ecf' }) {
+  const height = 58
+  const maxValue = Math.max(...values.map((value) => toNumber(value)), 1)
+  if (!values.length) {
+    return <div className="h-[58px] rounded-[18px] border border-dashed border-[#e4ebf2] bg-[#fbfdff]" />
+  }
+
+  return (
+    <div className="flex h-[58px] items-end gap-1.5">
+      {values.map((value, index) => {
+        const barHeight = Math.max(8, (toNumber(value) / maxValue) * height)
+        return (
+          <span
+            key={`${index}-${value}`}
+            className="flex-1 rounded-full"
+            style={{
+              height: `${barHeight}px`,
+              background: `linear-gradient(180deg, ${tone} 0%, rgba(255,255,255,0.08) 100%)`,
+              opacity: 0.9,
+            }}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function MiniProgress({ value = 0, tone = '#23b26d', label = '' }) {
+  const amount = Math.max(0, Math.min(100, toNumber(value)))
+  return (
+    <div className="space-y-2">
+      <div className="h-2.5 rounded-full bg-[#edf2f7]">
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${amount}%`,
+            background: `linear-gradient(90deg, ${tone} 0%, rgba(35,178,109,0.72) 100%)`,
+          }}
+        />
+      </div>
+      {label ? <p className="text-[12px] font-medium text-[#6b7c91]">{label}</p> : null}
+    </div>
+  )
+}
+
+function CommercialMetricCard({ label, value, comparison, icon: Icon, loading = false, visual = null }) {
+  return (
+    <article className={`${GLASS_CARD_CLASS} flex min-h-[188px] flex-col justify-between p-6`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[14px] font-medium text-[#6b7c91]">{label}</p>
+          <p className="mt-4 text-[52px] font-semibold leading-none tracking-[-0.045em] text-[#0f2748]">{loading ? '...' : value}</p>
+        </div>
+        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#2d6ecf] shadow-[0_10px_20px_rgba(15,23,42,0.05)]">
+          {createElement(Icon, { size: 20 })}
+        </span>
+      </div>
+      <div className="mt-4 min-h-[18px]">
+        <p className={`text-[13px] font-medium ${normalizeLower(comparison).includes('no ') || normalizeLower(comparison).includes('updating') ? 'text-[#7b899a]' : 'text-[#526276]'}`}>{comparison}</p>
+      </div>
+      <div className="mt-4">
+        {visual}
+      </div>
+    </article>
+  )
+}
+
+function CommercialTrendCard({ points = [], loading = false }) {
+  const hasActivity = points.some((point) => toNumber(point.value) > 0)
+  return (
+    <article className={`${PANEL_CLASS} p-6`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Pipeline Value Trend</h2>
+          <p className="mt-2 text-[13px] text-[#6b7c91]">Commercial pipeline value across the last 6 months.</p>
+        </div>
+        <button type="button" className="inline-flex h-[40px] items-center gap-2 rounded-[12px] border border-[#dbe5ee] bg-white px-3.5 text-[13px] font-medium text-[#304159] shadow-sm">
+          <CalendarDays size={15} />
+          Last 6 months
+          <ChevronRight size={14} className="-rotate-90 text-[#8ea1b6]" />
+        </button>
+      </div>
+      <div className="mt-5">
+        {hasActivity || loading ? (
+          <RevenueTrendChart points={points} loading={loading} />
+        ) : (
+          <InlineEmptyPanel
+            title="No pipeline activity yet"
+            description="Create your first listing or deal to start tracking commercial pipeline value."
+          />
+        )}
+      </div>
+    </article>
+  )
+}
+
+function CommercialDonutChart({ segments = [], totalValue = 0 }) {
+  const size = 220
+  const center = size / 2
+  const radius = 66
+  const strokeWidth = 28
+  const circumference = 2 * Math.PI * radius
+  let offset = 0
+
+  if (!segments.some((segment) => segment.value > 0)) {
+    return (
+      <div className="flex h-[220px] items-center justify-center rounded-[24px] border border-dashed border-[#e4ebf2] bg-[#fbfdff] text-[#7b899a]">
+        No active pipeline yet
+      </div>
+    )
+  }
+
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} className="h-[220px] w-[220px]">
+      <circle cx={center} cy={center} r={radius} fill="none" stroke="#edf2f7" strokeWidth={strokeWidth} />
+      {segments.map((segment) => {
+        const length = (toNumber(segment.percent) / 100) * circumference
+        const dasharray = `${length} ${circumference - length}`
+        const circle = (
+          <circle
+            key={segment.key}
+            cx={center}
+            cy={center}
+            r={radius}
+            fill="none"
+            stroke={segment.color}
+            strokeWidth={strokeWidth}
+            strokeDasharray={dasharray}
+            strokeDashoffset={-offset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${center} ${center})`}
+          />
+        )
+        offset += length
+        return circle
+      })}
+      <g>
+        <text x={center} y={center - 8} textAnchor="middle" className="fill-[#0f2748] text-[22px] font-semibold tracking-[-0.03em]">
+          {formatCurrencyZAR(totalValue)}
+        </text>
+        <text x={center} y={center + 14} textAnchor="middle" className="fill-[#6b7c91] text-[11px] font-medium uppercase tracking-[0.18em]">
+          Total
+        </text>
+      </g>
+    </svg>
+  )
+}
+
+function CommercialPipelineStageCard({ stages = [], totalValue = 0, loading = false, hasData = false }) {
+  return (
+    <article className={`${PANEL_CLASS} p-6`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Pipeline by Stage</h2>
+          <p className="mt-2 text-[13px] text-[#6b7c91]">Live commercial work broken into prospecting, qualification, proposal, and negotiation.</p>
+        </div>
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[16px] bg-[#f4f8fc] text-[#2d6ecf]">
+          <PieChart size={18} />
+        </span>
+      </div>
+      <div className="mt-5">
+        {loading && !hasData ? (
+          <InlineEmptyPanel
+            title="Loading pipeline stages…"
+            description="We’re pulling the latest commercial pipeline data."
+          />
+        ) : hasData ? (
+          <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
+            <div className="flex justify-center">
+              <CommercialDonutChart segments={stages} totalValue={totalValue} />
+            </div>
+            <div className="space-y-4">
+              {stages.map((stage) => (
+                <div key={stage.key} className="flex items-center justify-between gap-4 rounded-[18px] border border-[#ebf1f6] bg-[#fbfdff] px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className={`h-3.5 w-3.5 shrink-0 rounded-full ${stage.softClass}`} />
+                    <div className="min-w-0">
+                      <p className="text-[14px] font-semibold text-[#0f2748]">{stage.label}</p>
+                      <p className="text-[12px] text-[#6b7c91]">{formatPercentage(stage.percent, 0)} of visible pipeline</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[15px] font-semibold text-[#0f2748]">{formatCurrencyZAR(stage.amount)}</p>
+                    <p className="text-[12px] text-[#6b7c91]">{formatNumber(stage.value)} items</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <InlineEmptyPanel
+            title="No active pipeline yet"
+            description="Add listings, requirements, or deals to start building a commercial stage breakdown."
+          />
+        )}
+      </div>
+    </article>
+  )
+}
+
+function CommercialRecentActivityCard({ items = [], loading = false }) {
+  const rows = loading ? [] : items.slice(0, 5)
+  return (
+    <article className={`${PANEL_CLASS} p-6`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Recent Activity</h2>
+          <p className="mt-2 text-[13px] text-[#6b7c91]">The latest commercial updates across listings, requirements, deals, and vacancies.</p>
+        </div>
+        <Link to="/commercial/activity" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
+          View all
+          <ChevronRight size={15} />
+        </Link>
+      </div>
+      <div className="mt-5 space-y-3">
+        {rows.length ? rows.map((item) => {
+          const Icon = item.icon || Clock3
+          return (
+            <div key={item.id} className="flex items-start gap-3 rounded-[18px] border border-[#ebf1f6] bg-[#fbfdff] px-4 py-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-white text-[#2d6ecf] shadow-sm">
+                <Icon size={17} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[14px] font-semibold text-[#0f2748]">{item.title}</p>
+                <p className="mt-1 text-[13px] leading-5 text-[#6b7c91]">{item.body || item.entity}</p>
+              </div>
+              <p className="shrink-0 text-[12px] font-medium text-[#7b899a]">{item.timestampLabel}</p>
+            </div>
+          )
+        }) : loading ? (
+          <InlineEmptyPanel
+            title="Loading recent activity…"
+            description="We’re pulling the latest commercial updates."
+          />
+        ) : (
+          <InlineEmptyPanel
+            title="No recent commercial activity yet."
+            description="New listings, requirements and deals will appear here."
+          />
+        )}
+      </div>
+    </article>
+  )
+}
+
+function CommercialInsightBanner({ title, description, actionLabel = 'View insights', to = '/commercial/reports' }) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-[24px] border border-[rgba(45,110,207,0.14)] bg-[linear-gradient(180deg,rgba(243,248,255,1)_0%,rgba(236,248,242,0.92)_100%)] px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.03)]">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-white text-[#2ab673] shadow-sm">
+          <Sparkles size={18} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[16px] font-semibold tracking-[-0.02em] text-[#0f2748]">{title}</p>
+          <p className="mt-1.5 max-w-4xl text-[13px] leading-6 text-[#60758d]">{description}</p>
+        </div>
+      </div>
+      <Link to={to} className="inline-flex h-[40px] shrink-0 items-center rounded-[12px] border border-[#cfe2d9] bg-white px-4 text-[13px] font-semibold text-[#1d9c62] transition hover:border-[#b9d8cb] hover:text-[#168253]">
+        {actionLabel}
+      </Link>
+    </div>
+  )
+}
+
 function TrendPill({ delta = 0 }) {
   const positive = delta >= 0
   const tone = positive ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
@@ -623,33 +1075,10 @@ function InlineEmptyPanel({ title, description, actionLabel = '', onAction = nul
   )
 }
 
-function WorkflowShortcutCard({ to, title, description, icon: Icon, primary = false }) {
-  return (
-    <Link
-      to={to}
-      className={[
-        'flex h-full items-start gap-3 rounded-[24px] border p-4 transition hover:-translate-y-0.5 hover:shadow-[0_16px_30px_rgba(15,23,42,0.06)]',
-        primary
-          ? 'border-[#cfe0ef] bg-[#f4f8fc] text-[#102236]'
-          : 'border-[#e6edf4] bg-white text-[#102236]',
-      ].join(' ')}
-    >
-      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-white text-[#1f6dd5] shadow-sm">
-        <Icon size={17} />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-semibold tracking-[-0.02em] text-[#102236]">{title}</span>
-        <span className="mt-1 block text-xs leading-5 text-[#6b7c91]">{description}</span>
-      </span>
-      <ArrowUpRight size={14} className="ml-auto shrink-0 text-[#8aa0b8]" />
-    </Link>
-  )
-}
-
 function SectionTitle({ title, action = null }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-4">
-      <h2 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">{title}</h2>
+      <h2 className="text-[28px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">{title}</h2>
       {action}
     </div>
   )
@@ -674,39 +1103,6 @@ function StageBadge({ stage }) {
     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${tone}`}>
       {stage || 'Requirements'}
     </span>
-  )
-}
-
-function ActionStatusCard({ title, count, items = [], icon, tone }) {
-  const styles = {
-    red: 'border-[rgba(255,59,48,0.14)] bg-[rgba(255,59,48,0.05)] text-rose-700',
-    amber: 'border-[rgba(255,149,0,0.14)] bg-[rgba(255,149,0,0.05)] text-amber-700',
-    green: 'border-[rgba(52,199,89,0.14)] bg-[rgba(52,199,89,0.05)] text-emerald-700',
-  }[tone]
-  return (
-    <article className={`rounded-[24px] border p-5 ${styles}`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-[14px] bg-white/80 shadow-sm">
-              {createElement(icon, { size: 17 })}
-            </span>
-            <p className="text-[15px] font-semibold tracking-[-0.02em] text-[#0f2748]">{title}</p>
-          </div>
-          <p className="mt-4 text-[46px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748]">{count}</p>
-          {items.length ? (
-            <ul className="mt-3 space-y-1.5">
-              {items.map((item) => (
-                <li key={item} className="flex items-center gap-2 text-[13px] font-medium text-[#526276]">
-                  <span className="h-1.5 w-1.5 rounded-full bg-current/60" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      </div>
-    </article>
   )
 }
 
@@ -754,16 +1150,6 @@ export default function CommercialExecutiveCommandCenter({
       : financialSummary),
     [financialSummary, isFreshCommercialWorkspace],
   )
-  const kpis = useMemo(
-    () => [
-      { label: 'Pipeline Value', value: formatCompactCurrency(displaySummary.pipelineValue || displayFinancialSummary.pipelineValue || 0), description: '0% vs last month', icon: LineChart },
-      { label: 'Expected Commission', value: formatCompactCurrency(displayFinancialSummary.expectedCommission || displaySummary.expectedRevenue || 0), description: '0% vs last month', icon: TrendingUp },
-      { label: 'Active Listings', value: formatNumber(displaySummary.activeListings || 0), description: '0% vs last month', icon: Warehouse },
-      { label: 'Active Requirements', value: formatNumber(displaySummary.activeRequirements || 0), description: '0% vs last month', icon: Users },
-      { label: 'Occupancy', value: formatPercentValue(displaySummary.occupancyRate || 0), description: 'Stable', icon: Building2 },
-    ],
-    [displayFinancialSummary, displaySummary],
-  )
   const pipelineStages = useMemo(() => buildExecutivePipelineStages(data || {}, displaySummary, displayFinancialSummary), [data, displayFinancialSummary, displaySummary])
   const weeklyActivity = useMemo(() => buildWeeklyActivity(data || {}), [data])
   const openDeals = useMemo(() => buildOpenDeals(data || {}), [data])
@@ -771,21 +1157,92 @@ export default function CommercialExecutiveCommandCenter({
   const brokerLeaderboard = useMemo(() => (intelligence.brokerScorecards || []).slice(0, 10), [intelligence.brokerScorecards])
   const brokerActivityRows = useMemo(() => buildBrokerActivityRows(data || {}, intelligence.brokerScorecards || []), [data, intelligence.brokerScorecards])
   const portfolioCards = useMemo(() => buildPortfolioCards(data || {}), [data])
-  const actionItems = useMemo(() => buildActionItems(data || {}, intelligence), [data, intelligence])
   const trendPoints = useMemo(() => buildRevenueTrend(data || {}), [data])
+  const pipelineTrend = useMemo(() => buildPipelineTrendPoints(data || {}), [data])
+  const occupancyTrend = useMemo(() => data?.charts?.occupancyTrend || [], [data?.charts?.occupancyTrend])
+  const commissionSeries = useMemo(
+    () => buildMonthlyValueSeries(
+      (data?.commissions || []).filter((row) => !['archived', 'cancelled'].includes(normalizeLower(row.status))),
+      (row) => row.commission_amount || 0,
+      (row) => row.updated_at || row.updatedAt || row.created_at || row.createdAt,
+    ),
+    [data?.commissions],
+  )
+  const listingSeries = useMemo(
+    () => buildMonthlyCountSeries((data?.listings || []).filter(isActiveListing)),
+    [data?.listings],
+  )
+  const requirementSeries = useMemo(
+    () => buildMonthlyCountSeries((data?.requirements || []).filter(isActiveRequirement)),
+    [data?.requirements],
+  )
+  const dashboardMetrics = useMemo(
+    () => deriveCommercialDashboardMetrics({
+      summary: displaySummary,
+      financialSummary: displayFinancialSummary,
+      pipelineTrend,
+      occupancyTrend,
+      listingSeries,
+      requirementSeries,
+      loading,
+      isFreshCommercialWorkspace,
+    }),
+    [
+      displayFinancialSummary,
+      displaySummary,
+      isFreshCommercialWorkspace,
+      listingSeries,
+      loading,
+      occupancyTrend,
+      pipelineTrend,
+      commissionSeries,
+      requirementSeries,
+    ],
+  )
+  const stageBreakdown = useMemo(
+    () => deriveCommercialStageBreakdown({
+      summary: displaySummary,
+      financialSummary: displayFinancialSummary,
+      requirements: data?.requirements || [],
+      viewings: data?.viewings || [],
+      deals: data?.deals || [],
+      headsOfTerms: data?.headsOfTerms || [],
+      commercialTransactions: data?.commercialTransactions || [],
+    }),
+    [data, displayFinancialSummary, displaySummary],
+  )
   const compactPipelineStages = useMemo(
     () => pipelineStages.filter((stage) => ['requirements', 'viewings', 'hot', 'negotiation', 'signed'].includes(stage.key)),
     [pipelineStages],
   )
-  const actionCentre = useMemo(() => {
-    const attentionCount = riskWatch.critical.reduce((sum, item) => sum + toNumber(item.value), 0) || actionItems.length
-    const monitorCount = riskWatch.warning.reduce((sum, item) => sum + toNumber(item.value), 0)
-    return {
-      attentionCount,
-      monitorCount,
-      healthyValue: formatPercentValue(riskWatch.healthy),
+  const latestActivity = useMemo(() => buildLatestActivityFeed((data?.latestActivity || data?.activity || []).slice(0, 5)), [data?.activity, data?.latestActivity])
+  const insightBanner = useMemo(() => {
+    const hasSignals = pipelineTrend.some((point) => toNumber(point.value) > 0) || toNumber(occupancyTrend.at(-1)?.occupancy || occupancyTrend.at(-1)?.value || displaySummary.occupancyRate) > 0
+
+    if (loading) {
+      return {
+        title: 'Refreshing commercial insights…',
+        description: 'We are updating the latest pipeline and occupancy signals.',
+      }
     }
-  }, [actionItems.length, riskWatch])
+
+    if (isFreshCommercialWorkspace || !hasSignals) {
+      return {
+        title: 'Your commercial dashboard is ready.',
+        description: 'Add your first listing, requirement or deal to start seeing insights here.',
+      }
+    }
+
+    const pipelineDelta = calculateMonthDelta(pipelineTrend.at(-1)?.value || 0, pipelineTrend.at(-2)?.value || 0)
+    const occupancyDelta = calculateMonthDelta(occupancyTrend.at(-1)?.occupancy || occupancyTrend.at(-1)?.value || 0, occupancyTrend.at(-2)?.occupancy || occupancyTrend.at(-2)?.value || 0, 'points')
+    const pipelineDirection = pipelineDelta.delta >= 0 ? 'up' : 'down'
+    const occupancyDirection = occupancyDelta.delta >= 0 ? 'improved' : 'softened'
+
+    return {
+      title: 'Great progress!',
+      description: `Your pipeline value is ${pipelineDirection} ${Math.abs(pipelineDelta.delta).toFixed(0)}% and occupancy has ${occupancyDirection} by ${Math.abs(occupancyDelta.delta).toFixed(0)}pp this month.`,
+    }
+  }, [displaySummary.occupancyRate, isFreshCommercialWorkspace, loading, occupancyTrend, pipelineTrend])
   const topBrokerRows = useMemo(() => {
     const activityMap = new Map(brokerActivityRows.map((row) => [row.id, row.delta]))
     return brokerLeaderboard.slice(0, 5).map((row) => ({
@@ -808,91 +1265,74 @@ export default function CommercialExecutiveCommandCenter({
       <DashboardHeader profile={profile} />
 
       <section>
-        <div className="-mx-3 overflow-x-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mx-0 lg:px-0">
-          <div className="flex gap-6 lg:grid lg:grid-cols-5">
-            {kpis.map((card) => (
-              <KpiCard key={card.label} {...card} loading={loading} />
-            ))}
-          </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {Object.entries(dashboardMetrics).map(([key, card], index) => {
+            const series = key === 'pipelineValue'
+              ? pipelineTrend.map((point) => point.value)
+              : key === 'expectedCommission'
+                ? commissionSeries.map((point) => point.value)
+                : key === 'activeListings'
+                  ? listingSeries.map((point) => point.value)
+                  : key === 'activeRequirements'
+                    ? requirementSeries.map((point) => point.value)
+                    : []
+
+            const visual = key === 'occupancy'
+              ? <MiniProgress value={displaySummary.occupancyRate || 0} label={loading ? 'Updating occupancy…' : (displaySummary.occupancyRate ? 'Excellent' : 'No active vacancies yet')} tone="#2ab673" />
+              : key === 'activeListings' || key === 'activeRequirements'
+                ? <MiniBars values={series} tone={index === 2 ? '#3773f5' : '#8b5cf6'} />
+                : <MiniSparkline values={series} tone={index === 0 ? '#3773f5' : '#2ab673'} />
+
+            return (
+              <CommercialMetricCard
+                key={key}
+                label={
+                  key === 'pipelineValue'
+                    ? 'Pipeline Value'
+                    : key === 'expectedCommission'
+                      ? 'Expected Commission'
+                      : key === 'activeListings'
+                        ? 'Active Listings'
+                        : key === 'activeRequirements'
+                          ? 'Active Requirements'
+                          : 'Occupancy'
+                }
+                value={card.value}
+                comparison={card.comparison}
+                icon={
+                  key === 'pipelineValue'
+                    ? LineChart
+                    : key === 'expectedCommission'
+                      ? TrendingUp
+                      : key === 'activeListings'
+                        ? Warehouse
+                        : key === 'activeRequirements'
+                          ? Users
+                          : Building2
+                }
+                loading={loading}
+                visual={visual}
+              />
+            )
+          })}
         </div>
       </section>
 
       <section>
-        <article className={`${PANEL_CLASS} p-6`}>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Entry points</p>
-              <h2 className="mt-2 text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Workflow shortcuts</h2>
-              <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[#60758d]">Start canvassing from the overview, then move straight into requirements, deals, or vacancy follow-up without changing context.</p>
-            </div>
-            <Link to="/commercial/canvassing" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] bg-[#0e335f] px-[16px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.14)] transition hover:bg-[#0b294e]">
-              <Radar size={16} />
-              Open canvassing
-            </Link>
-          </div>
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <WorkflowShortcutCard
-              to="/commercial/canvassing"
-              title="Canvassing"
-              description="Capture prospects, log touchpoints, and launch the next commercial hand-off."
-              icon={Radar}
-              primary
-            />
-            <WorkflowShortcutCard
-              to="/commercial/requirements/pipeline"
-              title="Requirements"
-              description="Move demand into qualification, matching, and viewings."
-              icon={Users}
-            />
-            <WorkflowShortcutCard
-              to="/commercial/deals/pipeline"
-              title="Deals"
-              description="Review leasing and sales opportunities in motion."
-              icon={Handshake}
-            />
-            <WorkflowShortcutCard
-              to="/commercial/vacancies"
-              title="Vacancy follow-up"
-              description="Check open stock and start property-side follow-up work."
-              icon={Building2}
-            />
-          </div>
-        </article>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)_minmax(0,0.85fr)]">
+          <CommercialTrendCard points={pipelineTrend} loading={loading} />
+          <CommercialPipelineStageCard
+            stages={stageBreakdown.stages}
+            totalValue={stageBreakdown.totalValue}
+            loading={loading}
+            hasData={stageBreakdown.hasData}
+          />
+          <CommercialRecentActivityCard items={latestActivity} loading={loading} />
+        </div>
       </section>
 
       <section>
-        <article className={`${PANEL_CLASS} p-6`}>
-          <div className="mb-4 flex items-center justify-between gap-4">
-            <h2 className="text-[26px] font-semibold leading-[1.05] tracking-[-0.03em] text-[#0f2748]">Action Centre</h2>
-            <Link to="/commercial/lease-expiry-watch" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
-              View all
-              <ArrowUpRight size={14} />
-            </Link>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-3">
-            <ActionStatusCard
-              title="Attention Required"
-              count={loading ? '...' : formatNumber(actionCentre.attentionCount)}
-              items={['Lease Expiries', 'Compliance', 'Stalled Deals']}
-              icon={AlertTriangle}
-              tone="red"
-            />
-            <ActionStatusCard
-              title="Monitor"
-              count={loading ? '...' : formatNumber(actionCentre.monitorCount)}
-              items={['Vacancies > 60 Days', 'Overdue Items']}
-              icon={ShieldAlert}
-              tone="amber"
-            />
-            <ActionStatusCard
-              title="Healthy"
-              count={loading ? '...' : actionCentre.healthyValue}
-              items={['Occupancy', 'Renewals']}
-              icon={CheckCircle2}
-              tone="green"
-            />
-          </div>
-        </article>
+        <CommercialInsightBanner title={insightBanner.title} description={insightBanner.description} />
       </section>
 
       <section id="transactions">
