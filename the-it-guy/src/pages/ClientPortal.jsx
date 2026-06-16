@@ -310,6 +310,61 @@ function buildSellerPortalProgressModel({
   }
 }
 
+const SELLER_PROGRESS_PORTAL_KEY_BY_JOURNEY_KEY = {
+  contacted: 'contacted',
+  appointment_valuation: 'valuation',
+  seller_onboarding_sent: 'onboarding',
+  seller_onboarding_submitted: 'submitted',
+  mandate_sent: 'mandate_sent',
+  mandate_signed: 'mandate_signed',
+  listing_created: 'listing_created',
+  listing_live: 'listing_created',
+  documents_submitted: 'documents_complete',
+}
+
+function buildSellerPortalProgressModelFromSharedJourney(journeyView = null) {
+  const stages = Array.isArray(journeyView?.stages) ? journeyView.stages : []
+  if (!stages.length) return null
+
+  const stageMap = new Map(SELLER_PROGRESS_STEPS.map((step) => [step.key, []]))
+  for (const stage of stages) {
+    const portalKey = SELLER_PROGRESS_PORTAL_KEY_BY_JOURNEY_KEY[stage?.key]
+    if (!portalKey || !stageMap.has(portalKey)) continue
+    stageMap.get(portalKey).push(stage)
+  }
+
+  const currentKey =
+    SELLER_PROGRESS_PORTAL_KEY_BY_JOURNEY_KEY[journeyView?.currentStage?.key] ||
+    SELLER_PROGRESS_STEPS.find((step) => (stageMap.get(step.key) || []).some((stage) => stage.state === 'current'))?.key ||
+    'contacted'
+
+  const currentIndex = Math.max(
+    SELLER_PROGRESS_STEPS.findIndex((step) => step.key === currentKey),
+    0,
+  )
+
+  const stepsForUi = SELLER_PROGRESS_STEPS.map((step) => {
+    const mappedStages = stageMap.get(step.key) || []
+    const hasCurrent = mappedStages.some((stage) => stage.state === 'current')
+    const hasCompleted = mappedStages.some((stage) => stage.state === 'completed')
+    return {
+      ...step,
+      state: hasCurrent ? 'current' : hasCompleted ? 'completed' : 'upcoming',
+    }
+  })
+
+  return {
+    steps: stepsForUi,
+    currentKey,
+    currentIndex,
+    percent: Math.round((currentIndex / Math.max(SELLER_PROGRESS_STEPS.length - 1, 1)) * 100),
+    helperMessage:
+      journeyView?.stageMeta?.currentStage?.message ||
+      journeyView?.currentStage?.message ||
+      'Your seller portal will keep you updated as the sale progresses.',
+  }
+}
+
 function buildSellerPortalDetailsSections({ formData = {}, propertyAddress = '', uploadedDocuments = [] } = {}) {
   const details = formData && typeof formData === 'object' ? formData : {}
   const uploaded = Array.isArray(uploadedDocuments) ? uploadedDocuments : []
@@ -5484,16 +5539,18 @@ function ClientPortal() {
       sellerDocumentsNeedingAttention.length === 0 &&
       hasListingCreated,
   )
-  const sellerProgressModel = buildSellerPortalProgressModel({
-    hasSellingContext,
-    hasAppointment: clientVisibleAppointments.length > 0,
-    hasOnboardingStarted: hasSellerOnboardingData || Boolean(normalizedSellerOnboardingStatus && normalizedSellerOnboardingStatus !== 'not_started'),
-    hasOnboardingSubmitted: ['submitted', 'under_review', 'completed', 'reviewed', 'approved'].includes(normalizedSellerOnboardingStatus),
-    hasMandatePacket,
-    hasMandateSigned,
-    hasListingCreated,
-    hasDocumentsComplete,
-  })
+  const sellerProgressModel =
+    buildSellerPortalProgressModelFromSharedJourney(sharedSellerPortalJourney) ||
+    buildSellerPortalProgressModel({
+      hasSellingContext,
+      hasAppointment: clientVisibleAppointments.length > 0,
+      hasOnboardingStarted: hasSellerOnboardingData || Boolean(normalizedSellerOnboardingStatus && normalizedSellerOnboardingStatus !== 'not_started'),
+      hasOnboardingSubmitted: ['submitted', 'under_review', 'completed', 'reviewed', 'approved'].includes(normalizedSellerOnboardingStatus),
+      hasMandatePacket,
+      hasMandateSigned,
+      hasListingCreated,
+      hasDocumentsComplete,
+    })
   const sellerDetailsSections = buildSellerPortalDetailsSections({
     formData: sellerOnboardingFormData,
     propertyAddress: sellerPropertyTitle,

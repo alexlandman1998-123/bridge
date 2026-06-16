@@ -20,6 +20,17 @@ function firstPresent(...values) {
   return ''
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function unwrapSellerOnboardingFormCandidate(candidate = null) {
+  if (!isPlainObject(candidate)) return null
+  if (isPlainObject(candidate?.formData)) return candidate.formData
+  if (isPlainObject(candidate?.form_data)) return candidate.form_data
+  return candidate
+}
+
 export function normalizeSellerDocumentRequirementStatus(status = '') {
   const normalized = normalizeKey(status)
   if (['required', 'requested', 'uploaded', 'under_review', 'rejected', 'approved', 'completed', 'not_applicable', 'cancelled'].includes(normalized)) {
@@ -50,10 +61,10 @@ export function getSellerDocumentStatusLabel(status = '') {
 
 export function getSellerOnboardingFormData(listing = {}) {
   const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || {}
-  return onboarding?.formData ||
-    onboarding?.form_data ||
-    listing?.sellerOnboardingFormData ||
-    listing?.seller_onboarding_form_data ||
+  return unwrapSellerOnboardingFormCandidate(onboarding) ||
+    unwrapSellerOnboardingFormCandidate(listing?.onboardingDataSnapshot) ||
+    unwrapSellerOnboardingFormCandidate(listing?.sellerOnboardingFormData) ||
+    unwrapSellerOnboardingFormCandidate(listing?.seller_onboarding_form_data) ||
     {}
 }
 
@@ -93,16 +104,80 @@ export function mergeSellerRequiredDocuments(...requirementLists) {
   return merged
 }
 
+const STALE_PRE_ONBOARDING_REQUIREMENT_KEYS = new Set([
+  'seller_contact_confirmation',
+  'seller_onboarding_submission',
+])
+
+function hasSubmittedSellerOnboarding(status = '') {
+  return ['completed', 'complete', 'submitted', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'].includes(normalizeKey(status))
+}
+
+function coerceSellerDocumentLifecycle(listing = {}, formData = {}) {
+  const onboardingStatus = firstPresent(
+    listing?.sellerOnboardingStatus,
+    listing?.seller_onboarding_status,
+    listing?.sellerOnboarding?.status,
+    listing?.seller_onboarding?.status,
+  )
+  const lifecycleStatus = normalizeKey(firstPresent(
+    listing?.lifecycleStatus,
+    listing?.lifecycle_status,
+    listing?.listingStatus,
+    listing?.listing_status,
+    listing?.status,
+    listing?.stage,
+  ))
+  const hasOnboardingFacts = isPlainObject(formData) && Object.keys(formData).length > 0
+  const shouldPromote = hasOnboardingFacts || hasSubmittedSellerOnboarding(onboardingStatus)
+
+  if (!shouldPromote || !['', 'seller_lead', 'onboarding_sent'].includes(lifecycleStatus)) {
+    return listing
+  }
+
+  return {
+    ...listing,
+    lifecycleStatus: 'onboarding_completed',
+    lifecycle_status: 'onboarding_completed',
+    listingStatus: 'onboarding_completed',
+    listing_status: 'onboarding_completed',
+    status: 'onboarding_completed',
+  }
+}
+
+function filterStalePersistedRequirements(requirements = [], listing = {}, formData = {}) {
+  const onboardingStatus = firstPresent(
+    listing?.sellerOnboardingStatus,
+    listing?.seller_onboarding_status,
+    listing?.sellerOnboarding?.status,
+    listing?.seller_onboarding?.status,
+  )
+  const hasOnboardingFacts = isPlainObject(formData) && Object.keys(formData).length > 0
+  if (!hasOnboardingFacts && !hasSubmittedSellerOnboarding(onboardingStatus)) return Array.isArray(requirements) ? requirements : []
+
+  return (Array.isArray(requirements) ? requirements : []).filter((requirement) => {
+    const key = requirementIdentity(requirement)
+    return !STALE_PRE_ONBOARDING_REQUIREMENT_KEYS.has(key)
+  })
+}
+
 export function getSellerRequiredDocuments(listing = {}, formData = {}) {
-  const persisted = Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []
+  const persisted = filterStalePersistedRequirements(listing?.documentRequirements, listing, formData)
   const hasOnboardingFacts = formData && typeof formData === 'object' && Object.keys(formData).length > 0
   try {
+    const requirementListing = coerceSellerDocumentLifecycle(listing, formData)
     const derived = (!persisted.length || hasOnboardingFacts)
       ? generateSellerDocumentRequirements({
-          ...listing,
+          ...requirementListing,
           sellerOnboarding: {
-            ...(listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object' ? listing.sellerOnboarding : {}),
-            status: listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || 'completed',
+            ...(requirementListing?.sellerOnboarding && typeof requirementListing.sellerOnboarding === 'object' ? requirementListing.sellerOnboarding : {}),
+            status: firstPresent(
+              requirementListing?.sellerOnboardingStatus,
+              requirementListing?.seller_onboarding_status,
+              requirementListing?.sellerOnboarding?.status,
+              requirementListing?.seller_onboarding?.status,
+              'completed',
+            ),
             formData,
           },
         })

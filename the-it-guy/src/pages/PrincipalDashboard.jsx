@@ -118,16 +118,6 @@ function formatTimestamp(value) {
   return `${Math.round(diffHours / 24)}d ago`
 }
 
-function getGreetingName(profile = {}) {
-  const value = String(profile?.fullName || profile?.name || '').trim()
-  if (!value) return 'Alex'
-
-  const firstToken = value.split(/\s+/)[0]
-  if (!firstToken) return 'Alex'
-
-  return firstToken.charAt(0).toUpperCase() + firstToken.slice(1)
-}
-
 function TrendBadge({ value, inverse = false, label = 'vs last month' }) {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) {
     return <span className="text-[0.72rem] font-medium text-[#8a9aac]">— {label}</span>
@@ -147,7 +137,7 @@ function TrendBadge({ value, inverse = false, label = 'vs last month' }) {
 function DashboardSkeleton() {
   return (
     <div className="space-y-5">
-      <div className="h-11 animate-pulse rounded-2xl bg-white" />
+      <div className="h-12 w-full max-w-[360px] animate-pulse rounded-full bg-white" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {Array.from({ length: 5 }).map((_, index) => <div key={index} className="h-[132px] animate-pulse rounded-2xl bg-white" />)}
       </div>
@@ -298,44 +288,27 @@ function PrincipalDashboardHeader({
   selectedWorkspaceId,
   onWorkspaceChange,
   workspaceOptions,
-  profile,
   residentialMode,
   onResidentialModeChange,
 }) {
   return (
-    <header className="rounded-[24px] border border-[#dfe8f2] bg-white/90 px-5 py-4 shadow-[0_16px_38px_rgba(15,23,42,0.065)]">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-[#667085]">
-            Good morning, {getGreetingName(profile)}
-          </p>
-          <h1 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#101828]">
-            Principal Dashboard · Agency Overview
-          </h1>
-          <p className="mt-1 text-sm text-[#667085]">Agency-wide residential sales performance.</p>
-        </div>
-
-        <div className="flex flex-col items-start gap-3 xl:items-end">
-          <ResidentialDashboardModeToggle value={residentialMode} onChange={onResidentialModeChange} />
-          <div className="flex flex-wrap items-center gap-2.5">
-            <FilterDropdown
-              icon={LayoutGrid}
-              value={selectedWorkspaceId}
-              options={workspaceOptions}
-              onChange={onWorkspaceChange}
-              ariaLabel="Filter dashboard by workspace"
-            />
-            <FilterDropdown
-              icon={CalendarDays}
-              value={dateRange}
-              options={PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label }))}
-              onChange={onDateRangeChange}
-              ariaLabel="Filter dashboard by date range"
-            />
-          </div>
-        </div>
-      </div>
-    </header>
+    <div className="flex flex-wrap items-center justify-end gap-2.5">
+      <ResidentialDashboardModeToggle value={residentialMode} onChange={onResidentialModeChange} />
+      <FilterDropdown
+        icon={LayoutGrid}
+        value={selectedWorkspaceId}
+        options={workspaceOptions}
+        onChange={onWorkspaceChange}
+        ariaLabel="Filter dashboard by workspace"
+      />
+      <FilterDropdown
+        icon={CalendarDays}
+        value={dateRange}
+        options={PRINCIPAL_DASHBOARD_DATE_PRESETS.map((preset) => ({ value: preset.key, label: preset.label }))}
+        onChange={onDateRangeChange}
+        ariaLabel="Filter dashboard by date range"
+      />
+    </div>
   )
 }
 
@@ -2454,7 +2427,6 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
           selectedWorkspaceId={selectedWorkspaceId}
           onWorkspaceChange={setSelectedWorkspaceId}
           workspaceOptions={workspaceOptions}
-          profile={profile}
           residentialMode={residentialMode}
           onResidentialModeChange={setResidentialMode}
         />

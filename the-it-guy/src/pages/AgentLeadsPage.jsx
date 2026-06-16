@@ -140,9 +140,9 @@ import { listLeadCommunicationTemplates } from '../services/leadCommunicationTem
 import { buildLeadWorkspaceAnalyticsSummary } from '../services/leadAnalyticsService'
 import { buildSellerJourney } from '../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../services/sellerReadinessService'
+import { getSellerRequiredDocuments } from '../services/sellerDocumentRequirementsService'
 import {
   buildSellerRequirementProfile,
-  generateSellerDocumentRequirements,
 } from '../lib/sellerDocumentRequirementEngine'
 import {
   acceptRecommendation,
@@ -618,6 +618,13 @@ function readSellerOnboardingFormData(listing = {}, row = {}) {
   const records = [row, listing]
   const merged = {}
 
+  const unwrapCandidate = (candidate) => {
+    if (!isPlainObject(candidate)) return null
+    if (isPlainObject(candidate?.formData)) return candidate.formData
+    if (isPlainObject(candidate?.form_data)) return candidate.form_data
+    return candidate
+  }
+
   for (const record of records) {
     if (!record || typeof record !== 'object') continue
 
@@ -631,13 +638,17 @@ function readSellerOnboardingFormData(listing = {}, row = {}) {
       record?.onboardingDataSnapshot,
       record?.sellerOnboardingFormData,
       record?.seller_onboarding_form_data,
+      record?.onboardingFormData,
+      record?.onboarding_form_data,
       onboarding?.formData,
       onboarding?.form_data,
+      onboarding,
     ]
 
     for (const candidate of candidates) {
-      if (!isPlainObject(candidate)) continue
-      Object.assign(merged, clonePlainObject(candidate))
+      const unwrapped = unwrapCandidate(candidate)
+      if (!isPlainObject(unwrapped)) continue
+      Object.assign(merged, clonePlainObject(unwrapped))
     }
   }
 
@@ -7062,8 +7073,11 @@ function getSellerMandateMeta(row = {}, listing = null, journey = null) {
 }
 
 function getSellerPropertySummary(row = {}, listing = null) {
+  const formData = readSellerOnboardingFormData(listing || {}, row || {})
   const address = normalizeText(
-    listing?.propertyAddress ||
+    formData?.propertyAddress ||
+      formData?.propertyAddressLine1 ||
+      listing?.propertyAddress ||
       listing?.property_address ||
       listing?.address ||
       listing?.addressLine1 ||
@@ -7075,16 +7089,20 @@ function getSellerPropertySummary(row = {}, listing = null) {
       row?.areaInterest ||
       row?.area_interest,
   )
-  const suburb = normalizeText(listing?.suburb || row?.suburb || row?.areaInterest || row?.area_interest)
-  const city = normalizeText(listing?.city || row?.city)
+  const suburb = normalizeText(formData?.suburb || listing?.suburb || row?.suburb || row?.areaInterest || row?.area_interest)
+  const city = normalizeText(formData?.city || listing?.city || row?.city)
+  const lowerAddress = address.toLowerCase()
+  const addressParts = [address]
+  if (suburb && !lowerAddress.includes(suburb.toLowerCase())) addressParts.push(suburb)
+  if (city && !lowerAddress.includes(city.toLowerCase())) addressParts.push(city)
   return {
-    address: [address, suburb, city].filter(Boolean).join(', ') || 'Property address pending',
-    propertyType: normalizeText(listing?.propertyType || listing?.property_type || row?.propertyType || row?.property_type) || 'Property type pending',
-    estimatedValue: Number(listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || row?.estimatedValue || row?.estimated_value || row?.budget || 0) || 0,
-    bedrooms: normalizeText(listing?.bedrooms || listing?.propertyDetails?.bedrooms || row?.bedrooms),
-    bathrooms: normalizeText(listing?.bathrooms || listing?.propertyDetails?.bathrooms || row?.bathrooms),
-    erfSize: normalizeText(listing?.erfSize || listing?.erf_size || listing?.propertyDetails?.erfSize || row?.erfSize || row?.erf_size),
-    description: normalizeText(listing?.description || listing?.propertyDescription || listing?.property_description || row?.notes),
+    address: addressParts.filter(Boolean).join(', ') || 'Property address pending',
+    propertyType: normalizeText(formData?.propertyType || listing?.propertyType || listing?.property_type || row?.propertyType || row?.property_type) || 'Property type pending',
+    estimatedValue: Number(formData?.askingPrice || listing?.estimatedValue || listing?.estimated_value || listing?.askingPrice || listing?.asking_price || row?.estimatedValue || row?.estimated_value || row?.budget || 0) || 0,
+    bedrooms: normalizeText(formData?.bedrooms || listing?.bedrooms || listing?.propertyDetails?.bedrooms || row?.bedrooms),
+    bathrooms: normalizeText(formData?.bathrooms || listing?.bathrooms || listing?.propertyDetails?.bathrooms || row?.bathrooms),
+    erfSize: normalizeText(formData?.erfSize || listing?.erfSize || listing?.erf_size || listing?.propertyDetails?.erfSize || row?.erfSize || row?.erf_size),
+    description: normalizeText(formData?.propertyDescription || formData?.description || listing?.description || listing?.propertyDescription || listing?.property_description || row?.notes),
   }
 }
 
@@ -7563,7 +7581,6 @@ function getSellerDocumentDisplayStatus(document = {}) {
 }
 
 const SELLER_DOCUMENT_CENTER_TABS = [
-  { key: 'all', label: 'All Documents' },
   { key: 'property', label: 'Property Documents' },
   { key: 'fica', label: 'FICA Documents' },
   { key: 'additional', label: 'Additional Requests' },
@@ -7617,7 +7634,6 @@ function getSellerDocumentStatusSummary(documents = []) {
 
 function getSellerDocumentCountForTab(documents = [], tabKey = 'all') {
   const rows = (Array.isArray(documents) ? documents : []).filter((document) => document?.required !== false && document?.applicable !== false)
-  if (tabKey === 'all') return rows.length
   return rows.filter((document) => normalizeText(document.category).toLowerCase() === tabKey).length
 }
 
@@ -8893,7 +8909,7 @@ function buildSellerDocumentOverviewModel({
 } = {}) {
   const fallbackProfile = buildSellerRequirementProfile(listing?.sellerOnboarding?.formData || {}, listing || {})
   const requirementProfile = profile && Object.keys(profile || {}).length ? profile : fallbackProfile
-  const requirementSource = generateSellerDocumentRequirements(requirementProfile || {})
+  const requirementSource = getSellerRequiredDocuments(listing || {}, requirementProfile?.formData || {})
     .filter((requirement) => requirement?.is_required !== false)
     .filter((requirement) => normalizeText(requirement?.requirement_group || requirement?.group).toLowerCase() !== 'mandate')
 
@@ -9975,19 +9991,23 @@ function SellerDocumentsTab({ journey }) {
   const documents = useMemo(() => (Array.isArray(journey?.documents) ? journey.documents : []), [journey])
   const completion = getSellerDocumentCompletion(documents)
   const summary = useMemo(() => getSellerDocumentStatusSummary(documents), [documents])
-  const [activeTab, setActiveTab] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [activeTab, setActiveTab] = useState('property')
   const [searchValue, setSearchValue] = useState('')
   const searchableDocuments = useMemo(
     () => documents.filter((document) => document?.required !== false && document?.applicable !== false),
     [documents],
   )
+  const resolvedActiveTab = useMemo(() => {
+    if (SELLER_DOCUMENT_CENTER_TABS.some((tab) => tab.key === activeTab) && getSellerDocumentCountForTab(searchableDocuments, activeTab)) {
+      return activeTab
+    }
+    return SELLER_DOCUMENT_CENTER_TABS.find((tab) => getSellerDocumentCountForTab(searchableDocuments, tab.key) > 0)?.key || activeTab
+  }, [activeTab, searchableDocuments])
+
   const filteredDocuments = useMemo(() => {
     const query = normalizeText(searchValue).toLowerCase()
     return searchableDocuments.filter((document) => {
-      const matchesTab = activeTab === 'all' || normalizeText(document.category).toLowerCase() === activeTab
-      const bucket = getSellerDocumentFilterBucket(document)
-      const matchesStatus = statusFilter === 'all' || bucket === statusFilter
+      const matchesTab = normalizeText(document.category).toLowerCase() === resolvedActiveTab
       const haystack = [
         document?.title,
         document?.label,
@@ -9996,15 +10016,15 @@ function SellerDocumentsTab({ journey }) {
         document?.uploadedFileName,
       ].filter(Boolean).join(' ').toLowerCase()
       const matchesSearch = !query || haystack.includes(query)
-      return matchesTab && matchesStatus && matchesSearch
+      return matchesTab && matchesSearch
     })
-  }, [activeTab, searchValue, searchableDocuments, statusFilter])
+  }, [resolvedActiveTab, searchValue, searchableDocuments])
 
   return (
     <SellerWorkspaceCard title="Document Center" action={<StatusPill tone={completion.percent >= 80 ? 'green' : completion.percent ? 'amber' : 'slate'}>{completion.percent}% complete</StatusPill>}>
       <p className="text-sm leading-6 text-slate-500">Track seller uploads, FICA, property documents, and additional requests.</p>
       <div className="mt-5 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-5">
+        <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-5 xl:h-[420px]">
           <ListingReadinessCircle percent={completion.percent} />
           <p className="mt-4 text-lg font-semibold tracking-[-0.035em] text-slate-950">Documents Complete</p>
           <p className="mt-1 text-sm font-medium text-slate-500">{completion.complete}/{completion.total} requirements complete</p>
@@ -10026,7 +10046,7 @@ function SellerDocumentsTab({ journey }) {
             ))}
           </div>
         </div>
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 space-y-4 xl:flex xl:h-[420px] xl:flex-col xl:overflow-hidden">
           <div className="flex flex-wrap gap-2">
             {SELLER_DOCUMENT_CENTER_TABS.map((tab) => {
               const count = getSellerDocumentCountForTab(searchableDocuments, tab.key)
@@ -10035,10 +10055,10 @@ function SellerDocumentsTab({ journey }) {
                   key={tab.key}
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className={`inline-flex min-h-10 items-center gap-2 rounded-2xl border px-4 text-sm font-semibold transition ${activeTab === tab.key ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                  className={`inline-flex min-h-10 items-center gap-2 rounded-2xl border px-4 text-sm font-semibold transition ${resolvedActiveTab === tab.key ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
                 >
                   {tab.label}
-                  <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs ${activeTab === tab.key ? 'bg-white text-blue-700' : 'bg-slate-100 text-slate-500'}`}>{count}</span>
+                  <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs ${resolvedActiveTab === tab.key ? 'bg-white text-blue-700' : 'bg-slate-100 text-slate-500'}`}>{count}</span>
                 </button>
               )
             })}
@@ -10053,34 +10073,15 @@ function SellerDocumentsTab({ journey }) {
                 className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 text-sm outline-none focus:border-blue-300"
               />
             </label>
-            <div className="flex flex-wrap gap-2">
-              {[
-                ['all', 'All'],
-                ['outstanding', 'Outstanding'],
-                ['uploaded', 'Uploaded'],
-                ['under_review', 'Under Review'],
-                ['approved', 'Approved'],
-                ['rejected', 'Rejected'],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setStatusFilter(key)}
-                  className={`inline-flex min-h-10 items-center rounded-2xl border px-3 text-sm font-semibold transition ${statusFilter === key ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
           </div>
 
           {!searchableDocuments.length ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10">
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 xl:flex-1">
               <p className="text-base font-semibold text-slate-950">No seller document requirements have been generated yet.</p>
               <p className="mt-2 text-sm leading-6 text-slate-500">Once seller document requirements are created in the shared workflow, they will appear here automatically.</p>
             </div>
           ) : filteredDocuments.length ? (
-            <div className="space-y-3">
+            <div className="space-y-3 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:pr-2">
               {filteredDocuments.map((document) => (
                 <article key={document.id} className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -10090,11 +10091,6 @@ function SellerDocumentsTab({ journey }) {
                         <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getSellerDocumentCategoryTone(document.category)}`}>
                           {getSellerDocumentCategoryLabel(document.category)}
                         </span>
-                        {document.required !== false ? (
-                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-                            Required
-                          </span>
-                        ) : null}
                         <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getDocumentStatusTone(document.status)}`}>
                           {getSellerDocumentDisplayStatus(document)}
                         </span>
@@ -10130,9 +10126,9 @@ function SellerDocumentsTab({ journey }) {
               ))}
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10">
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 xl:flex-1">
               <p className="text-base font-semibold text-slate-950">No documents match the current filters.</p>
-              <p className="mt-2 text-sm leading-6 text-slate-500">Try a different category, status, or search term to view the seller requirement list.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Try a different category or search term to view the seller requirement list.</p>
             </div>
           )}
         </div>

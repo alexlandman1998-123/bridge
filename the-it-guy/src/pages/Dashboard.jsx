@@ -24,7 +24,6 @@ import {
   ResidentialAttentionRequired,
   ResidentialActiveTransactionsCarousel,
   ResidentialCommissionForecast,
-  ResidentialDashboardModeToggle,
   ResidentialDashboardShell,
   ResidentialKpiCard,
   ResidentialPerformanceChart,
@@ -143,13 +142,6 @@ function formatKpiCurrency(value) {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric) || numeric <= 0) return currency.format(0)
   return compactCurrency.format(numeric)
-}
-
-function getGreetingName(profile = {}) {
-  const value = String(profile?.fullName || profile?.name || '').trim()
-  if (!value) return 'Maya'
-  const firstToken = value.split(/\s+/)[0]
-  return firstToken ? firstToken.charAt(0).toUpperCase() + firstToken.slice(1) : 'Maya'
 }
 
 function PrincipalTrendBadge({ value, label = 'vs previous period', inverse = false }) {
@@ -959,7 +951,7 @@ function Dashboard() {
   const [organisationMembershipRole, setOrganisationMembershipRole] = useState('viewer')
   const [organisationIdForAppointments, setOrganisationIdForAppointments] = useState('')
   const [principalTimeFilter, setPrincipalTimeFilter] = useState('this_week')
-  const [residentialMode, setResidentialMode] = useState('sales')
+  const [residentialMode] = useState('sales')
   const [residentialDateRange, setResidentialDateRange] = useState('last_30_days')
   const [principalCrmSnapshot, setPrincipalCrmSnapshot] = useState({ leads: [], leadActivities: [] })
   const [principalCanvassingSnapshot, setPrincipalCanvassingSnapshot] = useState({ prospects: [], activities: [] })
@@ -3760,27 +3752,17 @@ function renderActiveTransactionsBlock({
               {!isPrincipalAgentView && agentResidentialModel ? (
                 <section className="mt-6">
                   <ResidentialDashboardShell className="space-y-5">
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-[#667085]">Good morning, {getGreetingName(profile)}</p>
-                        <h1 className="mt-2 text-[1.55rem] font-semibold tracking-[-0.04em] text-[#101828]">
-                          Agent Dashboard · My Performance
-                        </h1>
-                        <p className="mt-1 text-sm text-[#667085]">Your personal residential sales performance.</p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <ResidentialDashboardModeToggle value={residentialMode} onChange={setResidentialMode} />
-                        <PillToggle
-                          items={[
-                            { key: 'last_30_days', label: 'Last 30 Days' },
-                            { key: 'this_month', label: 'This Month' },
-                            { key: 'last_90_days', label: 'Last 90 Days' },
-                            { key: 'ytd', label: 'YTD' },
-                          ]}
-                          value={residentialDateRange}
-                          onChange={setResidentialDateRange}
-                        />
-                      </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2.5">
+                      <PillToggle
+                        items={[
+                          { key: 'last_30_days', label: 'Last 30 Days' },
+                          { key: 'this_month', label: 'This Month' },
+                          { key: 'last_90_days', label: 'Last 90 Days' },
+                          { key: 'ytd', label: 'YTD' },
+                        ]}
+                        value={residentialDateRange}
+                        onChange={setResidentialDateRange}
+                      />
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -3820,24 +3802,25 @@ function renderActiveTransactionsBlock({
                       />
                     </div>
 
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                    <ResidentialAppointments
+                      module="agent"
+                      organisationId={organisationIdForAppointments}
+                      userId={String(profile?.id || '').trim()}
+                      userEmail={String(profile?.email || '').trim()}
+                      includeAll={false}
+                      canManage={false}
+                      scope="agent"
+                      refreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
+                      onViewCalendar={() => navigate('/pipeline/calendar')}
+                      onOpenCalendar={() => navigate('/pipeline/calendar')}
+                      onManageAppointment={() => navigate('/pipeline/calendar')}
+                      onOpenAppointment={() => navigate('/pipeline/calendar')}
+                      onScheduleAppointment={() => navigate('/pipeline/calendar')}
+                    />
+
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                       <ResidentialAttentionRequired data={agentResidentialModel.attention} scope="agent" />
                       <ResidentialCommissionForecast data={agentResidentialModel.commissionForecast} scope="agent" />
-                      <ResidentialAppointments
-                        module="agent"
-                        organisationId={organisationIdForAppointments}
-                        userId={String(profile?.id || '').trim()}
-                        userEmail={String(profile?.email || '').trim()}
-                        includeAll={false}
-                        canManage={false}
-                        scope="agent"
-                        refreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
-                        onViewCalendar={() => navigate('/pipeline/calendar')}
-                        onOpenCalendar={() => navigate('/pipeline/calendar')}
-                        onManageAppointment={() => navigate('/pipeline/calendar')}
-                        onOpenAppointment={() => navigate('/pipeline/calendar')}
-                        onScheduleAppointment={() => navigate('/pipeline/calendar')}
-                      />
                     </div>
                   </ResidentialDashboardShell>
                 </section>

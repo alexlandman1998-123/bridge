@@ -64,18 +64,6 @@ function formatShortTime(value) {
   return parsed.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
 }
 
-function getFirstName(profile = {}) {
-  const label = profile.fullName || profile.firstName || profile.email || 'there'
-  return String(label).split(/[ @]/).filter(Boolean)[0] || 'there'
-}
-
-function getGreeting() {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
-}
-
 function getStatusMeta(matter = {}) {
   const label = String(matter.statusLabel || matter.currentStage || '').trim()
   const normalized = label.toLowerCase()
@@ -101,30 +89,22 @@ function StatePanel({ children, tone = 'neutral' }) {
   )
 }
 
-function DashboardHeader({ profile }) {
+function DashboardHeader() {
   return (
-    <section className="flex flex-col gap-4 rounded-2xl bg-[#f7f9fb] px-1 py-1 md:flex-row md:items-end md:justify-between">
-      <div>
-        <h1 className="text-[1.9rem] font-semibold tracking-[-0.03em] text-slate-950 sm:text-[2.25rem]">
-          {getGreeting()}, {getFirstName(profile)}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">Here's what is happening in your practice today.</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Link to="/new-transaction" className={primaryButtonClass}>
-          <Plus size={15} />
-          Create Matter
-        </Link>
-        <Link to="/documents" className={softButtonClass}>
-          <FileCheck2 size={15} />
-          Request Document
-        </Link>
-        <Link to="/attorney/scheduling" className={softButtonClass}>
-          <CalendarClock size={15} />
-          Schedule Appointment
-        </Link>
-      </div>
-    </section>
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <Link to="/new-transaction" className={primaryButtonClass}>
+        <Plus size={15} />
+        Create Matter
+      </Link>
+      <Link to="/documents" className={softButtonClass}>
+        <FileCheck2 size={15} />
+        Request Document
+      </Link>
+      <Link to="/attorney/scheduling" className={softButtonClass}>
+        <CalendarClock size={15} />
+        Schedule Appointment
+      </Link>
+    </div>
   )
 }
 
@@ -419,7 +399,7 @@ function AttorneyDashboardPage() {
     <section className={shellClass}>
       {error ? <div className={`${surfaceClass} p-4`}><p className="text-sm text-red-700">{error}</p></div> : null}
 
-      <DashboardHeader profile={profile} />
+      <DashboardHeader />
       <DailyStatusCards stats={dashboard.matterStats} alerts={dashboard.criticalAlerts} />
       <NeedsAttentionPanel alerts={dashboard.criticalAlerts} matters={dashboard.mattersRequiringAttention} />
       <MatterPipelines lanes={lanes} />
