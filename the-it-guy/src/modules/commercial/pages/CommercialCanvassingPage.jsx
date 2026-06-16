@@ -1137,10 +1137,12 @@ function CommercialCanvassingPage({ dealType = '' }) {
 
   const metrics = useMemo(() => deriveCommercialCanvassingMetrics(pageScopedProspects, activities), [activities, pageScopedProspects])
   const leaseRoleCounts = useMemo(() => {
-    const activeLeaseProspects = pageScopedProspects.filter((prospect) => !['archived', 'lost', 'closed'].includes(normalizeKey(prospect.status)))
+    const activeProspects = pageScopedProspects.filter((prospect) => !['archived', 'lost', 'closed'].includes(normalizeKey(prospect.status)))
     return {
-      landlords: activeLeaseProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'landlord').length,
-      tenants: activeLeaseProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'tenant').length,
+      landlords: activeProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'landlord').length,
+      tenants: activeProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'tenant').length,
+      sellers: activeProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'seller').length,
+      buyers: activeProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'buyer').length,
     }
   }, [pageScopedProspects])
 
@@ -1851,6 +1853,15 @@ function CommercialCanvassingPage({ dealType = '' }) {
   const tableStart = tableTotalCount ? 1 : 0
   const tableEnd = tableTotalCount
   const currentSortLabel = SORT_OPTIONS.find((option) => option.value === `${sortKey}:${sortDirection}`)?.label || 'Newest Updated'
+  const roleMetricCards = pageView.key === 'sale'
+    ? [
+        { label: 'Sellers', value: leaseRoleCounts.sellers, icon: Building2, trendLabel: '8%', series: kpiSeries.landlords, color: '#16a34a' },
+        { label: 'Buyers', value: leaseRoleCounts.buyers, icon: Users, trendLabel: '18%', series: kpiSeries.tenants, color: '#8b5cf6' },
+      ]
+    : [
+        { label: 'Landlords', value: leaseRoleCounts.landlords, icon: Building2, trendLabel: '8%', series: kpiSeries.landlords, color: '#16a34a' },
+        { label: 'Tenants', value: leaseRoleCounts.tenants, icon: Users, trendLabel: '18%', series: kpiSeries.tenants, color: '#8b5cf6' },
+      ]
   const emptyStateConfig = (() => {
     if (activeTab === 'followups') {
       return {
@@ -1953,8 +1964,9 @@ function CommercialCanvassingPage({ dealType = '' }) {
 
             <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               <ProspectStat label="Total Prospects" value={loading ? '...' : metrics.prospects} detail="vs last 30 days" icon={Users} trendLabel="12%" series={kpiSeries.total} color="#2d6ecf" />
-              <ProspectStat label="Landlords" value={loading ? '...' : leaseRoleCounts.landlords} detail="vs last 30 days" icon={Building2} trendLabel="8%" series={kpiSeries.landlords} color="#16a34a" />
-              <ProspectStat label="Tenants" value={loading ? '...' : leaseRoleCounts.tenants} detail="vs last 30 days" icon={Users} trendLabel="18%" series={kpiSeries.tenants} color="#8b5cf6" />
+              {roleMetricCards.map((card) => (
+                <ProspectStat key={card.label} label={card.label} value={loading ? '...' : card.value} detail="vs last 30 days" icon={card.icon} trendLabel={card.trendLabel} series={card.series} color={card.color} />
+              ))}
               <ProspectStat label="Follow Ups Due" value={loading ? '...' : metrics.followUpsDue} detail="vs last 30 days" icon={CalendarDays} trendLabel="6%" series={kpiSeries.followUps} color="#f59e0b" />
               <ProspectStat label="Converted" value={loading ? '...' : metrics.converted} detail="vs last 30 days" icon={CheckCircle2} trendLabel="15%" series={kpiSeries.converted} color="#0f766e" />
             </section>

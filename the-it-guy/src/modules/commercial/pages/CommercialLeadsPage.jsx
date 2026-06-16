@@ -1,20 +1,14 @@
 import {
   Archive,
-  ArrowRight,
-  BarChart3,
+  ArrowUpDown,
   Building2,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Download,
   Eye,
-  FileText,
-  Filter,
-  LayoutGrid,
-  ListFilter,
-  Mail,
   MapPin,
   MessageSquare,
   MoreHorizontal,
@@ -22,22 +16,17 @@ import {
   Phone,
   Plus,
   Search,
-  Send,
-  Sparkles,
   SlidersHorizontal,
   Trash2,
   Users,
   X,
-  TrendingUp,
-  CircleDollarSign,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Field from '../../../components/ui/Field'
 import Modal from '../../../components/ui/Modal'
 import CommercialEmptyState from '../components/CommercialEmptyState'
-import CommercialFilterBar from '../components/CommercialFilterBar'
 import CommercialStatusPill from '../components/CommercialStatusPill'
 import { toLookupOptions } from '../commercialPipelineHelpers'
 import {
@@ -81,6 +70,18 @@ const LEAD_STAGE_OPTIONS = [
   { value: 'proposal', label: 'Proposal' },
   { value: 'negotiation', label: 'Negotiation' },
   { value: 'converted', label: 'Converted' },
+]
+
+const CARD_CLASS = 'rounded-[24px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.06)]'
+
+const LEAD_SORT_OPTIONS = [
+  { value: 'updatedAt:desc', label: 'Newest Updated' },
+  { value: 'createdAt:desc', label: 'Newest Created' },
+  { value: 'createdAt:asc', label: 'Oldest' },
+  { value: 'value:desc', label: 'Highest Value' },
+  { value: 'value:asc', label: 'Lowest Value' },
+  { value: 'followUpDate:asc', label: 'Follow Up Date' },
+  { value: 'lastActivityAt:desc', label: 'Recently Active' },
 ]
 
 const BUDGET_BANDS = [
@@ -557,27 +558,6 @@ function buildStageBreakdown(leads = []) {
   return rows
 }
 
-function buildActivitySummary(activities = [], leadMap = new Map()) {
-  return activities
-    .slice(0, 6)
-    .map((activity) => ({
-      id: activity.id,
-      title: normalizeText(activity.activityType || activity.activity_type) || 'Activity',
-      description: normalizeText(activity.activityNote || activity.activity_note || activity.outcome) || 'Activity logged',
-      time: formatRelativeTime(activity.createdAt || activity.created_at || activity.activityDate || activity.activity_date),
-      leadLabel: leadMap.get(activity.prospectId || activity.prospect_id)?.displayName || 'Commercial lead',
-      tone: activity.activityType === 'Call' ? 'blue' : activity.activityType === 'Email' ? 'violet' : activity.activityType === 'Meeting' ? 'emerald' : 'slate',
-    }))
-}
-
-function toneForRole(role = '') {
-  return toneClass(getProspectBadgeVariant(role))
-}
-
-function toneForCategory(category = '') {
-  return toneClass(getCategoryBadgeVariant(category))
-}
-
 function LeadBadge({ children, tone = 'slate', className = '' }) {
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(tone)} ${className}`.trim()}>
@@ -586,47 +566,90 @@ function LeadBadge({ children, tone = 'slate', className = '' }) {
   )
 }
 
-function CommercialMetricCard({ label, value, sublabel, deltaLabel, icon: Icon, chart, emptyLabel }) {
+function SearchField({ value, onChange, placeholder = 'Search leads...', className = '' }) {
   return (
-    <article className="rounded-[24px] border border-[#e6edf4] bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-500">{label}</p>
-          <p className="mt-3 text-[clamp(2.1rem,4vw,3rem)] font-semibold tracking-[-0.05em] text-[#102236]">{value}</p>
-        </div>
-        {Icon ? (
-          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f5f8fd] text-[#2d6ecf]">
-            <Icon size={18} />
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-2 flex items-center justify-between gap-3">
-        <p className="text-sm text-slate-500">{sublabel}</p>
-        {deltaLabel ? <p className="text-sm font-semibold text-emerald-600">{deltaLabel}</p> : null}
-      </div>
-      <div className="mt-5 min-h-[42px]">{chart || <p className="text-xs text-slate-400">{emptyLabel || 'No movement yet'}</p>}</div>
-    </article>
+    <label className={`flex h-11 items-center gap-2 rounded-[14px] border border-[#dce6f0] bg-white px-3 text-sm text-[#102236] shadow-sm transition focus-within:border-[#9fb9d1] focus-within:ring-4 focus-within:ring-[#dbeafe] ${className}`.trim()}>
+      <Search size={17} className="shrink-0 text-[#6f86a0]" />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 border-0 bg-transparent font-medium outline-none placeholder:text-[#91a2b5]"
+      />
+    </label>
   )
 }
 
-function LeadSparkline({ series = [], color = '#2d6ecf' }) {
-  if (!series.length) {
-    return <div className="h-10 rounded-2xl bg-slate-50" />
-  }
-  const width = 240
-  const height = 56
-  const padding = 2
-  const max = Math.max(...series.map((item) => item.value), 1)
-  const points = series.map((item, index) => {
-    const x = padding + (index / Math.max(series.length - 1, 1)) * (width - padding * 2)
-    const y = height - padding - ((item.value || 0) / max) * (height - padding * 2)
-    return `${x},${y}`
-  }).join(' ')
+function RegisterTab({ active = false, onClick, children }) {
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-14 w-full">
-      <polyline fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" points={points} />
-      <line x1="0" y1={height - 1} x2={width} y2={height - 1} stroke="rgba(148,163,184,0.18)" strokeWidth="1" />
-    </svg>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative -mb-px inline-flex min-h-12 items-center gap-1 whitespace-nowrap border-b-2 px-2 text-sm font-semibold transition ${
+        active
+          ? 'border-[#1f6dd5] text-[#0d5ed0]'
+          : 'border-transparent text-[#405671] hover:text-[#102236]'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function FilterSelect({ value, onChange, options = [], placeholder, className = '' }) {
+  return (
+    <Field as="select" value={value} onChange={(event) => onChange(event.target.value)} className={`h-11 rounded-[14px] bg-white text-sm ${className}`.trim()}>
+      <option value="all">{placeholder}</option>
+      {options.map((option) => (
+        <option key={option.value || option} value={option.value || option}>
+          {option.label || option}
+        </option>
+      ))}
+    </Field>
+  )
+}
+
+function InlineTableEmptyState({ icon = CalendarDays, title, description, actionLabel, onAction }) {
+  return (
+    <div className="flex min-h-[300px] flex-col items-center justify-center border border-[#dce6f0] bg-white px-6 py-10 text-center">
+      <span className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#eef5ff] text-[#1f6dd5]">
+        {createElement(icon, { size: 23 })}
+      </span>
+      <h3 className="mt-5 text-[1.25rem] font-semibold tracking-[-0.02em] text-[#102236]">{title}</h3>
+      <p className="mt-3 max-w-[520px] text-sm leading-6 text-[#526985]">{description}</p>
+      {actionLabel ? (
+        <button
+          type="button"
+          onClick={onAction}
+          className="mt-5 inline-flex h-11 items-center justify-center rounded-[12px] border border-[#b9d2ff] bg-white px-5 text-sm font-semibold text-[#0d5ed0] transition hover:bg-[#f5f9ff]"
+        >
+          {actionLabel}
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function CommercialMetricCard({ label, value, sublabel, deltaLabel, icon, chart, emptyLabel }) {
+  return (
+    <article className={`${CARD_CLASS} flex min-h-[126px] flex-col justify-between p-4`}>
+      <div className="flex items-start justify-between gap-3">
+        {icon ? (
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[16px] bg-[#eef5ff] text-[#1f6dd5]">
+            {createElement(icon, { size: 18 })}
+          </span>
+        ) : null}
+        {deltaLabel ? <p className="text-sm font-semibold text-emerald-600">↑ {deltaLabel.replace(/^\+/, '')}</p> : null}
+      </div>
+      <div className="mt-2">
+        <p className="text-sm font-semibold text-[#102236]">{label}</p>
+        <p className="mt-1 text-[1.55rem] font-semibold leading-none tracking-[-0.04em] text-[#061b3a]">{value}</p>
+      </div>
+      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+        <div className="min-h-[34px]">{chart || <p className="text-xs text-slate-400">{emptyLabel || 'No movement yet'}</p>}</div>
+        <p className="whitespace-nowrap text-xs text-[#526985]">{sublabel}</p>
+      </div>
+    </article>
   )
 }
 
@@ -652,171 +675,6 @@ function MiniBars({ series = [], color = '#2d6ecf' }) {
   )
 }
 
-function CommercialTrendCard({ series = [], total = 0, deltaLabel = '', empty = false }) {
-  const latest = series[series.length - 1]?.value || 0
-  const previous = series[series.length - 2]?.value || 0
-  const change = calculateMonthDelta(latest, previous)
-  return (
-    <article className="rounded-[24px] border border-[#e6edf4] bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-[1.85rem] font-semibold tracking-[-0.04em] text-[#102236]">Pipeline Value Trend</h3>
-          <p className="mt-2 text-sm text-slate-500">Commercial pipeline value across the last 6 months.</p>
-        </div>
-        <Button variant="secondary" size="sm" className="rounded-xl">
-          Last 6 months
-          <ChevronDown size={14} />
-        </Button>
-      </div>
-      <div className="mt-5 rounded-[24px] border border-[#e6edf4] bg-[#fbfcfe] p-4">
-        {empty ? (
-          <CommercialEmptyState
-            title="No pipeline activity yet"
-            description="Create your first listing or deal to start tracking commercial pipeline value."
-          />
-        ) : (
-          <>
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <p className="text-sm text-slate-500">Value</p>
-                <p className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-[#102236]">{formatCurrencyZAR(total)}</p>
-              </div>
-              <p className="text-sm font-semibold text-emerald-600">{change > 0 ? `+${change}% vs last month` : deltaLabel || 'No movement yet'}</p>
-            </div>
-            <div className="mt-4">
-              <LeadSparkline series={series} color="#2d6ecf" />
-            </div>
-            <div className="mt-3 flex items-center justify-between text-[0.7rem] uppercase tracking-[0.12em] text-slate-400">
-              {series.map((item) => <span key={item.label}>{item.label}</span>)}
-            </div>
-          </>
-        )}
-      </div>
-    </article>
-  )
-}
-
-function CommercialStageCard({ stages = [], total = 0, empty = false }) {
-  const totalValue = stages.reduce((sum, stage) => sum + stage.value, 0)
-  const palette = stages.map((stage) => stage.color)
-  return (
-    <article className="rounded-[24px] border border-[#e6edf4] bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-[1.85rem] font-semibold tracking-[-0.04em] text-[#102236]">Pipeline by Stage</h3>
-          <p className="mt-2 text-sm text-slate-500">Live commercial work split into the active lead stages.</p>
-        </div>
-        <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f5f8fd] text-[#2d6ecf]">
-          <BarChart3 size={18} />
-        </span>
-      </div>
-      <div className="mt-5 rounded-[24px] border border-[#e6edf4] bg-[#fbfcfe] p-4">
-        {empty ? (
-          <CommercialEmptyState title="No active pipeline yet" description="Add leads, requirements or deals to see stage breakdowns here." />
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
-            <div className="mx-auto flex h-48 w-48 items-center justify-center rounded-full" style={{ background: `conic-gradient(${stages.map((stage, index) => {
-              const share = totalValue ? (stage.value / totalValue) * 100 : 0
-              const prior = stages.slice(0, index).reduce((sum, row) => sum + (totalValue ? (row.value / totalValue) * 100 : 0), 0)
-              return `${stage.color} ${prior}% ${prior + share}%`
-            }).join(', ')})` }}>
-              <div className="flex h-32 w-32 flex-col items-center justify-center rounded-full bg-white text-center shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Total</p>
-                <p className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#102236]">{formatCurrencyZAR(totalValue || total)}</p>
-              </div>
-            </div>
-            <div className="grid gap-3">
-              {stages.map((stage) => {
-                const share = totalValue ? Math.round((stage.value / totalValue) * 100) : 0
-                return (
-                  <div key={stage.key} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: stage.color }} />
-                      <div>
-                        <p className="text-sm font-semibold text-[#102236]">{stage.label}</p>
-                        <p className="text-xs text-slate-500">{stage.count} leads</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold text-[#102236]">{formatCurrencyZAR(stage.value)}</p>
-                      <p className="text-xs text-slate-500">{share}%</p>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </article>
-  )
-}
-
-function CommercialActivityCard({ items = [], empty = false }) {
-  return (
-    <article className="rounded-[24px] border border-[#e6edf4] bg-white p-6 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-[1.85rem] font-semibold tracking-[-0.04em] text-[#102236]">Recent Activity</h3>
-          <p className="mt-2 text-sm text-slate-500">The latest commercial updates across leads, notes and follow-ups.</p>
-        </div>
-        <Link to="/commercial/activity" className="inline-flex items-center gap-2 text-sm font-semibold text-[#1267a3]">
-          View all
-          <ArrowRight size={14} />
-        </Link>
-      </div>
-      <div className="mt-5 rounded-[24px] border border-[#e6edf4] bg-[#fbfcfe] p-4">
-        {empty ? (
-          <CommercialEmptyState title="No recent commercial activity yet." description="New leads, notes and follow-ups will appear here." />
-        ) : (
-          <div className="grid gap-3">
-            {items.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                <span className={`inline-flex h-10 w-10 items-center justify-center rounded-full ${toneClass(item.tone)}`}>
-                  {item.title === 'Email' ? <Mail size={16} /> : item.title === 'Call' ? <Phone size={16} /> : item.title === 'Meeting' ? <CalendarDays size={16} /> : <MessageSquare size={16} />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-[#102236]">{item.title}</p>
-                  <p className="truncate text-xs text-slate-500">{item.leadLabel} · {item.description}</p>
-                </div>
-                <p className="shrink-0 text-xs font-semibold text-slate-500">{item.time}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </article>
-  )
-}
-
-function CommercialInsightBanner({ hasData, metrics }) {
-  return (
-    <section className={`rounded-[24px] border px-5 py-4 shadow-[0_8px_26px_rgba(15,23,42,0.03)] ${hasData ? 'border-emerald-200 bg-emerald-50/40' : 'border-sky-200 bg-sky-50/50'}`}>
-      <div className="flex items-center gap-4">
-        <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl ${hasData ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'}`}>
-          <Sparkles size={18} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-base font-semibold text-[#102236]">
-            {hasData
-              ? `Great progress! You have ${metrics.qualifiedLeads} qualified leads and ${metrics.followUpsDue} follow-ups due this week.`
-              : 'Your commercial dashboard is ready.'}
-          </p>
-          <p className="mt-1 text-sm text-slate-600">
-            {hasData
-              ? `Pipeline value is ${formatCurrencyZAR(metrics.pipelineValue)} across ${metrics.activeLeads} active leads.`
-              : 'Add your first lead to start seeing useful insights here.'}
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" className="rounded-xl">
-          View insights
-          <ArrowRight size={14} />
-        </Button>
-      </div>
-    </section>
-  )
-}
-
 function CommercialLeadDrawer({
   open,
   lead,
@@ -827,10 +685,6 @@ function CommercialLeadDrawer({
   onLogCall,
 }) {
   const [activeTab, setActiveTab] = useState('overview')
-
-  useEffect(() => {
-    if (open) setActiveTab('overview')
-  }, [open, lead?.id])
 
   if (!open || !lead) return null
 
@@ -1205,6 +1059,7 @@ function NewCommercialLeadModal({
   mode = 'create',
   record = null,
   lookups = {},
+  organisationId = '',
   defaultRole = 'seller',
   roleOptions = COMMERCIAL_ROLE_OPTIONS,
   onClose,
@@ -1216,7 +1071,7 @@ function NewCommercialLeadModal({
   const [selectedRole, setSelectedRole] = useState(defaultRole)
   const [draft, setDraft] = useState(() => buildInitialDraft(record, defaultBroker))
   const [saving, setSaving] = useState(false)
-  const [errors, setErrors] = useState({})
+  const [, setErrors] = useState({})
   const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
@@ -1316,7 +1171,7 @@ function NewCommercialLeadModal({
     setErrors({})
   }
 
-  function validateStep(nextStep = step) {
+  function validateStep() {
     const validationDraft = {
       prospectRole: selectedRole,
       companyName: draft.companyName,
@@ -1618,6 +1473,7 @@ function CommercialLeadsPage({ dealType = '' }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [sortKey, setSortKey] = useState('updatedAt')
   const [sortDirection, setSortDirection] = useState('desc')
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [advancedFilters, setAdvancedFilters] = useState({
     branch: 'all',
     team: 'all',
@@ -1678,7 +1534,6 @@ function CommercialLeadsPage({ dealType = '' }) {
   })), [lookupMaps.brokers, lookups?.brokers])
 
   const normalizedLeads = useMemo(() => {
-    const byLeadId = new Map()
     const activitiesByLeadId = new Map()
     ;(workspace.activities || []).forEach((activity) => {
       const prospectId = normalizeText(activity.prospectId || activity.prospect_id)
@@ -1724,7 +1579,10 @@ function CommercialLeadsPage({ dealType = '' }) {
     })
   }, [brokerChoices, lookups.branches, workspace.activities, workspace.prospects])
 
-  const leadMap = useMemo(() => new Map(normalizedLeads.map((lead) => [lead.id, lead])), [normalizedLeads])
+  const pageScopedLeads = useMemo(() => {
+    if (pageView.baseDealType === 'all') return normalizedLeads
+    return normalizedLeads.filter((lead) => normalizeLower(lead.dealType || getDealTypeFromRole(normalizeLeadRole(lead))) === pageView.baseDealType)
+  }, [normalizedLeads, pageView.baseDealType])
   const activeTabConfig = useMemo(
     () => pageView.tabs.find((tab) => tab.id === activeTab) || pageView.tabs[0] || ALL_LEAD_TABS[0],
     [activeTab, pageView.tabs],
@@ -1768,13 +1626,29 @@ function CommercialLeadsPage({ dealType = '' }) {
     return rows
   }, [activeTabConfig, advancedFilters.assigned, advancedFilters.budget, advancedFilters.branch, advancedFilters.propertyType, advancedFilters.stage, advancedFilters.status, advancedFilters.team, categoryFilter, normalizedLeads, pageView.baseDealType, pageView.showRoleFilters, roleFilter, searchTerm, sortDirection, sortKey])
 
-  const metrics = useMemo(() => deriveSummaryStats(normalizedLeads, workspace.activities || []), [normalizedLeads, workspace.activities])
-  const trendSeries = useMemo(() => buildTrendSeries(normalizedLeads), [normalizedLeads])
-  const stageBreakdown = useMemo(() => buildStageBreakdown(normalizedLeads), [normalizedLeads])
-  const recentActivity = useMemo(() => buildActivitySummary(workspace.activities || [], leadMap), [leadMap, workspace.activities])
-  const activeLeadCount = normalizedLeads.length
-  const hasData = activeLeadCount > 0
+  const metrics = useMemo(() => deriveSummaryStats(pageScopedLeads, workspace.activities || []), [pageScopedLeads, workspace.activities])
+  const trendSeries = useMemo(() => buildTrendSeries(pageScopedLeads), [pageScopedLeads])
+  const stageBreakdown = useMemo(() => buildStageBreakdown(pageScopedLeads), [pageScopedLeads])
   const pipelineDelta = calculateMonthDelta(trendSeries[trendSeries.length - 1]?.value || 0, trendSeries[trendSeries.length - 2]?.value || 0)
+  const roleMetricCards = useMemo(() => {
+    const activeRows = pageScopedLeads.filter((lead) => !['archived', 'lost'].includes(normalizeLeadStatus(lead.status)))
+    if (pageView.key === 'sale') {
+      return [
+        { label: 'Sellers', value: activeRows.filter((lead) => normalizeLeadRole(lead) === 'seller').length, icon: Building2, chart: <MiniBars series={stageBreakdown} color="#16a34a" /> },
+        { label: 'Buyers', value: activeRows.filter((lead) => normalizeLeadRole(lead) === 'buyer').length, icon: Users, chart: <MiniBars series={stageBreakdown} color="#8b5cf6" /> },
+      ]
+    }
+    if (pageView.key === 'lease') {
+      return [
+        { label: 'Landlords', value: activeRows.filter((lead) => normalizeLeadRole(lead) === 'landlord').length, icon: Building2, chart: <MiniBars series={stageBreakdown} color="#16a34a" /> },
+        { label: 'Tenants', value: activeRows.filter((lead) => normalizeLeadRole(lead) === 'tenant').length, icon: Users, chart: <MiniBars series={stageBreakdown} color="#8b5cf6" /> },
+      ]
+    }
+    return [
+      { label: 'Sales Leads', value: activeRows.filter((lead) => normalizeLower(lead.dealType || getDealTypeFromRole(normalizeLeadRole(lead))) === 'sale').length, icon: Building2, chart: <MiniBars series={stageBreakdown} color="#16a34a" /> },
+      { label: 'Lease Leads', value: activeRows.filter((lead) => normalizeLower(lead.dealType || getDealTypeFromRole(normalizeLeadRole(lead))) === 'lease').length, icon: Users, chart: <MiniBars series={stageBreakdown} color="#8b5cf6" /> },
+    ]
+  }, [pageScopedLeads, pageView.key, stageBreakdown])
 
   useEffect(() => {
     if (!visibleLeads.length) setDrawerLead(null)
@@ -1843,290 +1717,307 @@ function CommercialLeadsPage({ dealType = '' }) {
   function renderEmptyState() {
     const copy = pageView.emptyCopy[activeTab] || pageView.emptyCopy.all || EMPTY_LEAD_COPY.all
     return (
-      <CommercialEmptyState
+      <InlineTableEmptyState
+        icon={CalendarDays}
         title={copy.title}
         description={copy.description}
-        primaryActionLabel={pageView.createLabel}
-        onPrimaryAction={() => openCreateLead(pageView.defaultCreateRole)}
+        actionLabel={pageView.createLabel.replace(/^\+\s*/, '')}
+        onAction={() => openCreateLead(pageView.defaultCreateRole)}
       />
     )
   }
 
-  const advancedFilterConfigs = useMemo(() => ([
-    { key: 'branch', label: 'Branch', options: (lookups.branches || []).map((row) => ({ value: row.id, label: row.name || row.branch_name || 'Branch' })) },
-    { key: 'team', label: 'Team', options: (lookups.teams || []).map((row) => ({ value: row.id, label: row.name || row.team_name || 'Team' })) },
-    { key: 'assigned', label: 'Broker Owner', options: (lookupMaps.brokers || []).map((row) => ({ value: row.value, label: row.label })) },
-    { key: 'status', label: 'Status', options: COMMERCIAL_PROSPECT_STATUSES.map((value) => ({ value, label: value })) },
-    { key: 'stage', label: 'Stage', options: LEAD_STAGE_OPTIONS.filter((option) => option.value !== 'all') },
-    { key: 'propertyType', label: 'Property Type', options: COMMERCIAL_CATEGORY_OPTIONS },
-    { key: 'budget', label: 'Budget/Rental', options: BUDGET_BANDS },
-  ]), [lookupMaps.brokers, lookups.branches, lookups.teams])
+  const tableTotalCount = visibleLeads.length
+  const tableStart = tableTotalCount ? 1 : 0
+  const tableEnd = tableTotalCount
+  const currentSortLabel = LEAD_SORT_OPTIONS.find((option) => option.value === `${sortKey}:${sortDirection}`)?.label || 'Newest Updated'
+  const advancedFilterCount = [
+    searchTerm,
+    activeTab,
+    roleFilter,
+    categoryFilter,
+    advancedFilters.branch,
+    advancedFilters.team,
+    advancedFilters.assigned,
+    advancedFilters.status,
+    advancedFilters.stage,
+    advancedFilters.propertyType,
+    advancedFilters.budget,
+  ].filter((value) => normalizeText(value) && value !== 'all').length
+  const shouldShowAdvancedFilters = showAdvancedFilters || advancedFilterCount > 0
+  const resetLeadFilters = () => {
+    setSearchTerm('')
+    setRoleFilter('all')
+    setCategoryFilter('all')
+    setActiveTab('all')
+    setAdvancedFilters({
+      branch: 'all',
+      team: 'all',
+      assigned: 'all',
+      status: 'all',
+      stage: 'all',
+      propertyType: 'all',
+      budget: 'all',
+    })
+    setShowAdvancedFilters(false)
+  }
 
   return (
-    <div className="space-y-5">
-      <section className="grid gap-4 xl:grid-cols-5">
-        <CommercialMetricCard
-          label="Total Leads"
-          value={metrics.prospects}
-          sublabel="All active leads"
-          deltaLabel={pipelineDelta ? `${pipelineDelta > 0 ? '+' : ''}${pipelineDelta}% vs last month` : 'No movement yet'}
-          icon={Users}
-          chart={<MiniBars series={trendSeries} color="#2d6ecf" />}
-        />
-        <CommercialMetricCard
-          label="Qualified Leads"
-          value={metrics.qualifiedLeads}
-          sublabel="Ready for next step"
-          icon={CheckCircle2}
-          chart={<MiniBars series={stageBreakdown} color="#8b5cf6" />}
-        />
-        <CommercialMetricCard
-          label="Follow Ups"
-          value={metrics.followUpsDue}
-          sublabel="Due this week"
-          deltaLabel={metrics.overdueFollowUps ? `${metrics.overdueFollowUps} overdue` : 'On track'}
-          icon={CalendarDays}
-          chart={<MiniBars series={trendSeries.slice(-4)} color="#f59e0b" />}
-        />
-        <CommercialMetricCard
-          label="Converted"
-          value={metrics.converted}
-          sublabel="This month"
-          icon={TrendingUp}
-          chart={<MiniBars series={stageBreakdown.map((stage) => ({ ...stage, value: stage.key === 'converted' ? stage.count : 0 }))} color="#22c55e" />}
-        />
-        <CommercialMetricCard
-          label="Pipeline Value"
-          value={formatCurrencyZAR(metrics.pipelineValue)}
-          sublabel="Opportunity value in motion"
-          deltaLabel={pipelineDelta ? `${pipelineDelta > 0 ? '+' : ''}${pipelineDelta}% vs last month` : 'No movement yet'}
-          icon={CircleDollarSign}
-          chart={<LeadSparkline series={trendSeries} color="#22c55e" />}
-        />
-      </section>
-
-      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.04)]">
-        <div className="border-b border-slate-200 px-5 pt-5">
-          <div className="mb-4 flex flex-col gap-1">
-            <h2 className="text-[28px] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h2>
-            <p className="text-sm leading-6 text-[#63768b]">{pageView.description}</p>
+    <div className="pb-10">
+      <article className={`${CARD_CLASS} overflow-hidden p-5 sm:p-6`}>
+        <section className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <h1 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h1>
+            <p className="mt-2 text-sm leading-6 text-[#4f6680]">{pageView.description}</p>
           </div>
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div className="flex flex-wrap gap-1.5">
-              {pageView.tabs.map((tab) => (
-                <button
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" onClick={() => openCreateLead(pageView.defaultCreateRole)} className="h-12 rounded-[14px] bg-[#102b46] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#143858]">
+              <Plus size={16} />
+              {pageView.createLabel.replace(/^\+\s*/, '')}
+            </Button>
+            <Button type="button" variant="secondary" className="h-12 rounded-[14px] px-5" disabled title="Import is coming soon">
+              <Download size={16} />
+              Import
+            </Button>
+            <button
+              type="button"
+              className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white text-[#62758b] shadow-sm transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
+              aria-label="More page actions"
+            >
+              <MoreHorizontal size={17} />
+            </button>
+          </div>
+        </section>
+
+        <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <CommercialMetricCard
+            label="Total Leads"
+            value={loading ? '...' : metrics.prospects}
+            sublabel="vs last 30 days"
+            deltaLabel={pipelineDelta ? `${pipelineDelta}%` : '0%'}
+            icon={Users}
+            chart={<MiniBars series={trendSeries} color="#2d6ecf" />}
+          />
+          {roleMetricCards.map((card) => (
+            <CommercialMetricCard
+              key={card.label}
+              label={card.label}
+              value={loading ? '...' : card.value}
+              sublabel="vs last 30 days"
+              deltaLabel="8%"
+              icon={card.icon}
+              chart={card.chart}
+            />
+          ))}
+          <CommercialMetricCard
+            label="Follow Ups Due"
+            value={loading ? '...' : metrics.followUpsDue}
+            sublabel="vs last 30 days"
+            deltaLabel={metrics.overdueFollowUps ? `${metrics.overdueFollowUps} overdue` : '6%'}
+            icon={CalendarDays}
+            chart={<MiniBars series={trendSeries.slice(-4)} color="#f59e0b" />}
+          />
+          <CommercialMetricCard
+            label="Converted"
+            value={loading ? '...' : metrics.converted}
+            sublabel="vs last 30 days"
+            deltaLabel="15%"
+            icon={CheckCircle2}
+            chart={<MiniBars series={stageBreakdown.map((stage) => ({ ...stage, value: stage.key === 'converted' ? stage.count : 0 }))} color="#0f766e" />}
+          />
+        </section>
+
+        <div className="mt-7 border-b border-[#e8eef5]">
+          <div className="flex gap-9 overflow-x-auto">
+            {pageView.tabs.map((tab) => {
+              const count = pageScopedLeads.filter((lead) => tab.matches(lead)).length
+              return (
+                <RegisterTab
                   key={tab.id}
-                  type="button"
+                  active={activeTab === tab.id}
                   onClick={() => {
                     setActiveTab(tab.id)
                     setRoleFilter('all')
                   }}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                    activeTab === tab.id
-                      ? 'bg-blue-50 text-[#1267a3]'
-                      : 'text-slate-500 hover:bg-slate-50 hover:text-[#102236]'
-                  }`}
                 >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            <Button variant="primary" size="md" className="rounded-xl self-start xl:self-auto" onClick={openCreateLead}>
-              <Plus size={16} />
-              {pageView.createLabel.replace(/^\+\s*/, '')}
-            </Button>
+                  <span>{tab.label}</span>
+                  {count ? (
+                    <span className={`ml-1.5 rounded-full px-2 py-0.5 text-xs font-semibold ${activeTab === tab.id ? 'bg-[#e7efff] text-[#1952c6]' : 'bg-[#f1f5f9] text-[#60758d]'}`}>
+                      {count}
+                    </span>
+                  ) : null}
+                </RegisterTab>
+              )
+            })}
           </div>
+        </div>
 
-          {pageView.showRoleFilters ? (
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
-              {pageView.roleFilters.map((option) => (
+        <section className="rounded-b-[18px] border border-t-0 border-[#dce6f0] bg-white">
+          <div className="border-b border-[#e8eef5] px-4 py-4">
+            <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
+              <SearchField value={searchTerm} onChange={setSearchTerm} placeholder={pageView.searchPlaceholder} className="w-full 2xl:max-w-[34%] 2xl:flex-1" />
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:flex 2xl:flex-wrap 2xl:items-center">
+                <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Category" className="!w-full 2xl:!w-[148px]" />
+                <FilterSelect value={advancedFilters.assigned} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, assigned: value }))} options={lookupMaps.brokers || []} placeholder="Broker" className="!w-full 2xl:!w-[138px]" />
+                <FilterSelect value={advancedFilters.status} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, status: value }))} options={COMMERCIAL_PROSPECT_STATUSES.map((value) => ({ value, label: value }))} placeholder="Status" className="!w-full 2xl:!w-[138px]" />
+                <FilterSelect value={advancedFilters.stage} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, stage: value }))} options={LEAD_STAGE_OPTIONS.filter((option) => option.value !== 'all')} placeholder="Stage" className="!w-full 2xl:!w-[138px]" />
+                <label className="relative block">
+                  <ArrowUpDown size={15} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#1f6dd5]" />
+                  <Field
+                    as="select"
+                    value={`${sortKey}:${sortDirection}`}
+                    onChange={(event) => {
+                      const [nextKey, nextDirection] = String(event.target.value || '').split(':')
+                      setSortKey(nextKey)
+                      setSortDirection(nextDirection || 'desc')
+                    }}
+                    aria-label={`Sort: ${currentSortLabel}`}
+                    className="h-11 !w-full rounded-[14px] bg-white pl-9 text-sm 2xl:!w-[198px]"
+                  >
+                    {LEAD_SORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>Sort: {option.label}</option>
+                    ))}
+                  </Field>
+                </label>
                 <button
-                  key={option.value}
                   type="button"
-                  onClick={() => setRoleFilter(option.value)}
-                  className={`rounded-full px-3 py-2 text-sm font-semibold transition ${
-                    roleFilter === option.value
-                      ? 'bg-blue-50 text-[#1267a3]'
-                      : 'text-slate-500 hover:bg-slate-50 hover:text-[#102236]'
+                  onClick={() => setShowAdvancedFilters((current) => !current)}
+                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border px-4 text-sm font-semibold transition ${
+                    shouldShowAdvancedFilters
+                      ? 'border-[#d7e3f4] bg-[#f5f8fc] text-[#0f2748]'
+                      : 'border-[#e2eaf3] bg-white text-[#0f2748] hover:border-[#d0dceb] hover:bg-[#f8fbff]'
                   }`}
                 >
-                  {option.label}
+                  <SlidersHorizontal size={15} />
+                  Filters
+                  {advancedFilterCount ? (
+                    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#e7efff] px-1.5 text-[11px] font-semibold text-[#1952c6]">
+                      {advancedFilterCount}
+                    </span>
+                  ) : null}
                 </button>
-              ))}
+              </div>
             </div>
-          ) : null}
 
-          <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
-            {COMMERCIAL_CATEGORY_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setCategoryFilter(option.value)}
-                className={`rounded-full border px-3 py-2 text-sm font-semibold transition ${
-                  categoryFilter === option.value
-                    ? 'border-blue-200 bg-blue-50 text-[#1267a3]'
-                    : 'border-slate-200 bg-white text-slate-500 hover:border-blue-200 hover:bg-slate-50 hover:text-[#102236]'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
+            {shouldShowAdvancedFilters ? (
+              <div className="mt-3 flex flex-col gap-3 rounded-[16px] border border-[#e6edf4] bg-[#fbfdff] px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-[#60758d]">{advancedFilterCount || 0} active filter{advancedFilterCount === 1 ? '' : 's'}</p>
+                  <button type="button" onClick={resetLeadFilters} className="text-sm font-semibold text-[#1f6dd5] transition hover:text-[#0f5bbf]">
+                    Clear filters
+                  </button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {pageView.showRoleFilters ? (
+                    <FilterSelect value={roleFilter} onChange={setRoleFilter} options={pageView.roleFilters.filter((option) => option.value !== 'all')} placeholder="Role" className="!w-full" />
+                  ) : null}
+                  <FilterSelect value={advancedFilters.branch} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, branch: value }))} options={(lookups.branches || []).map((row) => ({ value: row.id, label: row.name || row.branch_name || 'Branch' }))} placeholder="Branch" className="!w-full" />
+                  <FilterSelect value={advancedFilters.team} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, team: value }))} options={(lookups.teams || []).map((row) => ({ value: row.id, label: row.name || row.team_name || 'Team' }))} placeholder="Team" className="!w-full" />
+                  <FilterSelect value={advancedFilters.propertyType} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, propertyType: value }))} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Property Type" className="!w-full" />
+                  <FilterSelect value={advancedFilters.budget} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, budget: value }))} options={BUDGET_BANDS.filter((option) => option.value !== 'all')} placeholder="Budget / Rental" className="!w-full" />
+                </div>
+              </div>
+            ) : null}
           </div>
 
-          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_120px] xl:items-end">
-            <div className="grid gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Search</span>
-              <label className="flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 shadow-sm focus-within:border-[#9fb9d1] focus-within:ring-4 focus-within:ring-[#dbeafe]">
-                <Search size={16} className="text-slate-400" />
-                <input
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder={pageView.searchPlaceholder}
-                  className="w-full border-0 bg-transparent text-sm font-medium text-[#102236] outline-none placeholder:text-slate-400"
-                />
-              </label>
-            </div>
-            <label className="grid gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Sort</span>
-              <select
-                value={`${sortKey}:${sortDirection}`}
-                onChange={(event) => {
-                  const [nextKey, nextDirection] = String(event.target.value || '').split(':')
-                  setSortKey(nextKey)
-                  setSortDirection(nextDirection || 'desc')
-                }}
-                className="min-h-11 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-medium text-[#102236] outline-none transition focus:border-[#9fb9d1] focus:ring-4 focus:ring-[#dbeafe]"
-              >
-                <option value="updatedAt:desc">Newest Updated</option>
-                <option value="createdAt:desc">Newest Created</option>
-                <option value="createdAt:asc">Oldest</option>
-                <option value="value:desc">Highest Value</option>
-                <option value="value:asc">Lowest Value</option>
-                <option value="followUpDate:asc">Follow Up Date</option>
-                <option value="lastActivityAt:desc">Recently Active</option>
-              </select>
-            </label>
-            <div className="flex items-center justify-end text-sm font-semibold text-slate-500">
-              {visibleLeads.length} leads
-            </div>
-          </div>
-
-          <div className="mt-4">
-            <CommercialFilterBar
-              filters={advancedFilterConfigs}
-              values={advancedFilters}
-              onChange={(key, value) => setAdvancedFilters((previous) => ({ ...previous, [key]: value }))}
-              onClear={() => setAdvancedFilters({
-                branch: 'all',
-                team: 'all',
-                assigned: 'all',
-                status: 'all',
-                stage: 'all',
-                propertyType: 'all',
-                budget: 'all',
-              })}
-            />
-          </div>
-        </div>
-
-        <div className="p-5">
-          {loading ? (
-            <div className="space-y-3">
-              {[0, 1, 2].map((item) => (
-                <div key={item} className="h-20 animate-pulse rounded-[24px] bg-slate-100" />
-              ))}
-            </div>
-          ) : error ? (
-            <CommercialEmptyState title="Commercial leads could not be loaded" description={error} />
-          ) : !visibleLeads.length ? (
-            renderEmptyState()
-          ) : (
-            <>
-              <div className="hidden lg:block">
-                <div className="overflow-x-auto rounded-[24px] border border-slate-200 bg-white">
-                  <table className="min-w-[1400px] w-full border-collapse">
-                    <thead className="bg-[#f8fafc] text-left text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-slate-500">
-                      <tr>
-                        {['Lead', 'Type', 'Category', 'Client / Company', 'Requirement / Asset', 'Area', 'Budget / Rental', 'Broker', 'Status / Stage', 'Last Activity', 'Actions'].map((label) => (
-                          <th key={label} className="px-4 py-3">{label}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleLeads.map((lead) => (
-                        <LeadRow
-                          key={lead.id}
-                          lead={lead}
-                          onOpen={openDrawer}
-                          onEdit={openEditLead}
-                          onAddNote={handleAddNote}
-                          onLogCall={handleLogCall}
-                          onSchedule={handleSchedule}
-                          onArchive={handleArchive}
-                          onDelete={handleDelete}
-                          menuOpen={openMenuId === lead.id}
-                          onMenuToggle={() => setOpenMenuId((previous) => (previous === lead.id ? '' : lead.id))}
-                        />
+          <div className="overflow-hidden">
+            <div className="hidden lg:block">
+              <div className="max-h-[560px] overflow-auto">
+                <table className="min-w-[1400px] w-full border-separate border-spacing-0">
+                  <thead className="sticky top-0 z-10 bg-[#f7fafc] text-left text-[12px] font-semibold uppercase tracking-[0.12em] text-[#61758b]">
+                    <tr>
+                      {['Lead', 'Type', 'Category', 'Client / Company', 'Requirement / Asset', 'Area', 'Budget / Rental', 'Broker', 'Status / Stage', 'Last Activity', 'Actions'].map((label) => (
+                        <th key={label} className="border-b border-[#e7edf4] px-4 py-3">{label}</th>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? Array.from({ length: 6 }).map((_, index) => (
+                      <tr key={`lead-loading-${index}`}>
+                        <td colSpan={11} className="border-b border-[#eef3f7] px-5 py-4">
+                          <div className="h-16 animate-pulse rounded-[16px] bg-slate-100" />
+                        </td>
+                      </tr>
+                    )) : error ? (
+                      <tr>
+                        <td colSpan={11} className="px-0 py-0">
+                          <InlineTableEmptyState icon={CalendarDays} title="Commercial leads could not be loaded" description={error} />
+                        </td>
+                      </tr>
+                    ) : visibleLeads.length ? visibleLeads.map((lead) => (
+                      <LeadRow
+                        key={lead.id}
+                        lead={lead}
+                        onOpen={openDrawer}
+                        onEdit={openEditLead}
+                        onAddNote={handleAddNote}
+                        onLogCall={handleLogCall}
+                        onSchedule={handleSchedule}
+                        onArchive={handleArchive}
+                        onDelete={handleDelete}
+                        menuOpen={openMenuId === lead.id}
+                        onMenuToggle={() => setOpenMenuId((previous) => (previous === lead.id ? '' : lead.id))}
+                      />
+                    )) : (
+                      <tr>
+                        <td colSpan={11} className="px-0 py-0">
+                          {renderEmptyState()}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
+            </div>
 
-              <div className="grid gap-3 lg:hidden">
-                {visibleLeads.map((lead) => (
-                  <LeadCard
-                    key={lead.id}
-                    lead={lead}
-                    onOpen={openDrawer}
-                    onEdit={openEditLead}
-                    onAddNote={handleAddNote}
-                    onLogCall={handleLogCall}
-                    onSchedule={handleSchedule}
-                    onArchive={handleArchive}
-                    onDelete={handleDelete}
-                    menuOpen={openMenuId === lead.id}
-                    onMenuToggle={() => setOpenMenuId((previous) => (previous === lead.id ? '' : lead.id))}
-                  />
-                ))}
-              </div>
-
-              <footer className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-                <p>
-                  Showing <span className="font-semibold text-[#102236]">1</span>-
-                  <span className="font-semibold text-[#102236]">{visibleLeads.length}</span> of{' '}
-                  <span className="font-semibold text-[#102236]">{visibleLeads.length}</span> leads
-                </p>
-                <div className="flex items-center gap-2">
-                  <Button variant="secondary" size="sm" className="rounded-xl" disabled>
-                    <ChevronLeft size={14} />
-                  </Button>
-                  <Button variant="primary" size="sm" className="rounded-xl" disabled>
-                    1
-                  </Button>
-                  <Button variant="secondary" size="sm" className="rounded-xl" disabled>
-                    <ChevronRight size={14} />
-                  </Button>
+            <div className="divide-y divide-[#eef3f7] lg:hidden">
+              {loading ? Array.from({ length: 3 }).map((_, index) => (
+                <div key={`mobile-lead-loading-${index}`} className="px-4 py-4">
+                  <div className="h-24 animate-pulse rounded-[18px] bg-slate-100" />
                 </div>
-              </footer>
-            </>
-          )}
-        </div>
-      </section>
+              )) : error ? (
+                <InlineTableEmptyState icon={CalendarDays} title="Commercial leads could not be loaded" description={error} />
+              ) : visibleLeads.length ? visibleLeads.map((lead) => (
+                <LeadCard
+                  key={lead.id}
+                  lead={lead}
+                  onOpen={openDrawer}
+                  onEdit={openEditLead}
+                  onAddNote={handleAddNote}
+                  onLogCall={handleLogCall}
+                  onSchedule={handleSchedule}
+                  onArchive={handleArchive}
+                  onDelete={handleDelete}
+                  menuOpen={openMenuId === lead.id}
+                  onMenuToggle={() => setOpenMenuId((previous) => (previous === lead.id ? '' : lead.id))}
+                />
+              )) : renderEmptyState()}
+            </div>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]">
-        <CommercialTrendCard series={trendSeries} total={metrics.pipelineValue} deltaLabel={pipelineDelta ? `${pipelineDelta > 0 ? '+' : ''}${pipelineDelta}% vs last month` : 'No movement yet'} empty={!hasData} />
-        <CommercialStageCard stages={stageBreakdown} total={metrics.pipelineValue} empty={!hasData} />
-        <CommercialActivityCard items={recentActivity} empty={!recentActivity.length} />
-      </section>
-
-      <CommercialInsightBanner hasData={hasData} metrics={metrics} />
+            <div className="flex flex-col gap-3 border-t border-[#eef3f7] px-5 py-4 text-sm text-[#63768b] sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                Showing <span className="font-semibold text-[#102236]">{tableStart}</span>-
+                <span className="font-semibold text-[#102236]">{tableEnd}</span> of{' '}
+                <span className="font-semibold text-[#102236]">{pageScopedLeads.length}</span> leads
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Field as="select" value="10" onChange={() => {}} aria-label="Rows per page" className="h-10 !w-[150px] rounded-[12px] bg-white py-2 text-sm">
+                  <option value="10">10 per page</option>
+                </Field>
+                <button type="button" disabled className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#e2eaf3] bg-[#f8fbff] text-[#b7c5d5]"><ChevronLeft size={16} /></button>
+                <button type="button" disabled className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#e2eaf3] bg-[#f8fbff] text-[#b7c5d5]"><ChevronRight size={16} /></button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </article>
 
       <NewCommercialLeadModal
         open={modalState.open}
         mode={modalState.mode}
         record={modalState.record}
         lookups={lookups}
+        organisationId={organisationId}
         defaultRole={modalState.role || pageView.defaultCreateRole}
         roleOptions={pageView.roleOptions}
         onClose={() => setModalState({ open: false, mode: 'create', record: null, role: pageView.defaultCreateRole })}
@@ -2134,6 +2025,7 @@ function CommercialLeadsPage({ dealType = '' }) {
       />
 
       <CommercialLeadDrawer
+        key={drawerLead?.id || 'closed'}
         open={Boolean(drawerLead)}
         lead={drawerLead}
         activities={(workspace.activities || []).filter((activity) => normalizeText(activity.prospectId || activity.prospect_id) === normalizeText(drawerLead?.id))}
