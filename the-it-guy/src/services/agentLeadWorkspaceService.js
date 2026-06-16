@@ -215,10 +215,14 @@ function matchesLeadContext(row = {}, context = {}) {
   const rowContactId = getContactId(row)
   const rowListingId = getListingId(row)
   const rowTransactionId = getTransactionId(row)
+  const relatedEntityType = normalizeLower(row?.relatedEntityType || row?.related_entity_type)
+  const relatedEntityId = readId(row, ['relatedEntityId', 'related_entity_id'])
   return (
     (context.leadId && rowLeadId === context.leadId) ||
+    (context.leadId && ['lead', 'seller_lead', 'crm_lead'].includes(relatedEntityType) && relatedEntityId === context.leadId) ||
     (context.contactId && rowContactId === context.contactId) ||
     (context.listingId && rowListingId === context.listingId) ||
+    (context.listingId && ['listing', 'private_listing', 'seller_listing'].includes(relatedEntityType) && relatedEntityId === context.listingId) ||
     (context.convertedTransactionId && rowTransactionId === context.convertedTransactionId)
   )
 }
@@ -336,10 +340,14 @@ export function buildAgentLeadRows({
       .filter((activity) => getLeadId(activity) === leadId)
       .sort((left, right) => new Date(right.activityDate || right.activity_date || right.createdAt || right.created_at || 0) - new Date(left.activityDate || left.activity_date || left.createdAt || left.created_at || 0))
     const relatedTasks = tasks.filter((task) => getLeadId(task) === leadId).sort(sortTasksByDueDate)
-    const relatedAppointments = appointments.filter((appointment) => matchesLeadContext(appointment, context))
-    const relatedOffers = normalizedOffers.filter((offer) => matchesLeadContext(offer, context) || relatedAppointments.some((appointment) => getAppointmentId(appointment) && getAppointmentId(appointment) === offer.appointmentId))
-    const relatedTransactions = normalizedTransactions.filter((transaction) => matchesLeadContext(transaction, context))
     const relatedListings = normalizedListings.filter((listing) => matchesLeadContext(listing, context))
+    const expandedContext = {
+      ...context,
+      listingId: context.listingId || getListingId(relatedListings[0] || {}) || readId(relatedListings[0] || {}, ['id']),
+    }
+    const relatedAppointments = appointments.filter((appointment) => matchesLeadContext(appointment, expandedContext))
+    const relatedOffers = normalizedOffers.filter((offer) => matchesLeadContext(offer, expandedContext) || relatedAppointments.some((appointment) => getAppointmentId(appointment) && getAppointmentId(appointment) === offer.appointmentId))
+    const relatedTransactions = normalizedTransactions.filter((transaction) => matchesLeadContext(transaction, expandedContext))
     const relatedListingInterests = listingInterests.filter((interest) => getLeadId(interest) === leadId || readId(interest, ['leadId', 'lead_id']) === leadId)
     const relatedSuggestions = suggestions
       .filter((suggestion) => getLeadId(suggestion) === leadId || readId(suggestion, ['leadId', 'lead_id']) === leadId)
@@ -779,25 +787,8 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     listingId: getListingId(lead),
     convertedTransactionId: readId(lead, ['convertedTransactionId', 'converted_transaction_id', 'convertedDealId']),
   }
-  const appointments = (await safeReadAppointments(organisationId)).filter((appointment) => matchesLeadContext(appointment, context))
-  const listingIds = [...new Set([context.listingId, ...appointments.map(getListingId)].filter(Boolean))]
-  let offers = []
-  try {
-    offers = await listCanonicalOffersForLead({
-      organisationId,
-      leadId: context.leadId,
-      contactId: context.contactId,
-      appointmentIds: appointments.map(getAppointmentId).filter(Boolean),
-      listingIds,
-      buyerEmail: contact?.email || lead?.email || '',
-      buyerPhone: contact?.phone || lead?.phone || '',
-      buyerName: getLeadName(lead, contact),
-    })
-  } catch (error) {
-    if (!isRecoverableReadError(error, 'offers')) throw error
-    offers = []
-  }
-  const [transactions, listings, listingInterests, requirements, communications, suggestions, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, assignmentHistory, ownershipRows] = await Promise.all([
+  const [allAppointments, transactions, listings, listingInterests, requirements, communications, suggestions, recommendations, savedSearches, propertyShares, communicationDeliveries, communicationPreferences, assignmentHistory, ownershipRows] = await Promise.all([
+    safeReadAppointments(organisationId),
     safeReadTransactions(organisationId, context),
     safeReadPrivateListings(organisationId),
     listLeadListingInterests({ organisationId, leadId: context.leadId }),
@@ -824,6 +815,28 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     .filter((listing) => matchesLeadContext(listing, context))
   if (hydratedListing && !workspaceListings.some((listing) => getNormalizedListingId(listing) === hydratedListingId)) {
     workspaceListings.push(hydratedListing)
+  }
+  const expandedContext = {
+    ...context,
+    listingId: context.listingId || getListingId(workspaceListings[0] || {}) || getNormalizedListingId(workspaceListings[0] || {}),
+  }
+  const appointments = (Array.isArray(allAppointments) ? allAppointments : []).filter((appointment) => matchesLeadContext(appointment, expandedContext))
+  const listingIds = [...new Set([expandedContext.listingId, ...appointments.map(getListingId)].filter(Boolean))]
+  let offers = []
+  try {
+    offers = await listCanonicalOffersForLead({
+      organisationId,
+      leadId: context.leadId,
+      contactId: context.contactId,
+      appointmentIds: appointments.map(getAppointmentId).filter(Boolean),
+      listingIds,
+      buyerEmail: contact?.email || lead?.email || '',
+      buyerPhone: contact?.phone || lead?.phone || '',
+      buyerName: getLeadName(lead, contact),
+    })
+  } catch (error) {
+    if (!isRecoverableReadError(error, 'offers')) throw error
+    offers = []
   }
   const rows = buildAgentLeadRows({
     leads: enrichLeadsWithOwnership(workspace.leads, ownershipRows),

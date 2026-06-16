@@ -162,10 +162,13 @@ function filterStalePersistedRequirements(requirements = [], listing = {}, formD
 }
 
 export function getSellerRequiredDocuments(listing = {}, formData = {}) {
-  const persisted = filterStalePersistedRequirements(listing?.documentRequirements, listing, formData)
-  const hasOnboardingFacts = formData && typeof formData === 'object' && Object.keys(formData).length > 0
+  const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
+    ? formData
+    : getSellerOnboardingFormData(listing)
+  const persisted = filterStalePersistedRequirements(listing?.documentRequirements, listing, resolvedFormData)
+  const hasOnboardingFacts = resolvedFormData && typeof resolvedFormData === 'object' && Object.keys(resolvedFormData).length > 0
   try {
-    const requirementListing = coerceSellerDocumentLifecycle(listing, formData)
+    const requirementListing = coerceSellerDocumentLifecycle(listing, resolvedFormData)
     const derived = (!persisted.length || hasOnboardingFacts)
       ? generateSellerDocumentRequirements({
           ...requirementListing,
@@ -178,7 +181,7 @@ export function getSellerRequiredDocuments(listing = {}, formData = {}) {
               requirementListing?.seller_onboarding?.status,
               'completed',
             ),
-            formData,
+            formData: resolvedFormData,
           },
         })
       : []
@@ -440,7 +443,10 @@ export function buildSellerDocumentRequirementRows({ listing = {}, documents = [
     ...(Array.isArray(documents) ? documents : []),
     ...(Array.isArray(listing?.documents) ? listing.documents : []),
   ]
-  const requiredDocuments = getSellerRequiredDocuments(listing, formData)
+  const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
+    ? formData
+    : getSellerOnboardingFormData(listing)
+  const requiredDocuments = getSellerRequiredDocuments(listing, resolvedFormData)
   if (!requiredDocuments.length) {
     return uploadedDocuments.map((document, index) => buildExtraDocumentRow(document, index))
   }
