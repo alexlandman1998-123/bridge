@@ -147,6 +147,7 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
   const propertyType = normalizeText(payload.propertyType);
   const transactionReference = normalizeText(payload.transactionReference);
   const onboardingLink = normalizeText(payload.onboardingLink);
+  const emailKind = normalizeText(payload.emailKind) || "onboarding";
   const agentName = normalizeText(payload.agentName);
   const organisationName = normalizeText(payload.organisationName) || "Bridge";
   const organisationId = normalizeText(payload.organisationId);
@@ -193,13 +194,14 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
 
   const subject =
     normalizeText(templateOverrides?.subject) ||
-    buildSellerOnboardingSubject(propertyTitle, transactionReference, propertyType);
+    buildSellerOnboardingSubject(propertyTitle, transactionReference, propertyType, emailKind);
   const html = buildSellerOnboardingEmailHtml({
     sellerName,
     propertyTitle,
     propertyType,
     transactionReference,
     onboardingLink,
+    emailKind,
     agentName,
     organisationName,
     senderOrganisationName,
@@ -214,6 +216,7 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     propertyType,
     transactionReference,
     onboardingLink,
+    emailKind,
     agentName,
     organisationName: senderOrganisationName || organisationName,
     supportEmail,

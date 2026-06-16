@@ -8,9 +8,7 @@ import {
   Download,
   FileSignature,
   FileText,
-  FolderOpen,
   HandCoins,
-  Handshake,
   Home,
   KeyRound,
   LayoutDashboard,
@@ -92,9 +90,66 @@ const HANDOVER_PHOTO_FIELDS = [
 
 const SELLER_PORTAL_MENU = [
   { key: 'overview', label: 'Dashboard', icon: LayoutDashboard },
+  { key: 'details', label: 'My Details', icon: User },
   { key: 'appointments', label: 'Appointments', icon: CalendarClock },
   { key: 'offers', label: 'Offers', icon: HandCoins },
   { key: 'documents', label: 'Documents', icon: FileText },
+]
+
+const SELLER_ONBOARDING_STATUS_LABELS = {
+  not_started: 'Not Started',
+  in_progress: 'In Progress',
+  sent: 'Sent',
+  submitted: 'Submitted',
+  under_review: 'Under Review',
+  completed: 'Completed',
+  reviewed: 'Reviewed',
+  approved: 'Approved',
+}
+
+const SELLER_OWNERSHIP_TYPE_LABELS = {
+  individual: 'Individual',
+  married_cop: 'Married (COP)',
+  married_anc: 'Married (ANC)',
+  company: 'Company',
+  trust: 'Trust',
+  deceased_estate: 'Deceased Estate',
+  power_of_attorney: 'Power of Attorney',
+  multiple_owners: 'Multiple Owners',
+  other: 'Other',
+}
+
+const SELLER_MANDATE_TYPE_LABELS = {
+  open: 'Open Mandate',
+  sole: 'Sole Mandate',
+  exclusive: 'Exclusive Mandate',
+}
+
+const SELLER_OCCUPANCY_STATUS_LABELS = {
+  unknown: 'Unknown',
+  vacant: 'Vacant',
+  owner_occupied: 'Owner Occupied',
+  tenant_occupied: 'Tenant Occupied',
+  partially_occupied: 'Partially Occupied',
+}
+
+const SELLER_PROPERTY_CONDITION_LABELS = {
+  excellent: 'Excellent',
+  good: 'Good',
+  fair: 'Fair',
+  needs_renovation: 'Needs Renovation',
+  recently_renovated: 'Recently Renovated',
+}
+
+const SELLER_PROGRESS_STEPS = [
+  { key: 'contacted', label: 'Contacted' },
+  { key: 'valuation', label: 'Valuation' },
+  { key: 'onboarding', label: 'Onboarding' },
+  { key: 'submitted', label: 'Submitted' },
+  { key: 'mandate_sent', label: 'Mandate Sent' },
+  { key: 'mandate_signed', label: 'Mandate Signed' },
+  { key: 'listing_created', label: 'Listing Created' },
+  { key: 'documents_complete', label: 'Documents Complete' },
 ]
 
 function formatPortalStepStatus(status) {
@@ -147,6 +202,231 @@ function formatOnboardingFieldValue(value) {
   }
 
   return String(value)
+}
+
+function getSellerPortalInitials(value = '', fallback = 'B9') {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return fallback
+  return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')
+}
+
+function splitSellerPortalAddress(value = '') {
+  const parts = String(value || '').split(',').map((part) => part.trim()).filter(Boolean)
+  if (!parts.length) {
+    return { line1: 'Property address pending', line2: '' }
+  }
+  if (parts.length === 1) {
+    return { line1: parts[0], line2: '' }
+  }
+  return {
+    line1: parts.slice(0, 2).join(', '),
+    line2: parts.slice(2).join(', '),
+  }
+}
+
+function formatSellerPortalLabel(value = '', labels = {}) {
+  const normalized = normalizePortalStatus(value)
+  if (!normalized) return ''
+  return labels[normalized] || toTitleLabel(normalized)
+}
+
+function formatSellerPortalBoolean(value, yesLabel = 'Yes', noLabel = 'No') {
+  if (value === null || value === undefined || value === '') return ''
+  return isTruthyPortalValue(value) ? yesLabel : noLabel
+}
+
+function formatSellerPortalCurrency(value) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return ''
+  return ZAR_CURRENCY.format(amount)
+}
+
+function buildSellerPortalStatusChip(status = '') {
+  const normalized = normalizePortalStatus(status)
+  const label = SELLER_ONBOARDING_STATUS_LABELS[normalized]
+  if (label) return `Seller Onboarding ${label}`
+  if (normalized) return toTitleLabel(normalized)
+  return 'Seller Journey Active'
+}
+
+function buildSellerPortalProgressModel({
+  hasSellingContext = false,
+  hasAppointment = false,
+  hasOnboardingStarted = false,
+  hasOnboardingSubmitted = false,
+  hasMandatePacket = false,
+  hasMandateSigned = false,
+  hasListingCreated = false,
+  hasDocumentsComplete = false,
+} = {}) {
+  let currentKey = 'contacted'
+
+  if (!hasSellingContext) {
+    currentKey = 'contacted'
+  } else if (!hasAppointment && !hasOnboardingStarted) {
+    currentKey = 'valuation'
+  } else if (!hasOnboardingSubmitted) {
+    currentKey = 'onboarding'
+  } else if (!hasMandatePacket) {
+    currentKey = 'submitted'
+  } else if (!hasMandateSigned) {
+    currentKey = 'mandate_sent'
+  } else if (!hasListingCreated) {
+    currentKey = 'mandate_signed'
+  } else if (!hasDocumentsComplete) {
+    currentKey = 'listing_created'
+  } else {
+    currentKey = 'documents_complete'
+  }
+
+  const currentIndex = Math.max(
+    SELLER_PROGRESS_STEPS.findIndex((step) => step.key === currentKey),
+    0,
+  )
+
+  const steps = SELLER_PROGRESS_STEPS.map((step, index) => ({
+    ...step,
+    state: index < currentIndex ? 'completed' : index === currentIndex ? 'current' : 'upcoming',
+  }))
+
+  const percent = Math.round((currentIndex / Math.max(SELLER_PROGRESS_STEPS.length - 1, 1)) * 100)
+  const helperMessageByKey = {
+    contacted: 'Your seller workspace is active and your agent will guide the next milestone.',
+    valuation: 'Your valuation appointment is the next milestone before the sale moves ahead.',
+    onboarding: 'Your onboarding details are the next step before your agent can prepare the file.',
+    submitted: 'Your seller onboarding has been submitted and is under review by your agent.',
+    mandate_sent: 'Your onboarding is complete and your mandate is being prepared for review.',
+    mandate_signed: 'Your mandate is in place and the listing setup is moving forward.',
+    listing_created: 'Your property is moving through listing setup and live marketing preparation.',
+    documents_complete: 'Your seller file is complete and we will keep you updated as the sale progresses.',
+  }
+
+  return {
+    steps,
+    currentKey,
+    currentIndex,
+    percent,
+    helperMessage: helperMessageByKey[currentKey] || helperMessageByKey.contacted,
+  }
+}
+
+function buildSellerPortalDetailsSections({ formData = {}, propertyAddress = '', uploadedDocuments = [] } = {}) {
+  const details = formData && typeof formData === 'object' ? formData : {}
+  const uploaded = Array.isArray(uploadedDocuments) ? uploadedDocuments : []
+  const ownershipTypeLabel = formatSellerPortalLabel(details.ownershipType, SELLER_OWNERSHIP_TYPE_LABELS)
+  const mandateTypeLabel = formatSellerPortalLabel(details.mandateType, SELLER_MANDATE_TYPE_LABELS)
+  const occupancyLabel = formatSellerPortalLabel(details.occupancyStatus, SELLER_OCCUPANCY_STATUS_LABELS)
+  const propertyConditionLabel = formatSellerPortalLabel(details.propertyCondition, SELLER_PROPERTY_CONDITION_LABELS)
+  const maritalStatusLabel = formatSellerPortalLabel(details.maritalStatus)
+  const maritalRegimeLabel = formatSellerPortalLabel(details.maritalRegime)
+  const uploadedDocumentItems = uploaded
+    .map((document) => ({
+      label: document?.name || document?.fileName || document?.category || 'Uploaded document',
+      value: formatShortPortalDate(document?.created_at || document?.uploadedAt || document?.createdAt, 'Uploaded'),
+    }))
+    .filter((item) => item.label)
+
+  const sections = [
+    {
+      key: 'personal',
+      title: 'Personal Details',
+      description: 'The information you submitted during seller onboarding.',
+      items: [
+        { label: 'Full name', value: [details.sellerFirstName, details.sellerSurname].filter(Boolean).join(' ').trim() },
+        { label: 'Email', value: details.email },
+        { label: 'Phone', value: details.phone },
+        { label: 'ID number', value: details.idNumber },
+        { label: 'Residential address', value: details.residentialAddress },
+        { label: 'Marital status', value: maritalStatusLabel },
+        { label: 'Marital regime', value: maritalRegimeLabel },
+        { label: 'Spouse name', value: details.spouseName },
+        { label: 'Spouse email', value: details.spouseEmail },
+        { label: 'Spouse phone', value: details.spousePhone },
+      ],
+    },
+    {
+      key: 'property',
+      title: 'Property Details',
+      description: 'The property and sale context that was captured.',
+      items: [
+        { label: 'Property address', value: propertyAddress },
+        { label: 'Property category', value: toTitleLabel(details.propertyCategory || '') },
+        { label: 'Property type', value: toTitleLabel(details.propertyType || '') },
+        { label: 'Structure type', value: toTitleLabel(details.propertyStructureType || '') },
+        { label: 'Occupancy', value: occupancyLabel },
+        { label: 'Property condition', value: propertyConditionLabel },
+        { label: 'Asking price', value: formatSellerPortalCurrency(details.askingPrice) },
+        { label: 'Mandate type', value: mandateTypeLabel },
+      ],
+    },
+    {
+      key: 'ownership',
+      title: 'Ownership Details',
+      description: 'Ownership and authority details from your submission.',
+      items: [
+        { label: 'Ownership structure', value: ownershipTypeLabel },
+        { label: 'VAT registered', value: formatSellerPortalBoolean(details.vatRegistered) },
+        { label: 'VAT number', value: details.vatNumber },
+        { label: 'Company name', value: details.companyName },
+        { label: 'Company registration', value: details.companyRegistrationNumber },
+        { label: 'Trust name', value: details.trustName },
+        { label: 'Trust registration', value: details.trustRegistrationNumber },
+        { label: 'Estate name', value: details.estateName },
+        { label: 'Executor name', value: details.executorName },
+        { label: 'Representative name', value: details.powerOfAttorneyName },
+        { label: 'Principal name', value: details.principalName },
+      ],
+      listItems: Array.isArray(details.multipleOwners)
+        ? details.multipleOwners
+            .map((owner, index) => {
+              const ownerName = [owner?.name, owner?.surname].filter(Boolean).join(' ').trim()
+              const ownerMeta = [
+                owner?.ownershipShare ? `${owner.ownershipShare}% share` : '',
+                owner?.email || '',
+                owner?.phone || '',
+              ].filter(Boolean).join(' • ')
+              return ownerName || ownerMeta
+                ? {
+                    label: ownerName || `Owner ${index + 1}`,
+                    value: ownerMeta,
+                  }
+                : null
+            })
+            .filter(Boolean)
+        : [],
+    },
+    {
+      key: 'declarations',
+      title: 'Declarations',
+      description: 'Your sale timing, finance, and occupancy declarations.',
+      items: [
+        { label: 'Selling timeline', value: toTitleLabel(details.sellingTimeline || '') },
+        { label: 'Selling reason', value: toTitleLabel(details.sellingReason || '') },
+        { label: 'Existing bond', value: formatSellerPortalBoolean(details.existingBond) },
+        { label: 'Bond bank', value: details.bondBank },
+        { label: 'Cancellation required', value: formatSellerPortalBoolean(details.cancellationRequired) },
+        { label: 'Lease exists', value: formatSellerPortalBoolean(details.leaseExists) },
+        { label: 'Lease expiry', value: details.leaseExpiryDate ? formatShortPortalDate(details.leaseExpiryDate, '') : '' },
+        { label: 'Tenant name', value: details.tenantName },
+        { label: 'Tenant contact', value: details.tenantContactDetails },
+        { label: 'Recent renovations', value: details.recentRenovations },
+      ],
+    },
+    {
+      key: 'documents',
+      title: 'Documents Submitted',
+      description: 'Files already uploaded in your seller portal.',
+      items: uploadedDocumentItems,
+    },
+  ]
+
+  return sections
+    .map((section) => ({
+      ...section,
+      items: Array.isArray(section.items) ? section.items.filter((item) => String(item?.value || '').trim()) : [],
+      listItems: Array.isArray(section.listItems) ? section.listItems.filter((item) => String(item?.label || item?.value || '').trim()) : [],
+    }))
+    .filter((section) => section.items.length || section.listItems.length)
 }
 
 function isOnboardingMetaKey(key) {
@@ -2292,49 +2572,81 @@ function SellerPortalAction({ action, token, workspaceNavigationScope, className
   )
 }
 
-function SellerWelcomeHero({ sellerFirstName, sellerAgentName, sellerAgentPhone, sellerAgentEmail, sellerAgencyName, token, workspaceNavigationScope }) {
+function SellerWelcomeHero({
+  sellerFirstName,
+  sellerAgentName,
+  sellerAgentPhone,
+  sellerAgentEmail,
+  sellerAgencyName,
+  sellerPropertyTitle,
+  token,
+  workspaceNavigationScope,
+}) {
   const messageAction = sellerAgentEmail
     ? { label: 'Message agent', href: `mailto:${sellerAgentEmail}` }
     : { label: 'Message agent', disabled: true }
   const callAction = sellerAgentPhone
     ? { label: 'Call agent', href: `tel:${sellerAgentPhone}` }
     : { label: 'Call agent', disabled: true }
-  const heroButtonClass = 'inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[12px] border border-white/20 bg-white/10 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-white/16'
+  const heroPrimaryButtonClass = 'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] bg-[#183b63] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#112d4b]'
+  const heroSecondaryButtonClass = 'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-[14px] border border-[#d6e1ec] bg-white px-4 py-2.5 text-sm font-semibold text-[#20384f] transition hover:border-[#bfd0e1] hover:bg-[#f8fbff]'
+  const sellerAddressLines = splitSellerPortalAddress(sellerPropertyTitle)
+  const agentInitials = getSellerPortalInitials(sellerAgencyName || sellerAgentName, 'B9')
 
   return (
-    <section className="overflow-hidden rounded-[28px] border border-[#12375c] bg-[linear-gradient(135deg,#0b1f34_0%,#123b62_58%,#1a5b82_100%)] px-5 py-5 text-white shadow-[0_24px_48px_rgba(8,24,42,0.28)] md:px-8 md:py-7">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
+    <section className="rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fcfdff_100%)] px-6 py-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)] md:px-8 md:py-8">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center">
         <div className="min-w-0">
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/16 bg-white/10 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#cfe0ef]">
-            <ShieldCheck size={13} />
-            Secure seller workspace
-          </span>
-          <h1 className="mt-4 text-[2rem] font-semibold leading-tight tracking-[-0.04em] text-white sm:text-[2.35rem]">
+          <h1 className="text-[2rem] font-semibold leading-tight tracking-[-0.05em] text-[#142132] sm:text-[2.35rem]">
             Welcome, {sellerFirstName}
           </h1>
-          <p className="mt-3 max-w-3xl text-[1rem] font-medium leading-7 text-[#e4eef8]">
-            This is your secure transaction workspace.
+          <p className="mt-2 max-w-3xl text-[1rem] font-medium leading-7 text-[#35546c]">
+            Track your property sale from mandate to registration.
           </p>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[#c9d9e8]">
-            Track your property sale from mandate to registration with clear progress updates, documents, offers, and next steps all in one place.
-          </p>
+          <div className="mt-5 rounded-[18px] border border-[#e5edf5] bg-[#f8fbff] px-4 py-3">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Property</span>
+            <p className="mt-1.5 text-base font-semibold text-[#142132]">{sellerAddressLines.line1}</p>
+            {sellerAddressLines.line2 ? (
+              <p className="mt-1 text-sm text-[#64748b]">{sellerAddressLines.line2}</p>
+            ) : null}
+          </div>
         </div>
 
-        <article className="rounded-[22px] border border-white/14 bg-white/10 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur">
-          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#bed2e4]">Agent</span>
-          <h2 className="mt-2 text-base font-semibold text-white">{sellerAgentName || sellerAgencyName || 'Bridge Property Team'}</h2>
-          {sellerAgentPhone ? (
-            <p className="mt-2 inline-flex items-center gap-2 text-sm text-[#d9e7f4]">
-              <PhoneCall size={14} />
-              {sellerAgentPhone}
-            </p>
-          ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <SellerPortalAction action={messageAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={heroButtonClass}>
+        <article className="rounded-[22px] border border-[#dce6ef] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#183b63] text-sm font-semibold text-white">
+              {agentInitials}
+            </span>
+            <div className="min-w-0">
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Your Agent</span>
+              <h2 className="mt-1.5 text-base font-semibold text-[#142132]">{sellerAgencyName || sellerAgentName || 'Bridge Property Team'}</h2>
+              {sellerAgentName && sellerAgentName !== sellerAgencyName ? (
+                <p className="mt-1 text-sm text-[#64748b]">{sellerAgentName}</p>
+              ) : null}
+              {sellerAgentPhone ? (
+                <p className="mt-1.5 inline-flex items-center gap-2 text-sm text-[#51657b]">
+                  <PhoneCall size={14} />
+                  {sellerAgentPhone}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2.5">
+            <SellerPortalAction
+              action={messageAction}
+              token={token}
+              workspaceNavigationScope={workspaceNavigationScope}
+              className={heroPrimaryButtonClass}
+            >
               <MessageCircle size={15} />
               <span>Message agent</span>
             </SellerPortalAction>
-            <SellerPortalAction action={callAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={heroButtonClass}>
+            <SellerPortalAction
+              action={callAction}
+              token={token}
+              workspaceNavigationScope={workspaceNavigationScope}
+              className={heroSecondaryButtonClass}
+            >
               <PhoneCall size={15} />
               <span>Call agent</span>
             </SellerPortalAction>
@@ -2345,60 +2657,62 @@ function SellerWelcomeHero({ sellerFirstName, sellerAgentName, sellerAgentPhone,
   )
 }
 
-function SellerProgressJourney({ stageMeta, stageDates, token, workspaceNavigationScope }) {
+function SellerProgressJourney({ progressModel, token, workspaceNavigationScope }) {
+  const stepCount = Math.max(progressModel?.steps?.length || 0, 1)
+  const steps = Array.isArray(progressModel?.steps) ? progressModel.steps : []
+  const currentIndex = Math.max(Number(progressModel?.currentIndex || 0), 0)
+  const lineInset = `calc(100% / ${stepCount * 2})`
+  const lineProgressRatio = currentIndex / Math.max(stepCount - 1, 1)
+
   return (
-    <section className="rounded-[28px] border border-[#dbe5ef] bg-white p-5 shadow-[0_18px_36px_rgba(15,23,42,0.06)] md:p-6">
+    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-[1.28rem] font-semibold tracking-[-0.03em] text-[#142132]">Your Sale Progress</h2>
           <p className="mt-1 text-sm leading-6 text-[#64748b]">A simple view of where your property sale stands.</p>
         </div>
-        <span className="inline-flex items-center rounded-[14px] bg-[#ecfdf5] px-3.5 py-2 text-sm font-semibold text-[#047857]">
-          {stageMeta.progressPercent}% complete
+        <span className="inline-flex items-center rounded-full border border-[#d8e7f7] bg-[#eef5ff] px-3.5 py-2 text-sm font-semibold text-[#0f65b7]">
+          {progressModel?.percent || 0}% complete
         </span>
       </div>
 
       <div className="mt-7 overflow-x-auto pb-2">
-        <div className="relative grid min-w-[720px] grid-cols-6 gap-3">
-          <div className="absolute left-[8%] right-[8%] top-[19px] h-1 rounded-full bg-[#dce6f1]" />
-          <div
-            className="absolute left-[8%] top-[19px] h-1 rounded-full bg-[#17a37a] transition-all duration-300"
-            style={{ width: `${Math.max(0, Math.min(84, stageMeta.progressPercent * 0.84))}%` }}
-          />
-          {stageMeta.stages.map((stage) => {
-            const isComplete = stage.state === 'completed'
-            const isCurrent = stage.state === 'current'
-            const dateLabel = stageDates?.[stage.key] || ''
-            return (
-              <div key={stage.key} className="relative z-10 flex flex-col items-center text-center">
-                <span
-                  className={[
-                    'inline-flex h-10 w-10 items-center justify-center rounded-full border-4 text-sm transition',
-                    isComplete
-                      ? 'border-[#17a37a] bg-[#17a37a] text-white'
-                      : isCurrent
-                        ? 'border-[#d8ecff] bg-[#0f75d1] text-white shadow-[0_0_0_6px_rgba(15,117,209,0.12)]'
-                        : 'border-[#dce6f1] bg-[#edf3f8] text-[#9aacbd]',
-                  ].join(' ')}
-                >
-                  {isComplete ? <CheckCircle2 size={19} /> : stage.key === 'registered' ? <Home size={18} /> : <span className="h-3 w-3 rounded-full bg-current opacity-70" />}
-                </span>
-                <strong className="mt-3 max-w-[112px] text-sm font-semibold leading-5 text-[#142132]">{stage.label}</strong>
-                {isCurrent ? (
-                  <span className="mt-1 text-xs font-semibold text-[#0f75d1]">Current stage</span>
-                ) : dateLabel && isComplete ? (
-                  <span className="mt-1 text-xs font-medium text-[#64748b]">{dateLabel}</span>
-                ) : null}
-              </div>
-            )
-          })}
+        <div className="relative min-w-[860px] px-2 pb-1">
+          <div className="absolute top-5 h-[2px] rounded-full bg-[#dce6f1]" style={{ left: lineInset, right: lineInset }} />
+          <div className="absolute top-5 h-[2px] rounded-full bg-[#16a34a]" style={{ left: lineInset, width: `calc((100% - (${lineInset} * 2)) * ${lineProgressRatio})` }} />
+          <div className="grid grid-cols-8 gap-2">
+            {steps.map((stage) => {
+              const isComplete = stage.state === 'completed'
+              const isCurrent = stage.state === 'current'
+              return (
+                <div key={stage.key} className="relative z-10 flex min-w-0 flex-col items-center text-center">
+                  <span
+                    className={[
+                      'inline-flex h-10 w-10 items-center justify-center rounded-full border-4 text-sm transition',
+                      isComplete
+                        ? 'border-[#16a34a] bg-[#16a34a] text-white'
+                        : isCurrent
+                          ? 'border-[#d8ecff] bg-[#2563eb] text-white shadow-[0_0_0_6px_rgba(37,99,235,0.12)]'
+                          : 'border-[#dce6f1] bg-[#eef3f8] text-[#9aacbd]',
+                    ].join(' ')}
+                  >
+                    {isComplete ? <CheckCircle2 size={18} /> : <span className="h-3 w-3 rounded-full bg-current opacity-80" />}
+                  </span>
+                  <strong className="mt-3 max-w-[88px] text-[0.84rem] font-semibold leading-5 text-[#142132]">{stage.label}</strong>
+                  <span className={`mt-1 min-h-[14px] text-[0.7rem] font-semibold ${isCurrent ? 'text-[#2563eb]' : 'text-transparent'}`}>
+                    {isCurrent ? 'Current' : ''}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#e5edf5] bg-[#f5f9fd] px-4 py-3">
         <p className="flex min-w-0 items-start gap-2 text-sm leading-6 text-[#4f647b]">
-          <CheckCircle2 className="mt-0.5 shrink-0 text-[#17a37a]" size={16} />
-          <span>{stageMeta.currentStage.message}</span>
+          <CheckCircle2 className="mt-0.5 shrink-0 text-[#16a34a]" size={16} />
+          <span>{progressModel?.helperMessage || 'Your seller portal will keep you updated as the sale progresses.'}</span>
         </p>
         <Link
           to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
@@ -2412,118 +2726,147 @@ function SellerProgressJourney({ stageMeta, stageDates, token, workspaceNavigati
   )
 }
 
-function SellerDetailsCard({ sellerSummaryItems, currentStageLabel }) {
-  const detailIcons = [User, Home, FileSignature, Handshake, CalendarClock]
+function SellerMyDetailsReadonlyPage({ sections = [] }) {
+  if (!sections.length) {
+    return (
+      <section className="space-y-5">
+        <header className="rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+          <h1 className="text-[1.5rem] font-semibold tracking-[-0.04em] text-[#142132]">My Details</h1>
+          <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">The information you submitted during seller onboarding.</p>
+        </header>
+        <article className="rounded-[24px] border border-dashed border-[#d8e2ee] bg-white px-6 py-7 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+          <p className="text-base font-semibold text-[#142132]">No seller onboarding details have been submitted yet.</p>
+          <p className="mt-2 text-sm leading-6 text-[#64748b]">Once your onboarding is submitted, your seller details will appear here.</p>
+        </article>
+      </section>
+    )
+  }
 
   return (
-    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Seller Details</h2>
-        <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1 text-[0.68rem] font-semibold text-[#35546c]">
-          {currentStageLabel}
-        </span>
-      </div>
-      <div className="mt-5 space-y-3">
-        {sellerSummaryItems.map((item, index) => {
-          const Icon = detailIcons[index] || FileText
-          return (
-            <div key={item.label} className="grid grid-cols-[22px_minmax(110px,0.55fr)_1fr] items-start gap-3 text-sm">
-              <Icon className="mt-0.5 text-[#5f7892]" size={16} />
-              <span className="font-medium text-[#64748b]">{item.label}</span>
-              <strong className="font-semibold leading-6 text-[#142132]">{item.value || 'Awaiting update'}</strong>
+    <section className="space-y-5">
+      <header className="rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+        <h1 className="text-[1.5rem] font-semibold tracking-[-0.04em] text-[#142132]">My Details</h1>
+        <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">The information you submitted during seller onboarding.</p>
+      </header>
+
+      {sections.map((section) => (
+        <article key={section.key} className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+          <div>
+            <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">{section.title}</h2>
+            <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">{section.description}</p>
+          </div>
+          {section.items.length ? (
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              {section.items.map((item) => (
+                <div key={`${section.key}-${item.label}`} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{item.label}</span>
+                  <p className="mt-1.5 text-sm font-semibold leading-6 text-[#142132]">{item.value}</p>
+                </div>
+              ))}
             </div>
-          )
-        })}
-      </div>
-    </article>
+          ) : null}
+          {section.listItems.length ? (
+            <div className="mt-5 space-y-3">
+              {section.listItems.map((item, index) => (
+                <div key={`${section.key}-list-${index}`} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3">
+                  <p className="text-sm font-semibold text-[#142132]">{item.label}</p>
+                  {item.value ? <p className="mt-1 text-sm leading-6 text-[#64748b]">{item.value}</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </article>
+      ))}
+    </section>
   )
 }
 
 function SellerNextStepCard({ sellerNextStep, token, workspaceNavigationScope, sellerAgentEmail }) {
-  const primaryAction = {
-    label: sellerNextStep.label,
-    to: sellerNextStep.to,
-    href: sellerNextStep.href,
-  }
-  const agentAction = sellerAgentEmail
-    ? { label: 'Message agent', href: `mailto:${sellerAgentEmail}` }
-    : { label: 'Message agent', disabled: true }
-  const primaryClass = 'inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#00866d] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#00735d]'
-  const secondaryClass = 'inline-flex min-h-[42px] items-center justify-center rounded-[12px] px-4 py-2 text-sm font-semibold text-[#00866d] transition hover:bg-white/70'
+  const primaryAction = sellerNextStep?.tone === 'action'
+    ? {
+        label: sellerNextStep.label,
+        to: sellerNextStep.to,
+        href: sellerNextStep.href,
+      }
+    : null
+  const statusPillClass = sellerNextStep?.tone === 'action'
+    ? 'border-[#d8e7f7] bg-[#eef5ff] text-[#0f65b7]'
+    : 'border-[#cfe9da] bg-[#eefbf4] text-[#157347]'
+  const primaryClass = 'inline-flex min-h-[42px] items-center justify-center rounded-[14px] bg-[#183b63] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#112d4b]'
 
   return (
-    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Next Step</h2>
-      <div className="mt-5 rounded-[20px] border border-[#cdeee3] bg-[linear-gradient(135deg,#f0fdf7_0%,#eef8ff_100%)] p-5">
-        <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-white/70 text-[#00866d]">
-          <CalendarClock size={20} />
-        </span>
-        <h3 className="mt-4 text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">{sellerNextStep.title}</h3>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-[#52677f]">{sellerNextStep.description}</p>
-        <div className="mt-5 flex flex-wrap gap-2.5">
-          <SellerPortalAction action={primaryAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={primaryClass} />
-          <SellerPortalAction action={agentAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={secondaryClass} />
+    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">What happens next</h2>
+          <p className="mt-1.5 text-sm leading-6 text-[#64748b]">Here&apos;s what to expect in the coming steps.</p>
         </div>
+        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] ${statusPillClass}`}>
+          {sellerNextStep?.tone === 'action' ? sellerNextStep.label : 'No action needed'}
+        </span>
       </div>
+
+      {sellerNextStep?.tone === 'action' ? (
+        <div className="mt-5 rounded-[20px] border border-[#d8e7f7] bg-[linear-gradient(135deg,#f7fbff_0%,#eef5ff_100%)] p-5">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-white text-[#0f65b7] shadow-[0_10px_24px_rgba(15,101,183,0.12)]">
+            <CalendarClock size={20} />
+          </span>
+          <h3 className="mt-4 text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">{sellerNextStep.title}</h3>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-[#52677f]">{sellerNextStep.description}</p>
+          {primaryAction ? (
+            <div className="mt-5">
+              <SellerPortalAction action={primaryAction} token={token} workspaceNavigationScope={workspaceNavigationScope} className={primaryClass} />
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-[20px] border border-[#cfe9da] bg-[linear-gradient(135deg,#eefbf4_0%,#f8fffb_100%)] p-5">
+          <p className="text-base font-semibold text-[#157347]">No action needed from you right now.</p>
+          <p className="mt-2 text-sm leading-6 text-[#4d7a63]">
+            We&apos;ll keep you updated as we move forward.
+          </p>
+          {sellerNextStep?.description ? (
+            <p className="mt-3 text-sm leading-6 text-[#5d7468]">{sellerNextStep.description}</p>
+          ) : null}
+        </div>
+      )}
+      {sellerAgentEmail && sellerNextStep?.tone !== 'action' ? (
+        <p className="mt-4 text-sm leading-6 text-[#64748b]">
+          Questions? You can reach your agent at <a className="font-semibold text-[#0f65b7]" href={`mailto:${sellerAgentEmail}`}>{sellerAgentEmail}</a>.
+        </p>
+      ) : null}
     </article>
   )
 }
 
-function SellerQuickActions({ actions, token, workspaceNavigationScope }) {
-  const actionClass = 'flex min-h-[60px] items-center gap-3 rounded-[14px] border border-[#dbe5ef] bg-[#fbfdff] px-3.5 py-3 text-left transition hover:border-[#bfd0e1] hover:bg-white'
-
+function SellerSectionHeading({ title, subtitle }) {
   return (
-    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Quick Actions</h2>
-      <div className="mt-4 space-y-3">
-        {actions.map((action) => {
-          const Icon = action.icon
-          return (
-            <SellerPortalAction
-              key={action.label}
-              action={action}
-              token={token}
-              workspaceNavigationScope={workspaceNavigationScope}
-              className={actionClass}
-            >
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#eef5ff] text-[#0f65b7]">
-                <Icon size={18} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <strong className="block text-sm font-semibold text-[#142132]">{action.label}</strong>
-                <span className="mt-0.5 block text-xs leading-5 text-[#64748b]">{action.description}</span>
-              </span>
-              {action.badge ? (
-                <span className="rounded-full border border-[#dbe5ef] bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#4f647b]">{action.badge}</span>
-              ) : null}
-              <ChevronRight className="shrink-0 text-[#8aa0b8]" size={16} />
-            </SellerPortalAction>
-          )
-        })}
-      </div>
-    </article>
+    <div>
+      <h2 className="text-[1.12rem] font-semibold tracking-[-0.03em] text-[#142132]">{title}</h2>
+      {subtitle ? <p className="mt-1.5 text-sm leading-6 text-[#64748b]">{subtitle}</p> : null}
+    </div>
   )
 }
 
-function SellerRecentActivity({ items }) {
+function SellerActivityPanel({ items = [] }) {
   return (
-    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
+    <article className="rounded-[24px] border border-[#dbe5ef] bg-white p-6 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Recent Activity</h2>
+        <SellerSectionHeading title="Recent Activity" subtitle="A quick look at the latest updates on your sale." />
         <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#4f647b]">
           {items.length ? `${items.length} updates` : 'No updates'}
         </span>
       </div>
       {items.length ? (
-        <div className="mt-4 space-y-3">
+        <div className="mt-5 space-y-3">
           {items.map((item) => (
-            <article key={item.id} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+            <article key={item.id} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3.5">
               <div className="flex items-start gap-3">
-                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#ecfdf5] text-[#0f8d69]">
+                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-[#ecfdf5] text-[#16a34a]">
                   <CheckCircle2 size={16} />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold leading-5 text-[#142132]">{item.message || 'Your sale workspace has been updated.'}</p>
+                  <p className="text-sm font-semibold leading-5 text-[#142132]">{item.message || 'Your seller workspace has been updated.'}</p>
                   <p className="mt-1 text-xs font-medium text-[#7b8ca2]">{item.timestampLabel || 'Recently'}</p>
                 </div>
               </div>
@@ -2531,7 +2874,7 @@ function SellerRecentActivity({ items }) {
           ))}
         </div>
       ) : (
-        <div className="mt-4 rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm leading-6 text-[#6b7d93]">
+        <div className="mt-5 rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm leading-6 text-[#6b7d93]">
           No seller-facing updates yet. Your activity feed will appear here once your agent shares progress.
         </div>
       )}
@@ -2576,60 +2919,6 @@ function SellerListingDistribution({ links = [] }) {
   )
 }
 
-function SellerStatusCards({ cards = [] }) {
-  if (!cards.length) return null
-  const icons = [CalendarClock, FileSignature, Home, FileText, MessageCircle]
-  return (
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-      {cards.map((card, index) => {
-        const Icon = icons[index] || CheckCircle2
-        return (
-          <article key={card.key || card.label} className="rounded-[18px] border border-[#dbe5ef] bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
-            <div className="flex items-start justify-between gap-3">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{card.label}</p>
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef7f4] text-[#0f8d69]">
-                <Icon size={17} />
-              </span>
-            </div>
-            <strong className="mt-3 block truncate text-[1.02rem] font-semibold text-[#142132]" title={String(card.value || '')}>
-              {card.value || 'Awaiting update'}
-            </strong>
-          </article>
-        )
-      })}
-    </section>
-  )
-}
-
-function SellerPortalReadiness({ readiness = null }) {
-  const blockers = Array.isArray(readiness?.blockers) ? readiness.blockers : []
-  if (!readiness && !blockers.length) return null
-  return (
-    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_30px_rgba(15,23,42,0.05)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">What Happens Next</h2>
-          <p className="mt-1 text-sm leading-6 text-[#64748b]">{readiness?.nextAction || readiness?.label || 'Your agent is coordinating the next step.'}</p>
-        </div>
-        <span className="inline-flex items-center rounded-full border border-[#d8e4ef] bg-[#f4f8fc] px-3 py-1 text-[0.68rem] font-semibold text-[#35546c]">
-          {readiness?.label || 'In progress'}
-        </span>
-      </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        {blockers.length ? blockers.slice(0, 4).map((blocker) => (
-          <div key={blocker.key} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-            <p className="text-sm font-semibold text-[#142132]">{blocker.label}</p>
-          </div>
-        )) : (
-          <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-3.5 py-3 text-sm font-semibold text-[#1f7d44]">
-            No action needed from you right now.
-          </div>
-        )}
-      </div>
-    </section>
-  )
-}
-
 function SellerSupportCard({ sellerAgentPhone, sellerAgentEmail }) {
   const contactAction = sellerAgentEmail
     ? { label: 'Contact support', href: `mailto:${sellerAgentEmail}` }
@@ -2667,15 +2956,11 @@ function SellerPortalDashboard({
   sellerAgentPhone,
   sellerAgentEmail,
   sellerAgencyName,
-  sellerSummaryItems,
   sellerNextStep,
-  sellerQuickActions,
   sellerActivityItems,
   sellerVisibleListingLinks,
-  sellerStageMeta,
-  sellerStageDates,
-  sellerStatusCards,
-  sellerReadiness,
+  sellerPropertyTitle,
+  sellerProgressModel,
   token,
   workspaceNavigationScope,
 }) {
@@ -2687,29 +2972,23 @@ function SellerPortalDashboard({
         sellerAgentPhone={sellerAgentPhone}
         sellerAgentEmail={sellerAgentEmail}
         sellerAgencyName={sellerAgencyName}
+        sellerPropertyTitle={sellerPropertyTitle}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
       <SellerProgressJourney
-        stageMeta={sellerStageMeta}
-        stageDates={sellerStageDates}
+        progressModel={sellerProgressModel}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
-      <SellerStatusCards cards={sellerStatusCards} />
-      <SellerPortalReadiness readiness={sellerReadiness} />
-      <section className="grid gap-5 xl:grid-cols-2">
-        <SellerDetailsCard sellerSummaryItems={sellerSummaryItems} currentStageLabel={sellerStageMeta.currentStage.label} />
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <SellerNextStepCard
           sellerNextStep={sellerNextStep}
           token={token}
           workspaceNavigationScope={workspaceNavigationScope}
           sellerAgentEmail={sellerAgentEmail}
         />
-      </section>
-      <section className="grid gap-5 xl:grid-cols-2">
-        <SellerQuickActions actions={sellerQuickActions} token={token} workspaceNavigationScope={workspaceNavigationScope} />
-        <SellerRecentActivity items={sellerActivityItems} />
+        <SellerActivityPanel items={sellerActivityItems} />
       </section>
       <SellerListingDistribution links={sellerVisibleListingLinks} />
       <SellerSupportCard sellerAgentPhone={sellerAgentPhone} sellerAgentEmail={sellerAgentEmail} />
@@ -4067,10 +4346,6 @@ function ClientPortal() {
     hasOffers: activeSellerOfferCount > 0,
   })
   const sellerStageMeta = sharedSellerPortalJourney?.stageMeta || fallbackSellerStageMeta
-  const sellerStatusCards = Array.isArray(sharedSellerPortalJourney?.statusCards)
-    ? sharedSellerPortalJourney.statusCards
-    : []
-  const sellerPortalReadiness = sharedSellerPortalJourney?.readiness || null
   const sellerCurrentStage = sellerStageMeta.currentStage.label
   const sellerProgressPercent = sellerStageMeta.progressPercent
   const missingRequired = Math.max(
@@ -4098,7 +4373,7 @@ function ClientPortal() {
   const isTeam = workspaceSection === 'team'
   const isAlterations = workspaceSection === 'alterations'
   const isReview = workspaceSection === 'review'
-  const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller' && ['overview', 'appointments', 'offers', 'documents'].includes(workspaceSection)
+  const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller' && ['overview', 'appointments', 'offers', 'documents', 'details'].includes(workspaceSection)
 
   const trustFormStatus = portal?.trustInvestmentForm?.status || 'Not Started'
   const trustFormSubmittedAt = portal?.trustInvestmentForm?.submittedAt || null
@@ -5125,6 +5400,7 @@ function ClientPortal() {
     activeSellingContext?.listing_title,
     'Property sale',
   )
+  const sellerAddressLines = splitSellerPortalAddress(sellerPropertyTitle)
   const sellerAgencyName = pickFirstText(portal?.unit?.development?.name, activeSellingContext?.agencyName, activeSellingContext?.agency_name, 'Bridge')
   const sellerAgentName = pickFirstText(
     portal?.transaction?.assigned_agent,
@@ -5157,24 +5433,10 @@ function ClientPortal() {
       purchasePriceValue ||
       0,
   )
-  const sellerMandateStatus = getFriendlySellerStatusLabel(
-    activeSellingContext?.mandatePacket?.state ||
-      activeSellingContext?.mandateStatus ||
-      activeSellingContext?.mandate_status ||
-      mandatePacketState,
-    mandateStatusLabel,
-  )
-  const sellerLastUpdatedLabel = formatShortPortalDate(
-    portal?.lastUpdated || portal?.transaction?.updated_at || activeSellingContext?.updatedAt || activeSellingContext?.updated_at,
-    'Awaiting update',
-  )
-  const sellerSummaryItems = [
-    { label: 'Seller', value: sellerDisplayName },
-    { label: 'Property', value: sellerPropertyTitle },
-    { label: 'Mandate status', value: sellerMandateStatus },
-    { label: 'Agent / Agency', value: sellerAgentName },
-    { label: 'Last updated', value: sellerLastUpdatedLabel },
-  ]
+  const sellerOnboardingFormData =
+    portal?.onboardingFormData?.formData && typeof portal.onboardingFormData.formData === 'object'
+      ? portal.onboardingFormData.formData
+      : {}
   const sellerVisibleListingLinks = normalizeSellerVisibleListingLinks([
     ...(Array.isArray(activeSellingContext?.externalListingLinks) ? activeSellingContext.externalListingLinks : []),
     ...(Array.isArray(activeSellingContext?.listingExternalLinks) ? activeSellingContext.listingExternalLinks : []),
@@ -5182,38 +5444,60 @@ function ClientPortal() {
     ...(Array.isArray(portal?.activeSellingContext?.listingExternalLinks) ? portal.activeSellingContext.listingExternalLinks : []),
     ...(Array.isArray(portal?.listing?.externalLinks) ? portal.listing.externalLinks : []),
   ])
-  const acceptedSellerOffer = sellerOfferItems.find((offer) => ['accepted', 'converted_to_transaction'].includes(normalizeSellerPortalKey(offer.status)))
-  const sellerStageDates = {
-    mandate_signed: formatShortPortalDate(
-      activeSellingContext?.mandatePacket?.signedAt ||
-        activeSellingContext?.mandatePacket?.signed_at ||
-        portal?.mandate?.packet?.signedAt ||
-        portal?.mandate?.packet?.signed_at,
-      '',
-    ),
-    listed: formatShortPortalDate(
-      activeSellingContext?.listingPublishedAt ||
-        activeSellingContext?.listing_published_at ||
-        activeSellingContext?.listingCreatedAt ||
-        activeSellingContext?.listing_created_at ||
-        portal?.unit?.published_at ||
-        portal?.unit?.created_at,
-      '',
-    ),
-    offers: formatShortPortalDate(sellerOfferItems[0]?.receivedAt, ''),
-    offer_accepted: formatShortPortalDate(acceptedSellerOffer?.receivedAt, ''),
-    transfer: formatShortPortalDate(portal?.transaction?.stage_updated_at, ''),
-    registered: formatShortPortalDate(portal?.transaction?.registered_at || portal?.transaction?.completed_at, ''),
-  }
   const sellerRequiredDocuments = Array.isArray(workspaceData?.documentCenter?.requiredDocuments)
     ? workspaceData.documentCenter.requiredDocuments
-    : []
+    : (Array.isArray(portal?.requiredDocuments) ? portal.requiredDocuments : [])
   const sellerUploadedDocuments = Array.isArray(workspaceData?.documentCenter?.uploadedDocuments)
     ? workspaceData.documentCenter.uploadedDocuments
-    : []
+    : (Array.isArray(portal?.documents) ? portal.documents : [])
   const sellerDocumentsNeedingAttention = sellerRequiredDocuments.filter((item) => {
     const status = normalizePortalStatus(item?.status || item?.requiredDocumentStatus || '')
     return ['required', 'requested', 'rejected'].includes(status) && item?.visibility !== 'internal'
+  })
+  const normalizedSellerOnboardingStatus = normalizePortalStatus(
+    activeSellingContext?.sellerOnboardingStatus ||
+      activeSellingContext?.seller_onboarding_status ||
+      portal?.onboarding?.status ||
+      portal?.onboardingFormData?.status,
+  )
+  const sellerStatusChipLabel = buildSellerPortalStatusChip(normalizedSellerOnboardingStatus)
+  const hasSellerOnboardingData = Object.keys(sellerOnboardingFormData).length > 0
+  const hasMandatePacket = Boolean(
+    activeSellingContext?.mandatePacketId ||
+      activeSellingContext?.mandate_packet_id ||
+      activeSellingContext?.mandatePacket ||
+      portal?.mandate?.packet,
+  )
+  const hasMandateSigned = Boolean(
+    ['listed', 'offers', 'offer_accepted', 'transfer', 'registered'].includes(sellerStageMeta.currentStageKey) ||
+      ['signed', 'fully_signed', 'completed', 'uploaded_signed'].includes(normalizeSellerPortalKey(mandatePacketState)) ||
+      activeSellingContext?.mandatePacket?.finalSignedFilePath ||
+      portal?.mandate?.packet?.finalSignedFilePath,
+  )
+  const hasListingCreated = Boolean(
+    ['listed', 'offers', 'offer_accepted', 'transfer', 'registered'].includes(sellerStageMeta.currentStageKey) ||
+      sellerVisibleListingLinks.length ||
+      normalizePortalStatus(activeSellingContext?.listingStatus || activeSellingContext?.listing_status).includes('active'),
+  )
+  const hasDocumentsComplete = Boolean(
+    (sellerRequiredDocuments.length > 0 || sellerUploadedDocuments.length > 0 || sellerStageMeta.currentStageKey === 'registered') &&
+      sellerDocumentsNeedingAttention.length === 0 &&
+      hasListingCreated,
+  )
+  const sellerProgressModel = buildSellerPortalProgressModel({
+    hasSellingContext,
+    hasAppointment: clientVisibleAppointments.length > 0,
+    hasOnboardingStarted: hasSellerOnboardingData || Boolean(normalizedSellerOnboardingStatus && normalizedSellerOnboardingStatus !== 'not_started'),
+    hasOnboardingSubmitted: ['submitted', 'under_review', 'completed', 'reviewed', 'approved'].includes(normalizedSellerOnboardingStatus),
+    hasMandatePacket,
+    hasMandateSigned,
+    hasListingCreated,
+    hasDocumentsComplete,
+  })
+  const sellerDetailsSections = buildSellerPortalDetailsSections({
+    formData: sellerOnboardingFormData,
+    propertyAddress: sellerPropertyTitle,
+    uploadedDocuments: sellerUploadedDocuments,
   })
   const sellerPrimaryNextAction = workspaceNextActions.find((action) => action?.blocking) || workspaceNextActions[0] || null
   const pendingSellerAppointment = clientVisibleAppointments.find((appointment) => {
@@ -5230,7 +5514,7 @@ function ClientPortal() {
         tone: sellerPrimaryNextAction.blocking ? 'action' : 'info',
       }
     }
-    if (normalizeSellerPortalKey(portal?.onboarding?.status || portal?.onboardingFormData?.status) !== 'completed') {
+    if (!['submitted', 'under_review', 'completed', 'reviewed', 'approved'].includes(normalizedSellerOnboardingStatus)) {
       return {
         title: 'Complete seller onboarding',
         description: 'Finish your seller details so your agent can prepare the mandate and document requirements.',
@@ -5284,36 +5568,6 @@ function ClientPortal() {
       tone: 'info',
     }
   })()
-  const sellerQuickActions = [
-    {
-      to: 'appointments',
-      label: 'View appointments',
-      description: 'See upcoming and past appointments',
-      icon: CalendarClock,
-      badge: upcomingAppointmentCount > 0 ? String(upcomingAppointmentCount) : '',
-    },
-    {
-      to: 'offers',
-      label: 'View offers',
-      description: 'Review all offers received',
-      icon: HandCoins,
-      badge: activeSellerOfferCount > 0 ? String(activeSellerOfferCount) : '',
-    },
-    {
-      to: 'documents',
-      label: 'View documents',
-      description: 'Access and download your documents',
-      icon: FolderOpen,
-      badge: missingRequired > 0 ? `${missingRequired} due` : 'Ready',
-    },
-    {
-      href: sellerAgentEmail ? `mailto:${sellerAgentEmail}` : '',
-      label: 'Message agent',
-      description: sellerAgentEmail ? 'Send a message to your agent' : 'Agent messaging is coming soon',
-      icon: MessageCircle,
-      disabled: !sellerAgentEmail,
-    },
-  ]
   const safeSellerActivityItems = latestJourneyFeedItems
     .filter((item) => {
       const haystack = `${item.message || ''} ${item.contextLabel || ''}`.toLowerCase()
@@ -5333,7 +5587,15 @@ function ClientPortal() {
       ? {
           id: 'seller-listed-activity',
           message: 'Your property has been listed.',
-          timestampLabel: sellerStageDates.listed || 'Recently',
+          timestampLabel: formatShortPortalDate(
+            activeSellingContext?.listingPublishedAt ||
+              activeSellingContext?.listing_published_at ||
+              activeSellingContext?.listingCreatedAt ||
+              activeSellingContext?.listing_created_at ||
+              portal?.unit?.published_at ||
+              portal?.unit?.created_at,
+            'Recently',
+          ),
         }
       : null,
     sellerUploadedDocuments.length > 0
@@ -5795,16 +6057,19 @@ function ClientPortal() {
             <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">bridge.</h1>
             <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
             {effectiveWorkspace === 'seller' ? (
-              <div className="mt-4 overflow-hidden rounded-[18px] border border-white/10 bg-[rgba(7,14,24,0.34)]">
-                <div className="h-1 bg-[linear-gradient(90deg,#34d399,#38bdf8)]" style={{ width: `${sellerProgressPercent}%` }} />
-                <div className="px-3.5 py-3.5">
-                <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">Selling workspace</span>
-                <strong className="mt-1.5 block text-sm font-semibold leading-5 text-white">
-                  {sellerPropertyTitle}
+              <div className="mt-4 rounded-[18px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3.5 py-3.5">
+                <span className="inline-flex items-center rounded-full border border-white/12 bg-white/6 px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#c3d3e3]">
+                  {sellerStatusChipLabel}
+                </span>
+                <strong className="mt-3 block text-sm font-semibold leading-5 text-white">
+                  {sellerAddressLines.line1}
                 </strong>
-                <p className="mt-1 text-xs leading-5 text-[#b8c8d8]">
-                  {sellerCurrentStage} with {sellerAgentName || 'Bridge Property Team'}
-                </p>
+                {sellerAddressLines.line2 ? (
+                  <p className="mt-1 text-xs leading-5 text-[#b8c8d8]">{sellerAddressLines.line2}</p>
+                ) : null}
+                <p className="mt-3 text-xs leading-5 text-[#d7e3ef]">{sellerAgencyName || sellerAgentName || 'Bridge Property Team'}</p>
+                <div className="mt-3 h-1 rounded-full bg-white/10">
+                  <div className="h-1 rounded-full bg-[linear-gradient(90deg,#34d399,#38bdf8)]" style={{ width: `${sellerProgressPercent}%` }} />
                 </div>
               </div>
             ) : (
@@ -5866,12 +6131,17 @@ function ClientPortal() {
         <div className="min-w-0 flex-1 lg:pl-[280px]">
           <div className="border-b border-[#dbe5ef] bg-white/80 px-5 py-4 backdrop-blur lg:hidden">
             {effectiveWorkspace === 'seller' ? (
-              <div className="mb-3 overflow-hidden rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff]">
-                <div className="h-1 bg-[#17a37a]" style={{ width: `${sellerProgressPercent}%` }} />
-                <div className="px-3.5 py-3">
-                <span className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">bridge. seller workspace</span>
-                <strong className="mt-1 block text-sm font-semibold text-[#142132]">{sellerPropertyTitle}</strong>
-                <p className="mt-1 text-xs font-medium text-[#64748b]">{sellerCurrentStage}</p>
+              <div className="mb-3 rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-3">
+                <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#64748b]">
+                  {sellerStatusChipLabel}
+                </span>
+                <strong className="mt-2 block text-sm font-semibold text-[#142132]">{sellerAddressLines.line1}</strong>
+                {sellerAddressLines.line2 ? (
+                  <p className="mt-1 text-xs font-medium text-[#64748b]">{sellerAddressLines.line2}</p>
+                ) : null}
+                <p className="mt-2 text-xs text-[#64748b]">{sellerAgencyName || sellerAgentName || 'Bridge Property Team'}</p>
+                <div className="mt-3 h-1 rounded-full bg-[#dde7f1]">
+                  <div className="h-1 rounded-full bg-[#17a37a]" style={{ width: `${sellerProgressPercent}%` }} />
                 </div>
               </div>
             ) : (
@@ -6231,15 +6501,11 @@ function ClientPortal() {
                       sellerAgentPhone={sellerAgentPhone}
                       sellerAgentEmail={sellerAgentEmail}
                       sellerAgencyName={sellerAgencyName}
-                      sellerSummaryItems={sellerSummaryItems}
                       sellerNextStep={sellerNextStep}
-                      sellerQuickActions={sellerQuickActions}
                       sellerActivityItems={sellerActivityItems}
                       sellerVisibleListingLinks={sellerVisibleListingLinks}
-                      sellerStageMeta={sellerStageMeta}
-                      sellerStageDates={sellerStageDates}
-                      sellerStatusCards={sellerStatusCards}
-                      sellerReadiness={sellerPortalReadiness}
+                      sellerPropertyTitle={sellerPropertyTitle}
+                      sellerProgressModel={sellerProgressModel}
                       token={token}
                       workspaceNavigationScope={workspaceNavigationScope}
                     />
@@ -6653,6 +6919,9 @@ function ClientPortal() {
             ) : null}
 
             {isDetails ? (
+              effectiveWorkspace === 'seller' ? (
+                <SellerMyDetailsReadonlyPage sections={sellerDetailsSections} />
+              ) : (
               <section className="space-y-5">
                 <header className="rounded-[26px] border border-[#dbe5ef] bg-white px-6 py-6 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
                   <h3 className="text-[1.36rem] font-semibold tracking-[-0.03em] text-[#142132]">My Details</h3>
@@ -6796,6 +7065,7 @@ function ClientPortal() {
                   )
                 })}
               </section>
+              )
             ) : null}
 
             {isBondApplication ? (

@@ -7,11 +7,12 @@ function ClientDocumentUploadButton({
   uploadingDocumentKey = '',
   onUpload = null,
   uploadSpec = null,
+  className = '',
 }) {
   const busy = Boolean(uploadingDocumentKey) && String(uploadingDocumentKey) === String(uploadKey)
 
   return (
-    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
+    <label className={`inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white ${className}`.trim()}>
       <FileSignature size={14} />
       {busy ? 'Uploading...' : label}
       <input
@@ -31,4 +32,3 @@ function ClientDocumentUploadButton({
 }
 
 export default ClientDocumentUploadButton
-

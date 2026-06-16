@@ -49,6 +49,7 @@ test('transforms seller onboarding into canonical resolver facts', () => {
     companyDirectorName: 'Alex Principal',
     propertyType: 'apartment',
     propertyStructureType: 'sectional_title',
+    mandateType: 'sole',
     sectionalTitle: true,
     propertyAddressDetails: {
       query: '123 Main Street, Green Point, Cape Town, Western Cape, 8001',
@@ -105,6 +106,7 @@ test('captures land-specific details in canonical facts', () => {
     propertyCategory: 'agricultural',
     propertyStructureType: 'agricultural_holding',
     propertyType: 'farm',
+    mandateType: 'open',
     propertyAddressDetails: {
       query: 'Farm 12, Bela-Bela, Limpopo',
       line1: 'Farm 12',
@@ -143,6 +145,7 @@ test('validation distinguishes draft from final requirements', () => {
     province: 'Gauteng',
     propertyCategory: 'residential',
     propertyStructureType: 'freehold',
+    mandateType: 'sole',
     existingBond: true,
   }, listing)
 
@@ -175,6 +178,7 @@ test('builds canonical payload with readiness and resolver input', () => {
     canonicalPropertyType: 'estate',
     estateOrHoa: true,
     occupancyStatus: 'vacant',
+    mandateType: 'exclusive',
   }, listing, { contextType: 'private_listing', contextId: listing.id, listingId: listing.id })
 
   assert.equal(payload.canonicalSellerFacts.seller.legal_type, 'trust')
@@ -205,6 +209,7 @@ test('persists authority details and owner consent in canonical facts', () => {
     estateReference: 'EST-2026-01',
     executorAuthorityDetails: 'Letters of executorship issued by the Master of the High Court.',
     propertyType: 'house',
+    mandateType: 'sole',
     propertyAddress: '1 Main Road',
     suburb: 'Cape Town',
     province: 'Western Cape',
@@ -225,6 +230,7 @@ test('persists authority details and owner consent in canonical facts', () => {
     powerOfAttorneyPrincipalIdNumber: '8001015009080',
     powerOfAttorneyAuthorityDetails: 'POA-2026-01 / authority note',
     propertyType: 'vacant_land',
+    mandateType: 'open',
     propertyAddress: 'Farm 12',
     suburb: 'Bela-Bela',
     province: 'Limpopo',
@@ -246,6 +252,7 @@ test('persists authority details and owner consent in canonical facts', () => {
       { name: 'Kim', surname: 'Owner', idNumber: '9001015009084', consentToSell: true, ownershipShare: '50' },
     ],
     propertyType: 'house',
+    mandateType: 'sole',
     propertyAddress: '1 Main Road',
     suburb: 'Cape Town',
     province: 'Western Cape',

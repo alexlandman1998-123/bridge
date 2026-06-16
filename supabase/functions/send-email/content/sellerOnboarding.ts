@@ -45,7 +45,18 @@ export function buildSellerOnboardingSubject(
   propertyTitle: string,
   transactionReference = "",
   propertyType = "",
+  emailKind = "onboarding",
 ) {
+  if (String(emailKind || "").trim().toLowerCase() === "portal_documents") {
+    const propertyLabel = resolvePropertyLabel(propertyTitle, propertyType);
+    if (propertyLabel && !isGenericPropertyLabel(propertyLabel)) {
+      return `Upload your seller documents for ${propertyLabel}`;
+    }
+    if (propertyType) {
+      return `Upload your seller documents for ${propertyType}`;
+    }
+    return "Upload your seller documents";
+  }
   const propertyLabel = resolvePropertyLabel(propertyTitle, propertyType);
   const referenceLabel = normalizeReference(transactionReference || "");
   if (propertyLabel && !isGenericPropertyLabel(propertyLabel)) {
@@ -84,6 +95,7 @@ export function buildSellerOnboardingEmailHtml({
   senderOrganisationLogoUrl,
   supportEmail,
   supportPhone,
+  emailKind,
   templateOverrides,
 }: {
   sellerName: string;
@@ -97,6 +109,7 @@ export function buildSellerOnboardingEmailHtml({
   senderOrganisationLogoUrl?: string;
   supportEmail?: string;
   supportPhone?: string;
+  emailKind?: string;
   templateOverrides?: {
     title?: string;
     preheader?: string;
@@ -111,18 +124,36 @@ export function buildSellerOnboardingEmailHtml({
   const propertyLabel = resolvePropertyLabel(propertyTitle, propertyType);
   const referenceLabel = normalizeReference(transactionReference || "");
   const agentLabel = pickText(agentName, "Your agent");
+  const portalDocumentsMode = String(emailKind || "").trim().toLowerCase() === "portal_documents";
   const introParagraphs = pickLines(templateOverrides?.introParagraphs, [
-    "Your agent has invited you to complete the seller onboarding process for your property.",
-    "This should only take a few minutes and helps ensure your property sale progresses smoothly from the start.",
-    "To get everything ready, we need a few details and any available property documents from you.",
+    ...(portalDocumentsMode
+      ? [
+        "Your seller onboarding has been submitted and your seller portal is ready.",
+        "Use the secure link below to upload the documents needed for FICA, mandate preparation, and listing readiness.",
+        "Your agent can review the file in parallel while you complete the uploads.",
+      ]
+      : [
+        "Your agent has invited you to complete the seller onboarding process for your property.",
+        "This should only take a few minutes and helps ensure your property sale progresses smoothly from the start.",
+        "To get everything ready, we need a few details and any available property documents from you.",
+      ]),
   ]);
   const processSteps = pickLines(templateOverrides?.processSteps, [
-    "Complete your seller information.",
-    "Upload any available property documents.",
-    "Your agent reviews everything and prepares the property for listing.",
-    "We'll keep you updated as your sale progresses.",
+    ...(portalDocumentsMode
+      ? [
+        "Open your secure seller portal.",
+        "Upload the requested FICA, ownership, and property documents.",
+        "Your agent reviews the file and prepares the next mandate step.",
+        "You will receive secure updates as the sale progresses.",
+      ]
+      : [
+        "Complete your seller information.",
+        "Upload any available property documents.",
+        "Your agent reviews everything and prepares the property for listing.",
+        "We'll keep you updated as your sale progresses.",
+      ]),
   ]);
-  const ctaLabel = pickText(templateOverrides?.ctaLabel, "Complete Seller Information");
+  const ctaLabel = pickText(templateOverrides?.ctaLabel, portalDocumentsMode ? "Open Seller Portal" : "Complete Seller Information");
   const securityTitle = pickText(templateOverrides?.securityTitle, "Trust & Security");
   const securityBody = pickText(
     templateOverrides?.securityBody,
@@ -157,9 +188,11 @@ export function buildSellerOnboardingEmailHtml({
   return renderBridgeEmailLayout({
     preheader: pickText(
       templateOverrides?.preheader,
-      "Your agent has invited you to complete seller information for your property.",
+      portalDocumentsMode
+        ? "Your seller portal is ready for secure document uploads."
+        : "Your agent has invited you to complete seller information for your property.",
     ),
-    title: pickText(templateOverrides?.title, "Your Property Sale Starts Here"),
+    title: pickText(templateOverrides?.title, portalDocumentsMode ? "Upload Seller Documents" : "Your Property Sale Starts Here"),
     greeting: `Hi ${sellerName || "there"},`,
     contentHtml,
     securityTitle,
@@ -183,6 +216,7 @@ export function buildSellerOnboardingEmailText({
   organisationName,
   supportEmail,
   supportPhone,
+  emailKind,
   templateOverrides,
 }: {
   sellerName: string;
@@ -194,6 +228,7 @@ export function buildSellerOnboardingEmailText({
   organisationName?: string;
   supportEmail?: string;
   supportPhone?: string;
+  emailKind?: string;
   templateOverrides?: {
     introParagraphs?: string[];
     processSteps?: string[];
@@ -206,18 +241,36 @@ export function buildSellerOnboardingEmailText({
   const propertyLabel = resolvePropertyLabel(propertyTitle, propertyType);
   const referenceLabel = normalizeReference(transactionReference || "");
   const agentLabel = pickText(agentName, "Your agent");
+  const portalDocumentsMode = String(emailKind || "").trim().toLowerCase() === "portal_documents";
   const introParagraphs = pickLines(templateOverrides?.introParagraphs, [
-    "Your agent has invited you to complete the seller onboarding process for your property.",
-    "This should only take a few minutes and helps ensure your property sale progresses smoothly from the start.",
-    "To get everything ready, we need a few details and any available property documents from you.",
+    ...(portalDocumentsMode
+      ? [
+        "Your seller onboarding has been submitted and your seller portal is ready.",
+        "Use the secure link below to upload the documents needed for FICA, mandate preparation, and listing readiness.",
+        "Your agent can review the file in parallel while you complete the uploads.",
+      ]
+      : [
+        "Your agent has invited you to complete the seller onboarding process for your property.",
+        "This should only take a few minutes and helps ensure your property sale progresses smoothly from the start.",
+        "To get everything ready, we need a few details and any available property documents from you.",
+      ]),
   ]);
   const processSteps = pickLines(templateOverrides?.processSteps, [
-    "Complete your seller information.",
-    "Upload any available property documents.",
-    "Your agent reviews everything and prepares the property for listing.",
-    "We'll keep you updated as your sale progresses.",
+    ...(portalDocumentsMode
+      ? [
+        "Open your secure seller portal.",
+        "Upload the requested FICA, ownership, and property documents.",
+        "Your agent reviews the file and prepares the next mandate step.",
+        "You will receive secure updates as the sale progresses.",
+      ]
+      : [
+        "Complete your seller information.",
+        "Upload any available property documents.",
+        "Your agent reviews everything and prepares the property for listing.",
+        "We'll keep you updated as your sale progresses.",
+      ]),
   ]);
-  const ctaLabel = pickText(templateOverrides?.ctaLabel, "Complete Seller Information");
+  const ctaLabel = pickText(templateOverrides?.ctaLabel, portalDocumentsMode ? "Open Seller Portal" : "Complete Seller Information");
   const securityBody = pickText(
     templateOverrides?.securityBody,
     "Your information is securely stored and only shared with authorised parties involved in your property sale.",
@@ -235,7 +288,7 @@ export function buildSellerOnboardingEmailText({
     "What happens next:",
     ...processSteps.map((line, index) => `${index + 1}. ${line}`),
     "",
-    "Estimated Completion Time: 5-10 Minutes",
+    `Estimated Completion Time: ${portalDocumentsMode ? "2-5 Minutes" : "5-10 Minutes"}`,
     "",
     propertyLabel ? `Property: ${propertyLabel}` : null,
     agentLabel ? `Agent: ${agentLabel}` : null,

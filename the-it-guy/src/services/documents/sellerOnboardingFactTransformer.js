@@ -681,6 +681,7 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(!hasValue(facts.property?.address_details?.province || facts.property?.province), 'province_missing', 'Province is required for property classification.'))
   push(missingIf(!hasValue(facts.property?.property_category), 'property_category_missing', 'Property category is required.'))
   push(missingIf(!hasValue(facts.property?.property_structure_type), 'property_structure_type_missing', 'Property structure type is required.'))
+  push(missingIf(!hasValue(facts.transaction?.mandate_type), 'mandate_type_missing', 'Mandate type is required.'))
   push(missingIf(!hasValue(facts.property?.address_details?.municipality || facts.property?.municipality), 'municipality_missing', 'Municipality helps determine readiness and compliance.', 'recommended'))
   push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.name || facts.property?.scheme_name), 'sectional_scheme_missing', 'Scheme name should be captured for sectional title properties.', 'recommended'))
   push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.unit_number || facts.property?.unit_number), 'sectional_unit_missing', 'Section or unit number should be captured for sectional title properties.', 'recommended'))

@@ -1,5 +1,5 @@
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
-import { buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
+import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
 import {
   canTransitionPrivateListing,
   evaluatePrivateListingTransitionGuards,
@@ -151,6 +151,7 @@ const RAW_SELLER_ONBOARDING_KEYS = new Set([
   'monthlyWaterSpend',
   'monthlyElectricitySpend',
   'askingPrice',
+  'mandateType',
   'sellingTimeline',
   'sellingReason',
   'occupancyStatus',
@@ -1423,6 +1424,54 @@ function buildSellerClientPortalContextPayload({ listing = {}, onboarding = {}, 
     status: normalizeNullableText(status) || 'active',
     updated_at: new Date().toISOString(),
   }
+}
+
+function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {}, formData = {} } = {}) {
+  const token = normalizeText(onboarding?.token || listing?.sellerOnboarding?.token || listing?.seller_onboarding_token)
+  const portalLink = buildSellerClientPortalLink(token)
+  const to = getSellerClientPortalEmail(listing, onboarding, formData)
+  if (!to || !portalLink) return null
+
+  const propertyTitle = normalizeText(
+    listing?.propertyAddress ||
+      listing?.address ||
+      listing?.addressLine1 ||
+      listing?.address_line_1 ||
+      listing?.title ||
+      listing?.listingTitle ||
+      'your property',
+  )
+
+  return {
+    type: 'seller_onboarding_link',
+    emailKind: 'portal_documents',
+    to,
+    organisationId: normalizeText(listing?.organisationId || listing?.organisation_id),
+    sellerName: normalizeText(
+      formData?.sellerFirstName && formData?.sellerSurname
+        ? `${formData.sellerFirstName} ${formData.sellerSurname}`
+        : listing?.seller?.name || listing?.sellerName || 'Seller',
+    ),
+    propertyTitle,
+    propertyType: normalizeText(listing?.propertyType || listing?.property_type),
+    onboardingLink: portalLink,
+    transactionReference: normalizeText(listing?.listingReference || listing?.listing_reference),
+    agentName: normalizeText(listing?.assignedAgentName || listing?.assignedAgent || listing?.agentName || 'Your agent'),
+    organisationName: normalizeText(listing?.agencyOrganisation || listing?.organisationName || listing?.agencyName || 'Bridge'),
+    supportEmail: normalizeText(listing?.assignedAgentEmail || listing?.agentEmail || ''),
+  }
+}
+
+async function notifySellerPortalDocumentsReady(client, { listing = {}, onboarding = {}, formData = {} } = {}) {
+  const payload = buildSellerPortalDocumentsEmailPayload({ listing, onboarding, formData })
+  if (!payload) return { skipped: true, reason: 'email_or_portal_link_missing' }
+
+  const { data, error } = await client.functions.invoke('send-email', { body: payload })
+  if (error || data?.error) {
+    throw new Error(error?.message || data?.error || 'Seller portal email could not be sent.')
+  }
+
+  return data || { ok: true }
 }
 
 async function ensureSellerClientPortalContext(client, { listing = {}, onboarding = {}, formData = {}, status = 'active' } = {}) {
@@ -3053,6 +3102,14 @@ export async function submitSellerOnboarding(token, payload = {}) {
       console.warn('[Private Listings] seller client portal context sync skipped after onboarding submit', contextError)
       return null
     })
+    await notifySellerPortalDocumentsReady(client, {
+      listing: rpcContext.listing,
+      onboarding: rpcContext.onboarding,
+      formData: payload.formData,
+    }).catch((portalEmailError) => {
+      console.warn('[Private Listings] seller portal email skipped after onboarding submit', portalEmailError)
+      return null
+    })
     await persistCanonicalSellerFactPayload(client, {
       listingId: rpcContext.listing.id,
       onboardingId: rpcContext.onboarding?.id,
@@ -3225,15 +3282,23 @@ export async function submitSellerOnboarding(token, payload = {}) {
     console.warn('[Private Listings] seller client portal context sync skipped after onboarding fallback submit', contextError)
     return null
   })
-    await persistCanonicalSellerFactPayload(client, {
-      listingId: listingForContext?.id || context.listing.id,
-      onboardingId: updateOnboarding.data?.id,
-      formData: nextFormData,
-      listing: listingForContext,
-      draft: false,
-    }).catch((factError) => {
-      console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback submit', factError)
-      return null
+  await notifySellerPortalDocumentsReady(client, {
+    listing: listingForContext,
+    onboarding: updateOnboarding.data,
+    formData: nextFormData,
+  }).catch((portalEmailError) => {
+    console.warn('[Private Listings] seller portal email skipped after onboarding fallback submit', portalEmailError)
+    return null
+  })
+  await persistCanonicalSellerFactPayload(client, {
+    listingId: listingForContext?.id || context.listing.id,
+    onboardingId: updateOnboarding.data?.id,
+    formData: nextFormData,
+    listing: listingForContext,
+    draft: false,
+  }).catch((factError) => {
+    console.warn('[Private Listings] canonical seller facts persistence skipped after onboarding fallback submit', factError)
+    return null
   })
   await syncSellerOnboardingPublicationDraft(client, {
     listing: listingForContext,

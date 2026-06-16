@@ -52,6 +52,11 @@ import {
   upsertAppointmentViewedListings,
 } from '../lib/buyerLifecycleService'
 import { cancelTransactionLifecycle } from '../lib/api'
+import {
+  getDocumentStatusLabel,
+  getDocumentStatusTone,
+  normalizeDocumentStatus,
+} from '../lib/clientPortalDocumentStatus'
 import { normalizeLeadCategory as normalizeCanonicalLeadCategory } from '../lib/leadCategory'
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 import {
@@ -609,10 +614,34 @@ function normalizeCommissionTermType(value) {
   return 'percentage'
 }
 
-function readSellerOnboardingFormData(listing = {}) {
-  const onboarding = listing?.sellerOnboarding || listing?.seller_onboarding || listing?.sellerOnboardingRecord || {}
-  const formData = onboarding?.formData || onboarding?.form_data || listing?.sellerOnboardingFormData || listing?.seller_onboarding_form_data
-  return formData && typeof formData === 'object' ? formData : {}
+function readSellerOnboardingFormData(listing = {}, row = {}) {
+  const records = [row, listing]
+  const merged = {}
+
+  for (const record of records) {
+    if (!record || typeof record !== 'object') continue
+
+    const onboarding = record?.sellerOnboarding ||
+      record?.seller_onboarding ||
+      record?.sellerOnboardingRecord ||
+      record?.seller_onboarding_record ||
+      {}
+
+    const candidates = [
+      record?.onboardingDataSnapshot,
+      record?.sellerOnboardingFormData,
+      record?.seller_onboarding_form_data,
+      onboarding?.formData,
+      onboarding?.form_data,
+    ]
+
+    for (const candidate of candidates) {
+      if (!isPlainObject(candidate)) continue
+      Object.assign(merged, clonePlainObject(candidate))
+    }
+  }
+
+  return merged
 }
 
 function getSellerCommissionWorkspace(row = {}, listing = {}) {
@@ -7409,7 +7438,7 @@ function getSellerJourneyStepDate(row = {}, listing = null, journey = null, step
   return journey?.currentStageStartedAt || row?.updatedAt || row?.updated_at
 }
 
-function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboarding = {}, organisationId = '', actor = {}, workspaceName = '' } = {}) {
+function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboarding = {}, organisationId = '', actor = {}, workspaceName = '', emailKind = 'onboarding' } = {}) {
   const propertyTitle = normalizeText(
     row?.sellerPropertyAddress ||
       row?.seller_property_address ||
@@ -7426,6 +7455,7 @@ function buildSellerOnboardingEmailPayload({ row = {}, listing = null, onboardin
   )
   return {
     type: 'seller_onboarding_link',
+    emailKind: normalizeText(emailKind) || 'onboarding',
     to: normalizeText(row.email || row.contact?.email).toLowerCase(),
     organisationId: normalizeText(organisationId),
     sellerName: normalizeText(row.name || row.contact?.name || 'Seller'),
@@ -7515,24 +7545,80 @@ function SellerActionsPanel({
 
 function getSellerDocumentCompletion(documents = []) {
   const rows = Array.isArray(documents) ? documents : []
-  if (!rows.length) return { complete: 0, total: 0, percent: 0 }
-  const complete = rows.filter((document) => {
-    const status = normalizeText(document.status || document.documentStatus || document.document_status).toLowerCase()
-    return Boolean(document.url) || ['approved', 'uploaded', 'verified', 'accepted', 'complete', 'completed', 'signed'].includes(status)
+  const applicableRequiredRows = rows.filter((document) => document?.required !== false && document?.applicable !== false)
+  if (!applicableRequiredRows.length) return { complete: 0, total: 0, percent: 0 }
+  const complete = applicableRequiredRows.filter((document) => {
+    const status = normalizeDocumentStatus(document.status || document.documentStatus || document.document_status)
+    return status === 'approved' || status === 'completed'
   }).length
   return {
     complete,
-    total: rows.length,
-    percent: Math.round((complete / rows.length) * 100),
+    total: applicableRequiredRows.length,
+    percent: Math.round((complete / applicableRequiredRows.length) * 100),
   }
 }
 
 function getSellerDocumentDisplayStatus(document = {}) {
-  const complete = getSellerDocumentCompletion([document]).percent === 100
-  const rawStatus = normalizeText(document.status || document.documentStatus || document.document_status)
-  return rawStatus
-    ? rawStatus.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-    : complete ? 'Uploaded' : 'Missing'
+  return getDocumentStatusLabel(document.status || document.documentStatus || document.document_status)
+}
+
+const SELLER_DOCUMENT_CENTER_TABS = [
+  { key: 'all', label: 'All Documents' },
+  { key: 'property', label: 'Property Documents' },
+  { key: 'fica', label: 'FICA Documents' },
+  { key: 'additional', label: 'Additional Requests' },
+]
+
+function getSellerDocumentCategoryLabel(category = '') {
+  const normalized = normalizeText(category).toLowerCase()
+  if (normalized === 'property') return 'Property'
+  if (normalized === 'fica') return 'FICA'
+  if (normalized === 'additional') return 'Additional'
+  return 'Document'
+}
+
+function getSellerDocumentCategoryTone(category = '') {
+  const normalized = normalizeText(category).toLowerCase()
+  if (normalized === 'property') return 'bg-blue-50 text-blue-700'
+  if (normalized === 'fica') return 'bg-emerald-50 text-emerald-700'
+  if (normalized === 'additional') return 'bg-violet-50 text-violet-700'
+  return 'bg-slate-100 text-slate-700'
+}
+
+function getSellerDocumentFilterBucket(document = {}) {
+  const status = normalizeDocumentStatus(document.status || document.documentStatus || document.document_status)
+  if (status === 'approved' || status === 'completed') return 'approved'
+  if (status === 'rejected') return 'rejected'
+  if (status === 'under_review') return 'under_review'
+  if (status === 'uploaded') return 'uploaded'
+  return 'outstanding'
+}
+
+function getSellerDocumentStatusSummary(documents = []) {
+  const rows = (Array.isArray(documents) ? documents : []).filter((document) => document?.required !== false && document?.applicable !== false)
+  return rows.reduce((summary, document) => {
+    const bucket = getSellerDocumentFilterBucket(document)
+    summary.total += 1
+    if (bucket === 'approved') summary.approved += 1
+    else if (bucket === 'uploaded') summary.uploaded += 1
+    else if (bucket === 'under_review') summary.underReview += 1
+    else if (bucket === 'rejected') summary.rejected += 1
+    else summary.outstanding += 1
+    return summary
+  }, {
+    total: 0,
+    outstanding: 0,
+    uploaded: 0,
+    underReview: 0,
+    approved: 0,
+    rejected: 0,
+  })
+}
+
+function getSellerDocumentCountForTab(documents = [], tabKey = 'all') {
+  const rows = (Array.isArray(documents) ? documents : []).filter((document) => document?.required !== false && document?.applicable !== false)
+  if (tabKey === 'all') return rows.length
+  return rows.filter((document) => normalizeText(document.category).toLowerCase() === tabKey).length
 }
 
 function SellerWorkspaceCard({ title, action, children, className = '', id = '', density = 'regular' }) {
@@ -7938,7 +8024,7 @@ function SellerPropertyPreviewCard({ row, listing }) {
 
 function SellerAcquisitionActionRow({ row, listing, journey, readiness, onboardingStatus, onAction }) {
   return (
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.95fr)_minmax(260px,0.65fr)]">
+    <section className="grid gap-4 xl:grid-cols-3">
       <SellerNextBestActionCard row={row} listing={listing} journey={journey} readiness={readiness} onboardingStatus={onboardingStatus} onAction={onAction} />
       <SellerReadinessScoreCard readiness={readiness} journey={journey} />
       <SellerPropertyPreviewCard row={row} listing={listing} />
@@ -8263,6 +8349,7 @@ const SELLER_PROFILE_SECTION_DEFS = [
     defaultOpen: true,
     keys: [
       'askingPrice',
+      'mandateType',
       'sellingTimeline',
       'sellingReason',
       'propertyCategory',
@@ -8992,129 +9079,6 @@ function SellerSubmittedSectionCard({
   )
 }
 
-function SellerDocumentGroupCard({ group }) {
-  if (!group) return null
-  const statusLabel = group.outstanding > 0
-    ? 'Outstanding'
-    : group.notStarted > 0
-      ? 'Not started'
-      : 'Completed'
-  const tone = group.outstanding > 0
-    ? 'amber'
-    : group.notStarted > 0
-      ? 'slate'
-      : 'green'
-  const missingCount = group.outstanding + group.notStarted
-  const Icon = group.icon || FileText
-  const detailCopy = group.outstanding > 0
-    ? `${group.outstanding} outstanding`
-    : group.notStarted > 0
-      ? `${group.notStarted} not started`
-      : `${group.completed}/${group.total} complete`
-
-  return (
-    <article className="flex h-full min-h-[170px] min-w-0 flex-col justify-between rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-4 shadow-[0_16px_36px_rgba(15,23,42,0.05)]">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm">
-            <Icon size={18} />
-          </span>
-          <div className="min-w-0">
-            <h4 className="truncate text-sm font-semibold text-slate-950">{group.label}</h4>
-            <p className="mt-1 text-xs font-medium leading-5 text-slate-500">{detailCopy}</p>
-          </div>
-        </div>
-        <StatusPill tone={tone}>{statusLabel}</StatusPill>
-      </div>
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Required docs</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">{group.total} total</p>
-        </div>
-        <div className="rounded-2xl bg-slate-50 px-3 py-2 text-right">
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Missing</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">{missingCount}</p>
-        </div>
-      </div>
-      {group.completed === group.total ? (
-        <p className="mt-4 text-sm font-semibold text-emerald-700">All required documents are complete.</p>
-      ) : null}
-    </article>
-  )
-}
-
-function SellerDocumentOverviewPanel({
-  overview = null,
-  profile = {},
-  listing = null,
-  journey = null,
-  onboardingStatus = '',
-}) {
-  const onboardingSubmitted = sellerOnboardingIsSubmitted(onboardingStatus)
-  const resolvedOverview = useMemo(() => {
-    if (overview) return overview
-    if (!onboardingSubmitted) return { groups: [], summary: { total: 0, completed: 0, outstanding: 0, notStarted: 0 }, percent: 0 }
-    return buildSellerDocumentOverviewModel({ profile, listing, journey })
-  }, [journey, listing, onboardingSubmitted, overview, profile])
-
-  if (!onboardingSubmitted) {
-    return (
-      <SellerWorkspaceCard title="Documents Overview" density="compact">
-        <p className="text-sm font-semibold text-slate-900">Waiting for seller submission</p>
-        <p className="mt-2 leading-6">Document readiness will populate once the seller has submitted onboarding details.</p>
-      </SellerWorkspaceCard>
-    )
-  }
-
-  if (!resolvedOverview.groups.length) {
-    return (
-      <SellerWorkspaceCard title="Documents Overview" density="compact" action={<StatusPill tone="slate">No groups</StatusPill>}>
-        <p className="text-sm font-semibold text-slate-900">No document requirements yet</p>
-        <p className="mt-2 leading-6">The submitted onboarding did not produce a scenario-specific seller document set.</p>
-      </SellerWorkspaceCard>
-    )
-  }
-
-  return (
-    <SellerWorkspaceCard
-      title="Documents Overview"
-      density="compact"
-      action={<StatusPill tone={resolvedOverview.percent >= 80 ? 'green' : resolvedOverview.percent ? 'amber' : 'slate'}>{resolvedOverview.percent}% complete</StatusPill>}
-    >
-      <div className="grid gap-5 xl:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
-        <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-5 shadow-[0_18px_36px_rgba(15,23,42,0.05)]">
-          <ListingReadinessCircle percent={resolvedOverview.percent} />
-          <p className="mt-4 text-lg font-semibold tracking-[-0.035em] text-slate-950">Document Readiness</p>
-          <p className="mt-1 text-sm font-medium text-slate-500">
-            {resolvedOverview.summary.completed} completed, {resolvedOverview.summary.outstanding} outstanding, {resolvedOverview.summary.notStarted} not started
-          </p>
-          <div className="mt-4 space-y-2 text-sm font-medium text-slate-600">
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
-              <span>Completed</span>
-              <span className="font-semibold text-emerald-700">{resolvedOverview.summary.completed}</span>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
-              <span>Outstanding</span>
-              <span className="font-semibold text-amber-700">{resolvedOverview.summary.outstanding}</span>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
-              <span>Not started</span>
-              <span className="font-semibold text-slate-700">{resolvedOverview.summary.notStarted}</span>
-            </div>
-          </div>
-        </div>
-        <div className="overflow-x-auto pb-1">
-          <div className="grid min-w-max grid-flow-col auto-cols-[minmax(240px,1fr)] gap-4">
-            {resolvedOverview.groups.map((group) => (
-              <SellerDocumentGroupCard key={group.key} group={group} />
-            ))}
-          </div>
-        </div>
-      </div>
-    </SellerWorkspaceCard>
-  )
-}
-
 function buildSellerOnboardingSubmissionPatch({
   sourceData = {},
   draft = {},
@@ -9212,7 +9176,7 @@ function SellerProfileTab({
   onResendSellerPortalLink,
   onCopySellerPortalLink,
 }) {
-  const sourceFormData = useMemo(() => clonePlainObject(readSellerOnboardingFormData(listing || row)), [listing, row])
+  const sourceFormData = useMemo(() => clonePlainObject(readSellerOnboardingFormData(listing, row)), [listing, row])
   const sourceKey = useMemo(() => JSON.stringify(sourceFormData), [sourceFormData])
   const [draft, setDraft] = useState(() => clonePlainObject(sourceFormData))
   const [complexDrafts, setComplexDrafts] = useState(() => ({
@@ -9595,14 +9559,6 @@ function SellerProfileTab({
           )}
         </SellerWorkspaceCard>
       </div>
-
-      <SellerDocumentOverviewPanel
-        overview={documentOverview}
-        profile={requirementProfile}
-        listing={listing}
-        journey={journey}
-        onboardingStatus={onboardingStatus}
-      />
 
       <SellerWorkspaceCard
         id="seller-onboarding-editor"
@@ -10016,34 +9972,169 @@ function SellerMandateTab({
 }
 
 function SellerDocumentsTab({ journey }) {
-  const documents = journey?.documents || []
+  const documents = useMemo(() => (Array.isArray(journey?.documents) ? journey.documents : []), [journey])
   const completion = getSellerDocumentCompletion(documents)
+  const summary = useMemo(() => getSellerDocumentStatusSummary(documents), [documents])
+  const [activeTab, setActiveTab] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [searchValue, setSearchValue] = useState('')
+  const searchableDocuments = useMemo(
+    () => documents.filter((document) => document?.required !== false && document?.applicable !== false),
+    [documents],
+  )
+  const filteredDocuments = useMemo(() => {
+    const query = normalizeText(searchValue).toLowerCase()
+    return searchableDocuments.filter((document) => {
+      const matchesTab = activeTab === 'all' || normalizeText(document.category).toLowerCase() === activeTab
+      const bucket = getSellerDocumentFilterBucket(document)
+      const matchesStatus = statusFilter === 'all' || bucket === statusFilter
+      const haystack = [
+        document?.title,
+        document?.label,
+        document?.description,
+        document?.whyNeeded,
+        document?.uploadedFileName,
+      ].filter(Boolean).join(' ').toLowerCase()
+      const matchesSearch = !query || haystack.includes(query)
+      return matchesTab && matchesStatus && matchesSearch
+    })
+  }, [activeTab, searchValue, searchableDocuments, statusFilter])
+
   return (
     <SellerWorkspaceCard title="Document Center" action={<StatusPill tone={completion.percent >= 80 ? 'green' : completion.percent ? 'amber' : 'slate'}>{completion.percent}% complete</StatusPill>}>
-      <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <div>
+      <p className="text-sm leading-6 text-slate-500">Track seller uploads, FICA, property documents, and additional requests.</p>
+      <div className="mt-5 grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-5">
           <ListingReadinessCircle percent={completion.percent} />
           <p className="mt-4 text-lg font-semibold tracking-[-0.035em] text-slate-950">Documents Complete</p>
           <p className="mt-1 text-sm font-medium text-slate-500">{completion.complete}/{completion.total} requirements complete</p>
+          <div className="mt-5 space-y-3">
+            {[
+              ['Outstanding', summary.outstanding, 'bg-amber-500'],
+              ['Uploaded', summary.uploaded, 'bg-blue-500'],
+              ['Under Review', summary.underReview, 'bg-slate-500'],
+              ['Approved', summary.approved, 'bg-emerald-500'],
+              ['Rejected', summary.rejected, 'bg-rose-500'],
+            ].filter(([, count]) => count > 0 || searchableDocuments.length).map(([label, count, dotClass]) => (
+              <div key={label} className="flex items-center justify-between gap-3 text-sm font-semibold text-slate-700">
+                <span className="inline-flex items-center gap-2">
+                  <span className={`h-2.5 w-2.5 rounded-full ${dotClass}`} />
+                  {label}
+                </span>
+                <span>{count}</span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          {documents.length ? documents.map((document) => {
-            const complete = getSellerDocumentCompletion([document]).percent === 100
-            return (
-              <article key={document.id} className={`rounded-2xl border p-4 ${complete ? 'border-emerald-100 bg-emerald-50' : 'border-rose-100 bg-rose-50'}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-950">{document.label}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">{document.status || (complete ? 'Uploaded' : 'Missing')}</p>
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {SELLER_DOCUMENT_CENTER_TABS.map((tab) => {
+              const count = getSellerDocumentCountForTab(searchableDocuments, tab.key)
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`inline-flex min-h-10 items-center gap-2 rounded-2xl border px-4 text-sm font-semibold transition ${activeTab === tab.key ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {tab.label}
+                  <span className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs ${activeTab === tab.key ? 'bg-white text-blue-700' : 'bg-slate-100 text-slate-500'}`}>{count}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <label className="relative w-full lg:max-w-sm">
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={searchValue}
+                onChange={(event) => setSearchValue(event.target.value)}
+                placeholder="Search documents..."
+                className="min-h-11 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 text-sm outline-none focus:border-blue-300"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ['all', 'All'],
+                ['outstanding', 'Outstanding'],
+                ['uploaded', 'Uploaded'],
+                ['under_review', 'Under Review'],
+                ['approved', 'Approved'],
+                ['rejected', 'Rejected'],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStatusFilter(key)}
+                  className={`inline-flex min-h-10 items-center rounded-2xl border px-3 text-sm font-semibold transition ${statusFilter === key ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {!searchableDocuments.length ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10">
+              <p className="text-base font-semibold text-slate-950">No seller document requirements have been generated yet.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Once seller document requirements are created in the shared workflow, they will appear here automatically.</p>
+            </div>
+          ) : filteredDocuments.length ? (
+            <div className="space-y-3">
+              {filteredDocuments.map((document) => (
+                <article key={document.id} className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-base font-semibold tracking-[-0.03em] text-slate-950">{document.title || document.label}</h3>
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${getSellerDocumentCategoryTone(document.category)}`}>
+                          {getSellerDocumentCategoryLabel(document.category)}
+                        </span>
+                        {document.required !== false ? (
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                            Required
+                          </span>
+                        ) : null}
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getDocumentStatusTone(document.status)}`}>
+                          {getSellerDocumentDisplayStatus(document)}
+                        </span>
+                      </div>
+                      {document.description ? <p className="mt-2 text-sm leading-6 text-slate-600">{document.description}</p> : null}
+                      {document.whyNeeded ? <p className="mt-2 text-xs font-medium text-slate-500">Why this is needed: {document.whyNeeded}</p> : null}
+                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-slate-500">
+                        {document.uploadedFileName ? <span>File: <span className="font-semibold text-slate-700">{document.uploadedFileName}</span></span> : null}
+                        {document.uploadedAt ? <span>Uploaded {formatDateTime(document.uploadedAt, 'Recently')}</span> : null}
+                        {document.uploadedBy ? <span>By {document.uploadedBy}</span> : null}
+                        {document.requestedBy ? <span>Requested by {document.requestedBy}</span> : null}
+                        {document.rejectionReason ? <span className="text-rose-600">Reason: {document.rejectionReason}</span> : null}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      {document.url ? (
+                        <a
+                          href={document.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          View file
+                        </a>
+                      ) : (
+                        <span className="inline-flex min-h-10 items-center rounded-xl bg-slate-100 px-3 text-sm font-semibold text-slate-500">
+                          Awaiting seller upload
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className={`flex h-8 w-8 items-center justify-center rounded-full ${complete ? 'bg-emerald-600 text-white' : 'bg-white text-rose-500'}`}>
-                    {complete ? <CheckCircle2 size={15} /> : <FileText size={15} />}
-                  </span>
-                </div>
-                {document.url ? <a href={document.url} className="mt-3 inline-flex text-sm font-semibold text-blue-700">Open document</a> : null}
-              </article>
-            )
-          }) : <EmptyState title="No seller documents" copy="Seller document requirements will appear from the existing seller journey." />}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10">
+              <p className="text-base font-semibold text-slate-950">No documents match the current filters.</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Try a different category, status, or search term to view the seller requirement list.</p>
+            </div>
+          )}
         </div>
       </div>
     </SellerWorkspaceCard>
@@ -10448,8 +10539,12 @@ function SellerDetailsCard({ row, sourceInfo, journey }) {
 }
 
 function SellerDocumentsSummaryCard({ journey = null }) {
-  const documents = journey?.documents || []
+  const documents = Array.isArray(journey?.documents) ? journey.documents : []
   const completion = getSellerDocumentCompletion(documents)
+  const summary = getSellerDocumentStatusSummary(documents)
+  const topDocuments = documents
+    .filter((document) => document?.required !== false && document?.applicable !== false)
+    .slice(0, 4)
   return (
     <SellerWorkspaceCard
       density="compact"
@@ -10465,18 +10560,30 @@ function SellerDocumentsSummaryCard({ journey = null }) {
         </div>
         <span className="shrink-0 text-sm font-semibold text-slate-500">{completion.percent}% complete</span>
       </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {[
+          ['Outstanding', summary.outstanding],
+          ['Uploaded', summary.uploaded + summary.underReview],
+          ['Approved', summary.approved],
+          ['Rejected', summary.rejected],
+        ].map(([label, count]) => (
+          <div key={label} className="rounded-xl bg-slate-50 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{label}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-800">{count}</p>
+          </div>
+        ))}
+      </div>
       <div className="mt-3 grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
-        {documents.length ? documents.map((document) => {
-          const complete = getSellerDocumentCompletion([document]).percent === 100
+        {topDocuments.length ? topDocuments.map((document) => {
           return (
             <div key={document.id} className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
               <span className="min-w-0 truncate text-sm font-semibold text-slate-700">{document.label}</span>
-              <span className={`shrink-0 text-xs font-semibold ${complete ? 'text-emerald-600' : 'text-rose-500'}`}>
+              <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-1 text-[11px] font-semibold ${getDocumentStatusTone(document.status)}`}>
                 {getSellerDocumentDisplayStatus(document)}
               </span>
             </div>
           )
-        }) : <p className="text-sm text-slate-500">No seller documents linked.</p>}
+        }) : <p className="text-sm text-slate-500">No seller document requirements have been generated yet.</p>}
       </div>
     </SellerWorkspaceCard>
   )
@@ -11084,6 +11191,7 @@ function AgentLeadWorkspace() {
           organisationId,
           actor,
           workspaceName,
+          emailKind: 'portal_documents',
         }),
       })
       if (portalEmail?.error || portalEmail?.data?.error) {
@@ -11150,7 +11258,7 @@ function AgentLeadWorkspace() {
       if (!listingId) throw new Error('Create or link a seller listing before saving commission terms.')
 
       const formPatch = buildSellerCommissionFormPatch(draft, actor)
-      const existingFormData = readSellerOnboardingFormData(linkedSellerListing)
+      const existingFormData = readSellerOnboardingFormData(linkedSellerListing, row)
       const currentStatus = getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney)
       await updatePrivateListingOnboardingFormData(listingId, {
         ...existingFormData,

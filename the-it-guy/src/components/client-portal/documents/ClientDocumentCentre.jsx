@@ -4,6 +4,7 @@ import { normalizeDocumentStatus } from '../../../lib/clientPortalDocumentStatus
 import { getEducationalContentForRequirement } from '../../../content/clientPortalEducation'
 import CanonicalDocumentWorkspace from './canonical/CanonicalDocumentWorkspace'
 import { isCanonicalDocumentWorkspaceEnabled } from '../../../services/documents/canonicalDocumentWorkspaceService'
+import SellerDocumentWorkspace from './SellerDocumentWorkspace'
 
 function toArray(value) {
   return Array.isArray(value) ? value : []
@@ -298,6 +299,22 @@ function sellerRequirementGroup(item = {}) {
   return 'fica'
 }
 
+function decorateSellerDocumentItem(item = {}, categoryKey = '') {
+  const labels = {
+    property: 'Property',
+    fica: 'FICA',
+    mandate: 'Mandate',
+    transfer: 'Transfer',
+    additional: 'Additional Request',
+  }
+  return {
+    ...item,
+    sellerCategoryKey: categoryKey || 'property',
+    sellerCategoryLabel: labels[categoryKey] || 'Property',
+    isCoreRequirement: categoryKey !== 'additional',
+  }
+}
+
 function ClientDocumentCentre({
   documentCenter = {},
   workspace = 'buying',
@@ -309,7 +326,7 @@ function ClientDocumentCentre({
 }) {
   const [activeSellerDocumentTab, setActiveSellerDocumentTab] = useState('property')
   const canonicalRequirements = toArray(documentCenter?.canonicalRequirements)
-  if (isCanonicalDocumentWorkspaceEnabled() && canonicalRequirements.length) {
+  if (workspace !== 'selling' && isCanonicalDocumentWorkspaceEnabled() && canonicalRequirements.length) {
     return (
       <CanonicalDocumentWorkspace
         requirements={canonicalRequirements}
@@ -325,41 +342,87 @@ function ClientDocumentCentre({
 
   const sections = buildDocumentCentreSections(documentCenter, workspace)
   const isSelling = workspace === 'selling'
-  const sellerFicaDocuments = sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'fica')
-  const sellerPropertyDocuments = sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'property')
+  const sellerFicaDocuments = sections.allRequired
+    .filter((item) => sellerRequirementGroup(item) === 'fica')
+    .map((item) => decorateSellerDocumentItem(item, 'fica'))
+  const sellerPropertyDocuments = sections.allRequired
+    .filter((item) => sellerRequirementGroup(item) === 'property')
+    .map((item) => decorateSellerDocumentItem(item, 'property'))
   const sellerMandateDocuments = [
-    ...sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'mandate'),
-    ...sections.signedDocuments.filter((item) => /mandate/i.test(`${item?.title || ''} ${item?.description || ''}`)),
+    ...sections.allRequired
+      .filter((item) => sellerRequirementGroup(item) === 'mandate')
+      .map((item) => decorateSellerDocumentItem(item, 'mandate')),
+    ...sections.signedDocuments
+      .filter((item) => /mandate/i.test(`${item?.title || ''} ${item?.description || ''}`))
+      .map((item) => decorateSellerDocumentItem(item, 'mandate')),
   ]
   const sellerTransferDocuments = [
-    ...sections.allRequired.filter((item) => sellerRequirementGroup(item) === 'transfer'),
-    ...sections.signedDocuments.filter((item) => /transfer|sale agreement|otp/i.test(`${item?.title || ''} ${item?.description || ''}`)),
+    ...sections.allRequired
+      .filter((item) => sellerRequirementGroup(item) === 'transfer')
+      .map((item) => decorateSellerDocumentItem(item, 'transfer')),
+    ...sections.signedDocuments
+      .filter((item) => /transfer|sale agreement|otp/i.test(`${item?.title || ''} ${item?.description || ''}`))
+      .map((item) => decorateSellerDocumentItem(item, 'transfer')),
   ]
+  const sellerAdditionalDocuments = sections.additionalRequests.map((item) => decorateSellerDocumentItem(item, 'additional'))
   const sellerDocumentTabs = [
     {
       key: 'property',
       title: 'Property Documents',
       subtitle: 'Property, mandate, transfer, levy, rates, occupancy, and related sale documents.',
       items: uniqueById([...sellerPropertyDocuments, ...sellerMandateDocuments, ...sellerTransferDocuments]),
-      emptyState: 'No property documents are required at this stage.',
+      emptyState: 'No documents required in this category.',
     },
     {
       key: 'fica',
       title: 'FICA Documents',
       subtitle: 'Identity and compliance documents based on your seller onboarding answers.',
       items: sellerFicaDocuments,
-      emptyState: 'No FICA documents are required at this stage.',
+      emptyState: 'No documents required in this category.',
     },
     {
       key: 'additional',
       title: 'Additional Requests',
       subtitle: 'Extra seller documents requested by your transaction team.',
-      items: sections.additionalRequests,
-      emptyState: 'No additional document requests yet.',
+      items: sellerAdditionalDocuments,
+      emptyState: 'No documents required in this category.',
     },
   ]
   const activeSellerDocumentSection =
     sellerDocumentTabs.find((tab) => tab.key === activeSellerDocumentTab) || sellerDocumentTabs[0]
+  const handlePrimaryUploadAction = () => {
+    const firstActionableTab = sellerDocumentTabs.find((tab) =>
+      tab.items.some((item) => item?.uploadSpec),
+    ) || sellerDocumentTabs[0]
+    if (firstActionableTab?.key) {
+      setActiveSellerDocumentTab(firstActionableTab.key)
+    }
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        document.getElementById('seller-document-list')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+      })
+    }
+  }
+
+  if (isSelling) {
+    return (
+      <SellerDocumentWorkspace
+        tabs={sellerDocumentTabs}
+        activeTabKey={activeSellerDocumentSection.key}
+        onTabChange={setActiveSellerDocumentTab}
+        requiredItems={sections.allRequired.map((item) => decorateSellerDocumentItem(item, sellerRequirementGroup(item)))}
+        errorMessage={documentCenter?.loadError || documentCenter?.error || ''}
+        onPrimaryUploadAction={handlePrimaryUploadAction}
+        uploadingDocumentKey={uploadingDocumentKey}
+        openingDocumentPath={openingDocumentPath}
+        onUpload={onUpload}
+        onOpenDocument={onOpenDocument}
+      />
+    )
+  }
 
   return (
     <section className="space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
@@ -374,45 +437,6 @@ function ClientDocumentCentre({
       </div>
       ) : null}
 
-      {isSelling ? (
-        <>
-          <div className="rounded-[18px] border border-[#dbe5ef] bg-[#f8fbff] p-2">
-            <div className="grid gap-2 md:grid-cols-3">
-              {sellerDocumentTabs.map((tab) => {
-                const isActive = activeSellerDocumentSection.key === tab.key
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveSellerDocumentTab(tab.key)}
-                    className={`inline-flex min-h-[46px] items-center justify-between gap-3 rounded-[14px] px-4 py-2 text-left text-sm font-semibold transition ${
-                      isActive
-                        ? 'border border-[#cfe0ef] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
-                        : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
-                    }`}
-                  >
-                    <span>{tab.title}</span>
-                    <span className="inline-flex min-w-[28px] items-center justify-center rounded-full border border-[#dce6f0] bg-white px-2 py-0.5 text-[0.7rem] font-semibold text-[#5f7086]">
-                      {tab.items.length}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          <ClientDocumentSection
-            title={activeSellerDocumentSection.title}
-            subtitle={activeSellerDocumentSection.subtitle}
-            items={activeSellerDocumentSection.items}
-            emptyState={activeSellerDocumentSection.emptyState}
-            uploadingDocumentKey={uploadingDocumentKey}
-            openingDocumentPath={openingDocumentPath}
-            onUpload={onUpload}
-            onOpenDocument={onOpenDocument}
-          />
-        </>
-      ) : (
       <>
       <ClientDocumentSection
         title="Required From You"
@@ -480,7 +504,6 @@ function ClientDocumentCentre({
         onOpenDocument={onOpenDocument}
       />
       </>
-      )}
     </section>
   )
 }

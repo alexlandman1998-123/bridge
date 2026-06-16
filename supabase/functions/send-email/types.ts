@@ -154,13 +154,14 @@ export type SendTransactionPartnerInvitationPayload = {
 };
 
 export type SendSellerOnboardingPayload = {
-  type: "seller_onboarding";
+  type: "seller_onboarding" | "seller_onboarding_link";
   to: string;
   organisationId?: string;
   sellerName?: string;
   propertyTitle?: string;
   propertyType?: string;
   onboardingLink?: string;
+  emailKind?: "onboarding" | "portal_documents" | string;
   transactionReference?: string;
   agentName?: string;
   organisationName?: string;

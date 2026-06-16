@@ -126,6 +126,12 @@ const MARITAL_REGIMES = [
   { value: 'unknown', label: 'Unknown' },
 ]
 
+const MANDATE_TYPE_OPTIONS = [
+  { value: 'open', label: 'Open mandate' },
+  { value: 'sole', label: 'Sole mandate' },
+  { value: 'exclusive', label: 'Exclusive mandate' },
+]
+
 const PAGE_CONTAINER_CLASS = 'mx-auto w-full max-w-[1184px]'
 const PAGE_STACK_CLASS = 'space-y-5 sm:space-y-6 lg:space-y-8'
 const SECTION_CARD_CLASS =
@@ -811,6 +817,7 @@ function normalizeFormData(listing) {
     ownershipFieldLabels,
 
     askingPrice: existing.askingPrice || String(listing?.askingPrice || ''),
+    mandateType: existing.mandateType || canonicalFacts?.transaction?.mandate_type || listing?.mandateType || '',
     sellingTimeline: existing.sellingTimeline || '1_3_months',
     sellingReason: existing.sellingReason || '',
 
@@ -1201,6 +1208,7 @@ function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, d
 
 function SellerCompletedState({ token, listing, form, brand }) {
   const clientSellingPath = `/client/${token}/selling/documents`
+  const mandateTypeLabel = MANDATE_TYPE_OPTIONS.find((item) => item.value === form.mandateType)?.label || 'Not selected'
 
   return (
     <section className="rounded-[28px] border border-[#d8e2ec] bg-white/90 p-5 shadow-[0_20px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl sm:rounded-[32px] sm:p-6 lg:rounded-[36px] lg:p-8 lg:shadow-[0_28px_60px_rgba(15,23,42,0.09)]">
@@ -1211,7 +1219,7 @@ function SellerCompletedState({ token, listing, form, brand }) {
           </span>
           <h2 className="mt-4 text-xl font-semibold tracking-[-0.02em] text-[#14532d] sm:mt-5 sm:text-2xl sm:tracking-[-0.025em]">Your seller information has been submitted</h2>
           <p className="mt-3 text-sm leading-6 text-[#25603d]">
-            Your agent will review your information. Your next step is to open the client portal selling module and upload the documents needed for FICA, mandate preparation, and listing readiness.
+            Your seller portal is ready now. Open it to upload the documents needed for FICA, mandate preparation, and listing readiness while your agent reviews the submitted information.
           </p>
           <div className="mt-4 rounded-[18px] border border-[#cfe8da] bg-white/70 p-4 text-left text-sm leading-6 text-[#25603d]">
             <p className="font-semibold text-[#14532d]">What happens next</p>
@@ -1223,7 +1231,7 @@ function SellerCompletedState({ token, listing, form, brand }) {
           </div>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <Link to={clientSellingPath} className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] bg-[#172334] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] sm:w-auto">
-              Open Client Portal
+              Open Seller Portal
             </Link>
             <Link to="/" className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto">
               Return to Bridge
@@ -1244,6 +1252,7 @@ function SellerCompletedState({ token, listing, form, brand }) {
               { label: 'Seller', value: getSellerDisplayName(listing, form) },
               { label: 'Property', value: getPropertyDisplayAddress(listing, form) },
               { label: 'Ownership', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
+              { label: 'Mandate Type', value: mandateTypeLabel },
               { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
             ]}
           />
@@ -1781,6 +1790,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           return 'Each owner needs a name, surname, ID number, and consent to sell.'
         }
       }
+
+      if (!form.mandateType) {
+        return 'Please select the mandate type for this sale.'
+      }
     }
 
     if (currentStep === 1) {
@@ -1901,7 +1914,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       setListing(updated)
       setCurrentStep(3)
-      setSuccess('Your property details have been submitted.\nNext, open your client portal selling module to upload the required seller documents.')
+      setSuccess('Your property details have been submitted.\nYour seller portal is ready now. Open the client portal selling module to upload the required seller documents.')
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('itg:seller-onboarding-submitted', {
@@ -2540,6 +2553,17 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               <FormSection icon={Building2} title="Selling Context" description="Light qualification details help your agent prepare the next step.">
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                    Mandate Type
+                    <select className={DETAIL_INPUT_CLASS} value={form.mandateType} onChange={(event) => handleFormUpdate('mandateType', event.target.value)}>
+                      <option value="">Select mandate type</option>
+                      {MANDATE_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
                     Asking Price (optional)
                     <input className={DETAIL_INPUT_CLASS} type="number" min="0" value={form.askingPrice} onChange={(event) => handleFormUpdate('askingPrice', event.target.value)} />
                   </label>
@@ -3158,8 +3182,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           {currentStep === 2 ? (
             <StepShell
               eyebrow="FICA & Compliance"
-              title="Documents are uploaded later"
-              description="Your agent will review this onboarding first. FICA and compliance uploads happen securely inside the seller portal."
+              title="Documents upload next"
+              description="Once you submit, your seller portal is ready immediately. FICA and compliance uploads happen securely there."
             >
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.05fr_0.95fr]">
                 <FormSection
@@ -3169,10 +3193,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 >
                   <div className="rounded-[18px] border border-[#dbe6f2] bg-[#f7fbff] p-4 sm:p-5">
                     <p className="text-sm leading-6 text-[#35546c]">
-                      After you submit this onboarding, your agent will open the seller portal for document uploads. You’ll be asked there for FICA, ownership, mandate, and property compliance documents that match your seller file.
+                      After you submit this onboarding, your seller portal is available immediately for document uploads. You’ll be asked there for FICA, ownership, mandate, and property compliance documents that match your seller file.
                     </p>
                     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      {['Submit onboarding', 'Agent reviews file', 'Upload documents in portal'].map((item, index) => (
+                      {['Submit onboarding', 'Upload documents in portal', 'Agent reviews file'].map((item, index) => (
                         <div key={item} className="rounded-[16px] border border-[#dbe6f2] bg-white px-3 py-3">
                           <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#172334] text-xs font-semibold text-white">{index + 1}</span>
                           <p className="mt-2 text-sm font-semibold text-[#22364a]">{item}</p>
@@ -3266,6 +3290,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   collapsible
                   items={[
                     { label: 'Asking Price', value: form.askingPrice ? formatCurrency(form.askingPrice) : 'Not provided' },
+                    { label: 'Mandate Type', value: MANDATE_TYPE_OPTIONS.find((item) => item.value === form.mandateType)?.label || 'Not selected' },
                     { label: 'Timeline', value: formatValue(form.sellingTimeline) },
                     { label: 'Reason', value: formatValue(form.sellingReason) },
                   ]}
@@ -3277,7 +3302,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   items={[
                     { label: 'Seller Profile', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
                     { label: 'Branch Tasks', value: `${complianceDocuments.length} item${complianceDocuments.length === 1 ? '' : 's'} identified` },
-                    { label: 'Next Step', value: 'Agent review and mandate preparation' },
+                    { label: 'Next Step', value: 'Upload documents in seller portal' },
                   ]}
                 />
               </div>
@@ -3285,7 +3310,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 <div className="flex items-start gap-3">
                   <Sparkles size={18} className="mt-0.5 text-[#35546c]" />
                   <p className="text-sm leading-6 text-[#35546c]">
-                    Submit when everything looks correct. Your agent will review this seller file and prepare the next step.
+                    Submit when everything looks correct. Your seller portal opens immediately for document uploads while your agent reviews the file.
                   </p>
                 </div>
               </div>

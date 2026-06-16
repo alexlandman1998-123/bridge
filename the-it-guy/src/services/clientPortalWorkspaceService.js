@@ -24,9 +24,9 @@ import {
 } from '../content/clientPortalEducation'
 import { getTransactionWorkflowReadModel } from './transactionWorkflowReadModelService'
 import { getSellerOnboardingByToken } from './privateListingService'
-import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine'
 import { buildSellerJourney } from './sellerJourneyService.js'
 import { buildSellerReadinessSummary } from './sellerReadinessService.js'
+import { getSellerRequiredDocuments } from './sellerDocumentRequirementsService.js'
 import {
   getCanonicalRequirementsForContext,
   isCanonicalDocumentWorkspaceEnabled,
@@ -115,35 +115,6 @@ function mapSellerRequiredDocument(requirement = {}) {
     canonicalRequirementInstanceId: requirement?.canonicalRequirementInstanceId || requirement?.canonical_requirement_instance_id || '',
     canonical_requirement_instance_id: requirement?.canonical_requirement_instance_id || requirement?.canonicalRequirementInstanceId || '',
   }
-}
-
-function sellerRequirementIdentity(requirement = {}) {
-  return String(
-    requirement?.key ||
-      requirement?.requirement_key ||
-      requirement?.document_key ||
-      requirement?.canonicalRequirementInstanceId ||
-      requirement?.canonical_requirement_instance_id ||
-      requirement?.label ||
-      requirement?.requirement_name ||
-      requirement?.name ||
-      '',
-  )
-    .trim()
-    .toLowerCase()
-}
-
-function mergeSellerRequiredDocuments(...requirementLists) {
-  const merged = []
-  const seen = new Set()
-  for (const requirement of requirementLists.flat()) {
-    if (!requirement || typeof requirement !== 'object') continue
-    const identity = sellerRequirementIdentity(requirement)
-    if (identity && seen.has(identity)) continue
-    if (identity) seen.add(identity)
-    merged.push(requirement)
-  }
-  return merged
 }
 
 function mapSellerUploadedDocument(document = {}) {
@@ -400,31 +371,6 @@ function resolveSellerPortalWorkflowStage(listing = {}, onboarding = {}, status 
     return 'mandate_signed'
   }
   return 'mandate_signed'
-}
-
-function getSellerRequiredDocuments(listing = {}, formData = {}) {
-  const persisted = Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []
-  const hasOnboardingFacts =
-    formData && typeof formData === 'object' && Object.keys(formData).length > 0
-  try {
-    const derived = (!persisted.length || hasOnboardingFacts)
-      ? generateSellerDocumentRequirements({
-          ...listing,
-          sellerOnboarding: {
-            ...(listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object' ? listing.sellerOnboarding : {}),
-            status: listing?.sellerOnboardingStatus || 'completed',
-            formData,
-          },
-        })
-      : []
-    return mergeSellerRequiredDocuments(persisted, derived)
-  } catch (error) {
-    console.warn('[client-portal-documents] Failed to derive seller document requirements', {
-      listingId: listing?.id || null,
-      error,
-    })
-    return persisted
-  }
 }
 
 async function fetchSellerClientPortalDataByToken(token) {

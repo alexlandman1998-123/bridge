@@ -66,6 +66,7 @@ function buildBaseForm(overrides = {}) {
     propertyCategory: 'residential',
     propertyType: 'house',
     propertyStructureType: 'freehold',
+    mandateType: 'sole',
     askingPrice: '2450000',
     ...baseAddress,
     ...overrides,
