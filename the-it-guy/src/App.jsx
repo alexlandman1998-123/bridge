@@ -1236,7 +1236,7 @@ function AppRoutes() {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
               <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
-              <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout /></AppErrorBoundary></RoleRoute>}>
+              <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout onLogout={logout} user={session?.user || null} /></AppErrorBoundary></RoleRoute>}>
                 <Route index element={<Navigate to="/commercial/dashboard" replace />} />
                 <Route path="dashboard" element={<CommercialDashboard />} />
                 <Route path="principal" element={<Navigate to="/commercial/performance" replace />} />

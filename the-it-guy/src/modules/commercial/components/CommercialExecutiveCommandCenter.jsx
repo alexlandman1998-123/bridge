@@ -641,8 +641,8 @@ function DashboardHeader({ profile }) {
   return (
     <header className="flex flex-col gap-3 pt-1 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
-        <h1 className="text-[46px] font-semibold leading-none tracking-[-0.045em] text-[#0f2748]">{getGreeting(profile)}</h1>
-        <p className="mt-1.5 text-[18px] font-normal text-[#60758d]">Commercial Portfolio Overview</p>
+        <h1 className="text-[38px] font-semibold leading-none tracking-[-0.04em] text-[#0f2748] lg:text-[40px]">{getGreeting(profile)}</h1>
+        <p className="mt-1.5 text-[15px] font-normal text-[#60758d] lg:text-[16px]">Commercial Portfolio Overview</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Link to="/commercial/listings" className="inline-flex h-[44px] items-center gap-2 rounded-[12px] bg-[#0e335f] px-[16px] text-sm font-medium text-white shadow-[0_10px_24px_rgba(14,51,95,0.14)] transition hover:bg-[#0b294e]">

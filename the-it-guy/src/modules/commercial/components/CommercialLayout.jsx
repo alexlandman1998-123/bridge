@@ -14,6 +14,45 @@ import CommercialBranding from './CommercialBranding'
 import CommercialEnablementExperience from './CommercialEnablementExperience'
 import CommercialSidebar from './CommercialSidebar'
 
+function getUserInitials(user) {
+  const fullName = String(
+    user?.fullName ||
+      user?.full_name ||
+      [user?.firstName || user?.first_name, user?.lastName || user?.last_name].filter(Boolean).join(' ') ||
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.name ||
+      '',
+  ).trim()
+  if (fullName) {
+    return fullName
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || '')
+      .join('')
+  }
+
+  const email = String(user?.email || '').trim()
+  if (email) {
+    return email.slice(0, 2).toUpperCase()
+  }
+
+  return 'CU'
+}
+
+function getUserAvatarUrl(user) {
+  return String(
+    user?.avatarUrl ||
+      user?.avatar_url ||
+      user?.profilePhotoUrl ||
+      user?.profile_photo_url ||
+      user?.photoUrl ||
+      user?.photo_url ||
+      user?.user_metadata?.avatar_url ||
+      user?.user_metadata?.picture ||
+      '',
+  ).trim()
+}
+
 function CommercialPageSkeleton() {
   return (
     <div className="grid gap-5">
@@ -28,12 +67,14 @@ function CommercialPageSkeleton() {
   )
 }
 
-function CommercialLayout() {
+function CommercialLayout({ onLogout = null, user = null }) {
   const location = useLocation()
   const navigate = useNavigate()
   const contentScrollRef = useRef(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [accessState, setAccessState] = useState({ loading: true, allowed: false, reason: '', message: '', scope: null })
+  const [profileOpen, setProfileOpen] = useState(false)
+  const profileMenuRef = useRef(null)
   const currentPath = `${location.pathname}${location.search || ''}`
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
   const mobilePrimaryItems = useMemo(() => COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS, [])
@@ -101,11 +142,71 @@ function CommercialLayout() {
     return () => window.cancelAnimationFrame(frameId)
   }, [location.pathname])
 
+  useEffect(() => {
+    function handlePointerDown(event) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setProfileOpen(false)
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') {
+        setProfileOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [])
+
   function handleSearchKeyDown(event) {
     if (event.key !== 'Enter') return
     const query = searchTerm.trim()
     navigate(query ? `/commercial/listings?search=${encodeURIComponent(query)}` : '/commercial/listings')
   }
+
+  const userInitials = getUserInitials(user)
+  const userAvatarUrl = getUserAvatarUrl(user)
+  const profileControl = (
+    <div className="relative flex-none" ref={profileMenuRef}>
+      <button
+        type="button"
+        className="ui-shell-avatar-trigger h-[44px]"
+        aria-label="Profile"
+        onClick={() => setProfileOpen((previous) => !previous)}
+      >
+        <span className="inline-grid h-7 w-7 place-items-center overflow-hidden rounded-full bg-textStrong text-secondary font-semibold text-textInverse">
+          {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : userInitials}
+        </span>
+        <ChevronDown size={14} />
+      </button>
+
+      {profileOpen ? (
+        <div className="ui-surface-floating absolute right-0 top-[calc(100%+12px)] z-50 flex min-w-[200px] flex-col p-2">
+          <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings/account" onClick={() => setProfileOpen(false)}>
+            Profile
+          </Link>
+          <Link className="rounded-control px-3 py-2 text-sm font-medium text-textStrong hover:bg-surfaceAlt" to="/settings" onClick={() => setProfileOpen(false)}>
+            Settings
+          </Link>
+          <button
+            type="button"
+            className="rounded-control px-3 py-2 text-left text-sm font-medium text-textStrong hover:bg-surfaceAlt"
+            onClick={() => {
+              setProfileOpen(false)
+              onLogout?.()
+            }}
+          >
+            Log out
+          </button>
+        </div>
+      ) : null}
+    </div>
+  )
 
   if (accessState.loading) {
     return (
@@ -142,8 +243,11 @@ function CommercialLayout() {
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <CommercialBranding compact />
-            <div className="w-[190px]">
-              <WorkspaceSwitcher currentPath={currentPath} onSelectWorkspace={(path) => navigate(path)} />
+            <div className="flex items-center gap-2">
+              <div className="w-[190px]">
+                <WorkspaceSwitcher currentPath={currentPath} onSelectWorkspace={(path) => navigate(path)} />
+              </div>
+              {profileControl}
             </div>
           </div>
           <div className="mt-3 flex items-center gap-2">
@@ -236,6 +340,7 @@ function CommercialLayout() {
               <button type="button" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-blue-200 hover:text-blue-600" aria-label="Notifications">
                 <Bell size={17} />
               </button>
+              {profileControl}
             </div>
           </div>
         </div>
