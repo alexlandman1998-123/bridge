@@ -129,7 +129,7 @@ update public.leads lead
        updated_at = now()
 from inserted
 where lead.organisation_id = inserted.organisation_id
-  and lead.lead_id = inserted.seller_lead_id;
+  and lead.lead_id::text = inserted.seller_lead_id::text;
 
 insert into public.private_listing_activity (
   private_listing_id,

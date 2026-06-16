@@ -333,14 +333,14 @@ function getInventoryStatus({ statusKey = '', lifecycleGroup = '', complianceWar
   if (['draft', 'seller_lead', 'onboarding_sent'].includes(normalizedStatus) || normalizedGroup === 'draft_intake') {
     return { key: 'draft', filterKey: 'draft', label: 'Draft' }
   }
-  if (hasAttention) {
-    return { key: 'needs_attention', filterKey: 'needs_attention', label: 'Needs Attention' }
-  }
   if (['active', 'listing_active', 'under_offer'].includes(normalizedStatus) || ['active', 'under_offer'].includes(normalizedGroup)) {
     return { key: 'live', filterKey: 'live', label: 'Live' }
   }
   if (normalizedStatus === 'mandate_signed') {
-    return { key: 'ready_to_publish', filterKey: 'draft', label: 'Ready To Publish' }
+    return { key: 'ready_to_publish', filterKey: 'ready_to_publish', label: 'Ready To Publish' }
+  }
+  if (hasAttention) {
+    return { key: 'needs_attention', filterKey: 'needs_attention', label: 'Needs Attention' }
   }
   if (['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent'].includes(normalizedStatus) || normalizedGroup === 'mandate') {
     return { key: 'under_review', filterKey: 'draft', label: 'Under Review' }
@@ -1667,6 +1667,7 @@ function AgentListings({ initialTab = null } = {}) {
     return [
       { key: 'all', label: 'All', count: residentialListingCards.length },
       { key: 'live', label: 'Live', count: countFor('live') },
+      { key: 'ready_to_publish', label: 'Ready To Publish', count: countFor('ready_to_publish') },
       { key: 'draft', label: 'Draft', count: countFor('draft') },
       { key: 'needs_attention', label: 'Needs Attention', count: countFor('needs_attention') },
       { key: 'sold', label: 'Sold', count: countFor('sold') },
