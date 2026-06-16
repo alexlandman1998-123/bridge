@@ -1133,7 +1133,7 @@ function buildDocumentCenter(portalData, workspaceMode = 'buying') {
           ? uploadedStatus
           : requirement?.status || uploadedStatus,
         requiredDocumentStatus: uploadedStatus,
-        complete: ['approved', 'completed'].includes(uploadedStatus),
+        complete: ['uploaded', 'under_review', 'approved', 'completed'].includes(uploadedStatus),
         isUploaded: true,
         uploadedDocumentId: uploadedDocument.id || uploadedDocument.file_path || uploadedDocument.storage_path || null,
         uploaded_document_id: uploadedDocument.id || uploadedDocument.file_path || uploadedDocument.storage_path || null,

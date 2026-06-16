@@ -23,8 +23,20 @@ function isClientVisible(document = {}) {
 }
 
 function resolveRequirementStatus(requirement = {}) {
-  if (requirement?.complete === true) return 'completed'
-  return normalizeDocumentStatus(requirement?.requiredDocumentStatus || requirement?.status || '')
+  const rawStatus = requirement?.requiredDocumentStatus || requirement?.status || ''
+  const normalized = normalizeDocumentStatus(rawStatus)
+  if (requirement?.complete === true) {
+    const hasUploadedDocument = Boolean(
+      requirement?.uploadedDocument ||
+        requirement?.uploaded_document ||
+        requirement?.uploadedDocumentId ||
+        requirement?.uploaded_document_id,
+    )
+    if (hasUploadedDocument && ['required', 'requested'].includes(normalized)) return 'uploaded'
+    if (hasUploadedDocument) return normalized
+    return 'completed'
+  }
+  return normalized
 }
 
 function resolveRequirementUploadSpec(requirement = {}) {

@@ -3268,41 +3268,71 @@ function ClientPortal() {
         return
       }
 
-      setPortal((previous) => {
-        if (!previous) {
-          return previous
-        }
-
+      const markRequiredDocumentUploaded = (document) => {
         const normalizedRequiredKey = normalizeDocumentKey(requiredDocumentKey)
+        if (!normalizedRequiredKey || normalizeDocumentKey(document?.key || document?.requirement_key) !== normalizedRequiredKey) {
+          return document
+        }
+        return {
+          ...document,
+          status: 'uploaded',
+          requiredDocumentStatus: 'uploaded',
+          complete: true,
+          isUploaded: true,
+          uploadedDocumentId: uploadedDocument.id,
+          uploaded_document_id: uploadedDocument.id,
+          uploadedDocument: uploadedDocument,
+          uploaded_document: uploadedDocument,
+        }
+      }
+
+      const addUploadedDocument = (documents = []) => {
+        const existingRows = Array.isArray(documents) ? documents : []
         const uploadedDocumentId = String(uploadedDocument.id)
         const uploadedDocumentType = normalizeDocumentKey(uploadedDocument.document_type)
-
-        let nextDocuments = Array.isArray(previous.documents) ? [...previous.documents] : []
-        nextDocuments = nextDocuments.filter((document) => String(document?.id || '') !== uploadedDocumentId)
+        let nextDocuments = existingRows.filter((document) => String(document?.id || '') !== uploadedDocumentId)
         if (uploadedDocumentType === 'reservation_deposit_pop') {
           nextDocuments = nextDocuments.filter(
             (document) => normalizeDocumentKey(document?.document_type) !== 'reservation_deposit_pop',
           )
         }
         nextDocuments.unshift(uploadedDocument)
+        return nextDocuments
+      }
+
+      setPortal((previous) => {
+        if (!previous) {
+          return previous
+        }
+
+        const normalizedRequiredKey = normalizeDocumentKey(requiredDocumentKey)
+        const nextDocuments = addUploadedDocument(previous.documents)
 
         let nextRequiredDocuments = previous.requiredDocuments
         if (normalizedRequiredKey && Array.isArray(previous.requiredDocuments)) {
-          nextRequiredDocuments = previous.requiredDocuments.map((document) =>
-            normalizeDocumentKey(document?.key) === normalizedRequiredKey
-              ? {
-                  ...document,
-                  complete: true,
-                  uploadedDocumentId: uploadedDocument.id,
-                }
-              : document,
-          )
+          nextRequiredDocuments = previous.requiredDocuments.map(markRequiredDocumentUploaded)
         }
 
         return {
           ...previous,
           documents: nextDocuments,
           requiredDocuments: nextRequiredDocuments,
+        }
+      })
+
+      setWorkspaceData((previous) => {
+        if (!previous?.documentCenter) return previous
+        const nextUploadedDocuments = addUploadedDocument(previous.documentCenter.uploadedDocuments)
+        const nextRequiredDocuments = Array.isArray(previous.documentCenter.requiredDocuments)
+          ? previous.documentCenter.requiredDocuments.map(markRequiredDocumentUploaded)
+          : previous.documentCenter.requiredDocuments
+        return {
+          ...previous,
+          documentCenter: {
+            ...previous.documentCenter,
+            uploadedDocuments: nextUploadedDocuments,
+            requiredDocuments: nextRequiredDocuments,
+          },
         }
       })
     },

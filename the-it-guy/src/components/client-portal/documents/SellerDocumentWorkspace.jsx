@@ -34,7 +34,7 @@ function buildSummaryModel(requiredItems = []) {
     rejected: 0,
   })
 
-  const completed = counts.approved
+  const completed = counts.uploaded + counts.under_review + counts.approved
   const total = applicableRequired.length
   const percent = total > 0 ? Math.round((completed / total) * 100) : 100
   const blockingItems = applicableRequired.filter((item) => {
