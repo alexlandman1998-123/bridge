@@ -42,6 +42,10 @@ function appointmentScheduled(journey = {}) {
   return Boolean(journey?.valuationAppointment) || ['Scheduled', 'Completed'].includes(normalizeText(journey?.valuationStatus))
 }
 
+function appointmentCompleted(journey = {}) {
+  return normalizeText(journey?.valuationStatus) === 'Completed'
+}
+
 function onboardingSent(journey = {}) {
   return journey?.onboardingSent === true
 }
@@ -269,7 +273,7 @@ export function getNextSellerAction(args = {}) {
   if (appointmentScheduled(journey) && !onboardingSubmitted(journey)) return action('open_seller_portal', 'Track Seller Onboarding')
   if (journey.mandateStatus === 'draft') return action('send_mandate', 'Send Mandate', canSendMandate({ ...args, journey }), blocking?.label || '', { blocker: blocking })
   if (appointmentScheduled(journey)) return action('generate_mandate', 'Generate Mandate')
-  if (journey.valuationAppointment) return action('mark_valuation_complete', 'Complete Valuation')
+  if (journey.valuationAppointment && !appointmentCompleted(journey)) return action('mark_valuation_complete', 'Mark as Completed')
   return action('schedule_valuation', 'Schedule Valuation', canScheduleValuation({ ...args, journey }), blocking?.label || '', { blocker: blocking })
 }
 
@@ -325,9 +329,9 @@ export function getStageAwareSellerActions({ lead = {}, contact = {}, appointmen
     : stageKey === 'appointment_valuation'
       ? [
         make('open_appointment', 'Open Appointment', Boolean(resolvedJourney.valuationAppointment)),
-        make('mark_valuation_complete', 'Mark Valuation Complete', Boolean(resolvedJourney.valuationAppointment)),
+        !appointmentCompleted(resolvedJourney) ? make('mark_valuation_complete', 'Mark as Completed', Boolean(resolvedJourney.valuationAppointment)) : null,
         make('generate_mandate', 'Generate Mandate', appointmentScheduled(resolvedJourney)),
-      ]
+      ].filter(Boolean)
       : stageKey === 'seller_onboarding_sent'
         ? [
           make('open_seller_portal', 'Open Seller Portal', true),

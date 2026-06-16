@@ -7261,6 +7261,51 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function handleMarkSellerValuationComplete() {
+    const appointment = selectedSellerJourney?.valuationAppointment
+    if (!organisationId || !selectedLead?.leadId || !appointment?.appointmentId) {
+      handleScheduleSellerAppointment()
+      return
+    }
+    if (normalizeKey(appointment?.status).includes('complete') || appointment?.completedAt || appointment?.completed_at) {
+      setMessage('Valuation is already marked completed.')
+      setError('')
+      return
+    }
+    if (typeof window !== 'undefined' && !window.confirm('Mark this valuation appointment as completed?')) {
+      return
+    }
+
+    try {
+      setError('')
+      const updated = await updateAppointmentAsync(
+        organisationId,
+        appointment.appointmentId,
+        {
+          status: 'completed',
+        },
+        {
+          actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+        },
+      )
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+        stage: 'Appointment Completed',
+        status: 'Valuation Completed',
+      })
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: currentAgent,
+        activityType: 'Valuation Completed',
+        activityNote: normalizeText(updated?.notes || updated?.title) || 'Seller valuation manually marked completed from seller journey.',
+        outcome: 'completed',
+        activityDate: new Date().toISOString(),
+      }, { actor: currentAgent })
+      setMessage('Valuation marked completed.')
+      await reloadRecords(organisationId)
+    } catch (completionError) {
+      setError(completionError?.message || 'Unable to mark this valuation as completed right now.')
+    }
+  }
+
   function handleSellerJourneyAction(actionId) {
     const id = normalizeText(actionId)
     if (id === 'contact_seller') {
@@ -7284,7 +7329,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'open_appointment' || id === 'mark_valuation_complete') {
-      if (selectedSellerJourney?.valuationAppointment) {
+      if (id === 'mark_valuation_complete') {
+        void handleMarkSellerValuationComplete()
+      } else if (selectedSellerJourney?.valuationAppointment) {
         handleOpenAppointmentModal(selectedSellerJourney.valuationAppointment)
       } else {
         handleScheduleSellerAppointment()

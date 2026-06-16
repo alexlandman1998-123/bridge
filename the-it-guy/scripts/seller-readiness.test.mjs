@@ -43,6 +43,7 @@ const baseLead = {
   assert.equal(readiness.nextAction.id, 'open_seller_portal')
   assert.equal(readiness.nextAction.label, 'Send Seller Onboarding')
   assert.equal(readiness.actions.some((item) => item.id === 'mark_valuation_complete'), true)
+  assert.equal(readiness.actions.find((item) => item.id === 'mark_valuation_complete')?.label, 'Mark as Completed')
 }
 
 {
@@ -62,6 +63,7 @@ const baseLead = {
   assert.equal(canSendMandate(args), false)
   assert.equal(getNextSellerAction(args).id, 'open_seller_portal')
   assert.equal(getNextSellerAction(args).label, 'Send Seller Onboarding')
+  assert.equal(getSellerReadiness(args).actions.some((item) => item.id === 'mark_valuation_complete'), false)
 }
 
 {
