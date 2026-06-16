@@ -789,7 +789,7 @@ function CommercialCanvassingPage() {
   }, [loadData])
 
   const lookupOptions = useMemo(() => toLookupOptions(lookups), [lookups])
-  const brokerOptions = lookupOptions.brokers || []
+  const brokerOptions = useMemo(() => lookupOptions.brokers || [], [lookupOptions])
 
   useEffect(() => {
     setCreateDraft((previous) => {
@@ -821,6 +821,23 @@ function CommercialCanvassingPage() {
       setRoleFilter('all')
     }
   }, [dealFilter, roleFilter])
+
+  const activitiesByProspectId = useMemo(() => {
+    const nextMap = new Map()
+
+    activities.forEach((activityRow) => {
+      const prospectId = normalizeText(activityRow?.prospectId || activityRow?.prospect_id)
+      if (!prospectId || nextMap.has(prospectId)) return
+      nextMap.set(prospectId, activityRow)
+    })
+
+    return nextMap
+  }, [activities])
+
+  const normalizedProspects = useMemo(() => prospects.map((prospect) => normaliseCommercialProspect(prospect, {
+    lastActivity: activitiesByProspectId.get(normalizeText(prospect.id)) || null,
+    assignedBrokerName: pickLookupLabel(brokerOptions, prospect.assignedBrokerId, prospect.assignedBrokerName || ''),
+  })), [activitiesByProspectId, brokerOptions, prospects])
 
   const selectedProspect = useMemo(
     () => prospects.find((prospect) => normalizeText(prospect.id) === normalizeText(selectedProspectId)) || null,
@@ -1494,7 +1511,7 @@ function CommercialCanvassingPage() {
     </Modal>
   )
 
-  const selectedBrokerLabel = pickLookupLabel(brokerOptions, selectedProspect?.assignedBrokerId, selectedProspect?.assignedBrokerName || 'Unassigned')
+  const selectedBrokerLabel = selectedProspectView?.assignedBrokerDisplay || pickLookupLabel(brokerOptions, selectedProspect?.assignedBrokerId, selectedProspect?.assignedBrokerName || 'Unassigned')
 
   return (
     <div className="space-y-8 pb-10">
