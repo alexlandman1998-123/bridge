@@ -31,7 +31,20 @@ function isLikelyUuid(value = '') {
 }
 
 function normalizeRole(value, fallback = 'agent') {
-  return normalizeText(value).toLowerCase() || fallback
+  const normalized = normalizeText(value).toLowerCase()
+  if (!normalized) return fallback
+  if (normalized === 'administrator') return 'admin'
+  if (normalized === 'superadmin') return 'super_admin'
+  if (normalized === 'principal / owner') return 'principal'
+  if (normalized === 'branch_admin' || normalized === 'branch manager') return 'branch_manager'
+  if (normalized === 'team lead') return 'team_lead'
+  if (normalized === 'senior agent') return 'senior_agent'
+  if (normalized === 'personal_assistant' || normalized === 'personal assistant' || normalized === 'pa') return 'assistant'
+  if (normalized === 'transaction coordinator' || normalized === 'transaction_coordination') return 'transaction_coordinator'
+  if (normalized === 'listing coordinator' || normalized === 'listing_coordination') return 'listing_coordinator'
+  if (normalized === 'admin coordinator' || normalized === 'administrator coordinator') return 'admin_coordinator'
+  if (normalized === 'commercial_broker' || normalized === 'commercial broker' || normalized === 'broker') return 'agent'
+  return normalized
 }
 
 function getFirstName(input = {}) {
