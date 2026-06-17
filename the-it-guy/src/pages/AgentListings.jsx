@@ -37,7 +37,7 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, transitionPrivateListingStatus, updatePrivateListing, uploadPrivateListingDocument } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListings, updatePrivateListing, uploadPrivateListingDocument } from '../services/privateListingService'
 import { getListingPartnerShareOptions, shareListingWithPartner, unshareListingWithPartner } from '../services/partnerListingSharingService'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import {
@@ -431,11 +431,8 @@ function getInventoryStatus({ statusKey = '', lifecycleGroup = '', complianceWar
   if (['draft', 'seller_lead', 'onboarding_sent'].includes(normalizedStatus) || normalizedGroup === 'draft_intake') {
     return { key: 'draft', filterKey: 'draft', label: 'Draft' }
   }
-  if (['active', 'listing_active', 'under_offer'].includes(normalizedStatus) || ['active', 'under_offer'].includes(normalizedGroup)) {
-    return { key: 'live', filterKey: 'live', label: 'Live' }
-  }
-  if (normalizedStatus === 'mandate_signed') {
-    return { key: 'ready_to_publish', filterKey: 'ready_to_publish', label: 'Ready To Publish' }
+  if (['active', 'listing_active', 'mandate_signed', 'under_offer'].includes(normalizedStatus) || ['active', 'under_offer'].includes(normalizedGroup)) {
+    return { key: 'live', filterKey: 'live', label: normalizedStatus === 'under_offer' ? 'Under Offer' : 'Active Mandate' }
   }
   if (hasAttention) {
     return { key: 'needs_attention', filterKey: 'needs_attention', label: 'Needs Attention' }
@@ -449,7 +446,6 @@ function getInventoryStatus({ statusKey = '', lifecycleGroup = '', complianceWar
 function inventoryStatusClass(statusKey) {
   if (statusKey === 'live') return 'border-[#bfe5ce] bg-[#effaf3] text-[#17623a]'
   if (statusKey === 'needs_attention') return 'border-[#f1d3a6] bg-[#fff8ea] text-[#8a5b16]'
-  if (statusKey === 'ready_to_publish') return 'border-[#c9dfef] bg-[#eff7ff] text-[#1f4f78]'
   if (statusKey === 'under_review') return 'border-[#ded7f1] bg-[#f7f3ff] text-[#5a3d9c]'
   if (statusKey === 'sold') return 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
   if (statusKey === 'archived') return 'border-[#d7dee8] bg-[#f4f7fb] text-[#607387]'
@@ -459,7 +455,6 @@ function inventoryStatusClass(statusKey) {
 function inventoryDotClass(statusKey) {
   if (statusKey === 'live' || statusKey === 'sold') return 'bg-[#2fb463]'
   if (statusKey === 'needs_attention') return 'bg-[#d78a16]'
-  if (statusKey === 'ready_to_publish') return 'bg-[#1f77b4]'
   if (statusKey === 'under_review') return 'bg-[#7d55d7]'
   if (statusKey === 'archived') return 'bg-[#8da0b5]'
   return 'bg-[#607387]'
@@ -888,7 +883,6 @@ function AgentListings({ initialTab = null } = {}) {
   const [deletedListingIds, setDeletedListingIds] = useState(() => readDeletedListingIds())
   const [organisationId, setOrganisationId] = useState('')
   const [deletingListingId, setDeletingListingId] = useState('')
-  const [publishingListingId, setPublishingListingId] = useState('')
   const [openListingMenuId, setOpenListingMenuId] = useState('')
   const [shareModalListing, setShareModalListing] = useState(null)
   const [shareOptions, setShareOptions] = useState([])
@@ -1639,102 +1633,6 @@ function AgentListings({ initialTab = null } = {}) {
     return listingIdentityKeys.find((value) => isUuidLike(value)) || ''
   }
 
-  function listingMatchesIdentityKeys(listing = {}, keys = new Set()) {
-    if (!keys.size) return false
-    return getListingIdentityKeys(listing).some((key) => keys.has(key))
-  }
-
-  function buildPublishedLocalListingPatch(listing = {}) {
-    const now = new Date().toISOString()
-    return {
-      ...listing,
-      listingStatus: LISTING_STATUS.LISTING_ACTIVE,
-      status: LISTING_STATUS.LISTING_ACTIVE,
-      listingVisibility: 'active_market',
-      visibility: listing.visibility || 'agent',
-      isActive: true,
-      bridgeListingStatus: 'published',
-      updatedAt: now,
-      activatedAt: listing.activatedAt || now,
-      propertyDetails: {
-        ...(listing.propertyDetails || {}),
-        listingStatus: LISTING_STATUS.LISTING_ACTIVE,
-        publicationStatus: 'Published',
-      },
-    }
-  }
-
-  function activateLocalListingCard(card = {}) {
-    const identityKeys = new Set([
-      ...(Array.isArray(card?.identityKeys) ? card.identityKeys : []),
-      ...getListingIdentityKeys(card?.listingRecord || {}),
-      card?.id,
-    ].map((value) => normalizeText(value)).filter(Boolean))
-    const fallbackListing = card?.listingRecord || { id: normalizeText(card?.id), listingTitle: card?.title }
-    const publishedFallback = buildPublishedLocalListingPatch(fallbackListing)
-
-    let foundRuntimeListing = false
-    const runtimeListings = readAgentPrivateListings()
-    const nextRuntimeListings = runtimeListings.map((listing) => {
-      if (!listingMatchesIdentityKeys(listing, identityKeys)) return listing
-      foundRuntimeListing = true
-      return buildPublishedLocalListingPatch(listing)
-    })
-    writeAgentPrivateListings(foundRuntimeListing ? nextRuntimeListings : [publishedFallback, ...nextRuntimeListings])
-
-    setPrivateListings((rows) => {
-      let foundRow = false
-      const nextRows = rows.map((row) => {
-        if (!listingMatchesIdentityKeys(row, identityKeys)) return row
-        foundRow = true
-        return buildPublishedLocalListingPatch(row)
-      })
-      return foundRow ? nextRows : [publishedFallback, ...nextRows]
-    })
-
-    window.dispatchEvent(new Event('itg:listings-updated'))
-    return publishedFallback
-  }
-
-  async function handlePublishListing(card, event) {
-    event?.stopPropagation?.()
-    setPublishingListingId(card.id)
-    setOpenListingMenuId('')
-    setError('')
-    setWorkflowMessage('')
-
-    try {
-      const remoteListingId = getRemoteListingIdForCard(card)
-      if (!remoteListingId) {
-        const publishedListing = activateLocalListingCard(card)
-        setWorkflowMessage(`"${publishedListing.listingTitle || publishedListing.title || card.title || 'Listing'}" is now live locally.`)
-        return
-      }
-
-      const result = await transitionPrivateListingStatus(remoteListingId, 'active', {
-        metadata: {
-          source: 'agent_listings_publish_action',
-          triggeredFrom: 'listings_page',
-        },
-      })
-      const publishedListing = result?.listing || null
-      if (publishedListing?.id) {
-        setPrivateListings((rows) => rows.map((row) => {
-          const rowKeys = getListingIdentityKeys(row)
-          return rowKeys.some((key) => key === publishedListing.id || key === remoteListingId)
-            ? { ...row, ...publishedListing }
-            : row
-        }))
-      }
-      await loadData({ showLoading: false })
-      setWorkflowMessage(`"${card.title || 'Listing'}" is now live.`)
-    } catch (publishError) {
-      setError(publishError?.message || 'Unable to publish this listing yet.')
-    } finally {
-      setPublishingListingId('')
-    }
-  }
-
   async function openPartnerShareModal(card, event) {
     event.stopPropagation()
     const remoteListingId = getRemoteListingIdForCard(card)
@@ -1807,8 +1705,6 @@ function AgentListings({ initialTab = null } = {}) {
       const completeness = getListingCompleteness(listing)
       const quickMetadata = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description)
       const complianceWarnings = getListingComplianceWarnings(listing, completeness)
-      const mandateStatusKey = normalizeKey(listing?.mandateStatus || listing?.mandate_status || quickMetadata?.mandateStatus)
-      const hasSignedMandate = mandateStatusKey === 'signed' || listingHasDocumentSignal(listing, ['mandate', 'signed mandate'])
       const lifecycleBlockers = evaluatePrivateListingTransitionGuards(
         listing,
         statusKey === 'seller_lead'
@@ -1856,7 +1752,6 @@ function AgentListings({ initialTab = null } = {}) {
         inventoryStatusKey: inventoryStatus.key,
         inventoryFilterKey: inventoryStatus.filterKey,
         inventoryStatusLabel: inventoryStatus.label,
-        canPublish: hasSignedMandate && !['active', 'listing_active', 'under_offer', 'transaction_created', 'sold', 'withdrawn'].includes(statusKey),
         attentionLine: '',
         mandateStatusLabel: getMandateStatus(listing),
         completenessScore: completeness.score,
@@ -1888,8 +1783,7 @@ function AgentListings({ initialTab = null } = {}) {
     const countFor = (key) => residentialListingCards.filter((card) => card.inventoryFilterKey === key).length
     return [
       { key: 'all', label: 'All', count: residentialListingCards.length },
-      { key: 'live', label: 'Live', count: countFor('live') },
-      { key: 'ready_to_publish', label: 'Ready To Publish', count: countFor('ready_to_publish') },
+      { key: 'live', label: 'Active Mandates', count: countFor('live') },
       { key: 'draft', label: 'Draft', count: countFor('draft') },
       { key: 'needs_attention', label: 'Needs Attention', count: countFor('needs_attention') },
       { key: 'sold', label: 'Sold', count: countFor('sold') },
@@ -2272,17 +2166,6 @@ function AgentListings({ initialTab = null } = {}) {
                                 Share With Partners
                               </button>
                             ) : null}
-                            {card.canPublish ? (
-                              <button
-                                type="button"
-                                onClick={(event) => handlePublishListing(card, event)}
-                                disabled={publishingListingId === card.id}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#1f7d44] transition hover:bg-[#f2fbf5] disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {publishingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                                Make Listing Live
-                              </button>
-                            ) : null}
                             <button
                               type="button"
                               onClick={(event) => {
@@ -2329,17 +2212,6 @@ function AgentListings({ initialTab = null } = {}) {
                         <UserRound size={14} className="shrink-0 text-[#1f4f78]" />
                         <span className="truncate">{card.agentName || 'Assigned Agent'}</span>
                       </span>
-                      {card.canPublish ? (
-                        <button
-                          type="button"
-                          onClick={(event) => handlePublishListing(card, event)}
-                          disabled={publishingListingId === card.id}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#bde7cc] bg-[#1f7d44] px-3 py-1.5 font-semibold text-white shadow-[0_8px_16px_rgba(31,125,68,0.18)] transition hover:bg-[#176337] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {publishingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                          Make Live
-                        </button>
-                      ) : null}
                       <button
                         type="button"
                         onClick={(event) => {

@@ -376,6 +376,136 @@ function resolveAgencyCommissionAmount(row) {
   }
 }
 
+function parseDashboardNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  const raw = String(value || '').replace(/[^0-9.,-]+/g, '')
+  if (!raw) return 0
+  const separators = raw.match(/[.,]/g) || []
+  const lastSeparatorIndex = Math.max(raw.lastIndexOf('.'), raw.lastIndexOf(','))
+  const trailingDigits = lastSeparatorIndex >= 0 ? raw.slice(lastSeparatorIndex + 1).replace(/\D/g, '') : ''
+  const candidate = separators.length && trailingDigits.length > 0 && trailingDigits.length !== 3
+    ? `${raw.slice(0, lastSeparatorIndex).replace(/[.,]/g, '')}.${trailingDigits}`
+    : raw.replace(/[.,]/g, '')
+  const numeric = Number(candidate)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
+function resolvePrivateListingPrice(listing = {}) {
+  return Math.max(
+    0,
+    parseDashboardNumber(listing?.askingPrice),
+    parseDashboardNumber(listing?.asking_price),
+    parseDashboardNumber(listing?.estimatedValue),
+    parseDashboardNumber(listing?.estimated_value),
+    parseDashboardNumber(listing?.propertyDetails?.price),
+    parseDashboardNumber(listing?.propertyDetails?.askingPrice),
+    parseDashboardNumber(listing?.propertyDetails?.estimatedValue),
+  )
+}
+
+function getPrivateListingStatusKey(listing = {}) {
+  return toLookupText(listing?.listingStatus || listing?.listing_status || listing?.status || listing?.lifecycleStatus || listing?.stage)
+}
+
+function getPrivateListingMandateStatusKey(listing = {}) {
+  return toLookupText(listing?.mandateStatus || listing?.mandate_status || listing?.mandate?.status)
+}
+
+function privateListingHasSignedMandate(listing = {}) {
+  if (['signed', 'signed uploaded', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(getPrivateListingMandateStatusKey(listing))) {
+    return true
+  }
+  const documents = [
+    ...(Array.isArray(listing?.documents) ? listing.documents : []),
+    ...(Array.isArray(listing?.requiredDocuments) ? listing.requiredDocuments : []),
+    ...(Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []),
+  ]
+  return documents.some((document) => {
+    const label = toLookupText([
+      document?.key,
+      document?.requirementKey,
+      document?.requirement_key,
+      document?.documentType,
+      document?.document_type,
+      document?.documentCategory,
+      document?.category,
+      document?.name,
+      document?.document_name,
+      document?.fileName,
+      document?.file_name,
+    ].filter(Boolean).join(' '))
+    const status = toLookupText(document?.status || document?.documentStatus || document?.document_status)
+    return label.includes('mandate') && (!status || ['uploaded', 'approved', 'verified', 'completed', 'signed'].includes(status))
+  })
+}
+
+function isOpenPrivateListing(listing = {}) {
+  const status = getPrivateListingStatusKey(listing)
+  const visibility = toLookupText(listing?.listingVisibility || listing?.listing_visibility || listing?.visibility)
+  return !['withdrawn', 'archived', 'sold', 'deleted'].includes(status) && !['archived', 'deleted'].includes(visibility)
+}
+
+function isActivePrivateListingStock(listing = {}) {
+  if (!isOpenPrivateListing(listing)) return false
+  const status = getPrivateListingStatusKey(listing)
+  return Boolean(
+    listing?.isActive ||
+      listing?.is_active ||
+      ['active', 'listing_active', 'mandate_signed', 'under_offer', 'transaction_created'].includes(status) ||
+      privateListingHasSignedMandate(listing),
+  )
+}
+
+function resolvePrivateListingCommissionAmount(listing = {}) {
+  const commission = listing?.commission && typeof listing.commission === 'object' ? listing.commission : {}
+  const explicitAmount = Math.max(
+    0,
+    parseDashboardNumber(commission.commission_amount),
+    parseDashboardNumber(commission.amount),
+    parseDashboardNumber(commission.agent_commission_amount),
+    parseDashboardNumber(commission.agency_commission_amount),
+  )
+  if (explicitAmount > 0) return explicitAmount
+
+  const commissionType = toLookupText(commission.type || commission.commission_type || commission.commission_structure)
+  const value = parseDashboardNumber(commission.value)
+  if (value > 0 && (commissionType.includes('amount') || commissionType.includes('fixed') || commissionType.includes('flat'))) {
+    return value
+  }
+
+  const percentage = Math.max(
+    0,
+    parseDashboardNumber(commission.commission_percentage),
+    parseDashboardNumber(commission.percentage),
+    parseDashboardNumber(commission.commission_percent),
+    commissionType.includes('percentage') || commissionType.includes('percent') ? value : 0,
+  )
+  const price = resolvePrivateListingPrice(listing)
+  if (price > 0 && percentage > 0) return Number(((price * percentage) / 100).toFixed(2))
+  if (price > 0) return Number((price * 0.03).toFixed(2))
+  return 0
+}
+
+function deriveAgentPrivateListingDashboardMetrics(listingRows = []) {
+  const openRows = (Array.isArray(listingRows) ? listingRows : []).filter(isOpenPrivateListing)
+  const activeRows = openRows.filter(isActivePrivateListingStock)
+  const pipelineValue = openRows.reduce((sum, listing) => sum + resolvePrivateListingPrice(listing), 0)
+  const commissionForecast = openRows.reduce((sum, listing) => sum + resolvePrivateListingCommissionAmount(listing), 0)
+  const forecastRows = [
+    { key: 'private_listing_current', label: 'Current Mandates', rawValue: commissionForecast, value: commissionForecast, expectedCommission: commissionForecast },
+    { key: 'private_listing_month_2', label: 'Month 2', rawValue: commissionForecast, value: commissionForecast, expectedCommission: commissionForecast },
+    { key: 'private_listing_month_3', label: 'Month 3', rawValue: commissionForecast, value: commissionForecast, expectedCommission: commissionForecast },
+  ]
+  return {
+    activeListings: activeRows.length,
+    openListings: openRows.length,
+    pipelineValue,
+    commissionForecast,
+    forecastRows,
+    forecastValues: forecastRows.map((row) => row.rawValue),
+  }
+}
+
 function getHeatLevel(value, max) {
   if (!value || !max) {
     return 0
@@ -3081,6 +3211,21 @@ function Dashboard() {
   const agentResidentialModel = useMemo(() => {
     if (!isAgentRole || isPrincipalAgentView || !agentPremiumModel) return null
     const sellerStages = Array.isArray(agentPerformanceMetrics.conversionFunnel?.seller) ? agentPerformanceMetrics.conversionFunnel.seller : []
+    const privateListingMetrics = deriveAgentPrivateListingDashboardMetrics(agentPrivateListingRows)
+    const transactionPipelineValue = Number(agentSharedData?.dashboard?.pipelineValue ?? agentPerformanceMetrics.activeDealValue ?? 0)
+    const transactionCommissionForecast = Number(agentSharedData?.dashboard?.commissionEarned ?? agentSharedData?.dashboard?.estimatedCommission ?? agentPerformanceMetrics.commissionEarned ?? 0)
+    const activeListingCount = Math.max(
+      Number(agentSharedData?.dashboard?.listingCount ?? agentPerformanceMetrics.listingCount ?? 0),
+      privateListingMetrics.activeListings,
+    )
+    const pipelineValue = transactionPipelineValue + privateListingMetrics.pipelineValue
+    const expectedCommission = transactionCommissionForecast + privateListingMetrics.commissionForecast
+    const forecastRows = privateListingMetrics.commissionForecast > 0
+      ? privateListingMetrics.forecastRows
+      : agentPremiumModel.forecastRows
+    const forecastValues = privateListingMetrics.commissionForecast > 0
+      ? privateListingMetrics.forecastValues
+      : agentPremiumModel.forecastValues
     return deriveResidentialDashboardMetrics({
       scope: 'agent',
       mode: residentialMode,
@@ -3090,9 +3235,10 @@ function Dashboard() {
       source: {
         kpis: {
           activeTransactions: Number(agentPremiumModel.health?.total || agentPerformanceMetrics.openDeals || AGENT_SUMMARY.activeTransactions || 0),
-          activeListings: Number(agentSharedData?.dashboard?.listingCount ?? agentPerformanceMetrics.listingCount ?? 0),
-          pipelineValue: Number(agentSharedData?.dashboard?.pipelineValue ?? agentPerformanceMetrics.activeDealValue ?? 0),
-          expectedCommission: Number(agentSharedData?.dashboard?.commissionEarned ?? agentSharedData?.dashboard?.estimatedCommission ?? agentPerformanceMetrics.commissionEarned ?? 0),
+          activeListings: activeListingCount,
+          mandates: activeListingCount,
+          pipelineValue,
+          expectedCommission,
           trends: {
             activeTransactions: null,
             activeListings: null,
@@ -3105,14 +3251,20 @@ function Dashboard() {
         transactionFlow: agentPremiumModel.flow,
         activeTransactions: agentPremiumModel.recentTransactions,
         attentionRows: agentPremiumModel.attention,
-        forecastRows: agentPremiumModel.forecastRows,
-        forecastValues: agentPremiumModel.forecastValues,
+        forecastRows,
+        forecastValues,
         recentTransactions: agentPremiumModel.recentTransactions,
         appointments: Array.isArray(appointmentSummary.rows) ? appointmentSummary.rows : [],
-        revenue: { forecast: { expectedCommission: agentPerformanceMetrics.commissionEarned || 0 } },
+        commissionForecastValue: expectedCommission,
+        listingCount: activeListingCount,
+        activeListings: activeListingCount,
+        revenue: { forecast: { expectedCommission } },
         pipeline: {
           salesFunnel: { stages: sellerStages },
-          totalValue: agentPerformanceMetrics.activeDealValue || 0,
+          totalValue: pipelineValue,
+          mandateInsights: {
+            active_mandates: activeListingCount,
+          },
         },
         transactions: {
           totalActive: agentPerformanceMetrics.openDeals || 0,
@@ -3121,7 +3273,7 @@ function Dashboard() {
         },
       },
     })
-  }, [AGENT_SUMMARY.activeTransactions, agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.conversionFunnel?.seller, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPremiumModel, agentSharedData?.dashboard?.commissionEarned, agentSharedData?.dashboard?.estimatedCommission, agentSharedData?.dashboard?.listingCount, agentSharedData?.dashboard?.pipelineValue, appointmentSummary.rows, isAgentRole, isPrincipalAgentView, profile?.id, profile?.userId, residentialDateRange, residentialMode, workspace.id])
+  }, [AGENT_SUMMARY.activeTransactions, agentPerformanceMetrics.activeDealValue, agentPerformanceMetrics.commissionEarned, agentPerformanceMetrics.conversionFunnel?.seller, agentPerformanceMetrics.listingCount, agentPerformanceMetrics.openDeals, agentPremiumModel, agentPrivateListingRows, agentSharedData?.dashboard?.commissionEarned, agentSharedData?.dashboard?.estimatedCommission, agentSharedData?.dashboard?.listingCount, agentSharedData?.dashboard?.pipelineValue, appointmentSummary.rows, isAgentRole, isPrincipalAgentView, profile?.id, profile?.userId, residentialDateRange, residentialMode, workspace.id])
   const sharedActivityViewPath = useMemo(() => {
     if (isAttorneyRole) return '/transactions'
     if (isBondRole) return '/bond/pipeline'

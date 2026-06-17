@@ -94,7 +94,6 @@ import {
   deletePrivateListing,
   sendSellerOnboarding,
   syncPrivateListingDistributionData,
-  transitionPrivateListingStatus,
   updatePrivateListing,
   updatePrivateListingOnboardingFormData,
   uploadPrivateListingDocument,
@@ -1215,7 +1214,6 @@ function AgentListingDetail() {
   const [detailError, setDetailError] = useState('')
   const [deletingListing, setDeletingListing] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
-  const [publishingListing, setPublishingListing] = useState(false)
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
@@ -3120,13 +3118,6 @@ function AgentListingDetail() {
   const listingReadinessPercent = listingReadinessItems.length
     ? Math.round((listingReadinessCompleted / listingReadinessItems.length) * 100)
     : 0
-  const listingIsLive = useMemo(() => {
-    const status = normalizeKey(listingRecord?.listingStatus || listingRecord?.status || marketingDraft.listingStatus)
-    const visibility = normalizeKey(listingRecord?.listingVisibility || listingRecord?.listing_visibility)
-    const bridgeStatus = normalizeKey(listingRecord?.bridgeListingStatus || marketingDraft.bridgeListingStatus)
-    return Boolean(listingRecord?.isActive) || ['active', 'published', 'live'].includes(status) || visibility === 'active_market' || bridgeStatus === 'published'
-  }, [listingRecord, marketingDraft.bridgeListingStatus, marketingDraft.listingStatus])
-
   const sellerFormData = useMemo(() => getListingSellerFormData(listingRecord), [listingRecord])
 
   const sellerProfile = useMemo(() => {
@@ -4013,70 +4004,6 @@ function AgentListingDetail() {
       }),
       { message: 'External listing link removed.' },
     )
-  }
-
-  async function markReadyForPublishing() {
-    await applyMarketingDraftAndPersist(
-      (previous) => ({
-        ...previous,
-        publicationStatus: 'Ready',
-      }),
-      { message: 'Listing marked ready for publishing.' },
-    )
-  }
-
-  async function publishListing() {
-    if (!listingRecord?.id) return
-    setPublishingListing(true)
-    setDetailMessage('')
-    setDetailError('')
-    try {
-      const localPatch = {
-        ...listingRecord,
-        listingStatus: 'active',
-        status: 'active',
-        listingVisibility: 'active_market',
-        isActive: true,
-        bridgeListingStatus: 'published',
-        propertyDetails: {
-          ...(listingRecord?.propertyDetails || {}),
-          listingStatus: 'active',
-          publicationStatus: 'Published',
-        },
-      }
-
-      if (!isSupabaseConfigured) {
-        patchListing((row) => ({ ...row, ...localPatch }))
-        setMarketingDraft((previous) => ({
-          ...previous,
-          listingStatus: 'active',
-          publicationStatus: 'Published',
-          bridgeListingStatus: 'published',
-        }))
-        setDetailMessage('Listing is now live locally.')
-        return
-      }
-
-      const result = await transitionPrivateListingStatus(listingRecord.id, 'active', {
-        metadata: {
-          source: 'agent_listing_detail_publish_action',
-          triggeredFrom: 'listing_detail',
-        },
-      })
-      const publishedListing = result?.listing || localPatch
-      setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(localPatch, publishedListing)))
-      setMarketingDraft((previous) => ({
-        ...previous,
-        listingStatus: 'active',
-        publicationStatus: 'Published',
-        bridgeListingStatus: 'published',
-      }))
-      setDetailMessage('Listing is now live.')
-    } catch (error) {
-      setDetailError(error?.message || 'Unable to make this listing live yet.')
-    } finally {
-      setPublishingListing(false)
-    }
   }
 
   async function applyMarketingDraftAndPersist(updater, { message = '', showSaving = false } = {}) {
@@ -6760,15 +6687,17 @@ function AgentListingDetail() {
                     </label>
                   </div>
 
-                  <div className="mt-5 flex flex-wrap justify-end gap-2 rounded-[16px] border border-[#d8eddf] bg-[#f2fbf5] p-3">
-                    <Button size="sm" variant="secondary" onClick={markReadyForPublishing}>
-                      <CheckCircle2 size={15} />
-                      Mark Ready for Publishing
-                    </Button>
-                    <Button size="sm" onClick={publishListing} disabled={publishingListing || listingIsLive}>
-                      {publishingListing ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
-                      {listingIsLive ? 'Listing Live' : 'Make Listing Live'}
-                    </Button>
+                  <div className={`mt-5 flex flex-wrap items-center gap-2 rounded-[16px] border p-3 text-sm font-semibold ${
+                    mandateWorkspace.isSigned
+                      ? 'border-[#d8eddf] bg-[#f2fbf5] text-[#1f7d44]'
+                      : 'border-[#f2dfbf] bg-[#fff8ea] text-[#8a5b16]'
+                  }`}>
+                    {mandateWorkspace.isSigned ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}
+                    <span>
+                      {mandateWorkspace.isSigned
+                        ? 'Mandate signed. This is tracked as active agency stock; external portal links can be added when available.'
+                        : 'Mandate not signed yet. Capture or send the mandate before this becomes active agency stock.'}
+                    </span>
                   </div>
                 </article>
 
