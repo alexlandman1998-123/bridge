@@ -1130,11 +1130,17 @@ function Dashboard() {
                         organisationId: currentOrganisationId,
                         assignedAgentEmail: '',
                         assignedAgentIds: assignmentIds,
+                      }).catch((listingError) => {
+                        console.warn('[dashboard] Unable to load agent private listings by assignment id.', listingError)
+                        return []
                       }),
                       profile?.email
                         ? getAgentPrivateListings('', {
                             organisationId: currentOrganisationId,
                             assignedAgentEmail: profile.email,
+                          }).catch((listingError) => {
+                            console.warn('[dashboard] Unable to load agent private listings by email.', listingError)
+                            return []
                           })
                         : Promise.resolve([]),
                     ])

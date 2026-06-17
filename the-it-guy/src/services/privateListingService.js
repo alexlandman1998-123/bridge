@@ -2363,6 +2363,9 @@ export async function getAgentPrivateListings(
 
   const query = await queryBuilder.order('updated_at', { ascending: false })
   if (query.error) {
+    if (isMissingColumnError(query.error, 'assigned_agent_email') && !normalizedAgentIds.length) {
+      return []
+    }
     if (isMissingColumnError(query.error, 'assigned_agent_email') && normalizedOrgId && normalizedAgentIds.length) {
       const retryQuery = await applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
         .eq('organisation_id', normalizedOrgId)
