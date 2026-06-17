@@ -13,7 +13,7 @@ import {
   listOrganisationUsers,
   updateOrganisationUserRole,
 } from '../../lib/settingsApi'
-import { createWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
+import { createPrincipalClaimInvite, createWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
 import {
   AGENCY_AUTHORITY_ACTIONS,
   canPerformAgencyAuthorityAction,
@@ -126,6 +126,7 @@ export default function SettingsUsersPage() {
   const canEdit = can(PERMISSIONS.manageUsers)
   const inviteSectionRef = useRef(null)
   const inviteNavigationState = readInviteNavigationState(location.state)
+  const isPrincipalClaimInviteMode = inviteNavigationState.inviteIntent === 'residential_principal_manager'
   const initialInviteRole = resolveInviteRole(inviteNavigationState.inviteRole || inviteNavigationState.role, 'agent')
   const [users, setUsers] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
@@ -208,6 +209,13 @@ export default function SettingsUsersPage() {
 
   useEffect(() => {
     if (!inviteNavigationState.openInvite) return
+    if (isPrincipalClaimInviteMode) {
+      setInviteForm((previous) => ({ ...previous, role: 'principal' }))
+      window.setTimeout(() => {
+        inviteSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+      }, 0)
+      return
+    }
     const nextRole = resolveInviteRole(inviteNavigationState.inviteRole || inviteNavigationState.role, 'principal')
     const allowedRole = inviteRoleOptions.some((option) => option.value === nextRole)
       ? nextRole
@@ -216,13 +224,14 @@ export default function SettingsUsersPage() {
     window.setTimeout(() => {
       inviteSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     }, 0)
-  }, [inviteNavigationState.inviteRole, inviteNavigationState.openInvite, inviteNavigationState.role, inviteRoleOptions])
+  }, [inviteNavigationState.inviteRole, inviteNavigationState.openInvite, inviteNavigationState.role, inviteRoleOptions, isPrincipalClaimInviteMode])
 
   useEffect(() => {
+    if (isPrincipalClaimInviteMode) return
     if (!inviteRoleOptions.length) return
     if (inviteRoleOptions.some((option) => option.value === inviteForm.role)) return
     setInviteForm((previous) => ({ ...previous, role: inviteRoleOptions[0].value }))
-  }, [inviteForm.role, inviteRoleOptions])
+  }, [inviteForm.role, inviteRoleOptions, isPrincipalClaimInviteMode])
 
   async function handleInvite(event) {
     event.preventDefault()
@@ -234,20 +243,31 @@ export default function SettingsUsersPage() {
         commissionStructureById.get(String(inviteForm.commissionStructureId || '').trim()) ||
         defaultCommissionStructure ||
         null
-      const inviteResult = await createWorkspaceUserInvite({
-        firstName: inviteForm.firstName,
-        lastName: inviteForm.lastName,
-        email: inviteForm.email,
-        role: inviteForm.role,
-        branchId: inviteNavigationState.branchId || '',
-        branchName: inviteNavigationState.branchName || '',
-        commissionStructureId: selectedCommissionStructure?.id || '',
-        commissionStructureName: selectedCommissionStructure?.name || '',
-        source: inviteNavigationState.inviteSource || 'settings_users_invite',
-      })
+      const inviteResult = isPrincipalClaimInviteMode
+        ? await createPrincipalClaimInvite({
+            firstName: inviteForm.firstName,
+            lastName: inviteForm.lastName,
+            email: inviteForm.email,
+            source: inviteNavigationState.inviteSource || 'settings_principal_claim_invite',
+          })
+        : await createWorkspaceUserInvite({
+            firstName: inviteForm.firstName,
+            lastName: inviteForm.lastName,
+            email: inviteForm.email,
+            role: inviteForm.role,
+            branchId: inviteNavigationState.branchId || '',
+            branchName: inviteNavigationState.branchName || '',
+            commissionStructureId: selectedCommissionStructure?.id || '',
+            commissionStructureName: selectedCommissionStructure?.name || '',
+            source: inviteNavigationState.inviteSource || 'settings_users_invite',
+          })
       setInviteForm({ firstName: '', lastName: '', email: '', role: 'agent', commissionStructureId: '' })
       await loadUsers()
-      setMessage(inviteResult.reusedExistingInvite ? 'Existing pending invite resent.' : 'User invite sent.')
+      setMessage(
+        inviteResult.reusedExistingInvite
+          ? isPrincipalClaimInviteMode ? 'Existing principal claim invite resent.' : 'Existing pending invite resent.'
+          : isPrincipalClaimInviteMode ? 'Principal claim invite sent.' : 'User invite sent.',
+      )
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -377,9 +397,9 @@ export default function SettingsUsersPage() {
 
       <div ref={inviteSectionRef}>
       <SettingsSectionCard title="Invite User" description="Add a team member and assign their initial role.">
-        {inviteNavigationState.inviteIntent === 'residential_principal_manager' ? (
+        {isPrincipalClaimInviteMode ? (
           <SettingsBanner tone="success">
-            Principal / Manager invite selected from Residential. Confirm the role, add the invitee details, and Bridge will send the workspace invite email.
+            Principal claim selected from Residential. This sends a claim link for the principal to start organisation onboarding, without granting principal access automatically.
           </SettingsBanner>
         ) : null}
         <form className={settingsGridClass} onSubmit={handleInvite}>
@@ -409,23 +429,34 @@ export default function SettingsUsersPage() {
           </label>
           <label className={settingsFieldClass}>
             <span className="text-sm font-medium text-[#51657b]">Role</span>
-            <Field
-              as="select"
-              value={inviteForm.role}
-              disabled={!canEdit || inviteRoleOptions.length === 0}
-              onChange={(event) => setInviteForm((previous) => ({ ...previous, role: event.target.value }))}
-            >
-              {inviteRoleOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-                ))}
-              </Field>
-              {canEdit && !inviteRoleOptions.some((option) => normalizeAgencyAuthorityRole(option.value) === 'principal') ? (
+            {isPrincipalClaimInviteMode ? (
+              <>
+                <Field value="Principal claim invite" disabled />
+                <span className="text-xs font-medium text-[#51657b]">
+                  The invited principal claims/onboards the organisation first; access approval happens in the claim flow.
+                </span>
+              </>
+            ) : (
+              <>
+                <Field
+                  as="select"
+                  value={inviteForm.role}
+                  disabled={!canEdit || inviteRoleOptions.length === 0}
+                  onChange={(event) => setInviteForm((previous) => ({ ...previous, role: event.target.value }))}
+                >
+                  {inviteRoleOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                    ))}
+                </Field>
+                {canEdit && !inviteRoleOptions.some((option) => normalizeAgencyAuthorityRole(option.value) === 'principal') ? (
                 <span className="text-xs font-medium text-[#8a6a18]">
                   Principal and owner invites are restricted to the organisation owner.
                 </span>
               ) : null}
+              </>
+            )}
             </label>
           <label className={settingsFieldClass}>
             <span className="text-sm font-medium text-[#51657b]">Commission Structure (Optional)</span>

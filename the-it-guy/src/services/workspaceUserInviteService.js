@@ -2,7 +2,7 @@ import { buildAgentInviteLink } from '../lib/agentInviteService'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import { assignOrganisationUserCommissionProfile, fetchOrganisationSettings } from '../lib/settingsApi'
-import { createInvite, INVITE_STATUSES, InviteValidationError } from './inviteService'
+import { createInvite, INVITE_STATUSES, INVITE_TYPES, InviteValidationError } from './inviteService'
 import {
   AGENCY_AUTHORITY_ACTIONS,
   assertAgencyAuthority,
@@ -16,6 +16,14 @@ function normalizeText(value) {
 
 function normalizeEmail(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function pickFirstText(...values) {
+  for (const value of values) {
+    const normalized = normalizeText(value)
+    if (normalized) return normalized
+  }
+  return ''
 }
 
 function isLikelyUuid(value = '') {
@@ -67,6 +75,9 @@ function getInviteeName(input = {}) {
 function buildInviteMessage({ invite, inviteLink }) {
   const agentName = getInviteeName(invite) || 'Agent'
   const orgName = normalizeText(invite?.organisationName) || 'your organisation'
+  if (invite?.inviteType === INVITE_TYPES.principalClaim || invite?.role === 'principal_claim') {
+    return `Hi ${agentName},\n\n${orgName} has invited you to claim principal access on Bridge 9.\n\nStart the claim here:\n${inviteLink}\n\n- Bridge`
+  }
   return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Bridge 9.\n\nComplete your onboarding here:\n${inviteLink}\n\n- Bridge`
 }
 
@@ -83,18 +94,111 @@ function isMissingRelationError(error, relationName = '') {
   return code === '42P01' || code === 'PGRST205' || (relationName && message.includes(relationName.toLowerCase()))
 }
 
+async function createPrincipalClaimInviteRpc(payload = {}) {
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Invite creation is unavailable because Supabase is not configured.')
+  }
+  const result = await supabase.rpc('bridge_create_principal_claim_invite', { payload })
+  if (result.error) throw result.error
+  if (!result.data?.success) {
+    throw new InviteValidationError(result.data?.code || 'principal_claim_invite_create_failed', result.data || {})
+  }
+  return result.data
+}
+
+function resolveInviteBranding(input = {}, context = {}) {
+  const organisation = context?.organisation || {}
+  const onboarding = context?.agencyOnboarding || context?.onboarding || {}
+  const onboardingBranding = onboarding?.branding && typeof onboarding.branding === 'object' ? onboarding.branding : {}
+  const settingsJson = organisation?.settingsJson || organisation?.settings_json || {}
+  const settingsBranding = settingsJson?.branding && typeof settingsJson.branding === 'object' ? settingsJson.branding : {}
+  const agencySettingsBranding =
+    settingsJson?.agencyOnboarding?.branding ||
+    settingsJson?.agency_onboarding?.branding ||
+    {}
+  const metadata = input?.metadata && typeof input.metadata === 'object' ? input.metadata : {}
+
+  const organisationLogoUrl = pickFirstText(
+    input.organisationLogoUrl,
+    input.organisation_logo_url,
+    input.logoUrl,
+    input.logo_url,
+    metadata.organisation_logo_url,
+    metadata.organisationLogoUrl,
+    organisation.logoUrl,
+    organisation.logo_url,
+    onboardingBranding.logoLight,
+    onboardingBranding.logoLightUrl,
+    onboardingBranding.logoDark,
+    onboardingBranding.logoDarkUrl,
+    settingsBranding.logoLight,
+    settingsBranding.logoLightUrl,
+    settingsBranding.logoUrl,
+    settingsBranding.logo_url,
+    settingsBranding.logoDark,
+    settingsBranding.logoDarkUrl,
+    agencySettingsBranding.logoLight,
+    agencySettingsBranding.logoLightUrl,
+    agencySettingsBranding.logoUrl,
+    agencySettingsBranding.logo_url,
+    agencySettingsBranding.logoDark,
+    agencySettingsBranding.logoDarkUrl,
+  )
+  const organisationLogoIconUrl = pickFirstText(
+    input.organisationLogoIconUrl,
+    input.organisation_logo_icon_url,
+    input.logoIconUrl,
+    input.logo_icon_url,
+    metadata.organisation_logo_icon_url,
+    metadata.organisationLogoIconUrl,
+    organisation.logoIconUrl,
+    organisation.logo_icon_url,
+    onboardingBranding.logoIcon,
+    onboardingBranding.logoIconUrl,
+    settingsBranding.logoIcon,
+    settingsBranding.logoIconUrl,
+    agencySettingsBranding.logoIcon,
+    agencySettingsBranding.logoIconUrl,
+  )
+  const brandPrimaryColor = pickFirstText(
+    input.brandPrimaryColor,
+    input.brand_primary_color,
+    input.primaryColor,
+    input.primary_colour,
+    metadata.brand_primary_color,
+    metadata.brandPrimaryColor,
+    onboardingBranding.primaryColor,
+    onboardingBranding.primaryColour,
+    settingsBranding.primaryColor,
+    settingsBranding.primaryColour,
+    agencySettingsBranding.primaryColor,
+    agencySettingsBranding.primaryColour,
+  )
+
+  return {
+    organisationLogoUrl,
+    organisationLogoIconUrl,
+    brandPrimaryColor,
+  }
+}
+
 async function resolveWorkspaceDefaults(input = {}) {
   const requestedWorkspaceId = normalizeText(input.workspaceId || input.workspace_id || input.organisationId || input.organisation_id)
   const workspaceId = isLikelyUuid(requestedWorkspaceId) ? requestedWorkspaceId : ''
   const organisationName = normalizeText(input.organisationName || input.organisation_name)
+  const inputBranding = resolveInviteBranding(input)
   if (workspaceId && organisationName) {
-    return { workspaceId, organisationName }
+    return { workspaceId, organisationName, ...inputBranding }
   }
 
   const context = await fetchOrganisationSettings().catch(() => null)
+  const contextBranding = resolveInviteBranding(input, context)
   return {
     workspaceId: workspaceId || normalizeText(context?.organisation?.id),
     organisationName: organisationName || normalizeText(context?.organisation?.displayName || context?.organisation?.name) || 'Bridge Organisation',
+    organisationLogoUrl: contextBranding.organisationLogoUrl || inputBranding.organisationLogoUrl,
+    organisationLogoIconUrl: contextBranding.organisationLogoIconUrl || inputBranding.organisationLogoIconUrl,
+    brandPrimaryColor: contextBranding.brandPrimaryColor || inputBranding.brandPrimaryColor,
   }
 }
 
@@ -187,6 +291,7 @@ function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
   const branchName = normalizeText(metadata.branch_name || metadata.branchName)
   const role = normalizeRole(metadata.role || row.target_workspace_role, 'agent')
   const inviteLink = buildAgentInviteLink(row.token)
+  const branding = resolveInviteBranding(metadata, { organisation: defaults })
 
   return {
     id: row.id || '',
@@ -208,6 +313,9 @@ function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
     office: branchName || organisationName,
     role,
     roleLabel: normalizeText(metadata.role_label || metadata.roleLabel) || formatRoleLabel(role),
+    organisationLogoUrl: branding.organisationLogoUrl,
+    organisationLogoIconUrl: branding.organisationLogoIconUrl,
+    brandPrimaryColor: branding.brandPrimaryColor,
     status,
     inviteStatus: row.status || '',
     invitedAt: row.created_at || null,
@@ -239,6 +347,9 @@ async function sendInviteEmail({ invite, inviteLink }) {
       organisationName: invite.organisationName || 'Bridge Organisation',
       workspaceRole: invite.roleLabel || formatRoleLabel(invite.role),
       supportEmail: invite.supportEmail || '',
+      organisationLogoUrl: invite.organisationLogoUrl || '',
+      organisationLogoIconUrl: invite.organisationLogoIconUrl || '',
+      brandPrimaryColor: invite.brandPrimaryColor || '',
       inviteLink,
     },
   })
@@ -315,7 +426,8 @@ async function rememberInviteDelivery(inviteId, patch = {}) {
 export async function listWorkspaceUserInvites(input = {}) {
   if (!isSupabaseConfigured || !supabase) return []
 
-  const { workspaceId, organisationName } = await resolveWorkspaceDefaults(input)
+  const defaults = await resolveWorkspaceDefaults(input)
+  const { workspaceId } = defaults
   if (!workspaceId) return []
 
   const branchId = normalizeText(input.branchId || input.branch_id)
@@ -337,7 +449,7 @@ export async function listWorkspaceUserInvites(input = {}) {
     throw result.error
   }
 
-  const rows = (result.data || []).map((row) => normalizeWorkspaceInviteRow(row, { workspaceId, organisationName }))
+  const rows = (result.data || []).map((row) => normalizeWorkspaceInviteRow(row, defaults))
   if (input.includeInactive === true) return rows
   return rows.filter((row) => row.status === 'pending_invite')
 }
@@ -398,7 +510,13 @@ export async function createWorkspaceUserInvite(input = {}) {
   const email = normalizeEmail(input.email)
   if (!email) throw new Error('Invite email is required.')
 
-  const { workspaceId, organisationName } = await resolveWorkspaceDefaults(input)
+  const {
+    workspaceId,
+    organisationName,
+    organisationLogoUrl,
+    organisationLogoIconUrl,
+    brandPrimaryColor,
+  } = await resolveWorkspaceDefaults(input)
   if (!workspaceId) throw new Error('A workspace is required before creating an invite.')
 
   const branchId = normalizeText(input.branchId || input.branch_id)
@@ -440,6 +558,10 @@ export async function createWorkspaceUserInvite(input = {}) {
         branch_name: normalizeText(input.branchName || input.branch_name),
         role,
         role_label: roleLabel,
+        organisation_name: organisationName,
+        organisation_logo_url: organisationLogoUrl,
+        organisation_logo_icon_url: organisationLogoIconUrl,
+        brand_primary_color: brandPrimaryColor,
         commission_structure_id: commissionStructureId,
         commission_structure_name: commissionStructureName,
         notes: normalizeText(input.notes),
@@ -452,7 +574,13 @@ export async function createWorkspaceUserInvite(input = {}) {
       ? normalizeText(error.details?.invite_id)
       : ''
     if (duplicateInviteId) {
-      const existingInvite = await getWorkspaceInviteById(duplicateInviteId, { workspaceId, organisationName })
+      const existingInvite = await getWorkspaceInviteById(duplicateInviteId, {
+        workspaceId,
+        organisationName,
+        organisationLogoUrl,
+        organisationLogoIconUrl,
+        brandPrimaryColor,
+      })
       if (existingInvite?.id) {
         const resent = await resendWorkspaceUserInvite({
           ...existingInvite,
@@ -460,6 +588,9 @@ export async function createWorkspaceUserInvite(input = {}) {
           lastName: existingInvite.lastName || lastName,
           mobile: existingInvite.mobile || mobile,
           organisationName,
+          organisationLogoUrl: existingInvite.organisationLogoUrl || organisationLogoUrl,
+          organisationLogoIconUrl: existingInvite.organisationLogoIconUrl || organisationLogoIconUrl,
+          brandPrimaryColor: existingInvite.brandPrimaryColor || brandPrimaryColor,
         })
         return {
           ...resent,
@@ -485,6 +616,9 @@ export async function createWorkspaceUserInvite(input = {}) {
     phone: mobile,
     organisationId: workspaceId,
     organisationName,
+    organisationLogoUrl,
+    organisationLogoIconUrl,
+    brandPrimaryColor,
     branchId,
     branchName: normalizeText(input.branchName || input.branch_name),
     role,
@@ -502,6 +636,112 @@ export async function createWorkspaceUserInvite(input = {}) {
     })
   }
 
+  const sentAt = new Date().toISOString()
+  const delivery = await deliverWorkspaceInvite({
+    invite,
+    inviteLink,
+    deliveryPatch: {
+      first_sent_at: sentAt,
+      last_sent_at: sentAt,
+    },
+  })
+
+  return {
+    invite,
+    inviteLink,
+    onboardingUrl: inviteLink,
+    emailResult: delivery.emailResult,
+    whatsAppResult: delivery.whatsAppResult,
+    raw: inviteResult,
+  }
+}
+
+export async function createPrincipalClaimInvite(input = {}) {
+  const email = normalizeEmail(input.email)
+  if (!email) throw new Error('Principal email is required.')
+
+  const { workspaceId, organisationName } = await resolveWorkspaceDefaults(input)
+  if (!workspaceId) throw new Error('A workspace is required before creating a principal claim invite.')
+
+  const firstName = getFirstName(input)
+  const lastName = getLastName(input)
+  const mobile = normalizeText(input.mobile || input.phone)
+  const activeMembership = await findActiveWorkspaceUserByEmail({ workspaceId, email })
+  if (activeMembership?.id) {
+    throw new Error('This email already belongs to an active user in this workspace. Manage their role from the user directory instead.')
+  }
+
+  let inviteResult
+  try {
+    inviteResult = await createPrincipalClaimInviteRpc({
+      invite_type: INVITE_TYPES.principalClaim,
+      expires_at: input.expiresAt || input.expires_at || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      target_workspace_id: workspaceId,
+      target_workspace_role: 'principal',
+      email,
+      phone: mobile,
+      metadata: {
+        source: normalizeText(input.source) || 'principal_claim_invite',
+        claim_type: 'residential_principal_claim',
+        requested_role: 'principal',
+        first_name: firstName,
+        last_name: lastName,
+        mobile,
+        role: 'principal_claim',
+        role_label: 'Principal Claim',
+        organisation_name: organisationName,
+        notes: normalizeText(input.notes),
+        invited_by_name: normalizeText(input.invitedByName || input.invited_by_name),
+        ...(input.metadata && typeof input.metadata === 'object' ? input.metadata : {}),
+      },
+    })
+  } catch (error) {
+    const duplicateInviteId = error instanceof InviteValidationError && error.code === 'duplicate_pending_invite'
+      ? normalizeText(error.details?.invite_id)
+      : ''
+    if (duplicateInviteId) {
+      const existingInvite = await getWorkspaceInviteById(duplicateInviteId, { workspaceId, organisationName })
+      if (existingInvite?.id) {
+        const resent = await resendWorkspaceUserInvite({
+          ...existingInvite,
+          firstName: existingInvite.firstName || firstName,
+          lastName: existingInvite.lastName || lastName,
+          mobile: existingInvite.mobile || mobile,
+          organisationName,
+          role: 'principal_claim',
+          roleLabel: 'Principal Claim',
+        })
+        return {
+          ...resent,
+          onboardingUrl: resent.inviteLink,
+          raw: { invite_id: existingInvite.id, token: existingInvite.token, duplicate: true },
+          duplicate: true,
+          reusedExistingInvite: true,
+        }
+      }
+    }
+    throw new Error(resolveInviteError(error))
+  }
+
+  const invite = {
+    id: inviteResult.invite_id,
+    inviteId: inviteResult.invite_id,
+    inviteType: INVITE_TYPES.principalClaim,
+    token: inviteResult.token,
+    firstName,
+    lastName,
+    surname: lastName,
+    name: [firstName, lastName].filter(Boolean).join(' ') || email,
+    email,
+    mobile,
+    phone: mobile,
+    organisationId: workspaceId,
+    organisationName,
+    role: 'principal_claim',
+    roleLabel: 'Principal Claim',
+    invitedByName: normalizeText(input.invitedByName || input.invited_by_name),
+  }
+  const inviteLink = buildAgentInviteLink(invite.token)
   const sentAt = new Date().toISOString()
   const delivery = await deliverWorkspaceInvite({
     invite,

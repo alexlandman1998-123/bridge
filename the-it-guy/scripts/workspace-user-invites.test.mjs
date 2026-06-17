@@ -19,6 +19,8 @@ const settingsUsersPage = await read('../src/pages/settings/SettingsUsersPage.js
 const agencyBranchesPage = await read('../src/pages/agency/AgencyBranchesPage.jsx')
 const inviteResolver = await read('../src/pages/InviteResolver.jsx')
 const authPage = await read('../src/pages/Auth.jsx')
+const workspaceInviteEmail = await read('../../supabase/functions/send-email/handlers/workspaceInvite.ts')
+const sendEmailTypes = await read('../../supabase/functions/send-email/types.ts')
 const packageJson = JSON.parse(await read('../package.json'))
 
 for (const marker of [
@@ -68,6 +70,32 @@ matches(
   /first_sent_at:\s*sentAt[\s\S]*last_sent_at:\s*sentAt/i,
   'Initial sends should record first and last sent timestamps.',
 )
+for (const marker of [
+  'resolveInviteBranding',
+  'organisation_logo_url',
+  'organisationLogoUrl: invite.organisationLogoUrl',
+  'brand_primary_color',
+]) {
+  includes(inviteService, marker, `Workspace invites should preserve optional agency branding for invite emails: ${marker}`)
+}
+for (const marker of [
+  'organisationLogoUrl?: string',
+  'organisation_logo_url?: string',
+  'brandPrimaryColor?: string',
+  'brand_primary_color?: string',
+]) {
+  includes(sendEmailTypes, marker, `Workspace invite email payload should accept optional branding field: ${marker}`)
+}
+for (const marker of [
+  'Workspace invitation',
+  'Powered by Bridge',
+  'linear-gradient',
+  'Accept invite',
+  'organisationLogoUrl',
+  'getInitials',
+]) {
+  includes(workspaceInviteEmail, marker, `Workspace invite email should render the premium branded invite UI: ${marker}`)
+}
 
 for (const marker of [
   'listWorkspaceUserInvites({ includeInactive: false })',

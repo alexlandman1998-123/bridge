@@ -124,6 +124,12 @@ export type SendWorkspaceInvitePayload = {
   inviter_name?: string;
   organisationName?: string;
   organisation_name?: string;
+  organisationLogoUrl?: string;
+  organisation_logo_url?: string;
+  organisationLogoIconUrl?: string;
+  organisation_logo_icon_url?: string;
+  brandPrimaryColor?: string;
+  brand_primary_color?: string;
   workspaceRole?: string;
   workspace_role?: string;
   supportEmail?: string;

@@ -7,25 +7,43 @@ async function read(path) {
 }
 
 const expectedMenuRoutes = [
+  '/commercial',
+  '/commercial/pipeline',
+  '/commercial/leasing/canvassing',
+  '/commercial/leasing/leads',
+  '/commercial/leasing/vacancies',
+  '/commercial/leasing/deals',
+  '/commercial/sales/canvassing',
+  '/commercial/sales/leads',
+  '/commercial/sales/listings',
+  '/commercial/sales/deals',
+  '/commercial/properties',
+  '/commercial/landlords',
+  '/commercial/agency/branches',
+  '/commercial/agency/brokers',
+  '/commercial/reports',
+  '/commercial/settings',
+]
+
+const legacyRoutes = [
   '/commercial/dashboard',
   '/commercial/clients',
   '/commercial/tenants',
-  '/commercial/landlords',
-  '/commercial/properties',
   '/commercial/vacancies',
   '/commercial/requirements',
-  '/commercial/pipeline',
   '/commercial/deals',
   '/commercial/hot',
   '/commercial/leases',
   '/commercial/docs',
-  '/commercial/reports',
   '/commercial/activity',
 ]
 
 const menuRoutes = COMMERCIAL_NAV_ITEMS.map((item) => item.to)
 for (const route of expectedMenuRoutes) {
   assert.ok(menuRoutes.includes(route), `Commercial menu should include direct route ${route}`)
+}
+for (const route of legacyRoutes) {
+  assert.ok(!menuRoutes.includes(route), `Commercial menu should not expose legacy direct route ${route}`)
 }
 
 assert.equal(isCommercialNavItemActive('/commercial/dashboard', { to: '/commercial/dashboard', exact: true }), true)
@@ -39,14 +57,18 @@ assert.equal(isCommercialNavItemActive('/commercial/documents', { to: '/commerci
 assert.equal(isCommercialNavItemActive('/commercial/deals/leasing', { to: '/commercial/deals' }), true)
 assert.equal(isCommercialNavItemActive('/commercial/deals', { to: '/commercial/deals' }), true)
 assert.equal(isCommercialNavItemActive('/commercial/deals', { to: '/commercial/deals-overview' }), false)
+assert.equal(isCommercialNavItemActive('/commercial/agency/branches', { to: '/commercial/agency/branches' }), true)
+assert.equal(isCommercialNavItemActive('/commercial/performance/branches', { to: '/commercial/agency/branches', activePaths: ['/commercial/agency/branches', '/commercial/performance/branches'] }), true)
 
 const appSource = await read('../src/App.jsx')
 for (const marker of [
-  'path="tenants" element={<CommercialClientsPage />}',
-  'path="pipeline" element={<CommercialRequirementsPipelinePage />}',
+  'path="pipeline" element={<CommercialPipelinePage />}',
+  'path="leasing/leads" element={<CommercialLeadsPage dealType="lease" />}',
+  'path="sales/leads" element={<CommercialLeadsPage dealType="sale" />}',
   'path="deals" element={<CommercialDealsPage />}',
   'path="deals/pipeline" element={<CommercialDealsPipelinePage />}',
-  'path="hot" element={<CommercialHeadsOfTermsPage />}',
+  'path="agency/branches" element={<CommercialBrokerBranchesPage />}',
+  'path="agency/brokers" element={<CommercialBrokersPage />}',
   'path="docs" element={<CommercialDocumentsPage />}',
 ]) {
   assert.match(appSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Commercial route should be direct: ${marker}`)
@@ -63,7 +85,8 @@ for (const redirect of [
 const layoutSource = await read('../src/modules/commercial/components/CommercialLayout.jsx')
 for (const marker of [
   'useMemo(',
-  'mobileNavItems',
+  'visibleMobilePrimaryItems',
+  'visibleMobileMoreItems',
   'isCommercialNavItemActive',
   'overflow-x-hidden',
 ]) {
@@ -75,6 +98,7 @@ for (const marker of [
   'memo(CommercialSidebar)',
   'isCommercialNavItemActive',
   'transition-colors duration-150',
+  'border-l border-slate-200',
 ]) {
   assert.match(sidebarSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Commercial sidebar should include ${marker}`)
 }

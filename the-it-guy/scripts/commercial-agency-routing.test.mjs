@@ -47,11 +47,22 @@ for (const marker of [
   'Add Broker',
   'createWorkspaceUserInvite',
   'listWorkspaceUserInvites',
+  'Broker Directory',
+  'Card view',
+  'repeat(auto-fit,minmax(min(100%,300px),1fr))',
+  'optimistic-commercial-broker',
+  'You can keep working while Bridge handles the email.',
+  'The form has been reopened with the details preserved.',
   "role: 'commercial_broker'",
   "module_context: 'commercial'",
 ]) {
   assert.match(brokersPage, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Brokers page should include ${marker}`)
 }
+assert.doesNotMatch(
+  brokersPage,
+  /grid-cols-\[minmax\(260px,1\.35fr\)/,
+  'Commercial Brokers page should not use the old fixed-width table grid that overflows the shell.',
+)
 
 const branchesPage = await read('../src/modules/commercial/pages/CommercialBrokerBranchesPage.jsx')
 for (const marker of [

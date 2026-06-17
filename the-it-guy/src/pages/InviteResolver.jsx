@@ -2,7 +2,7 @@ import { ArrowRight, Building2, CheckCircle2, Mail, ShieldAlert } from 'lucide-r
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
-import { acceptInvite, getInviteByToken, InviteValidationError } from '../services/inviteService'
+import { acceptInvite, getInviteByToken, INVITE_TYPES, InviteValidationError } from '../services/inviteService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const PENDING_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
@@ -98,13 +98,19 @@ function getInviteErrorMessage(error, { sessionEmail = '', invitedEmail = '' } =
   return error?.message || 'Unable to accept this invite.'
 }
 
+function isPrincipalClaimInvite(invite = {}) {
+  return (invite?.inviteType || invite?.invite_type || '') === INVITE_TYPES.principalClaim
+}
+
 function getRedirectTarget(result = {}) {
+  if (isPrincipalClaimInvite(result.invite)) return '/onboarding/profile'
   if (result.redirect_to) return result.redirect_to
   if (result.transaction_id) return `/transactions/${result.transaction_id}`
   return '/dashboard'
 }
 
 function getInviteTarget(invite = {}) {
+  if (isPrincipalClaimInvite(invite)) return '/onboarding/profile'
   if (invite.targetTransactionId) return `/transactions/${invite.targetTransactionId}`
   return '/dashboard'
 }
@@ -315,6 +321,7 @@ export default function InviteResolver() {
   }, [token])
 
   const invite = inviteContext?.inviteType ? inviteContext : null
+  const principalClaimInvite = isPrincipalClaimInvite(invite)
   const invitedEmail = normalizeText(invite?.email)
   const signedInAsInvitedEmail = Boolean(sessionEmail && invitedEmail && sessionEmail === invitedEmail.toLowerCase())
   const acceptedBySignedInUser = Boolean(sessionUserId && invite?.acceptedByUserId && sessionUserId === invite.acceptedByUserId)
@@ -323,7 +330,7 @@ export default function InviteResolver() {
   const workspaceName = normalizeText(invite?.workspace?.display_name || invite?.workspace?.name)
   const workspaceLogoUrl = getInviteWorkspaceLogoUrl(invite)
   const branchName = getInviteBranchName(invite)
-  const roleLabel = invite ? formatInviteRoleLabel(invite?.metadata?.role_label || invite?.targetWorkspaceRole || invite?.metadata?.role) : ''
+  const roleLabel = invite ? formatInviteRoleLabel(principalClaimInvite ? 'principal claim' : invite?.metadata?.role_label || invite?.targetWorkspaceRole || invite?.metadata?.role) : ''
   const inviteDetails = useMemo(() => {
     const rows = []
     if (workspaceName) rows.push({ label: 'Workspace', value: workspaceName })
@@ -336,12 +343,17 @@ export default function InviteResolver() {
     if (invite.inviteType === 'transaction_invite') return 'Transaction collaboration'
     if (invite.inviteType === 'workspace_and_transaction_invite') return 'Workspace and transaction collaboration'
     if (invite.inviteType === 'client_invite') return 'Client access'
+    if (principalClaimInvite) {
+      return workspaceName
+        ? `Claim principal access for ${workspaceName}`
+        : 'Principal organisation claim'
+    }
     if (invite.inviteType === 'branch_invite') {
       return branchName && workspaceName ? `${branchName} branch at ${workspaceName}` : 'Branch workspace access'
     }
     if (invite.inviteType === 'team_invite') return 'Team workspace access'
     return workspaceName ? `${workspaceName} workspace` : 'Workspace access'
-  }, [branchName, invite, workspaceName])
+  }, [branchName, invite, principalClaimInvite, workspaceName])
 
   useEffect(() => {
     if (acceptedInviteBelongsToSession) {
@@ -427,8 +439,8 @@ export default function InviteResolver() {
           <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
-            title="Invite accepted"
-            subtitle="Your access has been created and verified."
+            title={principalClaimInvite ? 'Principal claim started' : 'Invite accepted'}
+            subtitle={principalClaimInvite ? 'Your claim invite has been accepted. Continue to onboarding so Bridge can capture the organisation details before access is finalised.' : 'Your access has been created and verified.'}
             tone="success"
           />
           <InviteActionPanel>
@@ -449,8 +461,8 @@ export default function InviteResolver() {
           <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
-            title="You’re already connected"
-            subtitle={`This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Bridge to access the workspace.`}
+            title={principalClaimInvite ? 'Principal claim already started' : 'You’re already connected'}
+            subtitle={principalClaimInvite ? `This claim invite has already been accepted for ${invitedEmail || 'your account'}. Continue to onboarding to finish the claim.` : `This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Bridge to access the workspace.`}
             tone="success"
           />
           <InviteActionPanel>
@@ -517,7 +529,7 @@ export default function InviteResolver() {
         <InviteBrandStrip workspaceName={workspaceName} workspaceLogoUrl={workspaceLogoUrl} />
         <InviteHeader
           icon={<Building2 size={22} />}
-          title="Accept Invite"
+          title={principalClaimInvite ? 'Start Principal Claim' : 'Accept Invite'}
           subtitle={invitePurpose}
         />
 
@@ -533,12 +545,14 @@ export default function InviteResolver() {
             <p className="text-center text-helper text-textMuted">Signed in as {sessionEmail}</p>
           ) : (
             <p className="text-center text-helper text-textMuted">
-              Continue with the invited email address. Bridge will apply the workspace and role from this invite.
+              {principalClaimInvite
+                ? 'Continue with the invited email address. Bridge will start the claim process without granting principal access automatically.'
+                : 'Continue with the invited email address. Bridge will apply the workspace and role from this invite.'}
             </p>
           )}
           <div className="flex flex-wrap justify-center gap-2">
             <Button type="button" onClick={() => void handleAccept()} disabled={saving}>
-              {saving ? 'Accepting…' : 'Accept invite'}
+              {saving ? 'Accepting…' : principalClaimInvite ? 'Start claim' : 'Accept invite'}
             </Button>
           </div>
         </InviteActionPanel>

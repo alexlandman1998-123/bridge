@@ -1835,6 +1835,17 @@ function getInviteeFirstName(name = '') {
 }
 
 async function dispatchAgencyInviteEmails({ client, workspaceId, mergedDraft, organisationName, inviterName, supportEmail }) {
+  const branding = mergedDraft?.branding && typeof mergedDraft.branding === 'object' ? mergedDraft.branding : {}
+  const organisationLogoUrl = normalizeText(
+    branding.logoLight ||
+      branding.logoLightUrl ||
+      branding.logoUrl ||
+      branding.logo_url ||
+      branding.logoDark ||
+      branding.logoDarkUrl,
+  )
+  const organisationLogoIconUrl = normalizeText(branding.logoIcon || branding.logoIconUrl || branding.logo_icon_url)
+  const brandPrimaryColor = normalizeText(branding.primaryColor || branding.primaryColour || branding.brandPrimaryColor)
   const inviteDrafts = (mergedDraft?.invitations || [])
     .map((invite) => ({
       email: normalizeEmail(invite.email),
@@ -1882,6 +1893,9 @@ async function dispatchAgencyInviteEmails({ client, workspaceId, mergedDraft, or
         organisationName,
         workspaceRole: row.organisation_role || invite.workspaceRole,
         supportEmail,
+        organisationLogoUrl,
+        organisationLogoIconUrl,
+        brandPrimaryColor,
         inviteLink,
       },
       client,

@@ -8,6 +8,7 @@ export const INVITE_TYPES = Object.freeze({
   workspaceAndTransaction: 'workspace_and_transaction_invite',
   branch: 'branch_invite',
   team: 'team_invite',
+  principalClaim: 'principal_claim_invite',
   client: 'client_invite',
   externalCollaborator: 'external_collaborator_invite',
 })
@@ -235,8 +236,9 @@ export async function acceptInvite(token, options = {}) {
     throw new InviteValidationError(result.data?.code || 'invite_accept_failed', result.data || {})
   }
 
+  const inviteType = context.invite?.inviteType || result.data?.invite_type || ''
   let workspaceResolution = null
-  if (result.data.workspace_id) {
+  if (result.data.workspace_id && inviteType !== INVITE_TYPES.principalClaim) {
     workspaceResolution = await resolveCurrentWorkspace(user.id, {
       client,
       user,
