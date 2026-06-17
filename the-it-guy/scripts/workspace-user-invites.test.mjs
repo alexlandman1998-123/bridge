@@ -16,6 +16,7 @@ function matches(source, pattern, message) {
 const inviteService = await read('../src/services/workspaceUserInviteService.js')
 const agentsPage = await read('../src/pages/Agents.jsx')
 const settingsUsersPage = await read('../src/pages/settings/SettingsUsersPage.jsx')
+const agencyBranchesPage = await read('../src/pages/agency/AgencyBranchesPage.jsx')
 const inviteResolver = await read('../src/pages/InviteResolver.jsx')
 const authPage = await read('../src/pages/Auth.jsx')
 const packageJson = JSON.parse(await read('../package.json'))
@@ -82,6 +83,21 @@ matches(
   settingsUsersPage,
   /inviteResult\.reusedExistingInvite \? 'Existing pending invite resent\.' : 'User invite sent\.'/,
   'Settings users invite flow should distinguish reused pending invites from fresh sends.',
+)
+matches(
+  settingsUsersPage,
+  /useLocation\(\)[\s\S]*inviteNavigationState[\s\S]*resolveInviteRole/i,
+  'Settings users invite flow should honor navigation intent from residential principal/manager CTAs.',
+)
+matches(
+  settingsUsersPage,
+  /branchId:\s*inviteNavigationState\.branchId[\s\S]*branchName:\s*inviteNavigationState\.branchName/i,
+  'Settings users invite flow should preserve optional branch metadata for branch-scoped invites.',
+)
+matches(
+  agencyBranchesPage,
+  /inviteIntent:\s*'residential_principal_manager'[\s\S]*inviteRole:\s*'principal'[\s\S]*inviteSource:\s*'residential_branches_principal_manager_invite'/i,
+  'Residential branches principal/manager CTA should open the invite form with the correct principal intent.',
 )
 
 for (const marker of [

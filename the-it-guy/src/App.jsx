@@ -34,6 +34,62 @@ const WARNING_DELAY_MS = Math.max(INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_LOGOUT_
 
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 
+const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
+
+function normalizeRouteText(value = '') {
+  return String(value || '').trim().toLowerCase()
+}
+
+function hasCommercialMembershipMarker(membership = {}) {
+  const raw = membership?.raw && typeof membership.raw === 'object' ? membership.raw : {}
+  const metadata =
+    (raw.module_metadata && typeof raw.module_metadata === 'object' ? raw.module_metadata : null) ||
+    (raw.moduleMetadata && typeof raw.moduleMetadata === 'object' ? raw.moduleMetadata : null) ||
+    (raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : null) ||
+    (membership.module_metadata && typeof membership.module_metadata === 'object' ? membership.module_metadata : null) ||
+    (membership.moduleMetadata && typeof membership.moduleMetadata === 'object' ? membership.moduleMetadata : null) ||
+    (membership.metadata && typeof membership.metadata === 'object' ? membership.metadata : {}) ||
+    {}
+  const moduleValue = normalizeRouteText(
+    raw.module_context ||
+      raw.moduleContext ||
+      raw.module ||
+      raw.module_type ||
+      membership.module_context ||
+      membership.moduleContext ||
+      membership.module ||
+      membership.module_type ||
+      metadata.module_context ||
+      metadata.moduleContext ||
+      metadata.module ||
+      metadata.module_type,
+  )
+  if (COMMERCIAL_MODULE_MARKERS.has(moduleValue)) return true
+
+  const workspaceType = normalizeRouteText(
+    membership.workspaceType ||
+      membership.workspace_type ||
+      raw.workspace_type ||
+      raw.workspaceType ||
+      membership.workspace?.type ||
+      raw.workspace?.type,
+  )
+  if (COMMERCIAL_MODULE_MARKERS.has(workspaceType)) return true
+
+  const role = normalizeRouteText(
+    membership.role ||
+      membership.workspaceRole ||
+      membership.workspace_role ||
+      membership.organisationRole ||
+      membership.organisation_role ||
+      raw.workspace_role ||
+      raw.organisation_role ||
+      raw.role ||
+      metadata.role,
+  )
+  return role.startsWith('commercial_') || role.includes('commercial_broker')
+}
+
 const AddDevelopmentModal = lazy(() => import('./components/AddDevelopmentModal'))
 const AgentNewDealWizard = lazy(() => import('./components/AgentNewDealWizard'))
 const CommandPalette = lazy(() => import('./components/CommandPalette'))
@@ -120,7 +176,6 @@ const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/Com
 const CommercialBrokerAssignmentsPage = lazy(() => import('./modules/commercial/pages/CommercialBrokerAssignmentsPage'))
 const CommercialBrokerBranchesPage = lazy(() => import('./modules/commercial/pages/CommercialBrokerBranchesPage'))
 const CommercialBrokerOverviewPage = lazy(() => import('./modules/commercial/pages/CommercialBrokerOverviewPage'))
-const CommercialBrokerPerformancePage = lazy(() => import('./modules/commercial/pages/CommercialBrokerPerformancePage'))
 const CommercialBrokersPage = lazy(() => import('./modules/commercial/pages/CommercialBrokersPage'))
 const CommercialBrokerTeamsPage = lazy(() => import('./modules/commercial/pages/CommercialBrokerTeamsPage'))
 const CommercialCalendarPage = lazy(() => import('./modules/commercial/pages/CommercialCalendarPage'))
@@ -1239,10 +1294,10 @@ function AppRoutes() {
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
               <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
-              <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout onLogout={logout} user={session?.user || null} /></AppErrorBoundary></RoleRoute>}>
+              <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout onLogout={logout} user={session?.user || null} /></AppErrorBoundary></RoleRoute>}>
                 <Route index element={<CommercialDashboard />} />
                 <Route path="dashboard" element={<CommercialDashboard />} />
-                <Route path="principal" element={<Navigate to="/commercial/performance" replace />} />
+                <Route path="principal" element={<Navigate to="/commercial/agency" replace />} />
                 <Route path="companies" element={<Navigate to="/commercial/clients?tab=companies" replace />} />
                 <Route path="companies/:companyId" element={<CommercialCompanyWorkspacePage />} />
                 <Route path="contacts" element={<Navigate to="/commercial/clients?tab=contacts" replace />} />
@@ -1290,16 +1345,22 @@ function AppRoutes() {
                 <Route path="reports" element={<CommercialReportsPage />} />
                 <Route path="lease-expiry-watch" element={<CommercialLeaseExpiryWatchPage />} />
                 <Route path="market-intelligence" element={<CommercialMarketIntelligencePage />} />
-                <Route path="broker-performance" element={<Navigate to="/commercial/performance" replace />} />
+                <Route path="broker-performance" element={<Navigate to="/commercial/reports" replace />} />
                 <Route path="teams" element={<CommercialBrokerTeamsPage />} />
-                <Route path="performance" element={<CommercialBrokerPerformancePage />} />
+                <Route path="agency" element={<CommercialBrokerBranchesPage />} />
+                <Route path="agency/branches" element={<CommercialBrokerBranchesPage />} />
+                <Route path="agency/brokers" element={<CommercialBrokersPage />} />
+                <Route path="agency/brokers/:brokerId" element={<CommercialBrokersPage />} />
+                <Route path="performance" element={<Navigate to="/commercial/agency" replace />} />
+                <Route path="performance/branches" element={<Navigate to="/commercial/agency/branches" replace />} />
+                <Route path="performance/brokers" element={<Navigate to="/commercial/agency/brokers" replace />} />
                 <Route path="brokers/overview" element={<CommercialBrokerOverviewPage />} />
-                <Route path="brokers" element={<CommercialBrokersPage />} />
+                <Route path="brokers" element={<Navigate to="/commercial/agency/brokers" replace />} />
                 <Route path="brokers/teams" element={<CommercialBrokerTeamsPage />} />
-                <Route path="brokers/branches" element={<CommercialBrokerBranchesPage />} />
-                <Route path="brokers/performance" element={<CommercialBrokerPerformancePage />} />
+                <Route path="brokers/branches" element={<Navigate to="/commercial/agency/branches" replace />} />
+                <Route path="brokers/performance" element={<Navigate to="/commercial/reports" replace />} />
                 <Route path="brokers/assignments" element={<CommercialBrokerAssignmentsPage />} />
-                <Route path="brokers/:brokerId" element={<CommercialBrokersPage />} />
+                <Route path="brokers/:brokerId" element={<LegacyCommercialBrokerRedirect />} />
                 <Route path="docs" element={<CommercialDocumentsPage />} />
                 <Route path="documents" element={<CommercialDocumentsPage />} />
                 <Route path="documents/new" element={<CommercialDocumentGeneratorPage />} />
@@ -2618,12 +2679,18 @@ function ConveyancerOrDeveloperDevelopmentDetail() {
 
 function ClientAwareDashboard() {
   const workspaceContext = useWorkspace()
-  const { role } = workspaceContext
+  const { role, currentMembership, activeMemberships = [] } = workspaceContext
   if (role === 'client') {
     return <ClientModulePage />
   }
   if (role === 'attorney') {
     return <Navigate to="/attorney/dashboard" replace />
+  }
+  const hasCommercialAccess =
+    hasCommercialMembershipMarker(currentMembership) ||
+    activeMemberships.some((membership) => hasCommercialMembershipMarker(membership))
+  if (hasCommercialAccess && ['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal'].includes(role)) {
+    return <Navigate to="/commercial" replace />
   }
   const dashboardPermission = role === 'agent'
     ? PERMISSIONS.viewAgencyDashboard
@@ -2658,6 +2725,12 @@ function LegacyAgentWorkspaceRedirect() {
   const { agentId = '' } = useParams()
   const safeAgentId = String(agentId || '').trim()
   return <Navigate to={safeAgentId ? `/agency/agents/${encodeURIComponent(safeAgentId)}` : '/agency/agents'} replace />
+}
+
+function LegacyCommercialBrokerRedirect() {
+  const { brokerId = '' } = useParams()
+  const safeBrokerId = String(brokerId || '').trim()
+  return <Navigate to={safeBrokerId ? `/commercial/agency/brokers/${encodeURIComponent(safeBrokerId)}` : '/commercial/agency/brokers'} replace />
 }
 
 function SellerLegacyRedirect() {

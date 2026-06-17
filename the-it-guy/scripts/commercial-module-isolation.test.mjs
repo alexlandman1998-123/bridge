@@ -39,16 +39,18 @@ for (const marker of [
 }
 
 const appRoutes = await read('../src/App.jsx')
-includes(appRoutes, 'path="/commercial" element={<RoleRoute allowedRoles={[\'agent\', \'platform_admin\']}', 'Commercial routes should be wrapped in RoleRoute.')
+includes(appRoutes, 'path="/commercial" element={<RoleRoute allowedRoles={[\'agent\', \'commercial_broker\', \'commercial_admin\', \'commercial_principal\', \'platform_admin\']}', 'Commercial routes should be wrapped in RoleRoute with commercial-safe roles.')
+includes(appRoutes, 'hasCommercialMembershipMarker', 'Commercial users should be routed from the generic dashboard into the Commercial workspace.')
 
 const permissionRegistry = await read('../src/auth/permissions/permissionRegistry.js')
-includes(permissionRegistry, "{ prefix: '/commercial', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewDashboard }", 'Commercial should have an explicit route permission rule.')
+includes(permissionRegistry, "{ prefix: '/commercial' }", 'Commercial route registry should delegate module-specific authorization to CommercialLayout.')
+excludes(permissionRegistry, "{ prefix: '/commercial', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency", 'Commercial should not use the residential agent workspace guard.')
 
 const commercialLayout = await read('../src/modules/commercial/components/CommercialLayout.jsx')
 for (const marker of [
   'resolveCommercialAccessContext',
-  'Set up Commercial workspace',
-  'Activate Commercial',
+  'Commercial workspace access could not be verified.',
+  'Checking Commercial access',
   'hasCommercialAccess',
 ]) {
   includes(commercialLayout, marker, `Commercial layout should verify explicit commercial access: ${marker}`)

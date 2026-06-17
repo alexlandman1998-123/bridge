@@ -85,8 +85,8 @@ const COMMERCIAL_PLATFORM_MIGRATION_GUIDE = Object.freeze({
   commercial_commissions: '202606110007_commercial_brokerage_os_phase5.sql',
   'commercial access request workflow': '202606100003_commercial_access_requests_phase4.sql',
 })
-const COMMERCIAL_HQ_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'admin', 'admin_staff', 'manager', 'hq_manager', 'commercial_hq_admin', 'commercial_hq_manager', 'super_admin'])
-const COMMERCIAL_BRANCH_ROLES = new Set(['branch_manager', 'branch_admin', 'regional_manager'])
+const COMMERCIAL_HQ_ROLES = new Set(['owner', 'principal', 'commercial_principal', 'director', 'partner', 'admin', 'commercial_admin', 'admin_staff', 'manager', 'hq_manager', 'commercial_hq_admin', 'commercial_hq_manager', 'super_admin'])
+const COMMERCIAL_BRANCH_ROLES = new Set(['branch_manager', 'commercial_branch_manager', 'branch_admin', 'commercial_branch_admin', 'regional_manager'])
 const COMMERCIAL_TEAM_ROLES = new Set(['team_leader', 'team_manager', 'commercial_team_leader'])
 const COMMERCIAL_BROKER_ROLES = new Set(['broker', 'commercial_broker', 'agent', 'senior_agent'])
 const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
@@ -2696,17 +2696,28 @@ async function logCommercialRecordActivity(kind, record, { activityType, title, 
 
 async function resolveCommercialRelationshipContext(payload = {}, organisationId = '') {
   const resolvedOrganisationId = await resolveOrganisationId(organisationId || payload.organisation_id || payload.organisationId)
-  const [companies, contacts, tenants, landlords] = await Promise.all([
-    getCommercialCompanies(resolvedOrganisationId),
-    getCommercialContacts(resolvedOrganisationId),
-    getCommercialTenants(resolvedOrganisationId),
-    getCommercialLandlords(resolvedOrganisationId),
-  ])
-
   const companyId = normalizeText(payload.company_id || payload.companyId)
   const contactId = normalizeText(payload.contact_id || payload.contactId)
   const tenantId = normalizeText(payload.tenant_id || payload.tenantId)
   const landlordId = normalizeText(payload.landlord_id || payload.landlordId)
+  const needsRelationshipLookup = Boolean(companyId || contactId || tenantId || landlordId)
+  if (!needsRelationshipLookup) {
+    return {
+      organisationId: resolvedOrganisationId,
+      company: null,
+      contact: null,
+      tenant: null,
+      landlord: null,
+    }
+  }
+
+  const [companies, contacts, tenants, landlords] = await Promise.all([
+    getCommercialCompanies(resolvedOrganisationId),
+    contactId || companyId ? getCommercialContacts(resolvedOrganisationId) : Promise.resolve([]),
+    tenantId ? getCommercialTenants(resolvedOrganisationId) : Promise.resolve([]),
+    landlordId ? getCommercialLandlords(resolvedOrganisationId) : Promise.resolve([]),
+  ])
+
   const explicitContact = contacts.find((row) => row.id === contactId) || null
   const company = companies.find((row) => row.id === companyId)
     || (explicitContact?.company_id ? companies.find((row) => row.id === explicitContact.company_id) : null)
@@ -3866,27 +3877,36 @@ async function notifyCommercialTransactionStakeholders(transaction = {}, eventTy
 
 async function resolveCommercialTransactionLinks(payload = {}, organisationId = '') {
   const resolvedOrganisationId = await resolveOrganisationId(organisationId || payload.organisation_id || payload.organisationId)
+  const dealId = normalizeText(payload.deal_id || payload.dealId)
+  const requirementId = normalizeText(payload.requirement_id || payload.requirementId)
+  const listingId = normalizeText(payload.listing_id || payload.listingId)
+  const vacancyId = normalizeText(payload.vacancy_id || payload.vacancyId)
+  const propertyId = normalizeText(payload.property_id || payload.propertyId)
+  const companyId = normalizeText(payload.company_id || payload.companyId)
+  const contactId = normalizeText(payload.contact_id || payload.contactId)
+  const tenantId = normalizeText(payload.tenant_id || payload.tenantId)
+
   const [transactions, deals, requirements, listings, vacancies, properties, companies, contacts, tenants] = await Promise.all([
-    getCommercialTransactions(resolvedOrganisationId),
-    getCommercialDeals(resolvedOrganisationId),
-    getCommercialRequirements(resolvedOrganisationId),
-    getCommercialListings(resolvedOrganisationId),
-    getCommercialVacancies(resolvedOrganisationId),
-    getCommercialProperties(resolvedOrganisationId),
-    getCommercialCompanies(resolvedOrganisationId),
-    getCommercialContacts(resolvedOrganisationId),
-    getCommercialTenants(resolvedOrganisationId),
+    dealId ? getCommercialTransactions(resolvedOrganisationId) : Promise.resolve([]),
+    dealId ? getCommercialDeals(resolvedOrganisationId) : Promise.resolve([]),
+    requirementId || dealId ? getCommercialRequirements(resolvedOrganisationId) : Promise.resolve([]),
+    listingId || dealId ? getCommercialListings(resolvedOrganisationId) : Promise.resolve([]),
+    vacancyId || listingId || dealId ? getCommercialVacancies(resolvedOrganisationId) : Promise.resolve([]),
+    propertyId || vacancyId || listingId || dealId ? getCommercialProperties(resolvedOrganisationId) : Promise.resolve([]),
+    companyId || contactId || tenantId || dealId || requirementId ? getCommercialCompanies(resolvedOrganisationId) : Promise.resolve([]),
+    contactId || companyId || dealId || requirementId ? getCommercialContacts(resolvedOrganisationId) : Promise.resolve([]),
+    tenantId || dealId || requirementId ? getCommercialTenants(resolvedOrganisationId) : Promise.resolve([]),
   ])
 
-  const deal = deals.find((row) => row.id === normalizeText(payload.deal_id || payload.dealId)) || null
-  const requirement = requirements.find((row) => row.id === normalizeText(payload.requirement_id || payload.requirementId || deal?.requirement_id)) || null
-  const listing = listings.find((row) => row.id === normalizeText(payload.listing_id || payload.listingId || deal?.listing_id)) || null
-  const vacancy = vacancies.find((row) => row.id === normalizeText(payload.vacancy_id || payload.vacancyId || deal?.vacancy_id || listing?.vacancy_id)) || null
-  const property = properties.find((row) => row.id === normalizeText(payload.property_id || payload.propertyId || deal?.property_id || vacancy?.property_id || listing?.property_id)) || null
-  const contact = contacts.find((row) => row.id === normalizeText(payload.contact_id || payload.contactId || deal?.contact_id || requirement?.contact_id)) || null
-  const company = companies.find((row) => row.id === normalizeText(payload.company_id || payload.companyId || contact?.company_id || deal?.company_id || requirement?.company_id))
+  const deal = deals.find((row) => row.id === dealId) || null
+  const requirement = requirements.find((row) => row.id === normalizeText(requirementId || deal?.requirement_id)) || null
+  const listing = listings.find((row) => row.id === normalizeText(listingId || deal?.listing_id)) || null
+  const vacancy = vacancies.find((row) => row.id === normalizeText(vacancyId || deal?.vacancy_id || listing?.vacancy_id)) || null
+  const property = properties.find((row) => row.id === normalizeText(propertyId || deal?.property_id || vacancy?.property_id || listing?.property_id)) || null
+  const contact = contacts.find((row) => row.id === normalizeText(contactId || deal?.contact_id || requirement?.contact_id)) || null
+  const company = companies.find((row) => row.id === normalizeText(companyId || contact?.company_id || deal?.company_id || requirement?.company_id))
     || companies.find((row) => companyLegacyId(row, 'tenant') === normalizeText(deal?.tenant_id || requirement?.tenant_id))
-    || tenants.find((row) => row.id === normalizeText(payload.company_id || payload.companyId || deal?.tenant_id || requirement?.tenant_id))
+    || tenants.find((row) => row.id === normalizeText(companyId || deal?.tenant_id || requirement?.tenant_id))
     || null
   const existingTransaction = deal?.id ? transactions.find((row) => row.deal_id === deal.id) || null : null
 

@@ -3,6 +3,12 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supab
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 import { assignOrganisationUserCommissionProfile, fetchOrganisationSettings } from '../lib/settingsApi'
 import { createInvite, INVITE_STATUSES, InviteValidationError } from './inviteService'
+import {
+  AGENCY_AUTHORITY_ACTIONS,
+  assertAgencyAuthority,
+  getAgencyAuthorityLevel,
+  normalizeAgencyAuthorityRole,
+} from './agencyAuthorityService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -89,6 +95,40 @@ async function resolveWorkspaceDefaults(input = {}) {
   return {
     workspaceId: workspaceId || normalizeText(context?.organisation?.id),
     organisationName: organisationName || normalizeText(context?.organisation?.displayName || context?.organisation?.name) || 'Bridge Organisation',
+  }
+}
+
+async function assertWorkspaceUserInviteAuthority({ workspaceId = '', role = '', branchId = '' } = {}) {
+  const context = await fetchOrganisationSettings()
+  const currentWorkspaceId = normalizeText(context?.organisation?.id)
+  if (workspaceId && currentWorkspaceId && workspaceId !== currentWorkspaceId) return
+  const workspaceType = normalizeText(context?.organisation?.type || context?.organisation?.workspaceType).toLowerCase()
+  if (workspaceType && !['agency', 'residential'].includes(workspaceType)) return
+
+  const actor = {
+    role: context?.membershipRole || 'viewer',
+    membershipRole: context?.membershipRole || 'viewer',
+    branchId: context?.membershipBranchId || context?.membership?.branchId || context?.membership?.branch_id || '',
+  }
+  const targetRole = normalizeAgencyAuthorityRole(role)
+  const actorRole = normalizeAgencyAuthorityRole(actor.role)
+
+  if (targetRole === 'owner') {
+    throw new Error('Owner invites are not available from the team invite flow. Use the ownership transfer flow instead.')
+  }
+
+  const action = targetRole === 'principal'
+    ? AGENCY_AUTHORITY_ACTIONS.invitePrincipal
+    : AGENCY_AUTHORITY_ACTIONS.inviteAgent
+  assertAgencyAuthority(action, actor, { role, membershipRole: role, branchId }, {
+    branchId,
+    message: targetRole === 'principal'
+      ? 'Only the organisation owner can invite another principal.'
+      : 'You do not have authority to invite a user at this level.',
+  })
+
+  if (targetRole !== 'principal' && getAgencyAuthorityLevel(actorRole) <= getAgencyAuthorityLevel(targetRole)) {
+    throw new Error('You do not have authority to invite a user at this level.')
   }
 }
 
@@ -378,6 +418,8 @@ export async function createWorkspaceUserInvite(input = {}) {
       : 'Use the branch transfer or branch assignment flow instead of sending another invite.'
     throw new Error(`This email already belongs to an active user in this workspace. ${branchHint}`)
   }
+
+  await assertWorkspaceUserInviteAuthority({ workspaceId, role, branchId })
 
   let inviteResult
   try {

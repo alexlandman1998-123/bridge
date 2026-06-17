@@ -52,6 +52,7 @@ import {
   AGENCY_AUTHORITY_ACTIONS,
   assertAgencyAuthority,
   classifyRoleTransition,
+  normalizeAgencyAuthorityRole,
   recordAgencyGovernanceAudit,
 } from '../services/agencyAuthorityService'
 import { completeOnboarding } from '../services/onboarding/onboardingEngine'
@@ -1299,7 +1300,8 @@ function mapAgencyInviteRoleToOrganisationRole(role = '') {
 }
 
 function normalizeOrganisationUserRole(role = '', fallback = 'viewer') {
-  const normalized = normalizeOrganisationMembershipRole(role)
+  const raw = normalizeText(role).toLowerCase()
+  const normalized = raw === 'owner' ? 'owner' : normalizeOrganisationMembershipRole(role)
   if (
     [
       'super_admin',
@@ -1324,6 +1326,30 @@ function normalizeOrganisationUserRole(role = '', fallback = 'viewer') {
     return normalized
   }
   return normalizeOrganisationMembershipRole(fallback)
+}
+
+function isOwnerOrganisationUserRole(role = '') {
+  return ['owner', 'super_admin'].includes(normalizeOrganisationUserRole(role, 'viewer'))
+}
+
+function isOwnerOrganisationUserRow(row = {}) {
+  return (
+    isOwnerOrganisationUserRole(row?.role) ||
+    isOwnerOrganisationUserRole(row?.workspace_role) ||
+    isOwnerOrganisationUserRole(row?.organisation_role)
+  )
+}
+
+async function countActiveOrganisationOwners(client, organisationId = '') {
+  const safeOrganisationId = normalizeText(organisationId)
+  if (!safeOrganisationId) return 0
+  const { data, error } = await client
+    .from('organisation_users')
+    .select('id, role, workspace_role, organisation_role, status')
+    .eq('organisation_id', safeOrganisationId)
+    .eq('status', 'active')
+  if (error) throw error
+  return (data || []).filter(isOwnerOrganisationUserRow).length
 }
 
 async function upsertOrganisationUserInvite(client, payload = {}) {
@@ -5110,14 +5136,18 @@ export async function updateOrganisationUserRole(userRowId, role) {
 
   const existing = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, email, role, status')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, email, role, workspace_role, organisation_role, status')
     .eq('id', userRowId)
     .eq('organisation_id', context.organisation.id)
     .maybeSingle()
   if (existing.error) throw existing.error
   if (!existing.data?.id) throw new Error('Organisation user not found.')
 
-  const transitionType = classifyRoleTransition(existing.data.role, nextRole)
+  const previousRole = existing.data.workspace_role || existing.data.organisation_role || existing.data.role
+  if (!isOwnerOrganisationUserRow(existing.data) && normalizeAgencyAuthorityRole(nextRole) === 'owner') {
+    throw new Error('Owner role changes must use the ownership transfer flow.')
+  }
+  const transitionType = classifyRoleTransition(previousRole, nextRole)
   assertAgencyAuthority(
     transitionType === 'promotion' ? AGENCY_AUTHORITY_ACTIONS.promoteUser : AGENCY_AUTHORITY_ACTIONS.demoteUser,
     getAuthorityActorFromContext(context),
@@ -5130,12 +5160,23 @@ export async function updateOrganisationUserRole(userRowId, role) {
     },
   )
 
+  if (isOwnerOrganisationUserRow(existing.data) && normalizeAgencyAuthorityRole(nextRole) !== 'owner') {
+    const activeOwnerCount = await countActiveOrganisationOwners(client, context.organisation.id)
+    if (activeOwnerCount <= 1) {
+      throw new Error('This is the only active organisation owner. Transfer ownership before changing this user role.')
+    }
+  }
+
   const { data, error } = await client
     .from('organisation_users')
-    .update({ role: nextRole })
+    .update({
+      role: nextRole,
+      workspace_role: nextRole,
+      organisation_role: nextRole,
+    })
     .eq('id', userRowId)
     .eq('organisation_id', context.organisation.id)
-    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, invited_at, accepted_at, last_active_at')
     .single()
 
   if (error) {
@@ -5148,14 +5189,14 @@ export async function updateOrganisationUserRole(userRowId, role) {
     action: transitionType === 'promotion' ? 'agency_user_promoted' : transitionType === 'demotion' ? 'agency_user_demoted' : 'role_changed',
     targetType: 'organisation_user',
     targetId: userRowId,
-    metadata: { previousRole: existing.data.role, role: nextRole, transitionType },
+    metadata: { previousRole, role: nextRole, transitionType },
   })
   void recordAgencyGovernanceAudit({
     actor: getAuthorityActorFromContext(context),
     workspaceId: context.organisation.id,
     action: transitionType === 'promotion' ? 'principal_promoted' : transitionType === 'demotion' ? 'agency_user_demoted' : 'agency_user_role_changed',
     target: getAuthorityTargetFromOrganisationUser(data),
-    previousRole: existing.data.role,
+    previousRole,
     nextRole,
   })
   organisationUsersCache = null
@@ -5169,7 +5210,7 @@ export async function deactivateOrganisationUser(userRowId) {
 
   const existing = await client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, email, role, status')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, email, role, workspace_role, organisation_role, status')
     .eq('id', userRowId)
     .eq('organisation_id', context.organisation.id)
     .maybeSingle()
@@ -5182,13 +5223,19 @@ export async function deactivateOrganisationUser(userRowId) {
     { message: 'You do not have authority to deactivate this organisation user.' },
   )
   assertMembershipStatusTransition(existing.data?.status, 'deactivated')
+  if (isOwnerOrganisationUserRow(existing.data)) {
+    const activeOwnerCount = await countActiveOrganisationOwners(client, context.organisation.id)
+    if (activeOwnerCount <= 1) {
+      throw new Error('This is the only active organisation owner. Transfer ownership before deactivating this user.')
+    }
+  }
 
   const { data, error } = await client
     .from('organisation_users')
     .update({ status: 'deactivated' })
     .eq('id', userRowId)
     .eq('organisation_id', context.organisation.id)
-    .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, first_name, last_name, email, role, workspace_role, organisation_role, status, invited_at, accepted_at, last_active_at')
     .single()
 
   if (error) {

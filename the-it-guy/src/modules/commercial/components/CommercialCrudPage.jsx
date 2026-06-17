@@ -139,9 +139,9 @@ function CommercialCrudPage({
   const resolvedSearchPlaceholder = searchPlaceholder || `Search ${resolvedPageTitle.toLowerCase()}...`
   const useCardView = presentation === 'cards'
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    setError('')
+  const loadData = useCallback(async ({ showLoading = true, preserveOnError = false } = {}) => {
+    if (showLoading) setLoading(true)
+    if (!preserveOnError) setError('')
     try {
       const context = await resolveCommercialOrganisationContext()
       const nextOrganisationId = context.organisationId || ''
@@ -153,10 +153,12 @@ function CommercialCrudPage({
       setRecords(nextRecords || [])
       setLookups(nextLookups || {})
     } catch (loadError) {
-      setError(friendlyError(loadError, 'Commercial records could not be loaded.'))
-      setRecords([])
+      if (!preserveOnError) {
+        setError(friendlyError(loadError, 'Commercial records could not be loaded.'))
+        setRecords([])
+      }
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [config])
 
@@ -265,11 +267,18 @@ function CommercialCrudPage({
     const record = modalState.record
     if (modalState.mode === 'edit' && record?.id) {
       const updated = await config.updateRecord(record.id, payload)
-      await loadData()
+      if (updated?.id) {
+        setRecords((current) => current.map((row) => String(row.id) === String(updated.id) ? updated : row))
+        setDrawerRecord((current) => (String(current?.id || '') === String(updated.id) ? updated : current))
+      }
+      void loadData({ showLoading: false, preserveOnError: true })
       return updated
     } else {
       const created = await config.createRecord({ ...payload, organisation_id: organisationId })
-      await loadData()
+      if (created?.id) {
+        setRecords((current) => [created, ...current.filter((row) => String(row.id) !== String(created.id))])
+      }
+      void loadData({ showLoading: false, preserveOnError: true })
       return created
     }
   }

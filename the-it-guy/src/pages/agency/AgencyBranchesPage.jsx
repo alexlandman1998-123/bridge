@@ -633,10 +633,21 @@ export default function AgencyBranchesPage() {
     navigate('/agency/agents', { state: { branchId } })
   }
 
+  function openPrincipalManagerInvite() {
+    navigate('/settings/users', {
+      state: {
+        openInvite: true,
+        inviteIntent: 'residential_principal_manager',
+        inviteRole: 'principal',
+        inviteSource: 'residential_branches_principal_manager_invite',
+      },
+    })
+  }
+
   return (
     <section className="flex flex-col gap-5 pb-8">
       <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="secondary" onClick={() => navigate('/settings/users', { state: { openInvite: true } })}>
+        <Button variant="secondary" onClick={openPrincipalManagerInvite}>
           <Users size={16} />Invite Principal / Manager
         </Button>
         <Button onClick={() => setShowCreateModal(true)}>

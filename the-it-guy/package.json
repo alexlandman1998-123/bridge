@@ -37,6 +37,7 @@
     "test:commercial-phase7": "node scripts/commercial-phase7.test.mjs",
     "test:commercial-phase8": "node scripts/commercial-phase8.test.mjs",
     "test:commercial-menu-performance": "node scripts/commercial-menu-performance.test.mjs",
+    "test:commercial-agency-routing": "node scripts/commercial-agency-routing.test.mjs",
     "test:commercial-module-isolation": "node scripts/commercial-module-isolation.test.mjs",
     "test:commercial-access-setup": "node scripts/commercial-access-setup.test.mjs",
     "test:commercial-signup-phase2": "node scripts/commercial-signup-phase2.test.mjs",

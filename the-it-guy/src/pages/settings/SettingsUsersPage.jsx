@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -13,6 +14,12 @@ import {
   updateOrganisationUserRole,
 } from '../../lib/settingsApi'
 import { createWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
+import {
+  AGENCY_AUTHORITY_ACTIONS,
+  canPerformAgencyAuthorityAction,
+  getAgencyAuthorityLevel,
+  normalizeAgencyAuthorityRole,
+} from '../../services/agencyAuthorityService'
 import {
   SettingsBanner,
   SettingsEmptyState,
@@ -51,6 +58,47 @@ const ROLE_OPTIONS = [
   { value: 'viewer', label: 'Viewer' },
 ]
 
+function resolveInviteRole(value = '', fallback = 'agent') {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ROLE_OPTIONS.some((option) => option.value === normalized) ? normalized : fallback
+}
+
+function getRoleLevel(value = '') {
+  return getAgencyAuthorityLevel(normalizeAgencyAuthorityRole(value))
+}
+
+function canAssignOrganisationRole(actor = {}, targetRole = '', { target = {}, invite = false } = {}) {
+  const normalizedTargetRole = normalizeAgencyAuthorityRole(targetRole)
+  if (normalizedTargetRole === 'owner') return false
+  if (invite) {
+    const action = normalizedTargetRole === 'principal'
+      ? AGENCY_AUTHORITY_ACTIONS.invitePrincipal
+      : AGENCY_AUTHORITY_ACTIONS.inviteAgent
+    if (!canPerformAgencyAuthorityAction(action, actor, { ...target, role: targetRole, membershipRole: targetRole }, target)) return false
+    return normalizedTargetRole === 'principal' || getRoleLevel(actor.role || actor.membershipRole) > getRoleLevel(targetRole)
+  }
+  return canPerformAgencyAuthorityAction(
+    AGENCY_AUTHORITY_ACTIONS.promoteUser,
+    actor,
+    target,
+    { nextRole: targetRole },
+  )
+}
+
+function filterAssignableRoleOptions(actor = {}, { target = null, invite = false } = {}) {
+  const currentRole = target?.role || ''
+  const options = ROLE_OPTIONS.filter((option) => canAssignOrganisationRole(actor, option.value, { target: target || {}, invite }))
+  if (currentRole && !options.some((option) => option.value === currentRole)) {
+    const currentOption = ROLE_OPTIONS.find((option) => option.value === currentRole)
+    if (currentOption) return [currentOption, ...options]
+  }
+  return options
+}
+
+function readInviteNavigationState(state = {}) {
+  return state && typeof state === 'object' && !Array.isArray(state) ? state : {}
+}
+
 function formatCommercialAuditAction(action = '') {
   const label = String(action || '')
     .replace(/^commercial_/, '')
@@ -72,15 +120,19 @@ function getCommercialAuditSubject(event = {}) {
 }
 
 export default function SettingsUsersPage() {
-  const { can } = useWorkspace()
-  const [, setMembershipRole] = useState('viewer')
+  const location = useLocation()
+  const { can, currentMembership, currentWorkspace, workspaceRole, workspaceType, profile } = useWorkspace()
+  const [membershipRole, setMembershipRole] = useState('viewer')
   const canEdit = can(PERMISSIONS.manageUsers)
+  const inviteSectionRef = useRef(null)
+  const inviteNavigationState = readInviteNavigationState(location.state)
+  const initialInviteRole = resolveInviteRole(inviteNavigationState.inviteRole || inviteNavigationState.role, 'agent')
   const [users, setUsers] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
   const [commissionProfiles, setCommissionProfiles] = useState([])
   const [commercialAccessRequests, setCommercialAccessRequests] = useState([])
   const [commercialAccessManagement, setCommercialAccessManagement] = useState({ organisationModuleStatus: null, users: [], auditEvents: [] })
-  const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: 'agent', commissionStructureId: '' })
+  const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: initialInviteRole, commissionStructureId: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [reviewingRequestId, setReviewingRequestId] = useState('')
@@ -88,6 +140,22 @@ export default function SettingsUsersPage() {
   const [savingCommercialUserId, setSavingCommercialUserId] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const authorityActor = useMemo(() => ({
+    id: profile?.id || currentMembership?.userId || currentMembership?.user_id || '',
+    userId: profile?.id || currentMembership?.userId || currentMembership?.user_id || '',
+    email: profile?.email || currentMembership?.email || '',
+    role: membershipRole || workspaceRole || currentMembership?.workspaceRole || currentMembership?.role || 'viewer',
+    membershipRole: membershipRole || workspaceRole || currentMembership?.workspaceRole || currentMembership?.role || 'viewer',
+    branchId: currentMembership?.primaryBranchId || currentMembership?.branchId || currentMembership?.primary_branch_id || currentMembership?.branch_id || '',
+  }), [currentMembership, membershipRole, profile, workspaceRole])
+  const usesAgencyGovernance = useMemo(() => {
+    const type = String(currentWorkspace?.type || workspaceType || '').trim().toLowerCase()
+    return !type || ['agency', 'residential'].includes(type)
+  }, [currentWorkspace?.type, workspaceType])
+  const inviteRoleOptions = useMemo(
+    () => (usesAgencyGovernance ? filterAssignableRoleOptions(authorityActor, { invite: true }) : ROLE_OPTIONS),
+    [authorityActor, usesAgencyGovernance],
+  )
 
   const commissionStructureById = useMemo(
     () => new Map((commissionStructures || []).map((item) => [String(item.id || ''), item])),
@@ -138,6 +206,24 @@ export default function SettingsUsersPage() {
     void loadUsers()
   }, [loadUsers])
 
+  useEffect(() => {
+    if (!inviteNavigationState.openInvite) return
+    const nextRole = resolveInviteRole(inviteNavigationState.inviteRole || inviteNavigationState.role, 'principal')
+    const allowedRole = inviteRoleOptions.some((option) => option.value === nextRole)
+      ? nextRole
+      : inviteRoleOptions[0]?.value || 'agent'
+    setInviteForm((previous) => ({ ...previous, role: allowedRole }))
+    window.setTimeout(() => {
+      inviteSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }, [inviteNavigationState.inviteRole, inviteNavigationState.openInvite, inviteNavigationState.role, inviteRoleOptions])
+
+  useEffect(() => {
+    if (!inviteRoleOptions.length) return
+    if (inviteRoleOptions.some((option) => option.value === inviteForm.role)) return
+    setInviteForm((previous) => ({ ...previous, role: inviteRoleOptions[0].value }))
+  }, [inviteForm.role, inviteRoleOptions])
+
   async function handleInvite(event) {
     event.preventDefault()
     if (!canEdit) return
@@ -153,9 +239,11 @@ export default function SettingsUsersPage() {
         lastName: inviteForm.lastName,
         email: inviteForm.email,
         role: inviteForm.role,
+        branchId: inviteNavigationState.branchId || '',
+        branchName: inviteNavigationState.branchName || '',
         commissionStructureId: selectedCommissionStructure?.id || '',
         commissionStructureName: selectedCommissionStructure?.name || '',
-        source: 'settings_users_invite',
+        source: inviteNavigationState.inviteSource || 'settings_users_invite',
       })
       setInviteForm({ firstName: '', lastName: '', email: '', role: 'agent', commissionStructureId: '' })
       await loadUsers()
@@ -287,7 +375,13 @@ export default function SettingsUsersPage() {
         <SettingsBanner tone="warning">Read-only for your role. Only Principal-level administrators can manage users and permissions.</SettingsBanner>
       ) : null}
 
+      <div ref={inviteSectionRef}>
       <SettingsSectionCard title="Invite User" description="Add a team member and assign their initial role.">
+        {inviteNavigationState.inviteIntent === 'residential_principal_manager' ? (
+          <SettingsBanner tone="success">
+            Principal / Manager invite selected from Residential. Confirm the role, add the invitee details, and Bridge will send the workspace invite email.
+          </SettingsBanner>
+        ) : null}
         <form className={settingsGridClass} onSubmit={handleInvite}>
           <label className={settingsFieldClass}>
             <span className="text-sm font-medium text-[#51657b]">First name</span>
@@ -318,15 +412,20 @@ export default function SettingsUsersPage() {
             <Field
               as="select"
               value={inviteForm.role}
-              disabled={!canEdit}
+              disabled={!canEdit || inviteRoleOptions.length === 0}
               onChange={(event) => setInviteForm((previous) => ({ ...previous, role: event.target.value }))}
             >
-              {ROLE_OPTIONS.map((option) => (
+              {inviteRoleOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
                 ))}
               </Field>
+              {canEdit && !inviteRoleOptions.some((option) => normalizeAgencyAuthorityRole(option.value) === 'principal') ? (
+                <span className="text-xs font-medium text-[#8a6a18]">
+                  Principal and owner invites are restricted to the organisation owner.
+                </span>
+              ) : null}
             </label>
           <label className={settingsFieldClass}>
             <span className="text-sm font-medium text-[#51657b]">Commission Structure (Optional)</span>
@@ -360,6 +459,7 @@ export default function SettingsUsersPage() {
           ) : null}
         </form>
       </SettingsSectionCard>
+      </div>
 
       {canEdit && commercialAccessRequests.length ? (
         <SettingsSectionCard
@@ -525,6 +625,19 @@ export default function SettingsUsersPage() {
                   ? commissionStructureById.get(String(commissionProfile.commissionStructureId))
                   : null
                 const usingDefault = !assignedStructure && defaultCommissionStructure
+                const roleOptions = usesAgencyGovernance
+                  ? filterAssignableRoleOptions(authorityActor, {
+                      target: {
+                        id: userRow.id,
+                        userId: userRow.userId,
+                        email: userRow.email,
+                        role: userRow.role,
+                        membershipRole: userRow.role,
+                        branchId: userRow.branchId || userRow.primaryBranchId || '',
+                      },
+                    })
+                  : ROLE_OPTIONS
+                const canChangeRole = canEdit && roleOptions.some((option) => option.value !== userRow.role)
                 return (
                 <div
                   key={userRow.id}
@@ -540,9 +653,9 @@ export default function SettingsUsersPage() {
                   </div>
                   <div className="space-y-1">
                     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Role</span>
-                    {canEdit ? (
+                    {canChangeRole ? (
                       <Field as="select" value={userRow.role} className="py-2.5" onChange={(event) => handleRoleChange(userRow.id, event.target.value)}>
-                        {ROLE_OPTIONS.map((option) => (
+                        {roleOptions.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
                           </option>

@@ -64,11 +64,19 @@ export const COMMERCIAL_NAV_SECTIONS = [
     ],
   },
   {
-    id: 'performance',
-    label: 'Performance',
+    id: 'agency',
+    label: 'Agency',
+    icon: Building2,
+    items: [
+      { label: 'Branches', to: '/commercial/agency/branches', icon: Building2, activePaths: ['/commercial/agency', '/commercial/agency/branches', '/commercial/brokers/branches', '/commercial/performance/branches'] },
+      { label: 'Brokers', to: '/commercial/agency/brokers', icon: UserRoundCheck, activePaths: ['/commercial/agency/brokers', '/commercial/agency/brokers/overview', '/commercial/agency/brokers/assignments', '/commercial/agency/brokers/teams', '/commercial/brokers', '/commercial/brokers/overview', '/commercial/brokers/assignments', '/commercial/brokers/teams', '/commercial/performance/brokers'] },
+    ],
+  },
+  {
+    id: 'insights',
+    label: 'Insights',
     icon: BarChart3,
     items: [
-      { label: 'Brokers', to: '/commercial/brokers', icon: UserRoundCheck, activePaths: ['/commercial/brokers', '/commercial/brokers/overview', '/commercial/brokers/assignments', '/commercial/brokers/teams', '/commercial/brokers/branches', '/commercial/brokers/performance', '/commercial/performance'] },
       { label: 'Reports', to: '/commercial/reports', icon: BarChart3, activePaths: ['/commercial/reports', '/commercial/docs', '/commercial/documents', '/commercial/activity', '/commercial/market-intelligence', '/commercial/broker-performance'] },
     ],
   },

@@ -58,7 +58,6 @@ import {
   getCommercialLookupData,
 } from '../services/commercialApi'
 import { getCommercialCanvassingContext, listCommercialCanvassingWorkspace, createCommercialCanvassingActivity, createCommercialCanvassingProspect, deleteCommercialCanvassingProspect, updateCommercialCanvassingProspect } from '../services/commercialCanvassingApi'
-import { getCommercialPipelineData } from '../services/commercialPipelineApi'
 
 const CARD_CLASS = 'rounded-[24px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.06)]'
 const FOLLOW_UP_PRIORITIES = COMMERCIAL_PRIORITY_OPTIONS
@@ -904,7 +903,6 @@ function CommercialCanvassingPage({ dealType = '' }) {
   const [prospects, setProspects] = useState([])
   const [activities, setActivities] = useState([])
   const [lookups, setLookups] = useState({})
-  const [, setPipeline] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -935,9 +933,9 @@ function CommercialCanvassingPage({ dealType = '' }) {
   const createPrefillKey = searchParams.toString()
   const hasCreatePrefillParams = hasCreatePrefill(searchParams)
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    setError('')
+  const loadData = useCallback(async ({ showLoading = true, preserveOnError = false } = {}) => {
+    if (showLoading) setLoading(true)
+    if (!preserveOnError) setError('')
     try {
       const context = await getCommercialCanvassingContext()
       const nextOrganisationId = context.organisationId || ''
@@ -948,27 +946,25 @@ function CommercialCanvassingPage({ dealType = '' }) {
         setProspects([])
         setActivities([])
         setLookups({})
-        setPipeline(null)
         return
       }
-      const [workspace, nextLookups, nextPipeline] = await Promise.all([
+      const [workspace, nextLookups] = await Promise.all([
         nextOrganisationId ? listCommercialCanvassingWorkspace(nextOrganisationId) : Promise.resolve({ prospects: [], activities: [] }),
         nextOrganisationId ? getCommercialLookupData(nextOrganisationId) : Promise.resolve({}),
-        nextOrganisationId ? getCommercialPipelineData(nextOrganisationId) : Promise.resolve(null),
       ])
       setOrganisationId(nextOrganisationId)
       setProspects(Array.isArray(workspace?.prospects) ? workspace.prospects : [])
       setActivities(Array.isArray(workspace?.activities) ? workspace.activities : [])
       setLookups(nextLookups || {})
-      setPipeline(nextPipeline || null)
     } catch (loadError) {
-      setError(loadError?.message || 'Commercial canvassing could not be loaded.')
-      setProspects([])
-      setActivities([])
-      setLookups({})
-      setPipeline(null)
+      if (!preserveOnError) {
+        setError(loadError?.message || 'Commercial canvassing could not be loaded.')
+        setProspects([])
+        setActivities([])
+        setLookups({})
+      }
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [])
 
@@ -1400,7 +1396,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
       setCreateStep(2)
       setCreateErrors({})
       setMessage(`${getRoleLabel(payload.prospectRole)} prospect added.`)
-      await loadData()
+      void loadData({ showLoading: false, preserveOnError: true })
     } catch (createError) {
       setError(createError?.message || 'Commercial canvassing prospect could not be created.')
     } finally {
@@ -1444,7 +1440,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
       })
       setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(selectedProspect.id) ? (updated || selectedProspect) : row))
       setMessage('Prospect saved.')
-      await loadData()
+      void loadData({ showLoading: false, preserveOnError: true })
     } catch (saveError) {
       setError(saveError?.message || 'Commercial canvassing prospect could not be saved.')
     } finally {
@@ -1473,7 +1469,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
       setActivities((current) => [created, ...current])
       setActivityDraft(buildInitialActivityDraft())
       setMessage(`${type} logged.`)
-      await loadData()
+      void loadData({ showLoading: false, preserveOnError: true })
     } catch (activityError) {
       setError(activityError?.message || 'Activity could not be logged.')
     } finally {
@@ -1606,7 +1602,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
         outcome: type,
         activityDate: new Date().toISOString(),
       })
-      await loadData()
+      void loadData({ showLoading: false, preserveOnError: true })
     } catch (convertError) {
       setError(convertError?.message || 'This canvassing prospect could not be converted.')
     } finally {
