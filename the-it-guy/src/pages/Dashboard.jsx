@@ -70,6 +70,7 @@ import {
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { getAgentPrivateListings } from '../services/privateListingService'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import {
   getListingSourceLabel,
@@ -514,6 +515,18 @@ function getActivityAgentName(row = {}) {
   ).trim() || 'Unassigned'
 }
 
+function mergeDashboardListingRows(...groups) {
+  const rowsByKey = new Map()
+  for (const group of groups) {
+    for (const row of Array.isArray(group) ? group : []) {
+      const key = String(row?.id || row?.listingId || row?.listing_id || row?.listingReference || '').trim()
+      if (!key) continue
+      rowsByKey.set(key, row)
+    }
+  }
+  return [...rowsByKey.values()]
+}
+
 function getAppointmentDateValue(appointment = {}) {
   const direct = getDateValue(appointment?.dateTime)
   if (direct) return direct
@@ -533,6 +546,7 @@ function FORMAT_DELTA_LABEL(value) {
 function getProfileIdentitySet(profile) {
   const values = [
     profile?.id,
+    profile?.userId,
     profile?.email,
     profile?.name,
     profile?.fullName,
@@ -547,15 +561,27 @@ function rowMatchesAgentIdentity(row, profileIdentitySet) {
   }
 
   const candidates = [
+    row?.transaction?.owner_user_id,
     row?.transaction?.assigned_agent_id,
+    row?.transaction?.assigned_agent_user_id,
     row?.transaction?.agent_id,
     row?.transaction?.owner_id,
+    row?.transaction?.ownerUserId,
+    row?.transaction?.created_by_user_id,
     row?.transaction?.created_by,
+    row?.transaction?.createdByUserId,
     row?.transaction?.assigned_agent_email,
+    row?.transaction?.assignedAgentEmail,
     row?.transaction?.agent_email,
     row?.transaction?.assigned_agent,
     row?.transaction?.assigned_agent_name,
+    row?.transaction?.assignedAgentName,
     row?.transaction?.agent_name,
+    row?.transaction?.agentId,
+    row?.transaction?.agentUserId,
+    row?.transaction?.participant_user_id,
+    row?.transaction?.participantUserId,
+    row?.transaction?.assignedUserId,
   ].map((value) => toLookupText(value)).filter(Boolean)
 
   if (!candidates.length) {
@@ -571,12 +597,18 @@ function leadMatchesAgentIdentity(lead, profileIdentitySet) {
   }
 
   const candidates = [
+    lead?.ownerUserId,
+    lead?.owner_user_id,
     lead?.assignedAgentId,
+    lead?.assignedAgentUserId,
     lead?.assignedAgentEmail,
+    lead?.assigned_agent_email,
     lead?.agentId,
+    lead?.agentUserId,
     lead?.agentEmail,
     lead?.assignedAgent,
     lead?.assignedAgentName,
+    lead?.assigned_agent_name,
     lead?.agentName,
   ].map((value) => toLookupText(value)).filter(Boolean)
 
@@ -637,12 +669,17 @@ function listingMatchesAgentIdentity(listing, profileIdentitySet) {
 
   const candidates = [
     listing?.agentId,
+    listing?.agentUserId,
+    listing?.assignedAgentId,
+    listing?.assignedAgentUserId,
     listing?.assignedAgentEmail,
     listing?.assigned_agent_email,
     listing?.assignedAgent,
     listing?.assignedAgentName,
+    listing?.assigned_agent_name,
     listing?.agentName,
     listing?.commission?.agent_id,
+    listing?.commission?.agentId,
   ].map((value) => toLookupText(value)).filter(Boolean)
 
   if (!candidates.length) {
@@ -953,6 +990,7 @@ function Dashboard() {
   const [principalTimeFilter, setPrincipalTimeFilter] = useState('this_week')
   const [residentialMode] = useState('sales')
   const [residentialDateRange, setResidentialDateRange] = useState('last_30_days')
+  const [agentPrivateListingRows, setAgentPrivateListingRows] = useState([])
   const [principalCrmSnapshot, setPrincipalCrmSnapshot] = useState({ leads: [], leadActivities: [] })
   const [principalCanvassingSnapshot, setPrincipalCanvassingSnapshot] = useState({ prospects: [], activities: [] })
 
@@ -983,6 +1021,7 @@ function Dashboard() {
     if (role !== 'agent') {
       setOrganisationMembershipRole('viewer')
       setOrganisationIdForAppointments('')
+      setAgentPrivateListingRows([])
       return
     }
     if (organisationLoading) return
@@ -992,11 +1031,13 @@ function Dashboard() {
 
   const loadDashboard = useCallback(async () => {
     if (isPrincipalAgentView) {
+      setAgentPrivateListingRows([])
       setLoading(false)
       return
     }
 
     if (!isSupabaseConfigured) {
+      setAgentPrivateListingRows([])
       setLoading(false)
       return
     }
@@ -1007,6 +1048,7 @@ function Dashboard() {
     }
 
     if (role === 'agent' && !currentOrganisationId) {
+      setAgentPrivateListingRows([])
       setOverview({
         metrics: {
           totalDevelopments: 0,
@@ -1029,6 +1071,7 @@ function Dashboard() {
       if (role === 'agent' || role === 'bond_originator' || role === 'attorney') {
         const roleType = role === 'bond_originator' ? 'bond_originator' : role === 'attorney' ? 'attorney' : 'agent'
         let participantRows = []
+        let privateListingRows = []
         if (role === 'agent' && isPrincipalAgentView) {
           participantRows = await fetchTransactionsListSummary({
             developmentId: workspace.id === 'all' ? null : workspace.id,
@@ -1036,12 +1079,37 @@ function Dashboard() {
             organisationId: currentOrganisationId,
           })
         } else if (profile?.id) {
-          participantRows = await fetchTransactionsByParticipantSummary({
-            userId: profile.id,
-            roleType,
-            organisationId: role === 'agent' ? currentOrganisationId : '',
-          })
+          const [participantRowsResult, privateListingRowsResult] = await Promise.all([
+            fetchTransactionsByParticipantSummary({
+              userId: profile.id,
+              roleType,
+              organisationId: role === 'agent' ? currentOrganisationId : '',
+            }),
+            role === 'agent' && currentOrganisationId
+              ? Promise.all([
+                  getAgentPrivateListings(profile.id, {
+                    organisationId: currentOrganisationId,
+                    assignedAgentEmail: '',
+                    assignedAgentIds: [profile?.userId].filter(Boolean),
+                  }),
+                  profile?.email
+                    ? getAgentPrivateListings('', {
+                        organisationId: currentOrganisationId,
+                        assignedAgentEmail: profile.email,
+                      })
+                    : Promise.resolve([]),
+                ])
+                  .then(([byAgentId, byAgentEmail]) => mergeDashboardListingRows(byAgentId, byAgentEmail))
+                  .catch((listingError) => {
+                    console.warn('[dashboard] Unable to load agent private listings for KPI cards.', listingError)
+                    return []
+                  })
+              : Promise.resolve([]),
+          ])
+          participantRows = participantRowsResult
+          privateListingRows = Array.isArray(privateListingRowsResult) ? privateListingRowsResult : []
         }
+        setAgentPrivateListingRows(role === 'agent' ? privateListingRows : [])
         const scopedRows =
           role === 'attorney'
             ? buildAttorneyDemoRows(participantRows || [])
@@ -1085,17 +1153,21 @@ function Dashboard() {
           rows: filteredRows,
         })
       } else {
+        setAgentPrivateListingRows([])
         const data = await fetchDashboardOverview({
           developmentId: workspace.id === 'all' ? null : workspace.id,
         })
         setOverview(data)
       }
     } catch (loadError) {
+      if (role === 'agent') {
+        setAgentPrivateListingRows([])
+      }
       setError(loadError.message)
     } finally {
       setLoading(false)
     }
-  }, [currentOrganisationId, isPrincipalAgentView, organisationLoading, profile?.id, role, workspace.id])
+  }, [currentOrganisationId, isPrincipalAgentView, organisationLoading, profile?.email, profile?.id, profile?.userId, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()
@@ -1255,8 +1327,16 @@ function Dashboard() {
     return roleScopedRows.filter((row) => rowMatchesAgentIdentity(row, profileIdentitySet))
   }, [isAgentRole, isPrincipalAgentView, profileIdentitySet, roleScopedRows])
   const agentSharedData = useMemo(
-    () => (isAgentRole ? getAgentModuleSharedData({ liveRows: agentScopedRows, profile, scope: agentDataScope }) : null),
-    [agentDataScope, agentScopedRows, isAgentRole, profile],
+    () =>
+      isAgentRole
+        ? getAgentModuleSharedData({
+            liveRows: agentScopedRows,
+            profile,
+            scope: agentDataScope,
+            listingRows: agentPrivateListingRows,
+          })
+        : null,
+    [agentDataScope, agentPrivateListingRows, agentScopedRows, isAgentRole, profile],
   )
   const agentDashboardPipelineRows = useMemo(
     () => (isAgentRole ? getScopedDashboardTransactions(agentScopedRows, { organisationId: currentOrganisationId }) : []),

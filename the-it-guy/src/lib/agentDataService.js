@@ -28,6 +28,13 @@ function normalizeText(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+function parseNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  const normalized = String(value || '').replace(/[^0-9.-]+/g, '')
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function resolveAgentDirectoryMap() {
   const directory = safeReadJson(KEY_AGENT_DIRECTORY, null)
   const agents = Array.isArray(directory?.agents) ? directory.agents : []
@@ -142,6 +149,26 @@ function resolveOfferBuyer(listing) {
   return pending || offers[0] || null
 }
 
+function resolveListingCommissionAmount(listing, dealValue = 0) {
+  const commission = listing?.commission && typeof listing.commission === 'object' ? listing.commission : {}
+  const type = normalizeText(commission.commission_type || commission.commissionType || commission.commission_structure)
+  const fixedAmount = parseNumber(commission.commission_amount || commission.commissionAmount)
+  const percentage = parseNumber(
+    commission.commission_percentage ||
+      commission.commissionPercentage ||
+      commission.commission_percent ||
+      commission.commissionPercent,
+  )
+
+  if (fixedAmount > 0 && (type.includes('fixed') || percentage <= 0)) {
+    return fixedAmount
+  }
+  if (percentage > 0 && dealValue > 0) {
+    return Number(((dealValue * percentage) / 100).toFixed(2))
+  }
+  return fixedAmount > 0 ? fixedAmount : 0
+}
+
 function documentSummaryFromListing(listing) {
   const docs = Array.isArray(listing?.requiredDocuments) ? listing.requiredDocuments : []
   const uploadedCount = docs.filter((doc) => {
@@ -166,17 +193,25 @@ function listingMatchesScope(listing, { profile = null, scope = 'agent' } = {}) 
 
   const profileEmail = normalizeText(profile?.email)
   const profileId = normalizeText(profile?.id)
-  if (!profileEmail && !profileId) return false
+  const profileUserId = normalizeText(profile?.userId)
+  if (!profileEmail && !profileId && !profileUserId) return false
 
   const candidates = [
     listing?.agentId,
+    listing?.agentUserId,
+    listing?.assignedAgentId,
+    listing?.assignedAgentUserId,
     listing?.assignedAgentEmail,
     listing?.assigned_agent_email,
+    listing?.assigned_agent_name,
+    listing?.owner_user_id,
+    listing?.ownerUserId,
     listing?.commission?.agent_id,
+    listing?.commission?.agentId,
   ].map((value) => normalizeText(value)).filter(Boolean)
 
   if (!candidates.length) return false
-  return candidates.some((candidate) => candidate === profileEmail || candidate === profileId)
+  return candidates.some((candidate) => candidate === profileEmail || candidate === profileId || candidate === profileUserId)
 }
 
 function makeDerivedTransactionRow(listing, agentMap) {
@@ -187,6 +222,8 @@ function makeDerivedTransactionRow(listing, agentMap) {
   const financeType = deriveFinanceType(listing)
   const salesPrice = Number(offer?.offerPrice || listing?.askingPrice || 0) || 0
   const listPrice = Number(listing?.askingPrice || salesPrice || 0) || 0
+  const dealValue = salesPrice || listPrice
+  const commissionAmount = resolveListingCommissionAmount(listing, dealValue)
   const agentId = normalizeText(listing?.commission?.agent_id || listing?.agentId || listing?.assignedAgentEmail)
   const agent = agentMap.get(agentId)
 
@@ -222,8 +259,8 @@ function makeDerivedTransactionRow(listing, agentMap) {
       city: listing?.city || null,
       province: listing?.province || null,
       property_description: listing?.listingTitle || null,
-      sales_price: salesPrice || listPrice,
-      purchase_price: salesPrice || listPrice,
+      sales_price: dealValue,
+      purchase_price: dealValue,
       finance_type: financeType,
       purchaser_type: 'individual',
       stage: stageMeta.stage,
@@ -252,10 +289,10 @@ function makeDerivedTransactionRow(listing, agentMap) {
       is_active: statusKey !== 'registered',
       updated_at: listing?.updatedAt || listing?.createdAt || new Date().toISOString(),
       created_at: listing?.createdAt || new Date().toISOString(),
-      commission_amount:
-        String(listing?.commission?.commission_type || '').trim().toLowerCase() === 'fixed'
-          ? Number(listing?.commission?.commission_amount || 0) || 0
-          : 0,
+      commission_amount: commissionAmount,
+      agent_commission_amount: commissionAmount,
+      commission_earned: commissionAmount,
+      commission_snapshot_source: commissionAmount > 0 ? 'listing_mandate' : null,
     },
     buyer: offer
       ? {
@@ -308,9 +345,12 @@ export function readAgentDirectory() {
   return safeReadJson(KEY_AGENT_DIRECTORY, { agency: null, principals: [], agents: [] })
 }
 
-export function getDerivedAgentTransactionRowsFromListings({ profile = null, scope = 'agent' } = {}) {
-  if (!isUnsafeFallbackAllowed()) return []
-  const listings = readAgentPrivateListings()
+export function getDerivedAgentTransactionRowsFromListings({ profile = null, scope = 'agent', listingRows = null } = {}) {
+  const listings = Array.isArray(listingRows)
+    ? listingRows
+    : isUnsafeFallbackAllowed()
+      ? readAgentPrivateListings()
+      : []
   const agentMap = resolveAgentDirectoryMap()
   return listings
     .filter((listing) => listingMatchesScope(listing, { profile, scope }))
@@ -362,6 +402,7 @@ function resolveAgentCommissionFromRow(row = {}, defaultPct = 0.03) {
       row?.transaction?.agent_commission_earned ??
       row?.transaction?.agent_commission ??
       row?.transaction?.commission_earned ??
+      row?.transaction?.commission_amount ??
       0,
   )
 
@@ -509,12 +550,20 @@ export function getActiveDeals(rows = [], limit = 10) {
     .slice(0, limit)
 }
 
-export function getAgentModuleSharedData({ liveRows = [], profile = null, scope = 'agent', includeDemoRows = false } = {}) {
-  const listings = readAgentPrivateListings().filter((listing) => listingMatchesScope(listing, { profile, scope }))
+export function getAgentModuleSharedData({ liveRows = [], profile = null, scope = 'agent', includeDemoRows = false, listingRows = null } = {}) {
+  const sourceListings = Array.isArray(listingRows) ? listingRows : readAgentPrivateListings()
+  const listings = sourceListings.filter((listing) => listingMatchesScope(listing, { profile, scope }))
   const sellerLeads = readAgentSellerLeads().filter((lead) => listingMatchesScope(lead, { profile, scope }))
   const pipelineLeads = readAgentPipelineLeads()
   const rows = getUnifiedAgentRows({ liveRows, includeDemoRows })
+  const listingRowsForDashboard = getDerivedAgentTransactionRowsFromListings({
+    profile,
+    scope,
+    listingRows: listings,
+  })
+  const dashboardRows = dedupeRows([...rows, ...listingRowsForDashboard])
   const activeRows = getScopedDashboardTransactions(rows)
+  const dashboardActiveRows = getScopedDashboardTransactions(dashboardRows)
 
   return {
     listings,
@@ -525,11 +574,11 @@ export function getAgentModuleSharedData({ liveRows = [], profile = null, scope 
       listingCount: getListingCount(listings),
       activeDealCount: activeRows.length,
       registeredCount: getRegisteredCount(rows),
-      pipelineValue: getPipelineValue(activeRows),
-      estimatedCommission: getEstimatedCommission(activeRows),
-      commissionEarned: getEstimatedCommission(activeRows),
-      commissionCoverage: getCommissionSnapshotCoverage(activeRows),
-      topPerformingAgents: getTopPerformingAgents(activeRows),
+      pipelineValue: getPipelineValue(dashboardActiveRows),
+      estimatedCommission: getEstimatedCommission(dashboardActiveRows),
+      commissionEarned: getEstimatedCommission(dashboardActiveRows),
+      commissionCoverage: getCommissionSnapshotCoverage(dashboardActiveRows),
+      topPerformingAgents: getTopPerformingAgents(dashboardActiveRows),
       activeDeals: getActiveDeals(activeRows),
     },
   }
