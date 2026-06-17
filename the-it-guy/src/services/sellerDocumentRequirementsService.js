@@ -196,7 +196,41 @@ export function getSellerRequiredDocuments(listing = {}, formData = {}) {
 }
 
 function normalizeDocumentMatchKey(value = '') {
-  return normalizeKey(value)
+  return normalizeText(value)
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+const SELLER_DOCUMENT_MATCH_ALIASES = {
+  signed_mandate: ['mandate', 'mandate_signature', 'signed_mandate'],
+  id_document: ['id_document', 'identity', 'identity_document', 'identity_documents', 'passport', 'seller_id'],
+  proof_of_address: ['proof_of_address', 'residential_address', 'residence', 'address'],
+  title_deed_reference: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
+  title_deed_copy: ['title_deed_reference', 'title_deed_copy', 'title_deed', 'deed'],
+  rates_account: ['rates_account', 'rates'],
+  property_condition_disclosure: ['property_condition_disclosure', 'condition_disclosure', 'disclosure', 'defects'],
+  solar_compliance_documents: ['solar_compliance_documents', 'solar_compliance', 'solar'],
+}
+
+function getSellerDocumentMatchAliases(key = '') {
+  const normalized = normalizeDocumentMatchKey(key)
+  if (!normalized) return []
+  return SELLER_DOCUMENT_MATCH_ALIASES[normalized] || [normalized]
+}
+
+function sellerDocumentKeysOverlap(left = '', right = '') {
+  const leftAliases = getSellerDocumentMatchAliases(left)
+  const rightAliases = getSellerDocumentMatchAliases(right)
+  if (!leftAliases.length || !rightAliases.length) return false
+  return leftAliases.some((leftAlias) =>
+    rightAliases.some((rightAlias) =>
+      leftAlias === rightAlias ||
+      leftAlias.includes(rightAlias) ||
+      rightAlias.includes(leftAlias),
+    ),
+  )
 }
 
 function isSignedMandateRequirement(requirement = {}) {
@@ -238,11 +272,8 @@ export function documentMatchesSellerRequirement(document = {}, requirement = {}
   const documentName = normalizeDocumentMatchKey(document?.document_name || document?.name || document?.file_name)
   return Boolean(
     requirementKey &&
-      (
-        documentRequirementKey === requirementKey ||
-        documentType === requirementKey ||
-        documentCategory === requirementKey ||
-        documentName === requirementKey
+      [documentRequirementKey, documentType, documentCategory, documentName].some((candidate) =>
+        candidate === requirementKey || sellerDocumentKeysOverlap(candidate, requirementKey),
       ),
   )
 }
