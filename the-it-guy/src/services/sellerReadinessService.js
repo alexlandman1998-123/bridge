@@ -2,6 +2,12 @@ import {
   buildSellerJourney,
   isSellerLead,
 } from './sellerJourneyService.js'
+import {
+  documentMatchesSellerRequirement,
+  getSellerOnboardingFormData,
+  getSellerRequiredDocuments,
+  normalizeSellerDocumentRequirementStatus,
+} from './sellerDocumentRequirementsService.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -60,10 +66,14 @@ function documentComplete(document = {}) {
     ['uploaded', 'approved', 'verified', 'accepted', 'complete', 'completed', 'signed'].includes(status)
 }
 
-function requiredDocumentsComplete(journey = {}) {
-  const documents = Array.isArray(journey.documents) ? journey.documents : []
-  if (!documents.length) return false
-  return documents.every(documentComplete)
+function requirementIsVisibleToSeller(requirement = {}) {
+  const visibility = normalizeKey(
+    requirement?.document_visibility ||
+      requirement?.visibility ||
+      requirement?.visibilityScope ||
+      requirement?.visibility_scope,
+  )
+  return !['internal', 'internal_only', 'agent_only'].includes(visibility)
 }
 
 function listingImages(listing = {}) {
@@ -136,29 +146,34 @@ function listingPrice(listing = {}, lead = {}) {
   )
 }
 
-function complianceDocumentComplete(journey = {}, listing = {}) {
+function requirementComplete(requirement = {}, documents = []) {
+  const status = normalizeSellerDocumentRequirementStatus(
+    requirement?.status || requirement?.requiredDocumentStatus || requirement?.required_document_status,
+  )
+  if (['uploaded', 'under_review', 'approved', 'completed'].includes(status)) return true
+  if (requirement?.complete || requirement?.isUploaded || requirement?.uploadedDocument || requirement?.uploaded_document || requirement?.uploadedDocumentId || requirement?.uploaded_document_id) {
+    return true
+  }
+  return documents.some((document) => documentMatchesSellerRequirement(document, requirement) && documentComplete(document))
+}
+
+function sellerDocumentsComplete(journey = {}, listing = {}) {
+  const onboardingFormData = getSellerOnboardingFormData(listing)
+  const requiredDocuments = getSellerRequiredDocuments(listing, onboardingFormData)
+    .filter((requirement) => requirement?.is_required !== false && requirement?.required !== false)
+    .filter(requirementIsVisibleToSeller)
+    .filter((requirement) => {
+      const key = normalizeKey(requirement?.requirement_key || requirement?.key || requirement?.name || requirement?.requirement_name)
+      const group = normalizeKey(requirement?.requirement_group || requirement?.group)
+      return group !== 'mandate' && !key.includes('signed_mandate')
+    })
+  if (!requiredDocuments.length) return true
+
   const documents = [
     ...asArray(journey.documents),
     ...asArray(listing?.documents),
-    ...asArray(listing?.requiredDocuments),
-    ...asArray(listing?.documentRequirements),
   ]
-  const complianceDocs = documents.filter((document) => {
-    const signal = normalizeKey([
-      document?.label,
-      document?.name,
-      document?.title,
-      document?.documentType,
-      document?.document_type,
-      document?.category,
-      document?.requirementKey,
-      document?.requirement_key,
-      document?.key,
-    ].join(' '))
-    return /(compliance|certificate|coc|electrical|electric|gas|beetle|plumbing|rates|title_deed|title_deed_copy|condition_disclosure|disclosure|hoa|body_corporate)/.test(signal)
-  })
-  if (complianceDocs.length) return complianceDocs.some(documentComplete)
-  return requiredDocumentsComplete(journey)
+  return requiredDocuments.every((requirement) => requirementComplete(requirement, documents))
 }
 
 export function getListingReadiness({ lead = {}, listing = {}, journey = null } = {}) {
@@ -167,13 +182,13 @@ export function getListingReadiness({ lead = {}, listing = {}, journey = null } 
   const photosComplete = listingImages(listing).length > 0
   const descriptionComplete = Boolean(listingDescription(listing))
   const pricingComplete = listingPrice(listing, lead) > 0
-  const complianceComplete = complianceDocumentComplete(resolvedJourney, listing)
+  const documentsComplete = sellerDocumentsComplete(resolvedJourney, listing)
   const visibilityComplete = resolvedJourney.listingLive || listingExternalLinks(listing).some((link) => link?.url || link?.listingUrl)
   const items = [
     { key: 'photos', label: 'Photos', complete: photosComplete, blocker: 'Missing Photos' },
     { key: 'description', label: 'Description', complete: descriptionComplete, blocker: 'Missing Description' },
     { key: 'pricing', label: 'Pricing', complete: pricingComplete, blocker: 'Missing Pricing' },
-    { key: 'compliance', label: 'Compliance', complete: complianceComplete, blocker: 'Missing Compliance Docs' },
+    { key: 'documents', label: 'Seller Documents', complete: documentsComplete, blocker: 'Missing Seller Documents' },
     { key: 'visibility', label: 'Visibility', complete: visibilityComplete, blocker: 'Listing In Draft' },
   ]
   const incompleteItems = hasListing ? items.filter((item) => !item.complete) : [
@@ -411,10 +426,9 @@ export function buildSellerReadinessSummary(args = {}) {
 }
 
 export const __sellerReadinessServiceTestUtils = {
-  complianceDocumentComplete,
+  sellerDocumentsComplete,
   documentComplete,
   getListingReadiness,
   hasContact,
   propertyAddress,
-  requiredDocumentsComplete,
 }
