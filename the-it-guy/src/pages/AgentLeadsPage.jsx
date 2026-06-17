@@ -7681,7 +7681,7 @@ function getSellerDocumentCompletion(documents = []) {
   if (!applicableRequiredRows.length) return { complete: 0, total: 0, percent: 0 }
   const complete = applicableRequiredRows.filter((document) => {
     const status = normalizeDocumentStatus(document.status || document.documentStatus || document.document_status)
-    return status === 'approved' || status === 'completed'
+    return ['uploaded', 'under_review', 'approved', 'completed'].includes(status)
   }).length
   return {
     complete,
@@ -7825,6 +7825,31 @@ function buildSellerDocumentRowsFromListing(listing = null, row = {}) {
       },
     }
   }).filter((document) => document.id || document.key || document.label)
+}
+
+function getSellerListingDocumentWeight(listing = null) {
+  if (!listing) return -1
+  const documents = Array.isArray(listing?.documents) ? listing.documents.length : 0
+  const requirements = Array.isArray(listing?.documentRequirements) ? listing.documentRequirements.length : 0
+  const linkedUploads = Array.isArray(listing?.documentRequirements)
+    ? listing.documentRequirements.filter((requirement) =>
+      requirement?.uploadedDocument ||
+      requirement?.uploaded_document ||
+      requirement?.uploadedDocumentId ||
+      requirement?.uploaded_document_id ||
+      requirement?.filePath ||
+      requirement?.file_path ||
+      requirement?.url ||
+      ['uploaded', 'under_review', 'approved', 'completed'].includes(normalizeDocumentStatus(requirement?.status)),
+    ).length
+    : 0
+  return documents * 100 + linkedUploads * 10 + requirements
+}
+
+function chooseRichestSellerListing(candidates = []) {
+  return (Array.isArray(candidates) ? candidates : [])
+    .filter(Boolean)
+    .sort((left, right) => getSellerListingDocumentWeight(right) - getSellerListingDocumentWeight(left))[0] || null
 }
 
 function mergeSellerDocumentRows(primaryRows = [], fallbackRows = []) {
@@ -11262,11 +11287,12 @@ function AgentLeadWorkspace() {
   const linkedSellerListing = useMemo(() => {
     if (!row) return null
     const leadListingId = normalizeText(row.listingId || row.listing_id || row.privateListingId || row.private_listing_id)
-    return (row.listings || data?.listings || []).find((listing) => {
+    const matches = [...(row.listings || []), ...(data?.listings || [])].filter((listing) => {
       const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
       const sellerLeadId = normalizeText(listing?.sellerLeadId || listing?.seller_lead_id || listing?.originatingCrmLeadId || listing?.originating_crm_lead_id || listing?.leadId || listing?.lead_id)
       return (leadListingId && listingId === leadListingId) || sellerLeadId === row.leadId
-    }) || row.listings?.[0] || (leadListingId ? { id: leadListingId } : null)
+    })
+    return chooseRichestSellerListing(matches) || chooseRichestSellerListing(row.listings) || (leadListingId ? { id: leadListingId } : null)
   }, [data?.listings, row])
   const sellerMandatePacket = useMemo(() => {
     if (!row || !isSellerLeadWorkspace) return null
@@ -11296,6 +11322,10 @@ function AgentLeadWorkspace() {
       contact: row.contact || {},
       appointments: row.appointments || [],
       listing: linkedSellerListing,
+      documents: [
+        ...(Array.isArray(row.documents) ? row.documents : []),
+        ...(Array.isArray(linkedSellerListing?.documents) ? linkedSellerListing.documents : []),
+      ],
       mandatePacket: sellerMandatePacket,
       mandatePacketStatus: sellerMandatePacketStatus,
     })
