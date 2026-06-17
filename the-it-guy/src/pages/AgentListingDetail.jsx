@@ -2997,7 +2997,13 @@ function AgentListingDetail() {
 
   const sellerDocumentTrackerRows = useMemo(() => {
     const sourceRequirements = Array.isArray(dynamicSellerRequirements) ? dynamicSellerRequirements : []
-    const uploadedDocuments = Array.isArray(listingRecord?.documents) ? listingRecord.documents : []
+    const linkedRequirementUploads = sourceRequirements.flatMap((requirement) =>
+      [requirement?.uploadedDocument, requirement?.uploaded_document].filter(Boolean),
+    )
+    const uploadedDocuments = [
+      ...(Array.isArray(listingRecord?.documents) ? listingRecord.documents : []),
+      ...linkedRequirementUploads,
+    ]
     const suggested = [
       { key: 'id_document', label: 'ID Document / Passport', match: /id_document|identity_documents|identity|seller_id|id document|passport/i },
       { key: 'proof_of_address', label: 'Proof of Address', match: /proof_of_address|proof of address|residential_address|residence|address/i },
@@ -3028,7 +3034,27 @@ function AgentListingDetail() {
           document?.requirementKey,
         ].filter(Boolean).join(' '))
         return item.match.test(searchable) || (requirementKey && searchable.includes(requirementKey))
-      }) || (item.key === 'signed_mandate' && mandateWorkspace.isSigned
+      }) || (requirement && (
+        requirement?.uploadedDocument ||
+        requirement?.uploaded_document ||
+        requirement?.filePath ||
+        requirement?.file_path ||
+        requirement?.fileUrl ||
+        requirement?.file_url ||
+        requirement?.url ||
+        requirement?.uploadedAt ||
+        requirement?.uploaded_at ||
+        ['uploaded', 'under_review', 'approved', 'completed', 'verified'].includes(String(requirement?.status || '').trim().toLowerCase())
+      )
+        ? {
+            ...requirement,
+            status: requirement.status || 'uploaded',
+            uploadedAt: requirement.uploadedAt || requirement.uploaded_at || requirement.updated_at || listingRecord?.updatedAt || '',
+            document_name: requirement.fileName || requirement.file_name || requirement.requirement_name || requirement.label,
+            storage_path: requirement.filePath || requirement.file_path || '',
+            url: requirement.url || requirement.fileUrl || requirement.file_url || '',
+          }
+        : null) || (item.key === 'signed_mandate' && mandateWorkspace.isSigned
         ? {
             status: 'signed',
             uploadedAt: mandateWorkspace.signedDate || listingRecord?.updatedAt || listingRecord?.createdAt || '',

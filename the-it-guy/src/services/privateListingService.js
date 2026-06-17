@@ -813,6 +813,70 @@ function isMandateDocumentRow(row = {}) {
   return searchable.includes('mandate')
 }
 
+function getPrivateListingDocumentMatchKey(document = {}) {
+  return normalizeCompatibilityKey(
+    document?.requirement_key ||
+      document?.requirementKey ||
+      document?.document_type ||
+      document?.documentType ||
+      document?.category ||
+      document?.document_name ||
+      document?.documentName ||
+      document?.fileName ||
+      '',
+  )
+}
+
+function documentMatchesRequirementRow(document = {}, requirement = {}) {
+  const requirementId = normalizeText(requirement?.id || requirement?.requirement_id)
+  const documentRequirementId = normalizeText(document?.requirement_id || document?.requirementId)
+  if (requirementId && documentRequirementId && requirementId === documentRequirementId) return true
+
+  const requirementKey = normalizeCompatibilityKey(requirement?.requirement_key || requirement?.key)
+  if (!requirementKey) return false
+  return getPrivateListingDocumentMatchKey(document) === requirementKey
+}
+
+function resolveDocumentUploadForRequirement(requirement = {}, documents = []) {
+  const rows = Array.isArray(documents) ? documents : []
+  return rows.find((document) => documentMatchesRequirementRow(document, requirement)) || null
+}
+
+function mergeRequirementUploadState(requirement = {}, upload = null) {
+  if (!upload) return requirement
+  const uploadStatus = normalizeText(upload?.status || 'uploaded')
+  const uploadedAt = upload?.uploaded_at || upload?.uploadedAt || upload?.created_at || upload?.createdAt || null
+  const filePath = normalizeText(upload?.storage_path || upload?.file_path || upload?.storagePath || upload?.path)
+  const url = normalizeText(upload?.url || upload?.fileUrl || upload?.file_url || upload?.signedUrl)
+  return {
+    ...requirement,
+    status: ['required', 'missing', 'requested', ''].includes(normalizeKey(requirement?.status)) ? uploadStatus : requirement.status,
+    uploaded_document_id: upload.id || requirement?.uploaded_document_id || null,
+    uploadedDocumentId: upload.id || requirement?.uploadedDocumentId || null,
+    uploaded_document: upload,
+    uploadedDocument: upload,
+    uploaded_at: uploadedAt || requirement?.uploaded_at || null,
+    uploadedAt: uploadedAt || requirement?.uploadedAt || null,
+    file_name: upload?.file_name || upload?.document_name || requirement?.file_name || '',
+    fileName: upload?.fileName || upload?.file_name || upload?.document_name || requirement?.fileName || '',
+    file_path: filePath || requirement?.file_path || '',
+    filePath: filePath || requirement?.filePath || '',
+    url: url || requirement?.url || '',
+    fileUrl: url || requirement?.fileUrl || '',
+  }
+}
+
+function resolvePrivateListingDocumentRequirements(mappedListing = {}, requirementRows = [], documentRows = []) {
+  const existingRequirements = Array.isArray(requirementRows) ? requirementRows : []
+  const sourceRequirements = existingRequirements.length
+    ? existingRequirements
+    : syncSellerDocumentRequirementsFromEngine(mappedListing, []).upsertRows
+
+  return sourceRequirements.map((requirement) =>
+    mergeRequirementUploadState(requirement, resolveDocumentUploadForRequirement(requirement, documentRows)),
+  )
+}
+
 async function enrichPrivateListingDocumentRows(client, rows = []) {
   const normalizedRows = normalizeDocumentRows(rows)
   return Promise.all(
@@ -1167,9 +1231,20 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     sellerCanonicalFactReadiness: canonicalSellerFactReadiness,
   }
 
-  return {
+  const resolvedDocumentRequirements = resolvePrivateListingDocumentRequirements(mapped, requirementRows, documentRows)
+  const mappedWithDocumentState = {
     ...mapped,
-    readinessSummary: getListingReadinessSummary(mapped),
+    documentRequirements: resolvedDocumentRequirements,
+    requiredDocuments: resolvedDocumentRequirements.map((requirement) => ({
+      ...requirement,
+      key: requirement.requirement_key || requirement.key,
+      label: requirement.requirement_name || requirement.label,
+    })),
+  }
+
+  return {
+    ...mappedWithDocumentState,
+    readinessSummary: getListingReadinessSummary(mappedWithDocumentState),
   }
 }
 
