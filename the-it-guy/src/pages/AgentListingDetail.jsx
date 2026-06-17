@@ -322,6 +322,14 @@ function isExternalLinkSellerVisible(status = '') {
   return normalized === 'live' || normalized === 'published'
 }
 
+function normalizeExternalUrl(value = '') {
+  const url = String(value || '').trim()
+  if (!url) return ''
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) return url
+  if (url.startsWith('www.') || url.includes('.')) return `https://${url}`
+  return url
+}
+
 function normalizeExternalListingLinks(items = []) {
   return (Array.isArray(items) ? items : [])
     .filter((item) => item?.url || item?.platform)
@@ -330,7 +338,7 @@ function normalizeExternalListingLinks(items = []) {
       return {
         id: String(item.id || item.key || `external-link-${index + 1}`),
         platform: String(item.platform || item.platformName || 'Other').trim() || 'Other',
-        url: String(item.url || item.listingUrl || '').trim(),
+        url: normalizeExternalUrl(item.url || item.listingUrl || item.listing_url || ''),
         status,
         publishedAt: String(item.publishedAt || item.published_at || '').trim(),
         lastCheckedAt: String(item.lastCheckedAt || item.last_checked_at || '').trim(),
@@ -1706,6 +1714,9 @@ function AgentListingDetail() {
   async function saveMarketingDraft() {
     setDetailMessage('')
     setDetailError('')
+    const normalizedExternalLinks = normalizeExternalListingLinks(marketingDraft.externalLinks)
+    const property24ExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('property24')) || null
+    const privatePropertyExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('private')) || null
     const updatedListing = await persistListingSnapshot(marketingDraft, { persistCoreFields: true })
     if (!updatedListing?.id || !isSupabaseConfigured) {
       setDetailMessage('Listing details saved locally.')
@@ -1725,12 +1736,12 @@ function AgentListingDetail() {
         city: marketingDraft.city.trim(),
         province: marketingDraft.province.trim(),
         isActive: String(marketingDraft.listingStatus || '').trim().toLowerCase() === 'active',
-        property24ListingUrl: marketingDraft.property24ListingUrl.trim(),
+        property24ListingUrl: marketingDraft.property24ListingUrl.trim() || property24ExternalLink?.url || '',
         property24Reference: marketingDraft.property24Reference.trim(),
-        property24Status: marketingDraft.property24Status,
-        privatePropertyListingUrl: marketingDraft.privatePropertyListingUrl.trim(),
+        property24Status: marketingDraft.property24Status || property24ExternalLink?.status || 'not_published',
+        privatePropertyListingUrl: marketingDraft.privatePropertyListingUrl.trim() || privatePropertyExternalLink?.url || '',
         privatePropertyReference: marketingDraft.privatePropertyReference.trim(),
-        privatePropertyStatus: marketingDraft.privatePropertyStatus,
+        privatePropertyStatus: marketingDraft.privatePropertyStatus || privatePropertyExternalLink?.status || 'not_published',
         bridgeListingStatus: marketingDraft.bridgeListingStatus,
         bridgeListingPublicUrl: marketingDraft.bridgeListingPublicUrl.trim(),
         listingPreviewDescription: marketingDraft.listingPreviewDescription.trim(),
@@ -1768,7 +1779,7 @@ function AgentListingDetail() {
           videoLink: marketingDraft.videoLink,
           virtualTourLink: marketingDraft.virtualTourLink,
         },
-        externalLinks: marketingDraft.externalLinks,
+        externalLinks: normalizedExternalLinks,
       })
       if (distributionSync?.skipped) {
         console.warn('[AgentListingDetail] listing distribution sync skipped', distributionSync.reason)

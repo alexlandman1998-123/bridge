@@ -299,6 +299,24 @@ function getListingDocuments(listing = {}) {
   ]
 }
 
+function getListingExternalLinks(listing = {}) {
+  return [
+    ...(Array.isArray(listing.externalLinks) ? listing.externalLinks : []),
+    ...(Array.isArray(listing.external_links) ? listing.external_links : []),
+    ...(Array.isArray(listing.listingExternalLinks) ? listing.listingExternalLinks : []),
+    ...(Array.isArray(listing.listing_external_links) ? listing.listing_external_links : []),
+    ...(Array.isArray(listing.propertyDetails?.externalLinks) ? listing.propertyDetails.externalLinks : []),
+    ...(Array.isArray(listing.marketing?.externalLinks) ? listing.marketing.externalLinks : []),
+  ]
+}
+
+function hasListingExternalLink(listing = {}, property = {}) {
+  if (normalizeText(listing.property24ListingUrl || listing.property24_listing_url || property.externalListingLink)) return true
+  return getListingExternalLinks(listing).some((link) =>
+    normalizeText(link?.url || link?.listingUrl || link?.listing_url),
+  )
+}
+
 function listingHasDocumentSignal(listing, matchers = []) {
   const normalizedMatchers = matchers.map(normalizeKey)
   return getListingDocuments(listing).some((document) => {
@@ -390,7 +408,7 @@ function getListingComplianceWarnings(listing = {}, completeness = null) {
   if (!seller.email || !seller.phone) warnings.push('Seller contact incomplete')
   if (!hasCommission || missingItems.has('commission structure')) warnings.push('Commission missing')
   if (!hasPhotos || missingItems.has('property photos')) warnings.push('Photos missing')
-  if (!normalizeText(listing.property24ListingUrl || listing.property24_listing_url || property.externalListingLink)) warnings.push('External listing link missing')
+  if (!hasListingExternalLink(listing, property)) warnings.push('External listing link missing')
   return [...new Set(warnings)]
 }
 
