@@ -254,14 +254,29 @@ function getMandateStatus(listing) {
 
 function getListingSeller(listing = {}) {
   const facts = listing?.sellerCanonicalFacts || listing?.sellerOnboarding?.canonicalFacts || listing?.sellerOnboarding?.formData || {}
+  const nestedSeller = facts?.seller && typeof facts.seller === 'object' ? facts.seller : {}
   const seller = listing?.seller || {}
-  const firstName = normalizeText(facts.firstName || facts.sellerFirstName || facts.name)
-  const lastName = normalizeText(facts.lastName || facts.sellerLastName || facts.surname)
+  const firstName = normalizeText(facts.firstName || facts.sellerFirstName || nestedSeller.first_name || nestedSeller.firstName || facts.name)
+  const lastName = normalizeText(facts.lastName || facts.sellerLastName || nestedSeller.surname || nestedSeller.last_name || nestedSeller.lastName || facts.surname)
   return {
-    name: normalizeText(seller.name || facts.sellerName || facts.fullName || facts.registeredName || [firstName, lastName].filter(Boolean).join(' ')),
-    email: normalizeText(seller.email || facts.email || facts.sellerEmail),
-    phone: normalizeText(seller.phone || facts.phone || facts.mobile || facts.sellerPhone),
-    registrationNumber: normalizeText(seller.registrationNumber || facts.idNumber || facts.registrationNumber || facts.companyRegistrationNumber || facts.trustRegistrationNumber),
+    name: normalizeText(seller.name || facts.sellerName || facts.fullName || facts.registeredName || nestedSeller.full_name || nestedSeller.registered_name || [firstName, lastName].filter(Boolean).join(' ')),
+    email: normalizeText(seller.email || facts.email || facts.sellerEmail || nestedSeller.email),
+    phone: normalizeText(seller.phone || facts.phone || facts.mobile || facts.sellerPhone || nestedSeller.phone || nestedSeller.mobile),
+    registrationNumber: normalizeText(
+      seller.registrationNumber ||
+        facts.idNumber ||
+        facts.id_number ||
+        facts.registrationNumber ||
+        facts.registration_number ||
+        facts.companyRegistrationNumber ||
+        facts.company_registration_number ||
+        facts.trustRegistrationNumber ||
+        facts.trust_registration_number ||
+        nestedSeller.id_number ||
+        nestedSeller.idNumber ||
+        nestedSeller.registration_number ||
+        nestedSeller.registrationNumber,
+    ),
   }
 }
 
@@ -360,7 +375,14 @@ function getListingComplianceWarnings(listing = {}, completeness = null) {
           sellerFormData.mandateTerms,
       )
   )
-  const hasPhotos = listingHasDocumentSignal(listing, ['property photo', 'property photos', 'photos']) || Boolean(Array.isArray(listing.images) && listing.images.length)
+  const hasPhotos = Boolean(
+    listingHasDocumentSignal(listing, ['property photo', 'property photos', 'photos']) ||
+      (Array.isArray(listing.images) && listing.images.length) ||
+      (Array.isArray(listing.galleryImages) && listing.galleryImages.length) ||
+      (Array.isArray(listing.marketing?.imageGallery) && listing.marketing.imageGallery.length) ||
+      (Array.isArray(sellerFormData.imageGallery) && sellerFormData.imageGallery.length) ||
+      normalizeText(listing.marketing?.mediaUrl || listing.coverImage?.url || listing.imageUrl || listing.image_url),
+  )
   const hasMandate = ['signed', 'signed_uploaded', 'approved', 'verified', 'completed'].includes(mandateStatus) || listingHasDocumentSignal(listing, ['mandate', 'signed_mandate'])
   const warnings = []
   if (!hasMandate || missingItems.has('signed mandate')) warnings.push('Mandate missing')
@@ -2148,11 +2170,7 @@ function AgentListings({ initialTab = null } = {}) {
                   </div>
 
                   <div className="flex flex-1 flex-col gap-3.5 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${inventoryStatusClass(card.inventoryStatusKey)}`}>
-                        <span className={`h-2 w-2 rounded-full ${inventoryDotClass(card.inventoryStatusKey)}`} />
-                        {card.inventoryStatusLabel}
-                      </span>
+                    <div className="flex items-start justify-end gap-3">
                       <div className="relative">
                         <button
                           type="button"

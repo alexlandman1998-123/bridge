@@ -20,6 +20,14 @@ function firstPresent(...values) {
   return values.map(normalizeText).find(Boolean) || ''
 }
 
+function isPlainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
 function hasContact({ lead = {}, contact = {} } = {}) {
   return Boolean(firstPresent(contact?.phone, contact?.email, lead?.phone, lead?.email, lead?.sellerPhone, lead?.sellerEmail, lead?.seller_phone, lead?.seller_email))
 }
@@ -48,7 +56,8 @@ function onboardingSubmitted(journey = {}) {
 
 function documentComplete(document = {}) {
   const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status)
-  return Boolean(document?.url) || ['uploaded', 'approved', 'verified', 'accepted', 'complete', 'completed'].includes(status)
+  return Boolean(document?.url || document?.fileUrl || document?.file_url || document?.signedUrl || document?.storage_path || document?.file_path) ||
+    ['uploaded', 'approved', 'verified', 'accepted', 'complete', 'completed', 'signed'].includes(status)
 }
 
 function requiredDocumentsComplete(journey = {}) {
@@ -58,18 +67,38 @@ function requiredDocumentsComplete(journey = {}) {
 }
 
 function listingImages(listing = {}) {
+  const onboarding = isPlainObject(listing?.sellerOnboarding)
+    ? listing.sellerOnboarding
+    : isPlainObject(listing?.seller_onboarding)
+      ? listing.seller_onboarding
+      : {}
+  const onboardingFormData = isPlainObject(onboarding?.formData)
+    ? onboarding.formData
+    : isPlainObject(onboarding?.form_data)
+      ? onboarding.form_data
+      : {}
   return [
-    ...(Array.isArray(listing?.galleryImages) ? listing.galleryImages : []),
-    ...(Array.isArray(listing?.gallery_images) ? listing.gallery_images : []),
-    ...(Array.isArray(listing?.images) ? listing.images : []),
-    ...(Array.isArray(listing?.photos) ? listing.photos : []),
-    ...(Array.isArray(listing?.media) ? listing.media : []),
+    ...asArray(listing?.galleryImages),
+    ...asArray(listing?.gallery_images),
+    ...asArray(listing?.images),
+    ...asArray(listing?.photos),
+    ...asArray(listing?.media),
+    ...asArray(listing?.marketing?.imageGallery),
+    ...asArray(listing?.marketing?.image_gallery),
+    ...asArray(listing?.propertyDetails?.imageGallery),
+    ...asArray(listing?.propertyDetails?.image_gallery),
+    ...asArray(onboardingFormData?.imageGallery),
+    ...asArray(onboardingFormData?.image_gallery),
     listing?.coverImage,
     listing?.cover_image,
     listing?.imageUrl,
     listing?.image_url,
     listing?.thumbnailUrl,
     listing?.thumbnail_url,
+    listing?.marketing?.mediaUrl,
+    listing?.marketing?.media_url,
+    listing?.marketing?.coverImage,
+    listing?.marketing?.cover_image,
   ].filter(Boolean)
 }
 
@@ -109,8 +138,10 @@ function listingPrice(listing = {}, lead = {}) {
 
 function complianceDocumentComplete(journey = {}, listing = {}) {
   const documents = [
-    ...(Array.isArray(journey.documents) ? journey.documents : []),
-    ...(Array.isArray(listing?.documents) ? listing.documents : []),
+    ...asArray(journey.documents),
+    ...asArray(listing?.documents),
+    ...asArray(listing?.requiredDocuments),
+    ...asArray(listing?.documentRequirements),
   ]
   const complianceDocs = documents.filter((document) => {
     const signal = normalizeKey([
@@ -120,8 +151,11 @@ function complianceDocumentComplete(journey = {}, listing = {}) {
       document?.documentType,
       document?.document_type,
       document?.category,
+      document?.requirementKey,
+      document?.requirement_key,
+      document?.key,
     ].join(' '))
-    return /(compliance|certificate|coc|electrical|electric|gas|beetle|plumbing|rates|title_deed|hoa|body_corporate)/.test(signal)
+    return /(compliance|certificate|coc|electrical|electric|gas|beetle|plumbing|rates|title_deed|title_deed_copy|condition_disclosure|disclosure|hoa|body_corporate)/.test(signal)
   })
   if (complianceDocs.length) return complianceDocs.some(documentComplete)
   return requiredDocumentsComplete(journey)

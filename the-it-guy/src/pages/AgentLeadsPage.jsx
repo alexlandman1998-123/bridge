@@ -7205,12 +7205,28 @@ function getSellerPropertySummary(row = {}, listing = null) {
 }
 
 function getSellerListingImageUrl(listing = null) {
+  const onboarding = isPlainObject(listing?.sellerOnboarding)
+    ? listing.sellerOnboarding
+    : isPlainObject(listing?.seller_onboarding)
+      ? listing.seller_onboarding
+      : {}
+  const onboardingFormData = isPlainObject(onboarding?.formData)
+    ? onboarding.formData
+    : isPlainObject(onboarding?.form_data)
+      ? onboarding.form_data
+      : {}
   const gallery = [
     ...(Array.isArray(listing?.galleryImages) ? listing.galleryImages : []),
     ...(Array.isArray(listing?.gallery_images) ? listing.gallery_images : []),
     ...(Array.isArray(listing?.images) ? listing.images : []),
     ...(Array.isArray(listing?.photos) ? listing.photos : []),
     ...(Array.isArray(listing?.media) ? listing.media : []),
+    ...(Array.isArray(listing?.marketing?.imageGallery) ? listing.marketing.imageGallery : []),
+    ...(Array.isArray(listing?.marketing?.image_gallery) ? listing.marketing.image_gallery : []),
+    ...(Array.isArray(listing?.propertyDetails?.imageGallery) ? listing.propertyDetails.imageGallery : []),
+    ...(Array.isArray(listing?.propertyDetails?.image_gallery) ? listing.propertyDetails.image_gallery : []),
+    ...(Array.isArray(onboardingFormData?.imageGallery) ? onboardingFormData.imageGallery : []),
+    ...(Array.isArray(onboardingFormData?.image_gallery) ? onboardingFormData.image_gallery : []),
   ]
   const media = gallery.find((item) => normalizeText(item?.url || item?.imageUrl || item?.src || item))
   return normalizeText(
@@ -7220,6 +7236,10 @@ function getSellerListingImageUrl(listing = null) {
       listing?.image_url ||
       listing?.thumbnailUrl ||
       listing?.thumbnail_url ||
+      listing?.marketing?.mediaUrl ||
+      listing?.marketing?.media_url ||
+      listing?.marketing?.coverImage?.url ||
+      listing?.marketing?.cover_image?.url ||
       media?.url ||
       media?.imageUrl ||
       media?.src ||

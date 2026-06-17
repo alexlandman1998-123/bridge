@@ -818,7 +818,7 @@ async function enrichPrivateListingDocumentRows(client, rows = []) {
   return Promise.all(
     normalizedRows.map(async (row) => {
       const signedUrl = row.storage_path ? await createPrivateListingDocumentSignedUrl(client, row.storage_path) : ''
-      const resolvedUrl = row.file_url || signedUrl || ''
+      const resolvedUrl = signedUrl || row.file_url || ''
       return {
         ...row,
         fileName: row.file_name || row.document_name,
@@ -3891,6 +3891,31 @@ export async function createSellerClientPortalDocumentSignedUrl({
   const listingPathPrefix = `seller-portal/${context.listing.id}/`
   if (!normalizedFilePath.startsWith(listingPathPrefix)) {
     throw new Error('This document is not available in this client portal.')
+  }
+
+  const signedUrl = await createPrivateListingDocumentSignedUrl(client, normalizedFilePath, expiresInSeconds)
+  if (!signedUrl) throw new Error('Unable to open this document right now.')
+  return signedUrl
+}
+
+export async function createPrivateListingDocumentDownloadUrl({
+  listingId,
+  filePath,
+  expiresInSeconds = 60,
+} = {}) {
+  const client = requireClient()
+  const normalizedListingId = normalizeUuid(listingId)
+  const normalizedFilePath = normalizeText(filePath)
+  if (!normalizedListingId) throw new Error('Listing id is required.')
+  if (!normalizedFilePath) throw new Error('Document path is required.')
+
+  await getPrivateListing(normalizedListingId, { includeRequirementsAndDocuments: false })
+  const allowedPrefixes = [
+    `seller-portal/${normalizedListingId}/`,
+    `private-listings/${normalizedListingId}/`,
+  ]
+  if (!allowedPrefixes.some((prefix) => normalizedFilePath.startsWith(prefix))) {
+    throw new Error('This document is not linked to the selected listing.')
   }
 
   const signedUrl = await createPrivateListingDocumentSignedUrl(client, normalizedFilePath, expiresInSeconds)

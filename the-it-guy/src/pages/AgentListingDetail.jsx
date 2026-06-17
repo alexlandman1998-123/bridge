@@ -90,6 +90,7 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supab
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import {
   getPrivateListing,
+  createPrivateListingDocumentDownloadUrl,
   deletePrivateListing,
   sendSellerOnboarding,
   syncPrivateListingDistributionData,
@@ -1207,6 +1208,7 @@ function AgentListingDetail() {
   const [deletingListing, setDeletingListing] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
   const [publishingListing, setPublishingListing] = useState(false)
+  const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
   const [showFullGallery, setShowFullGallery] = useState(false)
@@ -2019,6 +2021,36 @@ function AgentListingDetail() {
       setDetailError(error?.message || 'Unable to resend the seller client portal link.')
     } finally {
       setResendingSellerPortalLink(false)
+    }
+  }
+
+  async function handleOpenSellerDocument(doc) {
+    if (!doc?.uploaded) return
+    setDetailError('')
+    setOpeningSellerDocumentKey(doc.key)
+    const pendingWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null
+    if (pendingWindow) pendingWindow.opener = null
+    try {
+      const filePath = String(doc.filePath || '').trim()
+      const fallbackUrl = String(doc.url || '').trim()
+      const downloadUrl = filePath
+        ? await createPrivateListingDocumentDownloadUrl({
+            listingId,
+            filePath,
+            expiresInSeconds: 300,
+          })
+        : fallbackUrl
+      if (!downloadUrl) throw new Error('No downloadable file is linked to this document yet.')
+      if (pendingWindow) {
+        pendingWindow.location.href = downloadUrl
+      } else if (typeof window !== 'undefined') {
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer')
+      }
+    } catch (error) {
+      if (pendingWindow) pendingWindow.close()
+      setDetailError(error?.message || 'Unable to open this document.')
+    } finally {
+      setOpeningSellerDocumentKey('')
     }
   }
 
@@ -3023,6 +3055,7 @@ function AgentListingDetail() {
         status: hasUpload ? (status || 'uploaded') : status || 'missing',
         uploadedOn: upload?.uploadedAt || upload?.uploaded_at || upload?.createdAt || upload?.created_at || '',
         fileName: upload?.document_name || upload?.fileName || upload?.file_name || requirement?.fileName || requirement?.file_name || '',
+        filePath: upload?.storage_path || upload?.file_path || upload?.storagePath || upload?.path || '',
         url: upload?.url || upload?.fileUrl || upload?.file_url || upload?.signedUrl || '',
       }
     })
@@ -6921,11 +6954,16 @@ function AgentListingDetail() {
                         <td className="px-5 py-4"><StatusPill status={doc.uploaded ? 'uploaded' : 'missing'} label={doc.uploaded ? 'Uploaded' : 'Missing'} /></td>
                         <td className="px-5 py-4">{doc.uploadedOn ? formatDate(doc.uploadedOn) : '—'}</td>
                         <td className="px-5 py-4 text-right">
-                          {doc.url ? (
-                            <a href={doc.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78]">
-                              <ExternalLink size={14} />
+                          {doc.url || doc.filePath ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSellerDocument(doc)}
+                              disabled={openingSellerDocumentKey === doc.key}
+                              className="inline-flex items-center gap-1 text-sm font-semibold text-[#1f4f78] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {openingSellerDocumentKey === doc.key ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
                               Download
-                            </a>
+                            </button>
                           ) : (
                             <span className="text-xs text-[#9aa9b8]">—</span>
                           )}
