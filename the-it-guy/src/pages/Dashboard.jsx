@@ -61,6 +61,7 @@ import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTra
 import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { getAgencyPipelineSnapshot, getAppointmentsDashboardSummaryAsync } from '../lib/agencyPipelineService'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../lib/canvassingRepository'
+import { listOrganisationUsers } from '../lib/settingsApi'
 import {
   getDashboardPipelineValue,
   getDashboardTransactionPrice,
@@ -525,6 +526,41 @@ function mergeDashboardListingRows(...groups) {
     }
   }
   return [...rowsByKey.values()]
+}
+
+function normalizeDashboardText(value) {
+  return String(value || '').trim()
+}
+
+function normalizeDashboardContact(value) {
+  return normalizeDashboardText(value).toLowerCase().replace(/[^\da-z@.+-]/g, '')
+}
+
+function resolveDashboardAgentAssignmentIds(profile = {}, organisationUsers = []) {
+  const profileId = normalizeDashboardText(profile?.id)
+  const profileUserId = normalizeDashboardText(profile?.userId)
+  const profileEmail = normalizeDashboardContact(profile?.email)
+  const ids = new Set([profileId, profileUserId].filter(Boolean))
+
+  for (const user of Array.isArray(organisationUsers) ? organisationUsers : []) {
+    const userIds = [
+      user?.id,
+      user?.userId,
+      user?.user_id,
+      user?.organisationUserId,
+      user?.organisation_user_id,
+    ].map(normalizeDashboardText).filter(Boolean)
+    const userEmail = normalizeDashboardContact(user?.email)
+    const matchesProfile =
+      (profileId && userIds.includes(profileId)) ||
+      (profileUserId && userIds.includes(profileUserId)) ||
+      (profileEmail && userEmail === profileEmail)
+
+    if (!matchesProfile) continue
+    userIds.forEach((id) => ids.add(id))
+  }
+
+  return Array.from(ids)
 }
 
 function getAppointmentDateValue(appointment = {}) {
@@ -1086,19 +1122,23 @@ function Dashboard() {
               organisationId: role === 'agent' ? currentOrganisationId : '',
             }),
             role === 'agent' && currentOrganisationId
-              ? Promise.all([
-                  getAgentPrivateListings(profile.id, {
-                    organisationId: currentOrganisationId,
-                    assignedAgentEmail: '',
-                    assignedAgentIds: [profile?.userId].filter(Boolean),
-                  }),
-                  profile?.email
-                    ? getAgentPrivateListings('', {
+              ? listOrganisationUsers()
+                  .then((organisationUsers) => {
+                    const assignmentIds = resolveDashboardAgentAssignmentIds(profile, organisationUsers)
+                    return Promise.all([
+                      getAgentPrivateListings(profile.id, {
                         organisationId: currentOrganisationId,
-                        assignedAgentEmail: profile.email,
-                      })
-                    : Promise.resolve([]),
-                ])
+                        assignedAgentEmail: '',
+                        assignedAgentIds: assignmentIds,
+                      }),
+                      profile?.email
+                        ? getAgentPrivateListings('', {
+                            organisationId: currentOrganisationId,
+                            assignedAgentEmail: profile.email,
+                          })
+                        : Promise.resolve([]),
+                    ])
+                  })
                   .then(([byAgentId, byAgentEmail]) => mergeDashboardListingRows(byAgentId, byAgentEmail))
                   .catch((listingError) => {
                     console.warn('[dashboard] Unable to load agent private listings for KPI cards.', listingError)
