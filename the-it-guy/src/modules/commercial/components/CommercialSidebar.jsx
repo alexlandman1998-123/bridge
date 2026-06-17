@@ -11,11 +11,13 @@ function CommercialSidebar({ scope = null }) {
   const currentFullPath = `${location.pathname}${location.hash || ''}`
   const currentWorkspacePath = `${location.pathname}${location.search || ''}`
   const DashboardIcon = COMMERCIAL_DASHBOARD_NAV_ITEM.icon
-  const activeItemClass = 'bg-[#eef4f8] text-[#17324b] font-semibold before:absolute before:-left-2 before:top-2.5 before:bottom-2.5 before:w-0.5 before:rounded-full before:bg-[#2f5f7b]'
-  const sectionOpenClass = 'bg-[#f5f7fa] text-[#1f3448] font-semibold'
+  const activeItemClass = 'bg-[#eef4f8] text-[#17324b] font-semibold shadow-[inset_0_0_0_1px_rgba(191,213,238,0.7)]'
+  const sectionOpenClass = 'bg-[#f8fafc] text-[#17324b] font-semibold shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]'
   const inactiveItemClass = 'text-slate-600 hover:bg-[#f3f7fb] hover:text-[#1c3f5c]'
   const navItemClass = 'relative flex min-h-[42px] items-center gap-3 rounded-[14px] border border-transparent px-3 py-2 text-sm font-medium transition-colors duration-150 focus:outline-none focus-visible:border-[#bfd5ee] focus-visible:ring-4 focus-visible:ring-[#2f80ed]/10'
-  const childItemClass = 'min-h-[38px] rounded-[12px] px-3 text-[0.9rem]'
+  const childItemClass = 'flex min-h-[34px] items-center gap-2 rounded-xl px-3 text-[0.86rem] font-semibold transition-colors duration-150 focus:outline-none focus-visible:border-[#bfd5ee] focus-visible:ring-4 focus-visible:ring-[#2f80ed]/10'
+  const childActiveItemClass = 'bg-[#eef4f8] text-[#17324b] shadow-[inset_0_0_0_1px_rgba(191,213,238,0.75)]'
+  const childInactiveItemClass = 'text-slate-500 hover:bg-[#f7fafc] hover:text-[#1c3f5c]'
   const visibleSections = useMemo(
     () => COMMERCIAL_NAV_SECTIONS
       .map((section) => ({
@@ -111,7 +113,7 @@ function CommercialSidebar({ scope = null }) {
                     <ChevronDown size={14} className={`transition ${expandedSectionId === section.id ? 'rotate-180 text-[#0B3A5B]' : 'text-slate-400'}`} />
                   </button>
                   {expandedSectionId === section.id ? (
-                    <div className="ml-5 mt-1 grid gap-1 border-l border-slate-200 pl-3">
+                    <div className="mt-1 grid gap-1 pl-7">
                       {section.items.map((item) => {
                         const ItemIcon = item.icon
                         const active = isCommercialNavItemActive(currentFullPath, item)
@@ -125,12 +127,11 @@ function CommercialSidebar({ scope = null }) {
                             }}
                             aria-current={active ? 'page' : undefined}
                             className={[
-                              navItemClass,
                               childItemClass,
-                              active ? activeItemClass : inactiveItemClass,
+                              active ? childActiveItemClass : childInactiveItemClass,
                             ].join(' ')}
                           >
-                            <ItemIcon size={15} />
+                            <ItemIcon size={14} />
                             <span className="truncate">{item.label}</span>
                           </Link>
                         )

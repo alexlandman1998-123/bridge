@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, BriefcaseBusiness, Building2, CheckCircle2, Clock, ExternalLink, Mail, MoreVertical, Plus, Search, Users } from 'lucide-react'
+import { ArrowLeft, BriefcaseBusiness, Building2, CheckCircle2, Clock, ExternalLink, Mail, MoreVertical, Plus, Search, Trash2, Users } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Field from '../../../components/ui/Field'
 import Modal from '../../../components/ui/Modal'
-import { createWorkspaceUserInvite, listWorkspaceUserInvites } from '../../../services/workspaceUserInviteService'
+import { createWorkspaceUserInvite, listWorkspaceUserInvites, revokeWorkspaceUserInvite } from '../../../services/workspaceUserInviteService'
 import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
 import CommercialEmptyState from '../components/CommercialEmptyState'
 import { useCommercialData } from '../hooks/useCommercialData'
@@ -51,7 +51,7 @@ function statusTone(status = '') {
   return 'border-emerald-200 bg-emerald-50 text-emerald-700'
 }
 
-function BrokerDirectoryRow({ broker }) {
+function BrokerDirectoryRow({ broker, onDeleteInvite }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const isPending = normalizeText(broker.status).includes('pending')
   return (
@@ -121,9 +121,23 @@ function BrokerDirectoryRow({ broker }) {
                   View workspace
                 </Link>
               ) : null}
-              <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={() => setMenuOpen(false)}>
-                {isPending ? 'Invite pending' : 'Broker actions'}
-              </button>
+              {isPending ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#b42318] hover:bg-red-50"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onDeleteInvite?.(broker)
+                  }}
+                >
+                  <Trash2 size={14} />
+                  Delete invite
+                </button>
+              ) : (
+                <button type="button" className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]" onClick={() => setMenuOpen(false)}>
+                  Broker actions
+                </button>
+              )}
             </div>
           ) : null}
         </div>
@@ -204,6 +218,7 @@ function CommercialBrokersPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [branchFilter, setBranchFilter] = useState('all')
   const [pendingInvites, setPendingInvites] = useState([])
+  const [deletingInviteId, setDeletingInviteId] = useState('')
   const [form, setForm] = useState(EMPTY_INVITE_FORM)
   const { data, loading, error, organisationId } = useCommercialData(getCommercialBrokerageData, [refreshKey])
   const brokers = data?.brokers || []
@@ -232,6 +247,9 @@ function CommercialBrokersPage() {
 
   const pendingBrokerRows = useMemo(() => pendingInvites.map((invite) => ({
     id: invite.id,
+    inviteId: invite.inviteId || invite.id,
+    inviteToken: invite.inviteToken || invite.token,
+    isPendingInvite: true,
     name: invite.name || invite.email || 'Invited Broker',
     email: invite.email,
     role: invite.role || 'commercial_broker',
@@ -331,6 +349,37 @@ function CommercialBrokersPage() {
     })()
   }
 
+  async function handleDeleteInvite(broker = {}) {
+    const inviteId = broker.inviteId || broker.id
+    if (!inviteId || deletingInviteId) return
+
+    const confirmed = window.confirm(`Delete the pending invite for ${broker.email || broker.name}? This will invalidate the invite link.`)
+    if (!confirmed) return
+
+    setDeletingInviteId(inviteId)
+    setNotice({
+      tone: 'pending',
+      message: `Deleting invite for ${broker.email || broker.name}.`,
+    })
+
+    try {
+      await revokeWorkspaceUserInvite({ inviteId })
+      setPendingInvites((current) => current.filter((invite) => String(invite.inviteId || invite.id) !== String(inviteId)))
+      setNotice({
+        tone: 'success',
+        message: 'Broker invite deleted. The invite link is no longer valid.',
+      })
+      setRefreshKey((value) => value + 1)
+    } catch (deleteError) {
+      setNotice({
+        tone: 'error',
+        message: deleteError?.message || 'Broker invite could not be deleted.',
+      })
+    } finally {
+      setDeletingInviteId('')
+    }
+  }
+
   if (brokerId) return <BrokerProfile data={data} brokerId={brokerId} />
 
   const totalPipelineValue = brokers.reduce((sum, row) => sum + row.pipelineValue, 0)
@@ -403,7 +452,13 @@ function CommercialBrokersPage() {
           </span>
         </div>
         <div className="mt-4 grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
-          {loading ? <div className="h-32 animate-pulse rounded-3xl bg-slate-100" /> : filteredRows.map((broker) => <BrokerDirectoryRow key={`${broker.status}-${broker.id}`} broker={broker} />)}
+          {loading ? <div className="h-32 animate-pulse rounded-3xl bg-slate-100" /> : filteredRows.map((broker) => (
+            <BrokerDirectoryRow
+              key={`${broker.status}-${broker.id}`}
+              broker={broker}
+              onDeleteInvite={handleDeleteInvite}
+            />
+          ))}
         </div>
       </section>
 

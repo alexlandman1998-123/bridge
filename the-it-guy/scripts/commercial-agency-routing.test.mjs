@@ -47,8 +47,11 @@ for (const marker of [
   'Add Broker',
   'createWorkspaceUserInvite',
   'listWorkspaceUserInvites',
+  'revokeWorkspaceUserInvite',
   'Broker Directory',
   'Card view',
+  'Delete invite',
+  'Broker invite deleted. The invite link is no longer valid.',
   'repeat(auto-fit,minmax(min(100%,300px),1fr))',
   'optimistic-commercial-broker',
   'You can keep working while Bridge handles the email.',
@@ -62,6 +65,20 @@ assert.doesNotMatch(
   brokersPage,
   /grid-cols-\[minmax\(260px,1\.35fr\)/,
   'Commercial Brokers page should not use the old fixed-width table grid that overflows the shell.',
+)
+
+const commercialSidebar = await read('../src/modules/commercial/components/CommercialSidebar.jsx')
+for (const marker of [
+  'childActiveItemClass',
+  'childInactiveItemClass',
+  'pl-7',
+]) {
+  assert.match(commercialSidebar, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Commercial sidebar should include compact submenu styling marker ${marker}`)
+}
+assert.doesNotMatch(
+  commercialSidebar,
+  /border-l border-slate-200 pl-3/,
+  'Commercial sidebar submenu should not render the old vertical rail with oversized child pills.',
 )
 
 const branchesPage = await read('../src/modules/commercial/pages/CommercialBrokerBranchesPage.jsx')

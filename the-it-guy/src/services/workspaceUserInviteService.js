@@ -660,7 +660,13 @@ export async function createPrincipalClaimInvite(input = {}) {
   const email = normalizeEmail(input.email)
   if (!email) throw new Error('Principal email is required.')
 
-  const { workspaceId, organisationName } = await resolveWorkspaceDefaults(input)
+  const {
+    workspaceId,
+    organisationName,
+    organisationLogoUrl,
+    organisationLogoIconUrl,
+    brandPrimaryColor,
+  } = await resolveWorkspaceDefaults(input)
   if (!workspaceId) throw new Error('A workspace is required before creating a principal claim invite.')
 
   const firstName = getFirstName(input)
@@ -690,6 +696,9 @@ export async function createPrincipalClaimInvite(input = {}) {
         role: 'principal_claim',
         role_label: 'Principal Claim',
         organisation_name: organisationName,
+        organisation_logo_url: organisationLogoUrl,
+        organisation_logo_icon_url: organisationLogoIconUrl,
+        brand_primary_color: brandPrimaryColor,
         notes: normalizeText(input.notes),
         invited_by_name: normalizeText(input.invitedByName || input.invited_by_name),
         ...(input.metadata && typeof input.metadata === 'object' ? input.metadata : {}),
@@ -700,7 +709,13 @@ export async function createPrincipalClaimInvite(input = {}) {
       ? normalizeText(error.details?.invite_id)
       : ''
     if (duplicateInviteId) {
-      const existingInvite = await getWorkspaceInviteById(duplicateInviteId, { workspaceId, organisationName })
+      const existingInvite = await getWorkspaceInviteById(duplicateInviteId, {
+        workspaceId,
+        organisationName,
+        organisationLogoUrl,
+        organisationLogoIconUrl,
+        brandPrimaryColor,
+      })
       if (existingInvite?.id) {
         const resent = await resendWorkspaceUserInvite({
           ...existingInvite,
@@ -708,6 +723,9 @@ export async function createPrincipalClaimInvite(input = {}) {
           lastName: existingInvite.lastName || lastName,
           mobile: existingInvite.mobile || mobile,
           organisationName,
+          organisationLogoUrl: existingInvite.organisationLogoUrl || organisationLogoUrl,
+          organisationLogoIconUrl: existingInvite.organisationLogoIconUrl || organisationLogoIconUrl,
+          brandPrimaryColor: existingInvite.brandPrimaryColor || brandPrimaryColor,
           role: 'principal_claim',
           roleLabel: 'Principal Claim',
         })
@@ -737,6 +755,9 @@ export async function createPrincipalClaimInvite(input = {}) {
     phone: mobile,
     organisationId: workspaceId,
     organisationName,
+    organisationLogoUrl,
+    organisationLogoIconUrl,
+    brandPrimaryColor,
     role: 'principal_claim',
     roleLabel: 'Principal Claim',
     invitedByName: normalizeText(input.invitedByName || input.invited_by_name),
