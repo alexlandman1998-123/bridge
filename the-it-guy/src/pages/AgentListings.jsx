@@ -858,11 +858,7 @@ function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssi
 function validateQuickListingActiveRules({ form, assignedAgentKey }) {
   if (normalizeKey(form.listingStatus) !== 'active') return []
   const errors = validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent: true })
-  if (!normalizeText(form.propertyAddress)) errors.push('Property address is required before marking the listing Active.')
-  if (!normalizeText(form.propertyType)) errors.push('Property type is required before marking the listing Active.')
-  if (!form.listingPrice || Number(form.listingPrice) <= 0) errors.push('Listing price is required before marking the listing Active.')
   if (!hasQuickListingSignedMandate(form)) errors.push('Upload the signed mandate before marking the listing Active.')
-  if (!normalizeText(form.commissionValue)) errors.push('Capture the commission structure before marking the listing Active.')
   return [...new Set(errors)]
 }
 
@@ -1643,20 +1639,78 @@ function AgentListings({ initialTab = null } = {}) {
     return listingIdentityKeys.find((value) => isUuidLike(value)) || ''
   }
 
+  function listingMatchesIdentityKeys(listing = {}, keys = new Set()) {
+    if (!keys.size) return false
+    return getListingIdentityKeys(listing).some((key) => keys.has(key))
+  }
+
+  function buildPublishedLocalListingPatch(listing = {}) {
+    const now = new Date().toISOString()
+    return {
+      ...listing,
+      listingStatus: LISTING_STATUS.LISTING_ACTIVE,
+      status: LISTING_STATUS.LISTING_ACTIVE,
+      listingVisibility: 'active_market',
+      visibility: listing.visibility || 'agent',
+      isActive: true,
+      bridgeListingStatus: 'published',
+      updatedAt: now,
+      activatedAt: listing.activatedAt || now,
+      propertyDetails: {
+        ...(listing.propertyDetails || {}),
+        listingStatus: LISTING_STATUS.LISTING_ACTIVE,
+        publicationStatus: 'Published',
+      },
+    }
+  }
+
+  function activateLocalListingCard(card = {}) {
+    const identityKeys = new Set([
+      ...(Array.isArray(card?.identityKeys) ? card.identityKeys : []),
+      ...getListingIdentityKeys(card?.listingRecord || {}),
+      card?.id,
+    ].map((value) => normalizeText(value)).filter(Boolean))
+    const fallbackListing = card?.listingRecord || { id: normalizeText(card?.id), listingTitle: card?.title }
+    const publishedFallback = buildPublishedLocalListingPatch(fallbackListing)
+
+    let foundRuntimeListing = false
+    const runtimeListings = readAgentPrivateListings()
+    const nextRuntimeListings = runtimeListings.map((listing) => {
+      if (!listingMatchesIdentityKeys(listing, identityKeys)) return listing
+      foundRuntimeListing = true
+      return buildPublishedLocalListingPatch(listing)
+    })
+    writeAgentPrivateListings(foundRuntimeListing ? nextRuntimeListings : [publishedFallback, ...nextRuntimeListings])
+
+    setPrivateListings((rows) => {
+      let foundRow = false
+      const nextRows = rows.map((row) => {
+        if (!listingMatchesIdentityKeys(row, identityKeys)) return row
+        foundRow = true
+        return buildPublishedLocalListingPatch(row)
+      })
+      return foundRow ? nextRows : [publishedFallback, ...nextRows]
+    })
+
+    window.dispatchEvent(new Event('itg:listings-updated'))
+    return publishedFallback
+  }
+
   async function handlePublishListing(card, event) {
     event?.stopPropagation?.()
-    const remoteListingId = getRemoteListingIdForCard(card)
-    if (!remoteListingId) {
-      setError('Open the listing detail before publishing this locally saved listing.')
-      return
-    }
-
     setPublishingListingId(card.id)
     setOpenListingMenuId('')
     setError('')
     setWorkflowMessage('')
 
     try {
+      const remoteListingId = getRemoteListingIdForCard(card)
+      if (!remoteListingId) {
+        const publishedListing = activateLocalListingCard(card)
+        setWorkflowMessage(`"${publishedListing.listingTitle || publishedListing.title || card.title || 'Listing'}" is now live locally.`)
+        return
+      }
+
       const result = await transitionPrivateListingStatus(remoteListingId, 'active', {
         metadata: {
           source: 'agent_listings_publish_action',
@@ -1753,6 +1807,8 @@ function AgentListings({ initialTab = null } = {}) {
       const completeness = getListingCompleteness(listing)
       const quickMetadata = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description)
       const complianceWarnings = getListingComplianceWarnings(listing, completeness)
+      const mandateStatusKey = normalizeKey(listing?.mandateStatus || listing?.mandate_status || quickMetadata?.mandateStatus)
+      const hasSignedMandate = mandateStatusKey === 'signed' || listingHasDocumentSignal(listing, ['mandate', 'signed mandate'])
       const lifecycleBlockers = evaluatePrivateListingTransitionGuards(
         listing,
         statusKey === 'seller_lead'
@@ -1800,7 +1856,7 @@ function AgentListings({ initialTab = null } = {}) {
         inventoryStatusKey: inventoryStatus.key,
         inventoryFilterKey: inventoryStatus.filterKey,
         inventoryStatusLabel: inventoryStatus.label,
-        canPublish: statusKey === 'mandate_signed' || inventoryStatus.key === 'ready_to_publish' || inventoryStatus.filterKey === 'ready_to_publish',
+        canPublish: hasSignedMandate && !['active', 'listing_active', 'under_offer', 'transaction_created', 'sold', 'withdrawn'].includes(statusKey),
         attentionLine: '',
         mandateStatusLabel: getMandateStatus(listing),
         completenessScore: completeness.score,

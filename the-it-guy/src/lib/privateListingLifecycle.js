@@ -68,12 +68,12 @@ const PRIVATE_LISTING_STATUS_GROUPS = {
 }
 
 const PRIVATE_LISTING_TRANSITIONS = {
-  seller_lead: ['onboarding_sent', 'withdrawn'],
-  onboarding_sent: ['onboarding_completed', 'withdrawn'],
-  onboarding_completed: ['listing_review', 'mandate_ready', 'withdrawn'],
-  listing_review: ['mandate_ready', 'withdrawn'],
-  mandate_ready: ['mandate_sent', 'withdrawn'],
-  mandate_sent: ['mandate_signed', 'withdrawn'],
+  seller_lead: ['onboarding_sent', 'active', 'withdrawn'],
+  onboarding_sent: ['onboarding_completed', 'active', 'withdrawn'],
+  onboarding_completed: ['listing_review', 'mandate_ready', 'active', 'withdrawn'],
+  listing_review: ['mandate_ready', 'active', 'withdrawn'],
+  mandate_ready: ['mandate_sent', 'active', 'withdrawn'],
+  mandate_sent: ['mandate_signed', 'active', 'withdrawn'],
   mandate_signed: ['active', 'withdrawn'],
   active: ['under_offer', 'withdrawn'],
   under_offer: ['transaction_created', 'active', 'withdrawn'],
@@ -165,6 +165,34 @@ function hasValue(value) {
   if (value === null || value === undefined) return false
   if (typeof value === 'number') return Number.isFinite(value) && value > 0
   return normalizeText(value).length > 0
+}
+
+function listingHasDocumentSignal(listing = {}, matchers = []) {
+  const normalizedMatchers = matchers.map(normalizeKey).filter(Boolean)
+  if (!normalizedMatchers.length) return false
+  const documents = [
+    ...(Array.isArray(listing?.documents) ? listing.documents : []),
+    ...(Array.isArray(listing?.requiredDocuments) ? listing.requiredDocuments : []),
+    ...(Array.isArray(listing?.documentRequirements) ? listing.documentRequirements : []),
+  ]
+  return documents.some((document) => {
+    const key = normalizeKey([
+      document?.key,
+      document?.requirementKey,
+      document?.requirement_key,
+      document?.documentType,
+      document?.document_type,
+      document?.documentCategory,
+      document?.category,
+      document?.name,
+      document?.document_name,
+      document?.fileName,
+      document?.file_name,
+    ].filter(Boolean).join(' '))
+    const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status)
+    const usable = !status || ['uploaded', 'approved', 'verified', 'completed', 'signed'].includes(status)
+    return usable && normalizedMatchers.some((matcher) => key.includes(matcher))
+  })
 }
 
 function isOnboardingCompleted(listing = {}, metadata = {}) {
@@ -305,20 +333,9 @@ export function evaluatePrivateListingTransitionGuards(listing = {}, targetStatu
 
   if (normalizedTarget === 'active') {
     const mandateStatus = normalizeKey(metadata?.mandateStatus || listing?.mandateStatus || listing?.mandate_status)
-    if (mandateStatus !== 'signed') {
+    const hasSignedMandate = mandateStatus === 'signed' || listingHasDocumentSignal(listing, ['mandate', 'signed mandate'])
+    if (!hasSignedMandate) {
       blockers.push('The mandate must be signed before this listing can become active.')
-    }
-    if (!hasValue(metadata?.addressLine1 || listing?.addressLine1 || listing?.address_line_1)) {
-      blockers.push('Property address is required before activating listing.')
-    }
-    if (!hasValue(metadata?.propertyType || listing?.propertyType || listing?.property_type)) {
-      blockers.push('Property type is required before activating listing.')
-    }
-    if (!hasValue(metadata?.askingPrice || listing?.askingPrice || listing?.asking_price)) {
-      blockers.push('Asking price is required before activating listing.')
-    }
-    if (!hasValue(metadata?.assignedAgentId || listing?.assignedAgentId || listing?.assigned_agent_id)) {
-      blockers.push('Assigned agent is required before activating listing.')
     }
   }
 
@@ -413,4 +430,3 @@ export const PRIVATE_LISTING_LIFECYCLE = {
   STATUS_GROUPS: PRIVATE_LISTING_STATUS_GROUPS,
   SIDE_EFFECTS: PRIVATE_LISTING_STATUS_SIDE_EFFECTS,
 }
-

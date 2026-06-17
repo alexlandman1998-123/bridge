@@ -4085,7 +4085,7 @@ export async function transitionPrivateListingStatus(listingId, targetStatus, op
   const transitionBlockers = [...validation.blockers]
   const includeRequirementsAndDocuments = options?.includeRequirementsAndDocuments !== false
 
-  if (validation.targetStatus === 'mandate_sent' || validation.targetStatus === 'active') {
+  if (validation.targetStatus === 'mandate_sent') {
     const syncResult = await syncPrivateListingRequirements(validation.listing.id, {
       emitActivity: false,
       reason: 'transition_validation',
@@ -4099,9 +4099,6 @@ export async function transitionPrivateListingStatus(listingId, targetStatus, op
           : missingRows
       if (missingForMandateSent.length) {
         transitionBlockers.push('Required seller/property documents are still outstanding.')
-      }
-      if (validation.targetStatus === 'active' && !readiness.mandateSigned) {
-        transitionBlockers.push('Mandate must be signed before activation.')
       }
     }
   }
