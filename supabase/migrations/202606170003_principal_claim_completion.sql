@@ -58,6 +58,7 @@ declare
   v_workspace_type text;
   v_profile public.profiles%rowtype;
   v_membership_id uuid;
+  v_commercial_enabled boolean := false;
 begin
   if new.invite_type <> 'principal_claim_invite' then
     return new;
@@ -82,6 +83,24 @@ begin
   if v_workspace_type is null then
     return new;
   end if;
+
+  select exists (
+    select 1
+    from public.organisation_modules om
+    where om.organisation_id = new.target_workspace_id
+      and om.module_key = 'commercial'
+      and coalesce(om.status, '') = 'active'
+  )
+  or exists (
+    select 1
+    from public.organisation_settings os
+    where os.organisation_id = new.target_workspace_id
+      and (
+        lower(coalesce(os.settings_json->'enabledModules'->>'commercial', 'false')) = 'true'
+        or lower(coalesce(os.settings_json->'commercialWorkspace'->>'status', '')) = 'active'
+      )
+  )
+  into v_commercial_enabled;
 
   select *
   into v_profile
@@ -112,6 +131,16 @@ begin
       organisation_role = 'principal',
       app_role = 'agent',
       workspace_type = v_workspace_type,
+      module_context = case when v_commercial_enabled then 'commercial' else module_context end,
+      module_metadata = case
+        when v_commercial_enabled then coalesce(module_metadata, '{}'::jsonb)
+          || jsonb_build_object(
+            'source', 'principal_claim_invite',
+            'commercialAccessInheritedAt', coalesce(new.accepted_at, now()),
+            'commercialAccessReason', 'principal_claim'
+          )
+        else module_metadata
+      end,
       status = 'pending',
       membership_status = 'pending',
       invited_by_user_id = coalesce(invited_by_user_id, new.inviter_user_id),
@@ -137,6 +166,8 @@ begin
       organisation_role,
       app_role,
       workspace_type,
+      module_context,
+      module_metadata,
       status,
       membership_status,
       invited_by_user_id,
@@ -156,6 +187,15 @@ begin
       'principal',
       'agent',
       v_workspace_type,
+      case when v_commercial_enabled then 'commercial' else null end,
+      case
+        when v_commercial_enabled then jsonb_build_object(
+          'source', 'principal_claim_invite',
+          'commercialAccessInheritedAt', coalesce(new.accepted_at, now()),
+          'commercialAccessReason', 'principal_claim'
+        )
+        else '{}'::jsonb
+      end,
       'pending',
       'pending',
       new.inviter_user_id,
@@ -264,6 +304,7 @@ declare
   v_branch_id uuid;
   v_branch_name text;
   v_branch_slug text;
+  v_commercial_enabled boolean := false;
   v_now timestamptz := now();
 begin
   if v_user_id is null then
@@ -286,6 +327,24 @@ begin
   end if;
 
   v_workspace_id := v_membership.organisation_id;
+
+  select exists (
+    select 1
+    from public.organisation_modules om
+    where om.organisation_id = v_workspace_id
+      and om.module_key = 'commercial'
+      and coalesce(om.status, '') = 'active'
+  )
+  or exists (
+    select 1
+    from public.organisation_settings os
+    where os.organisation_id = v_workspace_id
+      and (
+        lower(coalesce(os.settings_json->'enabledModules'->>'commercial', 'false')) = 'true'
+        or lower(coalesce(os.settings_json->'commercialWorkspace'->>'status', '')) = 'active'
+      )
+  )
+  into v_commercial_enabled;
 
   select *
   into v_invite
@@ -424,6 +483,16 @@ begin
     organization_role = coalesce(organization_role, 'principal'),
     app_role = 'agent',
     workspace_type = 'agency',
+    module_context = case when v_commercial_enabled then 'commercial' else module_context end,
+    module_metadata = case
+      when v_commercial_enabled then coalesce(module_metadata, '{}'::jsonb)
+        || jsonb_build_object(
+          'source', 'principal_claim_onboarding',
+          'commercialAccessInheritedAt', v_now,
+          'commercialAccessReason', 'principal_claim_completed'
+        )
+      else module_metadata
+    end,
     status = 'active',
     membership_status = 'active',
     joined_at = coalesce(joined_at, v_now),
@@ -550,6 +619,7 @@ begin
     'workspace_role', 'principal',
     'membership_role', 'principal',
     'profile_role', 'agent',
+    'commercial_access_inherited', v_commercial_enabled,
     'principal_claim_completed', true
   );
 end;

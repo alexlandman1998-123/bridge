@@ -23,6 +23,8 @@ const onboardingProfileSetup = await read('../src/pages/OnboardingProfileSetup.j
 const postDashboardSetup = await read('../src/pages/PostDashboardSetup.jsx')
 const settingsApi = await read('../src/lib/settingsApi.js')
 const signupIntentLib = await read('../src/lib/signupIntent.js')
+const permissionRegistry = await read('../src/auth/permissions/permissionRegistry.js')
+const commercialApi = await read('../src/modules/commercial/services/commercialApi.js')
 const principalClaimMigration = await read('../../supabase/migrations/202606170003_principal_claim_completion.sql')
 const workspaceInviteEmail = await read('../../supabase/functions/send-email/handlers/workspaceInvite.ts')
 const sendEmailTypes = await read('../../supabase/functions/send-email/types.ts')
@@ -261,6 +263,11 @@ for (const marker of [
   "workspace_role = 'principal'",
   "organisation_role = 'principal'",
   "app_role = 'agent'",
+  'v_commercial_enabled boolean := false',
+  "om.module_key = 'commercial'",
+  "module_context = case when v_commercial_enabled then 'commercial' else module_context end",
+  "'commercialAccessInheritedAt'",
+  "'commercial_access_inherited', v_commercial_enabled",
   "'principal_claim_accepted'",
   'create or replace function public.bridge_complete_principal_claim_onboarding',
   "membership_status = 'active'",
@@ -269,6 +276,22 @@ for (const marker of [
 ]) {
   includes(principalClaimMigration, marker, `Principal claim migration should preserve the pending-to-active lifecycle contract: ${marker}`)
 }
+
+matches(
+  permissionRegistry,
+  /\[ORG_ROLES\.owner\]: mergeGrants\(allGeneral, grant\(ACCESS_SCOPES\.allWorkspace, AGENCY_PERMISSIONS\)\)[\s\S]*\[ORG_ROLES\.principal\]: mergeGrants\(allGeneral, grant\(ACCESS_SCOPES\.allWorkspace, AGENCY_PERMISSIONS\)\)/,
+  'Agency principals should keep the same all-workspace agency permission scope as organisation owners.',
+)
+matches(
+  commercialApi,
+  /const COMMERCIAL_HQ_ROLES = new Set\(\[[^\]]*'owner'[^\]]*'principal'[\s\S]*resolveScopeLevel\(role\)[\s\S]*return 'organisation'/,
+  'Commercial principals should resolve to organisation-level commercial scope once the commercial access marker is present.',
+)
+matches(
+  commercialApi,
+  /function isCommercialMembershipRow[\s\S]*COMMERCIAL_MODULE_MARKERS\.has\(moduleValue\)[\s\S]*return true/,
+  'Commercial access should continue to be driven by the membership module marker inherited during principal claim completion.',
+)
 
 for (const marker of [
   'resolveInviteEmailFromLocation',
