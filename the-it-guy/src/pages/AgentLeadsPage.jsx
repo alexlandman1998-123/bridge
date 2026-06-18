@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Archive,
   ArrowLeft,
+  ArrowRight,
   BadgeCheck,
   CalendarDays,
   ChevronDown,
@@ -159,7 +160,7 @@ import {
 const pageShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5'
 const leadListShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5'
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
-const buyerWorkspaceCardClass = `${panelClass} card`
+const buyerWorkspaceCardClass = `${panelClass} rounded-[24px] border-slate-200/80 bg-white p-6 shadow-[0_16px_36px_rgba(15,23,42,0.05)]`
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const LEAD_APPOINTMENT_TYPES = [
   { value: 'viewing', label: 'Viewing' },
@@ -1498,6 +1499,42 @@ function BuyerActivityOverviewCard({ row, workspace = {} }) {
   )
 }
 
+function getBuyerDocumentItems(row = {}) {
+  return getBuyerDocumentCollections(row).map((document, index) => {
+    const label = normalizeText(
+      document?.label ||
+        document?.name ||
+        document?.title ||
+        document?.requirementLabel ||
+        document?.requirement_label ||
+        document?.type ||
+        document?.documentType ||
+        document?.document_type ||
+        `Document ${index + 1}`,
+    )
+    return {
+      id: normalizeText(document?.id || document?.documentId || document?.document_id || `${label}-${index}`),
+      label,
+      status: normalizeText(document?.status || document?.reviewStatus || document?.review_status || document?.documentStatus || document?.document_status || 'missing'),
+      source: normalizeText(document?.source || document?.origin || document?.category || 'Lead'),
+      uploadedAt: document?.uploadedAt || document?.uploaded_at || document?.createdAt || document?.created_at || null,
+      url: normalizeText(document?.url || document?.fileUrl || document?.file_url || document?.signedUrl || document?.signed_url),
+      note: normalizeText(document?.note || document?.description || document?.requirementDescription || document?.requirement_description),
+    }
+  })
+}
+
+function getBuyerUpcomingAppointments(row = {}) {
+  return (Array.isArray(row?.appointments) ? row.appointments : [])
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftTime = new Date(left.dateTime || left.date_time || left.startsAt || left.starts_at || left.date || left.appointmentDate || left.appointment_date || left.createdAt || left.created_at || 0).getTime()
+      const rightTime = new Date(right.dateTime || right.date_time || right.startsAt || right.starts_at || right.date || right.appointmentDate || right.appointment_date || right.createdAt || right.created_at || 0).getTime()
+      return leftTime - rightTime
+    })
+    .slice(0, 3)
+}
+
 function BuyerOverviewRecentActivityCard({ row, timeline = [], onViewAll }) {
   const items = [
     ...(Array.isArray(timeline) ? timeline : []),
@@ -2424,24 +2461,17 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
   const [workingKey, setWorkingKey] = useState('')
   const [error, setError] = useState('')
   const completedCount = steps.filter((step) => step.done).length
-  const progress = Math.round((completedCount / Math.max(steps.length, 1)) * 100)
-  const actions = {
-    reached_out: { label: 'Mark reached out', handler: onMarkReachedOut },
-    viewing_scheduled: { label: 'Add viewing', handler: onAddViewing },
-    viewing_completed: { label: 'Open appointments', handler: onOpenAppointments || onAddViewing },
-    offer_made: { label: 'Open offers', handler: onOpenOffers },
-    transaction_created: { label: 'Convert lead', handler: onConvert },
-  }
   const nextStep = steps.find((step) => !step.done)
-  const nextAction = nextStep ? actions[nextStep.key] : { label: 'Review timeline', handler: onLogOutreach }
+  const currentStepIndex = Math.max(0, steps.findIndex((step) => !step.done))
+  const progress = Math.round((completedCount / Math.max(steps.length, 1)) * 100)
 
-  async function runStageAction(step) {
-    const action = actions[step.key]
-    if (!action?.handler) return
+  async function runPrimaryAction() {
+    const handler = onMarkReachedOut || onLogOutreach
+    if (!handler) return
     try {
-      setWorkingKey(step.key)
+      setWorkingKey('reached_out')
       setError('')
-      await action.handler()
+      await handler()
     } catch (actionError) {
       setError(actionError?.message || 'Unable to update outreach progress.')
     } finally {
@@ -2449,29 +2479,22 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
     }
   }
 
-  async function runPrimaryAction() {
-    if (!nextStep) {
-      onLogOutreach?.()
-      return
-    }
-    await runStageAction(nextStep)
-  }
-
   return (
-    <section className={`${panelClass} lead-outreach-progress card`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <section className={`${buyerWorkspaceCardClass} overflow-hidden`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Lead Outreach Progress</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Next step: <span className="font-semibold text-slate-700">{nextStep?.label || 'Keep nurturing this lead'}</span>. Each stage shows how the agent moves it forward.
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Lead Progress</p>
+          <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
+            <h2 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">Buyer journey</h2>
+            <span className="text-sm font-semibold text-slate-500">{completedCount} of {steps.length} complete</span>
+          </div>
+          <p className="mt-2 text-sm text-slate-500">
+            Next step: <span className="font-semibold text-slate-700">{nextStep?.label || 'Keep nurturing this buyer'}</span>.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={onLogOutreach} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            Log outreach
-          </button>
-          <button type="button" onClick={runPrimaryAction} disabled={Boolean(workingKey)} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300">
-            {workingKey ? 'Updating...' : nextAction.label}
+          <button type="button" onClick={runPrimaryAction} disabled={Boolean(workingKey)} className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-950 px-4.5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300">
+            {workingKey ? 'Updating...' : 'Mark reached out'}
           </button>
         </div>
       </div>
@@ -2479,31 +2502,63 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
         <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
       </div>
       {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
-      <div className="lead-progress-grid mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        {steps.map((step) => (
-          <div key={step.key} className={`lead-progress-step rounded-2xl border p-3 ${step.done ? 'border-blue-100 bg-blue-50/40' : 'border-slate-200 bg-slate-50'}`}>
-            <div className="flex items-start gap-2">
-              <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${step.done ? 'bg-blue-600 text-white' : 'bg-white text-slate-400 ring-1 ring-slate-200'}`}>
-                <CheckCircle2 size={14} />
-              </span>
-              <div className="min-w-0">
-                <p className="lead-progress-step-label text-sm font-semibold leading-5 text-slate-950">{step.label}</p>
-                <p className="mt-1 text-xs font-medium text-slate-500">{step.meta}</p>
-              </div>
-            </div>
-            <p className="lead-progress-step-hint mt-3 text-xs leading-5 text-slate-500">{step.hint}</p>
-            {!step.done && actions[step.key]?.handler ? (
-              <button type="button" onClick={() => runStageAction(step)} disabled={Boolean(workingKey)} className="lead-progress-step-action mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60">
-                {workingKey === step.key ? 'Updating...' : actions[step.key].label}
-              </button>
-            ) : (
-              <span className="lead-progress-step-action mt-3 inline-flex min-h-9 w-full items-center justify-center rounded-xl bg-white px-3 text-xs font-semibold text-slate-500 ring-1 ring-slate-100">
-                {step.done ? 'Complete' : 'Awaiting previous step'}
-              </span>
-            )}
+      <div className="mt-5 overflow-x-auto pb-2">
+        <div className="min-w-[920px]">
+          <div className="relative flex items-start gap-3">
+            <div className="absolute left-6 right-6 top-5 h-px bg-slate-200" aria-hidden="true" />
+            {steps.map((step, index) => {
+              const isCurrent = index === currentStepIndex && !step.done
+              const isDone = step.done
+              const circleClass = isDone
+                ? 'border-emerald-500 bg-emerald-500 text-white'
+                : isCurrent
+                  ? 'border-blue-600 bg-blue-600 text-white shadow-[0_0_0_6px_rgba(37,99,235,0.12)]'
+                  : 'border-slate-200 bg-white text-slate-400'
+              const labelClass = isDone || isCurrent ? 'text-slate-950' : 'text-slate-500'
+              return (
+                <div key={step.key} className="relative z-10 flex min-w-0 flex-1 flex-col items-center text-center">
+                  <span className={`flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold ${circleClass}`}>
+                    {isDone ? <CheckCircle2 size={15} /> : index + 1}
+                  </span>
+                  <div className="mt-3 min-w-0">
+                    <p className={`truncate text-sm font-semibold ${labelClass}`}>{step.label}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">{step.meta}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">{step.hint}</p>
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        ))}
+        </div>
       </div>
+    </section>
+  )
+}
+
+function LeadSectionMenu({ tabs = [], activeTab = 'overview', onChange }) {
+  return (
+    <section className={`${buyerWorkspaceCardClass} p-2`}>
+      <nav className="flex gap-2 overflow-x-auto" aria-label="Lead section tabs" role="tablist">
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => onChange?.(tab.key)}
+              className={`min-h-11 shrink-0 rounded-2xl px-4 text-sm font-semibold transition ${
+                isActive
+                  ? 'bg-slate-950 text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'
+              }`}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </nav>
     </section>
   )
 }
@@ -2524,69 +2579,65 @@ function BuyerHeaderStatusBlock({ icon, label, value, tone = 'slate', helper = '
   )
 }
 
-function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onOpenTimeline, onDelete, onRunCommand }) {
+function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onBack, onDelete, onRunCommand }) {
   const [moreOpen, setMoreOpen] = useState(false)
-  const command = getBuyerWorkspaceCommand(row)
-  const deal = command.snapshot || getBuyerDealSnapshot(row)
-  const finance = getBuyerFinanceReadiness(row)
-  const documents = getBuyerDocumentReadiness(row)
-  const property = getBuyerPropertyReadiness(row)
-  const stageLabel = formatCleanValue(row.stage || row.status)
-  const transactionValue = deal.latestTransaction ? deal.transactionStateLabel : 'Not Created'
-  const transactionTone = deal.latestTransaction ? deal.transactionStateTone : 'slate'
-  const runPrimaryAction = () => onRunCommand?.(command.actionId || 'overview')
+  const capturedDate = formatDate(row.createdAt || row.created_at, 'No created date')
+  const stageLabel = formatCleanValue(row.stage || row.status || 'New Lead')
+  const sourceLabel = formatCleanValue(sourceInfo?.leadSource || row.source || 'WhatsApp')
+  const assignedAgent = getOwnerName(row)
+  const reviewRequirements = () => onRunCommand?.('requirements')
   return (
-    <header className={`${panelClass} overflow-visible bg-gradient-to-br from-white via-white to-slate-50 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.08)]`}>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,1fr)_220px] xl:items-start">
+    <header className={`${buyerWorkspaceCardClass} overflow-visible`}>
+      <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-4">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
+          <ArrowLeft size={15} />
+          Back to leads
+        </button>
+        {lastActivity?.date ? <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Last activity {formatRelativeTime(lastActivity.date)}</span> : null}
+      </div>
+
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_auto] xl:items-start">
         <div className="flex min-w-0 gap-4">
-          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl bg-slate-950 text-xl font-semibold text-white shadow-[0_18px_34px_rgba(15,23,42,0.18)]">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[28px] bg-slate-950 text-2xl font-semibold text-white shadow-[0_18px_34px_rgba(15,23,42,0.18)]">
             {getInitials(row.name)}
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill tone="blue">Buyer Journey</StatusPill>
-              <StatusPill tone={getStageTone(row.stage)}>{stageLabel}</StatusPill>
-              <StatusPill tone={leadScore >= 80 ? 'green' : 'amber'}>{getIntentLabel(leadScore)}</StatusPill>
-              <StatusPill>{formatDate(row.createdAt || row.created_at, 'No created date')}</StatusPill>
+              <StatusPill tone={stageLabel.toLowerCase().includes('new') ? 'green' : 'blue'}>New Lead</StatusPill>
+              <StatusPill tone={leadScore >= 65 ? 'green' : 'amber'}>{getIntentLabel(leadScore)}</StatusPill>
             </div>
-            <h1 className="mt-3 break-words text-3xl font-semibold tracking-[-0.045em] text-slate-950">{row.name}</h1>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-600">
+            <h1 className="mt-3 break-words text-3xl font-semibold tracking-[-0.05em] text-slate-950">{row.name}</h1>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-600">
               <span className="inline-flex items-center gap-1.5"><Phone size={15} />{row.phone || 'No phone'}</span>
               <span className="inline-flex items-center gap-1.5"><Mail size={15} />{row.email || 'No email'}</span>
-              <span className="inline-flex items-center gap-1.5"><Tag size={15} />{formatCleanValue(sourceInfo?.leadSource || row.source)}</span>
+              <span className="inline-flex items-center gap-1.5"><Tag size={15} />{sourceLabel}</span>
+              <span className="inline-flex items-center gap-1.5"><MessageSquarePlus size={15} />WhatsApp</span>
             </div>
-            {lastActivity?.date ? <p className="mt-2 text-sm font-medium text-slate-500">Last activity {formatRelativeTime(lastActivity.date)} · {formatDateTime(lastActivity.date)}</p> : null}
           </div>
         </div>
 
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <BuyerHeaderStatusBlock icon={UserRound} label="Assigned Agent" value={getOwnerName(row)} tone={getOwnerName(row) === 'Unassigned' ? 'amber' : 'green'} />
-          <BuyerHeaderStatusBlock icon={Clock3} label="Current Stage" value={stageLabel} tone={getStageTone(row.stage || row.status)} />
-          <BuyerHeaderStatusBlock icon={CreditCard} label="Finance" value={finance.label} tone={finance.tone} helper={`${finance.score}% ready`} />
-          <BuyerHeaderStatusBlock icon={Target} label="Property Match" value={property.label} tone={property.tone} helper={`${property.percent}% fit`} />
-          <BuyerHeaderStatusBlock icon={FileText} label="Documents" value={documents.label} tone={documents.tone} helper={`${documents.complete}/${documents.total} complete`} />
-          <BuyerHeaderStatusBlock icon={Home} label="Transaction" value={transactionValue} tone={transactionTone} helper={deal.intakePreference ? deal.intakeLabel : ''} />
+        <div className="grid gap-3 border-l border-slate-100 pl-0 xl:pl-6">
+          <BuyerHeaderStatusBlock icon={CalendarDays} label="Lead Captured" value={capturedDate} tone="slate" />
+          <BuyerHeaderStatusBlock icon={Tag} label="Source" value={sourceLabel} tone="blue" />
+          <BuyerHeaderStatusBlock icon={UserRound} label="Assigned Agent" value={assignedAgent} tone={assignedAgent === 'Unassigned' ? 'amber' : 'green'} />
         </div>
 
-        <div className="flex flex-col gap-2 xl:items-stretch">
-          <button type="button" onClick={runPrimaryAction} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800">
-            {command.actionLabel}
-            <ExternalLink size={15} />
-          </button>
-          <button type="button" onClick={onOpenTimeline} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            <Clock3 size={15} />
-            Activity
+        <div className="flex flex-col gap-2 xl:w-[280px]">
+          <button type="button" onClick={reviewRequirements} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800">
+            Review Requirements
+            <ArrowRight size={15} />
           </button>
           <div className="relative">
-            <button type="button" onClick={() => setMoreOpen((open) => !open)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-haspopup="menu" aria-expanded={moreOpen}>
+            <button type="button" onClick={() => setMoreOpen((open) => !open)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-haspopup="menu" aria-expanded={moreOpen}>
+              More actions
               <MoreVertical size={15} />
-              More
             </button>
             {moreOpen ? (
               <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 text-sm font-semibold text-slate-700 shadow-xl" role="menu">
-                <button type="button" onClick={() => { setMoreOpen(false); onOpenTimeline?.() }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50" role="menuitem">
+                <button type="button" onClick={() => { setMoreOpen(false); onRunCommand?.('activity') }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50" role="menuitem">
                   <Clock3 size={15} />
-                  View timeline
+                  View activity
                 </button>
                 <button type="button" onClick={() => { setMoreOpen(false); onDelete?.() }} className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-left text-red-600 hover:bg-red-50" role="menuitem">
                   <Trash2 size={15} />
@@ -2625,103 +2676,122 @@ function BuyerJourneyCommandRow({ row, onNavigate, onConvert }) {
   const command = getBuyerWorkspaceCommand(row)
   const deal = command.snapshot || getBuyerDealSnapshot(row)
   const missing = command.blockers?.length ? command.blockers : ['No major blocker visible']
-  const toneClass = command.tone === 'green'
-    ? 'border-emerald-100 bg-emerald-50/70'
-    : command.tone === 'blue'
-      ? 'border-blue-100 bg-blue-50/70'
-      : 'border-amber-100 bg-amber-50/70'
-  const runCommand = () => {
-    if (command.actionId === 'convert') onConvert?.()
-    else onNavigate?.(command.actionId || 'overview')
+  const reviewRequirements = () => onNavigate?.('requirements')
+  const addViewing = () => onNavigate?.('appointments')
+  const prepareTransaction = () => {
+    if (deal.latestTransaction) {
+      onConvert?.()
+      return
+    }
+    onConvert?.()
   }
+
   return (
-    <section className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)_minmax(280px,0.75fr)]">
-      <article className={`rounded-2xl border p-5 shadow-sm ${toneClass}`}>
+    <section className="grid gap-4 lg:grid-cols-3">
+      <article className="rounded-[24px] border border-amber-100 bg-[linear-gradient(180deg,rgba(255,248,230,0.98),rgba(255,255,255,0.98))] p-6 shadow-[0_16px_36px_rgba(15,23,42,0.05)]">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-              <AlertTriangle size={15} className={command.tone === 'green' ? 'text-emerald-600' : command.tone === 'blue' ? 'text-blue-600' : 'text-amber-600'} />
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-600">
+              <AlertTriangle size={15} />
               Next Best Action
             </p>
             <h2 className="mt-3 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{command.title}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">{command.copy}</p>
           </div>
-          <button type="button" onClick={runCommand} className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
-            {command.actionLabel}
-          </button>
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-amber-100 bg-white text-amber-600 shadow-sm">
+            <FileText size={18} />
+          </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {missing.map((item) => (
-            <span key={item} className="inline-flex min-h-8 items-center rounded-full bg-white/80 px-3 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">{item}</span>
+            <span key={item} className="inline-flex min-h-8 items-center rounded-full bg-white/90 px-3 text-xs font-semibold text-slate-700 ring-1 ring-amber-100">{item}</span>
           ))}
         </div>
+        <button type="button" onClick={reviewRequirements} className="mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800">
+          Review Requirements
+          <ArrowRight size={15} />
+        </button>
       </article>
 
-      <article className={`${panelClass} p-5`}>
+      <article className={`${buyerWorkspaceCardClass} p-6`}>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Deal Path</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-500">Deal Path</p>
             <h2 className="mt-2 text-lg font-semibold tracking-[-0.035em] text-slate-950">Viewing and offer state</h2>
           </div>
           <StatusPill tone={deal.offerStateTone}>{deal.offerStateLabel}</StatusPill>
         </div>
-        <dl className="mt-4 grid gap-2 text-sm">
-          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+        <dl className="mt-5 grid gap-2 text-sm">
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+            <dt className="font-semibold text-slate-500">Current state</dt>
+            <dd className="truncate text-right font-semibold text-slate-950">{deal.offerStateLabel}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
             <dt className="font-semibold text-slate-500">Latest viewing</dt>
             <dd className="truncate text-right font-semibold text-slate-950">{deal.latestViewing ? getAppointmentDateLabel(deal.latestViewing) : 'No viewing logged'}</dd>
           </div>
-          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
             <dt className="font-semibold text-slate-500">Latest offer</dt>
             <dd className="truncate text-right font-semibold text-slate-950">{deal.latestOffer ? formatCurrency(getOfferAmount(deal.latestOffer)) : 'No offer yet'}</dd>
           </div>
-          <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-            <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Current offer state</dt>
-            <dd className="mt-1 text-sm font-semibold text-slate-950">{deal.offerStateLabel}</dd>
-            <p className="mt-1 text-xs leading-5 text-slate-500">{deal.offerStateHelper}</p>
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+            <dt className="font-semibold text-slate-500">Buyer readiness</dt>
+            <dd className="truncate text-right font-semibold text-slate-950">{command.tone === 'green' ? 'Ready' : command.tone === 'blue' ? 'In progress' : 'Requirements incomplete'}</dd>
           </div>
         </dl>
+        <button type="button" onClick={addViewing} className="mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          Add viewing
+        </button>
       </article>
 
-      <article className={`${panelClass} overflow-hidden p-5`}>
-        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+      <article className={`${buyerWorkspaceCardClass} p-6`}>
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-violet-500">
           <Home size={15} />
           Transaction
         </p>
-        <div className="mt-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="line-clamp-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">{deal.transactionStateLabel}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">{deal.transactionStateHelper}</p>
-          </div>
-          <StatusPill tone={deal.transactionStateTone}>{deal.latestTransaction ? 'Linked' : 'Pending'}</StatusPill>
-        </div>
-        <dl className="mt-4 grid gap-2 text-sm">
-          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+        <h2 className="mt-3 text-2xl font-semibold tracking-[-0.045em] text-slate-950">{deal.latestTransaction ? deal.transactionStateLabel : 'No transaction yet'}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-500">A transaction appears once there is a real accepted offer.</p>
+        <dl className="mt-5 grid gap-2 text-sm">
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
             <dt className="font-semibold text-slate-500">Client mode</dt>
             <dd className="truncate text-right font-semibold text-slate-950">{deal.intakeLabel}</dd>
           </div>
-          <div className="flex justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
             <dt className="font-semibold text-slate-500">Transaction link</dt>
             <dd className="truncate text-right font-semibold text-slate-950">{deal.transactionId || 'Not created'}</dd>
           </div>
-          <div className="rounded-xl bg-slate-50 px-3 py-2.5">
-            <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Practical note</dt>
-            <dd className="mt-1 text-sm font-semibold text-slate-950">
-              {deal.intakePreference === 'hard_copy'
-                ? 'Paper-led client path'
-                : deal.intakePreference === 'agent_assisted'
-                  ? 'Agent-assisted client path'
-                  : 'Digital client path'}
-            </dd>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              {deal.intakePreference === 'hard_copy'
-                ? 'Keep the workflow moving even when signatures and onboarding happen offline.'
-                : deal.intakePreference === 'agent_assisted'
-                  ? 'The agent can step in and capture the process without forcing the buyer through self-service.'
-                  : 'The portal flow is available end to end when the buyer is comfortable using it.'}
-            </p>
+          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+            <dt className="font-semibold text-slate-500">Status</dt>
+            <dd className="truncate text-right font-semibold text-slate-950">{deal.latestTransaction ? 'Linked' : 'Pending'}</dd>
           </div>
         </dl>
+        <button type="button" onClick={prepareTransaction} className="mt-6 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-700 hover:bg-violet-50">
+          Prepare transaction
+        </button>
       </article>
+    </section>
+  )
+}
+
+function BuyerUpcomingAppointmentsCard({ row, onViewAll }) {
+  const appointments = getBuyerUpcomingAppointments(row)
+  return (
+    <section className={buyerWorkspaceCardClass}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Upcoming Appointments</h2>
+          <p className="mt-1 text-sm text-slate-500">The next buyer appointments in the pipeline.</p>
+        </div>
+        <button type="button" onClick={onViewAll} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">View all</button>
+      </div>
+      <div className="mt-5 grid gap-3">
+        {appointments.length ? appointments.map((appointment) => (
+          <article key={appointment.id || appointment.appointmentId || appointment.appointment_id || `${appointment.title || 'appointment'}-${appointment.dateTime || appointment.date_time || appointment.date || appointment.createdAt || appointment.created_at || ''}`} className="rounded-2xl bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-950">{appointment.title || appointment.subject || appointment.appointmentType || 'Appointment'}</p>
+            <p className="mt-1 text-sm text-slate-500">{formatDateTime(appointment.dateTime || appointment.date_time || appointment.startsAt || appointment.starts_at || appointment.date || appointment.appointmentDate || appointment.appointment_date || appointment.createdAt || appointment.created_at)}</p>
+          </article>
+        )) : <EmptyState title="No appointments scheduled" copy="Schedule a viewing or meeting to move the buyer forward." actionLabel="Schedule appointment" onAction={onViewAll} />}
+      </div>
     </section>
   )
 }
@@ -2729,19 +2799,83 @@ function BuyerJourneyCommandRow({ row, onNavigate, onConvert }) {
 function BuyerLeadOverview({ row, workspace = {}, sourceInfo, onNavigate }) {
   const requirement = getBuyerPrimaryRequirement(row)
   const lastActivity = getBuyerLastActivity(row)
+  const captureSource = formatCleanValue(sourceInfo?.leadSource || row.source || 'WhatsApp')
+  const captureEvent = {
+    id: 'lead-captured',
+    activityType: 'Lead captured',
+    title: `Lead captured via ${captureSource}`,
+    summary: `Buyer journey created from ${captureSource}.`,
+    createdAt: row.createdAt || row.created_at || lastActivity?.date || new Date().toISOString(),
+    occurredAt: row.createdAt || row.created_at || lastActivity?.date || new Date().toISOString(),
+  }
   return (
-    <div className="section-stack">
-      <section className="card-grid buyer-overview-grid">
-        <BuyerSnapshotCard row={row} requirement={requirement} onEdit={() => onNavigate('property_match')} />
-        <BuyerLeadStatusCard row={row} sourceInfo={sourceInfo} lastActivity={lastActivity} />
-        <BuyerActivityOverviewCard row={row} workspace={workspace} />
-      </section>
+    <section className="grid gap-4 xl:grid-cols-3">
+      <BuyerOverviewRecentActivityCard
+        row={row}
+        sourceInfo={sourceInfo}
+        timeline={[captureEvent, ...(workspace.timeline || row.communicationTimeline || [])]}
+        onViewAll={() => onNavigate('activity')}
+      />
+      <BuyerTasksDueCard tasks={row.tasks || []} onAddTask={() => onNavigate('tasks')} />
+      <BuyerUpcomingAppointmentsCard row={row} onViewAll={() => onNavigate('appointments')} />
+      <BuyerSnapshotCard row={row} requirement={requirement} onEdit={() => onNavigate('property_match')} />
+      <BuyerLeadStatusCard row={row} sourceInfo={sourceInfo} lastActivity={lastActivity} />
+      <BuyerActivityOverviewCard row={row} workspace={workspace} />
+    </section>
+  )
+}
 
-      <section className="card-grid buyer-overview-lower-grid">
-        <BuyerOverviewRecentActivityCard row={row} timeline={workspace.timeline || row.communicationTimeline || []} onViewAll={() => onNavigate('timeline')} />
-        <BuyerTasksDueCard tasks={row.tasks || []} onAddTask={() => onNavigate('tasks')} />
-      </section>
-    </div>
+function BuyerLeadDocumentsTab({ row }) {
+  const readiness = getBuyerDocumentReadiness(row)
+  const documents = getBuyerDocumentItems(row)
+  return (
+    <section className={`${buyerWorkspaceCardClass} p-6`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Documents</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-slate-950">Buyer document centre</h2>
+          <p className="mt-2 text-sm text-slate-500">Track uploaded, missing, and in-review buyer documents without changing the underlying document flow.</p>
+        </div>
+        <StatusPill tone={readiness.tone}>{readiness.percent}% complete</StatusPill>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <BuyerInfoRow label="Complete" value={`${readiness.complete}/${readiness.total}`} />
+        <BuyerInfoRow label="Outstanding" value={readiness.missing?.length ? readiness.missing.length : Math.max(readiness.total - readiness.complete, 0)} />
+        <BuyerInfoRow label="Uploaded" value={readiness.complete} />
+        <BuyerInfoRow label="State" value={readiness.label} />
+      </div>
+
+      <div className="mt-6 grid gap-3">
+        {documents.length ? documents.map((document) => {
+          const isComplete = ['uploaded', 'approved', 'complete', 'completed', 'verified', 'received'].includes(document.status)
+          const href = document.url || document.link || ''
+          return (
+            <article key={document.id} className="flex flex-col gap-3 rounded-2xl bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-950">{document.label}</h3>
+                  <StatusPill tone={isComplete ? 'green' : 'amber'}>{formatCleanValue(document.status || 'Missing')}</StatusPill>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">{document.note || document.source || 'Buyer document requirement'}</p>
+                {document.uploadedAt ? <p className="mt-1 text-xs font-semibold text-slate-400">Uploaded {formatDateTime(document.uploadedAt)}</p> : null}
+              </div>
+              {href ? (
+                <a href={href} target={href.startsWith('http') ? '_blank' : undefined} rel={href.startsWith('http') ? 'noreferrer' : undefined} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  Download
+                </a>
+              ) : (
+                <span className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-400">
+                  No file
+                </span>
+              )}
+            </article>
+          )
+        }) : (
+          <EmptyState title="No buyer documents yet" copy="Uploaded buyer documents will appear here once linked to this lead." />
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -11356,12 +11490,18 @@ function AgentLeadWorkspace() {
     ]
     : [
       { key: 'overview', label: 'Overview' },
+      { key: 'requirements', label: 'Requirements' },
       { key: 'property_match', label: 'Property Match' },
-      { key: 'timeline', label: 'Timeline' },
-      { key: 'tasks', label: 'Tasks' },
+      { key: 'activity', label: 'Activity' },
       { key: 'appointments', label: 'Appointments' },
       { key: 'offers', label: 'Offers' },
+      { key: 'documents', label: 'Documents' },
+      { key: 'tasks', label: 'Tasks' },
     ], [isSellerLeadWorkspace])
+  const visibleBuyerTabs = useMemo(
+    () => tabs.filter((tab) => tab.key !== 'tasks'),
+    [tabs],
+  )
 
   useEffect(() => {
     if (!row) return
@@ -11730,15 +11870,23 @@ function AgentLeadWorkspace() {
       convertBuyerLead()
       return
     }
+    if (actionId === 'property_match') {
+      setActiveTab('requirements')
+      return
+    }
+    if (actionId === 'timeline') {
+      setActiveTab('activity')
+      return
+    }
+    if (actionId === 'tasks') {
+      setActiveTab('tasks')
+      return
+    }
     setActiveTab(actionId || 'overview')
   }, [convertBuyerLead])
 
   return (
     <main className={pageShell}>
-      <button type="button" onClick={() => navigate('/pipeline/leads')} className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
-        <ArrowLeft size={15} />
-        Back to leads
-      </button>
       {loading ? <LoadingSkeleton lines={10} className={panelClass} /> : null}
       {error && !loading ? <EmptyState title="Lead workspace could not be loaded" copy={error} /> : null}
       {!loading && !error && !row ? <EmptyState title="Lead not found" copy="This lead was not returned by the existing lead repository for the selected workspace." /> : null}
@@ -11773,122 +11921,141 @@ function AgentLeadWorkspace() {
               onArchiveLead={archiveSellerLead}
             />
           ) : (
-            <div className="buyer-lead-workspace">
+            <div className="buyer-lead-workspace space-y-4">
               <BuyerLeadHeader
                 row={row}
                 sourceInfo={sourceInfo}
                 leadScore={getBuyerLeadScore(row, workspaceAnalytics)}
                 lastActivity={getBuyerLastActivity(row)}
-                onOpenTimeline={() => setActiveTab('timeline')}
+                onBack={() => navigate('/pipeline/leads')}
                 onDelete={deleteCurrentLead}
                 onRunCommand={runBuyerWorkspaceAction}
               />
 
-              <BuyerJourneyCommandRow
-                row={row}
-                onNavigate={setActiveTab}
-                onConvert={convertBuyerLead}
+              <LeadSectionMenu
+                tabs={visibleBuyerTabs}
+                activeTab={activeTab}
+                onChange={setActiveTab}
               />
 
-              <BuyerOutreachProgress
-                row={row}
-                onLogOutreach={() => setActiveTab('timeline')}
-                onMarkReachedOut={markBuyerReachedOut}
-                onAddViewing={() => setActiveTab('appointments')}
-                onOpenAppointments={() => setActiveTab('appointments')}
-                onOpenOffers={() => setActiveTab('offers')}
-                onConvert={convertBuyerLead}
-              />
+              {activeTab === 'overview' ? (
+                <>
+                  <BuyerOutreachProgress
+                    row={row}
+                    onLogOutreach={() => setActiveTab('activity')}
+                    onMarkReachedOut={markBuyerReachedOut}
+                    onAddViewing={() => setActiveTab('appointments')}
+                    onOpenAppointments={() => setActiveTab('appointments')}
+                    onOpenOffers={() => setActiveTab('offers')}
+                    onConvert={convertBuyerLead}
+                  />
 
-              <nav className={`${panelClass} buyer-workspace-tabs flex gap-2 overflow-x-auto p-2`} aria-label="Lead workspace tabs">
-                {tabs.map((tab) => (
-                  <button key={tab.key} type="button" onClick={() => setActiveTab(tab.key)} className={`buyer-workspace-tab min-h-10 rounded-xl px-3 text-sm font-semibold ${activeTab === tab.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
-                    {tab.label}
-                  </button>
-                ))}
-              </nav>
+                  <BuyerJourneyCommandRow
+                    row={row}
+                    onNavigate={runBuyerWorkspaceAction}
+                    onConvert={convertBuyerLead}
+                  />
 
-              <div className="tab-content">
-                {activeTab === 'overview' ? (
                   <BuyerLeadOverview
                     row={row}
                     workspace={data || {}}
                     sourceInfo={sourceInfo}
-                    onNavigate={setActiveTab}
+                    onNavigate={runBuyerWorkspaceAction}
                   />
-                ) : null}
+                </>
+              ) : null}
 
-                {activeTab === 'property_match' ? (
-                  <BuyerPropertyMatchPanel
-                    organisationId={organisationId}
-                    row={row}
-                    workspace={data || {}}
-                    actor={actor}
-                    onSaved={loadWorkspace}
-                    onShare={setShareDraft}
-                  />
-                ) : null}
+              {activeTab === 'requirements' ? (
+                <LeadRequirementsPanel
+                  organisationId={organisationId}
+                  lead={row}
+                  requirements={data?.requirements || row.requirements || []}
+                  actor={actor}
+                  onSaved={loadWorkspace}
+                  title="Requirements"
+                  description="Buyer search brief and qualification criteria."
+                />
+              ) : null}
 
-                {activeTab === 'timeline' ? (
-                  <CommunicationTimelinePanel
-                    organisationId={organisationId}
-                    lead={row}
-                    actor={actor}
-                    timeline={data?.timeline || row.communicationTimeline || []}
-                    onSaved={loadWorkspace}
-                  />
-                ) : null}
+              {activeTab === 'property_match' ? (
+                <BuyerPropertyMatchPanel
+                  organisationId={organisationId}
+                  row={row}
+                  workspace={data || {}}
+                  actor={actor}
+                  onSaved={loadWorkspace}
+                  onShare={setShareDraft}
+                />
+              ) : null}
 
-                {activeTab === 'tasks' ? (
-                  <section className={buyerWorkspaceCardClass}>
-                    <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Tasks</h2>
-                    <TaskForm organisationId={organisationId} leadId={row.leadId} actor={actor} onSaved={loadWorkspace} />
-                    <div className="mt-5"><TaskList items={row.tasks} /></div>
-                  </section>
-                ) : null}
+              {activeTab === 'activity' ? (
+                <CommunicationTimelinePanel
+                  organisationId={organisationId}
+                  lead={row}
+                  actor={actor}
+                  timeline={data?.timeline || row.communicationTimeline || []}
+                  onSaved={loadWorkspace}
+                />
+              ) : null}
 
-                {activeTab === 'appointments' ? (
-                  <LeadAppointmentsPanel
-                    organisationId={organisationId}
-                    lead={row}
-                    actor={actor}
-                    onSaved={loadWorkspace}
-                  />
-                ) : null}
+              {activeTab === 'appointments' ? (
+                <LeadAppointmentsPanel
+                  organisationId={organisationId}
+                  lead={row}
+                  actor={actor}
+                  onSaved={loadWorkspace}
+                />
+              ) : null}
 
-                {activeTab === 'offers' ? (
-                  <section className={buyerWorkspaceCardClass}>
-                    <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Offers / Transactions</h2>
-                    <div className="mt-5 grid gap-5">
-                      <LeadOfferReadinessPanel
-                        organisationId={organisationId}
-                        lead={row}
-                        actor={actor}
-                        onSaved={loadWorkspace}
-                      />
-                      <LeadOfferTransactionConversionPanel
-                        organisationId={organisationId}
-                        lead={row}
-                        actor={actor}
-                        onSaved={loadWorkspace}
-                      />
-                      <LeadOfferEdgeCasesPanel
-                        organisationId={organisationId}
-                        lead={row}
-                        actor={actor}
-                        onSaved={loadWorkspace}
-                      />
-                      <LeadTransactionHandoffPanel
-                        organisationId={organisationId}
-                        lead={row}
-                        actor={actor}
-                        onSaved={loadWorkspace}
-                      />
-                      <OfferTransactionList offers={row.offers} transactions={row.transactions} convertedTransactionId={row.convertedTransactionId} />
-                    </div>
-                  </section>
-                ) : null}
-              </div>
+              {activeTab === 'offers' ? (
+                <section className={buyerWorkspaceCardClass}>
+                  <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Offers / Transactions</h2>
+                  <div className="mt-5 grid gap-5">
+                    <LeadOfferReadinessPanel
+                      organisationId={organisationId}
+                      lead={row}
+                      actor={actor}
+                      onSaved={loadWorkspace}
+                    />
+                    <LeadOfferTransactionConversionPanel
+                      organisationId={organisationId}
+                      lead={row}
+                      actor={actor}
+                      onSaved={loadWorkspace}
+                    />
+                    <LeadOfferEdgeCasesPanel
+                      organisationId={organisationId}
+                      lead={row}
+                      actor={actor}
+                      onSaved={loadWorkspace}
+                    />
+                    <LeadTransactionHandoffPanel
+                      organisationId={organisationId}
+                      lead={row}
+                      actor={actor}
+                      onSaved={loadWorkspace}
+                    />
+                    <OfferTransactionList offers={row.offers} transactions={row.transactions} convertedTransactionId={row.convertedTransactionId} />
+                  </div>
+                </section>
+              ) : null}
+
+              {activeTab === 'documents' ? (
+                <BuyerLeadDocumentsTab
+                  row={row}
+                  workspace={data || {}}
+                  onNavigate={runBuyerWorkspaceAction}
+                />
+              ) : null}
+
+              {activeTab === 'tasks' ? (
+                <section className={buyerWorkspaceCardClass}>
+                  <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Tasks</h2>
+                  <TaskForm organisationId={organisationId} leadId={row.leadId} actor={actor} onSaved={loadWorkspace} />
+                  <div className="mt-5"><TaskList items={row.tasks} /></div>
+                </section>
+              ) : null}
+
             </div>
           )}
         </>
