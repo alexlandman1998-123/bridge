@@ -2464,6 +2464,7 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
   const nextStep = steps.find((step) => !step.done)
   const currentStepIndex = Math.max(0, steps.findIndex((step) => !step.done))
   const progress = Math.round((completedCount / Math.max(steps.length, 1)) * 100)
+  const primaryActionLabel = workingKey ? 'Updating...' : 'Mark reached out'
 
   async function runPrimaryAction() {
     const handler = onMarkReachedOut || onLogOutreach
@@ -2480,32 +2481,35 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
   }
 
   return (
-    <section className={`${buyerWorkspaceCardClass} overflow-hidden`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Lead Progress</p>
-          <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
-            <h2 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">Buyer journey</h2>
-            <span className="text-sm font-semibold text-slate-500">{completedCount} of {steps.length} complete</span>
+    <section className={`${buyerWorkspaceCardClass} overflow-hidden p-6`}>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Lead Progress</p>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{completedCount} of {steps.length} complete</span>
           </div>
-          <p className="mt-2 text-sm text-slate-500">
-            Next step: <span className="font-semibold text-slate-700">{nextStep?.label || 'Keep nurturing this buyer'}</span>.
-          </p>
+          <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
+            <h2 className="text-2xl font-semibold text-slate-950">Buyer journey</h2>
+            <p className="text-sm font-semibold text-slate-500">
+              Next: <span className="text-slate-800">{nextStep?.label || 'Keep nurturing this buyer'}</span>
+            </p>
+          </div>
+          <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={runPrimaryAction} disabled={Boolean(workingKey)} className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-950 px-4.5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300">
-            {workingKey ? 'Updating...' : 'Mark reached out'}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2 lg:min-w-[220px]">
+          <button type="button" onClick={runPrimaryAction} disabled={Boolean(workingKey)} className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.14)] transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300">
+            {primaryActionLabel}
           </button>
+          <p className="mt-2 px-2 text-center text-xs font-medium text-slate-500">Advance the next buyer touchpoint.</p>
         </div>
-      </div>
-      <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
       </div>
       {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
-      <div className="mt-5 overflow-x-auto pb-2">
-        <div className="min-w-[920px]">
-          <div className="relative flex items-start gap-3">
-            <div className="absolute left-6 right-6 top-5 h-px bg-slate-200" aria-hidden="true" />
+      <div className="mt-7 overflow-x-auto pb-2">
+        <div className="min-w-[940px]">
+          <div className="relative grid grid-cols-6 gap-4">
+            <div className="absolute left-10 right-10 top-5 h-px bg-slate-200" aria-hidden="true" />
             {steps.map((step, index) => {
               const isCurrent = index === currentStepIndex && !step.done
               const isDone = step.done
@@ -2516,14 +2520,13 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
                   : 'border-slate-200 bg-white text-slate-400'
               const labelClass = isDone || isCurrent ? 'text-slate-950' : 'text-slate-500'
               return (
-                <div key={step.key} className="relative z-10 flex min-w-0 flex-1 flex-col items-center text-center">
-                  <span className={`flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold ${circleClass}`}>
+                <div key={step.key} className="relative z-10 min-w-0 text-center" title={step.hint}>
+                  <span className={`mx-auto flex h-10 w-10 items-center justify-center rounded-full border text-sm font-semibold ${circleClass}`}>
                     {isDone ? <CheckCircle2 size={15} /> : index + 1}
                   </span>
                   <div className="mt-3 min-w-0">
-                    <p className={`truncate text-sm font-semibold ${labelClass}`}>{step.label}</p>
-                    <p className="mt-1 text-xs font-medium text-slate-500">{step.meta}</p>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">{step.hint}</p>
+                    <p className={`text-sm font-semibold leading-5 ${labelClass}`}>{step.label}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">{step.meta}</p>
                   </div>
                 </div>
               )
@@ -2538,7 +2541,7 @@ function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddView
 function LeadSectionMenu({ tabs = [], activeTab = 'overview', onChange }) {
   return (
     <section className={`${buyerWorkspaceCardClass} p-2`}>
-      <nav className="flex gap-2 overflow-x-auto" aria-label="Lead section tabs" role="tablist">
+      <nav className="grid auto-cols-fr grid-flow-col gap-2 overflow-x-auto lg:grid-flow-row lg:grid-cols-7" aria-label="Lead section tabs" role="tablist">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key
           return (
@@ -2548,7 +2551,7 @@ function LeadSectionMenu({ tabs = [], activeTab = 'overview', onChange }) {
               role="tab"
               aria-selected={isActive}
               onClick={() => onChange?.(tab.key)}
-              className={`min-h-11 shrink-0 rounded-2xl px-4 text-sm font-semibold transition ${
+              className={`min-h-12 min-w-[150px] rounded-2xl px-4 text-center text-sm font-semibold transition lg:min-w-0 ${
                 isActive
                   ? 'bg-slate-950 text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]'
                   : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'
