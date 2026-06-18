@@ -1077,6 +1077,168 @@ function getBuyerPropertyReadiness(row = {}) {
   }
 }
 
+function getBuyerFinancePositionLabel(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
+  const financeType = formatCleanValue(requirement.financeType || requirement.finance_type || row.financeType || row.finance_type)
+  if (financeType !== '—') return financeType
+  const financeStatus = getBuyerFinanceReadiness(row)
+  return financeStatus.label === 'Finance Unknown' ? 'Not confirmed' : financeStatus.label
+}
+
+function getBuyerUrgencyLabel(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
+  return getBuyerTimelineLabel(requirement) || formatCleanValue(row.urgency || row.timeline || row.moveInTimeline || row.move_in_timeline)
+}
+
+function getBuyerCurrentPropertyLabel(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
+  return formatCleanValue(
+    requirement.currentProperty ||
+      requirement.current_property ||
+      requirement.currentPropertyStatus ||
+      requirement.current_property_status ||
+      row.currentProperty ||
+      row.current_property ||
+      row.currentPropertyStatus ||
+      row.current_property_status,
+  )
+}
+
+function getBuyerNeedsToSellLabel(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
+  const value = requirement.needsToSell ?? requirement.needs_to_sell ?? row.needsToSell ?? row.needs_to_sell
+  if (value === true) return 'Yes'
+  if (value === false) return 'No'
+  const text = normalizeText(value || requirement.currentPropertyStatus || requirement.current_property_status || row.currentPropertyStatus || row.current_property_status).toLowerCase()
+  if (!text) return '—'
+  if (['yes', 'true', 'needs to sell', 'sell first', 'selling'].some((token) => text.includes(token))) return 'Yes'
+  if (['no', 'false', 'renting', 'first time', 'none'].some((token) => text.includes(token))) return 'No'
+  return titleCaseLabel(text)
+}
+
+function getBuyerNextTask(row = {}) {
+  return (Array.isArray(row.tasks) ? row.tasks : [])
+    .filter((task) => String(task.status || '').toLowerCase() !== 'completed')
+    .sort((left, right) => new Date(left.dueDate || left.due_date || 0).getTime() - new Date(right.dueDate || right.due_date || 0).getTime())[0] || null
+}
+
+function getDaysSinceDate(value) {
+  const date = readDate(value)
+  if (!date) return null
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 86_400_000))
+}
+
+function getBuyerFollowUpSummary(row = {}, leadScore = 0) {
+  const lastActivity = getBuyerLastActivity(row)
+  const nextTask = getBuyerNextTask(row)
+  const daysSince = getDaysSinceDate(lastActivity?.date)
+  return {
+    lastContact: lastActivity?.date ? formatDate(lastActivity.date) : 'No contact logged',
+    nextFollowUp: nextTask?.dueDate || nextTask?.due_date ? formatDateTime(nextTask.dueDate || nextTask.due_date) : 'Not scheduled',
+    daysSinceContact: daysSince === null ? '—' : `${daysSince} day${daysSince === 1 ? '' : 's'}`,
+    temperature: getIntentLabel(leadScore),
+  }
+}
+
+function getBuyerMatchSummary(row = {}, workspace = {}) {
+  const propertyOptions = getLeadAppointmentPropertyOptions(row)
+  const listingInterests = [
+    ...(Array.isArray(workspace.listingInterests) ? workspace.listingInterests : []),
+    ...(Array.isArray(row.listingInterests) ? row.listingInterests : []),
+  ]
+  const suggestions = [
+    ...(Array.isArray(workspace.suggestions) ? workspace.suggestions : []),
+    ...(Array.isArray(row.suggestions) ? row.suggestions : []),
+  ]
+  const merged = [...propertyOptions, ...listingInterests, ...suggestions]
+  const unique = new Map()
+  merged.filter(Boolean).forEach((item, index) => {
+    const key = item.id || item.listingId || item.listing_id || item.propertyId || item.property_id || item.address || `match-${index}`
+    unique.set(key, item)
+  })
+  const matches = [...unique.values()]
+  const scoreFor = (item = {}) => toFiniteNumber(item.matchScore ?? item.match_score ?? item.score ?? item.compatibilityScore ?? item.compatibility_score)
+  const high = matches.filter((item) => {
+    const score = scoreFor(item)
+    const label = normalizeText(item.matchQuality || item.match_quality || item.tier || item.status).toLowerCase()
+    return score >= 80 || label.includes('high')
+  }).length
+  const medium = matches.filter((item) => {
+    const score = scoreFor(item)
+    const label = normalizeText(item.matchQuality || item.match_quality || item.tier || item.status).toLowerCase()
+    return (score >= 55 && score < 80) || label.includes('medium')
+  }).length
+  const low = Math.max(matches.length - high - medium, 0)
+  return {
+    total: matches.length,
+    high,
+    medium,
+    low,
+  }
+}
+
+function getBuyerViewingSummary(row = {}) {
+  const viewings = (Array.isArray(row.appointments) ? row.appointments : [])
+    .filter(isViewingAppointment)
+    .sort((left, right) => new Date(left.dateTime || left.date_time || left.startsAt || left.starts_at || left.date || left.appointmentDate || left.appointment_date || left.createdAt || left.created_at || 0).getTime() - new Date(right.dateTime || right.date_time || right.startsAt || right.starts_at || right.date || right.appointmentDate || right.appointment_date || right.createdAt || right.created_at || 0).getTime())
+  const completed = viewings.filter((item) => String(item.status || '').toLowerCase() === 'completed' || item.completedAt || item.completed_at)
+  const upcoming = viewings.find((item) => !['completed', 'cancelled', 'no_show'].includes(String(item.status || '').toLowerCase()))
+  return {
+    count: viewings.length,
+    upcoming,
+    completed: completed[completed.length - 1] || null,
+  }
+}
+
+function getBuyerHumanTimelineItems(row = {}, workspace = {}, sourceInfo = {}) {
+  const captureSource = formatCleanValue(sourceInfo?.leadSource || row.source || 'WhatsApp')
+  const rawItems = [
+    {
+      id: 'lead-captured',
+      title: `Lead received from ${captureSource}`,
+      description: `Buyer journey created from ${captureSource}.`,
+      date: row.createdAt || row.created_at,
+      type: 'lead',
+      actor: 'System',
+    },
+    ...(Array.isArray(workspace.timeline) ? workspace.timeline : []),
+    ...(Array.isArray(row.communicationTimeline) ? row.communicationTimeline : []),
+    ...(Array.isArray(row.activities) ? row.activities : []),
+    ...(Array.isArray(row.appointments) ? row.appointments : []).map((appointment) => ({
+      ...appointment,
+      title: isViewingAppointment(appointment) ? 'Viewing scheduled' : appointment.title || 'Appointment scheduled',
+      description: appointment.location || appointment.address || appointment.notes || appointment.summary || 'Buyer appointment logged.',
+      type: 'viewing',
+      date: appointment.dateTime || appointment.date_time || appointment.startsAt || appointment.starts_at || appointment.date || appointment.appointmentDate || appointment.appointment_date || appointment.createdAt || appointment.created_at,
+    })),
+    ...(Array.isArray(row.offers) ? row.offers : []).map((offer) => ({
+      ...offer,
+      title: 'Offer discussed',
+      description: getOfferAmount(offer) ? `Offer value ${formatCurrency(getOfferAmount(offer))}.` : 'Buyer offer activity logged.',
+      type: 'offer',
+      date: offer.createdAt || offer.created_at || offer.updatedAt || offer.updated_at,
+    })),
+  ]
+  const systemTokens = ['webhook', 'automation', 'background', 'queue', 'sync', 'canonical', 'packet generated', 'document generated', 'edge function']
+  const humanTokens = ['call', 'phone', 'whatsapp', 'message', 'sms', 'email', 'note', 'meeting', 'viewing', 'appointment', 'offer', 'feedback', 'contact', 'spoke', 'follow', 'budget', 'requirement', 'lead received']
+  return rawItems
+    .map((item, index) => {
+      const date = item.date || getLatestActivityDate(item) || item.occurredAt || item.occurred_at || item.createdAt || item.created_at || item.updatedAt || item.updated_at
+      const title = formatCleanValue(item.title || item.activityType || item.activity_type || item.communicationType || item.communication_type || item.kind || item.type)
+      const description = normalizeText(item.description || item.summary || item.message || item.subject || item.activityNote || item.activity_note || item.notes || item.note)
+      const haystack = `${title} ${description} ${item.type || ''} ${item.kind || ''}`.toLowerCase()
+      return {
+        id: item.id || item.activityId || item.activity_id || `timeline-${index}`,
+        title,
+        description: description || 'Buyer interaction logged.',
+        date,
+        actor: formatCleanValue(item.actorName || item.actor_name || item.createdByName || item.created_by_name || item.createdBy || item.created_by || item.actor),
+        isSystemNoise: systemTokens.some((token) => haystack.includes(token)),
+        isHumanSignal: item.id === 'lead-captured' || humanTokens.some((token) => haystack.includes(token)),
+        tone: haystack.includes('viewing') ? 'violet' : haystack.includes('whatsapp') || haystack.includes('message') ? 'green' : haystack.includes('offer') ? 'amber' : 'blue',
+      }
+    })
+    .filter((item) => item.date && !Number.isNaN(new Date(item.date).getTime()) && item.isHumanSignal && !item.isSystemNoise)
+    .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime())
+    .slice(0, 6)
+}
+
 function getBuyerWorkspaceCommand(row = {}) {
   const deal = getBuyerDealSnapshot(row)
   const steps = getBuyerOutreachSteps(row)
@@ -1243,7 +1405,7 @@ function getBuyerWorkspaceCommand(row = {}) {
       title: 'Finance position needs confirmation',
       copy: finance.helper,
       actionLabel: 'Review Requirements',
-      actionId: 'property_match',
+      actionId: 'requirements',
       tone: 'amber',
       blockers: finance.missing,
       snapshot: deal,
@@ -1273,11 +1435,11 @@ function getBuyerWorkspaceCommand(row = {}) {
   }
   if (nextStep) {
     const actionMap = {
-      reached_out: ['Contact buyer', 'timeline'],
-      viewing_scheduled: ['Schedule Viewing', 'appointments'],
-      viewing_completed: ['Review Viewing', 'appointments'],
-      offer_made: ['Open Offers', 'offers'],
-      transaction_created: ['Convert Lead', 'convert'],
+      qualified: ['Confirm Finance', 'requirements'],
+      needs_matched: ['View Matches', 'property_match'],
+      viewing: ['Schedule Viewing', 'appointments'],
+      offer: ['Open Offers', 'offers'],
+      won: ['Open Transaction', 'convert'],
     }
     const [actionLabel, actionId] = actionMap[nextStep.key] || ['Review Timeline', 'timeline']
     return {
@@ -2433,79 +2595,66 @@ function buildAppointmentCreateMessage(result = {}, draft = {}, isViewing = fals
 
 function getBuyerOutreachSteps(row = {}) {
   const safeRow = row || {}
-  const ownershipStatus = normalizeText(safeRow.ownershipStatus || safeRow.ownership_status).toLowerCase()
   const appointments = (Array.isArray(safeRow.appointments) ? safeRow.appointments : []).filter(Boolean)
   const viewings = appointments.filter(isViewingAppointment)
   const scheduledViewings = viewings.filter((item) => !['cancelled', 'completed', 'no_show'].includes(String(item.status || '').toLowerCase()))
   const completedViewings = viewings.filter((item) => String(item.status || '').toLowerCase() === 'completed' || item.completedAt || item.completed_at)
-  const timeline = (Array.isArray(safeRow.communicationTimeline) ? safeRow.communicationTimeline : []).filter(Boolean)
-  const outreachLogged = Boolean(safeRow.firstContactedAt || safeRow.first_contacted_at || ownershipStatus === 'contacted' || timeline.some((item) => {
-    const haystack = `${item.activityType || item.activity_type || ''} ${item.communicationType || item.communication_type || ''} ${item.title || ''}`.toLowerCase()
-    return ['call', 'email', 'whatsapp', 'meeting', 'outreach', 'contacted'].some((token) => haystack.includes(token))
-  }))
   const offers = (Array.isArray(safeRow.offers) ? safeRow.offers : []).filter(Boolean)
   const transactions = (Array.isArray(safeRow.transactions) ? safeRow.transactions : []).filter(Boolean)
+  const finance = getBuyerFinanceReadiness(safeRow)
+  const property = getBuyerPropertyReadiness(safeRow)
+  const requirement = getBuyerPrimaryRequirement(safeRow)
+  const hasRequirement = getBuyerBudgetLabel(safeRow, requirement) !== '—' || getBuyerAreaLabel(safeRow, requirement) !== '—' || getBuyerPropertyTypeLabel(safeRow, requirement) !== '—'
+  const qualified = hasRequirement && finance.score >= 45
+  const hasMatches = property.propertyCount > 0
+  const won = Boolean(
+    safeRow.convertedTransactionId ||
+      safeRow.converted_transaction_id ||
+      transactions.length ||
+      offers.some((offer) => ['accepted', 'won', 'signed'].includes(String(offer.status || offer.offerStatus || offer.offer_status || '').toLowerCase())),
+  )
 
   return [
-    { key: 'captured', label: 'Lead captured', done: true, meta: formatDate(safeRow.createdAt || safeRow.created_at, 'Captured'), hint: 'Created automatically when the enquiry lands.' },
-    { key: 'reached_out', label: 'Reached out', done: outreachLogged, meta: outreachLogged ? 'Logged' : 'Pending', hint: 'Mark first contact after calling, emailing, or messaging.' },
-    { key: 'viewing_scheduled', label: 'Viewing scheduled', done: viewings.length > 0, meta: scheduledViewings.length ? `${scheduledViewings.length} scheduled` : 'None yet', hint: 'Add one or more viewing appointments for this buyer.' },
-    { key: 'viewing_completed', label: 'Viewing completed', done: completedViewings.length > 0, meta: completedViewings.length ? `${completedViewings.length} completed` : 'Pending', hint: 'Complete a viewing appointment after it happens.' },
-    { key: 'offer_made', label: 'Offer made', done: offers.length > 0, meta: offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'}` : 'No offer', hint: 'Create or link an offer when the buyer is ready.' },
-    { key: 'transaction_created', label: 'Transaction created', done: Boolean(safeRow.convertedTransactionId || safeRow.converted_transaction_id || transactions.length), meta: transactions.length ? `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}` : 'Not created', hint: 'Convert the lead once there is a real transaction.' },
+    { key: 'captured', label: 'Lead Captured', done: true, meta: formatDate(safeRow.createdAt || safeRow.created_at, 'Captured'), hint: 'Created automatically when the enquiry lands.' },
+    { key: 'qualified', label: 'Qualified', done: qualified, meta: qualified ? 'Confirmed' : 'Pending', hint: 'Confirm finance, budget, and search requirements.' },
+    { key: 'needs_matched', label: 'Needs Matched', done: hasMatches, meta: hasMatches ? `${property.propertyCount} matches` : 'In progress', hint: 'Match this buyer to suitable listings.' },
+    { key: 'viewing', label: 'Viewing', done: viewings.length > 0, meta: completedViewings.length ? `${completedViewings.length} completed` : scheduledViewings.length ? `${scheduledViewings.length} scheduled` : 'None yet', hint: 'Schedule and complete viewings.' },
+    { key: 'offer', label: 'Offer', done: offers.length > 0, meta: offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'}` : 'No offer', hint: 'Create an offer when the buyer is ready.' },
+    { key: 'won', label: 'Won', done: won, meta: won ? 'Transaction linked' : 'Not won', hint: 'Won appears after accepted offer or transaction creation.' },
   ]
 }
 
-function BuyerOutreachProgress({ row, onLogOutreach, onMarkReachedOut, onAddViewing, onOpenAppointments, onOpenOffers, onConvert }) {
+function BuyerOutreachProgress({ row }) {
   const steps = getBuyerOutreachSteps(row)
-  const [workingKey, setWorkingKey] = useState('')
-  const [error, setError] = useState('')
   const completedCount = steps.filter((step) => step.done).length
   const nextStep = steps.find((step) => !step.done)
   const currentStepIndex = Math.max(0, steps.findIndex((step) => !step.done))
   const progress = Math.round((completedCount / Math.max(steps.length, 1)) * 100)
-  const primaryActionLabel = workingKey ? 'Updating...' : 'Mark reached out'
-
-  async function runPrimaryAction() {
-    const handler = onMarkReachedOut || onLogOutreach
-    if (!handler) return
-    try {
-      setWorkingKey('reached_out')
-      setError('')
-      await handler()
-    } catch (actionError) {
-      setError(actionError?.message || 'Unable to update outreach progress.')
-    } finally {
-      setWorkingKey('')
-    }
-  }
 
   return (
     <section className={`${buyerWorkspaceCardClass} overflow-hidden p-6`}>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Lead Progress</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Buyer Journey</p>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{completedCount} of {steps.length} complete</span>
           </div>
           <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
-            <h2 className="text-2xl font-semibold text-slate-950">Buyer journey</h2>
+            <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">Progress to offer</h2>
             <p className="text-sm font-semibold text-slate-500">
-              Next: <span className="text-slate-800">{nextStep?.label || 'Keep nurturing this buyer'}</span>
+              Next: <span className="text-slate-800">{nextStep?.label || 'Ready for transaction follow-through'}</span>
             </p>
           </div>
           <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
             <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
           </div>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2 lg:min-w-[220px]">
-          <button type="button" onClick={runPrimaryAction} disabled={Boolean(workingKey)} className="inline-flex min-h-12 w-full items-center justify-center whitespace-nowrap rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.14)] transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300">
-            {primaryActionLabel}
-          </button>
-          <p className="mt-2 px-2 text-center text-xs font-medium text-slate-500">Advance the next buyer touchpoint.</p>
+        <div className="rounded-3xl border border-blue-100 bg-blue-50/70 px-5 py-4 text-sm font-semibold text-blue-800 lg:min-w-[220px]">
+          <p className="text-xs uppercase tracking-[0.14em] text-blue-500">Current focus</p>
+          <p className="mt-1 text-base text-slate-950">{nextStep?.label || 'Offer outcome'}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{nextStep?.hint || 'Keep the buyer moving through the offer path.'}</p>
         </div>
       </div>
-      {error ? <p className="mt-3 text-sm font-semibold text-red-600">{error}</p> : null}
       <div className="mt-7 overflow-x-auto pb-2">
         <div className="min-w-[940px]">
           <div className="relative grid grid-cols-6 gap-4">
@@ -2585,10 +2734,8 @@ function BuyerHeaderStatusBlock({ icon, label, value, tone = 'slate', helper = '
 function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onBack, onDelete, onRunCommand }) {
   const [moreOpen, setMoreOpen] = useState(false)
   const capturedDate = formatDate(row.createdAt || row.created_at, 'No created date')
-  const stageLabel = formatCleanValue(row.stage || row.status || 'New Lead')
   const sourceLabel = formatCleanValue(sourceInfo?.leadSource || row.source || 'WhatsApp')
-  const assignedAgent = getOwnerName(row)
-  const reviewRequirements = () => onRunCommand?.('requirements')
+  const preferredChannel = formatCleanValue(row.preferredChannel || row.preferred_channel || row.channel || 'WhatsApp')
   return (
     <header className={`${buyerWorkspaceCardClass} overflow-visible`}>
       <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-4">
@@ -2596,10 +2743,27 @@ function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onBack, onD
           <ArrowLeft size={15} />
           Back to leads
         </button>
-        {lastActivity?.date ? <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Last activity {formatRelativeTime(lastActivity.date)}</span> : null}
+        <div className="relative">
+          <button type="button" onClick={() => setMoreOpen((open) => !open)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-haspopup="menu" aria-expanded={moreOpen}>
+            More actions
+            <MoreVertical size={15} />
+          </button>
+          {moreOpen ? (
+            <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 text-sm font-semibold text-slate-700 shadow-xl" role="menu">
+              <button type="button" onClick={() => { setMoreOpen(false); onRunCommand?.('activity') }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50" role="menuitem">
+                <Clock3 size={15} />
+                View activity
+              </button>
+              <button type="button" onClick={() => { setMoreOpen(false); onDelete?.() }} className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-left text-red-600 hover:bg-red-50" role="menuitem">
+                <Trash2 size={15} />
+                Delete lead
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_auto] xl:items-start">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.9fr)] xl:items-start">
         <div className="flex min-w-0 gap-4">
           <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[28px] bg-slate-950 text-2xl font-semibold text-white shadow-[0_18px_34px_rgba(15,23,42,0.18)]">
             {getInitials(row.name)}
@@ -2607,48 +2771,22 @@ function BuyerLeadHeader({ row, sourceInfo, leadScore, lastActivity, onBack, onD
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill tone="blue">Buyer Journey</StatusPill>
-              <StatusPill tone={stageLabel.toLowerCase().includes('new') ? 'green' : 'blue'}>New Lead</StatusPill>
               <StatusPill tone={leadScore >= 65 ? 'green' : 'amber'}>{getIntentLabel(leadScore)}</StatusPill>
+              <StatusPill tone="blue">Lead Score {leadScore}</StatusPill>
             </div>
             <h1 className="mt-3 break-words text-3xl font-semibold tracking-[-0.05em] text-slate-950">{row.name}</h1>
             <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-slate-600">
               <span className="inline-flex items-center gap-1.5"><Phone size={15} />{row.phone || 'No phone'}</span>
               <span className="inline-flex items-center gap-1.5"><Mail size={15} />{row.email || 'No email'}</span>
-              <span className="inline-flex items-center gap-1.5"><Tag size={15} />{sourceLabel}</span>
-              <span className="inline-flex items-center gap-1.5"><MessageSquarePlus size={15} />WhatsApp</span>
+              <span className="inline-flex items-center gap-1.5"><MessageSquarePlus size={15} />{preferredChannel}</span>
             </div>
           </div>
         </div>
 
-        <div className="grid gap-3 border-l border-slate-100 pl-0 xl:pl-6">
+        <div className="grid gap-3 sm:grid-cols-3 xl:border-l xl:border-slate-100 xl:pl-6">
           <BuyerHeaderStatusBlock icon={CalendarDays} label="Lead Captured" value={capturedDate} tone="slate" />
           <BuyerHeaderStatusBlock icon={Tag} label="Source" value={sourceLabel} tone="blue" />
-          <BuyerHeaderStatusBlock icon={UserRound} label="Assigned Agent" value={assignedAgent} tone={assignedAgent === 'Unassigned' ? 'amber' : 'green'} />
-        </div>
-
-        <div className="flex flex-col gap-2 xl:w-[280px]">
-          <button type="button" onClick={reviewRequirements} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800">
-            Review Requirements
-            <ArrowRight size={15} />
-          </button>
-          <div className="relative">
-            <button type="button" onClick={() => setMoreOpen((open) => !open)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" aria-haspopup="menu" aria-expanded={moreOpen}>
-              More actions
-              <MoreVertical size={15} />
-            </button>
-            {moreOpen ? (
-              <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 text-sm font-semibold text-slate-700 shadow-xl" role="menu">
-                <button type="button" onClick={() => { setMoreOpen(false); onRunCommand?.('activity') }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-slate-50" role="menuitem">
-                  <Clock3 size={15} />
-                  View activity
-                </button>
-                <button type="button" onClick={() => { setMoreOpen(false); onDelete?.() }} className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-left text-red-600 hover:bg-red-50" role="menuitem">
-                  <Trash2 size={15} />
-                  Delete lead
-                </button>
-              </div>
-            ) : null}
-          </div>
+          <BuyerHeaderStatusBlock icon={Clock3} label="Last Activity" value={lastActivity?.date ? formatRelativeTime(lastActivity.date) : 'No activity'} tone={lastActivity?.date ? 'green' : 'amber'} helper={lastActivity?.date ? formatDate(lastActivity.date) : ''} />
         </div>
       </div>
     </header>
@@ -2799,31 +2937,302 @@ function BuyerUpcomingAppointmentsCard({ row, onViewAll }) {
   )
 }
 
-function BuyerLeadOverview({ row, workspace = {}, sourceInfo, onNavigate }) {
-  const requirement = getBuyerPrimaryRequirement(row)
-  const lastActivity = getBuyerLastActivity(row)
-  const captureSource = formatCleanValue(sourceInfo?.leadSource || row.source || 'WhatsApp')
-  const captureEvent = {
-    id: 'lead-captured',
-    activityType: 'Lead captured',
-    title: `Lead captured via ${captureSource}`,
-    summary: `Buyer journey created from ${captureSource}.`,
-    createdAt: row.createdAt || row.created_at || lastActivity?.date || new Date().toISOString(),
-    occurredAt: row.createdAt || row.created_at || lastActivity?.date || new Date().toISOString(),
+function BuyerProfileCard({ row, requirement, onEdit }) {
+  const profileRows = [
+    { icon: Banknote, label: 'Budget', value: getBuyerBudgetLabel(row, requirement) },
+    { icon: CreditCard, label: 'Finance', value: getBuyerFinancePositionLabel(row, requirement) },
+    { icon: BadgeCheck, label: 'Pre Qualified', value: getBuyerPreQualifiedLabel(requirement) },
+    { icon: Home, label: 'Property Type', value: getBuyerPropertyTypeLabel(row, requirement) },
+    { icon: Home, label: 'Bedrooms', value: getBuyerBedroomLabel(row, requirement) },
+    { icon: Shield, label: 'Bathrooms', value: getBuyerBathroomLabel(row, requirement) },
+    { icon: MapPin, label: 'Areas', value: getBuyerAreaLabel(row, requirement) },
+    { icon: Clock3, label: 'Urgency', value: getBuyerUrgencyLabel(row, requirement) },
+    { icon: Building2, label: 'Current Property', value: getBuyerCurrentPropertyLabel(row, requirement) },
+    { icon: Tag, label: 'Needs To Sell', value: getBuyerNeedsToSellLabel(row, requirement) },
+  ]
+  return (
+    <section className={`${buyerWorkspaceCardClass} p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">
+            <UserRound size={15} />
+            Buyer Profile
+          </p>
+          <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">Qualification snapshot</h2>
+        </div>
+        <button type="button" onClick={onEdit} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          Edit
+        </button>
+      </div>
+      <dl className="mt-5 divide-y divide-slate-100">
+        {profileRows.map((item) => (
+          <div key={item.label} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] gap-3 py-3 first:pt-0 last:pb-0">
+            <dt className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-500">
+              {createElement(item.icon, { size: 15, className: 'shrink-0 text-slate-400' })}
+              <span className="truncate">{item.label}</span>
+            </dt>
+            <dd className="min-w-0 text-right text-sm font-semibold text-slate-950">{item.value || '—'}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
+function BuyerNextBestActionV2Card({ row, onNavigate, onConvert }) {
+  const command = getBuyerWorkspaceCommand(row)
+  const action = () => {
+    if (command.actionId === 'convert') {
+      onConvert?.()
+      return
+    }
+    onNavigate?.(command.actionId || 'requirements')
   }
   return (
-    <section className="grid gap-4 xl:grid-cols-3">
-      <BuyerOverviewRecentActivityCard
-        row={row}
-        sourceInfo={sourceInfo}
-        timeline={[captureEvent, ...(workspace.timeline || row.communicationTimeline || [])]}
-        onViewAll={() => onNavigate('activity')}
-      />
-      <BuyerTasksDueCard tasks={row.tasks || []} onAddTask={() => onNavigate('tasks')} />
-      <BuyerUpcomingAppointmentsCard row={row} onViewAll={() => onNavigate('appointments')} />
-      <BuyerSnapshotCard row={row} requirement={requirement} onEdit={() => onNavigate('property_match')} />
-      <BuyerLeadStatusCard row={row} sourceInfo={sourceInfo} lastActivity={lastActivity} />
-      <BuyerActivityOverviewCard row={row} workspace={workspace} />
+    <section className="relative overflow-hidden rounded-[28px] border border-amber-100 bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.18),transparent_34%),linear-gradient(180deg,#FFFBEB,#FFFFFF)] p-7 shadow-[0_20px_42px_rgba(15,23,42,0.08)]">
+      <div className="absolute right-5 top-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-100 bg-white/85 text-amber-600 shadow-sm">
+        <AlertTriangle size={22} />
+      </div>
+      <div className="max-w-[82%]">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">Next Action</p>
+        <h2 className="mt-4 text-3xl font-semibold leading-tight tracking-[-0.055em] text-slate-950">{command.title}</h2>
+        <p className="mt-3 text-base leading-7 text-slate-600">{command.copy}</p>
+      </div>
+      {command.blockers?.length ? (
+        <div className="mt-6 flex flex-wrap gap-2">
+          {command.blockers.slice(0, 3).map((blocker) => (
+            <span key={blocker} className="rounded-full border border-amber-100 bg-white/80 px-3 py-1.5 text-xs font-semibold text-amber-800">
+              {blocker}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <button type="button" onClick={action} className="mt-7 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] hover:bg-slate-800">
+        {command.actionLabel || 'Take action'}
+        <ArrowRight size={16} />
+      </button>
+    </section>
+  )
+}
+
+function BuyerFollowUpCentreCard({ row, leadScore, onNavigate }) {
+  const summary = getBuyerFollowUpSummary(row, leadScore)
+  const quickActions = [
+    { label: 'Log Call', icon: Phone, action: 'activity' },
+    { label: 'Log WhatsApp', icon: MessageSquarePlus, action: 'activity' },
+    { label: 'Schedule Viewing', icon: CalendarDays, action: 'appointments' },
+    { label: 'Send Listings', icon: Home, action: 'property_match' },
+  ]
+  return (
+    <section className={`${buyerWorkspaceCardClass} p-5`}>
+      <div>
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <Phone size={15} />
+          Follow-Up Centre
+        </p>
+        <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">Stay in touch</h2>
+        <p className="mt-1 text-sm text-slate-500">Consistency converts interest into viewings and offers.</p>
+      </div>
+      <dl className="mt-5 grid grid-cols-2 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+        <div className="border-b border-r border-slate-200 p-3">
+          <dt className="text-xs font-semibold text-slate-500">Last Contact</dt>
+          <dd className="mt-1 text-sm font-semibold text-slate-950">{summary.lastContact}</dd>
+        </div>
+        <div className="border-b border-slate-200 p-3">
+          <dt className="text-xs font-semibold text-slate-500">Next Follow-Up</dt>
+          <dd className="mt-1 text-sm font-semibold text-slate-950">{summary.nextFollowUp}</dd>
+        </div>
+        <div className="border-r border-slate-200 p-3">
+          <dt className="text-xs font-semibold text-slate-500">Days Since Contact</dt>
+          <dd className="mt-1 text-sm font-semibold text-slate-950">{summary.daysSinceContact}</dd>
+        </div>
+        <div className="p-3">
+          <dt className="text-xs font-semibold text-slate-500">Buyer Temperature</dt>
+          <dd className="mt-1 text-sm font-semibold text-amber-600">{summary.temperature}</dd>
+        </div>
+      </dl>
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        {quickActions.map((item) => (
+          <button key={item.label} type="button" onClick={() => onNavigate?.(item.action)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            {createElement(item.icon, { size: 15 })}
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function BuyerRelationshipTimelineCard({ row, workspace, sourceInfo, onViewAll }) {
+  const items = getBuyerHumanTimelineItems(row, workspace, sourceInfo)
+  const toneClass = (tone) => tone === 'green'
+    ? 'bg-emerald-500'
+    : tone === 'violet'
+      ? 'bg-violet-500'
+      : tone === 'amber'
+        ? 'bg-amber-500'
+        : 'bg-blue-500'
+  return (
+    <section className={`${buyerWorkspaceCardClass} p-6`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Relationship Timeline</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-slate-950">Human interactions</h2>
+          <p className="mt-1 text-sm text-slate-500">Calls, messages, viewings, notes, and offer conversations only.</p>
+        </div>
+        <button type="button" onClick={onViewAll} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">View all</button>
+      </div>
+      <div className="mt-6">
+        {items.length ? (
+          <ol className="relative grid gap-0 before:absolute before:left-5 before:top-5 before:h-[calc(100%-40px)] before:w-px before:bg-slate-200">
+            {items.map((item) => (
+              <li key={item.id} className="relative grid grid-cols-[44px_minmax(0,1fr)] gap-3 pb-5 last:pb-0">
+                <span className={`relative z-10 mt-1 flex h-10 w-10 items-center justify-center rounded-full text-white shadow-sm ${toneClass(item.tone)}`}>
+                  <MessageSquarePlus size={16} />
+                </span>
+                <article className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-950">{item.title}</h3>
+                    <span className="text-xs font-semibold text-blue-600">{formatDateTime(item.date)}</span>
+                  </div>
+                  <p className="mt-1 text-sm leading-5 text-slate-600">{item.description}</p>
+                  <p className="mt-2 text-xs font-semibold text-slate-400">{item.actor && item.actor !== '—' ? item.actor : 'Logged interaction'}</p>
+                </article>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <EmptyState title="No human interactions yet" copy="Calls, WhatsApps, notes, viewings, and offer conversations will appear here." actionLabel="Log activity" onAction={onViewAll} />
+        )}
+      </div>
+    </section>
+  )
+}
+
+function BuyerPropertyMatchCard({ row, workspace, onNavigate }) {
+  const summary = getBuyerMatchSummary(row, workspace)
+  const total = Math.max(summary.total, 0)
+  const highWidth = total ? Math.round((summary.high / total) * 100) : 0
+  const mediumWidth = total ? Math.round((summary.medium / total) * 100) : 0
+  const lowWidth = Math.max(0, 100 - highWidth - mediumWidth)
+  return (
+    <section className={`${buyerWorkspaceCardClass} p-6`}>
+      <div>
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <Home size={15} />
+          Property Match
+        </p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <strong className="text-5xl font-semibold tracking-[-0.065em] text-slate-950">{total}</strong>
+          <span className="pb-2 text-sm font-semibold text-slate-500">matching properties</span>
+        </div>
+        <p className="mt-1 text-sm text-slate-500">Updated from requirements and available listings.</p>
+      </div>
+      <div className="mt-6 overflow-hidden rounded-full bg-slate-100">
+        <div className="flex h-3">
+          <span className="bg-emerald-500" style={{ width: `${highWidth}%` }} />
+          <span className="bg-blue-500" style={{ width: `${mediumWidth}%` }} />
+          <span className="bg-violet-500" style={{ width: `${lowWidth}%` }} />
+        </div>
+      </div>
+      <dl className="mt-5 grid gap-2">
+        {[
+          ['High match', summary.high, 'bg-emerald-500'],
+          ['Medium match', summary.medium, 'bg-blue-500'],
+          ['Low match', summary.low, 'bg-violet-500'],
+        ].map(([label, value, dotClass]) => (
+          <div key={label} className="flex items-center justify-between gap-3 text-sm font-semibold">
+            <dt className="inline-flex items-center gap-2 text-slate-600"><span className={`h-2.5 w-2.5 rounded-full ${dotClass}`} />{label}</dt>
+            <dd className="text-slate-950">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        <button type="button" onClick={() => onNavigate?.('property_match')} className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700">View Matches</button>
+        <button type="button" onClick={() => onNavigate?.('property_match')} className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Send To Buyer</button>
+      </div>
+    </section>
+  )
+}
+
+function BuyerViewingPipelineCard({ row, onNavigate }) {
+  const viewing = getBuyerViewingSummary(row)
+  const activeViewing = viewing.upcoming || viewing.completed
+  const isCompleted = Boolean(!viewing.upcoming && viewing.completed)
+  return (
+    <section className={`${buyerWorkspaceCardClass} p-6`}>
+      <div>
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <CalendarDays size={15} />
+          Viewing Pipeline
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.045em] text-slate-950">
+          {activeViewing ? (isCompleted ? 'Latest viewing completed' : 'Viewing scheduled') : 'No viewing scheduled'}
+        </h2>
+      </div>
+      <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-500 shadow-sm">
+          <CalendarDays size={22} />
+        </span>
+        {activeViewing ? (
+          <>
+            <p className="mt-4 text-lg font-semibold text-slate-950">{getAppointmentDateLabel(activeViewing)}</p>
+            <p className="mt-1 text-sm text-slate-500">{activeViewing.location || activeViewing.address || activeViewing.title || 'Buyer viewing'}</p>
+            <StatusPill tone={isCompleted ? 'green' : 'blue'}>{isCompleted ? 'Feedback due' : 'Upcoming'}</StatusPill>
+          </>
+        ) : (
+          <>
+            <p className="mt-4 text-lg font-semibold text-slate-950">No viewing scheduled</p>
+            <p className="mt-1 text-sm text-slate-500">Schedule a viewing to move this buyer toward an offer.</p>
+          </>
+        )}
+      </div>
+      <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        <button type="button" onClick={() => onNavigate?.('appointments')} className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700">Schedule Viewing</button>
+        <button type="button" onClick={() => onNavigate?.('appointments')} className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">View All Viewings</button>
+      </div>
+    </section>
+  )
+}
+
+function BuyerTransactionSummaryCard({ row, onConvert }) {
+  const deal = getBuyerDealSnapshot(row)
+  if (!deal.acceptedOffer && !deal.latestTransaction) return null
+  return (
+    <section className={`${buyerWorkspaceCardClass} border-violet-100 bg-violet-50/40 p-6`}>
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-violet-600">
+        <Home size={15} />
+        Transaction
+      </p>
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-[-0.045em] text-slate-950">{deal.transactionStateLabel || 'Transaction ready'}</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{deal.transactionStateHelper || 'A transaction summary appears once the buyer reaches accepted-offer stage.'}</p>
+        </div>
+        <button type="button" onClick={onConvert} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-violet-600 px-5 text-sm font-semibold text-white hover:bg-violet-700">
+          Open Transaction
+          <ArrowRight size={15} />
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function BuyerLeadOverview({ row, workspace = {}, sourceInfo, leadScore = 0, onNavigate, onConvert }) {
+  const requirement = getBuyerPrimaryRequirement(row)
+  return (
+    <section className="grid gap-4">
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
+        <BuyerNextBestActionV2Card row={row} onNavigate={onNavigate} onConvert={onConvert} />
+        <BuyerProfileCard row={row} requirement={requirement} onEdit={() => onNavigate('requirements')} />
+        <BuyerFollowUpCentreCard row={row} leadScore={leadScore} onNavigate={onNavigate} />
+      </div>
+      <BuyerRelationshipTimelineCard row={row} workspace={workspace} sourceInfo={sourceInfo} onViewAll={() => onNavigate('activity')} />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <BuyerPropertyMatchCard row={row} workspace={workspace} onNavigate={onNavigate} />
+        <BuyerViewingPipelineCard row={row} onNavigate={onNavigate} />
+      </div>
+      <BuyerTransactionSummaryCard row={row} onConvert={onConvert} />
     </section>
   )
 }
@@ -11873,7 +12282,7 @@ function AgentLeadWorkspace() {
       convertBuyerLead()
       return
     }
-    if (actionId === 'property_match') {
+    if (actionId === 'requirements') {
       setActiveTab('requirements')
       return
     }
@@ -11943,27 +12352,15 @@ function AgentLeadWorkspace() {
 
               {activeTab === 'overview' ? (
                 <>
-                  <BuyerOutreachProgress
-                    row={row}
-                    onLogOutreach={() => setActiveTab('activity')}
-                    onMarkReachedOut={markBuyerReachedOut}
-                    onAddViewing={() => setActiveTab('appointments')}
-                    onOpenAppointments={() => setActiveTab('appointments')}
-                    onOpenOffers={() => setActiveTab('offers')}
-                    onConvert={convertBuyerLead}
-                  />
-
-                  <BuyerJourneyCommandRow
-                    row={row}
-                    onNavigate={runBuyerWorkspaceAction}
-                    onConvert={convertBuyerLead}
-                  />
+                  <BuyerOutreachProgress row={row} />
 
                   <BuyerLeadOverview
                     row={row}
                     workspace={data || {}}
                     sourceInfo={sourceInfo}
+                    leadScore={getBuyerLeadScore(row, workspaceAnalytics)}
                     onNavigate={runBuyerWorkspaceAction}
+                    onConvert={convertBuyerLead}
                   />
                 </>
               ) : null}
