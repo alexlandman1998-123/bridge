@@ -134,5 +134,9 @@ export function isCommercialNavItemAvailable(item = {}, scope = null) {
   if ((item.to === '/commercial/canvassing' || item.to === '/commercial/leasing/canvassing' || item.to === '/commercial/sales/canvassing') && scope?.commercialCanvassingEnabled === false) {
     return false
   }
+  const path = String(item.to || '')
+  if ((path.startsWith('/commercial/agency') || path === '/commercial/reports') && scope?.canManageBrokerage === false) {
+    return false
+  }
   return true
 }

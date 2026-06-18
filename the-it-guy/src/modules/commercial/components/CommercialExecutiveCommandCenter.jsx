@@ -741,13 +741,13 @@ function CommercialTransactionHealth({ mode, stages = [], loading = false }) {
   )
 }
 
-function CommercialAgencyPerformance({ mode, conversionSeries = [], loading = false }) {
+function CommercialAgencyPerformance({ mode, conversionSeries = [], loading = false, brokerView = false }) {
   const current = conversionSeries.at(-1)?.value || 0
   return (
     <section className={`${PANEL_CLASS} p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#0f2748]">Agency Performance</h2>
+          <h2 className="text-[17px] font-semibold tracking-[-0.02em] text-[#0f2748]">{brokerView ? 'Your Performance' : 'Agency Performance'}</h2>
           <p className="mt-1 text-[12px] text-[#66768a]">{mode === 'sales' ? 'Seller/Buyer lead to sale conversion.' : 'Landlord/Tenant lead to deal conversion.'}</p>
         </div>
         <div className="rounded-[12px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2 text-right">
@@ -1322,6 +1322,8 @@ export default function CommercialExecutiveCommandCenter({
     () => data?.financialSummary || summary.financialSummary || EMPTY_OBJECT,
     [data?.financialSummary, summary],
   )
+  const viewerScope = useMemo(() => data?.viewerScope || EMPTY_OBJECT, [data?.viewerScope])
+  const brokerView = viewerScope.scopeLevel === 'broker'
 
   const isFreshCommercialWorkspace = useMemo(
     () => buildFreshWorkspaceState(summary, data || {}),
@@ -1402,7 +1404,7 @@ export default function CommercialExecutiveCommandCenter({
 
       <section className="grid gap-4 xl:grid-cols-2">
         <CommercialTransactionHealth mode={dashboardMode} stages={modeStages} loading={loading} />
-        <CommercialAgencyPerformance mode={dashboardMode} conversionSeries={modeConversionSeries} loading={loading} />
+        <CommercialAgencyPerformance mode={dashboardMode} conversionSeries={modeConversionSeries} loading={loading} brokerView={brokerView} />
       </section>
 
       <CommercialTransactionFlow stages={modeStages} mode={dashboardMode} loading={loading} />
@@ -1411,7 +1413,7 @@ export default function CommercialExecutiveCommandCenter({
 
       <section className="grid gap-4 xl:grid-cols-3">
         <CommercialAttentionRequired rows={attentionRows} loading={loading} />
-        <CommercialTopPerformers rows={modeTopPerformers} loading={loading} />
+        {brokerView ? null : <CommercialTopPerformers rows={modeTopPerformers} loading={loading} />}
         <CommercialCommissionForecast metrics={forecastMetrics} loading={loading} />
       </section>
 

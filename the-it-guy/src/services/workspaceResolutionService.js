@@ -44,6 +44,7 @@ const INVALID_SERVICE_WORKSPACE_IDS = new Set([
   'local',
   'local-workspace',
 ])
+const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -51,6 +52,20 @@ function normalizeText(value) {
 
 function normalizeEmail(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function parseObject(value) {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+  return {}
 }
 
 function isMissingTableError(error, tableName = '') {
@@ -211,6 +226,27 @@ function sortMemberships(left, right) {
   return leftKey.localeCompare(rightKey)
 }
 
+function isCommercialBrokerMembership(membership = {}) {
+  const metadata = parseObject(membership.moduleMetadata || membership.module_metadata || membership.raw?.module_metadata || membership.raw?.metadata)
+  const moduleContext = normalizeText(
+    membership.moduleContext ||
+      membership.module_context ||
+      membership.raw?.module_context ||
+      metadata.module_context ||
+      metadata.module,
+  ).toLowerCase()
+  const commercialRole = normalizeText(
+    metadata.commercial_role ||
+      metadata.commercialRole ||
+      metadata.broker_role ||
+      metadata.brokerRole,
+  ).toLowerCase()
+  if (commercialRole === 'broker' || commercialRole === 'commercial broker' || commercialRole === 'commercial_broker') return true
+  if (!COMMERCIAL_MODULE_MARKERS.has(moduleContext)) return false
+  const role = normalizeText(membership.role || membership.workspaceRole || membership.rawRole || membership.raw?.workspace_role || membership.raw?.role).toLowerCase()
+  return role === 'agent' || role === 'broker' || role === 'commercial_broker' || role.includes('broker')
+}
+
 function getWorkspacePreferenceReason({
   requestedWorkspaceId = '',
   storedWorkspaceId = '',
@@ -242,6 +278,9 @@ function selectMembership(activeMemberships = [], { requestedWorkspaceId = '', s
     const selected = activeMemberships.find((membership) => membership.workspace && (membership.workspaceId === stored || membership.id === stored))
     if (selected) return selected
   }
+
+  const commercialBrokerMembership = activeMemberships.find((membership) => membership.workspace && isCommercialBrokerMembership(membership))
+  if (commercialBrokerMembership) return commercialBrokerMembership
 
   return [...activeMemberships].sort(sortMemberships)[0] || null
 }

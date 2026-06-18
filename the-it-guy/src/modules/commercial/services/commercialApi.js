@@ -118,6 +118,26 @@ let commercialPlatformInstallInflight = null
 
 export const COMMERCIAL_TABLES = TABLES
 
+function getCommercialMembershipMetadata(member = {}) {
+  return parseJsonObject(member.metadata || member.metadata_json || member.module_metadata || member.moduleMetadata)
+}
+
+function resolveCommercialMembershipRole(member = {}, fallback = 'viewer') {
+  const metadata = getCommercialMembershipMetadata(member)
+  const metadataRole = normalizeLower(
+    metadata.commercial_role ||
+      metadata.commercialRole ||
+      metadata.broker_role ||
+      metadata.brokerRole,
+  )
+  if (metadataRole === 'commercial broker' || metadataRole === 'broker') return 'commercial_broker'
+  if (metadataRole.startsWith('commercial_')) return metadataRole
+
+  const role = normalizeLower(member.workspace_role || member.workspaceRole || member.organisation_role || member.organisationRole || member.role || fallback)
+  if (isCommercialMembershipRow(member) && role === 'agent') return 'commercial_broker'
+  return role || normalizeLower(fallback)
+}
+
 function buildCommercialPlatformMigrationHint(missing = []) {
   const migrations = Array.from(
     new Set(
@@ -420,7 +440,7 @@ function isCommercialEnabledInOrganisationSettings(settings = {}) {
 }
 
 export function isCommercialMembershipRow(member = {}) {
-  const metadata = parseJsonObject(member.metadata || member.metadata_json || member.module_metadata || member.moduleMetadata)
+  const metadata = getCommercialMembershipMetadata(member)
   const moduleValue = normalizeLower(
     member.module_context ||
       member.moduleContext ||
@@ -434,6 +454,9 @@ export function isCommercialMembershipRow(member = {}) {
 
   const workspaceType = normalizeLower(member.workspace_type || member.workspaceType)
   if (COMMERCIAL_MODULE_MARKERS.has(workspaceType)) return true
+
+  const commercialRole = normalizeLower(metadata.commercial_role || metadata.commercialRole || metadata.broker_role || metadata.brokerRole)
+  if (commercialRole === 'broker' || commercialRole.startsWith('commercial_')) return true
 
   const role = normalizeLower(member.workspace_role || member.workspaceRole || member.organisation_role || member.organisationRole || member.role)
   return role.startsWith('commercial_') || role.includes('commercial_broker')
@@ -2006,7 +2029,7 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
     ])
     const organisationCommercialEnabled = isPlatformAdmin || Boolean(commercialModuleStatus.enabled)
     const membership = organisationCommercialEnabled ? currentMembership : null
-    const role = normalizeLower(membership?.workspace_role || membership?.organisation_role || membership?.role || context.membershipRole || 'viewer')
+    const role = resolveCommercialMembershipRole(membership, context.membershipRole || 'viewer')
     const memberHasCommercialAccess = Boolean(membership?.id && isCommercialMembershipRow(membership))
     const hasCommercialAccess = isPlatformAdmin || (organisationCommercialEnabled && memberHasCommercialAccess)
     const eligibleForCommercialSelfActivation = Boolean(
@@ -4395,13 +4418,15 @@ export async function getCommercialActivity({ organisationId, entityType, entity
 export async function getCommercialRecentActivity(organisationId, limit = 20) {
   const resolvedOrganisationId = await resolveOrganisationId(organisationId)
   if (!resolvedOrganisationId || !isSupabaseConfigured || !supabase) return []
+  const scope = await resolveCommercialAccessContext()
+  if (!scope.hasCommercialAccess) return []
 
-  const query = await supabase
+  const query = await applyCommercialScope(supabase
     .from(TABLES.activity)
     .select(SELECTS.activity)
     .eq('organisation_id', resolvedOrganisationId)
     .order('created_at', { ascending: false })
-    .limit(limit)
+    .limit(limit), 'activity', scope)
 
   if (query.error) {
     if (isMissingCommercialTableError(query.error)) return []

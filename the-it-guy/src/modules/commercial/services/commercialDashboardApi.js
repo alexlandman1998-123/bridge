@@ -591,6 +591,31 @@ function brokerKey(row = {}) {
   return normalizeText(row.userId || row.user_id || row.id)
 }
 
+function buildCommercialViewerBrokerIds(scope = {}) {
+  return new Set([
+    normalizeText(scope.userId),
+    normalizeText(scope.membership?.id),
+    normalizeText(scope.membership?.user_id),
+    normalizeText(scope.membership?.userId),
+  ].filter(Boolean))
+}
+
+function filterBrokerDirectoryForScope(brokers = [], scope = {}) {
+  if (!scope?.scopeLevel) return brokers
+  if (scope?.scopeLevel === 'organisation') return brokers
+  if (scope?.scopeLevel === 'branch' && normalizeText(scope.branchId)) {
+    return brokers.filter((broker) => normalizeText(broker.branchId || broker.branch_id || broker.primary_branch_id) === normalizeText(scope.branchId))
+  }
+  if (scope?.scopeLevel === 'team' && normalizeText(scope.teamId)) {
+    return brokers.filter((broker) => normalizeText(broker.teamId || broker.team_id) === normalizeText(scope.teamId))
+  }
+  if (scope?.scopeLevel === 'broker') {
+    const brokerIds = buildCommercialViewerBrokerIds(scope)
+    return brokers.filter((broker) => brokerIds.has(normalizeText(broker.userId || broker.user_id || broker.id)))
+  }
+  return []
+}
+
 function buildBrokerScorecards({ brokers = [], requirements = [], viewings = [], deals = [], vacancies = [], listings = [], commercialTransactions = [], commissions = [], properties = [] } = {}) {
   const brokerMap = new Map()
   brokers.forEach((broker) => {
@@ -822,9 +847,10 @@ function buildDocumentCompliance({ landlords = [], tenants = [], properties = []
   }
 }
 
-export async function getCommercialPrincipalDashboardData(organisationId) {
+export async function getCommercialPrincipalDashboardData(organisationId, accessScope = null) {
   const context = await resolveCommercialOrganisationContext()
   const resolvedOrganisationId = organisationId || context.organisationId
+  const scope = accessScope || {}
 
   if (!resolvedOrganisationId) {
     return buildCommercialPrincipalDashboardData({ organisation: context.organisation })
@@ -877,6 +903,7 @@ export async function getCommercialPrincipalDashboardData(organisationId) {
   return buildCommercialPrincipalDashboardData({
     organisationId: resolvedOrganisationId,
     organisation: context.organisation,
+    viewerScope: scope,
     companies,
     contacts,
     landlords,
@@ -896,7 +923,7 @@ export async function getCommercialPrincipalDashboardData(organisationId) {
     headsOfTerms,
     portalAccess,
     portalAudit,
-    brokers,
+    brokers: filterBrokerDirectoryForScope(brokers, scope),
   })
 }
 
@@ -923,6 +950,7 @@ export function buildCommercialPrincipalDashboardData({
   portalAccess = [],
   portalAudit = [],
   brokers = [],
+  viewerScope = {},
 } = {}) {
   const activeProperties = properties.filter(isActiveStatus)
   const activeCompanies = companies.filter((row) => !['archived', 'inactive'].includes(normalizeLower(row.status)))
@@ -1113,6 +1141,7 @@ export function buildCommercialPrincipalDashboardData({
   return {
     organisationId,
     organisation,
+    viewerScope,
     landlords,
     tenants,
     companies,

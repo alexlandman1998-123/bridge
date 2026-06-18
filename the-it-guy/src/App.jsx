@@ -77,6 +77,14 @@ function hasCommercialMembershipMarker(membership = {}) {
   )
   if (COMMERCIAL_MODULE_MARKERS.has(moduleValue)) return true
 
+  const commercialRole = normalizeRouteText(
+    metadata.commercial_role ||
+      metadata.commercialRole ||
+      metadata.broker_role ||
+      metadata.brokerRole,
+  )
+  if (commercialRole === 'broker' || commercialRole.startsWith('commercial_')) return true
+
   const workspaceType = normalizeRouteText(
     membership.workspaceType ||
       membership.workspace_type ||
@@ -99,6 +107,38 @@ function hasCommercialMembershipMarker(membership = {}) {
       metadata.role,
   )
   return role.startsWith('commercial_') || role.includes('commercial_broker')
+}
+
+function isCommercialBrokerMembership(membership = {}) {
+  const raw = membership?.raw && typeof membership.raw === 'object' ? membership.raw : {}
+  const metadata =
+    (raw.module_metadata && typeof raw.module_metadata === 'object' ? raw.module_metadata : null) ||
+    (raw.moduleMetadata && typeof raw.moduleMetadata === 'object' ? raw.moduleMetadata : null) ||
+    (raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : null) ||
+    (membership.module_metadata && typeof membership.module_metadata === 'object' ? membership.module_metadata : null) ||
+    (membership.moduleMetadata && typeof membership.moduleMetadata === 'object' ? membership.moduleMetadata : null) ||
+    (membership.metadata && typeof membership.metadata === 'object' ? membership.metadata : {}) ||
+    {}
+  const commercialRole = normalizeRouteText(
+    metadata.commercial_role ||
+      metadata.commercialRole ||
+      metadata.broker_role ||
+      metadata.brokerRole,
+  )
+  if (commercialRole === 'broker' || commercialRole === 'commercial broker' || commercialRole === 'commercial_broker') return true
+  if (!hasCommercialMembershipMarker(membership)) return false
+  const role = normalizeRouteText(
+    membership.role ||
+      membership.workspaceRole ||
+      membership.workspace_role ||
+      membership.organisationRole ||
+      membership.organisation_role ||
+      raw.workspace_role ||
+      raw.organisation_role ||
+      raw.role ||
+      metadata.role,
+  )
+  return role === 'agent' || role === 'broker' || role === 'commercial_broker' || role.includes('broker')
 }
 
 const AddDevelopmentModal = lazy(() => import('./components/AddDevelopmentModal'))
@@ -183,6 +223,7 @@ const BondRevenueManagementPage = lazy(() => import('./pages/bond/BondRevenueMan
 const BondAutomationCentrePage = lazy(() => import('./pages/bond/BondAutomationCentrePage'))
 const BondPredictiveIntelligencePage = lazy(() => import('./pages/bond/BondPredictiveIntelligencePage'))
 const CommercialLayout = lazy(() => import('./modules/commercial/components/CommercialLayout'))
+const CommercialManagerRouteGate = lazy(() => import('./modules/commercial/components/CommercialManagerRouteGate'))
 const CommercialActivityPage = lazy(() => import('./modules/commercial/pages/CommercialActivityPage'))
 const CommercialBrokerAssignmentsPage = lazy(() => import('./modules/commercial/pages/CommercialBrokerAssignmentsPage'))
 const CommercialBrokerBranchesPage = lazy(() => import('./modules/commercial/pages/CommercialBrokerBranchesPage'))
@@ -1371,24 +1412,24 @@ function AppRoutes() {
                 <Route path="viewings" element={<CommercialViewingsPage />} />
                 <Route path="hot" element={<Navigate to="/commercial/leasing?tab=heads-of-terms" replace />} />
                 <Route path="heads-of-terms" element={<Navigate to="/commercial/leasing?tab=heads-of-terms" replace />} />
-                <Route path="reports" element={<CommercialReportsPage />} />
+                <Route path="reports" element={<CommercialManagerRouteGate><CommercialReportsPage /></CommercialManagerRouteGate>} />
                 <Route path="lease-expiry-watch" element={<CommercialLeaseExpiryWatchPage />} />
                 <Route path="market-intelligence" element={<CommercialMarketIntelligencePage />} />
                 <Route path="broker-performance" element={<Navigate to="/commercial/reports" replace />} />
                 <Route path="teams" element={<CommercialBrokerTeamsPage />} />
-                <Route path="agency" element={<CommercialBrokerBranchesPage />} />
-                <Route path="agency/branches" element={<CommercialBrokerBranchesPage />} />
-                <Route path="agency/brokers" element={<CommercialBrokersPage />} />
-                <Route path="agency/brokers/:brokerId" element={<CommercialBrokersPage />} />
+                <Route path="agency" element={<CommercialManagerRouteGate><CommercialBrokerBranchesPage /></CommercialManagerRouteGate>} />
+                <Route path="agency/branches" element={<CommercialManagerRouteGate><CommercialBrokerBranchesPage /></CommercialManagerRouteGate>} />
+                <Route path="agency/brokers" element={<CommercialManagerRouteGate><CommercialBrokersPage /></CommercialManagerRouteGate>} />
+                <Route path="agency/brokers/:brokerId" element={<CommercialManagerRouteGate><CommercialBrokersPage /></CommercialManagerRouteGate>} />
                 <Route path="performance" element={<Navigate to="/commercial/agency" replace />} />
                 <Route path="performance/branches" element={<Navigate to="/commercial/agency/branches" replace />} />
                 <Route path="performance/brokers" element={<Navigate to="/commercial/agency/brokers" replace />} />
-                <Route path="brokers/overview" element={<CommercialBrokerOverviewPage />} />
+                <Route path="brokers/overview" element={<CommercialManagerRouteGate><CommercialBrokerOverviewPage /></CommercialManagerRouteGate>} />
                 <Route path="brokers" element={<Navigate to="/commercial/agency/brokers" replace />} />
-                <Route path="brokers/teams" element={<CommercialBrokerTeamsPage />} />
+                <Route path="brokers/teams" element={<CommercialManagerRouteGate><CommercialBrokerTeamsPage /></CommercialManagerRouteGate>} />
                 <Route path="brokers/branches" element={<Navigate to="/commercial/agency/branches" replace />} />
                 <Route path="brokers/performance" element={<Navigate to="/commercial/reports" replace />} />
-                <Route path="brokers/assignments" element={<CommercialBrokerAssignmentsPage />} />
+                <Route path="brokers/assignments" element={<CommercialManagerRouteGate><CommercialBrokerAssignmentsPage /></CommercialManagerRouteGate>} />
                 <Route path="brokers/:brokerId" element={<LegacyCommercialBrokerRedirect />} />
                 <Route path="docs" element={<CommercialDocumentsPage />} />
                 <Route path="documents" element={<CommercialDocumentsPage />} />
@@ -2719,7 +2760,14 @@ function ClientAwareDashboard() {
   const hasCommercialAccess =
     hasCommercialMembershipMarker(currentMembership) ||
     activeMemberships.some((membership) => hasCommercialMembershipMarker(membership))
-  if (preferredWorkspaceMode !== 'residential' && hasCommercialAccess && ['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal'].includes(role)) {
+  const hasCommercialBrokerAccess =
+    isCommercialBrokerMembership(currentMembership) ||
+    activeMemberships.some((membership) => isCommercialBrokerMembership(membership))
+  if (
+    (hasCommercialBrokerAccess || preferredWorkspaceMode !== 'residential') &&
+    hasCommercialAccess &&
+    ['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal'].includes(role)
+  ) {
     return <Navigate to="/commercial" replace />
   }
   const dashboardPermission = role === 'agent'

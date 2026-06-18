@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
-import { COMMERCIAL_NAV_SECTIONS, COMMERCIAL_NAV_ITEMS, isCommercialNavItemActive } from '../src/modules/commercial/commercialNavigation.js'
+import { COMMERCIAL_NAV_SECTIONS, COMMERCIAL_NAV_ITEMS, isCommercialNavItemActive, isCommercialNavItemAvailable } from '../src/modules/commercial/commercialNavigation.js'
 
 async function read(path) {
   return fs.readFile(new URL(path, import.meta.url), 'utf8')
@@ -14,6 +14,9 @@ assert.ok(COMMERCIAL_NAV_ITEMS.some((item) => item.to === '/commercial/agency/br
 assert.ok(COMMERCIAL_NAV_ITEMS.some((item) => item.to === '/commercial/agency/brokers'), 'Brokers should route through Commercial Agency.')
 assert.equal(isCommercialNavItemActive('/commercial/performance/branches', agencySection.items[0]), true, 'Legacy performance branch route should still activate Branches.')
 assert.equal(isCommercialNavItemActive('/commercial/brokers', agencySection.items[1]), true, 'Legacy brokers route should still activate Brokers.')
+assert.equal(isCommercialNavItemAvailable(agencySection.items[0], { canManageBrokerage: false }), false, 'Broker scope should not see Commercial Agency Branches.')
+assert.equal(isCommercialNavItemAvailable(agencySection.items[1], { canManageBrokerage: false }), false, 'Broker scope should not see Commercial Agency Brokers.')
+assert.equal(isCommercialNavItemAvailable(agencySection.items[1], { canManageBrokerage: true }), true, 'Commercial managers should still see Commercial Agency Brokers.')
 
 const appSource = await read('../src/App.jsx')
 for (const marker of [
@@ -23,9 +26,10 @@ for (const marker of [
   'WORKSPACE_SWITCHER_STORAGE_KEY',
   "preferredWorkspaceMode !== 'residential'",
   'hasCommercialMembershipMarker',
-  'path="agency" element={<CommercialBrokerBranchesPage />}',
-  'path="agency/branches" element={<CommercialBrokerBranchesPage />}',
-  'path="agency/brokers" element={<CommercialBrokersPage />}',
+  'CommercialManagerRouteGate',
+  'path="agency" element={<CommercialManagerRouteGate><CommercialBrokerBranchesPage /></CommercialManagerRouteGate>}',
+  'path="agency/branches" element={<CommercialManagerRouteGate><CommercialBrokerBranchesPage /></CommercialManagerRouteGate>}',
+  'path="agency/brokers" element={<CommercialManagerRouteGate><CommercialBrokersPage /></CommercialManagerRouteGate>}',
   'path="performance" element={<Navigate to="/commercial/agency" replace />}',
   'path="performance/brokers" element={<Navigate to="/commercial/agency/brokers" replace />}',
   'path="brokers" element={<Navigate to="/commercial/agency/brokers" replace />}',
@@ -41,6 +45,35 @@ assert.doesNotMatch(permissionRegistry, /\{ prefix: '\/commercial', appRole: APP
 const commercialApi = await read('../src/modules/commercial/services/commercialApi.js')
 for (const role of ['commercial_principal', 'commercial_admin', 'commercial_branch_manager', 'commercial_broker']) {
   assert.match(commercialApi, new RegExp(role), `Commercial access resolver should know ${role}.`)
+}
+for (const marker of [
+  'resolveCommercialMembershipRole',
+  'metadata.commercial_role',
+  "role === 'agent') return 'commercial_broker'",
+  "scope.scopeLevel === 'broker'",
+  'applyCommercialScope(supabase',
+]) {
+  assert.match(commercialApi, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Commercial API should include broker-safe scoping marker: ${marker}`)
+}
+
+const managerGate = await read('../src/modules/commercial/components/CommercialManagerRouteGate.jsx')
+for (const marker of [
+  'resolveCommercialAccessContext',
+  'scope?.canManageBrokerage === true',
+  'Broker accounts do not have agency management access.',
+  'to="/commercial"',
+]) {
+  assert.match(managerGate, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Commercial manager route gate should include ${marker}`)
+}
+
+const dashboardApi = await read('../src/modules/commercial/services/commercialDashboardApi.js')
+for (const marker of [
+  'filterBrokerDirectoryForScope',
+  "scope?.scopeLevel === 'broker'",
+  'buildCommercialViewerBrokerIds',
+  'viewerScope',
+]) {
+  assert.match(dashboardApi, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Commercial dashboard should scope broker metadata: ${marker}`)
 }
 
 const workspaceResolution = await read('../src/services/workspaceResolutionService.js')

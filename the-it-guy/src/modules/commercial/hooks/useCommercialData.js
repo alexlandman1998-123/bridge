@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { resolveCommercialOrganisationContext } from '../services/commercialApi'
+import { resolveCommercialAccessContext } from '../services/commercialApi'
 
 export function useCommercialData(fetcher, dependencies = []) {
   const [state, setState] = useState({
@@ -15,9 +15,9 @@ export function useCommercialData(fetcher, dependencies = []) {
     async function load() {
       setState((previous) => ({ ...previous, loading: true, error: '' }))
       try {
-        const context = await resolveCommercialOrganisationContext()
+        const context = await resolveCommercialAccessContext()
         const organisationId = context.organisationId || ''
-        const data = organisationId && typeof fetcher === 'function' ? await fetcher(organisationId) : null
+        const data = organisationId && typeof fetcher === 'function' ? await fetcher(organisationId, context) : null
         if (!active) return
         setState({ data, error: '', loading: false, organisationId })
       } catch (error) {

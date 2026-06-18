@@ -57,6 +57,29 @@ function isBrokerMember(member = {}) {
   return BROKER_ROLES.has(normalizeLower(member.role)) || normalizeLower(member.role).includes('broker')
 }
 
+function parseObject(value) {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
+function resolveCommercialBrokerageRole(row = {}) {
+  const metadata = parseObject(row.module_metadata || row.moduleMetadata || row.metadata)
+  const commercialRole = normalizeLower(metadata.commercial_role || metadata.commercialRole || metadata.broker_role || metadata.brokerRole)
+  if (commercialRole === 'commercial broker' || commercialRole === 'broker') return 'commercial_broker'
+  if (commercialRole.startsWith('commercial_')) return commercialRole
+  const role = normalizeLower(row.workspace_role || row.organisation_role || row.role)
+  return role === 'agent' && isCommercialMembershipRow(row) ? 'commercial_broker' : role
+}
+
 function isManagerMember(member = {}) {
   return MANAGER_ROLES.has(normalizeLower(member.role))
 }
@@ -147,7 +170,7 @@ async function listCommercialMembers(organisationId) {
     lastName: row.last_name,
     fullName: [row.first_name, row.last_name].filter(Boolean).join(' '),
     email: row.email,
-    role: row.workspace_role || row.organisation_role || row.role,
+    role: resolveCommercialBrokerageRole(row),
     status: row.status,
     invitedAt: row.invited_at,
     acceptedAt: row.accepted_at,
