@@ -19,6 +19,11 @@ const settingsUsersPage = await read('../src/pages/settings/SettingsUsersPage.js
 const agencyBranchesPage = await read('../src/pages/agency/AgencyBranchesPage.jsx')
 const inviteResolver = await read('../src/pages/InviteResolver.jsx')
 const authPage = await read('../src/pages/Auth.jsx')
+const onboardingProfileSetup = await read('../src/pages/OnboardingProfileSetup.jsx')
+const postDashboardSetup = await read('../src/pages/PostDashboardSetup.jsx')
+const settingsApi = await read('../src/lib/settingsApi.js')
+const signupIntentLib = await read('../src/lib/signupIntent.js')
+const principalClaimMigration = await read('../../supabase/migrations/202606170003_principal_claim_completion.sql')
 const workspaceInviteEmail = await read('../../supabase/functions/send-email/handlers/workspaceInvite.ts')
 const sendEmailTypes = await read('../../supabase/functions/send-email/types.ts')
 const packageJson = JSON.parse(await read('../package.json'))
@@ -28,6 +33,9 @@ for (const marker of [
   'export async function resendWorkspaceUserInvite',
   'export async function revokeWorkspaceUserInvite',
   'export async function createWorkspaceUserInvite',
+  'export async function createPrincipalClaimInvite',
+  'normalizeInviteDisplayRole',
+  'metadata.commercial_role',
   'findActiveWorkspaceUserByEmail',
   'getWorkspaceInviteById',
   'deliverWorkspaceInvite',
@@ -70,6 +78,36 @@ matches(
   /first_sent_at:\s*sentAt[\s\S]*last_sent_at:\s*sentAt/i,
   'Initial sends should record first and last sent timestamps.',
 )
+matches(
+  inviteService,
+  /\.in\('invite_type',\s*\[[\s\S]*'principal_claim_invite'[\s\S]*\]\)/,
+  'Pending invite lists must include principal claim invites so Settings can manage them before acceptance.',
+)
+matches(
+  inviteService,
+  /const principalClaimInvite = isPrincipalClaimInviteType\(inviteType\)[\s\S]*const role = principalClaimInvite[\s\S]*\? 'principal_claim'/,
+  'Principal claim invite rows must normalize to a non-authority principal_claim role.',
+)
+matches(
+  inviteService,
+  /isPrincipalClaimInvite:\s*principalClaimInvite/,
+  'Principal claim invite rows must expose an explicit UI flag.',
+)
+matches(
+  inviteService,
+  /normalizeAgencyAuthorityRole\(role\) === 'principal'[\s\S]*return createPrincipalClaimInvite/,
+  'Normal workspace principal invites must reroute to the claim flow instead of granting principal access directly.',
+)
+matches(
+  inviteService,
+  /bridge_create_principal_claim_invite[\s\S]*target_workspace_role:\s*'principal'[\s\S]*role:\s*'principal_claim'[\s\S]*role_label:\s*'Principal Claim'/,
+  'Principal claim creation must request principal onboarding while storing a safe principal_claim invite role.',
+)
+matches(
+  inviteService,
+  /duplicate_pending_invite[\s\S]*role:\s*'principal_claim'[\s\S]*roleLabel:\s*'Principal Claim'[\s\S]*reusedExistingInvite:\s*true/i,
+  'Duplicate principal claim invites should resend the existing claim link and preserve the claim label.',
+)
 for (const marker of [
   'resolveInviteBranding',
   'organisation_logo_url',
@@ -109,9 +147,32 @@ for (const marker of [
 
 matches(
   settingsUsersPage,
-  /inviteResult\.reusedExistingInvite \? 'Existing pending invite resent\.' : 'User invite sent\.'/,
+  /inviteResult\.reusedExistingInvite[\s\S]*Existing pending invite resent\.[\s\S]*User invite sent\./,
   'Settings users invite flow should distinguish reused pending invites from fresh sends.',
 )
+matches(
+  settingsUsersPage,
+  /principalInviteSelected[\s\S]*createPrincipalClaimInvite[\s\S]*settings_users_principal_role_invite/i,
+  'Selecting Principal in Settings must send a principal claim instead of a direct principal invite.',
+)
+matches(
+  settingsUsersPage,
+  /listWorkspaceUserInvites\(\{ includeInactive: false \}\)[\s\S]*filter\(\(invite\) => invite\?\.isPrincipalClaimInvite\)/,
+  'Settings users page should load only pending principal claim invites for the claim management panel.',
+)
+for (const marker of [
+  'Pending Principal Claims',
+  'handleCopyPrincipalClaimLink',
+  'handleResendPrincipalClaimInvite',
+  'handleRevokePrincipalClaimInvite',
+  'Copy Link',
+  'Resend',
+  'Revoke',
+  'Send Principal Claim',
+  'Commission is assigned after the principal claim is completed',
+]) {
+  includes(settingsUsersPage, marker, `Settings users page should expose Phase 6 principal claim lifecycle UI: ${marker}`)
+}
 matches(
   settingsUsersPage,
   /useLocation\(\)[\s\S]*inviteNavigationState[\s\S]*resolveInviteRole/i,
@@ -130,21 +191,91 @@ matches(
 
 for (const marker of [
   'itg:pending-org-invite-email',
+  'itg:pending-org-invite-module',
+  'itg:pending-org-invite-role',
   'itg:pending-org-invite-auto-accept-token',
   'CLEAR_PENDING_INVITE_REASONS',
   "new Set(['not_found', 'expired', 'revoked', 'already_accepted'])",
+  'getInviteModuleContext',
+  'getInviteRole',
+  'isCommercialInvite',
   'rememberPendingInviteAutoAccept(safeToken)',
-  "navigate(getAuthInvitePath({ token: safeToken, email: invitedEmail, mode: 'signup' }))",
-  "navigate(getInviteTarget(invite), { replace: true })",
+  'buildSignupIntent({',
+  'claimExistingWorkspace',
+  'storeSignupIntentTemporarily(seededIntent)',
+  'moduleContext: getInviteModuleContext(invite)',
+  'role: getInviteRole(invite)',
+  'window.location.assign(getRedirectTarget(result))',
+  'window.location.replace(getInviteTarget(invite))',
   "'Accept invite'",
+  'Claim principal access for ${workspaceName}',
+  'Principal organisation claim',
 ]) {
   includes(inviteResolver, marker, `Invite resolver should preserve Phase 3/4 auth handoff behavior: ${marker}`)
 }
 
 for (const marker of [
+  'claimExistingWorkspace',
+  "workspace_action === SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace",
+  'Before We Claim the Workspace',
+  'We found a principal claim.',
+]) {
+  includes(onboardingProfileSetup, marker, `Onboarding profile setup should show the principal claim handoff: ${marker}`)
+}
+
+for (const marker of [
+  'canClaimExistingWorkspace',
+  "'Claim your agency workspace'",
+  'Confirm the profile details for the principal who is claiming an existing agency workspace.',
+  'workspace_action === SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace',
+]) {
+  includes(postDashboardSetup, marker, `Post dashboard setup should understand the principal claim workspace action: ${marker}`)
+}
+
+matches(
+  signupIntentLib,
+  /workspace_action === SIGNUP_WORKSPACE_ACTIONS\.acceptInvite[\s\S]*workspace_action === SIGNUP_WORKSPACE_ACTIONS\.claimExistingWorkspace[\s\S]*return '\/setup'/,
+  'Signup intent routing should treat principal claim intents as setup flows.',
+)
+
+matches(
+  settingsApi,
+  /bridge_complete_principal_claim_onboarding[\s\S]*workspace_action:\s*'claim_existing_workspace'[\s\S]*principal_claim_invite_id:\s*principalClaimInviteId/,
+  'Agency onboarding completion must call the principal-claim completion RPC for pending principal claims.',
+)
+matches(
+  settingsApi,
+  /scopeMetadata\.source === 'principal_claim_invite'[\s\S]*Boolean\(scopeMetadata\.principalClaimInviteId\)/,
+  'Settings user normalization must mark principal-claim memberships for clearer user directory status.',
+)
+for (const marker of [
+  'create trigger trg_bridge_sync_principal_claim_membership',
+  "new.invite_type <> 'principal_claim_invite'",
+  "status = 'pending'",
+  "membership_status = 'pending'",
+  "role = 'principal'",
+  "workspace_role = 'principal'",
+  "organisation_role = 'principal'",
+  "app_role = 'agent'",
+  "'principal_claim_accepted'",
+  'create or replace function public.bridge_complete_principal_claim_onboarding',
+  "membership_status = 'active'",
+  'active_workspace_source',
+  "'principal_claim_completed'",
+]) {
+  includes(principalClaimMigration, marker, `Principal claim migration should preserve the pending-to-active lifecycle contract: ${marker}`)
+}
+
+for (const marker of [
   'resolveInviteEmailFromLocation',
+  'resolveInviteModuleFromLocation',
+  'resolveInviteSignupPosition',
+  'SIGNUP_BUSINESS_TYPES.commercialBrokerage',
+  '!inviteDrivenSignup && signupStep === 0',
+  'loading && !inviteDrivenSignup',
   'readOnly={inviteDrivenSignup && Boolean(invitedEmail)}',
   'This invite is locked to {invitedEmail}.',
+  'Bridge will take you straight into the invited workspace.',
   'This invite is for ${invitedEmail}. Sign in or create an account with that email address to continue.',
   'resolvePendingInvitePath() || (currentIntent ? resolveSignupIntentRoute(currentIntent) : \'/setup\')',
 ]) {

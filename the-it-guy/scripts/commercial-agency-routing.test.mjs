@@ -20,6 +20,8 @@ for (const marker of [
   'commercial_broker',
   'commercial_admin',
   'commercial_principal',
+  'WORKSPACE_SWITCHER_STORAGE_KEY',
+  "preferredWorkspaceMode !== 'residential'",
   'hasCommercialMembershipMarker',
   'path="agency" element={<CommercialBrokerBranchesPage />}',
   'path="agency/branches" element={<CommercialBrokerBranchesPage />}',
@@ -39,6 +41,28 @@ assert.doesNotMatch(permissionRegistry, /\{ prefix: '\/commercial', appRole: APP
 const commercialApi = await read('../src/modules/commercial/services/commercialApi.js')
 for (const role of ['commercial_principal', 'commercial_admin', 'commercial_branch_manager', 'commercial_broker']) {
   assert.match(commercialApi, new RegExp(role), `Commercial access resolver should know ${role}.`)
+}
+
+const workspaceResolution = await read('../src/services/workspaceResolutionService.js')
+for (const marker of [
+  'module_context, module_metadata',
+  'moduleContext: row.module_context',
+  'moduleMetadata: row.module_metadata',
+  'module_context: normalizeText(moduleContext)',
+  'module_metadata: moduleMetadata',
+]) {
+  assert.match(workspaceResolution, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Workspace resolution should carry commercial membership markers: ${marker}`)
+}
+
+const commercialInviteMigration = await read('../../supabase/migrations/202606170004_commercial_invite_membership_marker.sql')
+for (const marker of [
+  'bridge_apply_commercial_invite_membership_marker',
+  "module_context = 'commercial'",
+  'accepted_from_invite_at',
+  'workspace_invite_backfill',
+  "target_workspace_role",
+]) {
+  assert.match(commercialInviteMigration, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Commercial invite migration should preserve module-aware memberships: ${marker}`)
 }
 
 const brokersPage = await read('../src/modules/commercial/pages/CommercialBrokersPage.jsx')

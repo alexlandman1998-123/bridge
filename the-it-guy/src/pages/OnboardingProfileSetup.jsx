@@ -5,6 +5,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { APP_ROLE_LABELS, normalizeAppRole } from '../lib/roles'
 import { clearSupabaseLocalAuthState, supabase } from '../lib/supabaseClient'
 import { BUSINESS_TYPE_OPTIONS, POSITION_OPTIONS_BY_BUSINESS_TYPE, SIGNUP_INTENT_SOURCE } from '../constants/signupIntents'
+import { SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
 import { buildSignupIntent, persistSignupIntent, resolveSignupIntentRoute } from '../lib/signupIntent'
 
 const PROFILE_BOOTSTRAP_TIMEOUT_MS = 12000
@@ -88,6 +89,7 @@ function OnboardingProfileSetup() {
   const roleSelected = effectiveAppRole !== 'viewer'
   const needsIntentRecovery = !signupIntent && selectedRole === 'viewer'
   const recoveryPositionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[recoveryBusinessType] || []
+  const isPrincipalClaimIntent = effectiveIntent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace
 
   async function handleSignOut() {
     console.debug('[AUTH] onboarding-profile:signout')
@@ -238,11 +240,13 @@ function OnboardingProfileSetup() {
         <section className="auth-card onboarding-card agency-onboarding-card">
           <div className="auth-card-head">
             <span className="auth-card-eyebrow">Profile Setup</span>
-            <h2>Before We Continue</h2>
+            <h2>{isPrincipalClaimIntent ? 'Before We Claim the Workspace' : 'Before We Continue'}</h2>
             <p>
-              {signupIntent
-                ? 'We found your signup path. Confirm your profile details before workspace setup.'
-                : 'Confirm your business type and position so Bridge can recover the correct onboarding path.'}
+              {isPrincipalClaimIntent
+                ? 'We found a principal claim. Confirm your profile details before Bridge captures the workspace as yours.'
+                : signupIntent
+                  ? 'We found your signup path. Confirm your profile details before workspace setup.'
+                  : 'Confirm your business type and position so Bridge can recover the correct onboarding path.'}
             </p>
           </div>
 

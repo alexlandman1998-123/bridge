@@ -2121,27 +2121,34 @@ async function ensureOrganisationContext(client) {
         workspaceResolution.currentMembership?.source === 'organisation_users'
           ? workspaceResolution.currentMembership
           : (workspaceResolution.activeMemberships || []).find((entry) => entry?.source === 'organisation_users') || null
+      const pendingResolvedMembership = !resolvedMembership
+        ? (workspaceResolution.pendingMemberships || []).find((entry) => entry?.source === 'organisation_users') || null
+        : null
       const rawResolvedMembership = resolvedMembership?.raw && typeof resolvedMembership.raw === 'object'
         ? resolvedMembership.raw
+        : pendingResolvedMembership?.raw && typeof pendingResolvedMembership.raw === 'object'
+          ? pendingResolvedMembership.raw
         : null
 
-      membership = resolvedMembership
+      const selectedResolvedMembership = resolvedMembership || pendingResolvedMembership
+
+      membership = selectedResolvedMembership
         ? {
             ...(rawResolvedMembership || {}),
-            id: normalizeText(rawResolvedMembership?.id || resolvedMembership.id),
-            organisation_id: normalizeText(rawResolvedMembership?.organisation_id || resolvedMembership.workspaceId),
+            id: normalizeText(rawResolvedMembership?.id || selectedResolvedMembership.id),
+            organisation_id: normalizeText(rawResolvedMembership?.organisation_id || selectedResolvedMembership.workspaceId),
             role: normalizeText(
               rawResolvedMembership?.workspace_role ||
                 rawResolvedMembership?.organisation_role ||
                 rawResolvedMembership?.role ||
-                resolvedMembership.workspaceRole ||
-                resolvedMembership.role,
+                selectedResolvedMembership.workspaceRole ||
+                selectedResolvedMembership.role,
             ),
-            status: normalizeText(rawResolvedMembership?.status || resolvedMembership.status || 'active'),
+            status: normalizeText(rawResolvedMembership?.status || selectedResolvedMembership.status || 'active'),
             email: normalizeText(rawResolvedMembership?.email || user.email || profile?.email),
-            branch_id: rawResolvedMembership?.branch_id || resolvedMembership.branchId || null,
-            primary_branch_id: rawResolvedMembership?.primary_branch_id || resolvedMembership.primaryBranchId || resolvedMembership.branchId || null,
-            branch_scope: rawResolvedMembership?.branch_scope || resolvedMembership.branchScope || null,
+            branch_id: rawResolvedMembership?.branch_id || selectedResolvedMembership.branchId || null,
+            primary_branch_id: rawResolvedMembership?.primary_branch_id || selectedResolvedMembership.primaryBranchId || selectedResolvedMembership.branchId || null,
+            branch_scope: rawResolvedMembership?.branch_scope || selectedResolvedMembership.branchScope || null,
           }
         : await findActiveMembershipByUserId(client, user.id)
     } catch (membershipError) {
@@ -2446,6 +2453,7 @@ async function ensureOrganisationContext(client) {
         organisationSettings: safeJson(insertSettings.data?.settings_json, DEFAULT_ORGANISATION_SETTINGS),
         membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
         membershipStatus: membership?.status || 'active',
+        membership,
         membershipId: membership?.id || null,
         membershipBranchId: membership?.branch_id || membership?.primary_branch_id || null,
         membershipPrimaryBranchId: membership?.primary_branch_id || membership?.branch_id || null,
@@ -2461,6 +2469,7 @@ async function ensureOrganisationContext(client) {
       organisationSettings: safeJson(settingsQuery.data.settings_json, DEFAULT_ORGANISATION_SETTINGS),
       membershipRole: normalizeOrganisationMembershipRole(membership?.role || profile.role),
       membershipStatus: membership?.status || 'active',
+      membership,
       membershipId: membership?.id || null,
       membershipBranchId: membership?.branch_id || membership?.primary_branch_id || null,
       membershipPrimaryBranchId: membership?.primary_branch_id || membership?.branch_id || null,
@@ -3089,11 +3098,33 @@ export async function completeAgencyOnboarding(input = {}) {
   }
 
   const payload = buildAtomicAgencyOnboardingPayload({ mergedDraft, context, user, intent })
-  const rpcResponse = await client.rpc('bridge_complete_workspace_onboarding', { payload })
+  const principalClaimInviteId = normalizeText(
+    context?.membership?.scope_metadata?.principalClaimInviteId ||
+      context?.membership?.scopeMetadata?.principalClaimInviteId ||
+      context?.membership?.principalClaimInviteId,
+  )
+  const isPrincipalClaimCompletion =
+    normalizeText(context.membershipStatus).toLowerCase() === 'pending' &&
+    normalizeOrganisationMembershipRole(context.membershipRole) === 'principal' &&
+    Boolean(context.organisation?.id) &&
+    Boolean(principalClaimInviteId)
+
+  const rpcName = isPrincipalClaimCompletion
+    ? 'bridge_complete_principal_claim_onboarding'
+    : 'bridge_complete_workspace_onboarding'
+  const rpcPayload = isPrincipalClaimCompletion
+    ? {
+        ...payload,
+        target_workspace_id: context.organisation.id,
+        workspace_action: 'claim_existing_workspace',
+        principal_claim_invite_id: principalClaimInviteId || null,
+      }
+    : payload
+  const rpcResponse = await client.rpc(rpcName, { payload: rpcPayload })
   if (rpcResponse.error) {
     const rpcErrorMessage = `${rpcResponse.error?.message || ''} ${rpcResponse.error?.details || ''} ${rpcResponse.error?.hint || ''}`.toLowerCase()
-    if (isMissingTableError(rpcResponse.error, 'bridge_complete_workspace_onboarding') || rpcErrorMessage.includes('bridge_complete_workspace_onboarding')) {
-      throw new Error('Atomic onboarding is not installed. Apply the bridge_complete_workspace_onboarding migration before completing agency setup.')
+    if (isMissingTableError(rpcResponse.error, rpcName) || rpcErrorMessage.includes(rpcName)) {
+      throw new Error(`Atomic onboarding is not installed. Apply the ${rpcName} migration before completing agency setup.`)
     }
     throw rpcResponse.error
   }
@@ -4905,6 +4936,10 @@ function normalizeOrganisationUserRow(row) {
   const profileFirstName = normalizeText(row?.profile?.first_name || row?.profile?.firstName)
   const profileLastName = normalizeText(row?.profile?.last_name || row?.profile?.lastName)
   const profileFullName = normalizeText(row?.profile?.full_name || row?.profile?.fullName)
+  const scopeMetadata = row?.scope_metadata && typeof row.scope_metadata === 'object' ? row.scope_metadata : {}
+  const role = normalizeText(row?.workspace_role || row?.organisation_role || row?.organization_role || row?.role) || 'viewer'
+  const status = normalizeText(row?.membership_status || row?.status) || 'invited'
+  const isPrincipalClaim = scopeMetadata.source === 'principal_claim_invite' || Boolean(scopeMetadata.principalClaimInviteId)
   return {
     id: row?.id || null,
     userId: row?.user_id || null,
@@ -4919,8 +4954,13 @@ function normalizeOrganisationUserRow(row) {
       normalizeText(row?.email),
     email: normalizeText(row?.email),
     avatarUrl: normalizeText(row?.avatarUrl || row?.avatar_url || row?.profile?.avatar_url),
-    role: normalizeText(row?.role) || 'viewer',
-    status: normalizeText(row?.status) || 'invited',
+    role,
+    status,
+    membershipStatus: status,
+    workspaceRole: normalizeText(row?.workspace_role) || role,
+    organisationRole: normalizeText(row?.organisation_role || row?.organization_role) || role,
+    scopeMetadata,
+    isPrincipalClaim,
     lastActiveAt: row?.last_active_at || null,
     invitedAt: row?.invited_at || null,
     acceptedAt: row?.accepted_at || null,
@@ -5013,7 +5053,7 @@ export async function listOrganisationUsers() {
 
     const { data, error } = await client
       .from('organisation_users')
-      .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, status, invited_at, accepted_at, last_active_at')
+      .select('id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at')
       .eq('organisation_id', context.organisation.id)
       .order('created_at', { ascending: true })
 

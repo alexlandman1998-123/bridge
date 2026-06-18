@@ -543,13 +543,15 @@ export default function PostDashboardSetup() {
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
   const autosaveTimerRef = useRef(null)
   const hydratedDraftKeyRef = useRef('')
+  const inviteAutoContinueRef = useRef('')
   const workspaceNoun = getWorkspaceNoun(intent?.workspace_type)
   const canCreateWorkspace = intent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.createWorkspace
+  const canClaimExistingWorkspace = intent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace
   const canJoinOrRequest = intent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.joinOrRequestWorkspace
   const canAcceptInvite = intent?.workspace_action === SIGNUP_WORKSPACE_ACTIONS.acceptInvite
   const intendedRole = normalizeText(intent?.intended_org_role)
   const isAgencyPrincipalSetup =
-    canCreateWorkspace &&
+    (canCreateWorkspace || canClaimExistingWorkspace) &&
     intent?.workspace_type === WORKSPACE_TYPES.agency &&
     ['owner', 'principal'].includes(intendedRole)
   const isBondOwnerSetup =
@@ -566,18 +568,21 @@ export default function PostDashboardSetup() {
   const agencySetupType = agencyDraft?.agencyInformation?.agencyType || agencySignupType
   const agencySetupLabel = getAgencySetupLabel(agencySetupType)
   const pageTitle = useMemo(() => {
+    if (canClaimExistingWorkspace) return 'Claim your agency workspace'
     if (isAgencyPrincipalSetup) return getAgencySetupTitle(agencySetupType)
     if (isBondOwnerSetup) return 'Set up your bond originator business'
     if (canCreateWorkspace) return `Create your ${workspaceNoun}`
     if (canAcceptInvite) return 'Accept your workspace invite'
     if (canJoinOrRequest) return `Join a ${workspaceNoun}`
     return 'Workspace setup'
-  }, [agencySetupType, canAcceptInvite, canCreateWorkspace, canJoinOrRequest, isAgencyPrincipalSetup, isBondOwnerSetup, workspaceNoun])
-  const pageDescription = isAgencyPrincipalSetup
-    ? getAgencySetupDescription(agencySetupType)
-    : isBondOwnerSetup
-      ? 'Choose the originator setup type, then capture the owner, operating, and launch-team details Bridge needs to create a complete bond workspace.'
-      : 'Bridge has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
+  }, [agencySetupType, canAcceptInvite, canClaimExistingWorkspace, canCreateWorkspace, canJoinOrRequest, isAgencyPrincipalSetup, isBondOwnerSetup, workspaceNoun])
+  const pageDescription = canClaimExistingWorkspace
+    ? 'Confirm the profile details for the principal who is claiming an existing agency workspace.'
+    : isAgencyPrincipalSetup
+      ? getAgencySetupDescription(agencySetupType)
+      : isBondOwnerSetup
+        ? 'Choose the originator setup type, then capture the owner, operating, and launch-team details Bridge needs to create a complete bond workspace.'
+        : 'Bridge has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
 
   useEffect(() => {
     setForm((previous) => ({
@@ -631,6 +636,37 @@ export default function PostDashboardSetup() {
       }
     }
   }, [agencyDraft, agencyStepIndex, form, isAgencyPrincipalSetup, setupDraftStorageKey])
+
+  useEffect(() => {
+    const token = normalizeText(intent?.invite_token || form.inviteToken)
+    if (!canAcceptInvite || !token || !authState.user?.id || saving) return
+    if (inviteAutoContinueRef.current === token) return
+    inviteAutoContinueRef.current = token
+    const targetPath = agencySignupType === 'commercial' ? '/commercial' : getDashboardPath(intent?.app_role || baseRole)
+
+    if (activeMemberships.length > 0) {
+      navigate(targetPath, { replace: true })
+      return
+    }
+
+    async function acceptAndContinue() {
+      try {
+        setSaving(true)
+        setError('')
+        setMessage('Accepting invite. Opening your workspace...')
+        await joinWorkspaceFromInvite(token, authState.user, { intent })
+        await refreshAuthState?.()
+        navigate(targetPath, { replace: true })
+      } catch (inviteError) {
+        inviteAutoContinueRef.current = ''
+        setError(inviteError?.message || 'Invite acceptance failed.')
+      } finally {
+        setSaving(false)
+      }
+    }
+
+    void acceptAndContinue()
+  }, [activeMemberships.length, agencySignupType, authState.user, baseRole, canAcceptInvite, form.inviteToken, intent, navigate, refreshAuthState, saving])
 
   function updateField(field, value) {
     setForm((previous) => ({ ...previous, [field]: value }))

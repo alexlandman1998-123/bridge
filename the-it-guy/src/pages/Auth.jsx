@@ -139,6 +139,36 @@ function resolveInviteEmailFromLocation(location) {
   return normalizeAuthEmail(window.sessionStorage.getItem('itg:pending-org-invite-email'))
 }
 
+function normalizeInviteContextValue(value = '') {
+  return String(value || '').trim().toLowerCase()
+}
+
+function resolveInviteModuleFromLocation(location) {
+  const queryModule = new URLSearchParams(location.search).get('module')
+  if (queryModule) return normalizeInviteContextValue(queryModule)
+  if (typeof window === 'undefined') return ''
+  return normalizeInviteContextValue(window.sessionStorage.getItem('itg:pending-org-invite-module'))
+}
+
+function resolveInviteRoleFromLocation(location) {
+  const queryRole = new URLSearchParams(location.search).get('role')
+  if (queryRole) return normalizeInviteContextValue(queryRole)
+  if (typeof window === 'undefined') return ''
+  return normalizeInviteContextValue(window.sessionStorage.getItem('itg:pending-org-invite-role'))
+}
+
+const COMMERCIAL_INVITE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
+
+function isCommercialInviteContext({ moduleContext = '', role = '' } = {}) {
+  const safeModuleContext = normalizeInviteContextValue(moduleContext)
+  const safeRole = normalizeInviteContextValue(role)
+  return COMMERCIAL_INVITE_MARKERS.has(safeModuleContext) || safeRole.startsWith('commercial_') || safeRole.includes('commercial broker')
+}
+
+function resolveInviteSignupPosition({ moduleContext = '', role = '' } = {}) {
+  return isCommercialInviteContext({ moduleContext, role }) ? 'commercial_broker' : 'agency_operational'
+}
+
 const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
 const RESEND_COOLDOWN_SECONDS = 90
 const RESEND_COOLDOWN_STORAGE_KEY = 'itg:auth:resend-cooldown-until'
@@ -270,6 +300,12 @@ function Auth({ onDevBypass = null }) {
   const navigate = useNavigate()
   const location = useLocation()
   const initialInvitedEmail = useMemo(() => resolveInviteEmailFromLocation(location), [location])
+  const inviteModuleContext = useMemo(() => resolveInviteModuleFromLocation(location), [location])
+  const inviteRole = useMemo(() => resolveInviteRoleFromLocation(location), [location])
+  const inviteSignupPosition = useMemo(
+    () => resolveInviteSignupPosition({ moduleContext: inviteModuleContext, role: inviteRole }),
+    [inviteModuleContext, inviteRole],
+  )
   const [mode, setMode] = useState(() => (new URLSearchParams(location.search).get('mode') === 'signup' ? 'signup' : 'login'))
   const [signupStep, setSignupStep] = useState(0)
   const [businessType, setBusinessType] = useState('')
@@ -293,14 +329,14 @@ function Auth({ onDevBypass = null }) {
   const invitedEmail = initialInvitedEmail
   const inviteDrivenSignup = Boolean(inviteToken)
   const currentIntent = useMemo(() => {
-    const resolvedPosition = position || (inviteDrivenSignup ? 'agency_operational' : '')
+    const resolvedPosition = position || (inviteDrivenSignup ? inviteSignupPosition : '')
     if (!resolvedPosition) return null
     return buildSignupIntent({
       position: resolvedPosition,
       inviteToken,
       source: inviteDrivenSignup ? SIGNUP_INTENT_SOURCE.inviteLink : SIGNUP_INTENT_SOURCE.publicSignup,
     })
-  }, [inviteDrivenSignup, inviteToken, position])
+  }, [inviteDrivenSignup, inviteSignupPosition, inviteToken, position])
   const positionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[businessType] || []
   const selectedBusinessTypeLabel = ROLE_DISPLAY_COPY[businessType]?.label || BUSINESS_TYPE_OPTIONS.find((option) => option.value === businessType)?.label || ''
   const selectedPositionLabel = positionOptions.find((option) => option.value === position)?.label || ''
@@ -325,10 +361,13 @@ function Auth({ onDevBypass = null }) {
 
   useEffect(() => {
     if (!inviteDrivenSignup || mode !== 'signup') return
-    if (!businessType) setBusinessType(SIGNUP_BUSINESS_TYPES.agency)
-    if (!position) setPosition('agency_operational')
+    const inviteBusinessType = isCommercialInviteContext({ moduleContext: inviteModuleContext, role: inviteRole })
+      ? SIGNUP_BUSINESS_TYPES.commercialBrokerage
+      : SIGNUP_BUSINESS_TYPES.agency
+    if (!businessType) setBusinessType(inviteBusinessType)
+    if (!position) setPosition(inviteSignupPosition)
     if (signupStep < 2) setSignupStep(2)
-  }, [businessType, inviteDrivenSignup, mode, position, signupStep])
+  }, [businessType, inviteDrivenSignup, inviteModuleContext, inviteRole, inviteSignupPosition, mode, position, signupStep])
 
   useEffect(() => {
     if (!resendCooldownActive && resendCooldownUntil > 0 && typeof window !== 'undefined') {
@@ -361,10 +400,14 @@ function Auth({ onDevBypass = null }) {
 
   useEffect(() => {
     if (!inviteDrivenSignup) return
-    setBusinessType(SIGNUP_BUSINESS_TYPES.agency)
-    setPosition('agency_operational')
+    setBusinessType(
+      isCommercialInviteContext({ moduleContext: inviteModuleContext, role: inviteRole })
+        ? SIGNUP_BUSINESS_TYPES.commercialBrokerage
+        : SIGNUP_BUSINESS_TYPES.agency,
+    )
+    setPosition(inviteSignupPosition)
     setSignupStep(2)
-  }, [inviteDrivenSignup])
+  }, [inviteDrivenSignup, inviteModuleContext, inviteRole, inviteSignupPosition])
 
   useEffect(() => {
     if (!inviteDrivenSignup || !invitedEmail) return
@@ -604,7 +647,7 @@ function Auth({ onDevBypass = null }) {
 
   const securityLogoutMessage = new URLSearchParams(location.search).get('security') === '1'
   const orderedBusinessTypeOptions = getOrderedBusinessTypeOptions()
-  const showingWorkspaceBuild = mode === 'signup' && signupStep === 2 && loading
+  const showingWorkspaceBuild = mode === 'signup' && signupStep === 2 && loading && !inviteDrivenSignup
 
   return (
     <div className="auth-page">
@@ -676,36 +719,32 @@ function Auth({ onDevBypass = null }) {
           <form id="auth-form" ref={authFormRef} className="auth-form" onSubmit={handleSubmit}>
             {mode === 'signup' ? (
               <>
-                <div className="signup-stepper" aria-label="Signup progress">
-                  {SIGNUP_STEPS.map((step, index) => {
-                    const complete = signupStep > index
-                    const active = signupStep === index
-                    return (
-                        <div key={step.label} className="signup-stepper-item-wrap">
-                        <div className={`signup-stepper-item ${active ? 'active' : ''} ${complete ? 'complete' : ''}`}>
-                          <span className="signup-stepper-node">
-                            {complete ? <Check size={15} /> : active ? String(index + 1) : <Circle size={8} />}
-                          </span>
-                          <span className="signup-stepper-copy">
-                            <em>{step.eyebrow}</em>
-                            <strong>{step.label}</strong>
-                          </span>
+                {!inviteDrivenSignup ? (
+                  <div className="signup-stepper" aria-label="Signup progress">
+                    {SIGNUP_STEPS.map((step, index) => {
+                      const complete = signupStep > index
+                      const active = signupStep === index
+                      return (
+                          <div key={step.label} className="signup-stepper-item-wrap">
+                          <div className={`signup-stepper-item ${active ? 'active' : ''} ${complete ? 'complete' : ''}`}>
+                            <span className="signup-stepper-node">
+                              {complete ? <Check size={15} /> : active ? String(index + 1) : <Circle size={8} />}
+                            </span>
+                            <span className="signup-stepper-copy">
+                              <em>{step.eyebrow}</em>
+                              <strong>{step.label}</strong>
+                            </span>
+                          </div>
+                          {index < SIGNUP_STEPS.length - 1 ? (
+                            <span className={`signup-stepper-line ${signupStep > index ? 'complete' : ''}`} aria-hidden="true" />
+                          ) : null}
                         </div>
-                        {index < SIGNUP_STEPS.length - 1 ? (
-                          <span className={`signup-stepper-line ${signupStep > index ? 'complete' : ''}`} aria-hidden="true" />
-                        ) : null}
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {inviteDrivenSignup ? (
-                  <p className="rounded-[14px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
-                    Invite detected. Bridge will create an agency staff profile linked to this invitation after email verification.
-                  </p>
+                      )
+                    })}
+                  </div>
                 ) : null}
 
-                {signupStep === 0 ? (
+                {!inviteDrivenSignup && signupStep === 0 ? (
                   <section className="signup-choice-stack signup-step-panel">
                     <div className="auth-card-head compact">
                       <span className="auth-card-eyebrow">STEP 1 OF 3</span>
@@ -765,7 +804,7 @@ function Auth({ onDevBypass = null }) {
                   </section>
                 ) : null}
 
-                {signupStep === 1 ? (
+                {!inviteDrivenSignup && signupStep === 1 ? (
                   <section className="signup-choice-stack signup-step-panel">
                     <div className="auth-card-head compact">
                       <span className="auth-card-eyebrow">STEP 2 OF 3</span>
@@ -863,7 +902,7 @@ function Auth({ onDevBypass = null }) {
                       <h2>{inviteDrivenSignup ? 'Create your account' : 'Create your secure account'}</h2>
                       <p>
                         {inviteDrivenSignup
-                          ? 'Complete these details and Bridge will return you to the invitation.'
+                          ? 'Complete these details and Bridge will take you straight into the invited workspace.'
                           : selectedBusinessTypeLabel
                             ? `${selectedBusinessTypeLabel} workspace setup will continue after verification.`
                             : 'Workspace setup will continue after verification.'}
@@ -947,7 +986,7 @@ function Auth({ onDevBypass = null }) {
                         />
                       </label>
                     </div>
-                    {currentIntent ? (
+                    {currentIntent && !inviteDrivenSignup ? (
                       <p className="rounded-[14px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
                         {currentIntent.workspace_action === 'create_workspace'
                           ? 'After verification, Bridge will continue with workspace setup for your business.'

@@ -36,8 +36,11 @@ for (const marker of [
   'Mixed Residential + Commercial Agency',
   'Tell us about your commercial brokerage',
   'Tell us about your mixed agency',
+  'resolveInviteModuleFromLocation',
+  'resolveInviteSignupPosition',
   'SIGNUP_BUSINESS_TYPES.commercialBrokerage',
   'SIGNUP_BUSINESS_TYPES.mixedAgency',
+  'loading && !inviteDrivenSignup',
 ]) {
   includes(authSource, marker, `Auth signup UI should include ${marker}`)
 }
@@ -45,9 +48,12 @@ for (const marker of [
 const setupSource = await read('../src/pages/PostDashboardSetup.jsx')
 for (const marker of [
   'getAgencyTypeForSignupIntent',
+  'inviteAutoContinueRef',
+  'joinWorkspaceFromInvite(token, authState.user, { intent })',
   'Set up your commercial brokerage',
   'Set up your mixed agency workspace',
   "completedAgencyType === 'commercial' ? '/commercial' : '/dashboard'",
+  "agencySignupType === 'commercial' ? '/commercial' : getDashboardPath(intent?.app_role || baseRole)",
 ]) {
   includes(setupSource, marker, `Post-dashboard setup should include ${marker}`)
 }
@@ -57,7 +63,7 @@ for (const marker of [
   'activateCommercialMembershipForAgencySignup',
   'assertCommercialSignupSchemaInstalled',
   "module_context: 'commercial'",
-  "source: 'signup'",
+  "source = 'signup'",
   'Commercial is not installed on this environment',
 ]) {
   includes(settingsSource, marker, `Commercial signup persistence should include ${marker}`)

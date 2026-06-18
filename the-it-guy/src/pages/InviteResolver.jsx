@@ -4,14 +4,23 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import { acceptInvite, getInviteByToken, INVITE_TYPES, InviteValidationError } from '../services/inviteService'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { SIGNUP_INTENT_SOURCE, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
+import { buildSignupIntent, storeSignupIntentTemporarily } from '../lib/signupIntent'
 
 const PENDING_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 const PENDING_INVITE_EMAIL_STORAGE_KEY = 'itg:pending-org-invite-email'
+const PENDING_INVITE_MODULE_STORAGE_KEY = 'itg:pending-org-invite-module'
+const PENDING_INVITE_ROLE_STORAGE_KEY = 'itg:pending-org-invite-role'
 const PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY = 'itg:pending-org-invite-auto-accept-token'
 const CLEAR_PENDING_INVITE_REASONS = new Set(['not_found', 'expired', 'revoked', 'already_accepted'])
+const COMMERCIAL_INVITE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeLower(value = '') {
+  return normalizeText(value).toLowerCase()
 }
 
 function getInviteTitle(reason = '') {
@@ -102,8 +111,42 @@ function isPrincipalClaimInvite(invite = {}) {
   return (invite?.inviteType || invite?.invite_type || '') === INVITE_TYPES.principalClaim
 }
 
+function getInviteModuleContext(invite = {}) {
+  const metadata = invite?.metadata && typeof invite.metadata === 'object' ? invite.metadata : {}
+  return normalizeLower(
+    metadata.module_context ||
+      metadata.moduleContext ||
+      metadata.module ||
+      metadata.module_type ||
+      metadata.commercial_role ||
+      invite?.module_context ||
+      invite?.moduleContext,
+  )
+}
+
+function getInviteRole(invite = {}) {
+  const metadata = invite?.metadata && typeof invite.metadata === 'object' ? invite.metadata : {}
+  return normalizeLower(
+    invite?.targetWorkspaceRole ||
+      invite?.target_workspace_role ||
+      metadata.role ||
+      metadata.workspace_role ||
+      metadata.workspaceRole ||
+      metadata.commercial_role ||
+      metadata.role_label ||
+      metadata.roleLabel,
+  )
+}
+
+function isCommercialInvite(invite = {}) {
+  const moduleContext = getInviteModuleContext(invite)
+  const role = getInviteRole(invite)
+  return COMMERCIAL_INVITE_MARKERS.has(moduleContext) || role.startsWith('commercial_') || role.includes('commercial broker')
+}
+
 function getRedirectTarget(result = {}) {
   if (isPrincipalClaimInvite(result.invite)) return '/onboarding/profile'
+  if (isCommercialInvite(result.invite)) return '/commercial'
   if (result.redirect_to) return result.redirect_to
   if (result.transaction_id) return `/transactions/${result.transaction_id}`
   return '/dashboard'
@@ -111,6 +154,7 @@ function getRedirectTarget(result = {}) {
 
 function getInviteTarget(invite = {}) {
   if (isPrincipalClaimInvite(invite)) return '/onboarding/profile'
+  if (isCommercialInvite(invite)) return '/commercial'
   if (invite.targetTransactionId) return `/transactions/${invite.targetTransactionId}`
   return '/dashboard'
 }
@@ -119,15 +163,21 @@ function clearPendingInviteToken() {
   if (typeof window === 'undefined') return
   window.sessionStorage.removeItem(PENDING_INVITE_TOKEN_STORAGE_KEY)
   window.sessionStorage.removeItem(PENDING_INVITE_EMAIL_STORAGE_KEY)
+  window.sessionStorage.removeItem(PENDING_INVITE_MODULE_STORAGE_KEY)
+  window.sessionStorage.removeItem(PENDING_INVITE_ROLE_STORAGE_KEY)
   window.sessionStorage.removeItem(PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY)
 }
 
-function rememberPendingInvite({ token = '', email = '' } = {}) {
+function rememberPendingInvite({ token = '', email = '', moduleContext = '', role = '' } = {}) {
   if (typeof window === 'undefined') return
   const safeToken = normalizeText(token)
   const safeEmail = normalizeText(email).toLowerCase()
+  const safeModuleContext = normalizeLower(moduleContext)
+  const safeRole = normalizeLower(role)
   if (safeToken) window.sessionStorage.setItem(PENDING_INVITE_TOKEN_STORAGE_KEY, safeToken)
   if (safeEmail) window.sessionStorage.setItem(PENDING_INVITE_EMAIL_STORAGE_KEY, safeEmail)
+  if (safeModuleContext) window.sessionStorage.setItem(PENDING_INVITE_MODULE_STORAGE_KEY, safeModuleContext)
+  if (safeRole) window.sessionStorage.setItem(PENDING_INVITE_ROLE_STORAGE_KEY, safeRole)
 }
 
 function rememberPendingInviteAutoAccept(token = '') {
@@ -147,13 +197,17 @@ function shouldAutoAcceptInvite(token = '') {
   return Boolean(safeToken && window.sessionStorage.getItem(PENDING_INVITE_AUTO_ACCEPT_STORAGE_KEY) === safeToken)
 }
 
-function getAuthInvitePath({ token = '', email = '', mode = '' } = {}) {
+function getAuthInvitePath({ token = '', email = '', mode = '', moduleContext = '', role = '' } = {}) {
   const safeToken = normalizeText(token)
   const params = new URLSearchParams()
   params.set('next', `/invite/${safeToken}`)
   const safeEmail = normalizeText(email).toLowerCase()
   if (safeEmail) params.set('email', safeEmail)
   if (mode) params.set('mode', mode)
+  const safeModuleContext = normalizeLower(moduleContext)
+  const safeRole = normalizeLower(role)
+  if (safeModuleContext) params.set('module', safeModuleContext)
+  if (safeRole) params.set('role', safeRole)
   return `/auth?${params.toString()}`
 }
 
@@ -300,7 +354,12 @@ export default function InviteResolver() {
         setInviteContext(context.invite || null)
         setReason(context.ok ? '' : context.reason || 'not_found')
         if (context.invite?.email) {
-          rememberPendingInvite({ token: safeToken, email: context.invite.email })
+          rememberPendingInvite({
+            token: safeToken,
+            email: context.invite.email,
+            moduleContext: getInviteModuleContext(context.invite),
+            role: getInviteRole(context.invite),
+          })
         }
       } catch (loadError) {
         if (!active) return
@@ -356,6 +415,22 @@ export default function InviteResolver() {
   }, [branchName, invite, principalClaimInvite, workspaceName])
 
   useEffect(() => {
+    if (!invite || !principalClaimInvite) return
+    const seededIntent = buildSignupIntent({
+      position: 'agency_owner',
+      source: SIGNUP_INTENT_SOURCE.inviteLink,
+      inviteToken: token,
+      overrides: {
+        workspace_action: SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace,
+        email: invitedEmail,
+      },
+    })
+    if (seededIntent) {
+      storeSignupIntentTemporarily(seededIntent)
+    }
+  }, [invitedEmail, invite, principalClaimInvite, token])
+
+  useEffect(() => {
     if (acceptedInviteBelongsToSession) {
       clearPendingInviteToken()
     }
@@ -363,7 +438,7 @@ export default function InviteResolver() {
 
   useEffect(() => {
     if (!acceptedInviteBelongsToSession) return
-    navigate(getInviteTarget(invite), { replace: true })
+    window.location.replace(getInviteTarget(invite))
   }, [acceptedInviteBelongsToSession, invite, navigate])
 
   useEffect(() => {
@@ -376,9 +451,20 @@ export default function InviteResolver() {
     const safeToken = normalizeText(token)
     if (!safeToken) return
     if (!sessionEmail) {
-      rememberPendingInvite({ token: safeToken, email: invitedEmail })
+      rememberPendingInvite({
+        token: safeToken,
+        email: invitedEmail,
+        moduleContext: getInviteModuleContext(invite),
+        role: getInviteRole(invite),
+      })
       rememberPendingInviteAutoAccept(safeToken)
-      navigate(getAuthInvitePath({ token: safeToken, email: invitedEmail, mode: 'signup' }))
+      navigate(getAuthInvitePath({
+        token: safeToken,
+        email: invitedEmail,
+        mode: 'signup',
+        moduleContext: getInviteModuleContext(invite),
+        role: getInviteRole(invite),
+      }))
       return
     }
 
@@ -388,6 +474,7 @@ export default function InviteResolver() {
       const result = await acceptInvite(safeToken)
       setAcceptedResult(result)
       clearPendingInviteToken()
+      window.location.assign(getRedirectTarget(result))
     } catch (acceptError) {
       clearPendingInviteAutoAccept()
       if (acceptError instanceof InviteValidationError) {
@@ -411,9 +498,19 @@ export default function InviteResolver() {
 
   async function handleSwitchAccount() {
     const safeToken = normalizeText(token)
-    rememberPendingInvite({ token: safeToken, email: invitedEmail })
+    rememberPendingInvite({
+      token: safeToken,
+      email: invitedEmail,
+      moduleContext: getInviteModuleContext(invite),
+      role: getInviteRole(invite),
+    })
     await supabase?.auth?.signOut?.()
-    navigate(getAuthInvitePath({ token: safeToken, email: invitedEmail }), { replace: true })
+    navigate(getAuthInvitePath({
+      token: safeToken,
+      email: invitedEmail,
+      moduleContext: getInviteModuleContext(invite),
+      role: getInviteRole(invite),
+    }), { replace: true })
   }
 
   if (loading) {

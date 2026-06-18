@@ -39,6 +39,7 @@ export const SIGNUP_ONBOARDING_PATHS = Object.freeze({
 
 export const SIGNUP_WORKSPACE_ACTIONS = Object.freeze({
   createWorkspace: 'create_workspace',
+  claimExistingWorkspace: 'claim_existing_workspace',
   joinOrRequestWorkspace: 'join_or_request_workspace',
   acceptInvite: 'accept_invite',
   acceptClientAccess: 'accept_client_access',

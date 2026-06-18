@@ -79,7 +79,7 @@ export function buildSignupIntent({
 } = {}) {
   const template = SIGNUP_POSITION_INTENT_MAP[position]
   if (!template) return null
-  const workspaceAction = inviteToken ? SIGNUP_WORKSPACE_ACTIONS.acceptInvite : template.workspace_action
+  const workspaceAction = overrides.workspace_action || (inviteToken ? SIGNUP_WORKSPACE_ACTIONS.acceptInvite : template.workspace_action)
   return normalizeSignupIntent({
     ...template,
     ...overrides,
@@ -323,6 +323,9 @@ export function resolveSignupIntentRoute(intent = null) {
   if (!normalized) return '/onboarding/profile'
   if (normalized.workspace_action === SIGNUP_WORKSPACE_ACTIONS.acceptInvite && normalized.invite_token) {
     return `/invite/${encodeURIComponent(normalized.invite_token)}`
+  }
+  if (normalized.workspace_action === SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace) {
+    return '/setup'
   }
   if (normalized.app_role === 'client') return '/client-access'
   if (normalized.app_role === 'attorney') return '/attorney/onboarding'

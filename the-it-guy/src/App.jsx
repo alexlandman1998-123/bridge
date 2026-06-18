@@ -35,9 +35,20 @@ const WARNING_DELAY_MS = Math.max(INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_LOGOUT_
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 
 const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
+const WORKSPACE_SWITCHER_STORAGE_KEY = 'bridge:active-workspace'
 
 function normalizeRouteText(value = '') {
   return String(value || '').trim().toLowerCase()
+}
+
+function getPreferredWorkspaceMode() {
+  if (typeof window === 'undefined' || !window.localStorage) return ''
+  try {
+    const value = normalizeRouteText(window.localStorage.getItem(WORKSPACE_SWITCHER_STORAGE_KEY))
+    return value === 'residential' || value === 'commercial' ? value : ''
+  } catch {
+    return ''
+  }
 }
 
 function hasCommercialMembershipMarker(membership = {}) {
@@ -2680,6 +2691,7 @@ function ConveyancerOrDeveloperDevelopmentDetail() {
 function ClientAwareDashboard() {
   const workspaceContext = useWorkspace()
   const { role, currentMembership, activeMemberships = [] } = workspaceContext
+  const preferredWorkspaceMode = getPreferredWorkspaceMode()
   if (role === 'client') {
     return <ClientModulePage />
   }
@@ -2689,7 +2701,7 @@ function ClientAwareDashboard() {
   const hasCommercialAccess =
     hasCommercialMembershipMarker(currentMembership) ||
     activeMemberships.some((membership) => hasCommercialMembershipMarker(membership))
-  if (hasCommercialAccess && ['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal'].includes(role)) {
+  if (preferredWorkspaceMode !== 'residential' && hasCommercialAccess && ['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal'].includes(role)) {
     return <Navigate to="/commercial" replace />
   }
   const dashboardPermission = role === 'agent'

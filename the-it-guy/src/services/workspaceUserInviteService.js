@@ -47,6 +47,18 @@ function normalizeRole(value, fallback = 'agent') {
   return normalized
 }
 
+function normalizeInviteDisplayRole({ metadata = {}, targetWorkspaceRole = '', fallback = 'agent' } = {}) {
+  const commercialRole = normalizeText(
+    metadata.commercial_role ||
+      metadata.commercialRole ||
+      metadata.broker_role ||
+      metadata.brokerRole,
+  ).toLowerCase()
+  if (commercialRole === 'commercial broker' || commercialRole === 'broker') return 'commercial_broker'
+  if (commercialRole.startsWith('commercial_')) return commercialRole
+  return normalizeRole(metadata.role || targetWorkspaceRole, fallback)
+}
+
 function getFirstName(input = {}) {
   return normalizeText(input.firstName || input.first_name || input.name?.split(/\s+/)?.[0])
 }
@@ -60,11 +72,16 @@ function getLastName(input = {}) {
 
 function formatRoleLabel(value = '') {
   const normalized = normalizeRole(value)
+  if (normalized === 'principal_claim') return 'Principal Claim'
   return normalized
     .split(/[_\s-]+/)
     .filter(Boolean)
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(' ') || 'Agent'
+}
+
+function isPrincipalClaimInviteType(value = '') {
+  return normalizeText(value) === INVITE_TYPES.principalClaim
 }
 
 function mapInviteStatus(value = '') {
@@ -290,6 +307,8 @@ async function findActiveWorkspaceUserByEmail({ workspaceId = '', email = '' } =
 
 function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
   const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+  const inviteType = normalizeText(row.invite_type)
+  const principalClaimInvite = isPrincipalClaimInviteType(inviteType)
   const firstName = normalizeText(metadata.first_name || metadata.firstName)
   const lastName = normalizeText(metadata.last_name || metadata.lastName || metadata.surname)
   const email = normalizeEmail(row.email)
@@ -302,7 +321,9 @@ function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
       metadata.organisationName,
   ) || 'Bridge Organisation'
   const branchName = normalizeText(metadata.branch_name || metadata.branchName)
-  const role = normalizeRole(metadata.role || row.target_workspace_role, 'agent')
+  const role = principalClaimInvite
+    ? 'principal_claim'
+    : normalizeInviteDisplayRole({ metadata, targetWorkspaceRole: row.target_workspace_role, fallback: 'agent' })
   const inviteLink = buildAgentInviteLink(row.token)
   const branding = resolveInviteBranding(metadata, { organisation: defaults })
 
@@ -311,6 +332,7 @@ function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
     inviteId: row.id || '',
     token: row.token || '',
     inviteToken: row.token || '',
+    inviteType,
     inviteLink,
     firstName,
     lastName,
@@ -325,7 +347,9 @@ function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
     branchName,
     office: branchName || organisationName,
     role,
-    roleLabel: normalizeText(metadata.role_label || metadata.roleLabel) || formatRoleLabel(role),
+    roleLabel: principalClaimInvite
+      ? 'Principal Claim'
+      : normalizeText(metadata.role_label || metadata.roleLabel) || formatRoleLabel(role),
     organisationLogoUrl: branding.organisationLogoUrl,
     organisationLogoIconUrl: branding.organisationLogoIconUrl,
     brandPrimaryColor: branding.brandPrimaryColor,
@@ -341,6 +365,7 @@ function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
     notes: normalizeText(metadata.notes),
     invitedByName: normalizeText(metadata.invited_by_name || metadata.invitedByName),
     isPendingInvite: status === 'pending_invite',
+    isPrincipalClaimInvite: principalClaimInvite,
     isCanonicalInvite: true,
     raw: row,
   }
@@ -448,7 +473,7 @@ export async function listWorkspaceUserInvites(input = {}) {
     .from('invites')
     .select('id, invite_type, status, token, expires_at, target_workspace_id, target_workspace_role, target_branch_id, target_team_id, email, phone, metadata, accepted_at, created_at, updated_at, organisations:target_workspace_id(id, name, display_name, type)')
     .eq('target_workspace_id', workspaceId)
-    .in('invite_type', ['workspace_invite', 'branch_invite', 'team_invite'])
+    .in('invite_type', ['workspace_invite', 'branch_invite', 'team_invite', 'principal_claim_invite'])
     .order('created_at', { ascending: false })
 
   if (input.status) query = query.eq('status', input.status)
@@ -534,6 +559,13 @@ export async function createWorkspaceUserInvite(input = {}) {
 
   const branchId = normalizeText(input.branchId || input.branch_id)
   const role = normalizeRole(input.role || input.workspaceRole || input.workspace_role || input.organisationRole || input.organisation_role, 'agent')
+  if (normalizeAgencyAuthorityRole(role) === 'principal') {
+    return createPrincipalClaimInvite({
+      ...input,
+      email,
+      source: normalizeText(input.source) || 'workspace_user_principal_claim_invite',
+    })
+  }
   const roleLabel = normalizeText(input.roleLabel || input.role_label) || formatRoleLabel(role)
   const firstName = getFirstName(input)
   const lastName = getLastName(input)
