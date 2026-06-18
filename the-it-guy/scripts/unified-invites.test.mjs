@@ -37,6 +37,9 @@ assert.match(inviteService, /invite_email_mismatch/i, 'client-side email mismatc
 assert.match(inviteService, /resolveInviteAction/i, 'invite action resolver must exist')
 assert.match(inviteService, /bridge_accept_invite/i, 'invite service must call canonical RPC')
 assert.match(inviteService, /bridge_lookup_invite_by_token/i, 'invite service must use public token lookup when RLS hides invite rows')
+assert.match(inviteService, /completeOnboarding/i, 'canonical invite acceptance must complete onboarding after workspace resolution')
+assert.match(inviteService, /source: 'canonical_invite_acceptance'/i, 'canonical invite onboarding completion should be traceable')
+assert.match(inviteService, /onboardingCompletion/i, 'canonical invite acceptance should return onboarding completion diagnostics')
 
 assert.match(workspaceService, /createInvite\(/, 'workspace invite creation must mirror canonical invites')
 assert.match(workspaceService, /acceptInvite\(inviteToken/, 'workspace invite acceptance must use canonical acceptInvite first')

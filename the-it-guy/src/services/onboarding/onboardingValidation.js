@@ -17,6 +17,54 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function normalizeKey(value) {
+  return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
+
+function getMembershipMetadata(membership = {}) {
+  return membership?.module_metadata && typeof membership.module_metadata === 'object'
+    ? membership.module_metadata
+    : membership?.moduleMetadata && typeof membership.moduleMetadata === 'object'
+      ? membership.moduleMetadata
+      : membership?.metadata && typeof membership.metadata === 'object'
+        ? membership.metadata
+        : {}
+}
+
+function hasCommercialMembershipMarker(membership = {}) {
+  const metadata = getMembershipMetadata(membership)
+  const moduleContext = normalizeKey(
+    membership.module_context ||
+      membership.moduleContext ||
+      membership.module ||
+      membership.module_type ||
+      metadata.module_context ||
+      metadata.moduleContext ||
+      metadata.module ||
+      metadata.module_type,
+  )
+  if (COMMERCIAL_MODULE_MARKERS.has(moduleContext)) return true
+
+  const commercialRole = normalizeKey(
+    metadata.commercial_role ||
+      metadata.commercialRole ||
+      metadata.role_label ||
+      metadata.roleLabel,
+  )
+  if (commercialRole.startsWith('commercial_') || commercialRole === 'broker' || commercialRole === 'commercial_broker') return true
+
+  const role = normalizeKey(
+    membership.workspace_role ||
+      membership.workspaceRole ||
+      membership.organisation_role ||
+      membership.organisationRole ||
+      membership.role,
+  )
+  return role.startsWith('commercial_') || role.includes('commercial_broker')
+}
+
 function isMissingSchemaError(error, token = '') {
   if (!error) return false
   const code = String(error.code || '').toLowerCase()
@@ -133,13 +181,18 @@ async function validateAttorneyCompletion(client, { userId, appRole, workspaceId
 async function validateOrganisationCompletion(client, { userId, appRole, workspaceType, workspaceId }) {
   let query = client
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, role, workspace_role, organisation_role, status, app_role, workspace_type, organisations:organisation_id(id, name, display_name, type)')
+    .select('id, organisation_id, user_id, branch_id, role, workspace_role, organisation_role, status, app_role, workspace_type, module_context, module_metadata, organisations:organisation_id(id, name, display_name, type)')
     .eq('user_id', userId)
     .eq('status', MEMBERSHIP_STATUSES.active)
 
   if (workspaceId) query.eq('organisation_id', workspaceId)
   let result = await query.limit(20)
-  if (result.error && isMissingSchemaError(result.error, 'workspace_role')) {
+  if (
+    result.error &&
+    (isMissingSchemaError(result.error, 'workspace_role') ||
+      isMissingSchemaError(result.error, 'module_context') ||
+      isMissingSchemaError(result.error, 'module_metadata'))
+  ) {
     query = client
       .from('organisation_users')
       .select('id, organisation_id, user_id, branch_id, role, organisation_role, status, app_role, workspace_type, organisations:organisation_id(id, name, display_name, type)')
@@ -172,13 +225,14 @@ async function validateOrganisationCompletion(client, { userId, appRole, workspa
 
   const organisationRole = resolveWorkspaceRole(membership, { appRole, workspaceType: resolvedWorkspaceType })
   const missingRecords = []
+  const isCommercialMembership = resolvedWorkspaceType === WORKSPACE_TYPES.agency && hasCommercialMembershipMarker(membership)
 
-  if ([WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(resolvedWorkspaceType)) {
+  if ([WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(resolvedWorkspaceType) && !isCommercialMembership) {
     const branch = await validateBranch(client, membership.organisation_id)
     if (!branch.ok) missingRecords.push('default_branch')
   }
 
-  if (resolvedWorkspaceType === WORKSPACE_TYPES.agency) {
+  if (resolvedWorkspaceType === WORKSPACE_TYPES.agency && !isCommercialMembership) {
     const settings = await validateSettings(client, membership.organisation_id, resolvedWorkspaceType)
     if (!settings.ok) missingRecords.push('agency_settings')
   }
@@ -190,6 +244,7 @@ async function validateOrganisationCompletion(client, { userId, appRole, workspa
 
   const requiresAssignment =
     [WORKSPACE_TYPES.agency, WORKSPACE_TYPES.attorneyFirm, WORKSPACE_TYPES.bondOriginator].includes(resolvedWorkspaceType) &&
+    !isCommercialMembership &&
     ![ORG_ROLES.owner, ORG_ROLES.principal, ORG_ROLES.director, ORG_ROLES.partner].includes(organisationRole)
   if (requiresAssignment && !membership.branch_id) missingRecords.push('branch_assignment')
 

@@ -125,6 +125,30 @@ function formatInviteDate(value = '') {
   return date.toLocaleDateString()
 }
 
+function formatPrincipalClaimStatusLabel(invite = {}) {
+  const status = String(invite?.status || '').trim()
+  if (status === 'active') return 'Claim completed'
+  if (status === 'pending_invite') return 'Claim pending'
+  if (status === 'revoked') return 'Claim revoked'
+  if (status === 'expired') return 'Claim expired'
+  return status ? status.replaceAll('_', ' ') : 'Principal claim'
+}
+
+function formatPrincipalClaimEventLabel(invite = {}) {
+  const status = String(invite?.status || '').trim()
+  if (status === 'active') return 'Accepted'
+  if (status === 'revoked') return 'Revoked'
+  if (status === 'expired') return 'Expired'
+  return 'Sent'
+}
+
+function getPrincipalClaimStatusClasses(status = '') {
+  if (status === 'active') return 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]'
+  if (status === 'pending_invite') return 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]'
+  if (status === 'expired') return 'border-[#d7e3ef] bg-[#f8fbff] text-[#51657b]'
+  return 'border-[#f6d4d4] bg-[#fff5f5] text-[#b42318]'
+}
+
 function formatCommercialAuditAction(action = '') {
   const label = String(action || '')
     .replace(/^commercial_/, '')
@@ -158,6 +182,7 @@ export default function SettingsUsersPage() {
   const [commissionStructures, setCommissionStructures] = useState([])
   const [commissionProfiles, setCommissionProfiles] = useState([])
   const [pendingPrincipalClaimInvites, setPendingPrincipalClaimInvites] = useState([])
+  const [principalClaimInviteHistory, setPrincipalClaimInviteHistory] = useState([])
   const [commercialAccessRequests, setCommercialAccessRequests] = useState([])
   const [commercialAccessManagement, setCommercialAccessManagement] = useState({ organisationModuleStatus: null, users: [], auditEvents: [] })
   const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', role: initialInviteRole, commissionStructureId: '' })
@@ -216,7 +241,7 @@ export default function SettingsUsersPage() {
         fetchOrganisationSettings(),
         listOrganisationCommissionStructures(),
         listOrganisationUserCommissionProfiles(),
-        canEdit ? listWorkspaceUserInvites({ includeInactive: false }).catch(() => []) : Promise.resolve([]),
+        canEdit ? listWorkspaceUserInvites({ includeInactive: true }).catch(() => []) : Promise.resolve([]),
         listCommercialAccessRequests({ status: 'pending' }).catch(() => []),
         listCommercialAccessManagementState().catch(() => ({ organisationModuleStatus: null, users: [], auditEvents: [] })),
       ])
@@ -224,10 +249,10 @@ export default function SettingsUsersPage() {
       setMembershipRole(context.membershipRole || 'viewer')
       setCommissionStructures(Array.isArray(structureRows) ? structureRows : [])
       setCommissionProfiles(Array.isArray(profileRows) ? profileRows : [])
-      setPendingPrincipalClaimInvites(
-        (Array.isArray(principalClaimInvites) ? principalClaimInvites : [])
-          .filter((invite) => invite?.isPrincipalClaimInvite),
-      )
+      const principalClaimInviteRows = (Array.isArray(principalClaimInvites) ? principalClaimInvites : [])
+        .filter((invite) => invite?.isPrincipalClaimInvite)
+      setPrincipalClaimInviteHistory(principalClaimInviteRows)
+      setPendingPrincipalClaimInvites(principalClaimInviteRows.filter((invite) => invite.status === 'pending_invite'))
       setCommercialAccessRequests(Array.isArray(commercialRequests) ? commercialRequests : [])
       setCommercialAccessManagement(commercialManagement || { organisationModuleStatus: null, users: [], auditEvents: [] })
     } catch (loadError) {
@@ -587,18 +612,45 @@ export default function SettingsUsersPage() {
 
       {canEdit && usesAgencyGovernance ? (
         <SettingsSectionCard
-          title="Pending Principal Claims"
-          description="Track claim links before the invited principal accepts and completes organisation onboarding."
+          title="Principal Claim Lifecycle"
+          description="Track claim links before acceptance, and keep completed claims visible after the principal finishes onboarding."
         >
-          {!pendingPrincipalClaimInvites.length ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-[#e4ebf3] bg-white px-4 py-3">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">Pending</p>
+              <p className="mt-1 text-2xl font-semibold text-[#162334]">{pendingPrincipalClaimInvites.length}</p>
+            </div>
+            <div className="rounded-2xl border border-[#e4ebf3] bg-white px-4 py-3">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">Completed</p>
+              <p className="mt-1 text-2xl font-semibold text-[#162334]">
+                {principalClaimInviteHistory.filter((invite) => invite.status === 'active').length}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#e4ebf3] bg-white px-4 py-3">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">Closed</p>
+              <p className="mt-1 text-2xl font-semibold text-[#162334]">
+                {principalClaimInviteHistory.filter((invite) => ['revoked', 'expired'].includes(invite.status)).length}
+              </p>
+            </div>
+          </div>
+
+          {principalClaimInviteHistory.some((invite) => invite.status === 'active') ? (
+            <SettingsBanner tone="success">
+              A principal claim has been completed. The principal now appears as an active workspace user and commission setup can continue.
+            </SettingsBanner>
+          ) : null}
+
+          {!principalClaimInviteHistory.length ? (
             <SettingsEmptyState
-              title="No pending principal claims"
-              description="When you invite a principal, their claim link will appear here until they accept or the invite is revoked."
+              title="No principal claim lifecycle yet"
+              description="When you invite a principal, the claim link and its completion history will appear here."
             />
           ) : (
             <div className="divide-y divide-[#e9eff5] overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
-              {pendingPrincipalClaimInvites.map((invite) => {
+              {principalClaimInviteHistory.map((invite) => {
                 const busy = claimInviteBusyId === invite.id
+                const isPending = invite.status === 'pending_invite'
+                const statusClasses = getPrincipalClaimStatusClasses(invite.status)
                 return (
                   <div key={invite.id} className="grid gap-3 px-5 py-4 lg:grid-cols-[1.2fr_0.8fr_0.8fr_1fr] lg:items-center">
                     <div className="space-y-1">
@@ -606,42 +658,60 @@ export default function SettingsUsersPage() {
                       <p className="break-all text-sm text-[#51657b]">{invite.email}</p>
                     </div>
                     <div className="space-y-1">
-                      <span className="inline-flex rounded-full border border-[#cde8dc] bg-[#f2fbf5] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#1f7a45]">
-                        Principal claim
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${statusClasses}`}>
+                        {formatPrincipalClaimStatusLabel(invite)}
                       </span>
-                      <p className="text-xs text-[#7b8da6]">Sent {formatInviteDate(invite.invitedAt || invite.createdAt)}</p>
+                      <p className="text-xs text-[#7b8da6]">
+                        {formatPrincipalClaimEventLabel(invite)} {formatInviteDate(invite.activatedAt || invite.acceptedAt || invite.invitedAt || invite.createdAt)}
+                      </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">Expires</p>
-                      <p className="text-sm text-[#51657b]">{formatInviteDate(invite.expiresAt)}</p>
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#8da0b6]">
+                        {isPending ? 'Expires' : 'Closed'}
+                      </p>
+                      <p className="text-sm text-[#51657b]">
+                        {isPending
+                          ? formatInviteDate(invite.expiresAt)
+                          : formatInviteDate(invite.activatedAt || invite.acceptedAt || invite.revokedAt || invite.expiresAt)}
+                      </p>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleCopyPrincipalClaimLink(invite)}
-                        disabled={busy}
-                      >
-                        Copy Link
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => handleResendPrincipalClaimInvite(invite)}
-                        disabled={busy}
-                      >
-                        {busy ? 'Working...' : 'Resend'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRevokePrincipalClaimInvite(invite)}
-                        disabled={busy}
-                      >
-                        Revoke
-                      </Button>
+                      {isPending ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleCopyPrincipalClaimLink(invite)}
+                            disabled={busy}
+                          >
+                            Copy Link
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleResendPrincipalClaimInvite(invite)}
+                            disabled={busy}
+                          >
+                            {busy ? 'Working...' : 'Resend'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRevokePrincipalClaimInvite(invite)}
+                            disabled={busy}
+                          >
+                            Revoke
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-sm text-[#8da0b6]">
+                          {invite.status === 'active'
+                            ? 'Claim completed and linked to the active principal membership.'
+                            : 'Claim closed.'}
+                        </span>
+                      )}
                     </div>
                   </div>
                 )

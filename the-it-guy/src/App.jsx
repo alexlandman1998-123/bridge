@@ -838,6 +838,24 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   }
 
   const reason = authState.onboardingRequiredReason
+  const hasCommercialAccess =
+    hasCommercialMembershipMarker(authState.currentMembership) ||
+    (authState.activeMemberships || []).some((membership) => hasCommercialMembershipMarker(membership))
+  const commercialRecoveryCanContinue =
+    hasCommercialAccess &&
+    (
+      reason === ONBOARDING_REQUIRED_REASONS.missingBranch ||
+      reason === ONBOARDING_REQUIRED_REASONS.missingSettings ||
+      reason === ONBOARDING_REQUIRED_REASONS.completionValidationFailed ||
+      reason === ONBOARDING_REQUIRED_REASONS.invalidOnboardingState
+    )
+  if (commercialRecoveryCanContinue) {
+    if (!location.pathname.startsWith('/commercial')) {
+      return <Navigate to="/commercial" replace />
+    }
+    return <Outlet />
+  }
+
   if (
     reason === ONBOARDING_REQUIRED_REASONS.noProfile ||
     reason === ONBOARDING_REQUIRED_REASONS.profileIncomplete ||
@@ -882,7 +900,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
   }
 
   if (onAnyOnboardingRoute && onboardingCompleted) {
-    const target = baseRole === 'attorney' ? '/attorney/dashboard' : '/dashboard'
+    const target = hasCommercialAccess ? '/commercial' : baseRole === 'attorney' ? '/attorney/dashboard' : '/dashboard'
     return <Navigate to={target} replace />
   }
 

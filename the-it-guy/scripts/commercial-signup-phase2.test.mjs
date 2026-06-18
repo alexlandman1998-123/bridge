@@ -49,11 +49,14 @@ const setupSource = await read('../src/pages/PostDashboardSetup.jsx')
 for (const marker of [
   'getAgencyTypeForSignupIntent',
   'inviteAutoContinueRef',
+  'hasCommercialWorkspaceAccess',
+  'clearStoredSignupIntent()',
+  "navigate('/commercial', { replace: true })",
+  'getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole })',
   'joinWorkspaceFromInvite(token, authState.user, { intent })',
   'Set up your commercial brokerage',
   'Set up your mixed agency workspace',
   "completedAgencyType === 'commercial' ? '/commercial' : '/dashboard'",
-  "agencySignupType === 'commercial' ? '/commercial' : getDashboardPath(intent?.app_role || baseRole)",
 ]) {
   includes(setupSource, marker, `Post-dashboard setup should include ${marker}`)
 }
@@ -67,6 +70,25 @@ for (const marker of [
   'Commercial is not installed on this environment',
 ]) {
   includes(settingsSource, marker, `Commercial signup persistence should include ${marker}`)
+}
+
+const onboardingValidationSource = await read('../src/services/onboarding/onboardingValidation.js')
+for (const marker of [
+  'hasCommercialMembershipMarker',
+  'module_context, module_metadata',
+  "isCommercialMembership = resolvedWorkspaceType === WORKSPACE_TYPES.agency && hasCommercialMembershipMarker(membership)",
+  '&& !isCommercialMembership',
+]) {
+  includes(onboardingValidationSource, marker, `Commercial invite validation should bypass setup recovery for ${marker}`)
+}
+
+const appSource = await read('../src/App.jsx')
+for (const marker of [
+  'commercialRecoveryCanContinue',
+  'return <Navigate to="/commercial" replace />',
+  "const target = hasCommercialAccess ? '/commercial'",
+]) {
+  includes(appSource, marker, `Commercial auth gate should route setup recovery to Commercial for ${marker}`)
 }
 
 console.log('commercial signup phase 2 diagnostics passed')

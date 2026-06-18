@@ -1,6 +1,7 @@
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { resolveCurrentWorkspace } from './workspaceResolutionService'
 import { resolveWorkspaceRole, resolveTransactionRole } from './roleResolutionService'
+import { completeOnboarding } from './onboarding/onboardingEngine'
 
 export const INVITE_TYPES = Object.freeze({
   workspace: 'workspace_invite',
@@ -238,6 +239,7 @@ export async function acceptInvite(token, options = {}) {
 
   const inviteType = context.invite?.inviteType || result.data?.invite_type || ''
   let workspaceResolution = null
+  let onboardingCompletion = null
   if (result.data.workspace_id && inviteType !== INVITE_TYPES.principalClaim) {
     workspaceResolution = await resolveCurrentWorkspace(user.id, {
       client,
@@ -250,11 +252,25 @@ export async function acceptInvite(token, options = {}) {
         reason: workspaceResolution.reason,
       })
     }
+    try {
+      onboardingCompletion = await completeOnboarding({
+        userId: user.id,
+        user,
+        intent: options.intent || null,
+        appRole: workspaceResolution.currentMembership?.appRole || context.invite?.metadata?.app_role || result.data?.app_role || '',
+        workspaceType: workspaceResolution.currentWorkspace?.type || context.invite?.metadata?.workspace_type || result.data?.workspace_type || '',
+        workspaceId: result.data.workspace_id,
+        context: { source: 'canonical_invite_acceptance', inviteId: result.data.invite_id || context.invite.id },
+      })
+    } catch (completionError) {
+      console.warn('[INVITE] accepted invite but onboarding completion is pending', completionError)
+    }
   }
 
   return {
     ...result.data,
     invite: context.invite,
     workspaceResolution,
+    onboardingCompletion,
   }
 }

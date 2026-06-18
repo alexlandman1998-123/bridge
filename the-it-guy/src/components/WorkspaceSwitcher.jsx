@@ -50,7 +50,7 @@ function getWorkspacePath(workspaceKey) {
   return workspaceKey === 'commercial' ? '/commercial' : getStoredResidentialRoute()
 }
 
-function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace }) {
+function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace, variant = 'default' }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef(null)
   const activeWorkspace = currentPath.startsWith('/commercial') ? 'commercial' : 'residential'
@@ -95,7 +95,12 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace }) {
   }
 
   return (
-    <div ref={menuRef} className="ui-workspace-switcher" onClick={(event) => event.stopPropagation()}>
+    <div
+      ref={menuRef}
+      className={`ui-workspace-switcher ${variant === 'compact' ? 'ui-workspace-switcher-compact' : ''}`.trim()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <p className="ui-workspace-switcher-heading">Current workspace</p>
       <button
         type="button"
         className="ui-workspace-switcher-trigger"
@@ -103,18 +108,19 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace }) {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="ui-workspace-switcher-icon">
-          <SelectedIcon size={16} />
+        <span className="ui-workspace-switcher-icon ui-workspace-switcher-icon-current">
+          <SelectedIcon size={20} />
         </span>
         <span className="min-w-0 flex-1 text-left">
-          <span className="ui-workspace-switcher-kicker">Current workspace</span>
           <span className="ui-workspace-switcher-label">{selected.label}</span>
+          <span className="ui-workspace-switcher-option-description ui-workspace-switcher-current-description">{selected.description}</span>
         </span>
         <ChevronDown size={15} className={`shrink-0 transition ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open ? (
         <div className="ui-workspace-switcher-menu" role="menu" aria-label="Workspace switcher">
+          <p className="ui-workspace-switcher-menu-heading">Choose workspace</p>
           {WORKSPACES.map((workspace) => {
             const Icon = workspace.icon
             const active = workspace.key === activeWorkspace
@@ -136,7 +142,11 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace }) {
                   <span className="ui-workspace-switcher-option-label">{workspace.label}</span>
                   <span className="ui-workspace-switcher-option-description">{workspace.description}</span>
                 </span>
-                {active ? <Check size={15} className="text-[#1a7f55]" /> : null}
+                {active ? (
+                  <span className="ui-workspace-switcher-option-check" aria-hidden="true">
+                    <Check size={15} />
+                  </span>
+                ) : null}
               </button>
             )
           })}

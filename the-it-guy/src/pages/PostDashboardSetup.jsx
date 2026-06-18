@@ -21,6 +21,7 @@ import OnboardingProgressLayout from '../components/onboarding/OnboardingProgres
 import { APP_ROLE_LABELS } from '../lib/roles'
 import { ONBOARDING_STATUSES, ONBOARDING_STEPS } from '../constants/onboardingStatuses'
 import { SIGNUP_ONBOARDING_PATHS, SIGNUP_WORKSPACE_ACTIONS } from '../constants/signupIntents'
+import { clearStoredSignupIntent } from '../lib/signupIntent'
 import { WORKSPACE_KINDS, WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import {
   AGENCY_BUSINESS_FOCUS_OPTIONS,
@@ -86,6 +87,59 @@ const SETUP_DRAFT_STORAGE_PREFIX = 'bridge:post-dashboard-setup-draft'
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeKey(value = '') {
+  return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
+
+function hasCommercialMembershipMarker(membership = {}) {
+  const raw = membership?.raw && typeof membership.raw === 'object' ? membership.raw : {}
+  const metadata =
+    (raw.module_metadata && typeof raw.module_metadata === 'object' ? raw.module_metadata : null) ||
+    (raw.moduleMetadata && typeof raw.moduleMetadata === 'object' ? raw.moduleMetadata : null) ||
+    (raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : null) ||
+    (membership.module_metadata && typeof membership.module_metadata === 'object' ? membership.module_metadata : null) ||
+    (membership.moduleMetadata && typeof membership.moduleMetadata === 'object' ? membership.moduleMetadata : null) ||
+    (membership.metadata && typeof membership.metadata === 'object' ? membership.metadata : {}) ||
+    {}
+  const moduleContext = normalizeKey(
+    raw.module_context ||
+      raw.moduleContext ||
+      raw.module ||
+      raw.module_type ||
+      membership.module_context ||
+      membership.moduleContext ||
+      membership.module ||
+      membership.module_type ||
+      metadata.module_context ||
+      metadata.moduleContext ||
+      metadata.module ||
+      metadata.module_type,
+  )
+  if (COMMERCIAL_MODULE_MARKERS.has(moduleContext)) return true
+
+  const role = normalizeKey(
+    membership.role ||
+      membership.workspaceRole ||
+      membership.workspace_role ||
+      membership.organisationRole ||
+      membership.organisation_role ||
+      raw.workspace_role ||
+      raw.organisation_role ||
+      raw.role ||
+      metadata.commercial_role ||
+      metadata.commercialRole ||
+      metadata.role,
+  )
+  return role.startsWith('commercial_') || role.includes('commercial_broker')
+}
+
+function getPostInviteDashboardPath({ hasCommercialWorkspaceAccess = false, agencySignupType = '', intent = null, baseRole = '' } = {}) {
+  if (hasCommercialWorkspaceAccess || agencySignupType === 'commercial') return '/commercial'
+  return getDashboardPath(intent?.app_role || baseRole)
 }
 
 function buildSetupDraftStorageKey({ userId = '', profileId = '', intent = null } = {}) {
@@ -567,6 +621,10 @@ export default function PostDashboardSetup() {
   const agencySignupType = getAgencyTypeForSignupIntent(intent)
   const agencySetupType = agencyDraft?.agencyInformation?.agencyType || agencySignupType
   const agencySetupLabel = getAgencySetupLabel(agencySetupType)
+  const hasCommercialWorkspaceAccess = useMemo(
+    () => [currentMembership, ...(activeMemberships || [])].some((membership) => hasCommercialMembershipMarker(membership)),
+    [activeMemberships, currentMembership],
+  )
   const pageTitle = useMemo(() => {
     if (canClaimExistingWorkspace) return 'Claim your agency workspace'
     if (isAgencyPrincipalSetup) return getAgencySetupTitle(agencySetupType)
@@ -592,6 +650,12 @@ export default function PostDashboardSetup() {
     setAgencyDraft((previous) => mergeAgencyOnboardingDraft(getAgencyDraftDefaults(intent, profile), previous, profile))
     setBondDraft((previous) => mergeBondOnboardingDraft(getBondDraftDefaults(intent, profile), previous))
   }, [intent, profile])
+
+  useEffect(() => {
+    if (!hasCommercialWorkspaceAccess || !activeMemberships.length) return
+    clearStoredSignupIntent()
+    navigate('/commercial', { replace: true })
+  }, [activeMemberships.length, hasCommercialWorkspaceAccess, navigate])
 
   useEffect(() => {
     if (!isAgencyPrincipalSetup || !setupDraftStorageKey || hydratedDraftKeyRef.current === setupDraftStorageKey) return
@@ -642,9 +706,10 @@ export default function PostDashboardSetup() {
     if (!canAcceptInvite || !token || !authState.user?.id || saving) return
     if (inviteAutoContinueRef.current === token) return
     inviteAutoContinueRef.current = token
-    const targetPath = agencySignupType === 'commercial' ? '/commercial' : getDashboardPath(intent?.app_role || baseRole)
+    const targetPath = getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole })
 
     if (activeMemberships.length > 0) {
+      clearStoredSignupIntent()
       navigate(targetPath, { replace: true })
       return
     }
@@ -656,6 +721,7 @@ export default function PostDashboardSetup() {
         setMessage('Accepting invite. Opening your workspace...')
         await joinWorkspaceFromInvite(token, authState.user, { intent })
         await refreshAuthState?.()
+        clearStoredSignupIntent()
         navigate(targetPath, { replace: true })
       } catch (inviteError) {
         inviteAutoContinueRef.current = ''
@@ -666,7 +732,7 @@ export default function PostDashboardSetup() {
     }
 
     void acceptAndContinue()
-  }, [activeMemberships.length, agencySignupType, authState.user, baseRole, canAcceptInvite, form.inviteToken, intent, navigate, refreshAuthState, saving])
+  }, [activeMemberships.length, agencySignupType, authState.user, baseRole, canAcceptInvite, form.inviteToken, hasCommercialWorkspaceAccess, intent, navigate, refreshAuthState, saving])
 
   function updateField(field, value) {
     setForm((previous) => ({ ...previous, [field]: value }))
@@ -1058,8 +1124,10 @@ export default function PostDashboardSetup() {
       await joinWorkspaceFromInvite(token, authState.user, { intent })
       refreshAuthState?.()
       setMessage('Invite accepted. Opening your workspace...')
+      clearStoredSignupIntent()
+      const targetPath = getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole })
       window.setTimeout(() => {
-        navigate(getDashboardPath(intent?.app_role || baseRole), { replace: true })
+        navigate(targetPath, { replace: true })
       }, 500)
     } catch (inviteError) {
       setError(inviteError?.message || 'Invite acceptance failed.')

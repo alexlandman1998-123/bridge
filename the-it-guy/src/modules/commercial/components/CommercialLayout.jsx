@@ -245,7 +245,7 @@ function CommercialLayout({ onLogout = null, user = null }) {
             <CommercialBranding compact />
             <div className="flex items-center gap-2">
               <div className="w-[190px]">
-                <WorkspaceSwitcher currentPath={currentPath} onSelectWorkspace={(path) => navigate(path)} />
+                <WorkspaceSwitcher currentPath={currentPath} onSelectWorkspace={(path) => navigate(path)} variant="compact" />
               </div>
               {profileControl}
             </div>

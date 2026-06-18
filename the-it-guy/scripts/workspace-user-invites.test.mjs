@@ -157,11 +157,12 @@ matches(
 )
 matches(
   settingsUsersPage,
-  /listWorkspaceUserInvites\(\{ includeInactive: false \}\)[\s\S]*filter\(\(invite\) => invite\?\.isPrincipalClaimInvite\)/,
-  'Settings users page should load only pending principal claim invites for the claim management panel.',
+  /listWorkspaceUserInvites\(\{ includeInactive: true \}\)[\s\S]*setPrincipalClaimInviteHistory\(principalClaimInviteRows\)[\s\S]*setPendingPrincipalClaimInvites\(principalClaimInviteRows\.filter\(\(invite\) => invite\.status === 'pending_invite'\)\)/,
+  'Settings users page should load the full principal claim lifecycle and derive the pending state from it.',
 )
 for (const marker of [
-  'Pending Principal Claims',
+  'Principal Claim Lifecycle',
+  'setPrincipalClaimInviteHistory',
   'handleCopyPrincipalClaimLink',
   'handleResendPrincipalClaimInvite',
   'handleRevokePrincipalClaimInvite',
@@ -170,6 +171,9 @@ for (const marker of [
   'Revoke',
   'Send Principal Claim',
   'Commission is assigned after the principal claim is completed',
+  'A principal claim has been completed.',
+  'Claim completed',
+  'Claim pending',
 ]) {
   includes(settingsUsersPage, marker, `Settings users page should expose Phase 6 principal claim lifecycle UI: ${marker}`)
 }
