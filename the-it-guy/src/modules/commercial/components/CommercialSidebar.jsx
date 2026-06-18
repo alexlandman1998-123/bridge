@@ -12,15 +12,14 @@ function CommercialSidebar({ scope = null }) {
   const currentWorkspacePath = `${location.pathname}${location.search || ''}`
   const DashboardIcon = COMMERCIAL_DASHBOARD_NAV_ITEM.icon
   const sectionButtonBaseClass =
-    'relative flex min-h-[54px] items-center gap-3 rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-[1rem] font-semibold text-[#1f3448] shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition duration-150 ease-out hover:border-[#d9e6f1] hover:bg-[#fbfdff] hover:shadow-[0_12px_28px_rgba(15,23,42,0.055)] focus:outline-none focus-visible:border-[#bfd5ee] focus-visible:ring-4 focus-visible:ring-[#2f80ed]/10'
-  const sectionButtonOpenClass = 'border-[#cbd9e8] bg-[#fbfdff] shadow-[0_12px_28px_rgba(15,23,42,0.055)]'
-  const sectionButtonActiveClass = 'border-[#bfd5ee] bg-[#f7fbff] text-[#17324b]'
-  const sectionButtonInactiveClass = 'text-[#17324b]'
+    'relative flex min-h-[42px] items-center gap-3 rounded-[12px] px-3 py-2 text-[0.92rem] font-semibold transition duration-150 ease-out focus:outline-none focus-visible:ring-4 focus-visible:ring-[#2f80ed]/10'
+  const sectionButtonOpenClass = 'bg-[#f6f9fc] text-[#12324b]'
+  const sectionButtonActiveClass = 'bg-[#eef5fb] text-[#0b3a5b]'
+  const sectionButtonInactiveClass = 'text-[#43536a] hover:bg-[#f6f9fc] hover:text-[#12324b]'
   const childItemClass =
-    'relative flex min-h-[40px] items-center gap-2.5 rounded-[16px] px-3.5 py-2 text-[0.9rem] font-medium transition duration-150 ease-out focus:outline-none focus-visible:border-[#bfd5ee] focus-visible:ring-4 focus-visible:ring-[#2f80ed]/10'
-  const childActiveItemClass =
-    'border border-[#c9daea] bg-[#eef5fb] text-[#17324b] shadow-[inset_0_1px_0_rgba(255,255,255,0.92),0_10px_20px_rgba(23,69,128,0.08)]'
-  const childInactiveItemClass = 'border border-transparent text-[#6a788b] hover:border-[#dee8f1] hover:bg-[#f8fbfe] hover:text-[#17324b]'
+    'relative flex min-h-[34px] items-center gap-2.5 rounded-[10px] px-3 py-1.5 text-[0.86rem] font-medium transition duration-150 ease-out focus:outline-none focus-visible:ring-4 focus-visible:ring-[#2f80ed]/10'
+  const childActiveItemClass = 'bg-[#eef5fb] text-[#0b3a5b]'
+  const childInactiveItemClass = 'text-[#66758a] hover:bg-[#f7fafc] hover:text-[#17324b]'
   const visibleSections = useMemo(
     () => COMMERCIAL_NAV_SECTIONS
       .map((section) => ({
@@ -48,11 +47,12 @@ function CommercialSidebar({ scope = null }) {
 
           <WorkspaceSwitcher
             currentPath={currentWorkspacePath}
+            variant="compact"
             onSelectWorkspace={(path) => navigate(path)}
           />
         </div>
 
-        <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" aria-label="Commercial Navigation">
+        <nav className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" aria-label="Commercial Navigation">
           <Link
             to={COMMERCIAL_DASHBOARD_NAV_ITEM.to}
             aria-current={isCommercialNavItemActive(currentFullPath, COMMERCIAL_DASHBOARD_NAV_ITEM) ? 'page' : undefined}
@@ -79,7 +79,7 @@ function CommercialSidebar({ scope = null }) {
                     aria-current={active ? 'page' : undefined}
                     className={[
                       sectionButtonBaseClass,
-                      'mt-3',
+                      'mt-2',
                       active ? sectionButtonActiveClass : sectionButtonInactiveClass,
                     ].join(' ')}
                   >
@@ -105,7 +105,7 @@ function CommercialSidebar({ scope = null }) {
                     }}
                     className={[
                       sectionButtonBaseClass,
-                      'mt-3 w-full justify-between',
+                      'mt-2 w-full justify-between',
                       expandedSectionId === section.id ? sectionButtonOpenClass : sectionButtonInactiveClass,
                     ].join(' ')}
                     aria-expanded={expandedSectionId === section.id}
@@ -117,7 +117,7 @@ function CommercialSidebar({ scope = null }) {
                     <ChevronDown size={14} className={`transition ${expandedSectionId === section.id ? 'rotate-180 text-[#0B3A5B]' : 'text-slate-400'}`} />
                   </button>
                   {expandedSectionId === section.id ? (
-                    <div className="mt-2 grid gap-2 pl-7">
+                    <div className="mt-1 grid gap-1 pl-7">
                       {section.items.map((item) => {
                         const ItemIcon = item.icon
                         const active = isCommercialNavItemActive(currentFullPath, item)
