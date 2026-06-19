@@ -10,12 +10,14 @@ declare
   v_buyer_ids uuid[] := array[]::uuid[];
   v_subprocess_ids uuid[] := array[]::uuid[];
 begin
-  -- Reset the workspace the real demo login is currently scoped to first. This
-  -- mirrors the seed script and prevents wiping/reseeding an invisible fallback
-  -- organisation while the app is looking at the authenticated membership org.
+  -- Reset only explicitly marked demo workspaces. Demo accounts may also be
+  -- used for manual QA, and those non-demo workspaces must not be reset.
   select ou.organisation_id
     into v_org_id
   from public.organisation_users ou
+  join public.organisations o
+    on o.id = ou.organisation_id
+   and coalesce(o.is_demo_data, false) = true
   left join public.profiles p on p.id = ou.user_id
   where lower(coalesce(ou.email, p.email, '')) in (lower('bond.demo@bridgenine.co.za'), lower('principal.demo@bridgenine.co.za'))
     and lower(coalesce(ou.status, 'active')) = 'active'
@@ -29,8 +31,11 @@ begin
     select o.id
       into v_org_id
     from public.organisations o
-    where lower(coalesce(o.company_email, '')) in (lower('bond.demo@bridgenine.co.za'), lower('principal.demo@bridgenine.co.za'))
-       or lower(o.name) = lower('Bridge9 Realty')
+    where coalesce(o.is_demo_data, false) = true
+      and (
+        lower(coalesce(o.company_email, '')) in (lower('bond.demo@bridgenine.co.za'), lower('principal.demo@bridgenine.co.za'))
+        or lower(o.name) = lower('Bridge9 Realty')
+      )
     order by o.created_at desc nulls last
     limit 1;
   end if;

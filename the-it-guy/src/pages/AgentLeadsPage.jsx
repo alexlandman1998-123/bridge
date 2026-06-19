@@ -1601,9 +1601,9 @@ function getBuyerWorkspaceCommand(row = {}) {
   if (nextStep) {
     const actionMap = {
       qualified: ['Qualify Buyer', 'requirements'],
-      needs_matched: ['View Matches', 'property_match'],
       viewing: ['Schedule Viewing', 'appointments'],
-      offer: ['Open Offers', 'offers'],
+      offer_submitted: ['Open Offers', 'offers'],
+      offer_accepted: ['Open Offers', 'offers'],
       won: ['Open Transaction', 'convert'],
     }
     const [actionLabel, actionId] = actionMap[nextStep.key] || ['Review Timeline', 'timeline']
@@ -2345,7 +2345,7 @@ function getOfferAmount(offer = {}) {
 
 function getOfferStatus(offer = {}) {
   const safeOffer = offer || {}
-  return normalizeText(safeOffer.status).toLowerCase()
+  return normalizeText(safeOffer.status || safeOffer.offerStatus || safeOffer.offer_status || safeOffer.workflowStatus || safeOffer.workflow_status).toLowerCase()
 }
 
 function getOfferLifecycleState(offer = {}) {
@@ -2870,24 +2870,24 @@ function getBuyerOutreachSteps(row = {}) {
   const completedViewings = viewings.filter((item) => String(item.status || '').toLowerCase() === 'completed' || item.completedAt || item.completed_at)
   const offers = (Array.isArray(safeRow.offers) ? safeRow.offers : []).filter(Boolean)
   const transactions = (Array.isArray(safeRow.transactions) ? safeRow.transactions : []).filter(Boolean)
-  const property = getBuyerPropertyReadiness(safeRow)
   const qualification = getBuyerQualificationState(safeRow)
-  const priceBandReady = Boolean(getBuyerEnquiryPricePoint(safeRow))
-  const hasMatches = property.propertyCount > 0 || priceBandReady
-  const won = Boolean(
-    safeRow.convertedTransactionId ||
-      safeRow.converted_transaction_id ||
-      transactions.length ||
-      offers.some((offer) => ['accepted', 'won', 'signed'].includes(String(offer.status || offer.offerStatus || offer.offer_status || '').toLowerCase())),
-  )
+  const submittedOffers = offers.filter((offer) => {
+    const status = getOfferStatus(offer)
+    return !['draft', 'pending', 'not_started', 'cancelled', 'withdrawn'].includes(status)
+  })
+  const acceptedOffers = offers.filter((offer) => {
+    const status = getOfferStatus(offer)
+    return ['accepted', 'won', 'signed', 'converted_to_transaction'].includes(status)
+  })
+  const won = Boolean(safeRow.convertedTransactionId || safeRow.converted_transaction_id || transactions.length)
 
   return [
     { key: 'captured', label: 'Lead Captured', done: true, meta: formatDate(safeRow.createdAt || safeRow.created_at, 'Captured'), hint: 'Created automatically when the enquiry lands.' },
     { key: 'qualified', label: 'Qualified', done: qualification.qualified, meta: qualification.date ? formatDate(qualification.date, qualification.label) : qualification.label, hint: qualification.helper },
-    { key: 'needs_matched', label: 'Needs Matched', done: hasMatches, meta: property.propertyCount > 0 ? `${property.propertyCount} matches` : priceBandReady ? 'Price band ready' : 'In progress', hint: 'Match this buyer to suitable listings.' },
     { key: 'viewing', label: 'Viewing', done: viewings.length > 0, meta: completedViewings.length ? `${completedViewings.length} completed` : scheduledViewings.length ? `${scheduledViewings.length} scheduled` : 'None yet', hint: 'Schedule and complete viewings.' },
-    { key: 'offer', label: 'Offer', done: offers.length > 0, meta: offers.length ? `${offers.length} offer${offers.length === 1 ? '' : 's'}` : 'No offer', hint: 'Create an offer when the buyer is ready.' },
-    { key: 'won', label: 'Won', done: won, meta: won ? 'Transaction linked' : 'Not won', hint: 'Won appears after accepted offer or transaction creation.' },
+    { key: 'offer_submitted', label: 'Offer Submitted', done: submittedOffers.length > 0, meta: submittedOffers.length ? `${submittedOffers.length} submitted` : 'No offer', hint: 'Submit the buyer offer for seller review.' },
+    { key: 'offer_accepted', label: 'Offer Accepted', done: acceptedOffers.length > 0, meta: acceptedOffers.length ? 'Accepted' : 'Awaiting acceptance', hint: 'Seller acceptance confirms the deal is ready to convert.' },
+    { key: 'won', label: 'Won', done: won, meta: won ? 'Transaction linked' : 'Not won', hint: 'Won appears after transaction creation.' },
   ]
 }
 
@@ -2924,7 +2924,7 @@ function BuyerOutreachProgress({ row, onQualifyBuyer, onMarkQualified }) {
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{completedCount} of {steps.length} complete</span>
           </div>
           <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
-            <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">Progress to offer</h2>
+            <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">Progress to won</h2>
             <p className="text-sm font-semibold text-slate-500">
               Next: <span className="text-slate-800">{nextStep?.label || 'Ready for transaction follow-through'}</span>
             </p>
