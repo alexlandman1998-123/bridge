@@ -54,10 +54,16 @@ export function deriveStepFromIntent(intent = null) {
   return ONBOARDING_STEPS.createOrJoinWorkspace
 }
 
-export function deriveStatusFromRuntime({ profile = null, activeMemberships = [], pendingMemberships = [], validation = null } = {}) {
+export function deriveStatusFromRuntime({
+  profile = null,
+  activeMemberships = [],
+  pendingMemberships = [],
+  validation = null,
+  onboardingComplete = false,
+} = {}) {
   if (!profile?.id) return ONBOARDING_STATUSES.recoveryRequired
   if (validation && !validation.ok) return ONBOARDING_STATUSES.recoveryRequired
-  if (profile.onboardingCompleted && validation?.ok) return ONBOARDING_STATUSES.completed
+  if ((profile.onboardingCompleted || onboardingComplete) && validation?.ok) return ONBOARDING_STATUSES.completed
   if (pendingMemberships.length && !activeMemberships.length) return ONBOARDING_STATUSES.workspacePendingApproval
   if (!activeMemberships.length) return ONBOARDING_STATUSES.workspaceSetupRequired
   return ONBOARDING_STATUSES.inProgress

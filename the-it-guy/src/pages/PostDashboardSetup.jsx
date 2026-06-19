@@ -659,6 +659,21 @@ export default function PostDashboardSetup() {
   }, [activeMemberships.length, hasCommercialWorkspaceAccess, navigate])
 
   useEffect(() => {
+    if (!activeMemberships.length || onboardingRequiredReason || onboardingState?.recoveryReason) return
+    clearStoredSignupIntent()
+    navigate(getPostInviteDashboardPath({ hasCommercialWorkspaceAccess, agencySignupType, intent, baseRole }), { replace: true })
+  }, [
+    activeMemberships.length,
+    agencySignupType,
+    baseRole,
+    hasCommercialWorkspaceAccess,
+    intent,
+    navigate,
+    onboardingRequiredReason,
+    onboardingState?.recoveryReason,
+  ])
+
+  useEffect(() => {
     if (!isAgencyPrincipalSetup || !setupDraftStorageKey || hydratedDraftKeyRef.current === setupDraftStorageKey) return
     hydratedDraftKeyRef.current = setupDraftStorageKey
     const savedDraft = loadSetupDraft(setupDraftStorageKey)

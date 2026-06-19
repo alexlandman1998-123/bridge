@@ -97,7 +97,13 @@ export function deriveAuthBootOnboardingState({
     }
   }
 
-  if (!profile?.onboardingCompleted) {
+  const hasResolvedWorkspaceAccess = Boolean(
+    appRole !== 'client' &&
+      activeMemberships.length &&
+      currentMembership?.workspace,
+  )
+
+  if (!profile?.onboardingCompleted && !hasResolvedWorkspaceAccess) {
     return {
       onboardingComplete: false,
       onboardingRequiredReason: ONBOARDING_REQUIRED_REASONS.onboardingIncomplete,
@@ -210,6 +216,11 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     activeMemberships,
     currentMembership,
   })
+  const shouldValidateResolvedWorkspace = Boolean(
+    appRole !== 'client' &&
+      activeMemberships.length &&
+      currentMembership?.workspace,
+  )
   const onboardingState = await runAuthBootStep(
     'onboarding.getOnboardingState',
     () => getOnboardingState(user.id, {
@@ -231,6 +242,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       workspaceDiagnostics: workspaceResolution.diagnostics,
       onboardingComplete: onboarding.onboardingComplete,
       onboardingRequiredReason: onboarding.onboardingRequiredReason,
+      forceValidate: shouldValidateResolvedWorkspace,
     }),
     {
       userId: user.id,
@@ -239,7 +251,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     },
   )
   const engineRequiresSetup = Boolean(onboardingState?.recoveryReason) || (
-    profile?.onboardingCompleted &&
+    onboarding.onboardingComplete &&
     onboardingState?.validation &&
     onboardingState.validation.ok === false
   )

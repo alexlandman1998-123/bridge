@@ -89,6 +89,7 @@ export async function getOnboardingState(userId, context = {}) {
     activeMemberships: context.activeMemberships || [],
     pendingMemberships: context.pendingMemberships || [],
     validation,
+    onboardingComplete: context.onboardingComplete,
   })
   const status =
     existingState?.onboardingStatus === ONBOARDING_STATUSES.workspacePendingApproval &&
