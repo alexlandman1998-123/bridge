@@ -6717,31 +6717,175 @@ function BuyerMatchFeatureRow({ listing }) {
   )
 }
 
-function BuyerEnquiredPropertySection({ property, onView, onReplace }) {
+function BuyerEnquiryPropertyDropdown({
+  organisationId,
+  lead,
+  requirements = [],
+  actor,
+  onSaved,
+  onCancel,
+}) {
+  const primaryRequirement = requirements.find((requirement) => requirement.isPrimary || requirement.is_primary) || requirements[0] || null
+  const [filters, setFilters] = useState({ search: '', status: 'all' })
+  const [rows, setRows] = useState([])
+  const [selectedId, setSelectedId] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const loadListings = useCallback(async () => {
+    if (!organisationId) return
+    try {
+      setLoading(true)
+      setError('')
+      const result = await listSearchablePrivateListings({ organisationId, ...filters })
+      const nextRows = result.slice(0, 40)
+      setRows(nextRows)
+      setSelectedId((current) => current && nextRows.some((listing) => listing.id === current) ? current : nextRows[0]?.id || '')
+    } catch (loadError) {
+      setRows([])
+      setSelectedId('')
+      setError(loadError?.message || 'Unable to load listings.')
+    } finally {
+      setLoading(false)
+    }
+  }, [filters, organisationId])
+
+  useEffect(() => {
+    void loadListings()
+  }, [loadListings])
+
+  async function linkSelectedProperty() {
+    const selected = rows.find((listing) => listing.id === selectedId)
+    if (!selected) {
+      setError('Choose a property to link.')
+      return
+    }
+    try {
+      setSaving(true)
+      setError('')
+      await upsertLeadListingInterest(
+        {
+          organisationId,
+          lead,
+          contactId: lead.contactId || lead.contact_id,
+          listing: selected,
+          requirementId: primaryRequirement?.requirementId || '',
+          source: 'enquiry',
+          status: 'interested',
+          isOriginalEnquiry: true,
+          isAgentSelected: false,
+          createdBy: actor?.id,
+        },
+        { actor },
+      )
+      await onSaved?.()
+      onCancel?.()
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to link this property.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-left">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px]">
+        <input
+          value={filters.search}
+          onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
+          className="min-h-11 rounded-xl border border-blue-100 bg-white px-3 text-sm outline-none focus:border-blue-300"
+          placeholder="Search address, title, suburb"
+        />
+        <select
+          value={filters.status}
+          onChange={(event) => setFilters((previous) => ({ ...previous, status: event.target.value }))}
+          className="min-h-11 rounded-xl border border-blue-100 bg-white px-3 text-sm"
+        >
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="seller_lead">Seller lead</option>
+          <option value="under_offer">Under offer</option>
+          <option value="sold">Sold</option>
+        </select>
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center">
+        <select
+          value={selectedId}
+          onChange={(event) => setSelectedId(event.target.value)}
+          className="min-h-11 rounded-xl border border-blue-100 bg-white px-3 text-sm"
+          disabled={loading || !rows.length}
+        >
+          <option value="">{loading ? 'Loading listings...' : rows.length ? 'Choose property' : 'No listings found'}</option>
+          {rows.map((listing) => (
+            <option key={listing.id} value={listing.id}>
+              {[listing.title, listing.suburb || listing.city, getListingPriceLabel(listing)].filter(Boolean).join(' - ')}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={linkSelectedProperty}
+          disabled={saving || loading || !selectedId}
+          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:bg-slate-300"
+        >
+          {saving ? 'Linking...' : 'Link Property'}
+        </button>
+        {onCancel ? (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-blue-100 bg-white px-4 text-sm font-semibold text-slate-700"
+          >
+            Cancel
+          </button>
+        ) : null}
+      </div>
+
+      {error ? <p className="mt-3 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">{error}</p> : null}
+    </div>
+  )
+}
+
+function BuyerEnquiredPropertySection({ property, organisationId, lead, requirements = [], actor, onSaved, onView }) {
+  const [selectorOpen, setSelectorOpen] = useState(false)
   const listing = property?.listing || {}
   return (
     <MatchSectionShell number="2" title="Enquired Property" subtitle="The property that brought this buyer to you">
       {property ? (
-        <article className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)_180px] lg:items-center">
-          <BuyerMatchPropertyImage listing={listing} className="h-44 w-full rounded-2xl lg:h-36" />
-          <div className="min-w-0">
-            <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{getListingTitle(listing)}</h3>
-            <p className="mt-1 text-sm font-semibold text-slate-500">{getListingSuburbLabel(listing)}</p>
-            <p className="mt-3 text-lg font-semibold text-blue-700">{getListingPriceLabel(listing)}</p>
-            <BuyerMatchFeatureRow listing={listing} />
-            <span className="mt-4 inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">Original Enquiry</span>
-          </div>
-          <div className="grid gap-2">
-            <button type="button" onClick={() => onView?.(property)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              View Listing
-              <ExternalLink size={14} />
-            </button>
-            <button type="button" onClick={onReplace} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              <RefreshCw size={14} />
-              Replace Property
-            </button>
-          </div>
-        </article>
+        <>
+          <article className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)_180px] lg:items-center">
+            <BuyerMatchPropertyImage listing={listing} className="h-44 w-full rounded-2xl lg:h-36" />
+            <div className="min-w-0">
+              <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{getListingTitle(listing)}</h3>
+              <p className="mt-1 text-sm font-semibold text-slate-500">{getListingSuburbLabel(listing)}</p>
+              <p className="mt-3 text-lg font-semibold text-blue-700">{getListingPriceLabel(listing)}</p>
+              <BuyerMatchFeatureRow listing={listing} />
+              <span className="mt-4 inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">Original Enquiry</span>
+            </div>
+            <div className="grid gap-2">
+              <button type="button" onClick={() => onView?.(property)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                View Listing
+                <ExternalLink size={14} />
+              </button>
+              <button type="button" onClick={() => setSelectorOpen((current) => !current)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <RefreshCw size={14} />
+                Replace Property
+              </button>
+            </div>
+          </article>
+          {selectorOpen ? (
+            <BuyerEnquiryPropertyDropdown
+              organisationId={organisationId}
+              lead={lead}
+              requirements={requirements}
+              actor={actor}
+              onSaved={onSaved}
+              onCancel={() => setSelectorOpen(false)}
+            />
+          ) : null}
+        </>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm">
@@ -6749,9 +6893,13 @@ function BuyerEnquiredPropertySection({ property, onView, onReplace }) {
           </div>
           <h3 className="mt-4 text-lg font-semibold text-slate-950">No enquiry property linked</h3>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">This buyer came from a registration form rather than a specific listing.</p>
-          <button type="button" onClick={onReplace} className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white">
-            Link Property
-          </button>
+          <BuyerEnquiryPropertyDropdown
+            organisationId={organisationId}
+            lead={lead}
+            requirements={requirements}
+            actor={actor}
+            onSaved={onSaved}
+          />
         </div>
       )}
     </MatchSectionShell>
@@ -7208,8 +7356,12 @@ function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, a
 
       <BuyerEnquiredPropertySection
         property={originalProperty}
+        organisationId={organisationId}
+        lead={row}
+        requirements={requirements}
+        actor={actor}
+        onSaved={onSaved}
         onView={openListing}
-        onReplace={() => onNavigate?.('overview')}
       />
 
       <BuyerMightAlsoLikeSection
