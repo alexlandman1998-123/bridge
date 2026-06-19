@@ -1,13 +1,29 @@
-const ADMIN_ACCESS_ROLES = new Set([
+export const ADMIN_LEVELS = {
+  EXECUTIVE: 'executive',
+  CUSTOMER_SUPPORT: 'customer_support',
+}
+
+const ADMIN_LEVEL_LABELS = {
+  [ADMIN_LEVELS.EXECUTIVE]: 'Executive Level',
+  [ADMIN_LEVELS.CUSTOMER_SUPPORT]: 'Customer Support Level',
+}
+
+const EXECUTIVE_ROLE_TOKENS = new Set([
+  'executive',
+  'executive_level',
   'founder',
   'super_admin',
   'platform_admin',
   'internal_admin',
   'developer',
   'hq_staff',
-  'support_agent',
-  'customer_support',
   'admin',
+])
+
+const CUSTOMER_SUPPORT_ROLE_TOKENS = new Set([
+  'customer_support',
+  'customer_support_level',
+  'support_agent',
 ])
 
 function normalizeToken(value = '') {
@@ -56,12 +72,21 @@ export function resolveAdminAccess({ user, profile } = {}) {
     ...collectTokens(profile),
     normalizeToken(profile?.raw_user_meta_data?.role),
   ].filter(Boolean)
-  const allowed = tokens.some((token) => ADMIN_ACCESS_ROLES.has(token))
+  const level = tokens.some((token) => EXECUTIVE_ROLE_TOKENS.has(token))
+    ? ADMIN_LEVELS.EXECUTIVE
+    : tokens.some((token) => CUSTOMER_SUPPORT_ROLE_TOKENS.has(token))
+      ? ADMIN_LEVELS.CUSTOMER_SUPPORT
+      : ''
 
   return {
-    allowed,
+    allowed: Boolean(level),
+    level,
     roles: Array.from(new Set(tokens)),
   }
+}
+
+export function formatAdminLevelLabel(value = '') {
+  return ADMIN_LEVEL_LABELS[value] || 'No Admin Access'
 }
 
 export function formatRoleLabel(value = '') {

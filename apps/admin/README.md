@@ -1,6 +1,6 @@
 # Bridge Admin
 
-Internal admin dashboard for `hq.bridgenine.co.za`.
+Internal admin dashboard for `admin.arch9.co.za`.
 
 ## Local setup
 
@@ -33,7 +33,7 @@ Install Command: npm install
 Add the custom domain to that Vercel project:
 
 ```txt
-hq.bridgenine.co.za
+admin.arch9.co.za
 ```
 
 Required Vercel environment variables:
@@ -43,20 +43,28 @@ VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
 ```
 
-## Access roles
+## Access levels
 
-The first scaffold allows these internal roles:
+The admin app uses two access levels:
 
 ```txt
-founder
-super_admin
-platform_admin
-internal_admin
-developer
-hq_staff
-support_agent
+executive
 customer_support
-admin
 ```
 
-Roles are read from Supabase user metadata and common profile fields.
+Recommended Supabase user metadata:
+
+```json
+{ "role": "executive" }
+```
+
+or
+
+```json
+{ "role": "customer_support" }
+```
+
+Executive level can access Dashboard, Growth, Revenue, Ecosystem, Platform Health, Operations, Service Desk, Audit Log, Search, and Settings.
+Customer support level can access Service Desk and Search only.
+
+Roles are read from Supabase app metadata, user metadata, and common profile fields. Legacy internal roles still map into these two levels so existing staff access continues to work.
