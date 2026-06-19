@@ -8,6 +8,11 @@ import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding } from './s
 import { getOnboardingState } from '../services/onboarding/onboardingEngine'
 import { resolveCurrentWorkspace } from '../services/workspaceResolutionService'
 
+const AUTO_REPAIRABLE_ONBOARDING_REASONS = new Set([
+  ONBOARDING_REQUIRED_REASONS.missingBranch,
+  ONBOARDING_REQUIRED_REASONS.missingSettings,
+])
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -72,6 +77,19 @@ async function runAuthBootStep(label, task, metadata = {}) {
   } finally {
     endAuthBootStep(stepId)
   }
+}
+
+export function shouldAutoRepairWorkspaceOnboarding({
+  appRole = '',
+  currentMembership = null,
+  currentWorkspace = null,
+  onboardingState = null,
+} = {}) {
+  if (appRole === 'client') return false
+  if (!currentWorkspace?.id || !currentMembership?.id) return false
+  if (currentMembership.source && currentMembership.source !== 'organisation_users') return false
+  const reason = normalizeText(onboardingState?.recoveryReason || onboardingState?.validation?.reason)
+  return AUTO_REPAIRABLE_ONBOARDING_REASONS.has(reason)
 }
 
 function profileNeedsRepair(profile) {
@@ -189,7 +207,7 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     })
   }
 
-  const workspaceResolution = await runAuthBootStep(
+  let workspaceResolution = await runAuthBootStep(
     'workspace.resolveCurrentWorkspace',
     () => resolveCurrentWorkspace(user.id, {
       client: supabase,
@@ -202,26 +220,26 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       requestedWorkspaceId: normalizeText(selectedWorkspaceId) || null,
     },
   )
-  const memberships = workspaceResolution.memberships
-  const activeMemberships = workspaceResolution.activeMemberships
-  const pendingMemberships = workspaceResolution.pendingMemberships
-  const suspendedMemberships = workspaceResolution.suspendedMemberships
-  const currentMembership = workspaceResolution.currentMembership
-  const currentWorkspace = workspaceResolution.currentWorkspace
-  const workspaceType = workspaceResolution.workspaceType || inferWorkspaceTypeFromAppRole(appRole)
-  const onboarding = deriveAuthBootOnboardingState({
+  let memberships = workspaceResolution.memberships
+  let activeMemberships = workspaceResolution.activeMemberships
+  let pendingMemberships = workspaceResolution.pendingMemberships
+  let suspendedMemberships = workspaceResolution.suspendedMemberships
+  let currentMembership = workspaceResolution.currentMembership
+  let currentWorkspace = workspaceResolution.currentWorkspace
+  let workspaceType = workspaceResolution.workspaceType || inferWorkspaceTypeFromAppRole(appRole)
+  let onboarding = deriveAuthBootOnboardingState({
     profile,
     signupIntent,
     appRole,
     activeMemberships,
     currentMembership,
   })
-  const shouldValidateResolvedWorkspace = Boolean(
+  let shouldValidateResolvedWorkspace = Boolean(
     appRole !== 'client' &&
       activeMemberships.length &&
       currentMembership?.workspace,
   )
-  const onboardingState = await runAuthBootStep(
+  let onboardingState = await runAuthBootStep(
     'onboarding.getOnboardingState',
     () => getOnboardingState(user.id, {
       session,
@@ -250,6 +268,96 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
       workspaceType,
     },
   )
+
+  if (shouldAutoRepairWorkspaceOnboarding({ appRole, currentMembership, currentWorkspace, onboardingState })) {
+    const repair = await runAuthBootStep(
+      'onboarding.autoRepairWorkspace',
+      () => supabase.rpc('bridge_repair_workspace_onboarding', { target_user_id: user.id }),
+      {
+        userId: user.id,
+        workspaceId: currentWorkspace?.id || null,
+        reason: onboardingState?.recoveryReason || onboardingState?.validation?.reason || null,
+      },
+    )
+
+    if (repair.error) {
+      console.warn('[AUTH] workspace auto-repair failed', {
+        userId: user.id,
+        workspaceId: currentWorkspace?.id || null,
+        reason: onboardingState?.recoveryReason || onboardingState?.validation?.reason || null,
+        error: repair.error,
+      })
+    } else if (repair.data?.success) {
+      workspaceResolution = await runAuthBootStep(
+        'workspace.resolveCurrentWorkspace.afterRepair',
+        () => resolveCurrentWorkspace(user.id, {
+          client: supabase,
+          user,
+          profile,
+          requestedWorkspaceId: repair.data.workspace_id || repair.data.organisation_id || currentWorkspace?.id,
+        }),
+        {
+          userId: user.id,
+          requestedWorkspaceId: repair.data.workspace_id || repair.data.organisation_id || currentWorkspace?.id || null,
+        },
+      )
+      memberships = workspaceResolution.memberships
+      activeMemberships = workspaceResolution.activeMemberships
+      pendingMemberships = workspaceResolution.pendingMemberships
+      suspendedMemberships = workspaceResolution.suspendedMemberships
+      currentMembership = workspaceResolution.currentMembership
+      currentWorkspace = workspaceResolution.currentWorkspace
+      workspaceType = workspaceResolution.workspaceType || inferWorkspaceTypeFromAppRole(appRole)
+      onboarding = deriveAuthBootOnboardingState({
+        profile: { ...profile, onboardingCompleted: true },
+        signupIntent,
+        appRole,
+        activeMemberships,
+        currentMembership,
+      })
+      shouldValidateResolvedWorkspace = Boolean(
+        appRole !== 'client' &&
+          activeMemberships.length &&
+          currentMembership?.workspace,
+      )
+      onboardingState = await runAuthBootStep(
+        'onboarding.getOnboardingState.afterRepair',
+        () => getOnboardingState(user.id, {
+          session,
+          user,
+          profile: { ...profile, onboardingCompleted: true },
+          signupIntent,
+          appRole,
+          memberships,
+          activeMemberships,
+          pendingMemberships,
+          suspendedMemberships,
+          currentMembership,
+          currentWorkspace,
+          workspaceType,
+          workspaceRole: workspaceResolution.workspaceRole,
+          permissions: workspaceResolution.permissions,
+          workspaceResolution,
+          workspaceDiagnostics: workspaceResolution.diagnostics,
+          onboardingComplete: onboarding.onboardingComplete,
+          onboardingRequiredReason: onboarding.onboardingRequiredReason,
+          forceValidate: shouldValidateResolvedWorkspace,
+        }),
+        {
+          userId: user.id,
+          workspaceId: currentWorkspace?.id || null,
+          workspaceType,
+        },
+      )
+    } else {
+      console.warn('[AUTH] workspace auto-repair returned unresolved result', {
+        userId: user.id,
+        workspaceId: currentWorkspace?.id || null,
+        result: repair.data || null,
+      })
+    }
+  }
+
   const engineRequiresSetup = Boolean(onboardingState?.recoveryReason) || (
     onboarding.onboardingComplete &&
     onboardingState?.validation &&

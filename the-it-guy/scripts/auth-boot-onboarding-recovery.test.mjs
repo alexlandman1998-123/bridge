@@ -8,7 +8,7 @@ const server = await createServer({
 })
 
 try {
-  const { deriveAuthBootOnboardingState } = await server.ssrLoadModule('/src/lib/authBoot.js')
+  const { deriveAuthBootOnboardingState, shouldAutoRepairWorkspaceOnboarding } = await server.ssrLoadModule('/src/lib/authBoot.js')
   const { deriveStatusFromRuntime } = await server.ssrLoadModule('/src/services/onboarding/onboardingState.js')
 
   const staleProfile = {
@@ -39,6 +39,42 @@ try {
 
   assert.equal(recovered.onboardingComplete, true)
   assert.equal(recovered.onboardingRequiredReason, '')
+  assert.equal(
+    shouldAutoRepairWorkspaceOnboarding({
+      appRole: 'agent',
+      currentMembership: { ...membership, source: 'organisation_users' },
+      currentWorkspace: workspace,
+      onboardingState: { recoveryReason: 'missing_settings' },
+    }),
+    true,
+  )
+  assert.equal(
+    shouldAutoRepairWorkspaceOnboarding({
+      appRole: 'agent',
+      currentMembership: { ...membership, source: 'organisation_users' },
+      currentWorkspace: workspace,
+      onboardingState: { validation: { reason: 'missing_branch' } },
+    }),
+    true,
+  )
+  assert.equal(
+    shouldAutoRepairWorkspaceOnboarding({
+      appRole: 'agent',
+      currentMembership: { ...membership, source: 'organisation_users' },
+      currentWorkspace: workspace,
+      onboardingState: { recoveryReason: 'no_active_membership' },
+    }),
+    false,
+  )
+  assert.equal(
+    shouldAutoRepairWorkspaceOnboarding({
+      appRole: 'attorney',
+      currentMembership: { ...membership, source: 'attorney_firm_members' },
+      currentWorkspace: workspace,
+      onboardingState: { recoveryReason: 'missing_department' },
+    }),
+    false,
+  )
 
   const runtimeStatus = deriveStatusFromRuntime({
     profile: staleProfile,
