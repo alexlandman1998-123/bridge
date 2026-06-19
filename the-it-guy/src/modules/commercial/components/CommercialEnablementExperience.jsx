@@ -626,7 +626,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
     )
   }
 
-  if (!canEnableCommercial) {
+  if (canSelfActivate || !canEnableCommercial) {
     const accessTitle = canSelfActivate
       ? 'Commercial Workspace'
       : 'Commercial Workspace access'

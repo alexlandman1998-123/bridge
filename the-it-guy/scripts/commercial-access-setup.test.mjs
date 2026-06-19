@@ -92,6 +92,7 @@ for (const marker of [
   'Enable Commercial Workspace',
   'Commercial Workspace Ready',
   'Go To Commercial',
+  'if (canSelfActivate || !canEnableCommercial)',
   'Commercial Listings',
   'Commercial Leasing',
   'Heads of Terms',
