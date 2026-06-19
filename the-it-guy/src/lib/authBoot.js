@@ -13,6 +13,11 @@ const AUTO_REPAIRABLE_ONBOARDING_REASONS = new Set([
   ONBOARDING_REQUIRED_REASONS.missingSettings,
 ])
 
+const AUTO_CLAIMABLE_ONBOARDING_REASONS = new Set([
+  ONBOARDING_REQUIRED_REASONS.noActiveMembership,
+  ONBOARDING_REQUIRED_REASONS.onboardingIncomplete,
+])
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -90,6 +95,23 @@ export function shouldAutoRepairWorkspaceOnboarding({
   if (currentMembership.source && currentMembership.source !== 'organisation_users') return false
   const reason = normalizeText(onboardingState?.recoveryReason || onboardingState?.validation?.reason)
   return AUTO_REPAIRABLE_ONBOARDING_REASONS.has(reason)
+}
+
+export function shouldAutoClaimWorkspaceMembership({
+  profile = null,
+  appRole = '',
+  activeMemberships = [],
+  currentMembership = null,
+  signupIntent = null,
+  onboardingRequiredReason = '',
+} = {}) {
+  if (appRole === 'client') return false
+  if (activeMemberships.length || currentMembership?.id) return false
+  if (!profile?.id || !normalizeText(profile.email)) return false
+  if (profileNeedsRepair(profile)) return false
+  if (!signupIntent?.id) return false
+  const reason = normalizeText(onboardingRequiredReason)
+  return AUTO_CLAIMABLE_ONBOARDING_REASONS.has(reason)
 }
 
 function profileNeedsRepair(profile) {
@@ -234,6 +256,70 @@ export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } 
     activeMemberships,
     currentMembership,
   })
+
+  if (shouldAutoClaimWorkspaceMembership({
+    profile,
+    appRole,
+    activeMemberships,
+    currentMembership,
+    signupIntent,
+    onboardingRequiredReason: onboarding.onboardingRequiredReason,
+  })) {
+    const claimRepair = await runAuthBootStep(
+      'onboarding.autoClaimWorkspaceMembership',
+      () => supabase.rpc('bridge_repair_workspace_onboarding', { target_user_id: user.id }),
+      {
+        userId: user.id,
+        email: normalizeText(profile?.email || user.email).toLowerCase() || null,
+        reason: onboarding.onboardingRequiredReason || null,
+      },
+    )
+
+    if (claimRepair.error) {
+      console.warn('[AUTH] workspace membership auto-claim failed', {
+        userId: user.id,
+        email: normalizeText(profile?.email || user.email).toLowerCase() || null,
+        reason: onboarding.onboardingRequiredReason || null,
+        error: claimRepair.error,
+      })
+    } else if (claimRepair.data?.success) {
+      workspaceResolution = await runAuthBootStep(
+        'workspace.resolveCurrentWorkspace.afterClaim',
+        () => resolveCurrentWorkspace(user.id, {
+          client: supabase,
+          user,
+          profile,
+          requestedWorkspaceId: claimRepair.data.workspace_id || claimRepair.data.organisation_id || selectedWorkspaceId,
+        }),
+        {
+          userId: user.id,
+          requestedWorkspaceId: claimRepair.data.workspace_id || claimRepair.data.organisation_id || normalizeText(selectedWorkspaceId) || null,
+        },
+      )
+      memberships = workspaceResolution.memberships
+      activeMemberships = workspaceResolution.activeMemberships
+      pendingMemberships = workspaceResolution.pendingMemberships
+      suspendedMemberships = workspaceResolution.suspendedMemberships
+      currentMembership = workspaceResolution.currentMembership
+      currentWorkspace = workspaceResolution.currentWorkspace
+      workspaceType = workspaceResolution.workspaceType || inferWorkspaceTypeFromAppRole(appRole)
+      onboarding = deriveAuthBootOnboardingState({
+        profile: { ...profile, onboardingCompleted: true },
+        signupIntent,
+        appRole,
+        activeMemberships,
+        currentMembership,
+      })
+    } else {
+      console.debug('[AUTH] workspace membership auto-claim skipped', {
+        userId: user.id,
+        email: normalizeText(profile?.email || user.email).toLowerCase() || null,
+        reason: onboarding.onboardingRequiredReason || null,
+        result: claimRepair.data || null,
+      })
+    }
+  }
+
   let shouldValidateResolvedWorkspace = Boolean(
     appRole !== 'client' &&
       activeMemberships.length &&

@@ -8,11 +8,16 @@ const server = await createServer({
 })
 
 try {
-  const { deriveAuthBootOnboardingState, shouldAutoRepairWorkspaceOnboarding } = await server.ssrLoadModule('/src/lib/authBoot.js')
+  const {
+    deriveAuthBootOnboardingState,
+    shouldAutoClaimWorkspaceMembership,
+    shouldAutoRepairWorkspaceOnboarding,
+  } = await server.ssrLoadModule('/src/lib/authBoot.js')
   const { deriveStatusFromRuntime } = await server.ssrLoadModule('/src/services/onboarding/onboardingState.js')
 
   const staleProfile = {
     id: 'user-1',
+    email: 'principal@example.test',
     firstName: 'Principal',
     lastName: 'Demo',
     role: 'agent',
@@ -39,6 +44,39 @@ try {
 
   assert.equal(recovered.onboardingComplete, true)
   assert.equal(recovered.onboardingRequiredReason, '')
+  assert.equal(
+    shouldAutoClaimWorkspaceMembership({
+      profile: staleProfile,
+      appRole: 'agent',
+      activeMemberships: [],
+      currentMembership: null,
+      signupIntent: { id: 'signup-intent-1' },
+      onboardingRequiredReason: 'no_active_membership',
+    }),
+    true,
+  )
+  assert.equal(
+    shouldAutoClaimWorkspaceMembership({
+      profile: staleProfile,
+      appRole: 'agent',
+      activeMemberships: [membership],
+      currentMembership: membership,
+      signupIntent: { id: 'signup-intent-1' },
+      onboardingRequiredReason: 'no_active_membership',
+    }),
+    false,
+  )
+  assert.equal(
+    shouldAutoClaimWorkspaceMembership({
+      profile: staleProfile,
+      appRole: 'agent',
+      activeMemberships: [],
+      currentMembership: null,
+      signupIntent: null,
+      onboardingRequiredReason: 'no_active_membership',
+    }),
+    false,
+  )
   assert.equal(
     shouldAutoRepairWorkspaceOnboarding({
       appRole: 'agent',
