@@ -1,24 +1,32 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
   BarChart3,
+  Ban,
   Building2,
   Calendar,
   CheckCircle2,
   CircleDollarSign,
   CircleDot,
+  CreditCard,
   Database,
+  FileText,
   Headphones,
   Home,
   LineChart,
   Lock,
   LogOut,
+  MoreVertical,
+  Plus,
   RefreshCw,
   Search,
   Settings,
   ShieldCheck,
   Ticket,
+  UserCog,
   Users,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { ADMIN_LEVELS, formatAdminLevelLabel, formatRoleLabel, resolveAdminAccess } from './lib/adminAccess'
@@ -49,6 +57,7 @@ const NAV_GROUPS = [
     label: 'Operations',
     items: [
       { id: 'organisations', label: 'Organisations', icon: Building2, levels: [ADMIN_LEVELS.EXECUTIVE] },
+      { id: 'roleplayers', label: 'Roleplayers', icon: UserCog, levels: [ADMIN_LEVELS.EXECUTIVE] },
       { id: 'users', label: 'Users', icon: Users, levels: [ADMIN_LEVELS.EXECUTIVE] },
       { id: 'transactions', label: 'Transactions', icon: Database, levels: [ADMIN_LEVELS.EXECUTIVE] },
       { id: 'service', label: 'Service Desk', icon: Headphones, levels: [ADMIN_LEVELS.EXECUTIVE, ADMIN_LEVELS.CUSTOMER_SUPPORT] },
@@ -66,6 +75,14 @@ const NAV_GROUPS = [
 
 const ALL_VIEWS = NAV_GROUPS.flatMap((group) => group.items)
 
+const MOBILE_NAV_ITEMS = [
+  { id: 'dashboard', label: 'Dashboard', icon: Home, path: '/admin' },
+  { id: 'roleplayers', label: 'Roleplayers', icon: UserCog, path: '/admin/roleplayers' },
+  { id: 'alerts', label: 'Alerts', icon: AlertTriangle, path: '/admin/alerts' },
+  { id: 'search', label: 'Search', icon: Search, path: '/admin/search' },
+  { id: 'more', label: 'More', icon: MoreVertical, path: '/admin/more' },
+]
+
 const EMPTY_SNAPSHOT = {
   activities: [],
   attention: [],
@@ -82,6 +99,7 @@ const EMPTY_SNAPSHOT = {
     transactionFunnel: [],
     velocity: { hasData: false, trend: [] },
   },
+  roleplayers: [],
   tickets: [],
   transactions: [],
   users: [],
@@ -98,6 +116,45 @@ function statusClass(value = '') {
 
 function formatCount(value) {
   return new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 }).format(Number(value) || 0)
+}
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 767px)').matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const query = window.matchMedia('(max-width: 767px)')
+    const update = () => setIsMobile(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  return isMobile
+}
+
+function viewFromPath(level = '', isMobile = false) {
+  if (typeof window === 'undefined') return getDefaultView(level)
+  const path = window.location.pathname
+  if (isMobile) {
+    if (path.includes('/admin/roleplayers')) return 'roleplayers'
+    if (path.includes('/admin/alerts')) return 'alerts'
+    if (path.includes('/admin/search')) return 'search'
+    if (path.includes('/admin/more')) return 'more'
+    return 'dashboard'
+  }
+  if (path.includes('/admin/roleplayers')) return 'roleplayers'
+  if (path.includes('/admin/search')) return 'search'
+  return getDefaultView(level)
+}
+
+function pushAdminPath(path) {
+  if (typeof window !== 'undefined' && window.history?.pushState) {
+    window.history.pushState({}, '', path)
+  }
 }
 
 function LoginScreen({ authError, onSignIn, onMagicLink }) {
@@ -793,6 +850,794 @@ function HealthView({ snapshot }) {
   )
 }
 
+const ROLEPLAYER_FILTERS = ['All', 'Agencies', 'Attorneys', 'Bond Originators', 'Developers', 'Insurance Partners', 'Banks', 'Other']
+const ROLEPLAYER_SORTS = ['Most Active', 'Highest Revenue', 'Most Transactions', 'Newest', 'Needs Attention', 'A-Z']
+
+function roleplayerFilterMatches(roleplayer, filter) {
+  if (filter === 'All') return true
+  const pluralType = roleplayer.type === 'Agency' ? 'Agencies' : `${roleplayer.type}s`
+  return pluralType === filter || roleplayer.type === filter.replace(/s$/, '')
+}
+
+function roleplayerTypeClass(value = '') {
+  return value.toLowerCase().replace(/\s+/g, '-')
+}
+
+function RoleplayerLogo({ roleplayer, size = 'large' }) {
+  return roleplayer.logoUrl ? (
+    <img alt="" className={`roleplayer-logo ${size}`} src={roleplayer.logoUrl} />
+  ) : (
+    <div className={`roleplayer-logo fallback ${size}`} aria-hidden="true">
+      {roleplayer.initials}
+    </div>
+  )
+}
+
+function RoleplayerCard({ isSelected, onSelect, roleplayer }) {
+  return (
+    <article className={isSelected ? 'roleplayer-card selected' : 'roleplayer-card'} onClick={onSelect}>
+      <div className="roleplayer-card-top">
+        <RoleplayerLogo roleplayer={roleplayer} />
+        <div>
+          <h3>{roleplayer.name}</h3>
+          <span className={`type-badge ${roleplayerTypeClass(roleplayer.type)}`}>{roleplayer.type}</span>
+        </div>
+        <details className="card-actions" onClick={(event) => event.stopPropagation()}>
+          <summary aria-label={`Actions for ${roleplayer.name}`}>
+            <MoreVertical size={18} />
+          </summary>
+          <div>
+            <button type="button">View Workspace</button>
+            <button type="button">Manage Users</button>
+            <button type="button">View Transactions</button>
+            <button type="button">View Billing</button>
+            <button className="danger" type="button">
+              Suspend Organisation
+            </button>
+          </div>
+        </details>
+      </div>
+      <div className="roleplayer-kpis">
+        <span>
+          <Users size={16} />
+          <b>{formatCount(roleplayer.userCount)}</b>
+          <small>Users</small>
+        </span>
+        <span>
+          <Database size={16} />
+          <b>{formatCount(roleplayer.activeWorkload)}</b>
+          <small>{roleplayer.activeWorkloadLabel}</small>
+        </span>
+      </div>
+      <div className="roleplayer-revenue">
+        <strong>{roleplayer.revenueDisplay}</strong>
+        <span>Revenue This Month</span>
+      </div>
+      <div className="roleplayer-footer">
+        <span className={`health-dot ${roleplayer.health.tone}`}>Health: {roleplayer.health.label}</span>
+        <span>Last activity: {roleplayer.lastActivity}</span>
+      </div>
+    </article>
+  )
+}
+
+function WorkspaceMetric({ label, value }) {
+  return (
+    <div className="workspace-metric">
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function RoleplayerWorkspace({ onClose, roleplayer }) {
+  if (!roleplayer) {
+    return (
+      <aside className="roleplayer-workspace empty">
+        <EmptyData />
+      </aside>
+    )
+  }
+
+  return (
+    <aside className="roleplayer-workspace">
+      <div className="workspace-topbar">
+        <button className="text-button" onClick={onClose} type="button">
+          <ArrowLeft size={16} />
+          Back to Roleplayers
+        </button>
+        <button className="icon-button" onClick={onClose} title="Close workspace" type="button">
+          <X size={17} />
+        </button>
+      </div>
+
+      <section className="workspace-hero">
+        <RoleplayerLogo roleplayer={roleplayer} size="workspace" />
+        <div>
+          <h2>{roleplayer.name}</h2>
+          <span className={`type-badge ${roleplayerTypeClass(roleplayer.type)}`}>{roleplayer.type}</span>
+          <p>
+            <span className={`status-dot ${roleplayer.health.tone}`} />
+            {roleplayer.status}
+          </p>
+          <small>Joined: {roleplayer.joinedDate}</small>
+          <small>Organisation ID: {roleplayer.organisationId}</small>
+          <small>Plan: {roleplayer.subscriptionPlan}</small>
+        </div>
+      </section>
+
+      <div className="workspace-actions">
+        <button className="secondary-button compact" type="button">
+          <UserCog size={15} />
+          Manage Users
+        </button>
+        <button className="secondary-button compact" type="button">
+          <ShieldCheck size={15} />
+          Permissions
+        </button>
+        <button className="secondary-button compact" type="button">
+          <CreditCard size={15} />
+          Billing
+        </button>
+        <button className="secondary-button compact danger" type="button">
+          <Ban size={15} />
+          Suspend Access
+        </button>
+      </div>
+
+      <section className="workspace-section">
+        <div className="workspace-heading">
+          <h3>Overview</h3>
+          <button className="text-button success" type="button">
+            View Full Dashboard
+          </button>
+        </div>
+        <div className="workspace-metrics">
+          <WorkspaceMetric label="Users" value={formatCount(roleplayer.userCount)} />
+          <WorkspaceMetric label={roleplayer.activeWorkloadLabel} value={formatCount(roleplayer.activeWorkload)} />
+          <WorkspaceMetric label="Active Transactions" value={formatCount(roleplayer.transactions.length)} />
+          <WorkspaceMetric label="Revenue This Month" value={roleplayer.revenueDisplay} />
+          <WorkspaceMetric label="Open Issues" value={formatCount(roleplayer.openIssues)} />
+          <WorkspaceMetric label="Last Activity" value={roleplayer.lastActivity} />
+        </div>
+      </section>
+
+      <section className="workspace-section">
+        <div className="workspace-heading">
+          <h3>Recent Activity</h3>
+          <button className="text-button success" type="button">
+            View All Activity
+          </button>
+        </div>
+        <div className="activity-feed">
+          {roleplayer.activityFeed.length ? (
+            roleplayer.activityFeed.map((item) => (
+              <div key={item.id}>
+                <FileText size={16} />
+                <span>{item.text}</span>
+                <time>{item.time}</time>
+              </div>
+            ))
+          ) : (
+            <EmptyData compact />
+          )}
+        </div>
+      </section>
+
+      <section className="workspace-section">
+        <h3>Workspaces</h3>
+        <div className="workspace-card-grid">
+          {roleplayer.workspaceCards.map((card) => (
+            <button key={card.label} type="button">
+              <FileText size={18} />
+              <strong>{card.label}</strong>
+              <span>
+                {typeof card.value === 'number' ? formatCount(card.value) : card.value} {card.meta}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="workspace-section">
+        <h3>Users</h3>
+        <div className="mini-table">
+          {roleplayer.users.length ? (
+            roleplayer.users.slice(0, 5).map((user) => (
+              <div key={user.id}>
+                <span>{user.name}</span>
+                <small>{user.role}</small>
+                <small>{user.lastLogin}</small>
+              </div>
+            ))
+          ) : (
+            <EmptyData compact />
+          )}
+        </div>
+      </section>
+
+      <section className="workspace-section">
+        <h3>Quick Actions</h3>
+        <div className="quick-actions">
+          <button type="button">View All Transactions</button>
+          <button type="button">View All Matters</button>
+          <button type="button">View Applications</button>
+          <button type="button">Audit Log</button>
+        </div>
+      </section>
+    </aside>
+  )
+}
+
+function RoleplayersView({ snapshot }) {
+  const [activeFilter, setActiveFilter] = useState('All')
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState('Most Active')
+  const [selectedId, setSelectedId] = useState('')
+
+  const roleplayers = snapshot.roleplayers || []
+  const filteredRoleplayers = useMemo(() => {
+    const search = query.trim().toLowerCase()
+    return roleplayers
+      .filter((roleplayer) => roleplayerFilterMatches(roleplayer, activeFilter))
+      .filter((roleplayer) => {
+        if (!search) return true
+        return [roleplayer.name, roleplayer.type, roleplayer.organisationId, ...roleplayer.users.map((user) => `${user.name} ${user.email}`)]
+          .join(' ')
+          .toLowerCase()
+          .includes(search)
+      })
+      .sort((left, right) => {
+        if (sort === 'Highest Revenue') return right.revenue - left.revenue
+        if (sort === 'Most Transactions') return right.transactions.length - left.transactions.length
+        if (sort === 'Newest') return String(right.joinedDate).localeCompare(String(left.joinedDate))
+        if (sort === 'Needs Attention') return (right.health.tone === 'danger' ? 2 : right.health.tone === 'warning' ? 1 : 0) - (left.health.tone === 'danger' ? 2 : left.health.tone === 'warning' ? 1 : 0)
+        if (sort === 'A-Z') return left.name.localeCompare(right.name)
+        return right.activeWorkload + right.userCount - (left.activeWorkload + left.userCount)
+      })
+  }, [activeFilter, query, roleplayers, sort])
+
+  const selectedRoleplayer = roleplayers.find((roleplayer) => roleplayer.id === selectedId) || filteredRoleplayers[0]
+
+  function selectRoleplayer(roleplayer) {
+    setSelectedId(roleplayer.id)
+    if (window.history?.pushState) {
+      window.history.pushState({}, '', `/admin/roleplayers/${encodeURIComponent(roleplayer.id)}`)
+    }
+  }
+
+  function closeWorkspace() {
+    setSelectedId('')
+    if (window.history?.pushState) {
+      window.history.pushState({}, '', '/admin/roleplayers')
+    }
+  }
+
+  return (
+    <section className="roleplayers-module">
+      <div className="roleplayers-header">
+        <div>
+          <h1>Roleplayers</h1>
+          <p>Manage and monitor every organisation within the Arch9 ecosystem.</p>
+        </div>
+        <button className="primary-button compact" type="button">
+          <Plus size={16} />
+          Add Roleplayer
+        </button>
+      </div>
+
+      <div className="roleplayers-toolbar">
+        <label className="roleplayer-search">
+          <Search size={17} />
+          <input onChange={(event) => setQuery(event.target.value)} placeholder="Search organisation..." value={query} />
+        </label>
+        <label className="roleplayer-sort">
+          <span>Sort by:</span>
+          <select onChange={(event) => setSort(event.target.value)} value={sort}>
+            {ROLEPLAYER_SORTS.map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="roleplayers-layout">
+        <div className="roleplayers-list-panel panel">
+          <div className="roleplayer-filter-bar">
+            {ROLEPLAYER_FILTERS.map((filter) => (
+              <button className={activeFilter === filter ? 'active' : ''} key={filter} onClick={() => setActiveFilter(filter)} type="button">
+                {filter}
+              </button>
+            ))}
+          </div>
+          {filteredRoleplayers.length ? (
+            <div className="roleplayer-grid">
+              {filteredRoleplayers.map((roleplayer) => (
+                <RoleplayerCard
+                  isSelected={selectedRoleplayer?.id === roleplayer.id}
+                  key={roleplayer.id}
+                  onSelect={() => selectRoleplayer(roleplayer)}
+                  roleplayer={roleplayer}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyData />
+          )}
+        </div>
+        <RoleplayerWorkspace onClose={closeWorkspace} roleplayer={selectedRoleplayer} />
+      </div>
+    </section>
+  )
+}
+
+function MobileHeader({ profile, snapshot, title, subtitle }) {
+  const firstName = (profile?.full_name || profile?.name || profile?.email || 'Alex').split(/[ @]/)[0] || 'Alex'
+  const alertCount = snapshot.attention?.length || 0
+  return (
+    <header className="mobile-header">
+      <div>
+        <p>{title || `Good morning, ${firstName}`}</p>
+        <h1>{subtitle || (alertCount ? `${alertCount} items need attention.` : 'Arch9 is operating normally.')}</h1>
+      </div>
+      <div className="brand-mark mini" aria-hidden="true">
+        9
+      </div>
+    </header>
+  )
+}
+
+function MobileBottomNav({ activeView, onNavigate }) {
+  return (
+    <nav className="mobile-bottom-nav" aria-label="Mobile admin navigation">
+      {MOBILE_NAV_ITEMS.map((item) => {
+        const Icon = item.icon
+        return (
+          <button className={activeView === item.id ? 'active' : ''} key={item.id} onClick={() => onNavigate(item.id)} type="button">
+            <Icon size={19} />
+            <span>{item.label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+function MobileMetricCard({ metric }) {
+  return (
+    <article className="mobile-metric-card">
+      <span>{metric.label}</span>
+      {metric.hasData ? (
+        <>
+          <strong>{metric.value}</strong>
+          {metric.change ? <em>{metric.change}</em> : null}
+        </>
+      ) : (
+        <EmptyData compact />
+      )}
+    </article>
+  )
+}
+
+function MobileKpiCarousel({ kpis = [] }) {
+  const priority = ['Transactions In Progress', 'Monthly Revenue', 'Registrations This Month', 'Active Organisations', 'Active Users']
+  const cards = priority.map((label) => kpis.find((metric) => metric.label === label)).filter(Boolean)
+  return (
+    <section className="mobile-kpi-carousel" aria-label="Executive KPIs">
+      {cards.map((metric) => (
+        <MobileMetricCard key={metric.label} metric={metric} />
+      ))}
+    </section>
+  )
+}
+
+function MobileAlertCard({ alert }) {
+  return (
+    <article className={`mobile-alert-card ${alert.severity || 'warning'}`}>
+      <div>
+        <strong>{alert.title || alert.organisation || 'Platform alert'}</strong>
+        <span>{alert.detail || alert.issue || 'Needs attention'}</span>
+      </div>
+      <time>{alert.time || 'Now'}</time>
+    </article>
+  )
+}
+
+function MobileActivityFeed({ items = [] }) {
+  return (
+    <div className="mobile-activity-feed">
+      {items.length ? (
+        items.slice(0, 5).map((item) => (
+          <div key={item.id || `${item.title}-${item.time}`}>
+            <CircleDot size={15} />
+            <span>{item.title || item.text}</span>
+            <time>{item.time}</time>
+          </div>
+        ))
+      ) : (
+        <EmptyData compact />
+      )}
+    </div>
+  )
+}
+
+function MobileDashboard({ onNavigate, profile, snapshot }) {
+  const ecosystemTotal = snapshot.ecosystem?.total || 0
+  const organisations = snapshot.kpis.find((metric) => metric.label === 'Active Organisations')?.value || '0'
+  const users = snapshot.kpis.find((metric) => metric.label === 'Active Users')?.value || '0'
+  const velocity = snapshot.platformHealth?.velocity || {}
+  const recent = [
+    ...(snapshot.activities || []),
+    ...(snapshot.roleplayers || []).flatMap((roleplayer) =>
+      (roleplayer.activityFeed || []).slice(0, 1).map((item) => ({
+        id: `${roleplayer.id}-${item.id}`,
+        title: `${roleplayer.name}: ${item.text}`,
+        time: item.time,
+      })),
+    ),
+  ].slice(0, 5)
+
+  return (
+    <>
+      <MobileHeader profile={profile} snapshot={snapshot} />
+      <MobileKpiCarousel kpis={snapshot.kpis} />
+
+      <section className="mobile-section">
+        <div className="mobile-section-heading">
+          <h2>Attention Required</h2>
+          <button onClick={() => onNavigate('alerts')} type="button">
+            View all alerts
+          </button>
+        </div>
+        {snapshot.attention?.length ? (
+          <div className="mobile-alert-list">
+            {snapshot.attention.slice(0, 3).map((alert) => (
+              <MobileAlertCard alert={alert} key={alert.id} />
+            ))}
+          </div>
+        ) : (
+          <div className="mobile-empty-good">
+            <CheckCircle2 size={18} />
+            <span>No alerts right now. Arch9 is operating normally.</span>
+          </div>
+        )}
+      </section>
+
+      <section className="mobile-section">
+        <h2>Ecosystem Snapshot</h2>
+        <div className="mobile-snapshot-grid">
+          <MobileMetricCard metric={{ hasData: true, label: 'Organisations', value: organisations }} />
+          <MobileMetricCard metric={{ hasData: true, label: 'Users', value: users }} />
+          <MobileMetricCard metric={{ hasData: true, label: 'Participants', value: formatCount(ecosystemTotal) }} />
+        </div>
+      </section>
+
+      <section className="mobile-section">
+        <h2>Organisation Growth</h2>
+        <article className="mobile-card">
+          <MiniLineChart data={snapshot.growth?.organisationTrend || []} />
+        </article>
+      </section>
+
+      <section className="mobile-section">
+        <h2>Registration Velocity</h2>
+        <article className="mobile-card velocity">
+          {velocity.hasData ? (
+            <>
+              <span>Average Registration Time</span>
+              <strong>{velocity.averageDays} days</strong>
+              <em className={velocity.deltaDays <= 0 ? 'positive' : 'negative'}>
+                {velocity.deltaDays <= 0 ? 'Down' : 'Up'} {Math.abs(velocity.deltaDays || 0)} days vs last month
+              </em>
+            </>
+          ) : (
+            <EmptyData compact />
+          )}
+        </article>
+      </section>
+
+      <section className="mobile-section">
+        <h2>Recent Activity</h2>
+        <MobileActivityFeed items={recent} />
+      </section>
+    </>
+  )
+}
+
+function MobileRoleplayerCard({ onSelect, roleplayer }) {
+  return (
+    <button className="mobile-roleplayer-card" onClick={() => onSelect(roleplayer)} type="button">
+      <RoleplayerLogo roleplayer={roleplayer} size="large" />
+      <div>
+        <h3>{roleplayer.name}</h3>
+        <span className={`type-badge ${roleplayerTypeClass(roleplayer.type)}`}>{roleplayer.type}</span>
+        <div className="mobile-roleplayer-metrics">
+          <span>{formatCount(roleplayer.userCount)} Users</span>
+          <span>
+            {formatCount(roleplayer.activeWorkload)} {roleplayer.activeWorkloadLabel.replace('Active ', '')}
+          </span>
+          <span>{roleplayer.revenueDisplay} Revenue</span>
+        </div>
+        <p>
+          <span className={`health-dot ${roleplayer.health.tone}`}>Health: {roleplayer.health.label}</span>
+          <time>{roleplayer.lastActivity}</time>
+        </p>
+      </div>
+    </button>
+  )
+}
+
+function MobileWorkspaceGrid({ roleplayer }) {
+  return (
+    <div className="mobile-workspace-grid">
+      {roleplayer.workspaceCards.map((card) => (
+        <button key={card.label} type="button">
+          <FileText size={17} />
+          <strong>{card.label}</strong>
+          <span>
+            {typeof card.value === 'number' ? formatCount(card.value) : card.value} {card.meta}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function MobileRoleplayerDetail({ onBack, roleplayer }) {
+  if (!roleplayer) return <EmptyData />
+  return (
+    <>
+      <button className="mobile-back-button" onClick={onBack} type="button">
+        <ArrowLeft size={16} />
+        Roleplayers
+      </button>
+      <section className="mobile-detail-hero">
+        <RoleplayerLogo roleplayer={roleplayer} size="workspace" />
+        <div>
+          <h1>{roleplayer.name}</h1>
+          <span className={`type-badge ${roleplayerTypeClass(roleplayer.type)}`}>{roleplayer.type}</span>
+          <p>
+            <span className={`status-dot ${roleplayer.health.tone}`} />
+            {roleplayer.status}
+          </p>
+          <small>Joined {roleplayer.joinedDate}</small>
+          <small>Last activity {roleplayer.lastActivity}</small>
+        </div>
+      </section>
+
+      <section className="mobile-section">
+        <div className="mobile-action-grid">
+          <button type="button">Users</button>
+          <button type="button">Permissions</button>
+          <button type="button">Billing</button>
+          <button className="danger" type="button">Suspend</button>
+        </div>
+      </section>
+
+      <section className="mobile-section">
+        <div className="mobile-snapshot-grid two">
+          <MobileMetricCard metric={{ hasData: true, label: 'Users', value: formatCount(roleplayer.userCount) }} />
+          <MobileMetricCard metric={{ hasData: true, label: roleplayer.activeWorkloadLabel, value: formatCount(roleplayer.activeWorkload) }} />
+          <MobileMetricCard metric={{ hasData: true, label: 'Revenue', value: roleplayer.revenueDisplay }} />
+          <MobileMetricCard metric={{ hasData: true, label: 'Open Issues', value: formatCount(roleplayer.openIssues) }} />
+          <MobileMetricCard metric={{ hasData: true, label: 'Last Activity', value: roleplayer.lastActivity }} />
+          <MobileMetricCard metric={{ hasData: true, label: 'Health', value: roleplayer.health.label }} />
+        </div>
+      </section>
+
+      <section className="mobile-section">
+        <h2>Recent Activity</h2>
+        <MobileActivityFeed items={(roleplayer.activityFeed || []).map((item) => ({ ...item, title: item.text }))} />
+      </section>
+
+      <section className="mobile-section">
+        <h2>Workspaces</h2>
+        <MobileWorkspaceGrid roleplayer={roleplayer} />
+      </section>
+
+      <section className="mobile-section">
+        <h2>Quick Links</h2>
+        <div className="mobile-link-list">
+          <button type="button">View All Transactions</button>
+          <button type="button">View All Matters</button>
+          <button type="button">View All Applications</button>
+          <button type="button">Audit Log</button>
+        </div>
+      </section>
+    </>
+  )
+}
+
+function MobileRoleplayers({ snapshot }) {
+  const [activeFilter, setActiveFilter] = useState('All')
+  const [query, setQuery] = useState('')
+  const [selectedId, setSelectedId] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    const match = window.location.pathname.match(/\/admin\/roleplayers\/([^/]+)/)
+    return match ? decodeURIComponent(match[1]) : ''
+  })
+  const roleplayers = snapshot.roleplayers || []
+  const filtered = roleplayers.filter((roleplayer) => roleplayerFilterMatches(roleplayer, activeFilter)).filter((roleplayer) => {
+    const search = query.trim().toLowerCase()
+    if (!search) return true
+    return `${roleplayer.name} ${roleplayer.type} ${roleplayer.organisationId}`.toLowerCase().includes(search)
+  })
+  const selectedRoleplayer = roleplayers.find((roleplayer) => roleplayer.id === selectedId)
+
+  function selectRoleplayer(roleplayer) {
+    setSelectedId(roleplayer.id)
+    pushAdminPath(`/admin/roleplayers/${encodeURIComponent(roleplayer.id)}`)
+  }
+
+  function backToList() {
+    setSelectedId('')
+    pushAdminPath('/admin/roleplayers')
+  }
+
+  if (selectedRoleplayer) {
+    return <MobileRoleplayerDetail onBack={backToList} roleplayer={selectedRoleplayer} />
+  }
+
+  return (
+    <>
+      <MobileHeader snapshot={snapshot} title="Roleplayers" subtitle="Manage and monitor organisations." />
+      <section className="mobile-section">
+        <label className="mobile-search-field">
+          <Search size={17} />
+          <input onChange={(event) => setQuery(event.target.value)} placeholder="Search roleplayers..." value={query} />
+        </label>
+        <div className="mobile-chip-row">
+          {ROLEPLAYER_FILTERS.filter((item) => item !== 'Insurance Partners' || true).map((filter) => (
+            <button className={activeFilter === filter ? 'active' : ''} key={filter} onClick={() => setActiveFilter(filter)} type="button">
+              {filter === 'Insurance Partners' ? 'Insurance' : filter}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="mobile-roleplayer-list">
+        {filtered.length ? (
+          filtered.map((roleplayer) => <MobileRoleplayerCard key={roleplayer.id} onSelect={selectRoleplayer} roleplayer={roleplayer} />)
+        ) : (
+          <EmptyData />
+        )}
+      </section>
+    </>
+  )
+}
+
+function MobileAlerts({ snapshot }) {
+  const alerts = [
+    ...(snapshot.attention || []),
+    ...(snapshot.warnings || []).map((warning) => ({
+      detail: warning.message,
+      id: `${warning.label}-${warning.message}`,
+      severity: 'warning',
+      time: 'Now',
+      title: warning.label,
+    })),
+  ]
+  return (
+    <>
+      <MobileHeader snapshot={snapshot} title="Alerts" subtitle={alerts.length ? `${alerts.length} items need attention.` : 'No alerts right now.'} />
+      <section className="mobile-alert-list">
+        {alerts.length ? alerts.map((alert) => <MobileAlertCard alert={alert} key={alert.id} />) : <div className="mobile-empty-good"><CheckCircle2 size={18} /><span>Arch9 is operating normally.</span></div>}
+      </section>
+    </>
+  )
+}
+
+function MobileSearchResult({ result, type }) {
+  return (
+    <article className="mobile-search-result">
+      <span>{type}</span>
+      <strong>{result.title}</strong>
+      <small>{result.meta}</small>
+      <em>{result.status}</em>
+    </article>
+  )
+}
+
+function MobileSearch({ snapshot }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState({ customers: [], transactions: [], warnings: [] })
+  const [isSearching, setIsSearching] = useState(false)
+
+  async function handleSearch(event) {
+    event.preventDefault()
+    setIsSearching(true)
+    setResults(await searchPlatform(query))
+    setIsSearching(false)
+  }
+
+  const roleplayerResults = (snapshot.roleplayers || [])
+    .filter((roleplayer) => `${roleplayer.name} ${roleplayer.type}`.toLowerCase().includes(query.trim().toLowerCase()))
+    .slice(0, 6)
+    .map((roleplayer) => ({
+      meta: roleplayer.type,
+      status: roleplayer.health.label,
+      title: roleplayer.name,
+    }))
+
+  return (
+    <>
+      <MobileHeader snapshot={snapshot} title="Search" subtitle="Find organisations, users, transactions and matters." />
+      <form className="mobile-search-form" onSubmit={handleSearch}>
+        <Search size={18} />
+        <input onChange={(event) => setQuery(event.target.value)} placeholder="Search the ecosystem..." value={query} />
+        <button disabled={isSearching || !query.trim()} type="submit">Search</button>
+      </form>
+      <section className="mobile-search-results">
+        {roleplayerResults.map((result) => <MobileSearchResult key={`org-${result.title}`} result={result} type="Organisation" />)}
+        {results.customers.map((result) => <MobileSearchResult key={`user-${result.id}`} result={result} type="User" />)}
+        {results.transactions.map((result) => <MobileSearchResult key={`tx-${result.id}`} result={result} type="Transaction" />)}
+        {!query.trim() ? <EmptyData compact /> : null}
+      </section>
+    </>
+  )
+}
+
+function MobileMore({ onNavigate, onSignOut, snapshot }) {
+  const items = [
+    { id: 'health', label: 'Platform Health' },
+    { id: 'revenue', label: 'Revenue' },
+    { id: 'growth', label: 'Growth' },
+    { id: 'ecosystem', label: 'Ecosystem' },
+    { id: 'audit', label: 'Audit Log' },
+    { id: 'settings', label: 'Settings' },
+  ]
+  return (
+    <>
+      <MobileHeader snapshot={snapshot} title="More" subtitle="Secondary executive tools." />
+      <section className="mobile-link-list">
+        {items.map((item) => (
+          <button key={item.id} onClick={() => onNavigate(item.id)} type="button">
+            {item.label}
+          </button>
+        ))}
+        <button className="danger" onClick={onSignOut} type="button">Sign Out</button>
+      </section>
+    </>
+  )
+}
+
+function MobileSecondaryView({ activeView, access, onNavigate, profile, snapshot }) {
+  if (activeView === 'health') return <><MobileHeader snapshot={snapshot} title="Platform Health" subtitle="Current platform operating signals." /><PlatformHealthSection health={snapshot.platformHealth} /></>
+  if (activeView === 'revenue') return <><MobileHeader snapshot={snapshot} title="Revenue" subtitle="Financial overview." /><FinancialSection financials={snapshot.financials} /></>
+  if (activeView === 'growth') return <><MobileHeader snapshot={snapshot} title="Growth" subtitle="Adoption and organisation growth." /><GrowthSection growth={snapshot.growth} /></>
+  if (activeView === 'ecosystem') return <><MobileHeader snapshot={snapshot} title="Ecosystem" subtitle="Participants and role coverage." /><EcosystemSection ecosystem={snapshot.ecosystem} /></>
+  if (activeView === 'audit') return <><MobileHeader snapshot={snapshot} title="Audit Log" subtitle="Recent system activity." /><RecordList emptyLabel="No audit events found." icon={ShieldCheck} items={snapshot.activities} title="Audit Log" /></>
+  if (activeView === 'settings') return <><MobileHeader snapshot={snapshot} title="Settings" subtitle="Admin access and configuration." /><SettingsView access={access} profile={profile} /></>
+  return (
+    <>
+      <button className="mobile-back-button" onClick={() => onNavigate('more')} type="button">
+        <ArrowLeft size={16} />
+        More
+      </button>
+      <EmptyData />
+    </>
+  )
+}
+
+function MobileAdminShell({ access, activeView, onNavigate, onSignOut, profile, snapshot }) {
+  const primaryViews = ['dashboard', 'roleplayers', 'alerts', 'search', 'more']
+  const bottomActive = primaryViews.includes(activeView) ? activeView : 'more'
+  return (
+    <div className="mobile-admin-shell">
+      <main className="mobile-admin-main">
+        {activeView === 'dashboard' ? <MobileDashboard onNavigate={onNavigate} profile={profile} snapshot={snapshot} /> : null}
+        {activeView === 'roleplayers' ? <MobileRoleplayers snapshot={snapshot} /> : null}
+        {activeView === 'alerts' ? <MobileAlerts snapshot={snapshot} /> : null}
+        {activeView === 'search' ? <MobileSearch snapshot={snapshot} /> : null}
+        {activeView === 'more' ? <MobileMore onNavigate={onNavigate} onSignOut={onSignOut} snapshot={snapshot} /> : null}
+        {!primaryViews.includes(activeView) ? (
+          <MobileSecondaryView activeView={activeView} access={access} onNavigate={onNavigate} profile={profile} snapshot={snapshot} />
+        ) : null}
+      </main>
+      <MobileBottomNav activeView={bottomActive} onNavigate={onNavigate} />
+    </div>
+  )
+}
+
 function PlaceholderView({ icon: Icon, items, title }) {
   return (
     <div className="single-column">
@@ -853,6 +1698,7 @@ function UnauthorizedScreen({ roles, onSignOut }) {
 }
 
 export default function App() {
+  const isMobile = useIsMobile()
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [access, setAccess] = useState({ allowed: false, level: '', roles: [] })
@@ -873,6 +1719,14 @@ export default function App() {
   async function handleDateRangeChange(nextRange) {
     setDateRange(nextRange)
     await refreshData(nextRange)
+  }
+
+  function handleNavigate(viewId) {
+    setActiveView(viewId)
+    const navItem = MOBILE_NAV_ITEMS.find((item) => item.id === viewId)
+    if (navItem) {
+      pushAdminPath(navItem.path)
+    }
   }
 
   useEffect(() => {
@@ -924,7 +1778,7 @@ export default function App() {
       setProfile(nextProfile || { email: session.user.email })
       setAccess(nextAccess)
       if (nextAccess.allowed) {
-        setActiveView(getDefaultView(nextAccess.level))
+        setActiveView(viewFromPath(nextAccess.level, isMobile))
         setIsLoading(true)
         const nextSnapshot = await loadDashboardSnapshot(dateRange)
         if (!cancelled) setSnapshot(nextSnapshot)
@@ -936,7 +1790,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [session])
+  }, [isMobile, session])
 
   async function handleSignIn({ email, password }) {
     setAuthError('')
@@ -980,6 +1834,19 @@ export default function App() {
   const allowedViews = getAllowedViews(access.level)
   const canViewActive = allowedViews.some((view) => view.id === activeView)
 
+  if (isMobile && access.level === ADMIN_LEVELS.EXECUTIVE) {
+    return (
+      <MobileAdminShell
+        access={access}
+        activeView={activeView}
+        onNavigate={handleNavigate}
+        onSignOut={handleSignOut}
+        profile={profile}
+        snapshot={snapshot}
+      />
+    )
+  }
+
   return (
     <div className="admin-shell">
       <Sidebar
@@ -1007,6 +1874,7 @@ export default function App() {
         {activeView === 'organisations' && canViewActive ? (
           <PlaceholderView icon={Building2} items={snapshot.organisations} title="Organisations" />
         ) : null}
+        {activeView === 'roleplayers' && canViewActive ? <RoleplayersView snapshot={snapshot} /> : null}
         {activeView === 'users' && canViewActive ? <PlaceholderView icon={Users} items={snapshot.users} title="Users" /> : null}
         {activeView === 'transactions' && canViewActive ? (
           <PlaceholderView icon={Database} items={snapshot.transactions} title="Transactions" />

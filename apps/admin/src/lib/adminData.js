@@ -51,6 +51,19 @@ function uniqueById(rows = []) {
   })
 }
 
+function uniqueByInviteIdentity(rows = []) {
+  const seen = new Set()
+  return rows.filter((row) => {
+    const identity =
+      normalizeText(firstValue(row, ['email', 'invited_email', 'recipient_email', 'user_email']) || '').toLowerCase() ||
+      firstValue(row, ['user_id', 'profile_id', 'id']) ||
+      JSON.stringify(row)
+    if (seen.has(identity)) return false
+    seen.add(identity)
+    return true
+  })
+}
+
 function asDate(value) {
   if (!value) return null
   const date = new Date(value)
@@ -166,6 +179,78 @@ function rowEmail(row = {}) {
 
 function rowStatus(row = {}) {
   return normalizeText(row.status) || normalizeText(row.stage) || normalizeText(row.workflow_status) || 'open'
+}
+
+function rowRole(row = {}) {
+  const value = normalizeText(
+    firstValue(row, [
+      'role',
+      'user_role',
+      'invited_role',
+      'app_role',
+      'profile_role',
+      'organisation_role',
+      'organization_role',
+      'type',
+    ]),
+  )
+  if (!value) return 'Unknown'
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function roleplayerType(row = {}) {
+  const type = normalizeToken(firstValue(row, ['organisation_type', 'organization_type', 'type', 'category', 'role']))
+  if (type.includes('attorney') || type.includes('conveyancer')) return 'Attorney'
+  if (type.includes('bond') || type.includes('originator') || type.includes('finance')) return 'Bond Originator'
+  if (type.includes('developer')) return 'Developer'
+  if (type.includes('insurance')) return 'Insurance Partner'
+  if (type.includes('bank')) return 'Bank'
+  if (type.includes('agency') || type.includes('agent')) return 'Agency'
+  return 'Other'
+}
+
+function roleplayerTypeKey(value = '') {
+  return normalizeToken(value).replace(/s$/, '')
+}
+
+function organisationId(row = {}) {
+  return firstValue(row, ['id', 'organisation_id', 'organization_id', 'company_id', 'agency_id'])
+}
+
+function linkedOrganisationId(row = {}) {
+  return firstValue(row, ['organisation_id', 'organization_id', 'company_id', 'agency_id', 'partner_id', 'firm_id'])
+}
+
+function rowLogo(row = {}) {
+  return normalizeText(firstValue(row, ['logo_url', 'logoUrl', 'avatar_url', 'image_url', 'brand_logo_url', 'photo_url']))
+}
+
+function initialsFor(value = '') {
+  return normalizeText(value)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'A9'
+}
+
+function relativeTime(value) {
+  const date = asDate(value)
+  if (!date) return 'No activity'
+  const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000))
+  if (minutes < 60) return minutes <= 1 ? 'Just now' : `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return hours === 1 ? '1 hour ago' : `${hours} hours ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return days === 1 ? '1 day ago' : `${days} days ago`
+  return formatShortDate(date)
+}
+
+function matchesOrganisation(row = {}, orgId) {
+  if (!orgId) return false
+  return linkedOrganisationId(row) === orgId || organisationId(row) === orgId
 }
 
 function rowUpdatedAt(row = {}) {
@@ -350,6 +435,215 @@ function buildAttention({ organisations, profiles, transactions }) {
   return items.slice(0, 6)
 }
 
+function buildRoleplayerWorkspaces(type, counts = {}) {
+  if (type === 'Attorney') {
+    return [
+      { label: 'Transfer Matters', value: counts.transfer || counts.transactions || 0, meta: 'active' },
+      { label: 'Bond Matters', value: counts.bond || 0, meta: 'active' },
+      { label: 'Cancellation Matters', value: counts.cancellation || 0, meta: 'active' },
+      { label: 'Documents', value: counts.documents || 0, meta: 'files' },
+      { label: 'SLA Performance', value: counts.sla || 95, meta: '% on time' },
+    ]
+  }
+  if (type === 'Bond Originator') {
+    return [
+      { label: 'Applications', value: counts.applications || 0, meta: 'active' },
+      { label: 'Bank Submissions', value: counts.submissions || counts.applications || 0, meta: 'sent' },
+      { label: 'Approvals', value: counts.approvals || 0, meta: 'approved' },
+      { label: 'Declines', value: counts.declines || 0, meta: 'declined' },
+      { label: 'Consultants', value: counts.users || 0, meta: 'users' },
+    ]
+  }
+  if (type === 'Developer') {
+    return [
+      { label: 'Developments', value: counts.developments || 0, meta: 'active' },
+      { label: 'Units', value: counts.units || 0, meta: 'listed' },
+      { label: 'Buyers', value: counts.buyers || 0, meta: 'active' },
+      { label: 'Sales', value: counts.sales || 0, meta: 'month' },
+      { label: 'Transactions', value: counts.transactions || 0, meta: 'active' },
+    ]
+  }
+  if (type === 'Insurance Partner') {
+    return [
+      { label: 'Leads', value: counts.leads || 0, meta: 'active' },
+      { label: 'Quotes', value: counts.quotes || 0, meta: 'sent' },
+      { label: 'Policies', value: counts.policies || 0, meta: 'active' },
+      { label: 'Revenue', value: money(counts.revenue || 0), meta: 'month' },
+      { label: 'Performance', value: counts.performance || 0, meta: '% conversion' },
+    ]
+  }
+  return [
+    { label: 'Leads', value: counts.leads || 0, meta: 'active' },
+    { label: 'Listings', value: counts.listings || 0, meta: 'live' },
+    { label: 'Transactions', value: counts.transactions || 0, meta: 'active' },
+    { label: 'Buyer Leads', value: counts.buyers || 0, meta: 'open' },
+    { label: 'Seller Leads', value: counts.sellers || 0, meta: 'open' },
+    { label: 'Appointments', value: counts.appointments || 0, meta: 'scheduled' },
+  ]
+}
+
+function buildRoleplayers({ activities, bondApplications, bondCancellations, commissions, leads, organisations, profiles, subscriptions, tickets, transactions }, range) {
+  return organisations.map((organisation) => {
+    const id = organisationId(organisation) || rowName(organisation)
+    const type = roleplayerType(organisation)
+    const users = profiles.filter((profile) => matchesOrganisation(profile, id))
+    const orgTransactions = transactions.filter((transaction) => matchesOrganisation(transaction, id))
+    const orgBondApplications = bondApplications.filter((application) => matchesOrganisation(application, id))
+    const orgCancellations = bondCancellations.filter((cancellation) => matchesOrganisation(cancellation, id))
+    const orgTickets = tickets.filter((ticket) => matchesOrganisation(ticket, id))
+    const orgLeads = leads.filter((lead) => matchesOrganisation(lead, id))
+    const orgActivities = activities.filter((activity) => matchesOrganisation(activity, id))
+    const activeTransactions = orgTransactions.filter(isActiveTransaction)
+    const transferTransactions = orgTransactions.filter((transaction) => transactionStage(transaction) === 'Transfer')
+    const financeTransactions = orgTransactions.filter((transaction) => transactionStage(transaction) === 'Finance')
+    const registeredTransactions = orgTransactions.filter(isRegistered)
+    const revenue =
+      orgTransactions
+        .filter((row) => inRange(dateFrom(row, ['registration_date', 'registered_at', 'created_at']), range))
+        .reduce((sum, row) => sum + numberValue(row, ['transaction_fee', 'fee_amount', 'revenue_amount', 'amount']), 0) +
+      subscriptions
+        .filter((row) => matchesOrganisation(row, id) && inRange(dateFrom(row, ['created_at', 'started_at', 'current_period_start']), range))
+        .reduce((sum, row) => sum + numberValue(row, ['monthly_amount', 'amount', 'price', 'amount_cents']), 0) +
+      commissions
+        .filter((row) => matchesOrganisation(row, id) && inRange(dateFrom(row, ['created_at', 'earned_at', 'paid_at']), range))
+        .reduce((sum, row) => sum + numberValue(row, ['amount', 'commission_amount', 'amount_cents']), 0)
+
+    const lastUserActivity = users
+      .map((user) => dateFrom(user, ['last_login', 'last_sign_in_at', 'last_seen_at', 'updated_at', 'created_at']))
+      .filter(Boolean)
+      .sort((a, b) => b.getTime() - a.getTime())[0]
+    const lastTransactionActivity = orgTransactions
+      .map((transaction) => dateFrom(transaction, ['updated_at', 'created_at']))
+      .filter(Boolean)
+      .sort((a, b) => b.getTime() - a.getTime())[0]
+    const lastActivity = [lastUserActivity, lastTransactionActivity, latestDate(organisation)]
+      .filter(Boolean)
+      .sort((a, b) => b.getTime() - a.getTime())[0]
+    const noLoginDays = lastUserActivity ? daysAgo(lastUserActivity) : daysAgo(createdAt(organisation))
+    const stalledTransactions = activeTransactions.filter((transaction) => {
+      const age = daysAgo(dateFrom(transaction, ['updated_at', 'created_at', 'inserted_at']))
+      return age !== null && age > 21
+    })
+    const openIssues = orgTickets.filter((ticket) => !normalizeToken(rowStatus(ticket)).includes('closed')).length
+    const healthTone = noLoginDays > 30 || stalledTransactions.length > 8 ? 'danger' : noLoginDays > 14 || stalledTransactions.length > 0 || openIssues > 3 ? 'warning' : 'success'
+    const healthLabel = healthTone === 'danger' ? 'At Risk' : healthTone === 'warning' ? 'Needs Attention' : 'Good'
+    const activeWorkloadLabel =
+      type === 'Attorney'
+        ? 'Active Matters'
+        : type === 'Bond Originator'
+          ? 'Active Applications'
+          : type === 'Developer'
+            ? 'Active Developments'
+            : type === 'Insurance Partner'
+              ? 'Active Policies'
+              : 'Active Transactions'
+    const activeWorkload =
+      type === 'Bond Originator'
+        ? orgBondApplications.length
+        : type === 'Attorney'
+          ? transferTransactions.length + financeTransactions.length + orgCancellations.length
+          : activeTransactions.length
+    const workspaceCounts = {
+      applications: orgBondApplications.length,
+      approvals: orgBondApplications.filter((row) => normalizeToken(rowStatus(row)).includes('approved')).length,
+      bond: financeTransactions.length + orgBondApplications.length,
+      buyers: orgLeads.filter((row) => normalizeToken(firstValue(row, ['type', 'lead_type', 'role']) || '').includes('buyer')).length,
+      cancellation: orgCancellations.length,
+      declines: orgBondApplications.filter((row) => normalizeToken(rowStatus(row)).includes('declined')).length,
+      documents: Number(firstValue(organisation, ['document_count', 'documents_count']) || 0),
+      leads: orgLeads.length,
+      revenue,
+      sales: registeredTransactions.length,
+      sellers: orgLeads.filter((row) => normalizeToken(firstValue(row, ['type', 'lead_type', 'role']) || '').includes('seller')).length,
+      sla: Number(firstValue(organisation, ['sla_score', 'sla_performance']) || 95),
+      transactions: activeTransactions.length,
+      transfer: transferTransactions.length,
+      users: users.length,
+    }
+
+    const activityFeed = [
+      ...orgActivities.map((activity) => ({
+        id: activity.id || `${id}-activity-${activity.created_at}`,
+        text: normalizeText(activity.event_type || activity.action) || 'Organisation activity logged',
+        time: relativeTime(activity.created_at),
+        tone: 'neutral',
+      })),
+      ...orgTransactions.slice(0, 5).map((transaction) => ({
+        id: transaction.id || `${id}-transaction`,
+        text: `${rowName(transaction)} moved to ${transactionStage(transaction)}`,
+        time: relativeTime(rowUpdatedAt(transaction)),
+        tone: transactionStage(transaction) === 'Finance' ? 'blue' : 'green',
+      })),
+      ...users.slice(0, 4).map((user) => ({
+        id: user.id || `${id}-${user.email}`,
+        text: `${rowName(user)} ${dateFrom(user, ['last_login', 'last_sign_in_at']) ? 'logged in' : 'joined the workspace'}`,
+        time: relativeTime(dateFrom(user, ['last_login', 'last_sign_in_at', 'created_at'])),
+        tone: 'green',
+      })),
+    ]
+      .sort((a, b) => {
+        const left = a.time === 'No activity' ? 1 : 0
+        const right = b.time === 'No activity' ? 1 : 0
+        return left - right
+      })
+      .slice(0, 6)
+
+    return {
+      activeWorkload,
+      activeWorkloadLabel,
+      activityFeed,
+      billing: {
+        plan: normalizeText(firstValue(organisation, ['subscription_plan', 'plan', 'billing_plan'])) || 'Not set',
+        revenue: money(revenue),
+        subscriptionFees: money(
+          subscriptions
+            .filter((row) => matchesOrganisation(row, id))
+            .reduce((sum, row) => sum + numberValue(row, ['monthly_amount', 'amount', 'price', 'amount_cents']), 0),
+        ),
+        transactionFees: money(
+          orgTransactions.reduce((sum, row) => sum + numberValue(row, ['transaction_fee', 'fee_amount', 'revenue_amount', 'amount']), 0),
+        ),
+      },
+      health: { label: healthLabel, tone: healthTone },
+      id,
+      initials: initialsFor(rowName(organisation)),
+      joinedDate: formatShortDate(createdAt(organisation)),
+      lastActivity: relativeTime(lastActivity),
+      logoUrl: rowLogo(organisation),
+      name: rowName(organisation),
+      openIssues,
+      organisationId: id,
+      revenue,
+      revenueDisplay: money(revenue),
+      status: rowStatus(organisation),
+      subscriptionPlan: normalizeText(firstValue(organisation, ['subscription_plan', 'plan', 'billing_plan'])) || 'Not set',
+      transactions: orgTransactions.slice(0, 12).map((transaction) => ({
+        id: transaction.id,
+        assigned: normalizeText(firstValue(transaction, ['assigned_user_name', 'agent_name', 'attorney_name'])) || 'Unassigned',
+        buyer: normalizeText(firstValue(transaction, ['buyer_name', 'buyer_full_name'])) || 'No buyer',
+        lastActivity: relativeTime(rowUpdatedAt(transaction)),
+        reference: normalizeText(transaction.reference) || `Transaction ${String(transaction.id).slice(0, 8)}`,
+        seller: normalizeText(firstValue(transaction, ['seller_name', 'seller_full_name'])) || 'No seller',
+        stage: transactionStage(transaction),
+        status: rowStatus(transaction),
+      })),
+      type,
+      typeKey: roleplayerTypeKey(type),
+      users: users.slice(0, 12).map((user) => ({
+        id: user.id || user.email,
+        branch: normalizeText(firstValue(user, ['branch', 'office', 'region'])) || 'Main',
+        email: rowEmail(user),
+        lastLogin: relativeTime(dateFrom(user, ['last_login', 'last_sign_in_at', 'last_seen_at'])),
+        name: rowName(user),
+        role: rowRole(user),
+        status: rowStatus(user),
+      })),
+      userCount: users.length,
+      workspaceCards: buildRoleplayerWorkspaces(type, workspaceCounts),
+    }
+  })
+}
+
 function buildExecutiveSnapshot(raw, range) {
   const organisations = uniqueById(raw.organisations.data)
   const profiles = uniqueById(raw.profiles.data)
@@ -361,6 +655,35 @@ function buildExecutiveSnapshot(raw, range) {
   const subscriptions = uniqueById(raw.subscriptions.data)
   const commissions = uniqueById(raw.commissions.data)
   const leads = uniqueById([...raw.leads.data, ...raw.enquiries.data])
+  const invitationTables = uniqueByInviteIdentity([
+    ...raw.userInvitations.data.map((row) => ({ ...row, _invitation_source: 'user_invitations' })),
+    ...raw.invitations.data.map((row) => ({ ...row, _invitation_source: 'invitations' })),
+  ])
+  const profileInvitations = profiles.filter((profile) => {
+    const status = normalizeToken(rowStatus(profile))
+    return Boolean(
+      dateFrom(profile, ['invited_at', 'invitation_sent_at', 'invitedAt', 'invited_on']) ||
+        status.includes('invite') ||
+        status.includes('pending_invitation'),
+    )
+  })
+  const invitedUniverse = uniqueByInviteIdentity([...invitationTables, ...profileInvitations])
+  const invitedUsers = invitedUniverse.filter((row) =>
+    inRange(dateFrom(row, ['invited_at', 'invitation_sent_at', 'sent_at', 'invitedAt', 'invited_on', 'created_at']), range),
+  )
+  const previousInvitedUsers = invitedUniverse.filter((row) =>
+    inPreviousRange(dateFrom(row, ['invited_at', 'invitation_sent_at', 'sent_at', 'invitedAt', 'invited_on', 'created_at']), range),
+  )
+  const invitedRoleBreakdown = Object.entries(
+    invitedUsers.reduce((roles, row) => {
+      const role = rowRole(row)
+      roles[role] = (roles[role] || 0) + 1
+      return roles
+    }, {}),
+  )
+    .map(([label, value]) => ({ label, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 4)
 
   const orgBreakdown = ['Agencies', 'Attorneys', 'Bond Originators', 'Developers'].map((label) => ({
     label,
@@ -429,6 +752,14 @@ function buildExecutiveSnapshot(raw, range) {
       hasData: profiles.length > 0,
       label: 'Active Users',
       value: count(activeUsers.length || profiles.length),
+    },
+    {
+      accent: 'blue',
+      breakdown: invitedRoleBreakdown,
+      change: `${percentChange(invitedUsers.length, previousInvitedUsers.length) || '0%'} vs previous`,
+      hasData: invitedUniverse.length > 0,
+      label: 'Invited Users',
+      value: count(invitedUsers.length),
     },
     {
       accent: 'blue',
@@ -549,6 +880,21 @@ function buildExecutiveSnapshot(raw, range) {
     { label: 'Developers', value: orgBreakdown.find((item) => item.label === 'Developers')?.value || 0 },
   ]
   const ecosystemTotal = ecosystem.reduce((sum, item) => sum + item.value, 0)
+  const roleplayers = buildRoleplayers(
+    {
+      activities,
+      bondApplications,
+      bondCancellations,
+      commissions,
+      leads,
+      organisations,
+      profiles,
+      subscriptions,
+      tickets,
+      transactions,
+    },
+    range,
+  )
 
   const warnings = [
     raw.organisations.error,
@@ -560,6 +906,8 @@ function buildExecutiveSnapshot(raw, range) {
     raw.activities.error,
     raw.subscriptions.error,
     raw.commissions.error,
+    raw.userInvitations.error,
+    raw.invitations.error,
   ].filter(Boolean)
 
   return {
@@ -646,6 +994,7 @@ function buildExecutiveSnapshot(raw, range) {
       },
     },
     range,
+    roleplayers,
     tickets: tickets.map((ticket) => ({
       id: ticket.id,
       meta: ticket.requester_email || 'No requester',
@@ -701,6 +1050,8 @@ export async function loadDashboardSnapshot(rangeKey = '30d') {
     activities,
     subscriptions,
     commissions,
+    userInvitations,
+    invitations,
     leads,
     enquiries,
   ] = await Promise.all([
@@ -713,6 +1064,8 @@ export async function loadDashboardSnapshot(rangeKey = '30d') {
     tryTable('audit_logs', 'audit_logs'),
     tryTable('subscriptions', 'subscriptions'),
     tryTable('commissions', 'commissions'),
+    tryTable('user_invitations', 'user_invitations'),
+    tryTable('invitations', 'invitations'),
     tryTable('leads', 'leads'),
     tryTable('enquiries', 'enquiries'),
   ])
@@ -724,12 +1077,14 @@ export async function loadDashboardSnapshot(rangeKey = '30d') {
       bondCancellations,
       commissions,
       enquiries,
+      invitations,
       leads,
       organisations,
       profiles,
       subscriptions,
       tickets,
       transactions,
+      userInvitations,
     },
     range,
   )
