@@ -101,9 +101,9 @@ function CommercialLandlordOnboardingInviteModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/35 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-2xl rounded-[28px] border border-white/70 bg-[#f8fafc] shadow-[0_28px_88px_rgba(15,23,42,0.18)]">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center overflow-y-auto bg-slate-950/35 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <div className="my-auto flex max-h-[calc(100dvh-32px)] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[#f8fafc] shadow-[0_28px_88px_rgba(15,23,42,0.18)]">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
           <div>
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-400">Commercial Landlord</p>
             <h2 className="mt-1 text-xl font-semibold tracking-[-0.04em] text-[#102236]">Send Landlord Onboarding</h2>
@@ -114,7 +114,7 @@ function CommercialLandlordOnboardingInviteModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="grid gap-5 px-5 py-5 sm:px-6">
+        <form onSubmit={handleSubmit} className="grid min-h-0 flex-1 gap-5 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
           <div className="inline-flex w-fit rounded-2xl border border-slate-200 bg-white p-1">
             {[
               { value: 'existing', label: 'Use Existing' },

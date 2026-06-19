@@ -2944,12 +2944,12 @@
   }
 
   .ui-modal-overlay {
-    @apply items-center justify-center overflow-y-auto p-4;
+    @apply items-center justify-center overflow-y-auto px-3 py-4 sm:px-4;
   }
 
   .ui-modal {
-    @apply flex w-full max-w-[560px] flex-col overflow-hidden rounded-surface-xl border border-borderDefault bg-surface shadow-modal;
-    max-height: min(860px, calc(100dvh - 32px));
+    @apply my-auto flex w-full max-w-[560px] flex-col overflow-hidden rounded-surface-xl border border-borderDefault bg-surface shadow-modal;
+    max-height: min(900px, calc(100dvh - 32px));
   }
 
   .ui-modal-head,
@@ -2958,7 +2958,7 @@
   }
 
   .ui-modal-body {
-    @apply min-h-0 flex-1 overflow-y-auto px-6 py-6;
+    @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-6;
   }
 
   .ui-modal-footer {

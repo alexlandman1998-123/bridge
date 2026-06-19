@@ -43,9 +43,9 @@ function CommercialDocumentRequestModal({ open, entityType, onClose, onSubmit })
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm">
-      <form onSubmit={handleSubmit} className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)]">
-        <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-950/35 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <form onSubmit={handleSubmit} className="my-auto flex max-h-[calc(100dvh-32px)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)]">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 p-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Request document</p>
             <h2 className="mt-1 text-xl font-semibold tracking-[-0.035em] text-[#102236]">Internal Commercial Request</h2>
@@ -55,7 +55,7 @@ function CommercialDocumentRequestModal({ open, entityType, onClose, onSubmit })
           </button>
         </header>
 
-        <div className="grid gap-4 p-5 sm:grid-cols-2">
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto overscroll-contain p-5 sm:grid-cols-2">
           {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 sm:col-span-2">{error}</div> : null}
           <label className="grid gap-1.5">
             <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Document name *</span>
@@ -124,7 +124,7 @@ function CommercialDocumentRequestModal({ open, entityType, onClose, onSubmit })
           </label>
         </div>
 
-        <footer className="flex justify-end gap-3 border-t border-slate-200 p-5">
+        <footer className="flex shrink-0 justify-end gap-3 border-t border-slate-200 p-5">
           <button type="button" onClick={onClose} className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">Cancel</button>
           <button type="submit" disabled={saving} className="rounded-2xl bg-[#102b46] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:opacity-60">
             {saving ? 'Creating...' : 'Create request'}

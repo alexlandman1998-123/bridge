@@ -264,6 +264,20 @@ export type SendBuyerOfferLinkPayload = {
   supportPhone?: string;
 } & DeliveryContextPayload;
 
+export type SendLeadPropertySharePayload = {
+  type:
+    | "lead_property_share"
+    | "property_collection"
+    | "property_collection_email"
+    | "buyer_property_collection";
+  to: string;
+  subject?: string;
+  message?: string;
+  text?: string;
+  html?: string;
+  metadata?: JsonRecord;
+} & DeliveryContextPayload;
+
 export type SendBuyerOfferSubmittedAgentPayload = {
   type:
     | "buyer_offer_submitted_agent"

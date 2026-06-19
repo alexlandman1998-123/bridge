@@ -11,6 +11,7 @@ import { handleAppointmentEmail } from "./handlers/appointment.ts";
 import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
+import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
 import { handleBondIntakeNotificationEmail } from "./handlers/bondIntakeNotification.ts";
 import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBuyerIntro.ts";
 import { handleCommercialAccessNotificationEmail } from "./handlers/commercialAccessNotification.ts";
@@ -32,6 +33,7 @@ import type {
   SendCommercialAccessNotificationPayload,
   SendCommercialLandlordOnboardingPayload,
   SendLegacyTestPayload,
+  SendLeadPropertySharePayload,
   SendOfferDecisionNotificationPayload,
   SendOnboardingSubmittedPayload,
   SendReservationDepositPayload,
@@ -270,6 +272,23 @@ Deno.serve(async (req: Request) => {
 
     if (
       [
+        "lead_property_share",
+        "property_collection",
+        "property_collection_email",
+        "buyer_property_collection",
+      ].includes(type)
+    ) {
+      console.log("[send-email] routing template", {
+        route: "lead_property_share",
+        recipient: recipient || null,
+      });
+      return await handleLeadPropertyShareEmail(
+        payload as SendLeadPropertySharePayload,
+      );
+    }
+
+    if (
+      [
         "buyer_offer_submitted_agent",
         "buyer_offer_submitted",
         "offer_submitted_agent",
@@ -483,6 +502,8 @@ Deno.serve(async (req: Request) => {
           "seller_onboarding_submitted",
           "seller_mandate_sent",
           "seller_mandate_signed",
+          "lead_property_share",
+          "property_collection",
           "buyer_offer_link",
           "buyer_offer_submitted_agent",
           "seller_offer_review",

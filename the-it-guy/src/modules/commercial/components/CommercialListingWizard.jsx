@@ -523,9 +523,9 @@ function CommercialListingWizard({ open, lookups = {}, rawLookups = {}, onClose,
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm">
-      <form onSubmit={submit} className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)]">
-        <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/35 px-3 py-4 backdrop-blur-sm sm:px-4">
+      <form onSubmit={submit} className="my-auto flex max-h-[calc(100dvh-32px)] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)]">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 p-5">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Create Listing</p>
             <h2 className="mt-1 text-xl font-semibold text-[#102236]">Commercial new listing flow</h2>
@@ -549,10 +549,10 @@ function CommercialListingWizard({ open, lookups = {}, rawLookups = {}, onClose,
         </header>
 
         {createdListing ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">{renderSuccessState()}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{renderSuccessState()}</div>
         ) : (
           <>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
               {error ? <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</div> : null}
 
               {stepIndex === 0 ? renderIntentStep() : null}
@@ -564,7 +564,7 @@ function CommercialListingWizard({ open, lookups = {}, rawLookups = {}, onClose,
               {stepIndex === 6 ? renderReviewStep() : null}
             </div>
 
-            <footer className="flex flex-wrap justify-between gap-3 border-t border-slate-200 p-5">
+            <footer className="flex shrink-0 flex-wrap justify-between gap-3 border-t border-slate-200 p-5">
               <button type="button" onClick={stepIndex === 0 ? onClose : previousStep} className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
                 <ArrowLeft size={15} />
                 {stepIndex === 0 ? 'Cancel' : 'Back'}

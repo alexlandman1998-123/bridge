@@ -1722,8 +1722,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
         </div>
       )}
     >
-      <form id="commercial-canvassing-create-form" onSubmit={handleCreateProspect} className="overflow-hidden">
-        <div className="grid max-h-[calc(100vh-220px)] gap-0 overflow-hidden lg:grid-cols-[340px_minmax(0,1fr)]">
+      <form id="commercial-canvassing-create-form" onSubmit={handleCreateProspect} className="min-h-0">
+        <div className="grid min-h-0 gap-0 lg:grid-cols-[340px_minmax(0,1fr)]">
           <aside className="border-b border-[#e6edf4] bg-[#fbfdff] p-5 lg:border-b-0 lg:border-r">
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#8a96a8]">Step 1 of 3</p>
             <h4 className="mt-2 text-[1.1rem] font-semibold tracking-[-0.02em] text-[#102236]">What type of prospect is this?</h4>
@@ -1775,7 +1775,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
             </button>
           </aside>
 
-          <div className="overflow-y-auto bg-white">
+          <div className="min-h-0 bg-white">
             {createStep === 3 ? (
               <section className="p-5 sm:p-6">
                 <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#8a96a8]">Step 3 of 3</p>
