@@ -2198,7 +2198,11 @@ export async function activateCommercialWorkspaceForCurrentUser() {
   }
 
   commercialScopeCache = null
-  return resolveCommercialAccessContext({ forceRefresh: true })
+  const scope = await resolveCommercialAccessContext({ forceRefresh: true })
+  if (!scope?.hasCommercialAccess) {
+    throw new Error('Commercial access activation could not be confirmed for your account. Ask your principal to grant Commercial access from Settings > Users, then try again.')
+  }
+  return scope
 }
 
 function applyCommercialScope(query, kind, scope = {}) {

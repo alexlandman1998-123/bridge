@@ -427,6 +427,9 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
     try {
       setActionState({ saving: false, error: '', completion: null, selfActivating: true })
       const scope = await activateCommercialWorkspaceForCurrentUser()
+      if (!scope?.hasCommercialAccess) {
+        throw new Error('Commercial access could not be confirmed for your account. Ask your principal to grant Commercial access from Settings > Users, then try again.')
+      }
       onAccessGranted?.(scope)
       navigate('/commercial')
     } catch (error) {

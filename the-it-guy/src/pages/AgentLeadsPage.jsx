@@ -8767,6 +8767,842 @@ function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, on
   )
 }
 
+function getDealOfferNumber(offer = {}) {
+  const explicit = normalizeText(offer.offerNumber || offer.offer_number || offer.referenceNumber || offer.reference_number || offer.number)
+  if (explicit) return explicit.startsWith('#') ? explicit : `#${explicit}`
+  const id = getOfferId(offer)
+  return id ? `#${id.slice(0, 5).toUpperCase()}` : '—'
+}
+
+function getOfferDateValue(offer = {}, keys = []) {
+  for (const key of keys) {
+    if (offer?.[key]) return offer[key]
+  }
+  return ''
+}
+
+function getOfferDepositLabel(offer = {}) {
+  const deposit = toFiniteNumber(offer.deposit || offer.depositAmount || offer.deposit_amount)
+  const amount = getOfferAmount(offer)
+  if (!deposit) return '—'
+  const percentage = amount ? Math.round((deposit / amount) * 100) : 0
+  return percentage ? `${formatCurrency(deposit)} (${percentage}%)` : formatCurrency(deposit)
+}
+
+function getOfferFinanceLabel(offer = {}) {
+  return formatCleanValue(
+    offer.financeType ||
+    offer.finance_type ||
+    offer.financing ||
+    offer.conditions?.financeType ||
+    offer.conditions?.finance_type ||
+    offer.conditionsJson?.financeType ||
+    offer.conditions_json?.financeType,
+  ) || '—'
+}
+
+function getOfferPublicUrl(offer = {}) {
+  const token = normalizeText(offer.offerToken || offer.offer_token || offer.publicToken || offer.public_token || offer.token || getOfferId(offer))
+  if (!token || typeof window === 'undefined') return ''
+  return `${window.location.origin}/offers/${encodeURIComponent(token)}`
+}
+
+function getDealPropertySummary(lead = {}, offer = null) {
+  const contexts = getLeadOfferPropertyContexts(lead)
+  const propertyOptions = getLeadAppointmentPropertyOptions(lead)
+  const offerListingId = offer ? getOfferListingId(offer) : ''
+  const context = contexts.find((item) => item.listingId === offerListingId) || contexts[0] || null
+  const option = propertyOptions.find((item) => item.id === (context?.listingId || offerListingId)) || propertyOptions[0] || null
+  if (!context && !option) return null
+  return {
+    id: context?.listingId || option?.id || offerListingId,
+    title: context?.label || option?.label || 'Linked property',
+    suburb: option?.suburb || option?.city || context?.description || 'Location not set',
+    address: option?.description || context?.description || 'Property details pending',
+    price: context?.price || option?.price || null,
+    imageUrl: option?.imageUrl || '',
+    bedrooms: option?.bedrooms || null,
+    bathrooms: option?.bathrooms || null,
+    garages: option?.garages || null,
+    type: option?.type || '',
+  }
+}
+
+function getDealStatusCopy(lead = {}) {
+  const deal = getBuyerDealSnapshot(lead)
+  const offer = deal.latestOffer
+  const transaction = deal.latestTransaction
+  const transactionStatus = normalizeText(transaction?.status || transaction?.currentMainStage || transaction?.current_main_stage || transaction?.lifecycleState || transaction?.lifecycle_state).toLowerCase()
+  const offerStatus = getOfferStatus(offer)
+
+  if (transactionStatus.includes('registered')) {
+    return {
+      title: 'Registered',
+      subtitle: 'Deal completed',
+      copy: 'The transaction has successfully registered.',
+      icon: CheckCircle2,
+      tone: 'green',
+    }
+  }
+  if (transaction) {
+    return {
+      title: transactionStatus.includes('transfer') ? 'Transfer In Progress' : 'Transaction Created',
+      subtitle: deal.transactionStateLabel || 'Transaction active',
+      copy: deal.transactionStateHelper || 'Open the transaction workspace to continue the deal.',
+      icon: FileText,
+      tone: 'blue',
+    }
+  }
+  if (offerStatus === 'accepted' || deal.acceptedOffer) {
+    return {
+      title: 'Offer Accepted',
+      subtitle: 'Transaction ready',
+      copy: 'The seller accepted the offer. A transaction can now be created from this deal.',
+      icon: CheckCircle2,
+      tone: 'green',
+    }
+  }
+  if (['rejected', 'withdrawn', 'expired'].includes(offerStatus)) {
+    return {
+      title: formatCleanValue(offerStatus),
+      subtitle: 'Offer closed',
+      copy: deal.offerStateHelper || 'This offer is no longer active.',
+      icon: AlertTriangle,
+      tone: 'red',
+    }
+  }
+  if (offer) {
+    return {
+      title: offerStatus.includes('submitted') || offerStatus.includes('review') ? 'Offer Submitted' : 'Offer Sent',
+      subtitle: offerStatus.includes('submitted') || offerStatus.includes('review') ? 'Waiting For Seller Response' : 'Waiting for buyer submission',
+      copy: offerStatus.includes('submitted') || offerStatus.includes('review')
+        ? "The offer has been sent to the seller. We'll notify you when they respond."
+        : 'The offer link has been sent. Keep an eye on buyer and seller updates.',
+      icon: Send,
+      tone: 'blue',
+    }
+  }
+  return {
+    title: 'No Offer Submitted',
+    subtitle: 'Ready for first offer',
+    copy: 'Create and send an offer when the buyer is ready to move forward.',
+    icon: FileText,
+    tone: 'slate',
+  }
+}
+
+function getDealTimelineSteps(lead = {}, property = null) {
+  const deal = getBuyerDealSnapshot(lead)
+  const offer = deal.latestOffer
+  const offerStatus = getOfferStatus(offer)
+  const accepted = Boolean(deal.acceptedOffer || offerStatus === 'accepted' || offerStatus === 'converted_to_transaction')
+  const transaction = deal.latestTransaction
+  const offerSentDate = getOfferDateValue(offer, ['submittedAt', 'submitted_at', 'sentAt', 'sent_at', 'createdAt', 'created_at'])
+  const acceptedDate = getOfferDateValue(deal.acceptedOffer || offer, ['acceptedAt', 'accepted_at', 'updatedAt', 'updated_at'])
+  const transactionDate = getOfferDateValue(transaction, ['createdAt', 'created_at', 'updatedAt', 'updated_at'])
+  return [
+    { key: 'property', title: 'Property', status: property ? 'Completed' : 'Pending', done: Boolean(property), current: !property, date: '' },
+    { key: 'offer', title: 'Offer Sent', status: offer ? 'Completed' : 'Pending', done: Boolean(offer), current: Boolean(property && !offer), date: offerSentDate ? formatDate(offerSentDate) : '' },
+    { key: 'seller', title: 'Seller Review', status: accepted ? 'Completed' : offer ? 'In Progress' : 'Pending', done: accepted, current: Boolean(offer && !accepted && !['rejected', 'withdrawn', 'expired'].includes(offerStatus)), date: '' },
+    { key: 'accepted', title: 'Accepted', status: accepted ? 'Completed' : 'Pending', done: accepted, current: false, date: accepted && acceptedDate ? formatDate(acceptedDate) : '' },
+    { key: 'transaction', title: 'Transaction', status: transaction ? 'Completed' : 'Pending', done: Boolean(transaction), current: Boolean(accepted && !transaction), date: transactionDate ? formatDate(transactionDate) : '' },
+  ]
+}
+
+function DealStatusSection({ lead, property }) {
+  const status = getDealStatusCopy(lead)
+  const Icon = status.icon
+  const steps = getDealTimelineSteps(lead, property)
+  return (
+    <MatchSectionShell number="1" title="Deal Status">
+      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-center">
+        <div className="rounded-2xl bg-blue-50 p-5">
+          <div className="flex items-center gap-4">
+            <span className={`inline-flex h-14 w-14 items-center justify-center rounded-full ${status.tone === 'green' ? 'bg-emerald-100 text-emerald-700' : status.tone === 'red' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-blue-700'}`}>
+              <Icon size={24} />
+            </span>
+            <div>
+              <h3 className="text-lg font-semibold text-slate-950">{status.title}</h3>
+              <p className="mt-1 text-sm font-semibold text-slate-600">{status.subtitle}</p>
+            </div>
+          </div>
+          <p className="mt-5 text-sm leading-6 text-slate-600">{status.copy}</p>
+        </div>
+        <div className="overflow-x-auto pb-2">
+          <div className="grid min-w-[720px] grid-cols-5 items-start">
+            {steps.map((step, index) => (
+              <div key={step.key} className="relative text-center">
+                {index > 0 ? <span className={`absolute left-0 top-7 h-0.5 w-1/2 ${steps[index - 1].done ? 'bg-blue-600' : 'bg-slate-200'}`} /> : null}
+                {index < steps.length - 1 ? <span className={`absolute right-0 top-7 h-0.5 w-1/2 ${step.done ? 'bg-blue-600' : 'bg-slate-200'}`} /> : null}
+                <span className={`relative z-10 mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 ${step.done ? 'border-blue-600 bg-blue-600 text-white' : step.current ? 'border-blue-600 bg-white text-blue-700 shadow-[0_0_0_6px_rgba(37,99,235,0.08)]' : 'border-slate-200 bg-white text-slate-400'}`}>
+                  {step.done ? <CheckCircle2 size={20} /> : index + 1}
+                </span>
+                <p className="mt-3 text-sm font-semibold text-slate-950">{step.title}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">{step.date || step.status}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </MatchSectionShell>
+  )
+}
+
+function DealPropertySection({ property, onViewListing, onReplaceProperty }) {
+  return (
+    <MatchSectionShell number="2" title="Property">
+      {property ? (
+        <article className="grid gap-5 lg:grid-cols-[300px_minmax(0,1fr)_180px] lg:items-center">
+          {property.imageUrl ? (
+            <img src={property.imageUrl} alt={property.title} className="h-44 w-full rounded-2xl object-cover lg:h-40" loading="lazy" />
+          ) : (
+            <div className="flex h-44 w-full items-center justify-center rounded-2xl bg-slate-100 text-slate-400 lg:h-40">
+              <Home size={28} />
+            </div>
+          )}
+          <div className="min-w-0">
+            <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{property.title}</h3>
+            <p className="mt-1 text-sm font-semibold text-slate-500">{property.suburb || property.address}</p>
+            <p className="mt-4 text-xl font-semibold text-blue-700">{property.price ? formatCurrency(property.price) : 'Price on request'}</p>
+            <div className="mt-4 flex flex-wrap gap-5 text-sm font-semibold text-slate-600">
+              {property.bedrooms ? <span>{property.bedrooms} Bed</span> : null}
+              {property.bathrooms ? <span>{property.bathrooms} Bath</span> : null}
+              {property.garages ? <span>{property.garages} Garage</span> : null}
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <button type="button" onClick={onViewListing} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <ExternalLink size={15} />
+              View Listing
+            </button>
+            <button type="button" onClick={onReplaceProperty} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <RefreshCw size={15} />
+              Replace Property
+            </button>
+          </div>
+        </article>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+          <h3 className="text-lg font-semibold text-slate-950">No property linked</h3>
+          <p className="mt-2 text-sm text-slate-500">This offer requires a property before it can be sent.</p>
+          <button type="button" onClick={onReplaceProperty} className="mt-5 inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white">Link Property</button>
+        </div>
+      )}
+    </MatchSectionShell>
+  )
+}
+
+function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, onSaved }) {
+  const contact = getLeadContactSnapshot(lead)
+  const contexts = useMemo(() => getLeadOfferPropertyContexts(lead), [lead])
+  const bestContext = contexts[0] || null
+  const [draft, setDraft] = useState({
+    contextKey: bestContext?.key || '',
+    expiryDate: getFutureInputValue(7),
+    note: '',
+    emailBuyer: true,
+  })
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [lastLink, setLastLink] = useState('')
+  const selectedContext = contexts.find((context) => context.key === draft.contextKey) || bestContext
+
+  useEffect(() => {
+    if (!open) return
+    setDraft((previous) => ({
+      ...previous,
+      contextKey: contexts.some((context) => context.key === previous.contextKey) ? previous.contextKey : contexts[0]?.key || '',
+      expiryDate: previous.expiryDate || getFutureInputValue(7),
+    }))
+    setError('')
+    setMessage('')
+    setLastLink('')
+  }, [contexts, open])
+
+  async function sendBuyerOfferLinkEmail(link = '', context = {}) {
+    const recipientEmail = normalizeText(contact.email || lead.email).toLowerCase()
+    if (!draft.emailBuyer || !recipientEmail || !link) {
+      return {
+        attempted: false,
+        sent: false,
+        reason: !draft.emailBuyer ? 'disabled' : recipientEmail ? 'missing_link' : 'missing_email',
+      }
+    }
+    try {
+      const emailResponse = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'buyer_offer_link',
+          to: recipientEmail,
+          buyerName: contact.name || lead.name || 'Buyer',
+          propertyTitle: context.label || 'selected property',
+          propertyCount: 1,
+          offerLink: link,
+          expiresAt: draft.expiryDate,
+          agentName: actor?.fullName || actor?.name || actor?.email || '',
+          note: draft.note,
+        },
+      })
+      if (emailResponse?.error || emailResponse?.data?.error) {
+        throw emailResponse.error || new Error(emailResponse.data.error)
+      }
+      return { attempted: true, sent: true }
+    } catch (emailError) {
+      return { attempted: true, sent: false, error: emailError }
+    }
+  }
+
+  async function submit(event) {
+    event.preventDefault()
+    if (!organisationId || !lead?.leadId) {
+      setError('This lead needs to be loaded before an offer can be sent.')
+      return
+    }
+    if (!selectedContext?.listingId) {
+      setError('Link a property before sending an offer.')
+      return
+    }
+
+    try {
+      setSending(true)
+      setError('')
+      setMessage('')
+      setLastLink('')
+
+      const persisted = await ensureAgencyCrmLeadRecordPersisted(organisationId, lead, getLeadContactFallback(lead), { actor })
+      const buyerLeadId = normalizeText(persisted?.leadId || lead.leadId)
+      const buyerContactId = normalizeText(persisted?.contactId || contact.contactId)
+      const appointmentId = normalizeText(selectedContext.appointmentId)
+      const canUsePostViewingPortal = Boolean(
+        appointmentId &&
+          UUID_PATTERN.test(organisationId) &&
+          UUID_PATTERN.test(buyerLeadId) &&
+          UUID_PATTERN.test(selectedContext.listingId) &&
+          UUID_PATTERN.test(appointmentId),
+      )
+      let offerLink = ''
+      let activityType = 'Offer Link Sent'
+      let createdLabel = 'Offer link created'
+
+      if (canUsePostViewingPortal) {
+        await upsertAppointmentViewedListings({
+          organisationId,
+          appointmentId,
+          leadId: buyerLeadId,
+          agentId: actor?.id || actor?.userId,
+          viewedListings: [{
+            listingId: selectedContext.listingId,
+            outcome: selectedContext.completed ? 'Interested' : 'Offer requested',
+            buyerFeedback: '',
+            agentNotes: draft.note,
+            viewedAt: new Date().toISOString(),
+            metadata: { source: 'lead_workspace_offers_tab', readiness: selectedContext.readiness },
+          }],
+        }).catch(() => [])
+        const session = await createOfferPortalSession({
+          organisationId,
+          buyerLeadId,
+          buyerContactId,
+          appointmentId,
+          agentId: actor?.id || actor?.userId,
+          expiresAt: draft.expiryDate,
+          metadata: {
+            source: 'lead_workspace_offers_tab',
+            selectedListingId: selectedContext.listingId,
+            propertyLabel: selectedContext.label,
+            readiness: selectedContext.readiness,
+            agentNoteToBuyer: draft.note,
+          },
+        }, { actor })
+        offerLink = session?.token && typeof window !== 'undefined' ? `${window.location.origin}/offers/session/${encodeURIComponent(session.token)}` : ''
+        activityType = 'Post-Viewing Offer Portal Sent'
+        createdLabel = 'Post-viewing offer portal created'
+        await updateAppointmentAsync(organisationId, appointmentId, { nextStep: 'Post-viewing offer portal sent' }, { actor }).catch(() => null)
+      } else {
+        const offer = await createCanonicalOffer({
+          organisationId,
+          buyerLeadId,
+          buyerContactId,
+          listingId: selectedContext.listingId,
+          agentId: actor?.id || actor?.userId,
+          viewingAppointmentId: UUID_PATTERN.test(appointmentId) ? appointmentId : null,
+          status: 'sent_to_buyer',
+          expiryDate: draft.expiryDate,
+          conditionsJson: {
+            source: 'lead_workspace_offers_tab',
+            propertyLabel: selectedContext.label,
+            readiness: selectedContext.readiness,
+            buyerName: contact.name || lead.name || 'Buyer',
+            buyerEmail: contact.email || lead.email || '',
+            buyerPhone: contact.phone || lead.phone || '',
+            agentName: actor?.fullName || actor?.name || actor?.email || '',
+            agentEmail: normalizeText(actor?.email || '').toLowerCase(),
+            agentReviewUrl: typeof window !== 'undefined' ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(buyerLeadId)}` : '',
+            agentNoteToBuyer: draft.note,
+            offerWithoutCompletedViewing: !selectedContext.completed,
+          },
+        }, { actor })
+        const offerToken = normalizeText(offer?.offerToken || offer?.offer_token || offer?.id)
+        offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
+        createdLabel = selectedContext.completed ? 'Offer link created' : 'Offer link created without a completed viewing'
+      }
+
+      await createAgencyCrmLeadActivity(
+        organisationId,
+        buyerLeadId,
+        {
+          activityType,
+          activityNote: [
+            `${createdLabel} for ${selectedContext.label || 'selected property'}.`,
+            selectedContext.readinessLabel ? `Context: ${selectedContext.readinessLabel}.` : '',
+            offerLink ? `Link: ${offerLink}` : '',
+            draft.note ? `Note: ${draft.note}` : '',
+          ].filter(Boolean).join(' '),
+          outcome: 'Offer Draft',
+          activityDate: new Date().toISOString(),
+        },
+        { actor },
+      ).catch(() => null)
+
+      if (offerLink && typeof navigator !== 'undefined') void navigator.clipboard?.writeText(offerLink)
+      const emailResult = await sendBuyerOfferLinkEmail(offerLink, selectedContext)
+      setLastLink(offerLink)
+      setMessage(
+        offerLink
+          ? emailResult.sent
+            ? `${createdLabel} and emailed to the buyer. Link copied as backup.`
+            : emailResult.attempted
+              ? `${createdLabel} and copied, but the buyer email could not be sent.`
+              : `${createdLabel} and copied. Add a buyer email or enable email sending to send it directly.`
+          : `${createdLabel}.`,
+      )
+      if (emailResult.error) setError(emailResult.error?.message || 'Offer link created, but email sending failed.')
+      await onSaved?.()
+    } catch (sendError) {
+      setError(sendError?.message || 'Unable to create this offer link.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Send Offer" subtitle="Create and send an offer link for the selected property." className="max-w-3xl">
+      {contexts.length ? (
+        <form onSubmit={submit} className="grid gap-4">
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            Property
+            <select value={draft.contextKey} onChange={(event) => setDraft((previous) => ({ ...previous, contextKey: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
+              {contexts.map((context) => (
+                <option key={context.key} value={context.key}>
+                  {[context.label, context.price ? formatCurrency(context.price) : '', context.readinessLabel].filter(Boolean).join(' - ')}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+            <label className="grid gap-2 text-sm font-semibold text-slate-700">
+              Link expiry
+              <input type="date" value={draft.expiryDate} onChange={(event) => setDraft((previous) => ({ ...previous, expiryDate: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" />
+            </label>
+            <label className="flex min-h-12 items-center gap-3 self-end rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+              <input type="checkbox" checked={draft.emailBuyer} onChange={(event) => setDraft((previous) => ({ ...previous, emailBuyer: event.target.checked }))} />
+              Email buyer
+            </label>
+          </div>
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            Note
+            <textarea value={draft.note} onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))} rows={4} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="Optional note for the buyer or timeline" />
+          </label>
+          {!contact.email && draft.emailBuyer ? <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">This buyer has no email, so the link will be created and copied but not emailed.</p> : null}
+          {error ? <p className="text-sm font-semibold text-red-600">{error}</p> : null}
+          {message ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+          {lastLink ? <a href={lastLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700">Open generated offer link <ExternalLink size={13} /></a> : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" onClick={onClose} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Close</button>
+            <button type="submit" disabled={sending || !selectedContext?.listingId} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white disabled:bg-slate-300">
+              <Send size={15} />
+              {sending ? 'Sending...' : 'Send Offer'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <EmptyState title="No property linked" copy="Link a property or schedule a viewing before sending an offer." actionLabel="Close" onAction={onClose} />
+      )}
+    </Modal>
+  )
+}
+
+function DealOfferSection({ lead, offer, onSendOffer, onScheduleViewing, onViewOffer, onWithdrawOffer, withdrawing }) {
+  const status = offer ? getOfferStatus(offer) : ''
+  const lifecycle = offer ? getOfferLifecycleState(offer) : null
+  const submittedDate = getOfferDateValue(offer, ['submittedAt', 'submitted_at', 'sentAt', 'sent_at', 'createdAt', 'created_at'])
+  const expiryDate = getOfferDateValue(offer, ['expiryDate', 'expiry_date', 'expiresAt', 'expires_at'])
+  const statusLabel = status.includes('submitted') || status.includes('review') ? 'Waiting For Seller' : lifecycle?.label || 'Draft'
+  return (
+    <MatchSectionShell number="3" title="Offer">
+      {offer ? (
+        <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_190px]">
+          <div className="rounded-2xl bg-emerald-50 p-5">
+            <div className="flex items-center gap-4">
+              <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                <FileText size={24} />
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-950">{status === 'accepted' ? 'Offer accepted' : 'Offer submitted'}</h3>
+                <StatusPill tone={getOfferStatusTone(status)}>{statusLabel}</StatusPill>
+              </div>
+            </div>
+            <p className="mt-5 text-sm leading-6 text-slate-600">{getBuyerDealSnapshot(lead).offerStateHelper}</p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5">
+            <h3 className="text-base font-semibold text-slate-950">Offer {getDealOfferNumber(offer)}</h3>
+            <dl className="mt-3 divide-y divide-slate-100">
+              {[
+                ['Submitted', submittedDate ? formatDate(submittedDate) : '—'],
+                ['Offer Price', getOfferAmount(offer) ? formatCurrency(getOfferAmount(offer)) : '—'],
+                ['Deposit', getOfferDepositLabel(offer)],
+                ['Financing', getOfferFinanceLabel(offer)],
+                ['Status', statusLabel],
+                ['Expires', expiryDate ? formatDate(expiryDate) : '—'],
+              ].map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-4 py-2 text-sm">
+                  <dt className="font-semibold text-slate-500">{label}</dt>
+                  <dd className="text-right font-semibold text-slate-950">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+          <div className="grid content-start gap-2">
+            <button type="button" onClick={onViewOffer} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white">
+              <ExternalLink size={15} />
+              View Offer
+            </button>
+            <button type="button" onClick={onSendOffer} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+              <Send size={15} />
+              Resend Offer
+            </button>
+            <button type="button" onClick={onWithdrawOffer} disabled={withdrawing || !offer || status === 'withdrawn'} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-700 disabled:opacity-50">
+              <AlertTriangle size={15} />
+              {withdrawing ? 'Withdrawing...' : 'Withdraw Offer'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div>
+            <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">No offer submitted</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Create and send an offer to start the transaction process.</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button type="button" onClick={onSendOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white">
+              <Send size={15} />
+              Send Offer
+            </button>
+            <button type="button" onClick={onScheduleViewing} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700">
+              <CalendarDays size={15} />
+              Schedule Viewing
+            </button>
+          </div>
+        </div>
+      )}
+    </MatchSectionShell>
+  )
+}
+
+function DealTransactionSection({ lead, converting, onConvert, message, error }) {
+  const transaction = getLatestTransaction(lead)
+  const transactionId = getLeadLinkedTransactionId(lead)
+  const acceptedOffer = getAcceptedOfferForConversion(lead?.offers || [])
+  const registered = normalizeText(transaction?.status || transaction?.currentMainStage || transaction?.current_main_stage).toLowerCase().includes('registered')
+  return (
+    <MatchSectionShell number="4" title="Transaction">
+      {transaction || transactionId ? (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
+          <div className={`rounded-2xl border p-5 ${registered ? 'border-emerald-100 bg-emerald-50' : 'border-blue-100 bg-blue-50'}`}>
+            <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{registered ? 'Registered' : 'Transaction Created'}</h3>
+            <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Transaction Number</dt>
+                <dd className="mt-1 text-sm font-semibold text-slate-950">{transaction?.transactionNumber || transaction?.transaction_number || transactionId || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Attorney</dt>
+                <dd className="mt-1 text-sm font-semibold text-slate-950">{transaction?.attorneyName || transaction?.attorney_name || 'Not assigned'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Bond Status</dt>
+                <dd className="mt-1 text-sm font-semibold text-slate-950">{formatCleanValue(transaction?.bondStatus || transaction?.bond_status) || 'Pending'}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Transfer Status</dt>
+                <dd className="mt-1 text-sm font-semibold text-slate-950">{formatCleanValue(transaction?.transferStatus || transaction?.transfer_status || transaction?.currentMainStage || transaction?.current_main_stage || transaction?.status) || 'Preparing Documents'}</dd>
+              </div>
+            </dl>
+          </div>
+          <div className="grid content-start gap-2">
+            <Link to={`/transactions/${transactionId || transaction?.id}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white">
+              Open Transaction
+              <ExternalLink size={15} />
+            </Link>
+            <Link to={`/transactions/${transactionId || transaction?.id}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+              View Timeline
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)_auto] lg:items-center">
+          <div className="rounded-2xl bg-blue-50 p-5">
+            <h3 className="text-lg font-semibold text-slate-950">Transaction not created yet</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">A transaction will automatically be created once the seller accepts the offer.</p>
+          </div>
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5">
+            <p className="text-sm font-semibold text-slate-950">What happens next?</p>
+            <div className="mt-3 grid gap-2 text-sm text-slate-600">
+              {['Seller accepts the offer', 'Arch9 creates the transaction automatically', 'Document checklist generated', 'Transfer process begins'].map((item) => (
+                <span key={item} className="inline-flex items-center gap-2"><CheckCircle2 size={15} className="text-blue-700" />{item}</span>
+              ))}
+            </div>
+          </div>
+          {acceptedOffer ? (
+            <button type="button" onClick={onConvert} disabled={converting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:bg-slate-300">
+              <CheckCircle2 size={15} />
+              {converting ? 'Creating...' : 'Create Transaction'}
+            </button>
+          ) : null}
+        </div>
+      )}
+      {message ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      {error ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+    </MatchSectionShell>
+  )
+}
+
+function DealNextActionSection({ lead, onSendOffer, onScheduleViewing, onViewOffer, onOpenTransaction }) {
+  const deal = getBuyerDealSnapshot(lead)
+  const transactionId = getLeadLinkedTransactionId(lead)
+  const offer = deal.latestOffer
+  const status = getOfferStatus(offer)
+  let title = 'Ready to move forward?'
+  let copy = "If you're ready, you can send an offer to start the transaction process."
+  let primaryLabel = 'Send Offer'
+  let primaryAction = onSendOffer
+  let secondaryLabel = 'Schedule Viewing'
+  let secondaryAction = onScheduleViewing
+
+  if (transactionId) {
+    title = 'Transaction ready'
+    copy = 'Your transaction has been created automatically.'
+    primaryLabel = 'Open Transaction'
+    primaryAction = onOpenTransaction
+    secondaryLabel = ''
+    secondaryAction = null
+  } else if (status === 'accepted') {
+    title = 'Transaction ready'
+    copy = 'The seller accepted the offer. Create or open the transaction to continue.'
+    primaryLabel = 'Create Transaction'
+    primaryAction = onOpenTransaction
+    secondaryLabel = ''
+    secondaryAction = null
+  } else if (offer) {
+    title = 'Waiting for seller response'
+    copy = "We'll notify you when the seller views or responds to the offer."
+    primaryLabel = 'View Offer'
+    primaryAction = onViewOffer
+    secondaryLabel = ''
+    secondaryAction = null
+  }
+
+  return (
+    <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.045)] sm:p-6">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">
+        <div className="flex items-start gap-4">
+          <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+            <Send size={24} />
+          </span>
+          <div>
+            <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{copy}</p>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={primaryAction} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white">
+            <Send size={15} />
+            {primaryLabel}
+          </button>
+          {secondaryAction ? (
+            <button type="button" onClick={secondaryAction} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700">
+              <CalendarDays size={15} />
+              {secondaryLabel}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavigate }) {
+  const deal = getBuyerDealSnapshot(lead)
+  const latestOffer = deal.latestOffer
+  const latestOfferId = getOfferId(latestOffer)
+  const property = getDealPropertySummary(lead, latestOffer)
+  const transactionId = getLeadLinkedTransactionId(lead)
+  const acceptedOffer = getAcceptedOfferForConversion(lead?.offers || [])
+  const acceptedOfferId = getOfferId(acceptedOffer)
+  const acceptedProperty = getDealPropertySummary(lead, acceptedOffer)
+  const [offerModalOpen, setOfferModalOpen] = useState(false)
+  const [workingAction, setWorkingAction] = useState('')
+  const [transactionMessage, setTransactionMessage] = useState('')
+  const [transactionError, setTransactionError] = useState('')
+
+  function openListing() {
+    if (!property?.id || typeof window === 'undefined') return
+    window.open(`/agent/listings/${property.id}`, '_blank', 'noopener,noreferrer')
+  }
+
+  function viewOffer() {
+    const url = getOfferPublicUrl(latestOffer)
+    if (url && typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  function openTransaction() {
+    if (!transactionId || typeof window === 'undefined') return
+    window.open(`/transactions/${transactionId}`, '_blank', 'noopener,noreferrer')
+  }
+
+  async function withdrawOffer() {
+    if (!latestOfferId || !latestOffer) return
+    try {
+      setWorkingAction('withdrawn')
+      await updateCanonicalOfferStatus(latestOfferId, 'withdrawn', {
+        organisationId,
+        actor,
+        patch: buildLeadCanonicalOfferActionPatch(latestOffer, actor, 'Buyer withdrew offer', 'Withdrawn from deal workspace'),
+      })
+      await onSaved?.()
+    } finally {
+      setWorkingAction('')
+    }
+  }
+
+  async function sendBuyerOnboarding(scopedTransactionId = '') {
+    if (!scopedTransactionId) return { attempted: false, sent: false }
+    try {
+      const onboardingEmail = await invokeEdgeFunction('send-email', {
+        body: {
+          type: 'client_onboarding',
+          transactionId: scopedTransactionId,
+          source: 'buyer_lead_offer_conversion',
+        },
+      })
+      if (onboardingEmail?.error || onboardingEmail?.data?.error) throw onboardingEmail.error || new Error(onboardingEmail.data.error)
+      return { attempted: true, sent: true }
+    } catch (error) {
+      return { attempted: true, sent: false, error }
+    }
+  }
+
+  async function convertAcceptedOffer() {
+    if (!acceptedOffer || !acceptedOfferId) {
+      setTransactionError('An accepted offer is required before a transaction can be created.')
+      return
+    }
+    try {
+      setWorkingAction('convert')
+      setTransactionError('')
+      setTransactionMessage('')
+      const contact = getLeadContactSnapshot(lead)
+      const listingId = getOfferListingId(acceptedOffer)
+      const result = await createTransactionFromAcceptedCanonicalOffer({
+        organisationId,
+        offerId: acceptedOfferId,
+        offer: acceptedOffer,
+        lead: {
+          ...lead,
+          email: contact.email || lead.email,
+          phone: contact.phone || lead.phone,
+          firstName: getLeadContactFallback(lead).firstName,
+          lastName: getLeadContactFallback(lead).lastName,
+        },
+        listing: listingId ? {
+          id: listingId,
+          organisationId,
+          listingTitle: acceptedProperty?.title || lead.propertyInterest || 'Listing',
+          propertyAddress: acceptedProperty?.address || lead.areaInterest || '',
+        } : null,
+        actor,
+        payload: {
+          listingId,
+          buyerName: contact.name || lead.name,
+          buyerEmail: contact.email || lead.email,
+          buyerPhone: contact.phone || lead.phone,
+          source: 'buyer_lead_workspace_deal_progression',
+        },
+      })
+      const newTransactionId = normalizeText(result?.transactionId || result?.transactionRow?.transaction?.id)
+      const onboarding = await sendBuyerOnboarding(newTransactionId)
+      setTransactionMessage(onboarding.sent ? 'Transaction created and buyer onboarding was sent.' : 'Transaction created.')
+      if (onboarding.error) setTransactionError(onboarding.error?.message || 'Transaction created, but onboarding email failed.')
+      await onSaved?.()
+    } catch (error) {
+      setTransactionError(error?.message || 'Unable to create a transaction from this accepted offer.')
+    } finally {
+      setWorkingAction('')
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_16px_42px_rgba(15,23,42,0.045)] sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-[-0.055em] text-slate-950">Offers / Transactions</h1>
+            <p className="mt-1 text-sm text-slate-500">Track offers and transactions from first offer to final transfer.</p>
+          </div>
+          <button type="button" onClick={onSaved} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+            <RefreshCw size={15} />
+            Refresh Status
+          </button>
+        </div>
+      </section>
+
+      <DealStatusSection lead={lead} property={property} />
+      <DealPropertySection property={property} onViewListing={openListing} onReplaceProperty={() => onNavigate?.('property_match')} />
+      <DealOfferSection
+        lead={lead}
+        offer={latestOffer}
+        onSendOffer={() => setOfferModalOpen(true)}
+        onScheduleViewing={() => onNavigate?.('appointments')}
+        onViewOffer={viewOffer}
+        onWithdrawOffer={withdrawOffer}
+        withdrawing={workingAction === 'withdrawn'}
+      />
+      <DealTransactionSection
+        lead={lead}
+        converting={workingAction === 'convert'}
+        onConvert={convertAcceptedOffer}
+        message={transactionMessage}
+        error={transactionError}
+      />
+      <DealNextActionSection
+        lead={lead}
+        onSendOffer={() => setOfferModalOpen(true)}
+        onScheduleViewing={() => onNavigate?.('appointments')}
+        onViewOffer={viewOffer}
+        onOpenTransaction={transactionId ? openTransaction : convertAcceptedOffer}
+      />
+      <DealOfferComposerModal
+        open={offerModalOpen}
+        organisationId={organisationId}
+        lead={lead}
+        actor={actor}
+        onClose={() => setOfferModalOpen(false)}
+        onSaved={onSaved}
+      />
+    </div>
+  )
+}
+
 function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
   const contact = getLeadContactSnapshot(lead)
   const contexts = useMemo(() => getLeadOfferPropertyContexts(lead), [lead])
@@ -14761,36 +15597,13 @@ function AgentLeadWorkspace() {
               ) : null}
 
               {activeTab === 'offers' ? (
-                <section className={buyerWorkspaceCardClass}>
-                  <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Offers / Transactions</h2>
-                  <div className="mt-5 grid gap-5">
-                    <LeadOfferReadinessPanel
-                      organisationId={organisationId}
-                      lead={row}
-                      actor={actor}
-                      onSaved={loadWorkspace}
-                    />
-                    <LeadOfferTransactionConversionPanel
-                      organisationId={organisationId}
-                      lead={row}
-                      actor={actor}
-                      onSaved={loadWorkspace}
-                    />
-                    <LeadOfferEdgeCasesPanel
-                      organisationId={organisationId}
-                      lead={row}
-                      actor={actor}
-                      onSaved={loadWorkspace}
-                    />
-                    <LeadTransactionHandoffPanel
-                      organisationId={organisationId}
-                      lead={row}
-                      actor={actor}
-                      onSaved={loadWorkspace}
-                    />
-                    <OfferTransactionList offers={row.offers} transactions={row.transactions} convertedTransactionId={row.convertedTransactionId} />
-                  </div>
-                </section>
+                <LeadDealProgressionPanel
+                  organisationId={organisationId}
+                  lead={row}
+                  actor={actor}
+                  onSaved={loadWorkspace}
+                  onNavigate={setActiveTab}
+                />
               ) : null}
 
               {activeTab === 'documents' ? (

@@ -48,7 +48,9 @@ for (const marker of [
   "source: 'commercial_access_setup_prompt'",
   'pickPreferredOrganisationMembership',
   'isActiveMembershipStatus(row?.status)',
-  'return resolveCommercialAccessContext({ forceRefresh: true })',
+  'const scope = await resolveCommercialAccessContext({ forceRefresh: true })',
+  'Commercial access activation could not be confirmed for your account.',
+  'return scope',
 ]) {
   includes(commercialApi, marker, `Commercial activation should persist and refresh the explicit commercial membership marker: ${marker}`)
 }
