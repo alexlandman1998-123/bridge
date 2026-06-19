@@ -2993,7 +2993,7 @@ function BuyerOutreachProgress({ row, onQualifyBuyer, onMarkQualified }) {
 function LeadSectionMenu({ tabs = [], activeTab = 'overview', onChange }) {
   return (
     <section className={`${buyerWorkspaceCardClass} p-2`}>
-      <nav className="grid auto-cols-fr grid-flow-col gap-2 overflow-x-auto lg:grid-flow-row lg:grid-cols-7" aria-label="Lead section tabs" role="tablist">
+      <nav className="flex gap-2 overflow-x-auto" aria-label="Lead section tabs" role="tablist">
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key
           return (
@@ -3003,7 +3003,7 @@ function LeadSectionMenu({ tabs = [], activeTab = 'overview', onChange }) {
               role="tab"
               aria-selected={isActive}
               onClick={() => onChange?.(tab.key)}
-              className={`min-h-12 min-w-[150px] rounded-2xl px-4 text-center text-sm font-semibold transition lg:min-w-0 ${
+              className={`min-h-12 basis-0 min-w-[150px] flex-1 rounded-2xl px-4 text-center text-sm font-semibold transition ${
                 isActive
                   ? 'bg-slate-950 text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]'
                   : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950'
@@ -3593,11 +3593,11 @@ function BuyerRelationshipTimelineCard({ row, workspace, sourceInfo, onViewAll }
     ? 'bg-emerald-500'
     : tone === 'violet'
       ? 'bg-violet-500'
-      : tone === 'amber'
+    : tone === 'amber'
         ? 'bg-amber-500'
         : 'bg-blue-500'
   return (
-    <section className={`${buyerWorkspaceCardClass} p-6`}>
+    <section className={`${buyerWorkspaceCardClass} flex max-h-[34rem] flex-col p-6`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Relationship Timeline</p>
@@ -3606,7 +3606,7 @@ function BuyerRelationshipTimelineCard({ row, workspace, sourceInfo, onViewAll }
         </div>
         <button type="button" onClick={onViewAll} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">View all</button>
       </div>
-      <div className="mt-6">
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
         {items.length ? (
           <ol className="relative grid gap-0 before:absolute before:left-5 before:top-5 before:h-[calc(100%-40px)] before:w-px before:bg-slate-200">
             {items.map((item) => (
@@ -7679,8 +7679,18 @@ function QuickScheduleCard({ organisationId, lead, actor, propertyOptions = [], 
       setError('')
       setMessage('')
       const isViewing = draft.appointmentType === 'viewing'
+      const sellerFirstWorkflow = Boolean(isViewing && selectedProperty?.sellerEmail)
       const status = isViewing && selectedProperty ? 'seller_availability_requested' : 'confirmed'
       const titlePrefix = isViewing ? 'Viewing' : draft.appointmentType === 'buyer_meeting' ? 'Meeting' : titleCaseLabel(draft.appointmentType)
+      const sellerParticipant = selectedProperty?.sellerEmail
+        ? [{
+            name: selectedProperty.sellerName || `${selectedProperty.label} seller`,
+            email: selectedProperty.sellerEmail,
+            phone: selectedProperty.sellerPhone || '',
+            participantRole: 'Seller',
+            rsvpStatus: 'Pending',
+          }]
+        : []
       const result = await createAppointmentAsync(organisationId, {
         appointmentType: draft.appointmentType,
         title: `${titlePrefix} - ${contact.name || lead.name || 'Buyer'}`,
@@ -7697,19 +7707,21 @@ function QuickScheduleCard({ organisationId, lead, actor, propertyOptions = [], 
         relatedEntityType: 'lead',
         relatedEntityId: lead.leadId,
         assignedAgent: actor,
-        participants: [{
-          name: contact.name || lead.name || 'Buyer',
-          email: contact.email,
-          phone: contact.phone,
-          contactId: contact.contactId || null,
-          participantRole: 'Buyer',
-          rsvpStatus: status === 'confirmed' ? 'Confirmed' : 'Pending',
-        }],
+        participants: sellerFirstWorkflow
+          ? sellerParticipant
+          : [{
+              name: contact.name || lead.name || 'Buyer',
+              email: contact.email,
+              phone: contact.phone,
+              contactId: contact.contactId || null,
+              participantRole: 'Buyer',
+              rsvpStatus: status === 'confirmed' ? 'Confirmed' : 'Pending',
+            }],
         instructions: status === 'seller_availability_requested'
           ? 'Request seller availability first. Send buyer confirmation only once sellers accept the viewing window.'
           : '',
-        sendInviteEmails: false,
-        attachCalendarInvite: false,
+        sendInviteEmails: sellerFirstWorkflow ? sellerParticipant.length > 0 : false,
+        attachCalendarInvite: sellerFirstWorkflow ? sellerParticipant.length > 0 : false,
       }, { actor })
       const appointmentId = getAppointmentId(result)
       if (appointmentId && selectedProperty?.id && isViewing) {
@@ -7724,7 +7736,7 @@ function QuickScheduleCard({ organisationId, lead, actor, propertyOptions = [], 
       }
       setMessage(status === 'seller_availability_requested' ? 'Appointment created. Seller availability can now be managed.' : 'Appointment scheduled.')
       setDraft({ appointmentType: 'viewing', propertyId: propertyOptions[0]?.id || '', date: '', startTime: '' })
-      await onSaved?.()
+      void onSaved?.()
     } catch (saveError) {
       setError(saveError?.message || 'Unable to schedule this appointment.')
     } finally {

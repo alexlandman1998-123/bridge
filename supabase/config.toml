@@ -1,4 +1,9 @@
 
+[auth.rate_limit]
+email_sent = 1000
+sign_in_sign_ups = 1000
+token_verifications = 1000
+
 [functions.send-email]
 enabled = true
 verify_jwt = true

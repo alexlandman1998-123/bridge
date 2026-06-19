@@ -43,6 +43,11 @@ import {
   supabase,
 } from '../lib/supabaseClient'
 
+const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
+const PENDING_ORG_INVITE_EMAIL_STORAGE_KEY = 'itg:pending-org-invite-email'
+const PENDING_ORG_INVITE_MODULE_STORAGE_KEY = 'itg:pending-org-invite-module'
+const PENDING_ORG_INVITE_ROLE_STORAGE_KEY = 'itg:pending-org-invite-role'
+
 function getRedirectPath(location) {
   const nextPath = new URLSearchParams(location.search).get('next')
   if (typeof nextPath === 'string' && nextPath.startsWith('/')) {
@@ -81,9 +86,19 @@ function resolveEmailVerificationRedirectTo(nextPath = '/setup') {
   return undefined
 }
 
-function resolvePendingInvitePath() {
+function getInviteTokenFromNextPath(location) {
+  const nextPath = new URLSearchParams(location.search).get('next')
+  const match = String(nextPath || '').match(/^\/(?:agent\/)?invite\/([^/?#]+)/)
+  return match?.[1] ? decodeURIComponent(match[1]) : ''
+}
+
+function getStoredPendingInviteToken() {
   if (typeof window === 'undefined') return ''
-  const pendingInviteToken = String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
+  return String(window.sessionStorage.getItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY) || '').trim()
+}
+
+function resolvePendingInvitePath(location = null) {
+  const pendingInviteToken = location ? getInviteTokenFromNextPath(location) || getStoredPendingInviteToken() : getStoredPendingInviteToken()
   if (!pendingInviteToken) return ''
   return `/invite/${pendingInviteToken}`
 }
@@ -121,11 +136,7 @@ async function resolveFounderLoginTarget(fallbackTarget = '/dashboard') {
 }
 
 function resolveInviteTokenFromLocation(location) {
-  const nextPath = new URLSearchParams(location.search).get('next')
-  const match = String(nextPath || '').match(/^\/(?:agent\/)?invite\/([^/?#]+)/)
-  if (match?.[1]) return decodeURIComponent(match[1])
-  if (typeof window === 'undefined') return ''
-  return String(window.sessionStorage.getItem('itg:pending-org-invite-token') || '').trim()
+  return getInviteTokenFromNextPath(location) || getStoredPendingInviteToken()
 }
 
 function normalizeAuthEmail(value = '') {
@@ -136,7 +147,10 @@ function resolveInviteEmailFromLocation(location) {
   const queryEmail = new URLSearchParams(location.search).get('email')
   if (queryEmail) return normalizeAuthEmail(queryEmail)
   if (typeof window === 'undefined') return ''
-  return normalizeAuthEmail(window.sessionStorage.getItem('itg:pending-org-invite-email'))
+  const inviteTokenFromUrl = getInviteTokenFromNextPath(location)
+  const storedInviteToken = getStoredPendingInviteToken()
+  if (inviteTokenFromUrl && inviteTokenFromUrl !== storedInviteToken) return ''
+  return normalizeAuthEmail(window.sessionStorage.getItem(PENDING_ORG_INVITE_EMAIL_STORAGE_KEY))
 }
 
 function normalizeInviteContextValue(value = '') {
@@ -147,14 +161,20 @@ function resolveInviteModuleFromLocation(location) {
   const queryModule = new URLSearchParams(location.search).get('module')
   if (queryModule) return normalizeInviteContextValue(queryModule)
   if (typeof window === 'undefined') return ''
-  return normalizeInviteContextValue(window.sessionStorage.getItem('itg:pending-org-invite-module'))
+  const inviteTokenFromUrl = getInviteTokenFromNextPath(location)
+  const storedInviteToken = getStoredPendingInviteToken()
+  if (inviteTokenFromUrl && inviteTokenFromUrl !== storedInviteToken) return ''
+  return normalizeInviteContextValue(window.sessionStorage.getItem(PENDING_ORG_INVITE_MODULE_STORAGE_KEY))
 }
 
 function resolveInviteRoleFromLocation(location) {
   const queryRole = new URLSearchParams(location.search).get('role')
   if (queryRole) return normalizeInviteContextValue(queryRole)
   if (typeof window === 'undefined') return ''
-  return normalizeInviteContextValue(window.sessionStorage.getItem('itg:pending-org-invite-role'))
+  const inviteTokenFromUrl = getInviteTokenFromNextPath(location)
+  const storedInviteToken = getStoredPendingInviteToken()
+  if (inviteTokenFromUrl && inviteTokenFromUrl !== storedInviteToken) return ''
+  return normalizeInviteContextValue(window.sessionStorage.getItem(PENDING_ORG_INVITE_ROLE_STORAGE_KEY))
 }
 
 const COMMERCIAL_INVITE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
@@ -170,8 +190,6 @@ function resolveInviteSignupPosition({ moduleContext = '', role = '' } = {}) {
 }
 
 const DEV_BYPASS_ROLES = ['developer', 'agent', 'attorney', 'bond_originator']
-const RESEND_COOLDOWN_SECONDS = 90
-const RESEND_COOLDOWN_STORAGE_KEY = 'itg:auth:resend-cooldown-until'
 const SIGNUP_STEPS = [
   { eyebrow: '01', label: 'Account' },
   { eyebrow: '02', label: 'Business' },
@@ -288,14 +306,6 @@ function isExistingOrUnconfirmedUserError(error) {
   )
 }
 
-function resolveInitialCooldownUntil() {
-  if (typeof window === 'undefined') return 0
-  const raw = window.localStorage.getItem(RESEND_COOLDOWN_STORAGE_KEY)
-  const parsed = Number(raw || 0)
-  if (!Number.isFinite(parsed)) return 0
-  return parsed
-}
-
 function Auth({ onDevBypass = null }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -320,8 +330,6 @@ function Auth({ onDevBypass = null }) {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState(() => initialInvitedEmail)
-  const [resendCooldownUntil, setResendCooldownUntil] = useState(() => resolveInitialCooldownUntil())
-  const [nowTick, setNowTick] = useState(Date.now())
   const authFormRef = useRef(null)
 
   const redirectTo = useMemo(() => getRedirectPath(location), [location])
@@ -340,24 +348,6 @@ function Auth({ onDevBypass = null }) {
   const positionOptions = POSITION_OPTIONS_BY_BUSINESS_TYPE[businessType] || []
   const selectedBusinessTypeLabel = ROLE_DISPLAY_COPY[businessType]?.label || BUSINESS_TYPE_OPTIONS.find((option) => option.value === businessType)?.label || ''
   const selectedPositionLabel = positionOptions.find((option) => option.value === position)?.label || ''
-  const resendSecondsRemaining = Math.max(0, Math.ceil((resendCooldownUntil - nowTick) / 1000))
-  const resendCooldownActive = resendSecondsRemaining > 0
-
-  function setResendCooldown(seconds = RESEND_COOLDOWN_SECONDS) {
-    const safeSeconds = Number.isFinite(Number(seconds)) ? Math.max(0, Number(seconds)) : RESEND_COOLDOWN_SECONDS
-    const nextUntil = Date.now() + safeSeconds * 1000
-    setResendCooldownUntil(nextUntil)
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(RESEND_COOLDOWN_STORAGE_KEY, String(nextUntil))
-    }
-  }
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setNowTick(Date.now())
-    }, 1000)
-    return () => window.clearInterval(interval)
-  }, [])
 
   useEffect(() => {
     if (!inviteDrivenSignup || mode !== 'signup') return
@@ -368,12 +358,6 @@ function Auth({ onDevBypass = null }) {
     if (!position) setPosition(inviteSignupPosition)
     if (signupStep < 2) setSignupStep(2)
   }, [businessType, inviteDrivenSignup, inviteModuleContext, inviteRole, inviteSignupPosition, mode, position, signupStep])
-
-  useEffect(() => {
-    if (!resendCooldownActive && resendCooldownUntil > 0 && typeof window !== 'undefined') {
-      window.localStorage.removeItem(RESEND_COOLDOWN_STORAGE_KEY)
-    }
-  }, [resendCooldownActive, resendCooldownUntil])
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
@@ -388,7 +372,7 @@ function Auth({ onDevBypass = null }) {
         return
       }
       if (data?.session) {
-        const pendingInvitePath = resolvePendingInvitePath()
+        const pendingInvitePath = resolvePendingInvitePath(location)
         const target = pendingInvitePath || redirectTo
         console.debug('[REDIRECT] auth:session-present', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
@@ -410,13 +394,26 @@ function Auth({ onDevBypass = null }) {
   }, [inviteDrivenSignup, inviteModuleContext, inviteRole, inviteSignupPosition])
 
   useEffect(() => {
-    if (!inviteDrivenSignup || !invitedEmail) return
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.setItem('itg:pending-org-invite-email', invitedEmail)
+    if (!inviteDrivenSignup || typeof window === 'undefined') return
+    window.sessionStorage.setItem(PENDING_ORG_INVITE_TOKEN_STORAGE_KEY, inviteToken)
+    if (invitedEmail) {
+      window.sessionStorage.setItem(PENDING_ORG_INVITE_EMAIL_STORAGE_KEY, invitedEmail)
+      setEmail(invitedEmail)
+      setPendingVerificationEmail(invitedEmail)
+    } else {
+      window.sessionStorage.removeItem(PENDING_ORG_INVITE_EMAIL_STORAGE_KEY)
     }
-    setEmail(invitedEmail)
-    setPendingVerificationEmail(invitedEmail)
-  }, [inviteDrivenSignup, invitedEmail])
+    if (inviteModuleContext) {
+      window.sessionStorage.setItem(PENDING_ORG_INVITE_MODULE_STORAGE_KEY, inviteModuleContext)
+    } else {
+      window.sessionStorage.removeItem(PENDING_ORG_INVITE_MODULE_STORAGE_KEY)
+    }
+    if (inviteRole) {
+      window.sessionStorage.setItem(PENDING_ORG_INVITE_ROLE_STORAGE_KEY, inviteRole)
+    } else {
+      window.sessionStorage.removeItem(PENDING_ORG_INVITE_ROLE_STORAGE_KEY)
+    }
+  }, [inviteDrivenSignup, inviteModuleContext, inviteRole, inviteToken, invitedEmail])
 
   useEffect(() => {
     if (mode !== 'signup' || typeof window === 'undefined') return undefined
@@ -498,7 +495,7 @@ function Auth({ onDevBypass = null }) {
           throw signInError
         }
 
-        const pendingInvitePath = resolvePendingInvitePath()
+        const pendingInvitePath = resolvePendingInvitePath(location)
         const target = pendingInvitePath || await resolveFounderLoginTarget(redirectTo)
         console.debug('[AUTH] login:success', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
@@ -537,8 +534,7 @@ function Auth({ onDevBypass = null }) {
         if (isAuthRateLimitError(signUpError)) {
           setPendingVerificationEmail(email.trim())
           setMode('login')
-          setResendCooldown(RESEND_COOLDOWN_SECONDS)
-          setMessage('Too many verification emails were sent recently. Wait a moment, then use Resend verification.')
+          setMessage('Supabase Auth rejected the verification email because the project email limit was reached. Use Resend verification after the project limit is raised.')
           setPassword('')
           setConfirmPassword('')
           return
@@ -564,7 +560,7 @@ function Auth({ onDevBypass = null }) {
       }
 
       if (data?.session) {
-        const pendingInvitePath = resolvePendingInvitePath()
+        const pendingInvitePath = resolvePendingInvitePath(location)
         const target = pendingInvitePath || resolveSignupIntentRoute(intentWithEmail)
         console.debug('[REDIRECT] signup:session-created', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
@@ -603,16 +599,11 @@ function Auth({ onDevBypass = null }) {
       return
     }
 
-    if (resendCooldownActive) {
-      setError(`Please wait ${resendSecondsRemaining}s before requesting another verification email.`)
-      return
-    }
-
     try {
       setResendLoading(true)
       setError('')
       const emailRedirectTo = resolveEmailVerificationRedirectTo(
-        resolvePendingInvitePath() || (currentIntent ? resolveSignupIntentRoute(currentIntent) : '/setup'),
+        resolvePendingInvitePath(location) || (currentIntent ? resolveSignupIntentRoute(currentIntent) : '/setup'),
       )
       const { error: resendError } = await supabase.auth.resend({
         type: 'signup',
@@ -625,12 +616,10 @@ function Auth({ onDevBypass = null }) {
         throw resendError
       }
       setPendingVerificationEmail(targetEmail)
-      setResendCooldown(RESEND_COOLDOWN_SECONDS)
       setMessage('Verification email resent. Check inbox/spam and allow a few minutes for delivery.')
     } catch (resendError) {
       if (isAuthRateLimitError(resendError)) {
-        setResendCooldown(RESEND_COOLDOWN_SECONDS)
-        setError(`Email rate limit reached. Wait ${RESEND_COOLDOWN_SECONDS}s, then try again.`)
+        setError('Supabase Auth is still rejecting verification emails because the project email limit is reached. Raise the Supabase Auth email limit, then retry.')
         return
       }
       setError(resendError?.message || 'Unable to resend verification email right now.')
@@ -1025,9 +1014,9 @@ function Auth({ onDevBypass = null }) {
               <button
                 type="button"
                 onClick={() => void handleResendVerification()}
-                disabled={resendLoading || resendCooldownActive}
+                disabled={resendLoading}
               >
-                {resendLoading ? 'Resending...' : resendCooldownActive ? `Resend in ${resendSecondsRemaining}s` : 'Resend verification'}
+                {resendLoading ? 'Resending...' : 'Resend verification'}
               </button>
             </div>
           ) : null}

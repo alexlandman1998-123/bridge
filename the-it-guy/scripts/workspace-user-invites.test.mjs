@@ -304,7 +304,8 @@ for (const marker of [
   'This invite is locked to {invitedEmail}.',
   'Bridge will take you straight into the invited workspace.',
   'This invite is for ${invitedEmail}. Sign in or create an account with that email address to continue.',
-  'resolvePendingInvitePath() || (currentIntent ? resolveSignupIntentRoute(currentIntent) : \'/setup\')',
+  'resolvePendingInvitePath(location) || (currentIntent ? resolveSignupIntentRoute(currentIntent) : \'/setup\')',
+  'if (inviteTokenFromUrl && inviteTokenFromUrl !== storedInviteToken) return \'\'',
 ]) {
   includes(authPage, marker, `Auth page should keep invite-email lock and redirect behavior: ${marker}`)
 }

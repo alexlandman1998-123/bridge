@@ -17,19 +17,44 @@ function isStaleChunkLoadError(error) {
   const normalizedText = text.toLowerCase()
 
   return [
+    'ChunkLoadError',
     'Failed to fetch dynamically imported module',
     'Importing a module script failed',
     'error loading dynamically imported module',
     'Load failed for module',
     'dynamically imported module',
   ].some((pattern) => text.includes(pattern)) ||
-    (/\/assets\/.+\.js/.test(text) && /module|import|fetch|load/i.test(text)) ||
+    (/\/assets\/.+\.js/.test(text) && /chunkloaderror|dynamically imported module|module script|failed to fetch|importing a module|load failed for module/i.test(text)) ||
     (normalizedText.includes('javascript mime type') && normalizedText.includes('text/html'))
 }
 
 function getChunkReloadKey(scope) {
   if (typeof window === 'undefined') return ''
   return `bridge:stale-chunk-reload:${scope || 'app'}:${window.location.pathname}`
+}
+
+function buildCacheBustedUrl() {
+  if (typeof window === 'undefined') return ''
+  try {
+    const url = new URL(window.location.href)
+    url.searchParams.set('bridge_app_reload', String(Date.now()))
+    return url.toString()
+  } catch {
+    const separator = window.location.href.includes('?') ? '&' : '?'
+    return `${window.location.href}${separator}bridge_app_reload=${Date.now()}`
+  }
+}
+
+async function clearClientAssetCaches() {
+  if (typeof window === 'undefined') return
+  if (!window.caches || typeof window.caches.keys !== 'function') return
+
+  try {
+    const cacheNames = await window.caches.keys()
+    await Promise.all(cacheNames.map((name) => window.caches.delete(name)))
+  } catch {
+    // A cache-busted navigation is still the main recovery path.
+  }
 }
 
 class AppErrorBoundary extends Component {
@@ -114,7 +139,14 @@ class AppErrorBoundary extends Component {
 
     this.setState({ recoveringFromStaleChunk: true })
     window.setTimeout(() => {
-      window.location.reload()
+      void clearClientAssetCaches().finally(() => {
+        const url = buildCacheBustedUrl()
+        if (url) {
+          window.location.replace(url)
+          return
+        }
+        window.location.reload()
+      })
     }, 250)
   }
 
@@ -148,7 +180,14 @@ class AppErrorBoundary extends Component {
               className="auth-primary-cta"
               onClick={() => {
                 if (staleChunkError) {
-                  window.location.reload()
+                  void clearClientAssetCaches().finally(() => {
+                    const url = buildCacheBustedUrl()
+                    if (url) {
+                      window.location.replace(url)
+                      return
+                    }
+                    window.location.reload()
+                  })
                   return
                 }
                 this.setState({ hasError: false, error: null, recoveringFromStaleChunk: false })
