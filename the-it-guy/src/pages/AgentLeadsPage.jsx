@@ -2095,11 +2095,36 @@ function getLeadAppointmentPropertyOptions(lead = {}) {
     if (!listingId || options.some((option) => option.id === listingId)) return
     const title = normalizeText(listing?.title || listing?.listingTitle || listing?.propertyAddress || listing?.address) || 'Linked property'
     const location = [listing?.address, listing?.suburb, listing?.city].map(normalizeText).filter(Boolean).join(', ')
+    const imageUrl = normalizeText(
+      listing?.heroImageUrl ||
+        listing?.hero_image_url ||
+        listing?.primaryImageUrl ||
+        listing?.primary_image_url ||
+        listing?.mainImageUrl ||
+        listing?.main_image_url ||
+        listing?.thumbnailUrl ||
+        listing?.thumbnail_url ||
+        listing?.imageUrl ||
+        listing?.image_url ||
+        listing?.images?.[0]?.url ||
+        listing?.photos?.[0]?.url ||
+        listing?.media?.[0]?.url,
+    )
     options.push({
       id: listingId,
       label: title,
       description: location || normalizeText(source) || 'Property details pending',
+      address: normalizeText(listing?.address || listing?.propertyAddress || listing?.property_address),
+      suburb: normalizeText(listing?.suburb || listing?.area || listing?.location),
+      city: normalizeText(listing?.city),
       price: listing?.price || listing?.askingPrice || listing?.asking_price || null,
+      status: normalizeText(listing?.status || listing?.listingStatus || listing?.listing_status),
+      type: normalizeText(listing?.type || listing?.propertyType || listing?.property_type || listing?.category),
+      bedrooms: listing?.bedrooms ?? listing?.beds ?? listing?.bedroomsCount ?? listing?.bedrooms_count ?? null,
+      bathrooms: listing?.bathrooms ?? listing?.baths ?? listing?.bathroomsCount ?? listing?.bathrooms_count ?? null,
+      garages: listing?.garages ?? listing?.garage ?? listing?.parking ?? listing?.parkingSpaces ?? listing?.parking_spaces ?? null,
+      imageUrl,
+      referenceNumber: normalizeText(listing?.referenceNumber || listing?.reference_number || listing?.ref || listing?.listingReference || listing?.listing_reference),
       source,
       isOriginalEnquiry: Boolean(meta.isOriginalEnquiry),
       sellerName: normalizeText(listing?.seller?.name || listing?.sellerName || listing?.seller_name || listing?.ownerName || listing?.owner_name),
@@ -3215,31 +3240,75 @@ function BuyerUpcomingAppointmentsCard({ row, onViewAll }) {
   )
 }
 
+const BUYER_PROPERTY_TYPE_OPTIONS = [
+  '',
+  'House',
+  'Townhouse',
+  'Apartment',
+  'Cluster',
+  'Duplex',
+  'Vacant Land',
+  'Commercial',
+  'Other',
+]
+
+const BUYER_CURRENT_PROPERTY_OPTIONS = [
+  { value: '', label: 'Unknown' },
+  { value: 'First-time buyer', label: 'First-time buyer' },
+  { value: 'Renting', label: 'Renting' },
+  { value: 'Owns property', label: 'Owns property' },
+  { value: 'Selling current property', label: 'Selling current property' },
+  { value: 'Investor', label: 'Investor' },
+]
+
+function normalizeMoneyInput(value) {
+  return String(value || '').replace(/[^\d]/g, '')
+}
+
+function normalizeNumericInput(value) {
+  const cleaned = String(value || '').replace(/[^\d.]/g, '')
+  const [whole, ...decimalParts] = cleaned.split('.')
+  return decimalParts.length ? `${whole}.${decimalParts.join('')}` : whole
+}
+
 function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, focusSignal = 0, onRecommendations, onBondPartnerReferral }) {
   const [sendingBondReferral, setSendingBondReferral] = useState(false)
   const [bondReferralError, setBondReferralError] = useState('')
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [optimisticRequirement, setOptimisticRequirement] = useState(null)
   const cardRef = useRef(null)
+  const displayRequirement = optimisticRequirement || requirement
   const buildDraft = useCallback(() => ({
-    ...makeRequirementDraft(requirement, row),
-    isPrimary: requirement?.requirementId ? Boolean(requirement.isPrimary ?? requirement.is_primary) : true,
-  }), [requirement, row])
+    ...makeRequirementDraft(displayRequirement, row),
+    isPrimary: displayRequirement?.requirementId ? Boolean(displayRequirement.isPrimary ?? displayRequirement.is_primary) : true,
+  }), [displayRequirement, row])
   const [draft, setDraft] = useState(() => buildDraft())
-  const showBondReferral = shouldShowBondReferralPrompt(row, requirement)
+  const showBondReferral = shouldShowBondReferralPrompt(row, displayRequirement)
   const profileRows = [
-    { icon: Banknote, label: 'Budget', value: getBuyerBudgetLabel(row, requirement) },
-    { icon: CreditCard, label: 'Finance', value: getBuyerFinancePositionLabel(row, requirement) },
-    { icon: BadgeCheck, label: 'Pre Qualified', value: getBuyerPreQualifiedLabel(requirement) },
-    { icon: Home, label: 'Property Type', value: getBuyerPropertyTypeLabel(row, requirement) },
-    { icon: Home, label: 'Bedrooms', value: getBuyerBedroomLabel(row, requirement) },
-    { icon: Shield, label: 'Bathrooms', value: getBuyerBathroomLabel(row, requirement) },
-    { icon: MapPin, label: 'Areas', value: getBuyerAreaLabel(row, requirement) },
-    { icon: Clock3, label: 'Urgency', value: getBuyerUrgencyLabel(row, requirement) },
-    { icon: Building2, label: 'Current Property', value: getBuyerCurrentPropertyLabel(row, requirement) },
-    { icon: Tag, label: 'Needs To Sell', value: getBuyerNeedsToSellLabel(row, requirement) },
+    { icon: Banknote, label: 'Budget', value: getBuyerBudgetLabel(row, displayRequirement) },
+    { icon: CreditCard, label: 'Finance', value: getBuyerFinancePositionLabel(row, displayRequirement) },
+    { icon: BadgeCheck, label: 'Pre Qualified', value: getBuyerPreQualifiedLabel(displayRequirement) },
+    { icon: Home, label: 'Property Type', value: getBuyerPropertyTypeLabel(row, displayRequirement) },
+    { icon: Home, label: 'Bedrooms', value: getBuyerBedroomLabel(row, displayRequirement) },
+    { icon: Shield, label: 'Bathrooms', value: getBuyerBathroomLabel(row, displayRequirement) },
+    { icon: MapPin, label: 'Areas', value: getBuyerAreaLabel(row, displayRequirement) },
+    { icon: Clock3, label: 'Urgency', value: getBuyerUrgencyLabel(row, displayRequirement) },
+    { icon: Building2, label: 'Current Property', value: getBuyerCurrentPropertyLabel(row, displayRequirement) },
+    { icon: Tag, label: 'Needs To Sell', value: getBuyerNeedsToSellLabel(row, displayRequirement) },
   ]
+  const selectedPropertyType = parseListInput(draft.propertyTypes)[0] || ''
+  const propertyTypeOptions = selectedPropertyType && !BUYER_PROPERTY_TYPE_OPTIONS.includes(selectedPropertyType)
+    ? [...BUYER_PROPERTY_TYPE_OPTIONS, selectedPropertyType]
+    : BUYER_PROPERTY_TYPE_OPTIONS
+  const currentPropertyOptions = draft.currentPropertyStatus && !BUYER_CURRENT_PROPERTY_OPTIONS.some((option) => option.value === draft.currentPropertyStatus)
+    ? [...BUYER_CURRENT_PROPERTY_OPTIONS, { value: draft.currentPropertyStatus, label: draft.currentPropertyStatus }]
+    : BUYER_CURRENT_PROPERTY_OPTIONS
+
+  useEffect(() => {
+    setOptimisticRequirement(null)
+  }, [requirement?.requirementId, requirement?.updatedAt, requirement?.updated_at])
 
   useEffect(() => {
     if (!editing) setDraft(buildDraft())
@@ -3269,13 +3338,15 @@ function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, fo
       setSaving(true)
       setSaveError('')
       const payload = draftToRequirementPayload(draft, row, organisationId, actor)
-      if (requirement?.requirementId) {
-        await updateLeadRequirement({ requirementId: requirement.requirementId, updates: payload }, { actor })
+      let savedRequirement
+      if (displayRequirement?.requirementId) {
+        savedRequirement = await updateLeadRequirement({ requirementId: displayRequirement.requirementId, updates: payload }, { actor })
       } else {
-        await createLeadRequirement(payload, { actor })
+        savedRequirement = await createLeadRequirement(payload, { actor })
       }
-      await onSaved?.()
+      setOptimisticRequirement(savedRequirement)
       setEditing(false)
+      Promise.resolve(onSaved?.()).catch((refreshError) => console.warn('[BuyerProfileCard] background refresh skipped', refreshError))
     } catch (qualificationError) {
       setSaveError(qualificationError?.message || 'Unable to save the qualification snapshot.')
     } finally {
@@ -3326,11 +3397,17 @@ function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, fo
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
               Budget min
-              <input value={draft.budgetMin} onChange={(event) => updateDraftField('budgetMin', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="e.g. 2500000" />
+              <span className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900">
+                <span className="text-slate-400">R</span>
+                <input value={draft.budgetMin} inputMode="numeric" pattern="[0-9]*" onChange={(event) => updateDraftField('budgetMin', normalizeMoneyInput(event.target.value))} className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-semibold text-slate-900 outline-none" placeholder="2500000" />
+              </span>
             </label>
             <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
               Budget max
-              <input value={draft.budgetMax} onChange={(event) => updateDraftField('budgetMax', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="e.g. 3500000" />
+              <span className="flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900">
+                <span className="text-slate-400">R</span>
+                <input value={draft.budgetMax} inputMode="numeric" pattern="[0-9]*" onChange={(event) => updateDraftField('budgetMax', normalizeMoneyInput(event.target.value))} className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-semibold text-slate-900 outline-none" placeholder="3500000" />
+              </span>
             </label>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -3355,16 +3432,18 @@ function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, fo
           </label>
           <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
             Property type
-            <input value={draft.propertyTypes} onChange={(event) => updateDraftField('propertyTypes', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="House, Townhouse" />
+            <select value={selectedPropertyType} onChange={(event) => updateDraftField('propertyTypes', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900">
+              {propertyTypeOptions.map((option) => <option key={option || 'unknown-property-type'} value={option}>{option || 'Unknown'}</option>)}
+            </select>
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
               Bedrooms
-              <input value={draft.bedroomsMin} onChange={(event) => updateDraftField('bedroomsMin', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Min" />
+              <input value={draft.bedroomsMin} inputMode="numeric" pattern="[0-9]*" onChange={(event) => updateDraftField('bedroomsMin', normalizeMoneyInput(event.target.value))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Min" />
             </label>
             <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
               Bathrooms
-              <input value={draft.bathroomsMin} onChange={(event) => updateDraftField('bathroomsMin', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Min" />
+              <input value={draft.bathroomsMin} inputMode="decimal" onChange={(event) => updateDraftField('bathroomsMin', normalizeNumericInput(event.target.value))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Min" />
             </label>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -3386,7 +3465,9 @@ function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, fo
           </div>
           <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
             Current property
-            <input value={draft.currentPropertyStatus} onChange={(event) => updateDraftField('currentPropertyStatus', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Renting, owns property, first-time buyer" />
+            <select value={draft.currentPropertyStatus} onChange={(event) => updateDraftField('currentPropertyStatus', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900">
+              {currentPropertyOptions.map((option) => <option key={option.value || 'unknown-current-property'} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
           {saveError ? <p className="rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{saveError}</p> : null}
         </form>
@@ -3665,8 +3746,7 @@ function BuyerLeadOverview({ row, workspace = {}, sourceInfo, leadScore = 0, org
   const requirement = getBuyerPrimaryRequirement(row)
   return (
     <section className="grid gap-4">
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
-        <BuyerNextBestActionV2Card row={row} onNavigate={onNavigate} onConvert={onConvert} />
+      <div className="grid gap-4 xl:grid-cols-2">
         <BuyerProfileCard
           row={row}
           requirement={requirement}
@@ -6504,265 +6584,335 @@ function buildBuyerCollectionSummary(row = {}, requirement = {}, properties = []
   }
 }
 
-function BuyerCollectionHeader({ summary, canSendEmail = false, emailDisabledReason = '', onSend, onWhatsApp, onSchedule, onPreview, onRegenerate }) {
-  const hasMatches = summary.total > 0
-  const statusClass = hasMatches
-    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-    : 'border-slate-200 bg-slate-50 text-slate-600'
-  const statusDotClass = hasMatches ? 'bg-emerald-500' : 'bg-slate-400'
+function getListingBestImageUrl(listing = {}) {
+  return normalizeText(
+    getListingImageUrl(listing)
+    || listing.heroImageUrl
+    || listing.hero_image_url
+    || listing.primaryImageUrl
+    || listing.primary_image_url
+    || listing.mainImageUrl
+    || listing.main_image_url
+    || listing.photoUrl
+    || listing.photo_url,
+  )
+}
+
+function getListingSuburbLabel(listing = {}) {
+  return normalizeText(listing.suburb || listing.neighbourhood || listing.city || listing.location) || 'Location not set'
+}
+
+function getListingPriceLabel(listing = {}) {
+  const price = getListingPrice(listing)
+  return price > 0 ? formatCurrency(price) : 'Price on request'
+}
+
+function getListingFeatureItems(listing = {}) {
+  return [
+    { label: 'Bed', value: toFiniteNumber(listing.bedrooms ?? listing.beds) },
+    { label: 'Bath', value: toFiniteNumber(listing.bathrooms ?? listing.baths) },
+    { label: 'Garage', value: toFiniteNumber(listing.garages ?? listing.parking ?? listing.parkingSpaces ?? listing.parking_spaces) },
+  ].filter((item) => item.value > 0)
+}
+
+function getBuyerOriginalEnquiryProperty(row = {}, properties = []) {
+  const original = properties.find((property) => property.source === 'Original enquiry')
+  if (original) return original
+  const listingId = normalizeText(row.listingId || row.listing_id || row.propertyId || row.property_id || row.enquiryListingId || row.enquiry_listing_id)
+  if (!listingId) return null
+  return properties.find((property) => getListingIdentity(property.listing) === listingId || property.id === listingId) || null
+}
+
+function getBuyerCampaignLastSent(properties = []) {
+  return properties
+    .map((property) => property.sentAt)
+    .filter(Boolean)
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || ''
+}
+
+function MatchSectionShell({ number, title, subtitle, badge, action, children }) {
   return (
-    <section className="overflow-hidden rounded-[30px] border border-slate-200/80 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
-      <div className="grid gap-6 p-5 sm:p-6 xl:grid-cols-[minmax(0,1fr)_240px]">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${statusClass}`}>
-              <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
-              {summary.status}
-            </span>
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Buyer Collection</span>
-          </div>
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <CollectionMetric label="Collection Score" value={summary.score ? `${summary.score}%` : '—'} accent />
-            <CollectionMetric label="Properties Matched" value={summary.total} />
-            <CollectionMetric label="Last Updated" value={formatRelativeTime(summary.lastUpdated, 'Not updated')} />
-            <CollectionMetric label="Campaign Status" value={summary.campaignStatus} />
+    <section className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_16px_38px_rgba(15,23,42,0.045)] sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">{number}</span>
+          <div>
+            <h2 className="text-lg font-semibold tracking-[-0.035em] text-slate-950">{title}</h2>
+            {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
           </div>
         </div>
-        <div className="grid gap-2">
-          <button type="button" onClick={onSend} disabled={!canSendEmail} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-[0_16px_30px_rgba(15,23,42,0.16)] disabled:cursor-not-allowed disabled:bg-slate-300">
-            <Mail size={16} />
-            Send Collection Email
-          </button>
-          {!canSendEmail && emailDisabledReason ? <p className="text-xs font-semibold text-amber-700">{emailDisabledReason}</p> : null}
-          <button type="button" onClick={onPreview} disabled={!hasMatches} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-            <ExternalLink size={16} />
-            Preview Email
-          </button>
-          <button type="button" onClick={onWhatsApp} disabled={!hasMatches} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
-            <MessageSquarePlus size={16} />
-            Send on WhatsApp
-          </button>
-          <button type="button" onClick={onSchedule} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            <CalendarDays size={16} />
-            Schedule Viewing
-          </button>
-          <button type="button" onClick={onRegenerate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            <RefreshCw size={16} />
-            Regenerate Matches
-          </button>
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {badge ? <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{badge}</span> : null}
+          {action}
         </div>
       </div>
+      <div className="mt-5">{children}</div>
     </section>
   )
 }
 
-function CollectionMetric({ label, value, accent = false }) {
+function BuyerMatchCriteriaSection({ row, requirement, onEdit }) {
+  const fields = [
+    { label: 'Budget', value: getBuyerBudgetLabel(row, requirement), icon: Banknote },
+    { label: 'Areas', value: getBuyerAreaLabel(row, requirement), icon: MapPin },
+    { label: 'Property Types', value: getBuyerPropertyTypeLabel(row, requirement), icon: Home },
+    { label: 'Bedrooms', value: getBuyerBedroomLabel(row, requirement), icon: Home },
+    { label: 'Bathrooms', value: getBuyerBathroomLabel(row, requirement), icon: Shield },
+    { label: 'Finance', value: getBuyerFinancePositionLabel(row, requirement), icon: Building2 },
+    { label: 'Timeline', value: getBuyerTimelineLabel(requirement) || getBuyerUrgencyLabel(row, requirement), icon: Clock3 },
+    { label: 'Current Property', value: getBuyerCurrentPropertyLabel(row, requirement), icon: Building2 },
+    { label: 'Needs To Sell', value: getBuyerNeedsToSellLabel(row, requirement), icon: Tag },
+  ]
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{label}</p>
-      <p className={`mt-2 text-xl font-semibold tracking-[-0.04em] ${accent ? 'text-blue-700' : 'text-slate-950'}`}>{value}</p>
+    <MatchSectionShell
+      number="1"
+      title="Match Criteria"
+      subtitle="What the buyer is looking for"
+      action={(
+        <button type="button" onClick={onEdit} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <CreditCard size={15} />
+          Edit Criteria
+        </button>
+      )}
+    >
+      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        {fields.map((field) => {
+          const Icon = field.icon
+          return (
+            <div key={field.label} className="flex items-start gap-3">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+                <Icon size={17} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">{field.label}</p>
+                <p className="mt-1 text-sm font-semibold leading-5 text-slate-800">{field.value || '—'}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </MatchSectionShell>
+  )
+}
+
+function BuyerMatchPropertyImage({ listing, className = '' }) {
+  const imageUrl = getListingBestImageUrl(listing)
+  if (imageUrl) {
+    return <img src={imageUrl} alt={getListingTitle(listing)} className={`object-cover ${className}`} loading="lazy" />
+  }
+  return (
+    <div className={`flex items-center justify-center bg-slate-100 text-slate-400 ${className}`}>
+      <Home size={24} />
     </div>
   )
 }
 
-function BuyerCollectionProfileCard({ row, requirement, onEdit }) {
-  const profileRows = [
-    ['Budget', getBuyerBudgetLabel(row, requirement)],
-    ['Location', getBuyerAreaLabel(row, requirement)],
-    ['Bedrooms', getBuyerBedroomLabel(row, requirement)],
-    ['Bathrooms', getBuyerBathroomLabel(row, requirement)],
-    ['Property Types', getBuyerPropertyTypeLabel(row, requirement)],
-    ['Pet Friendly', formatCleanValue(requirement.petFriendly ?? requirement.pet_friendly ?? requirement.petsAllowed ?? requirement.pets_allowed)],
-    ['Security Preference', formatCleanValue(requirement.securityPreference || requirement.security_preference || requirement.security || requirement.estatePreference || requirement.estate_preference)],
-    ['Work Location', formatCleanValue(requirement.workLocation || requirement.work_location)],
-    ['Move Timeframe', getBuyerTimelineLabel(requirement)],
-  ]
+function BuyerMatchFeatureRow({ listing }) {
+  const features = getListingFeatureItems(listing)
+  if (!features.length) return null
   return (
-    <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Buyer Profile</p>
-          <h2 className="mt-2 text-xl font-semibold tracking-[-0.045em] text-slate-950">Match criteria</h2>
-        </div>
-        <button type="button" onClick={onEdit} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Edit</button>
-      </div>
-      <dl className="mt-5 divide-y divide-slate-100">
-        {profileRows.map(([label, value]) => (
-          <div key={label} className="grid grid-cols-[minmax(92px,0.8fr)_minmax(0,1fr)] gap-3 py-3 text-sm">
-            <dt className="font-semibold text-slate-500">{label}</dt>
-            <dd className="text-right font-semibold text-slate-950">{value || '—'}</dd>
+    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-semibold text-slate-600">
+      {features.map((feature) => <span key={feature.label}>{feature.value} {feature.label}</span>)}
+    </div>
+  )
+}
+
+function BuyerEnquiredPropertySection({ property, onView, onReplace }) {
+  const listing = property?.listing || {}
+  return (
+    <MatchSectionShell number="2" title="Enquired Property" subtitle="The property that brought this buyer to you">
+      {property ? (
+        <article className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)_180px] lg:items-center">
+          <BuyerMatchPropertyImage listing={listing} className="h-44 w-full rounded-2xl lg:h-36" />
+          <div className="min-w-0">
+            <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{getListingTitle(listing)}</h3>
+            <p className="mt-1 text-sm font-semibold text-slate-500">{getListingSuburbLabel(listing)}</p>
+            <p className="mt-3 text-lg font-semibold text-blue-700">{getListingPriceLabel(listing)}</p>
+            <BuyerMatchFeatureRow listing={listing} />
+            <span className="mt-4 inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">Original Enquiry</span>
           </div>
-        ))}
-      </dl>
-    </section>
-  )
-}
-
-function BuyerCollectionPropertiesCard({ properties = [], onShare, requirementId = '' }) {
-  return (
-    <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.045)]">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Matched Properties</p>
-          <h2 className="mt-2 text-xl font-semibold tracking-[-0.045em] text-slate-950">Top ranked recommendations</h2>
+          <div className="grid gap-2">
+            <button type="button" onClick={() => onView?.(property)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              View Listing
+              <ExternalLink size={14} />
+            </button>
+            <button type="button" onClick={onReplace} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <RefreshCw size={14} />
+              Replace Property
+            </button>
+          </div>
+        </article>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-400 shadow-sm">
+            <Search size={22} />
+          </div>
+          <h3 className="mt-4 text-lg font-semibold text-slate-950">No enquiry property linked</h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">This buyer came from a registration form rather than a specific listing.</p>
+          <button type="button" onClick={onReplace} className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white">
+            Link Property
+          </button>
         </div>
-        <StatusPill tone="blue">{properties.length} matched</StatusPill>
-      </div>
-      <div className="mt-5 grid gap-3">
-        {properties.length ? properties.slice(0, 6).map((property) => (
-          <BuyerCollectionPropertyCard
-            key={`${property.id}-${property.rank}`}
-            property={property}
-            onShare={onShare}
-            requirementId={requirementId}
-          />
-        )) : (
-          <EmptyState title="No collection properties yet" copy="Use price-band recommendations or smart suggestions below to curate the first buyer collection." />
-        )}
-      </div>
-    </section>
+      )}
+    </MatchSectionShell>
   )
 }
 
-function BuyerCollectionPropertyCard({ property, onShare, requirementId = '' }) {
-  const [expanded, setExpanded] = useState(false)
+function BuyerRecommendationCard({ property, onPreview, onSend, onAddViewing, onHide, busy }) {
   const listing = property.listing || {}
-  const scoreTone = getCollectionScoreTone(property.score)
-  const imageUrl = getListingImageUrl(listing)
+  const reason = property.reasons?.[0] || 'Matches budget, location and bedroom requirements.'
   return (
-    <article className="rounded-[22px] border border-slate-200 bg-white p-3 shadow-sm transition hover:border-slate-300">
-      <div className="grid gap-4 lg:grid-cols-[150px_minmax(0,1fr)_minmax(120px,auto)]">
-        <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-[18px] bg-slate-100 text-slate-400">
-          {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover" /> : <Home size={24} />}
-          <span className="absolute left-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-sm font-semibold text-slate-950 shadow-sm">{property.rank}</span>
-        </div>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-base font-semibold tracking-[-0.025em] text-slate-950">{getListingTitle(listing)}</h3>
-            <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold ${scoreTone.badge}`}>
-              <span className={`h-2 w-2 rounded-full ${scoreTone.dot}`} />
-              {scoreTone.label}
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-slate-500">{getListingAddressLine(listing)}</p>
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-slate-500">
-            <span>{getListingPropertyType(listing)}</span>
-            {listing.bedrooms ? <span>{listing.bedrooms} bed</span> : null}
-            {listing.bathrooms ? <span>{listing.bathrooms} bath</span> : null}
-            {listing.garages ? <span>{listing.garages} garage</span> : null}
-            {listing.floorSize || listing.floor_size ? <span>{listing.floorSize || listing.floor_size}m2</span> : null}
-          </div>
-          <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">{normalizeText(listing.shortDescription || listing.short_description || listing.description) || 'Curated because it aligns with the buyer profile and current matching signals.'}</p>
-          {expanded ? (
-            <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Match reasons</p>
-              <div className="mt-2 grid gap-2">
-                {(property.reasons || []).length ? property.reasons.map((reason, index) => (
-                  <span key={`${property.id}-reason-${index}`} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
-                    <CheckCircle2 size={15} className="text-emerald-500" />
-                    {reason}
-                  </span>
-                )) : <span className="text-sm text-slate-500">Match reasons will appear as data quality improves.</span>}
-              </div>
-            </div>
-          ) : null}
-        </div>
-        <div className="flex flex-col gap-2 lg:items-end">
-          <p className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{formatCurrency(getListingPrice(listing))}</p>
-          <span className={`inline-flex min-h-9 items-center rounded-full border px-3 text-sm font-semibold ${scoreTone.badge}`}>{property.score}%</span>
-          <div className="mt-auto grid w-full gap-2">
-            {listing.id ? <Link to={`/agent/listings/${listing.id}`} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">View Property</Link> : null}
-            <button type="button" onClick={() => setExpanded((current) => !current)} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              {expanded ? 'Hide Reasons' : 'View Match Reasons'}
-            </button>
-            <button type="button" onClick={() => onShare?.({ listing, requirementId: property.requirementId || requirementId, interestId: property.interestId, suggestionId: property.suggestionId })} className="inline-flex min-h-9 items-center justify-center rounded-xl bg-slate-950 px-3 text-sm font-semibold text-white">
-              Send To Buyer
-            </button>
-          </div>
-        </div>
+    <article className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[190px_minmax(0,1fr)_190px_280px] lg:items-center">
+      <BuyerMatchPropertyImage listing={listing} className="h-32 w-full rounded-2xl lg:h-28" />
+      <div className="min-w-0">
+        <h3 className="text-base font-semibold tracking-[-0.025em] text-slate-950">{getListingTitle(listing)}</h3>
+        <p className="mt-1 text-sm text-slate-500">{getListingSuburbLabel(listing)}</p>
+        <p className="mt-2 text-base font-semibold text-blue-700">{getListingPriceLabel(listing)}</p>
+        <BuyerMatchFeatureRow listing={listing} />
+      </div>
+      <div className="rounded-2xl bg-emerald-50 p-3">
+        <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">{property.score || 0}% Match</span>
+        <p className="mt-3 text-sm leading-5 text-slate-600">{reason}</p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-2">
+        <button type="button" onClick={() => onPreview?.(property)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          Preview
+          <ExternalLink size={14} />
+        </button>
+        <button type="button" onClick={() => onSend?.(property)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 text-sm font-semibold text-white hover:bg-slate-800">
+          <Send size={14} />
+          Send To Buyer
+        </button>
+        <button type="button" onClick={() => onAddViewing?.(property)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <CalendarDays size={14} />
+          Add To Viewing
+        </button>
+        <button type="button" onClick={() => onHide?.(property)} disabled={busy} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+          {busy ? 'Hiding...' : 'Hide'}
+        </button>
       </div>
     </article>
   )
 }
 
-function BuyerCollectionCampaignCard({ summary, onPreview }) {
-  const sentDate = summary.lastUpdated && summary.sentCount ? formatDate(summary.lastUpdated) : 'Not sent'
-  const timeline = [
-    { title: 'Email 1 - Collection Sent', status: summary.sentCount ? 'Sent' : 'Ready', date: sentDate, copy: `${summary.total || 0} curated properties matched to buyer requirements.` },
-    { title: 'Email 2 - Top Match Highlight', status: summary.sentCount ? 'Scheduled' : 'Waiting', date: summary.sentCount ? 'In 2 days' : 'After send', copy: 'Highlight the strongest recommendation.' },
-    { title: 'Email 3 - Viewing Reminder', status: summary.sentCount ? 'Scheduled' : 'Waiting', date: summary.sentCount ? 'In 4 days' : 'After engagement', copy: 'Prompt the buyer to book a viewing.' },
-    { title: 'New Match Alerts', status: summary.total ? 'Active' : 'Paused', date: 'Ongoing', copy: 'Notify buyer when fresh matches arrive.' },
+function BuyerMightAlsoLikeSection({ properties = [], expanded, busyId, onToggleExpanded, onPreview, onSend, onAddViewing, onHide, onRegenerate }) {
+  const visible = expanded ? properties : properties.slice(0, 3)
+  return (
+    <MatchSectionShell number="3" title="They Might Also Like" subtitle="Properties matched to the buyer's criteria" badge={`${properties.length} Matches`}>
+      {properties.length ? (
+        <>
+          <div className="grid gap-3">
+            {visible.map((property) => (
+              <BuyerRecommendationCard
+                key={property.id}
+                property={property}
+                busy={busyId === property.id}
+                onPreview={onPreview}
+                onSend={onSend}
+                onAddViewing={onAddViewing}
+                onHide={onHide}
+              />
+            ))}
+          </div>
+          {properties.length > 3 ? (
+            <div className="mt-4 text-center">
+              <button type="button" onClick={onToggleExpanded} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+                {expanded ? 'Show top 3 matches' : `View all ${properties.length} matches`}
+                <ChevronDown size={15} className={expanded ? 'rotate-180' : ''} />
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+          <h3 className="text-lg font-semibold text-slate-950">No matching properties found</h3>
+          <p className="mt-2 text-sm text-slate-500">Try updating the buyer criteria or regenerate matches.</p>
+          <button type="button" onClick={onRegenerate} className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white">
+            <RefreshCw size={15} />
+            Regenerate Matches
+          </button>
+        </div>
+      )}
+    </MatchSectionShell>
+  )
+}
+
+function BuyerEmailCampaignSection({ properties = [], summary, onPreview, onSend, onWhatsApp, onSchedule, onFollowUp }) {
+  const lastSent = getBuyerCampaignLastSent(properties)
+  const hasSent = Boolean(lastSent || summary.sentCount)
+  const sequence = [
+    { title: 'Email 1 - Collection Sent', status: hasSent ? 'Sent' : 'Ready to send' },
+    { title: 'Email 2 - Top Recommendation', status: hasSent ? 'After 2 days' : 'Waiting' },
+    { title: 'Email 3 - Follow Up', status: hasSent ? 'After 5 days' : 'Waiting' },
+    { title: 'Email 4 - Viewing Reminder', status: hasSent ? 'After 10 days' : 'Waiting' },
   ]
   return (
-    <section className="rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.045)]">
-      <div className="flex items-start justify-between gap-3">
+    <MatchSectionShell
+      number="4"
+      title="Email Campaign"
+      subtitle="Manage the collection email sequence"
+      action={(
+        <button type="button" onClick={onPreview} disabled={!properties.length} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+          Preview Collection Email
+          <ExternalLink size={14} />
+        </button>
+      )}
+    >
+      <div className="grid gap-5 xl:grid-cols-[1.1fr_1fr]">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Email Campaign</p>
-          <h2 className="mt-2 text-xl font-semibold tracking-[-0.045em] text-slate-950">Collection sequence</h2>
-        </div>
-        <button type="button" onClick={onPreview} className="text-sm font-semibold text-blue-700">Preview</button>
-      </div>
-      <div className="mt-5 space-y-3">
-        {timeline.map((item) => {
-          const tone = item.status === 'Sent' || item.status === 'Active' ? 'green' : item.status === 'Scheduled' ? 'blue' : 'slate'
-          return (
-            <article key={item.title} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{item.title}</p>
-                  <p className="mt-1 text-xs text-slate-500">{item.date}</p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-xs font-semibold text-slate-500">Campaign Status</p>
+              <p className="mt-1 text-lg font-semibold text-emerald-700">{properties.length ? (hasSent ? 'Sent' : 'Ready To Send') : 'Needs Properties'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-500">Properties Included</p>
+              <p className="mt-1 text-lg font-semibold text-slate-950">{properties.length}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-500">Last Sent</p>
+              <p className="mt-1 text-lg font-semibold text-slate-950">{lastSent ? formatDate(lastSent) : 'Never'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-500">Next Email</p>
+              <p className="mt-1 text-base font-semibold text-slate-950">Email 1 - Collection Sent</p>
+            </div>
+          </div>
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+            {sequence.map((item, index) => (
+              <div key={item.title} className="flex items-center justify-between gap-4 rounded-xl px-3 py-2">
+                <div className="flex items-center gap-3">
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${index === 0 && !hasSent ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-slate-500'}`}>{index + 1}</span>
+                  <span className="text-sm font-semibold text-slate-700">{item.title}</span>
                 </div>
-                <StatusPill tone={tone}>{item.status}</StatusPill>
+                <span className="text-xs font-semibold text-slate-500">{item.status}</span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-slate-500">{item.copy}</p>
-            </article>
-          )
-        })}
-      </div>
-      <div className="mt-4 grid gap-2">
-        <button type="button" onClick={onPreview} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Preview Next Email</button>
-        <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">Pause Campaign</button>
-      </div>
-    </section>
-  )
-}
-
-function BuyerCollectionInsightsPanel({ row, requirement, summary, properties = [] }) {
-  const top = properties[0]
-  const area = getBuyerAreaLabel(row, requirement)
-  const propertyType = getBuyerPropertyTypeLabel(row, requirement)
-  const budget = getBuyerBudgetLabel(row, requirement)
-  const engagementSignals = [
-    summary.sentCount ? 'Opened Emails' : '',
-    summary.viewedCount ? 'Viewed Properties' : '',
-    properties.some((property) => normalizeText(property.status).toLowerCase().includes('saved') || normalizeText(property.status).toLowerCase().includes('interest')) ? 'Saved Properties' : '',
-    summary.total ? 'Clicked Viewing Links' : '',
-  ].filter(Boolean)
-  return (
-    <section className="rounded-[28px] border border-blue-100 bg-gradient-to-br from-white via-white to-blue-50/70 p-5 shadow-[0_16px_38px_rgba(15,23,42,0.045)] sm:p-6">
-      <div className="grid gap-5 xl:grid-cols-[1.3fr_1fr_1fr_1fr]">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">AI Insights</p>
-          <h2 className="mt-2 text-xl font-semibold tracking-[-0.045em] text-slate-950">Collection summary</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-600">
-            Based on the buyer&apos;s preference for {propertyType !== '—' ? propertyType.toLowerCase() : 'suitable homes'} in {area !== '—' ? area : 'their target area'} with a budget of {budget !== '—' ? budget : 'the captured price point'}, this collection prioritises properties with the strongest fit against price, location and viewing readiness.
-          </p>
+            ))}
+          </div>
         </div>
-        <InsightBlock title="Top Recommendation" value={top ? getListingTitle(top.listing) : 'No top match yet'} copy={top ? `${top.score}% match - ${getCollectionScoreTone(top.score).label}` : 'Add matches to generate a recommendation.'} />
-        <InsightBlock title="Recommended Next Action" value={summary.viewedCount ? 'Schedule viewing' : summary.sentCount ? 'Follow up' : 'Send collection'} copy={summary.viewedCount ? `Buyer has engaged with ${summary.viewedCount} property view${summary.viewedCount === 1 ? '' : 's'}.` : summary.sentCount ? 'Collection has been sent. Nudge the top match.' : 'Send the collection to start engagement tracking.'} />
-        <InsightBlock title="Buyer Engagement Score" value={summary.engagement} copy={engagementSignals.length ? engagementSignals.join(' · ') : 'No engagement signals yet.'} />
+        <div className="grid content-start gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-sm font-semibold text-slate-950">Campaign Actions</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button type="button" onClick={onSend} disabled={!properties.length} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white disabled:bg-slate-300">
+              <Send size={15} />
+              Send Collection
+            </button>
+            <button type="button" onClick={onWhatsApp} disabled={!properties.length} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50">
+              <MessageSquarePlus size={15} />
+              Send on WhatsApp
+            </button>
+            <button type="button" onClick={onSchedule} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+              <CalendarDays size={15} />
+              Schedule Viewing
+            </button>
+            <button type="button" onClick={onFollowUp} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+              <Clock3 size={15} />
+              Set Follow Up
+            </button>
+          </div>
+        </div>
       </div>
-    </section>
-  )
-}
-
-function InsightBlock({ title, value, copy }) {
-  return (
-    <div className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">{title}</p>
-      <p className="mt-3 text-base font-semibold tracking-[-0.025em] text-slate-950">{value}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{copy}</p>
-    </div>
+    </MatchSectionShell>
   )
 }
 
@@ -6944,142 +7094,152 @@ function SendPropertyCollectionModal({
 
 function BuyerPropertyMatchPanel({ organisationId, row, workspace = {}, actor, agency = {}, onSaved, onShare, onNavigate }) {
   const requirements = workspace.requirements || row.requirements || []
-  const listingInterests = workspace.listingInterests || row.listingInterests || []
-  const suggestions = workspace.suggestions || row.suggestions || []
   const primaryRequirement = requirements.find((requirement) => requirement.isPrimary || requirement.is_primary) || requirements[0] || getBuyerPrimaryRequirement(row)
   const collectionProperties = useMemo(() => buildBuyerCollectionProperties(row, workspace), [row, workspace])
   const collectionSummary = useMemo(() => buildBuyerCollectionSummary(row, primaryRequirement, collectionProperties), [collectionProperties, primaryRequirement, row])
-  const topProperty = collectionProperties[0] || null
-  const buyer = getLeadContactSnapshot(row)
+  const originalProperty = useMemo(() => getBuyerOriginalEnquiryProperty(row, collectionProperties), [collectionProperties, row])
+  const recommendationProperties = useMemo(
+    () => collectionProperties.filter((property) => property.id !== originalProperty?.id),
+    [collectionProperties, originalProperty],
+  )
+  const topProperty = recommendationProperties[0] || collectionProperties[0] || null
   const [collectionEmailOpen, setCollectionEmailOpen] = useState(false)
   const [collectionPreviewOnly, setCollectionPreviewOnly] = useState(false)
-  const canSendCollectionEmail = Boolean(buyer.email && collectionProperties.length)
-  const emailDisabledReason = !buyer.email
-    ? 'Add buyer email to send collection'
-    : !collectionProperties.length
-      ? 'Generate property matches first'
-      : ''
+  const [matchesExpanded, setMatchesExpanded] = useState(false)
+  const [busyAction, setBusyAction] = useState('')
+  const [panelMessage, setPanelMessage] = useState('')
+  const [panelError, setPanelError] = useState('')
 
-  function shareTopProperty(channel = 'email') {
-    if (!topProperty?.listing) return
+  function openListing(property) {
+    const listingId = getListingIdentity(property?.listing)
+    if (!listingId || typeof window === 'undefined') return
+    window.open(`/agent/listings/${listingId}`, '_blank', 'noopener,noreferrer')
+  }
+
+  function shareProperty(property, channel = 'email') {
+    if (!property?.listing) return
     onShare?.({
-      listing: topProperty.listing,
-      requirementId: topProperty.requirementId || primaryRequirement?.requirementId || '',
-      interestId: topProperty.interestId || '',
-      suggestionId: topProperty.suggestionId || '',
+      listing: property.listing,
+      requirementId: property.requirementId || primaryRequirement?.requirementId || '',
+      interestId: property.interestId || '',
+      suggestionId: property.suggestionId || '',
       channel,
     })
   }
 
+  function shareTopProperty(channel = 'email') {
+    shareProperty(topProperty, channel)
+  }
+
+  async function regenerateMatches() {
+    if (!primaryRequirement?.requirementId) {
+      setPanelError('Add match criteria before regenerating matches.')
+      return
+    }
+    try {
+      setBusyAction('regenerate')
+      setPanelMessage('')
+      setPanelError('')
+      const result = await findListingsForRequirement({ organisationId, requirementId: primaryRequirement.requirementId, limit: 12 })
+      const matches = result.matches || []
+      for (const match of matches) {
+        await upsertLeadListingInterest(
+          {
+            organisationId,
+            lead: row,
+            contactId: row.contactId || row.contact_id,
+            listing: match,
+            requirementId: primaryRequirement.requirementId,
+            source: 'manual_match',
+            status: 'suggested',
+            isSystemSuggested: true,
+            matchScore: match.matchScore,
+            matchReasons: match.matchReasons,
+            createdBy: actor?.id,
+          },
+          { actor },
+        )
+      }
+      setPanelMessage(matches.length ? `${matches.length} matches regenerated.` : 'No matching properties found.')
+      await onSaved?.()
+    } catch (error) {
+      setPanelError(error?.message || 'Unable to regenerate matches.')
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  async function hideRecommendation(property) {
+    if (!property?.interestId) {
+      setPanelMessage('This recommendation is not linked to a saved listing yet.')
+      return
+    }
+    try {
+      setBusyAction(property.id)
+      setPanelMessage('')
+      setPanelError('')
+      await dismissLeadListingInterest({ interestId: property.interestId, reason: 'Hidden from Property Match page.' }, { actor })
+      await onSaved?.()
+    } catch (error) {
+      setPanelError(error?.message || 'Unable to hide this recommendation.')
+    } finally {
+      setBusyAction('')
+    }
+  }
+
   return (
     <div className="space-y-5">
-      <BuyerCollectionHeader
+      <section className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_16px_42px_rgba(15,23,42,0.045)] sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-[-0.055em] text-slate-950">Property Match</h1>
+            <p className="mt-1 text-sm text-slate-500">Find and send the right properties to this buyer.</p>
+          </div>
+          <button type="button" onClick={regenerateMatches} disabled={busyAction === 'regenerate'} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60">
+            <RefreshCw size={15} className={busyAction === 'regenerate' ? 'animate-spin' : ''} />
+            {busyAction === 'regenerate' ? 'Regenerating...' : 'Regenerate Matches'}
+          </button>
+        </div>
+        {panelMessage ? <p className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{panelMessage}</p> : null}
+        {panelError ? <p className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{panelError}</p> : null}
+      </section>
+
+      <BuyerMatchCriteriaSection row={row} requirement={primaryRequirement} onEdit={() => onNavigate?.('overview')} />
+
+      <BuyerEnquiredPropertySection
+        property={originalProperty}
+        onView={openListing}
+        onReplace={() => onNavigate?.('overview')}
+      />
+
+      <BuyerMightAlsoLikeSection
+        properties={recommendationProperties}
+        expanded={matchesExpanded}
+        busyId={busyAction}
+        onToggleExpanded={() => setMatchesExpanded((current) => !current)}
+        onPreview={openListing}
+        onSend={(property) => shareProperty(property, 'email')}
+        onAddViewing={() => onNavigate?.('appointments')}
+        onHide={hideRecommendation}
+        onRegenerate={regenerateMatches}
+      />
+
+      <BuyerEmailCampaignSection
+        properties={recommendationProperties}
         summary={collectionSummary}
-        canSendEmail={canSendCollectionEmail}
-        emailDisabledReason={emailDisabledReason}
+        onPreview={() => { setCollectionPreviewOnly(true); setCollectionEmailOpen(true) }}
         onSend={() => { setCollectionPreviewOnly(false); setCollectionEmailOpen(true) }}
         onWhatsApp={() => shareTopProperty('whatsapp')}
         onSchedule={() => onNavigate?.('appointments')}
-        onPreview={() => { setCollectionPreviewOnly(true); setCollectionEmailOpen(true) }}
-        onRegenerate={() => {
-          if (typeof document !== 'undefined') {
-            document.getElementById('buyer-collection-tools')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          }
-        }}
+        onFollowUp={() => onNavigate?.('activity')}
       />
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(230px,0.85fr)_minmax(0,1.9fr)_minmax(250px,0.9fr)]">
-        <BuyerCollectionProfileCard row={row} requirement={primaryRequirement} onEdit={() => onNavigate?.('requirements')} />
-        <BuyerCollectionPropertiesCard
-          properties={collectionProperties}
-          onShare={onShare}
-          requirementId={primaryRequirement?.requirementId || ''}
-        />
-        <BuyerCollectionCampaignCard summary={collectionSummary} onPreview={() => shareTopProperty('email')} />
-      </section>
-
-      <BuyerCollectionInsightsPanel
-        row={row}
-        requirement={primaryRequirement}
-        summary={collectionSummary}
-        properties={collectionProperties}
-      />
-
-      <section id="buyer-collection-tools" className={`${panelClass} scroll-mt-28 overflow-hidden rounded-[28px] border-slate-200/80 bg-white`}>
-        <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Collection tools</p>
-              <h2 className="mt-1 text-lg font-semibold tracking-[-0.035em] text-slate-950">Matching workspace controls</h2>
-              <p className="mt-1 text-sm text-slate-500">Review, regenerate, shortlist and send individual matches using the existing operational tools.</p>
-            </div>
-            <StatusPill tone="blue">Advisor workspace</StatusPill>
-          </div>
-        </div>
-        <div className="space-y-4 p-4 sm:p-5">
-          <PropertyMatchWorkflowPanel
-            lead={row}
-            interests={listingInterests}
-            requirements={requirements}
-            suggestions={suggestions}
-          />
-          <EnquiryPropertyPanel
-            organisationId={organisationId}
-            lead={row}
-            interests={listingInterests}
-            requirements={requirements}
-            actor={actor}
-            onSaved={onSaved}
-            onShare={onShare}
-          />
-          <PriceBandQuickMatchPanel
-            organisationId={organisationId}
-            lead={row}
-            requirements={requirements}
-            interests={listingInterests}
-            actor={actor}
-            onSaved={onSaved}
-            onShare={onShare}
-          />
-          <LeadRequirementsPanel
-            organisationId={organisationId}
-            lead={row}
-            requirements={requirements}
-            actor={actor}
-            onSaved={onSaved}
-            title="Search Brief"
-            description="Structured buyer criteria used for matching when there is no enquiry property, or for finding alternatives to the enquiry property."
-          />
-          <LeadSuggestionsPanel
-            organisationId={organisationId}
-            lead={row}
-            suggestions={suggestions}
-            actor={actor}
-            onSaved={onSaved}
-            onShare={onShare}
-            title="Smart Suggestions"
-            description="Alternative matches generated from the search brief and lead context. Accept a suggestion to move it into the buyer shortlist."
-          />
-          <LeadListingInterestsPanel
-            organisationId={organisationId}
-            lead={row}
-            interests={listingInterests}
-            requirements={requirements}
-            actor={actor}
-            onSaved={onSaved}
-            onShare={onShare}
-            title="Shortlist / Interested Listings"
-            description="All linked listings with operational controls: accepted suggestions, manual matches, enquiry listings, sent status, notes, and viewing scheduling."
-          />
-        </div>
-      </section>
 
       <SendPropertyCollectionModal
         open={collectionEmailOpen}
         organisationId={organisationId}
         lead={row}
         requirement={primaryRequirement}
-        properties={collectionProperties}
+        properties={recommendationProperties}
         actor={actor}
         agency={agency}
         previewOnly={collectionPreviewOnly}
@@ -7217,11 +7377,36 @@ function buildAppointmentPropertyOptions(lead = {}, activeListings = []) {
   const addActiveListing = (listing = {}) => {
     const id = normalizeText(listing.id || listing.listingId || listing.listing_id)
     if (!id || options.some((option) => option.id === id)) return
+    const imageUrl = normalizeText(
+      listing.heroImageUrl ||
+        listing.hero_image_url ||
+        listing.primaryImageUrl ||
+        listing.primary_image_url ||
+        listing.mainImageUrl ||
+        listing.main_image_url ||
+        listing.thumbnailUrl ||
+        listing.thumbnail_url ||
+        listing.imageUrl ||
+        listing.image_url ||
+        listing.images?.[0]?.url ||
+        listing.photos?.[0]?.url ||
+        listing.media?.[0]?.url,
+    )
     options.push({
       id,
       label: normalizeText(listing.title || listing.address || listing.propertyAddress) || 'Active listing',
       description: [listing.address, listing.suburb, listing.city].map(normalizeText).filter(Boolean).join(', ') || 'Active listing',
+      address: normalizeText(listing.address || listing.propertyAddress || listing.property_address),
+      suburb: normalizeText(listing.suburb || listing.area || listing.location),
+      city: normalizeText(listing.city),
       price: listing.price || listing.askingPrice || listing.asking_price || null,
+      status: normalizeText(listing.status || listing.listingStatus || listing.listing_status),
+      type: normalizeText(listing.type || listing.propertyType || listing.property_type || listing.category),
+      bedrooms: listing.bedrooms ?? listing.beds ?? listing.bedroomsCount ?? listing.bedrooms_count ?? null,
+      bathrooms: listing.bathrooms ?? listing.baths ?? listing.bathroomsCount ?? listing.bathrooms_count ?? null,
+      garages: listing.garages ?? listing.garage ?? listing.parking ?? listing.parkingSpaces ?? listing.parking_spaces ?? null,
+      imageUrl,
+      referenceNumber: normalizeText(listing.referenceNumber || listing.reference_number || listing.ref || listing.listingReference || listing.listing_reference),
       source: 'Active listing',
       isOriginalEnquiry: false,
       sellerName: normalizeText(listing.seller?.name || listing.sellerName || listing.seller_name || listing.ownerName || listing.owner_name),
@@ -7236,19 +7421,237 @@ function buildAppointmentPropertyOptions(lead = {}, activeListings = []) {
   })
 }
 
+function getPropertySelectorLocation(property = {}) {
+  return normalizeText(property.suburb || property.location || property.area) ||
+    [property.address, property.city].map(normalizeText).filter(Boolean).join(', ') ||
+    normalizeText(property.description) ||
+    'Location not set'
+}
+
+function getPropertySelectorPrice(property = {}) {
+  return property.price ? formatCurrency(property.price) : 'Price on request'
+}
+
+function getPropertySelectorSpecs(property = {}) {
+  return [
+    property.bedrooms ? `${property.bedrooms} bed` : '',
+    property.bathrooms ? `${property.bathrooms} bath` : '',
+    property.garages ? `${property.garages} parking` : '',
+    property.type || '',
+    property.status || property.source || '',
+  ].map(normalizeText).filter(Boolean)
+}
+
+function propertySelectorMatches(property = {}, query = '') {
+  const search = normalizeText(query).toLowerCase()
+  if (!search) return true
+  const haystack = [
+    property.label,
+    property.title,
+    property.address,
+    property.description,
+    property.suburb,
+    property.city,
+    property.referenceNumber,
+    property.type,
+    property.status,
+    property.source,
+    property.price,
+  ].map(normalizeText).join(' ').toLowerCase()
+  return haystack.includes(search)
+}
+
+function PropertyImageThumb({ property }) {
+  const imageUrl = normalizeText(property?.imageUrl || property?.heroImageUrl || property?.primaryImageUrl)
+  if (imageUrl) {
+    return (
+      <img
+        src={imageUrl}
+        alt=""
+        loading="lazy"
+        className="h-[72px] w-[104px] shrink-0 rounded-xl object-cover"
+      />
+    )
+  }
+  return (
+    <div className="flex h-[72px] w-[104px] shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-400">
+      <Home size={22} />
+    </div>
+  )
+}
+
+function PropertyResultRow({ property, selected, highlighted, onSelect }) {
+  const specs = getPropertySelectorSpecs(property)
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`grid w-full grid-cols-[104px_minmax(0,1fr)] gap-4 border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 sm:grid-cols-[104px_minmax(0,1fr)_auto_36px] ${selected ? 'bg-blue-50' : highlighted ? 'bg-slate-50' : 'bg-white hover:bg-slate-50'}`}
+    >
+      <PropertyImageThumb property={property} />
+      <span className="min-w-0">
+        <span className="block truncate text-base font-semibold tracking-[-0.02em] text-slate-950">{property.label || property.title || 'Untitled property'}</span>
+        <span className="mt-1 block truncate text-sm font-medium text-slate-500">{getPropertySelectorLocation(property)}</span>
+        <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500">
+          {specs.map((spec, index) => (
+            <span key={`${property.id}-${spec}-${index}`} className="inline-flex items-center gap-1">
+              {index > 0 ? <span className="hidden text-slate-300 sm:inline">|</span> : null}
+              {spec}
+            </span>
+          ))}
+        </span>
+      </span>
+      <span className="self-center text-left text-base font-semibold tracking-[-0.02em] text-slate-950 sm:text-right sm:text-lg">{getPropertySelectorPrice(property)}</span>
+      <span className="hidden self-center sm:flex sm:justify-end">
+        {selected ? <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-white"><CheckCircle2 size={18} /></span> : null}
+      </span>
+    </button>
+  )
+}
+
+function PropertySelector({ value = '', onChange, properties = [], placeholder = 'Select property', disabled = false, onAddProperty }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [highlightedIndex, setHighlightedIndex] = useState(0)
+  const containerRef = useRef(null)
+  const searchInputRef = useRef(null)
+  const selectedProperty = properties.find((property) => property.id === value) || null
+  const filteredProperties = useMemo(
+    () => properties.filter((property) => propertySelectorMatches(property, searchQuery)).slice(0, 100),
+    [properties, searchQuery],
+  )
+
+  useEffect(() => {
+    if (!isOpen) return undefined
+    const handlePointerDown = (event) => {
+      if (!containerRef.current?.contains(event.target)) setIsOpen(false)
+    }
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setIsOpen(false)
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleEscape)
+    window.requestAnimationFrame?.(() => searchInputRef.current?.focus())
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    setHighlightedIndex(0)
+  }, [searchQuery])
+
+  function openSelector() {
+    if (disabled) return
+    setIsOpen(true)
+  }
+
+  function selectProperty(property) {
+    onChange?.(property?.id || '')
+    setIsOpen(false)
+    setSearchQuery('')
+  }
+
+  function handleKeyDown(event) {
+    if (!isOpen && ['ArrowDown', 'Enter', ' '].includes(event.key)) {
+      event.preventDefault()
+      openSelector()
+      return
+    }
+    if (!isOpen) return
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setHighlightedIndex((index) => Math.min(index + 1, Math.max(filteredProperties.length - 1, 0)))
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setHighlightedIndex((index) => Math.max(index - 1, 0))
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      if (filteredProperties[highlightedIndex]) selectProperty(filteredProperties[highlightedIndex])
+    }
+  }
+
+  return (
+    <div ref={containerRef} className="relative" onKeyDown={handleKeyDown}>
+      <button
+        type="button"
+        onClick={openSelector}
+        disabled={disabled}
+        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 text-left text-sm outline-none transition hover:border-blue-200 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50"
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+      >
+        <span className="min-w-0">
+          <span className={`block truncate font-semibold ${selectedProperty ? 'text-slate-950' : 'text-slate-400'}`}>{selectedProperty?.label || placeholder}</span>
+          {selectedProperty ? <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">{getPropertySelectorLocation(selectedProperty)} · {getPropertySelectorPrice(selectedProperty)}</span> : null}
+        </span>
+        <ChevronDown size={16} className="shrink-0 text-slate-400" />
+      </button>
+
+      {isOpen ? (
+        <div className="fixed inset-x-3 bottom-3 top-8 z-50 flex flex-col overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.16)] sm:absolute sm:inset-auto sm:left-0 sm:top-[calc(100%+0.5rem)] sm:w-[min(720px,calc(100vw-4rem))] sm:max-h-[75vh]" role="dialog" aria-label="Select property">
+          <div className="border-b border-slate-100 p-4">
+            <h3 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">Select property</h3>
+            <div className="relative mt-4">
+              <Search size={20} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="min-h-12 w-full rounded-2xl border border-slate-300 bg-white pl-12 pr-4 text-sm font-medium outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
+                placeholder="Search for a property, suburb or reference..."
+              />
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {filteredProperties.length ? filteredProperties.map((property, index) => (
+              <PropertyResultRow
+                key={property.id}
+                property={property}
+                selected={property.id === value}
+                highlighted={index === highlightedIndex}
+                onSelect={() => selectProperty(property)}
+              />
+            )) : (
+              <div className="grid min-h-[260px] place-items-center px-6 text-center">
+                <div>
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-400">
+                    <Home size={24} />
+                  </div>
+                  <p className="mt-4 text-lg font-semibold text-slate-950">No properties found</p>
+                  <p className="mt-1 text-sm text-slate-500">Try searching by suburb, address or reference.</p>
+                  <button type="button" onClick={onAddProperty} className="mt-4 inline-flex min-h-10 items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 hover:bg-blue-100">
+                    <Plus size={15} />
+                    Add new property
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-3 border-t border-slate-100 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+            <button type="button" onClick={onAddProperty} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-4 text-sm font-semibold text-blue-700 hover:bg-blue-50">
+              <Plus size={15} />
+              Add new property
+            </button>
+            <p className="text-sm font-medium text-slate-500">
+              Can't find it? <button type="button" onClick={onAddProperty} className="font-semibold text-blue-600 hover:text-blue-700">Add a new property.</button>
+            </p>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function QuickScheduleCard({ organisationId, lead, actor, propertyOptions = [], onSaved, onOpenAdvanced }) {
   const contact = getLeadContactSnapshot(lead)
   const [draft, setDraft] = useState({ appointmentType: 'viewing', propertyId: propertyOptions[0]?.id || '', date: '', startTime: '' })
-  const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const selectedProperty = propertyOptions.find((option) => option.id === draft.propertyId) || null
   const requiresProperty = ['viewing', 'seller_meeting', 'inspection', 'valuation'].includes(draft.appointmentType)
-  const filteredOptions = propertyOptions.filter((option) => {
-    const haystack = `${option.label} ${option.description} ${option.source}`.toLowerCase()
-    return !query.trim() || haystack.includes(query.trim().toLowerCase())
-  })
 
   useEffect(() => {
     setDraft((previous) => {
@@ -7350,20 +7753,17 @@ function QuickScheduleCard({ organisationId, lead, actor, propertyOptions = [], 
               {BUYER_APPOINTMENT_QUICK_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
+          <div className="grid gap-1.5 text-sm font-semibold text-slate-700">
             Property
-            <span className="relative">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none focus:border-blue-300" placeholder="Search or select property" />
-            </span>
-          </label>
+            <PropertySelector
+              value={draft.propertyId}
+              onChange={(propertyId) => setDraft((previous) => ({ ...previous, propertyId }))}
+              properties={propertyOptions}
+              placeholder={propertyOptions.length ? 'Select property' : 'No linked properties yet'}
+              onAddProperty={onOpenAdvanced}
+            />
+          </div>
         </div>
-        <select value={draft.propertyId} onChange={(event) => setDraft((previous) => ({ ...previous, propertyId: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-300">
-          <option value="">{propertyOptions.length ? 'Select property' : 'No linked properties yet'}</option>
-          {filteredOptions.map((option) => (
-            <option key={option.id} value={option.id}>{[option.isOriginalEnquiry ? 'Enquiry property' : option.source, option.label, option.price ? formatCurrency(option.price) : ''].filter(Boolean).join(' - ')}</option>
-          ))}
-        </select>
         {!draft.propertyId && requiresProperty ? <p className="text-sm font-medium text-slate-500">Select or search for a property before booking a viewing.</p> : null}
         <div className="grid gap-4 md:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
