@@ -9041,7 +9041,7 @@ function getDealStatusCopy(lead = {}) {
     return {
       title: 'Offer Accepted',
       subtitle: 'Transaction ready',
-      copy: 'The seller accepted the offer. A transaction can now be created from this deal.',
+      copy: 'The buyer offer is accepted and ready for agent review. Send it to the seller manually, then create the transaction once accepted.',
       icon: CheckCircle2,
       tone: 'green',
     }
@@ -9058,10 +9058,10 @@ function getDealStatusCopy(lead = {}) {
   if (offer) {
     return {
       title: offerStatus.includes('submitted') || offerStatus.includes('review') ? 'Offer Submitted' : 'Offer Sent',
-      subtitle: offerStatus.includes('submitted') || offerStatus.includes('review') ? 'Waiting For Seller Response' : 'Waiting for buyer submission',
+      subtitle: offerStatus.includes('submitted') || offerStatus.includes('review') ? 'Ready for agent review' : 'Waiting for buyer submission',
       copy: offerStatus.includes('submitted') || offerStatus.includes('review')
-        ? "The offer has been sent to the seller. We'll notify you when they respond."
-        : 'The offer link has been sent. Keep an eye on buyer and seller updates.',
+        ? 'The buyer offer has come back here. Review it and send it to the seller manually for now.'
+        : 'The buyer offer link has been sent. The completed offer will appear here when the buyer submits it.',
       icon: Send,
       tone: 'blue',
     }
@@ -9069,7 +9069,7 @@ function getDealStatusCopy(lead = {}) {
   return {
     title: 'No Offer Submitted',
     subtitle: 'Ready for first offer',
-    copy: 'Create and send an offer when the buyer is ready to move forward.',
+    copy: 'Create and send the buyer offer link when the buyer is ready to move forward.',
     icon: FileText,
     tone: 'slate',
   }
@@ -9370,7 +9370,7 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Send Offer" subtitle="Create and send an offer link for the selected property." className="max-w-3xl">
+    <Modal open={open} onClose={onClose} title="Send Offer Link to Buyer" subtitle="Create and send a buyer offer link for the selected property." className="max-w-3xl">
       {contexts.length ? (
         <form onSubmit={submit} className="grid gap-4">
           <label className="grid gap-2 text-sm font-semibold text-slate-700">
@@ -9405,7 +9405,7 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
             <button type="button" onClick={onClose} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Close</button>
             <button type="submit" disabled={sending || !selectedContext?.listingId} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white disabled:bg-slate-300">
               <Send size={15} />
-              {sending ? 'Sending...' : 'Send Offer'}
+              {sending ? 'Sending...' : 'Send Offer Link to Buyer'}
             </button>
           </div>
         </form>
@@ -9416,12 +9416,12 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
   )
 }
 
-function DealOfferSection({ lead, offer, onSendOffer, onScheduleViewing, onViewOffer, onWithdrawOffer, withdrawing }) {
+function DealOfferSection({ lead, offer, onSendOffer, onViewOffer, onWithdrawOffer, withdrawing }) {
   const status = offer ? getOfferStatus(offer) : ''
   const lifecycle = offer ? getOfferLifecycleState(offer) : null
   const submittedDate = getOfferDateValue(offer, ['submittedAt', 'submitted_at', 'sentAt', 'sent_at', 'createdAt', 'created_at'])
   const expiryDate = getOfferDateValue(offer, ['expiryDate', 'expiry_date', 'expiresAt', 'expires_at'])
-  const statusLabel = status.includes('submitted') || status.includes('review') ? 'Waiting For Seller' : lifecycle?.label || 'Draft'
+  const statusLabel = status.includes('submitted') || status.includes('review') ? 'Ready for agent review' : lifecycle?.label || 'Draft'
   return (
     <MatchSectionShell number="3" title="Offer">
       {offer ? (
@@ -9463,7 +9463,7 @@ function DealOfferSection({ lead, offer, onSendOffer, onScheduleViewing, onViewO
             </button>
             <button type="button" onClick={onSendOffer} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
               <Send size={15} />
-              Resend Offer
+              Send Offer Link to Buyer
             </button>
             <button type="button" onClick={onWithdrawOffer} disabled={withdrawing || !offer || status === 'withdrawn'} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-700 disabled:opacity-50">
               <AlertTriangle size={15} />
@@ -9475,16 +9475,12 @@ function DealOfferSection({ lead, offer, onSendOffer, onScheduleViewing, onViewO
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div>
             <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">No offer submitted</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Create and send an offer to start the transaction process.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">Create and send a buyer offer link to start the offer process.</p>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div>
             <button type="button" onClick={onSendOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white">
               <Send size={15} />
-              Send Offer
-            </button>
-            <button type="button" onClick={onScheduleViewing} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700">
-              <CalendarDays size={15} />
-              Schedule Viewing
+              Send Offer Link to Buyer
             </button>
           </div>
         </div>
@@ -9537,12 +9533,12 @@ function DealTransactionSection({ lead, converting, onConvert, message, error })
         <div className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)_auto] lg:items-center">
           <div className="rounded-2xl bg-blue-50 p-5">
             <h3 className="text-lg font-semibold text-slate-950">Transaction not created yet</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">A transaction will automatically be created once the seller accepts the offer.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">When the buyer submits the offer, it appears in the Offer section. Send it to the seller manually, then create the transaction once accepted.</p>
           </div>
           <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-5">
             <p className="text-sm font-semibold text-slate-950">What happens next?</p>
             <div className="mt-3 grid gap-2 text-sm text-slate-600">
-              {['Seller accepts the offer', 'Arch9 creates the transaction automatically', 'Document checklist generated', 'Transfer process begins'].map((item) => (
+              {['Buyer submits the offer link', 'Offer appears here for agent review', 'Agent sends the offer to the seller manually', 'Create the transaction after acceptance'].map((item) => (
                 <span key={item} className="inline-flex items-center gap-2"><CheckCircle2 size={15} className="text-blue-700" />{item}</span>
               ))}
             </div>
@@ -9561,76 +9557,11 @@ function DealTransactionSection({ lead, converting, onConvert, message, error })
   )
 }
 
-function DealNextActionSection({ lead, onSendOffer, onScheduleViewing, onViewOffer, onOpenTransaction }) {
-  const deal = getBuyerDealSnapshot(lead)
-  const transactionId = getLeadLinkedTransactionId(lead)
-  const offer = deal.latestOffer
-  const status = getOfferStatus(offer)
-  let title = 'Ready to move forward?'
-  let copy = "If you're ready, you can send an offer to start the transaction process."
-  let primaryLabel = 'Send Offer'
-  let primaryAction = onSendOffer
-  let secondaryLabel = 'Schedule Viewing'
-  let secondaryAction = onScheduleViewing
-
-  if (transactionId) {
-    title = 'Transaction ready'
-    copy = 'Your transaction has been created automatically.'
-    primaryLabel = 'Open Transaction'
-    primaryAction = onOpenTransaction
-    secondaryLabel = ''
-    secondaryAction = null
-  } else if (status === 'accepted') {
-    title = 'Transaction ready'
-    copy = 'The seller accepted the offer. Create or open the transaction to continue.'
-    primaryLabel = 'Create Transaction'
-    primaryAction = onOpenTransaction
-    secondaryLabel = ''
-    secondaryAction = null
-  } else if (offer) {
-    title = 'Waiting for seller response'
-    copy = "We'll notify you when the seller views or responds to the offer."
-    primaryLabel = 'View Offer'
-    primaryAction = onViewOffer
-    secondaryLabel = ''
-    secondaryAction = null
-  }
-
-  return (
-    <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_16px_38px_rgba(15,23,42,0.045)] sm:p-6">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">
-        <div className="flex items-start gap-4">
-          <span className="inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-            <Send size={24} />
-          </span>
-          <div>
-            <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">{title}</h3>
-            <p className="mt-2 text-sm leading-6 text-slate-500">{copy}</p>
-          </div>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <button type="button" onClick={primaryAction} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white">
-            <Send size={15} />
-            {primaryLabel}
-          </button>
-          {secondaryAction ? (
-            <button type="button" onClick={secondaryAction} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700">
-              <CalendarDays size={15} />
-              {secondaryLabel}
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </section>
-  )
-}
-
 function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavigate }) {
   const deal = getBuyerDealSnapshot(lead)
   const latestOffer = deal.latestOffer
   const latestOfferId = getOfferId(latestOffer)
   const property = getDealPropertySummary(lead, latestOffer)
-  const transactionId = getLeadLinkedTransactionId(lead)
   const acceptedOffer = getAcceptedOfferForConversion(lead?.offers || [])
   const acceptedOfferId = getOfferId(acceptedOffer)
   const acceptedProperty = getDealPropertySummary(lead, acceptedOffer)
@@ -9647,11 +9578,6 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
   function viewOffer() {
     const url = getOfferPublicUrl(latestOffer)
     if (url && typeof window !== 'undefined') window.open(url, '_blank', 'noopener,noreferrer')
-  }
-
-  function openTransaction() {
-    if (!transactionId || typeof window === 'undefined') return
-    window.open(`/transactions/${transactionId}`, '_blank', 'noopener,noreferrer')
   }
 
   async function withdrawOffer() {
@@ -9756,7 +9682,6 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
         lead={lead}
         offer={latestOffer}
         onSendOffer={() => setOfferModalOpen(true)}
-        onScheduleViewing={() => onNavigate?.('appointments')}
         onViewOffer={viewOffer}
         onWithdrawOffer={withdrawOffer}
         withdrawing={workingAction === 'withdrawn'}
@@ -9767,13 +9692,6 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
         onConvert={convertAcceptedOffer}
         message={transactionMessage}
         error={transactionError}
-      />
-      <DealNextActionSection
-        lead={lead}
-        onSendOffer={() => setOfferModalOpen(true)}
-        onScheduleViewing={() => onNavigate?.('appointments')}
-        onViewOffer={viewOffer}
-        onOpenTransaction={transactionId ? openTransaction : convertAcceptedOffer}
       />
       <DealOfferComposerModal
         open={offerModalOpen}
