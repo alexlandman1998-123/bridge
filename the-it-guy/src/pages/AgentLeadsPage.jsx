@@ -377,6 +377,7 @@ function getLeadSourceInfo(row = {}) {
 
 function makeRequirementDraft(requirement = null, lead = null) {
   const source = requirement || buildRequirementFromLeadFallback(lead || {})
+  const notes = source.notes || ''
   return {
     title: source.title || '',
     intentType: source.intentType || 'buy',
@@ -403,12 +404,51 @@ function makeRequirementDraft(requirement = null, lead = null) {
     depositAvailable: source.depositAvailable === null || source.depositAvailable === undefined ? '' : String(Boolean(source.depositAvailable)),
     timeline: source.timeline || '',
     urgency: source.urgency || '',
+    currentPropertyStatus: source.currentPropertyStatus || source.current_property_status || source.currentProperty || source.current_property || lead?.currentPropertyStatus || lead?.current_property_status || lead?.currentProperty || lead?.current_property || readQualificationNoteValue(notes, 'Current property') || '',
+    needsToSell: normalizeQualificationBoolean(source.needsToSell ?? source.needs_to_sell ?? lead?.needsToSell ?? lead?.needs_to_sell ?? readQualificationNoteValue(notes, 'Needs to sell')),
     communicationPreference: source.communicationPreference || '',
     consentToReceiveMatches: Boolean(source.consentToReceiveMatches),
-    notes: source.notes || '',
+    notes,
     status: source.status || 'active',
     isPrimary: Boolean(source.isPrimary),
   }
+}
+
+function normalizeQualificationBoolean(value) {
+  if (value === true || value === false) return String(value)
+  const text = normalizeText(value).toLowerCase()
+  if (!text) return ''
+  if (['yes', 'true', 'needs to sell', 'sell first', 'selling'].some((token) => text.includes(token))) return 'true'
+  if (['no', 'false', 'renting', 'first time', 'none'].some((token) => text.includes(token))) return 'false'
+  return ''
+}
+
+function readQualificationNoteValue(notes = '', label = '') {
+  const safeLabel = normalizeText(label)
+  if (!safeLabel) return ''
+  const pattern = new RegExp(`^${safeLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:\\s*(.+)$`, 'im')
+  return normalizeText(notes.match(pattern)?.[1])
+}
+
+function writeQualificationNoteValue(notes = '', label = '', value = '') {
+  const safeLabel = normalizeText(label)
+  const safeValue = normalizeText(value)
+  if (!safeLabel) return notes || ''
+  const line = `${safeLabel}: ${safeValue}`
+  const pattern = new RegExp(`^${safeLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:\\s*.*$`, 'im')
+  if (pattern.test(notes || '')) {
+    return safeValue ? notes.replace(pattern, line) : notes.replace(pattern, '').replace(/\n{3,}/g, '\n\n').trim()
+  }
+  return safeValue ? [notes, line].filter((item) => normalizeText(item)).join('\n') : notes || ''
+}
+
+function buildRequirementNotesFromDraft(draft = {}) {
+  const currentProperty = normalizeText(draft.currentPropertyStatus)
+  const needsToSell = draft.needsToSell === 'true' ? 'Yes' : draft.needsToSell === 'false' ? 'No' : ''
+  let notes = draft.notes || ''
+  notes = writeQualificationNoteValue(notes, 'Current property', currentProperty)
+  notes = writeQualificationNoteValue(notes, 'Needs to sell', needsToSell)
+  return notes
 }
 
 function draftToRequirementPayload(draft = {}, lead = {}, organisationId = '', actor = {}) {
@@ -444,7 +484,7 @@ function draftToRequirementPayload(draft = {}, lead = {}, organisationId = '', a
     urgency: draft.urgency,
     communicationPreference: draft.communicationPreference,
     consentToReceiveMatches: draft.consentToReceiveMatches,
-    notes: draft.notes,
+    notes: buildRequirementNotesFromDraft(draft),
     status: draft.status || 'active',
     isPrimary: draft.isPrimary,
     createdBy: actor?.id,
@@ -1220,12 +1260,13 @@ function getBuyerCurrentPropertyLabel(row = {}, requirement = getBuyerPrimaryReq
       row.currentProperty ||
       row.current_property ||
       row.currentPropertyStatus ||
-      row.current_property_status,
+      row.current_property_status ||
+      readQualificationNoteValue(requirement.notes, 'Current property'),
   )
 }
 
 function getBuyerNeedsToSellLabel(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
-  const value = requirement.needsToSell ?? requirement.needs_to_sell ?? row.needsToSell ?? row.needs_to_sell
+  const value = requirement.needsToSell ?? requirement.needs_to_sell ?? row.needsToSell ?? row.needs_to_sell ?? readQualificationNoteValue(requirement.notes, 'Needs to sell')
   if (value === true) return 'Yes'
   if (value === false) return 'No'
   const text = normalizeText(value || requirement.currentPropertyStatus || requirement.current_property_status || row.currentPropertyStatus || row.current_property_status).toLowerCase()
@@ -2851,7 +2892,7 @@ function BuyerOutreachProgress({ row, onQualifyBuyer, onMarkQualified }) {
 
   return (
     <section className={`${buyerWorkspaceCardClass} overflow-hidden p-6`}>
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] xl:items-start">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] xl:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Buyer Journey</p>
@@ -2867,24 +2908,24 @@ function BuyerOutreachProgress({ row, onQualifyBuyer, onMarkQualified }) {
             <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
           </div>
         </div>
-        <div className="rounded-3xl border border-blue-100 bg-blue-50/70 px-5 py-4 text-sm font-semibold text-blue-800">
-          <p className="text-xs uppercase tracking-[0.14em] text-blue-500">Current focus</p>
-          <p className="mt-1 text-base text-slate-950">{nextStep?.label || 'Offer outcome'}</p>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm font-semibold text-blue-800">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-blue-500">Current focus</p>
+          <p className="mt-1 text-sm text-slate-950">{nextStep?.label || 'Offer outcome'}</p>
           <p className="mt-1 text-xs leading-5 text-slate-500">{nextStep?.hint || 'Keep the buyer moving through the offer path.'}</p>
           {isQualificationFocus ? (
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <button type="button" onClick={onQualifyBuyer} className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800">
+            <div className="mt-3 grid gap-2">
+              <button type="button" onClick={onQualifyBuyer} className="inline-flex min-h-9 items-center justify-center rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white hover:bg-slate-800">
                 Qualify Buyer
               </button>
-              <button type="button" onClick={markQualified} disabled={markingQualified} className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-blue-200 bg-white px-4 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" onClick={markQualified} disabled={markingQualified} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-blue-200 bg-white px-3 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60">
                 {markingQualified ? 'Marking...' : 'Mark Qualified'}
               </button>
-              <p className="sm:col-span-2 xl:col-span-1 2xl:col-span-2 text-xs font-medium leading-5 text-slate-500">
-                Use Mark Qualified if the buyer was qualified outside the form.
+              <p className="text-[11px] font-medium leading-4 text-slate-500">
+                Use when qualified outside the form.
               </p>
             </div>
           ) : qualification.qualified ? (
-            <div className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+            <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
               <CheckCircle2 size={14} />
               Buyer qualified
             </div>
@@ -3174,9 +3215,18 @@ function BuyerUpcomingAppointmentsCard({ row, onViewAll }) {
   )
 }
 
-function BuyerProfileCard({ row, requirement, onEdit, onRecommendations, onBondPartnerReferral }) {
+function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, focusSignal = 0, onRecommendations, onBondPartnerReferral }) {
   const [sendingBondReferral, setSendingBondReferral] = useState(false)
   const [bondReferralError, setBondReferralError] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const cardRef = useRef(null)
+  const buildDraft = useCallback(() => ({
+    ...makeRequirementDraft(requirement, row),
+    isPrimary: requirement?.requirementId ? Boolean(requirement.isPrimary ?? requirement.is_primary) : true,
+  }), [requirement, row])
+  const [draft, setDraft] = useState(() => buildDraft())
   const showBondReferral = shouldShowBondReferralPrompt(row, requirement)
   const profileRows = [
     { icon: Banknote, label: 'Budget', value: getBuyerBudgetLabel(row, requirement) },
@@ -3190,6 +3240,48 @@ function BuyerProfileCard({ row, requirement, onEdit, onRecommendations, onBondP
     { icon: Building2, label: 'Current Property', value: getBuyerCurrentPropertyLabel(row, requirement) },
     { icon: Tag, label: 'Needs To Sell', value: getBuyerNeedsToSellLabel(row, requirement) },
   ]
+
+  useEffect(() => {
+    if (!editing) setDraft(buildDraft())
+  }, [buildDraft, editing])
+
+  useEffect(() => {
+    if (!focusSignal) return
+    setEditing(true)
+    setSaveError('')
+    const runAfterFrame = typeof window !== 'undefined' && window.requestAnimationFrame ? window.requestAnimationFrame : (callback) => callback()
+    runAfterFrame(() => {
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [focusSignal])
+
+  function updateDraftField(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  async function saveQualification(event) {
+    event?.preventDefault()
+    if (!organisationId || !row?.leadId) {
+      setSaveError('This buyer cannot be updated until the workspace has loaded.')
+      return
+    }
+    try {
+      setSaving(true)
+      setSaveError('')
+      const payload = draftToRequirementPayload(draft, row, organisationId, actor)
+      if (requirement?.requirementId) {
+        await updateLeadRequirement({ requirementId: requirement.requirementId, updates: payload }, { actor })
+      } else {
+        await createLeadRequirement(payload, { actor })
+      }
+      await onSaved?.()
+      setEditing(false)
+    } catch (qualificationError) {
+      setSaveError(qualificationError?.message || 'Unable to save the qualification snapshot.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function requestBondReferral() {
     if (!onBondPartnerReferral || sendingBondReferral) return
@@ -3205,7 +3297,7 @@ function BuyerProfileCard({ row, requirement, onEdit, onRecommendations, onBondP
   }
 
   return (
-    <section className={`${buyerWorkspaceCardClass} p-5`}>
+    <section ref={cardRef} className={`${buyerWorkspaceCardClass} p-5 ${editing ? 'ring-2 ring-blue-100' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-blue-600">
@@ -3214,21 +3306,103 @@ function BuyerProfileCard({ row, requirement, onEdit, onRecommendations, onBondP
           </p>
           <h2 className="mt-2 text-xl font-semibold tracking-[-0.04em] text-slate-950">Qualification snapshot</h2>
         </div>
-        <button type="button" onClick={onEdit} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-          Edit
-        </button>
-      </div>
-      <dl className="mt-5 divide-y divide-slate-100">
-        {profileRows.map((item) => (
-          <div key={item.label} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] gap-3 py-3 first:pt-0 last:pb-0">
-            <dt className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-500">
-              {createElement(item.icon, { size: 15, className: 'shrink-0 text-slate-400' })}
-              <span className="truncate">{item.label}</span>
-            </dt>
-            <dd className="min-w-0 text-right text-sm font-semibold text-slate-950">{item.value || '—'}</dd>
+        {editing ? (
+          <div className="flex gap-2">
+            <button type="button" onClick={() => { setEditing(false); setSaveError(''); setDraft(buildDraft()) }} disabled={saving} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
+              Cancel
+            </button>
+            <button type="submit" form="buyer-qualification-inline-form" disabled={saving} className="inline-flex min-h-9 items-center justify-center rounded-xl bg-slate-950 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+              {saving ? 'Saving...' : 'Save'}
+            </button>
           </div>
-        ))}
-      </dl>
+        ) : (
+          <button type="button" onClick={() => { setEditing(true); setSaveError('') }} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Edit
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <form id="buyer-qualification-inline-form" onSubmit={saveQualification} className="mt-5 grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Budget min
+              <input value={draft.budgetMin} onChange={(event) => updateDraftField('budgetMin', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="e.g. 2500000" />
+            </label>
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Budget max
+              <input value={draft.budgetMax} onChange={(event) => updateDraftField('budgetMax', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="e.g. 3500000" />
+            </label>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Finance
+              <select value={draft.financeStatus} onChange={(event) => updateDraftField('financeStatus', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900">
+                {LEAD_REQUIREMENT_FINANCE_STATUSES.map((option) => <option key={option} value={option}>{titleCaseLabel(option.replace(/_/g, ' '))}</option>)}
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Pre qualified
+              <select value={draft.preApproved} onChange={(event) => updateDraftField('preApproved', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900">
+                <option value="">Unknown</option>
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </label>
+          </div>
+          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+            Areas
+            <input value={draft.areas} onChange={(event) => updateDraftField('areas', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Olympus, Faerie Glen" />
+          </label>
+          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+            Property type
+            <input value={draft.propertyTypes} onChange={(event) => updateDraftField('propertyTypes', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="House, Townhouse" />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Bedrooms
+              <input value={draft.bedroomsMin} onChange={(event) => updateDraftField('bedroomsMin', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Min" />
+            </label>
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Bathrooms
+              <input value={draft.bathroomsMin} onChange={(event) => updateDraftField('bathroomsMin', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Min" />
+            </label>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Urgency
+              <select value={draft.urgency} onChange={(event) => updateDraftField('urgency', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900">
+                <option value="">Unknown</option>
+                {LEAD_REQUIREMENT_URGENCIES.map((option) => <option key={option} value={option}>{titleCaseLabel(option)}</option>)}
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Needs to sell
+              <select value={draft.needsToSell} onChange={(event) => updateDraftField('needsToSell', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900">
+                <option value="">Unknown</option>
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </label>
+          </div>
+          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+            Current property
+            <input value={draft.currentPropertyStatus} onChange={(event) => updateDraftField('currentPropertyStatus', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Renting, owns property, first-time buyer" />
+          </label>
+          {saveError ? <p className="rounded-2xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{saveError}</p> : null}
+        </form>
+      ) : (
+        <dl className="mt-5 divide-y divide-slate-100">
+          {profileRows.map((item) => (
+            <div key={item.label} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] gap-3 py-3 first:pt-0 last:pb-0">
+              <dt className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-slate-500">
+                {createElement(item.icon, { size: 15, className: 'shrink-0 text-slate-400' })}
+                <span className="truncate">{item.label}</span>
+              </dt>
+              <dd className="min-w-0 text-right text-sm font-semibold text-slate-950">{item.value || '—'}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
       {showBondReferral ? (
         <div className="mt-5 rounded-3xl border border-emerald-100 bg-emerald-50/70 p-4">
           <p className="text-sm font-semibold text-emerald-900">Buyer may need prequalification help</p>
@@ -3487,13 +3661,22 @@ function BuyerTransactionSummaryCard({ row, onConvert }) {
   )
 }
 
-function BuyerLeadOverview({ row, workspace = {}, sourceInfo, leadScore = 0, onNavigate, onConvert, onBondPartnerReferral }) {
+function BuyerLeadOverview({ row, workspace = {}, sourceInfo, leadScore = 0, organisationId, actor, qualificationFocusSignal = 0, onSaved, onNavigate, onConvert, onBondPartnerReferral }) {
   const requirement = getBuyerPrimaryRequirement(row)
   return (
     <section className="grid gap-4">
       <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
         <BuyerNextBestActionV2Card row={row} onNavigate={onNavigate} onConvert={onConvert} />
-        <BuyerProfileCard row={row} requirement={requirement} onEdit={() => onNavigate('requirements')} onRecommendations={() => onNavigate('property_match')} onBondPartnerReferral={onBondPartnerReferral} />
+        <BuyerProfileCard
+          row={row}
+          requirement={requirement}
+          organisationId={organisationId}
+          actor={actor}
+          focusSignal={qualificationFocusSignal}
+          onSaved={onSaved}
+          onRecommendations={() => onNavigate('property_match')}
+          onBondPartnerReferral={onBondPartnerReferral}
+        />
         <BuyerFollowUpCentreCard row={row} leadScore={leadScore} onNavigate={onNavigate} />
       </div>
       <BuyerRelationshipTimelineCard row={row} workspace={workspace} sourceInfo={sourceInfo} onViewAll={() => onNavigate('activity')} />
@@ -13493,6 +13676,7 @@ function AgentLeadWorkspace() {
   const [error, setError] = useState('')
   const [data, setData] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
+  const [qualificationFocusSignal, setQualificationFocusSignal] = useState(0)
   const [shareDraft, setShareDraft] = useState(null)
   const [sellerActionError, setSellerActionError] = useState('')
   const [sellerActionMessage, setSellerActionMessage] = useState('')
@@ -14029,13 +14213,18 @@ function AgentLeadWorkspace() {
     else setActiveTab('offers')
   }, [navigate, row])
 
+  const focusBuyerQualificationSnapshot = useCallback(() => {
+    setActiveTab('overview')
+    setQualificationFocusSignal((value) => value + 1)
+  }, [])
+
   const runBuyerWorkspaceAction = useCallback((actionId = 'overview') => {
     if (actionId === 'convert') {
       convertBuyerLead()
       return
     }
-    if (actionId === 'requirements') {
-      setActiveTab('requirements')
+    if (actionId === 'requirements' || actionId === 'qualification') {
+      focusBuyerQualificationSnapshot()
       return
     }
     if (actionId === 'timeline') {
@@ -14047,7 +14236,7 @@ function AgentLeadWorkspace() {
       return
     }
     setActiveTab(actionId || 'overview')
-  }, [convertBuyerLead])
+  }, [convertBuyerLead, focusBuyerQualificationSnapshot])
 
   return (
     <main className={pageShell}>
@@ -14106,7 +14295,7 @@ function AgentLeadWorkspace() {
                 <>
                   <BuyerOutreachProgress
                     row={row}
-                    onQualifyBuyer={() => setActiveTab('requirements')}
+                    onQualifyBuyer={focusBuyerQualificationSnapshot}
                     onMarkQualified={markBuyerQualified}
                   />
 
@@ -14115,6 +14304,10 @@ function AgentLeadWorkspace() {
                     workspace={data || {}}
                     sourceInfo={sourceInfo}
                     leadScore={getBuyerLeadScore(row, workspaceAnalytics)}
+                    organisationId={organisationId}
+                    actor={actor}
+                    qualificationFocusSignal={qualificationFocusSignal}
+                    onSaved={loadWorkspace}
                     onNavigate={runBuyerWorkspaceAction}
                     onConvert={convertBuyerLead}
                     onBondPartnerReferral={sendBuyerToBondPartner}
