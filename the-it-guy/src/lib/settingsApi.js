@@ -78,6 +78,9 @@ const DEFAULT_NOTIFICATION_PREFERENCES = {
 }
 
 const PROFILE_AVATAR_UPLOAD_CONTENT_TYPE = 'image/jpeg'
+const ORGANISATION_LOGO_MAX_BYTES = 5 * 1024 * 1024
+const ORGANISATION_LOGO_UPLOAD_TIMEOUT_MS = 30000
+const ORGANISATION_LOGO_URL_TIMEOUT_MS = 12000
 const MOCK_PARTNER_ROUTING_RULES_STORAGE_KEY = 'itg:mock-partner-routing-rules:v1'
 
 const DEFAULT_ORGANISATION_SETTINGS = {
@@ -372,6 +375,29 @@ function isMissingStorageBucketError(error) {
     (message.includes('not found') || message.includes('does not exist') || message.includes('unknown')) ||
     code === 'bucket_not_found'
   )
+}
+
+function isAllowedOrganisationLogoType(file = {}) {
+  const contentType = normalizeText(file.type).toLowerCase()
+  const extension = normalizeFileExtension(file.name, '').toLowerCase()
+  return (
+    ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'].includes(contentType) ||
+    ['png', 'jpg', 'jpeg', 'webp', 'svg'].includes(extension)
+  )
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timeoutId
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+      }),
+    ])
+  } finally {
+    clearTimeout(timeoutId)
+  }
 }
 
 function createInviteToken() {
@@ -2912,6 +2938,12 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
   if (!selectedFile) {
     throw new Error('Select a valid logo file before uploading.')
   }
+  if (!isAllowedOrganisationLogoType(selectedFile)) {
+    throw new Error('Upload a PNG, JPG, WebP, or SVG logo file.')
+  }
+  if (Number(selectedFile.size || 0) > ORGANISATION_LOGO_MAX_BYTES) {
+    throw new Error('Logo file is too large. Please upload a logo smaller than 5 MB.')
+  }
 
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
@@ -2924,11 +2956,15 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
   let uploadError = null
 
   for (const bucketName of BRANDING_BUCKET_CANDIDATES) {
-    const { error } = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
-      upsert: true,
-      cacheControl: '3600',
-      contentType: selectedFile.type || undefined,
-    })
+    const { error } = await withTimeout(
+      client.storage.from(bucketName).upload(objectPath, selectedFile, {
+        upsert: true,
+        cacheControl: '3600',
+        contentType: selectedFile.type || undefined,
+      }),
+      ORGANISATION_LOGO_UPLOAD_TIMEOUT_MS,
+      `Logo upload timed out while saving to ${bucketName}. Please retry with a smaller image or check your connection.`,
+    )
 
     if (!error) {
       uploadedBucket = bucketName
@@ -2952,7 +2988,11 @@ export async function uploadOrganisationBrandingAsset({ file, variant = 'light' 
     throw new Error('Unable to upload organisation logo.')
   }
 
-  const signedResult = await client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30)
+  const signedResult = await withTimeout(
+    client.storage.from(uploadedBucket).createSignedUrl(objectPath, 60 * 60 * 24 * 30),
+    ORGANISATION_LOGO_URL_TIMEOUT_MS,
+    'The logo uploaded, but creating the preview link timed out. Please refresh settings and try again.',
+  )
   const signedUrl = normalizeText(signedResult?.data?.signedUrl)
   const { data: publicUrlData } = client.storage.from(uploadedBucket).getPublicUrl(objectPath)
   const publicUrl = normalizeText(publicUrlData?.publicUrl)

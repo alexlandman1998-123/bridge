@@ -1640,10 +1640,21 @@ h3 {
 .mobile-alert-card span,
 .mobile-alert-card time,
 .mobile-search-result small,
-.mobile-search-result em {
+.mobile-search-result em,
+.mobile-search-result time {
   color: #64748b;
   font-size: 12px;
   font-style: normal;
+}
+
+.mobile-alert-card button {
+  background: transparent;
+  border: 0;
+  color: #0f8f55;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 8px;
+  padding: 0;
 }
 
 .mobile-empty-good {

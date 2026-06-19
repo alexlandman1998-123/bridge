@@ -184,6 +184,7 @@ function rowStatus(row = {}) {
 function rowRole(row = {}) {
   const value = normalizeText(
     firstValue(row, [
+      '_invite_role',
       'role',
       'user_role',
       'invited_role',
@@ -191,6 +192,13 @@ function rowRole(row = {}) {
       'profile_role',
       'organisation_role',
       'organization_role',
+      'workspace_role',
+      'target_workspace_role',
+      'target_transaction_role',
+      'role_type',
+      'relationship_type',
+      'portal_role',
+      'invite_type',
       'type',
     ]),
   )
@@ -198,6 +206,34 @@ function rowRole(row = {}) {
   return value
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function invitationRows(rows = [], source, fallbackRole = 'Invited User') {
+  return rows.map((row) => ({
+    ...row,
+    _invitation_source: source,
+    email: firstValue(row, ['email', 'invited_email', 'recipient_email', 'user_email']) || row.email,
+    invited_at:
+      firstValue(row, ['invited_at', 'invitation_sent_at', 'sent_at', 'first_invited_at', 'last_invited_at', 'created_at']) ||
+      row.invited_at,
+    invited_role:
+      firstValue(row, [
+        'invited_role',
+        'role',
+        'user_role',
+        'app_role',
+        'profile_role',
+        'organisation_role',
+        'organization_role',
+        'workspace_role',
+        'target_workspace_role',
+        'target_transaction_role',
+        'role_type',
+        'relationship_type',
+        'portal_role',
+        'invite_type',
+      ]) || fallbackRole,
+  }))
 }
 
 function roleplayerType(row = {}) {
@@ -333,6 +369,17 @@ async function tryQuery(label, queryFactory) {
     return { data: Array.isArray(data) ? data : [], error: null }
   } catch (error) {
     return { data: [], error: { label, message: error?.message || 'Query failed' } }
+  }
+}
+
+async function tryRpc(label, functionName, args = {}) {
+  if (!supabase) return { data: null, error: null, skipped: true }
+  try {
+    const { data, error } = await supabase.rpc(functionName, args)
+    if (error) return { data: null, error: { label, message: error.message } }
+    return { data, error: null }
+  } catch (error) {
+    return { data: null, error: { label, message: error?.message || 'RPC failed' } }
   }
 }
 
@@ -655,9 +702,17 @@ function buildExecutiveSnapshot(raw, range) {
   const subscriptions = uniqueById(raw.subscriptions.data)
   const commissions = uniqueById(raw.commissions.data)
   const leads = uniqueById([...raw.leads.data, ...raw.enquiries.data])
+  const invitedSummary = raw.invitedUsersSummary.data || null
   const invitationTables = uniqueByInviteIdentity([
-    ...raw.userInvitations.data.map((row) => ({ ...row, _invitation_source: 'user_invitations' })),
-    ...raw.invitations.data.map((row) => ({ ...row, _invitation_source: 'invitations' })),
+    ...invitationRows(raw.userInvitations.data, 'user_invitations'),
+    ...invitationRows(raw.invitations.data, 'invitations'),
+    ...invitationRows(raw.invites.data, 'invites'),
+    ...invitationRows(raw.partnerInvitations.data, 'partner_invitations', 'Partner'),
+    ...invitationRows(raw.transactionPartnerInvitations.data, 'transaction_partner_invitations', 'Transaction Partner'),
+    ...invitationRows(raw.bondPartnerInvitations.data, 'bond_partner_invitations', 'Bond Partner'),
+    ...invitationRows(raw.attorneyFirmInvitations.data, 'attorney_firm_invitations', 'Attorney'),
+    ...invitationRows(raw.organisationUsers.data, 'organisation_users'),
+    ...invitationRows(raw.branchMembers.data, 'branch_members'),
   ])
   const profileInvitations = profiles.filter((profile) => {
     const status = normalizeToken(rowStatus(profile))
@@ -684,6 +739,14 @@ function buildExecutiveSnapshot(raw, range) {
     .map(([label, value]) => ({ label, value }))
     .sort((a, b) => b.value - a.value)
     .slice(0, 4)
+  const invitedCurrentCount = Number.isFinite(Number(invitedSummary?.current)) ? Number(invitedSummary.current) : invitedUsers.length
+  const invitedPreviousCount = Number.isFinite(Number(invitedSummary?.previous))
+    ? Number(invitedSummary.previous)
+    : previousInvitedUsers.length
+  const invitedTotalCount = Number.isFinite(Number(invitedSummary?.total)) ? Number(invitedSummary.total) : invitedUniverse.length
+  const invitedBreakdown = Array.isArray(invitedSummary?.roles) && invitedSummary.roles.length
+    ? invitedSummary.roles
+    : invitedRoleBreakdown
 
   const orgBreakdown = ['Agencies', 'Attorneys', 'Bond Originators', 'Developers'].map((label) => ({
     label,
@@ -755,11 +818,11 @@ function buildExecutiveSnapshot(raw, range) {
     },
     {
       accent: 'blue',
-      breakdown: invitedRoleBreakdown,
-      change: `${percentChange(invitedUsers.length, previousInvitedUsers.length) || '0%'} vs previous`,
-      hasData: invitedUniverse.length > 0,
+      breakdown: invitedBreakdown,
+      change: `${percentChange(invitedCurrentCount, invitedPreviousCount) || '0%'} vs previous`,
+      hasData: invitedTotalCount > 0,
       label: 'Invited Users',
-      value: count(invitedUsers.length),
+      value: count(invitedCurrentCount),
     },
     {
       accent: 'blue',
@@ -908,6 +971,14 @@ function buildExecutiveSnapshot(raw, range) {
     raw.commissions.error,
     raw.userInvitations.error,
     raw.invitations.error,
+    raw.invites.error,
+    raw.partnerInvitations.error,
+    raw.transactionPartnerInvitations.error,
+    raw.bondPartnerInvitations.error,
+    raw.attorneyFirmInvitations.error,
+    raw.organisationUsers.error,
+    raw.branchMembers.error,
+    raw.invitedUsersSummary.error,
   ].filter(Boolean)
 
   return {
@@ -1052,6 +1123,14 @@ export async function loadDashboardSnapshot(rangeKey = '30d') {
     commissions,
     userInvitations,
     invitations,
+    invites,
+    partnerInvitations,
+    transactionPartnerInvitations,
+    bondPartnerInvitations,
+    attorneyFirmInvitations,
+    organisationUsers,
+    branchMembers,
+    invitedUsersSummary,
     leads,
     enquiries,
   ] = await Promise.all([
@@ -1066,6 +1145,17 @@ export async function loadDashboardSnapshot(rangeKey = '30d') {
     tryTable('commissions', 'commissions'),
     tryTable('user_invitations', 'user_invitations'),
     tryTable('invitations', 'invitations'),
+    tryTable('invites', 'invites'),
+    tryTable('partner_invitations', 'partner_invitations'),
+    tryTable('transaction_partner_invitations', 'transaction_partner_invitations'),
+    tryTable('bond_partner_invitations', 'bond_partner_invitations'),
+    tryTable('attorney_firm_invitations', 'attorney_firm_invitations'),
+    tryTable('organisation_users', 'organisation_users'),
+    tryTable('branch_members', 'branch_members'),
+    tryRpc('Invited users summary', 'arch9_admin_invited_users_summary', {
+      p_end: range.end.toISOString(),
+      p_start: range.start.toISOString(),
+    }),
     tryTable('leads', 'leads'),
     tryTable('enquiries', 'enquiries'),
   ])
@@ -1077,13 +1167,21 @@ export async function loadDashboardSnapshot(rangeKey = '30d') {
       bondCancellations,
       commissions,
       enquiries,
+      attorneyFirmInvitations,
+      bondPartnerInvitations,
+      branchMembers,
       invitations,
+      invitedUsersSummary,
+      invites,
       leads,
       organisations,
+      organisationUsers,
+      partnerInvitations,
       profiles,
       subscriptions,
       tickets,
       transactions,
+      transactionPartnerInvitations,
       userInvitations,
     },
     range,

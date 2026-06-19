@@ -1237,6 +1237,7 @@ function MobileAlertCard({ alert }) {
       <div>
         <strong>{alert.title || alert.organisation || 'Platform alert'}</strong>
         <span>{alert.detail || alert.issue || 'Needs attention'}</span>
+        <button type="button">Open organisation</button>
       </div>
       <time>{alert.time || 'Now'}</time>
     </article>
@@ -1487,7 +1488,7 @@ function MobileRoleplayers({ snapshot }) {
           <input onChange={(event) => setQuery(event.target.value)} placeholder="Search roleplayers..." value={query} />
         </label>
         <div className="mobile-chip-row">
-          {ROLEPLAYER_FILTERS.filter((item) => item !== 'Insurance Partners' || true).map((filter) => (
+          {ROLEPLAYER_FILTERS.map((filter) => (
             <button className={activeFilter === filter ? 'active' : ''} key={filter} onClick={() => setActiveFilter(filter)} type="button">
               {filter === 'Insurance Partners' ? 'Insurance' : filter}
             </button>
@@ -1533,6 +1534,7 @@ function MobileSearchResult({ result, type }) {
       <strong>{result.title}</strong>
       <small>{result.meta}</small>
       <em>{result.status}</em>
+      {result.time || result.lastActivity ? <time>{result.time || result.lastActivity}</time> : null}
     </article>
   )
 }
@@ -1553,6 +1555,7 @@ function MobileSearch({ snapshot }) {
     .filter((roleplayer) => `${roleplayer.name} ${roleplayer.type}`.toLowerCase().includes(query.trim().toLowerCase()))
     .slice(0, 6)
     .map((roleplayer) => ({
+      lastActivity: roleplayer.lastActivity,
       meta: roleplayer.type,
       status: roleplayer.health.label,
       title: roleplayer.name,
@@ -1571,6 +1574,7 @@ function MobileSearch({ snapshot }) {
         {results.customers.map((result) => <MobileSearchResult key={`user-${result.id}`} result={result} type="User" />)}
         {results.transactions.map((result) => <MobileSearchResult key={`tx-${result.id}`} result={result} type="Transaction" />)}
         {!query.trim() ? <EmptyData compact /> : null}
+        {query.trim() && !roleplayerResults.length && !results.customers.length && !results.transactions.length ? <EmptyData compact /> : null}
       </section>
     </>
   )

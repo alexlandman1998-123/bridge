@@ -376,10 +376,10 @@ const configuredBrandingBuckets = [
   ...parseBucketCandidates(viteEnv.VITE_SUPABASE_STORAGE_BUCKET || processEnv.VITE_SUPABASE_STORAGE_BUCKET),
 ]
 
-export const BRANDING_BUCKET = configuredBrandingBuckets[0] || DOCUMENTS_BUCKET
+export const BRANDING_BUCKET = configuredBrandingBuckets[0] || 'organisation-branding'
 
 export const BRANDING_BUCKET_CANDIDATES = Array.from(
-  new Set([BRANDING_BUCKET, ...configuredBrandingBuckets, ...DOCUMENTS_BUCKET_CANDIDATES, 'organisation-branding'].filter(Boolean)),
+  new Set([BRANDING_BUCKET, ...configuredBrandingBuckets, 'organisation-branding', ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)),
 )
 
 const configuredProfileAvatarBuckets = [
