@@ -72,12 +72,13 @@ function parseObject(value) {
 }
 
 function resolveCommercialBrokerageRole(row = {}) {
-  const metadata = parseObject(row.module_metadata || row.moduleMetadata || row.metadata)
+  const safeRow = row && typeof row === 'object' ? row : {}
+  const metadata = parseObject(safeRow.module_metadata || safeRow.moduleMetadata || safeRow.metadata)
   const commercialRole = normalizeLower(metadata.commercial_role || metadata.commercialRole || metadata.broker_role || metadata.brokerRole)
   if (commercialRole === 'commercial broker' || commercialRole === 'broker') return 'commercial_broker'
   if (commercialRole.startsWith('commercial_')) return commercialRole
-  const role = normalizeLower(row.workspace_role || row.organisation_role || row.role)
-  return role === 'agent' && isCommercialMembershipRow(row) ? 'commercial_broker' : role
+  const role = normalizeLower(safeRow.workspace_role || safeRow.organisation_role || safeRow.role)
+  return role === 'agent' && isCommercialMembershipRow(safeRow) ? 'commercial_broker' : role
 }
 
 function isManagerMember(member = {}) {

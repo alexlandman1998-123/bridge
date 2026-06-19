@@ -96,24 +96,25 @@ function normalizeKey(value = '') {
 const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
 
 function hasCommercialMembershipMarker(membership = {}) {
-  const raw = membership?.raw && typeof membership.raw === 'object' ? membership.raw : {}
+  const safeMembership = membership && typeof membership === 'object' ? membership : {}
+  const raw = safeMembership.raw && typeof safeMembership.raw === 'object' ? safeMembership.raw : {}
   const metadata =
     (raw.module_metadata && typeof raw.module_metadata === 'object' ? raw.module_metadata : null) ||
     (raw.moduleMetadata && typeof raw.moduleMetadata === 'object' ? raw.moduleMetadata : null) ||
     (raw.metadata && typeof raw.metadata === 'object' ? raw.metadata : null) ||
-    (membership.module_metadata && typeof membership.module_metadata === 'object' ? membership.module_metadata : null) ||
-    (membership.moduleMetadata && typeof membership.moduleMetadata === 'object' ? membership.moduleMetadata : null) ||
-    (membership.metadata && typeof membership.metadata === 'object' ? membership.metadata : {}) ||
+    (safeMembership.module_metadata && typeof safeMembership.module_metadata === 'object' ? safeMembership.module_metadata : null) ||
+    (safeMembership.moduleMetadata && typeof safeMembership.moduleMetadata === 'object' ? safeMembership.moduleMetadata : null) ||
+    (safeMembership.metadata && typeof safeMembership.metadata === 'object' ? safeMembership.metadata : {}) ||
     {}
   const moduleContext = normalizeKey(
     raw.module_context ||
       raw.moduleContext ||
       raw.module ||
       raw.module_type ||
-      membership.module_context ||
-      membership.moduleContext ||
-      membership.module ||
-      membership.module_type ||
+      safeMembership.module_context ||
+      safeMembership.moduleContext ||
+      safeMembership.module ||
+      safeMembership.module_type ||
       metadata.module_context ||
       metadata.moduleContext ||
       metadata.module ||
@@ -122,11 +123,11 @@ function hasCommercialMembershipMarker(membership = {}) {
   if (COMMERCIAL_MODULE_MARKERS.has(moduleContext)) return true
 
   const role = normalizeKey(
-    membership.role ||
-      membership.workspaceRole ||
-      membership.workspace_role ||
-      membership.organisationRole ||
-      membership.organisation_role ||
+    safeMembership.role ||
+      safeMembership.workspaceRole ||
+      safeMembership.workspace_role ||
+      safeMembership.organisationRole ||
+      safeMembership.organisation_role ||
       raw.workspace_role ||
       raw.organisation_role ||
       raw.role ||

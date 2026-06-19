@@ -227,11 +227,12 @@ function sortMemberships(left, right) {
 }
 
 function isCommercialBrokerMembership(membership = {}) {
-  const metadata = parseObject(membership.moduleMetadata || membership.module_metadata || membership.raw?.module_metadata || membership.raw?.metadata)
+  const safeMembership = membership && typeof membership === 'object' ? membership : {}
+  const metadata = parseObject(safeMembership.moduleMetadata || safeMembership.module_metadata || safeMembership.raw?.module_metadata || safeMembership.raw?.metadata)
   const moduleContext = normalizeText(
-    membership.moduleContext ||
-      membership.module_context ||
-      membership.raw?.module_context ||
+    safeMembership.moduleContext ||
+      safeMembership.module_context ||
+      safeMembership.raw?.module_context ||
       metadata.module_context ||
       metadata.module,
   ).toLowerCase()
@@ -243,7 +244,7 @@ function isCommercialBrokerMembership(membership = {}) {
   ).toLowerCase()
   if (commercialRole === 'broker' || commercialRole === 'commercial broker' || commercialRole === 'commercial_broker') return true
   if (!COMMERCIAL_MODULE_MARKERS.has(moduleContext)) return false
-  const role = normalizeText(membership.role || membership.workspaceRole || membership.rawRole || membership.raw?.workspace_role || membership.raw?.role).toLowerCase()
+  const role = normalizeText(safeMembership.role || safeMembership.workspaceRole || safeMembership.rawRole || safeMembership.raw?.workspace_role || safeMembership.raw?.role).toLowerCase()
   return role === 'agent' || role === 'broker' || role === 'commercial_broker' || role.includes('broker')
 }
 
@@ -400,7 +401,7 @@ export function buildWorkspaceResolution({
   const organisationById = new Map((organisationRows || []).map((row) => [row.id, normalizeOrganisationRow(row, { appRole })]))
   const firmById = new Map((attorneyFirmRows || []).map((row) => [row.id, normalizeAttorneyFirmRow(row)]))
 
-  const organisationMemberships = (organisationMembershipRows || []).map((row) => {
+  const organisationMemberships = (organisationMembershipRows || []).filter(Boolean).map((row) => {
     const workspace = organisationById.get(row.organisation_id) || normalizeOrganisationRow(row.organisations, { appRole })
     return createMembershipRecord({
       id: row.id,

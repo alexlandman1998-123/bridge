@@ -119,7 +119,8 @@ let commercialPlatformInstallInflight = null
 export const COMMERCIAL_TABLES = TABLES
 
 function getCommercialMembershipMetadata(member = {}) {
-  return parseJsonObject(member.metadata || member.metadata_json || member.module_metadata || member.moduleMetadata)
+  const safeMember = member && typeof member === 'object' ? member : {}
+  return parseJsonObject(safeMember.metadata || safeMember.metadata_json || safeMember.module_metadata || safeMember.moduleMetadata)
 }
 
 function resolveCommercialMembershipRole(member = {}, fallback = 'viewer') {
@@ -888,19 +889,20 @@ function assertCommercialAccessReviewer(context = {}) {
 }
 
 function normalizeCommercialAccessAssignment(row = {}) {
-  const metadata = parseJsonObject(row.module_metadata || row.moduleMetadata || row.metadata)
+  const safeRow = row && typeof row === 'object' ? row : {}
+  const metadata = parseJsonObject(safeRow.module_metadata || safeRow.moduleMetadata || safeRow.metadata)
   return {
-    organisationUserId: normalizeText(row.id),
-    organisationId: normalizeText(row.organisation_id),
-    userId: normalizeText(row.user_id),
-    email: normalizeText(row.email),
-    fullName: [normalizeText(row.first_name), normalizeText(row.last_name)].filter(Boolean).join(' ') || normalizeText(row.email),
-    role: normalizeLower(row.workspace_role || row.organisation_role || row.role || 'viewer'),
-    status: normalizeLower(row.status || 'invited'),
-    hasCommercialAccess: isCommercialMembershipRow(row),
-    moduleContext: normalizeLower(row.module_context),
+    organisationUserId: normalizeText(safeRow.id),
+    organisationId: normalizeText(safeRow.organisation_id),
+    userId: normalizeText(safeRow.user_id),
+    email: normalizeText(safeRow.email),
+    fullName: [normalizeText(safeRow.first_name), normalizeText(safeRow.last_name)].filter(Boolean).join(' ') || normalizeText(safeRow.email),
+    role: normalizeLower(safeRow.workspace_role || safeRow.organisation_role || safeRow.role || 'viewer'),
+    status: normalizeLower(safeRow.status || 'invited'),
+    hasCommercialAccess: isCommercialMembershipRow(safeRow),
+    moduleContext: normalizeLower(safeRow.module_context),
     source: normalizeText(metadata.source),
-    updatedAt: row.updated_at || null,
+    updatedAt: safeRow.updated_at || null,
   }
 }
 
@@ -2107,7 +2109,8 @@ function isMissingCommercialActivationColumn(error) {
 }
 
 function buildCommercialActivationMetadata(member = {}, userId = '') {
-  const previousMetadata = parseJsonObject(member.module_metadata || member.moduleMetadata)
+  const safeMember = member && typeof member === 'object' ? member : {}
+  const previousMetadata = parseJsonObject(safeMember.module_metadata || safeMember.moduleMetadata)
   return {
     ...previousMetadata,
     module: 'commercial',
