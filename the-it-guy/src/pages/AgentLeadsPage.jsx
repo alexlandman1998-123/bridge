@@ -329,6 +329,12 @@ function formatCurrency(value) {
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(number)
 }
 
+function parseCurrencyInput(value) {
+  if (value === null || value === undefined || value === '') return 0
+  const number = Number(String(value).replace(/[^\d.-]/g, ''))
+  return Number.isFinite(number) ? number : 0
+}
+
 function formatDuration(seconds) {
   const total = Number(seconds || 0)
   if (!total) return ''
@@ -2115,21 +2121,7 @@ function getLeadAppointmentPropertyOptions(lead = {}) {
     if (!listingId || options.some((option) => option.id === listingId)) return
     const title = normalizeText(listing?.title || listing?.listingTitle || listing?.propertyAddress || listing?.address) || 'Linked property'
     const location = [listing?.address, listing?.suburb, listing?.city].map(normalizeText).filter(Boolean).join(', ')
-    const imageUrl = normalizeText(
-      listing?.heroImageUrl ||
-        listing?.hero_image_url ||
-        listing?.primaryImageUrl ||
-        listing?.primary_image_url ||
-        listing?.mainImageUrl ||
-        listing?.main_image_url ||
-        listing?.thumbnailUrl ||
-        listing?.thumbnail_url ||
-        listing?.imageUrl ||
-        listing?.image_url ||
-        listing?.images?.[0]?.url ||
-        listing?.photos?.[0]?.url ||
-        listing?.media?.[0]?.url,
-    )
+    const imageUrl = getListingBestImageUrl(listing)
     options.push({
       id: listingId,
       label: title,
@@ -6398,8 +6390,73 @@ function getListingPrice(listing = {}) {
   return toFiniteNumber(listing.price ?? listing.askingPrice ?? listing.asking_price ?? listing.estimatedValue ?? listing.estimated_value)
 }
 
+function getMediaItemUrl(item) {
+  if (!item) return ''
+  if (typeof item === 'string') return normalizeText(item)
+  return normalizeText(item.url || item.signedUrl || item.signed_url || item.publicUrl || item.public_url || item.imageUrl || item.image_url || item.src || item.fileUrl || item.file_url || item.mediaUrl || item.media_url)
+}
+
+function getListingMediaItems(listing = {}) {
+  const raw = listing.raw && typeof listing.raw === 'object' ? listing.raw : {}
+  const marketing = listing.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
+  const rawMarketing = raw.marketing && typeof raw.marketing === 'object' ? raw.marketing : {}
+  const propertyDetails = listing.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const rawPropertyDetails = raw.propertyDetails && typeof raw.propertyDetails === 'object' ? raw.propertyDetails : {}
+  const onboardingFormData = raw.onboarding?.formData && typeof raw.onboarding.formData === 'object' ? raw.onboarding.formData : {}
+  return [
+    listing.coverImage,
+    listing.cover_image,
+    marketing.coverImage,
+    marketing.cover_image,
+    rawMarketing.coverImage,
+    rawMarketing.cover_image,
+    ...(Array.isArray(listing.galleryImages) ? listing.galleryImages : []),
+    ...(Array.isArray(listing.gallery_images) ? listing.gallery_images : []),
+    ...(Array.isArray(listing.images) ? listing.images : []),
+    ...(Array.isArray(listing.photos) ? listing.photos : []),
+    ...(Array.isArray(listing.media) ? listing.media : []),
+    ...(Array.isArray(marketing.imageGallery) ? marketing.imageGallery : []),
+    ...(Array.isArray(marketing.image_gallery) ? marketing.image_gallery : []),
+    ...(Array.isArray(marketing.galleryImages) ? marketing.galleryImages : []),
+    ...(Array.isArray(rawMarketing.imageGallery) ? rawMarketing.imageGallery : []),
+    ...(Array.isArray(rawMarketing.image_gallery) ? rawMarketing.image_gallery : []),
+    ...(Array.isArray(propertyDetails.imageGallery) ? propertyDetails.imageGallery : []),
+    ...(Array.isArray(propertyDetails.image_gallery) ? propertyDetails.image_gallery : []),
+    ...(Array.isArray(rawPropertyDetails.imageGallery) ? rawPropertyDetails.imageGallery : []),
+    ...(Array.isArray(rawPropertyDetails.image_gallery) ? rawPropertyDetails.image_gallery : []),
+    ...(Array.isArray(onboardingFormData.imageGallery) ? onboardingFormData.imageGallery : []),
+    ...(Array.isArray(onboardingFormData.image_gallery) ? onboardingFormData.image_gallery : []),
+  ].filter(Boolean)
+}
+
 function getListingImageUrl(listing = {}) {
-  return normalizeText(listing.imageUrl || listing.image_url || listing.thumbnailUrl || listing.thumbnail_url || listing.coverImageUrl || listing.cover_image_url)
+  const raw = listing.raw && typeof listing.raw === 'object' ? listing.raw : {}
+  const marketing = listing.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
+  const rawMarketing = raw.marketing && typeof raw.marketing === 'object' ? raw.marketing : {}
+  return normalizeText(
+    listing.imageUrl ||
+      listing.image_url ||
+      listing.thumbnailUrl ||
+      listing.thumbnail_url ||
+      listing.coverImageUrl ||
+      listing.cover_image_url ||
+      listing.heroImageUrl ||
+      listing.hero_image_url ||
+      listing.primaryImageUrl ||
+      listing.primary_image_url ||
+      listing.mainImageUrl ||
+      listing.main_image_url ||
+      listing.photoUrl ||
+      listing.photo_url ||
+      marketing.mediaUrl ||
+      marketing.media_url ||
+      rawMarketing.mediaUrl ||
+      rawMarketing.media_url ||
+      raw.imageUrl ||
+      raw.image_url ||
+      raw.thumbnailUrl ||
+      raw.thumbnail_url,
+  )
 }
 
 function getListingPropertyType(listing = {}) {
@@ -6527,6 +6584,8 @@ function buildBuyerCollectionProperties(row = {}, workspace = {}) {
       id: interest.listingId || interest.listing_id,
       title: interest.listingTitle || interest.listing_title,
       price: interest.price,
+      imageUrl: interest.imageUrl || interest.image_url,
+      raw: interest.raw,
     }
     addEntry(listing, {
       source: interest.isOriginalEnquiry ? 'Original enquiry' : interest.isAgentSelected ? 'Agent shortlist' : 'Shortlisted',
@@ -6605,17 +6664,7 @@ function buildBuyerCollectionSummary(row = {}, requirement = {}, properties = []
 }
 
 function getListingBestImageUrl(listing = {}) {
-  return normalizeText(
-    getListingImageUrl(listing)
-    || listing.heroImageUrl
-    || listing.hero_image_url
-    || listing.primaryImageUrl
-    || listing.primary_image_url
-    || listing.mainImageUrl
-    || listing.main_image_url
-    || listing.photoUrl
-    || listing.photo_url,
-  )
+  return getListingImageUrl(listing) || getMediaItemUrl(getListingMediaItems(listing).find((item) => getMediaItemUrl(item)))
 }
 
 function getListingSuburbLabel(listing = {}) {
@@ -7549,21 +7598,7 @@ function buildAppointmentPropertyOptions(lead = {}, activeListings = []) {
   const addActiveListing = (listing = {}) => {
     const id = normalizeText(listing.id || listing.listingId || listing.listing_id)
     if (!id || options.some((option) => option.id === id)) return
-    const imageUrl = normalizeText(
-      listing.heroImageUrl ||
-        listing.hero_image_url ||
-        listing.primaryImageUrl ||
-        listing.primary_image_url ||
-        listing.mainImageUrl ||
-        listing.main_image_url ||
-        listing.thumbnailUrl ||
-        listing.thumbnail_url ||
-        listing.imageUrl ||
-        listing.image_url ||
-        listing.images?.[0]?.url ||
-        listing.photos?.[0]?.url ||
-        listing.media?.[0]?.url,
-    )
+    const imageUrl = getListingBestImageUrl(listing)
     options.push({
       id,
       label: normalizeText(listing.title || listing.address || listing.propertyAddress) || 'Active listing',
@@ -7634,7 +7669,7 @@ function propertySelectorMatches(property = {}, query = '') {
 }
 
 function PropertyImageThumb({ property }) {
-  const imageUrl = normalizeText(property?.imageUrl || property?.heroImageUrl || property?.primaryImageUrl)
+  const imageUrl = getListingBestImageUrl(property)
   if (imageUrl) {
     return (
       <img
@@ -9176,15 +9211,23 @@ function DealPropertySection({ property, onViewListing, onReplaceProperty }) {
   )
 }
 
-function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, onSaved }) {
+function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode = 'send_link', onClose, onSaved }) {
   const contact = getLeadContactSnapshot(lead)
   const contexts = useMemo(() => getLeadOfferPropertyContexts(lead), [lead])
   const bestContext = contexts[0] || null
   const [draft, setDraft] = useState({
+    mode: initialMode,
     contextKey: bestContext?.key || '',
     expiryDate: getFutureInputValue(7),
     note: '',
     emailBuyer: true,
+    manualSource: 'Phone',
+    offerAmount: '',
+    depositAmount: '',
+    financeType: '',
+    cashComponent: '',
+    bondComponent: '',
+    specialConditions: '',
   })
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -9196,13 +9239,14 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
     if (!open) return
     setDraft((previous) => ({
       ...previous,
+      mode: initialMode || 'send_link',
       contextKey: contexts.some((context) => context.key === previous.contextKey) ? previous.contextKey : contexts[0]?.key || '',
       expiryDate: previous.expiryDate || getFutureInputValue(7),
     }))
     setError('')
     setMessage('')
     setLastLink('')
-  }, [contexts, open])
+  }, [contexts, initialMode, open])
 
   async function sendBuyerOfferLinkEmail(link = '', context = {}) {
     const recipientEmail = normalizeText(contact.email || lead.email).toLowerCase()
@@ -9246,6 +9290,12 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
       setError('Link a property before sending an offer.')
       return
     }
+    const isManualCapture = draft.mode === 'manual_capture'
+    const manualOfferAmount = parseCurrencyInput(draft.offerAmount)
+    if (isManualCapture && manualOfferAmount <= 0) {
+      setError('Capture the offer amount before saving a manual offer.')
+      return
+    }
 
     try {
       setSending(true)
@@ -9257,21 +9307,15 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
       const buyerLeadId = normalizeText(persisted?.leadId || lead.leadId)
       const buyerContactId = normalizeText(persisted?.contactId || contact.contactId)
       const appointmentId = normalizeText(selectedContext.appointmentId)
-      const canUsePostViewingPortal = Boolean(
-        appointmentId &&
-          UUID_PATTERN.test(organisationId) &&
-          UUID_PATTERN.test(buyerLeadId) &&
-          UUID_PATTERN.test(selectedContext.listingId) &&
-          UUID_PATTERN.test(appointmentId),
-      )
+      const scopedAppointmentId = UUID_PATTERN.test(appointmentId) ? appointmentId : null
       let offerLink = ''
-      let activityType = 'Offer Link Sent'
-      let createdLabel = 'Offer link created'
+      let activityType = isManualCapture ? 'Offer Captured Manually' : 'Offer Link Sent'
+      let createdLabel = isManualCapture ? 'Manual offer captured' : 'Offer link created'
 
-      if (canUsePostViewingPortal) {
+      if (scopedAppointmentId) {
         await upsertAppointmentViewedListings({
           organisationId,
-          appointmentId,
+          appointmentId: scopedAppointmentId,
           leadId: buyerLeadId,
           agentId: actor?.id || actor?.userId,
           viewedListings: [{
@@ -9280,55 +9324,58 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
             buyerFeedback: '',
             agentNotes: draft.note,
             viewedAt: new Date().toISOString(),
-            metadata: { source: 'lead_workspace_offers_tab', readiness: selectedContext.readiness },
+            metadata: { source: isManualCapture ? 'lead_workspace_manual_offer_capture' : 'lead_workspace_offer_link', readiness: selectedContext.readiness },
           }],
         }).catch(() => [])
-        const session = await createOfferPortalSession({
-          organisationId,
-          buyerLeadId,
-          buyerContactId,
-          appointmentId,
-          agentId: actor?.id || actor?.userId,
-          expiresAt: draft.expiryDate,
-          metadata: {
-            source: 'lead_workspace_offers_tab',
-            selectedListingId: selectedContext.listingId,
-            propertyLabel: selectedContext.label,
-            readiness: selectedContext.readiness,
-            agentNoteToBuyer: draft.note,
-          },
-        }, { actor })
-        offerLink = session?.token && typeof window !== 'undefined' ? `${window.location.origin}/offers/session/${encodeURIComponent(session.token)}` : ''
-        activityType = 'Post-Viewing Offer Portal Sent'
-        createdLabel = 'Post-viewing offer portal created'
-        await updateAppointmentAsync(organisationId, appointmentId, { nextStep: 'Post-viewing offer portal sent' }, { actor }).catch(() => null)
-      } else {
-        const offer = await createCanonicalOffer({
-          organisationId,
-          buyerLeadId,
-          buyerContactId,
-          listingId: selectedContext.listingId,
-          agentId: actor?.id || actor?.userId,
-          viewingAppointmentId: UUID_PATTERN.test(appointmentId) ? appointmentId : null,
-          status: 'sent_to_buyer',
-          expiryDate: draft.expiryDate,
-          conditionsJson: {
-            source: 'lead_workspace_offers_tab',
-            propertyLabel: selectedContext.label,
-            readiness: selectedContext.readiness,
-            buyerName: contact.name || lead.name || 'Buyer',
-            buyerEmail: contact.email || lead.email || '',
-            buyerPhone: contact.phone || lead.phone || '',
-            agentName: actor?.fullName || actor?.name || actor?.email || '',
-            agentEmail: normalizeText(actor?.email || '').toLowerCase(),
-            agentReviewUrl: typeof window !== 'undefined' ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(buyerLeadId)}` : '',
-            agentNoteToBuyer: draft.note,
-            offerWithoutCompletedViewing: !selectedContext.completed,
-          },
-        }, { actor })
-        const offerToken = normalizeText(offer?.offerToken || offer?.offer_token || offer?.id)
-        offerLink = offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
+      }
+      const nowIso = new Date().toISOString()
+      const offer = await createCanonicalOffer({
+        organisationId,
+        buyerLeadId,
+        buyerContactId,
+        listingId: selectedContext.listingId,
+        agentId: actor?.id || actor?.userId,
+        viewingAppointmentId: scopedAppointmentId,
+        status: isManualCapture ? 'submitted' : 'sent_to_buyer',
+        offerAmount: isManualCapture ? manualOfferAmount : undefined,
+        depositAmount: isManualCapture ? parseCurrencyInput(draft.depositAmount) : undefined,
+        financeType: isManualCapture ? draft.financeType : undefined,
+        cashComponent: isManualCapture ? parseCurrencyInput(draft.cashComponent) : undefined,
+        bondComponent: isManualCapture ? parseCurrencyInput(draft.bondComponent) : undefined,
+        expiryDate: isManualCapture ? '' : draft.expiryDate,
+        buyerSubmittedAt: isManualCapture ? nowIso : undefined,
+        submittedAt: isManualCapture ? nowIso : undefined,
+        conditionsJson: {
+          source: isManualCapture ? 'manual_offer_capture' : 'lead_workspace_offers_tab',
+          captureMethod: isManualCapture ? draft.manualSource : '',
+          capturedByAgent: isManualCapture,
+          capturedAt: isManualCapture ? nowIso : '',
+          propertyLabel: selectedContext.label,
+          readiness: selectedContext.readiness,
+          buyerName: contact.name || lead.name || 'Buyer',
+          buyerEmail: contact.email || lead.email || '',
+          buyerPhone: contact.phone || lead.phone || '',
+          agentName: actor?.fullName || actor?.name || actor?.email || '',
+          agentEmail: normalizeText(actor?.email || '').toLowerCase(),
+          agentReviewUrl: typeof window !== 'undefined' ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(buyerLeadId)}` : '',
+          agentNoteToBuyer: draft.note,
+          manualCaptureNote: isManualCapture ? draft.specialConditions : '',
+          specialConditions: isManualCapture ? draft.specialConditions : '',
+          offerWithoutCompletedViewing: !selectedContext.completed,
+        },
+      }, { actor })
+      const offerToken = normalizeText(offer?.offerToken || offer?.offer_token || offer?.id)
+      offerLink = !isManualCapture && offerToken && typeof window !== 'undefined' ? `${window.location.origin}/offers/${encodeURIComponent(offerToken)}` : ''
+      if (!isManualCapture) {
         createdLabel = selectedContext.completed ? 'Offer link created' : 'Offer link created without a completed viewing'
+      }
+      if (scopedAppointmentId) {
+        await updateAppointmentAsync(
+          organisationId,
+          scopedAppointmentId,
+          { nextStep: isManualCapture ? 'Manual offer captured' : 'Offer link sent' },
+          { actor },
+        ).catch(() => null)
       }
 
       await createAgencyCrmLeadActivity(
@@ -9339,20 +9386,25 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
           activityNote: [
             `${createdLabel} for ${selectedContext.label || 'selected property'}.`,
             selectedContext.readinessLabel ? `Context: ${selectedContext.readinessLabel}.` : '',
+            isManualCapture && manualOfferAmount ? `Amount: ${formatCurrency(manualOfferAmount)}.` : '',
+            isManualCapture ? `Captured via ${draft.manualSource}.` : '',
             offerLink ? `Link: ${offerLink}` : '',
             draft.note ? `Note: ${draft.note}` : '',
+            isManualCapture && draft.specialConditions ? `Terms: ${draft.specialConditions}` : '',
           ].filter(Boolean).join(' '),
-          outcome: 'Offer Draft',
+          outcome: isManualCapture ? 'Offer Submitted' : 'Offer Draft',
           activityDate: new Date().toISOString(),
         },
         { actor },
       ).catch(() => null)
 
       if (offerLink && typeof navigator !== 'undefined') void navigator.clipboard?.writeText(offerLink)
-      const emailResult = await sendBuyerOfferLinkEmail(offerLink, selectedContext)
+      const emailResult = isManualCapture ? { attempted: false, sent: false, reason: 'manual_capture' } : await sendBuyerOfferLinkEmail(offerLink, selectedContext)
       setLastLink(offerLink)
       setMessage(
-        offerLink
+        isManualCapture
+          ? `${createdLabel}. It is ready for agent review and manual seller follow-up.`
+          : offerLink
           ? emailResult.sent
             ? `${createdLabel} and emailed to the buyer. Link copied as backup.`
             : emailResult.attempted
@@ -9363,16 +9415,26 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
       if (emailResult.error) setError(emailResult.error?.message || 'Offer link created, but email sending failed.')
       await onSaved?.()
     } catch (sendError) {
-      setError(sendError?.message || 'Unable to create this offer link.')
+      setError(sendError?.message || 'Unable to create this offer.')
     } finally {
       setSending(false)
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Send Offer Link to Buyer" subtitle="Create and send a buyer offer link for the selected property." className="max-w-3xl">
+    <Modal open={open} onClose={onClose} title={draft.mode === 'manual_capture' ? 'Capture Manual Offer' : 'Send Offer Link to Buyer'} subtitle={draft.mode === 'manual_capture' ? 'Record an offer received by phone, email, WhatsApp, or in person.' : 'Create and send a buyer offer link for the selected property.'} className="max-w-3xl">
       {contexts.length ? (
         <form onSubmit={submit} className="grid gap-4">
+          <div className="grid grid-cols-2 rounded-2xl border border-slate-200 bg-slate-50 p-1">
+            {[
+              ['send_link', 'Send buyer link'],
+              ['manual_capture', 'Capture manually'],
+            ].map(([mode, label]) => (
+              <button key={mode} type="button" onClick={() => setDraft((previous) => ({ ...previous, mode }))} className={`min-h-10 rounded-xl px-3 text-sm font-semibold ${draft.mode === mode ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <label className="grid gap-2 text-sm font-semibold text-slate-700">
             Property
             <select value={draft.contextKey} onChange={(event) => setDraft((previous) => ({ ...previous, contextKey: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
@@ -9383,21 +9445,67 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
               ))}
             </select>
           </label>
-          <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-            <label className="grid gap-2 text-sm font-semibold text-slate-700">
-              Link expiry
-              <input type="date" value={draft.expiryDate} onChange={(event) => setDraft((previous) => ({ ...previous, expiryDate: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" />
-            </label>
-            <label className="flex min-h-12 items-center gap-3 self-end rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
-              <input type="checkbox" checked={draft.emailBuyer} onChange={(event) => setDraft((previous) => ({ ...previous, emailBuyer: event.target.checked }))} />
-              Email buyer
-            </label>
-          </div>
-          <label className="grid gap-2 text-sm font-semibold text-slate-700">
-            Note
-            <textarea value={draft.note} onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))} rows={4} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="Optional note for the buyer or timeline" />
-          </label>
-          {!contact.email && draft.emailBuyer ? <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">This buyer has no email, so the link will be created and copied but not emailed.</p> : null}
+          {draft.mode === 'manual_capture' ? (
+            <>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                  Capture method
+                  <select value={draft.manualSource} onChange={(event) => setDraft((previous) => ({ ...previous, manualSource: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
+                    {['Phone', 'Email', 'WhatsApp', 'In person', 'Other'].map((source) => <option key={source} value={source}>{source}</option>)}
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                  Offer amount
+                  <input value={draft.offerAmount} onChange={(event) => setDraft((previous) => ({ ...previous, offerAmount: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="R 0" />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                  Deposit
+                  <input value={draft.depositAmount} onChange={(event) => setDraft((previous) => ({ ...previous, depositAmount: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="Optional" />
+                </label>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                  Finance
+                  <select value={draft.financeType} onChange={(event) => setDraft((previous) => ({ ...previous, financeType: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300">
+                    <option value="">Not captured</option>
+                    <option value="cash">Cash</option>
+                    <option value="bond">Bond</option>
+                    <option value="combination">Combination</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                  Cash component
+                  <input value={draft.cashComponent} onChange={(event) => setDraft((previous) => ({ ...previous, cashComponent: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="Optional" />
+                </label>
+                <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                  Bond amount
+                  <input value={draft.bondComponent} onChange={(event) => setDraft((previous) => ({ ...previous, bondComponent: event.target.value }))} inputMode="decimal" className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" placeholder="Optional" />
+                </label>
+              </div>
+              <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                Terms / notes
+                <textarea value={draft.specialConditions} onChange={(event) => setDraft((previous) => ({ ...previous, specialConditions: event.target.value }))} rows={4} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="Conditions, occupation date, fixtures, or anything the buyer said" />
+              </label>
+            </>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+                <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                  Link expiry
+                  <input type="date" value={draft.expiryDate} onChange={(event) => setDraft((previous) => ({ ...previous, expiryDate: event.target.value }))} className="min-h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-300" />
+                </label>
+                <label className="flex min-h-12 items-center gap-3 self-end rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+                  <input type="checkbox" checked={draft.emailBuyer} onChange={(event) => setDraft((previous) => ({ ...previous, emailBuyer: event.target.checked }))} />
+                  Email buyer
+                </label>
+              </div>
+              <label className="grid gap-2 text-sm font-semibold text-slate-700">
+                Note
+                <textarea value={draft.note} onChange={(event) => setDraft((previous) => ({ ...previous, note: event.target.value }))} rows={4} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="Optional note for the buyer or timeline" />
+              </label>
+              {!contact.email && draft.emailBuyer ? <p className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-700">This buyer has no email, so the link will be created and copied but not emailed.</p> : null}
+            </>
+          )}
           {error ? <p className="text-sm font-semibold text-red-600">{error}</p> : null}
           {message ? <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
           {lastLink ? <a href={lastLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-semibold text-blue-700">Open generated offer link <ExternalLink size={13} /></a> : null}
@@ -9405,7 +9513,7 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
             <button type="button" onClick={onClose} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">Close</button>
             <button type="submit" disabled={sending || !selectedContext?.listingId} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white disabled:bg-slate-300">
               <Send size={15} />
-              {sending ? 'Sending...' : 'Send Offer Link to Buyer'}
+              {sending ? 'Saving...' : draft.mode === 'manual_capture' ? 'Capture Manual Offer' : 'Send Offer Link to Buyer'}
             </button>
           </div>
         </form>
@@ -9416,7 +9524,7 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, onClose, on
   )
 }
 
-function DealOfferSection({ lead, offer, onSendOffer, onViewOffer, onWithdrawOffer, withdrawing }) {
+function DealOfferSection({ lead, offer, onSendOffer, onCaptureManualOffer, onViewOffer, onWithdrawOffer, withdrawing }) {
   const status = offer ? getOfferStatus(offer) : ''
   const lifecycle = offer ? getOfferLifecycleState(offer) : null
   const submittedDate = getOfferDateValue(offer, ['submittedAt', 'submitted_at', 'sentAt', 'sent_at', 'createdAt', 'created_at'])
@@ -9465,6 +9573,10 @@ function DealOfferSection({ lead, offer, onSendOffer, onViewOffer, onWithdrawOff
               <Send size={15} />
               Send Offer Link to Buyer
             </button>
+            <button type="button" onClick={onCaptureManualOffer} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
+              <Phone size={15} />
+              Capture Manual Offer
+            </button>
             <button type="button" onClick={onWithdrawOffer} disabled={withdrawing || !offer || status === 'withdrawn'} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-700 disabled:opacity-50">
               <AlertTriangle size={15} />
               {withdrawing ? 'Withdrawing...' : 'Withdraw Offer'}
@@ -9477,10 +9589,14 @@ function DealOfferSection({ lead, offer, onSendOffer, onViewOffer, onWithdrawOff
             <h3 className="text-xl font-semibold tracking-[-0.04em] text-slate-950">No offer submitted</h3>
             <p className="mt-2 text-sm leading-6 text-slate-500">Create and send a buyer offer link to start the offer process.</p>
           </div>
-          <div>
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button type="button" onClick={onSendOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white">
               <Send size={15} />
               Send Offer Link to Buyer
+            </button>
+            <button type="button" onClick={onCaptureManualOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700">
+              <Phone size={15} />
+              Capture Manual Offer
             </button>
           </div>
         </div>
@@ -9566,9 +9682,15 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
   const acceptedOfferId = getOfferId(acceptedOffer)
   const acceptedProperty = getDealPropertySummary(lead, acceptedOffer)
   const [offerModalOpen, setOfferModalOpen] = useState(false)
+  const [offerModalInitialMode, setOfferModalInitialMode] = useState('send_link')
   const [workingAction, setWorkingAction] = useState('')
   const [transactionMessage, setTransactionMessage] = useState('')
   const [transactionError, setTransactionError] = useState('')
+
+  function openOfferModal(mode = 'send_link') {
+    setOfferModalInitialMode(mode)
+    setOfferModalOpen(true)
+  }
 
   function openListing() {
     if (!property?.id || typeof window === 'undefined') return
@@ -9681,7 +9803,8 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
       <DealOfferSection
         lead={lead}
         offer={latestOffer}
-        onSendOffer={() => setOfferModalOpen(true)}
+        onSendOffer={() => openOfferModal('send_link')}
+        onCaptureManualOffer={() => openOfferModal('manual_capture')}
         onViewOffer={viewOffer}
         onWithdrawOffer={withdrawOffer}
         withdrawing={workingAction === 'withdrawn'}
@@ -9698,6 +9821,7 @@ function LeadDealProgressionPanel({ organisationId, lead, actor, onSaved, onNavi
         organisationId={organisationId}
         lead={lead}
         actor={actor}
+        initialMode={offerModalInitialMode}
         onClose={() => setOfferModalOpen(false)}
         onSaved={onSaved}
       />
