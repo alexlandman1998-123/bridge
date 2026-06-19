@@ -999,9 +999,24 @@ function getBuyerTimelineLabel(requirement = {}) {
   return formatCleanValue(requirement.timeline || requirement.moveInTimeline || requirement.move_in_timeline)
 }
 
+function normalizeBooleanLike(value) {
+  if (value === true || value === false) return value
+  const normalized = normalizeText(value).toLowerCase()
+  if (!normalized) return null
+  if (['true', 'yes', 'y', 'pre_approved', 'pre-approved', 'approved'].includes(normalized)) return true
+  if (['false', 'no', 'n', 'not_pre_approved', 'not pre-approved', 'not pre approved', 'not approved'].includes(normalized)) return false
+  return null
+}
+
+function getBuyerPreApprovalValue(requirement = {}) {
+  const direct = normalizeBooleanLike(requirement.preApproved)
+  if (direct !== null) return direct
+  return normalizeBooleanLike(requirement.pre_approved)
+}
+
 function getBuyerPreQualifiedLabel(requirement = {}) {
-  if (requirement.preApproved !== null && requirement.preApproved !== undefined) return requirement.preApproved ? 'Pre-approved' : 'Not pre-approved'
-  if (requirement.pre_approved !== null && requirement.pre_approved !== undefined) return requirement.pre_approved ? 'Pre-approved' : 'Not pre-approved'
+  const preApproval = getBuyerPreApprovalValue(requirement)
+  if (preApproval !== null) return preApproval ? 'Pre-approved' : 'Not pre-approved'
   return formatCleanValue(requirement.financeStatus || requirement.finance_status)
 }
 
@@ -1012,7 +1027,7 @@ function getBuyerLeadScore(row = {}, analytics = {}) {
   if (getBuyerAreaLabel(row, requirement) !== '—') score += 10
   if (getBuyerPropertyTypeLabel(row, requirement) !== '—') score += 8
   if (getBuyerTimelineLabel(requirement) !== '—') score += 8
-  if (getBuyerPreQualifiedLabel(requirement).toLowerCase().includes('pre-approved')) score += 12
+  if (getBuyerPreApprovalValue(requirement) === true) score += 12
   if (toFiniteNumber(analytics.touchpoints)) score += 4
   if (toFiniteNumber(analytics.viewings)) score += 6
   return Math.min(100, score)
@@ -1094,7 +1109,8 @@ function getBuyerFinanceReadiness(row = {}) {
       row.bond_application_status,
   ).toLowerCase()
   const financeType = normalizeText(requirement.financeType || requirement.finance_type || row.financeType || row.finance_type).toLowerCase()
-  const preApproved = requirement.preApproved === true || requirement.pre_approved === true || ['pre_approved', 'pre-approved', 'approved'].some((token) => financeStatus.includes(token))
+  const explicitPreApproval = getBuyerPreApprovalValue(requirement)
+  const preApproved = explicitPreApproval === true || ['pre_approved', 'pre-approved', 'approved'].some((token) => financeStatus.includes(token)) && !financeStatus.includes('not')
   const cash = financeStatus.includes('cash') || financeType.includes('cash')
   const bondApplications = [
     ...(Array.isArray(row.bondApplications) ? row.bondApplications : []),
@@ -1110,6 +1126,9 @@ function getBuyerFinanceReadiness(row = {}) {
   }
   if (bondApplications.length) {
     return { score: 70, label: 'Bond In Progress', tone: 'blue', helper: `${bondApplications.length} application${bondApplications.length === 1 ? '' : 's'} linked.`, missing: [] }
+  }
+  if (explicitPreApproval === false) {
+    return { score: 55, label: 'Pre-approval Needed', tone: 'amber', helper: 'Buyer is not pre-approved yet.', missing: ['Pre-approval'] }
   }
   if (needsFinance) {
     return { score: 45, label: 'Finance Required', tone: 'amber', helper: 'Confirm pre-approval and document pack.', missing: ['Pre-approval', 'Finance documents'] }
@@ -1160,6 +1179,7 @@ function hasManualBuyerQualification(row = {}) {
 }
 
 function isBuyerFinancePositionKnown(row = {}, requirement = getBuyerPrimaryRequirement(row)) {
+  if (getBuyerPreApprovalValue(requirement) !== null) return true
   const raw = normalizeText(
     requirement.financeType ||
       requirement.finance_type ||
