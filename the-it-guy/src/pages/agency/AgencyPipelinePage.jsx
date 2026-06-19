@@ -8349,6 +8349,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
         {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          suppressNotifications: true,
         },
       ).catch(() => null)
       const offerLink = session?.token && typeof window !== 'undefined'
@@ -8454,6 +8455,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         },
         {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          suppressNotifications: true,
         },
       ).catch(() => null)
     }

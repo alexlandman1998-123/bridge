@@ -9374,7 +9374,7 @@ function DealOfferComposerModal({ open, organisationId, lead, actor, initialMode
           organisationId,
           scopedAppointmentId,
           { nextStep: isManualCapture ? 'Manual offer captured' : 'Offer link sent' },
-          { actor },
+          { actor, suppressNotifications: true },
         ).catch(() => null)
       }
 
@@ -9964,7 +9964,7 @@ function LeadOfferReadinessPanel({ organisationId, lead, actor, onSaved }) {
         createdLabel = 'Post-viewing offer portal created'
         await updateAppointmentAsync(organisationId, appointmentId, {
           nextStep: 'Post-viewing offer portal sent',
-        }, { actor }).catch(() => null)
+        }, { actor, suppressNotifications: true }).catch(() => null)
       } else {
         const offer = await createCanonicalOffer({
           organisationId,

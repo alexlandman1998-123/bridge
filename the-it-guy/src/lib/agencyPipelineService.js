@@ -2580,7 +2580,7 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
   }
 }
 
-export async function updateAppointmentAsync(organisationId, appointmentId, updater = {}, { actor = null } = {}) {
+export async function updateAppointmentAsync(organisationId, appointmentId, updater = {}, { actor = null, suppressNotifications = false } = {}) {
   const fallbackReason = resolveAppointmentsDemoFallbackReason(organisationId)
   if (fallbackReason) {
     assertLocalFallbackAllowed('agencyPipelineService.updateAppointmentAsync', organisationId, fallbackReason)
@@ -2757,60 +2757,62 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
       // Non-blocking event log.
     }
   }
-  await runAppointmentNotificationTask('appointment_updated', async () => {
-    const currentStatus = normalizeLowerText(updatedRecord?.status)
-    const notificationMetadata = {
-      source: 'updateAppointmentAsync',
-      listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
-      listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
-    }
-    if (currentStatus.includes('cancel') || currentStatus.includes('declin')) {
-      await cancelAppointmentReminders(updatedRecord.appointmentId)
-      await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_cancelled', {
-        visibility: updatedRecord.visibility,
-        metadata: notificationMetadata,
-      })
-      return
-    }
-    if (currentStatus.includes('complete')) {
-      await cancelAppointmentReminders(updatedRecord.appointmentId)
-      return
-    }
-    if (currentStatus.includes('confirm') && !previousStatus.includes('confirm')) {
-      await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmed', {
-        visibility: updatedRecord.visibility,
-        metadata: notificationMetadata,
-      })
-      return
-    }
-    if (currentStatus.includes('request')) {
-      await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmation_required', {
-        visibility: updatedRecord.visibility,
-        metadata: {
-          source: 'updateAppointmentAsync',
-          attachCalendarInvite: updater?.attachCalendarInvite !== false,
-          listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
-          listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
-        },
-      })
-      return
-    }
-    if (currentStatus.includes('reschedule') || currentStatus.includes('proposed')) {
-      await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_rescheduled', {
-        visibility: updatedRecord.visibility,
-        metadata: notificationMetadata,
-      })
+  if (!suppressNotifications) {
+    await runAppointmentNotificationTask('appointment_updated', async () => {
+      const currentStatus = normalizeLowerText(updatedRecord?.status)
+      const notificationMetadata = {
+        source: 'updateAppointmentAsync',
+        listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
+        listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
+      }
+      if (currentStatus.includes('cancel') || currentStatus.includes('declin')) {
+        await cancelAppointmentReminders(updatedRecord.appointmentId)
+        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_cancelled', {
+          visibility: updatedRecord.visibility,
+          metadata: notificationMetadata,
+        })
+        return
+      }
+      if (currentStatus.includes('complete')) {
+        await cancelAppointmentReminders(updatedRecord.appointmentId)
+        return
+      }
+      if (currentStatus.includes('confirm') && !previousStatus.includes('confirm')) {
+        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmed', {
+          visibility: updatedRecord.visibility,
+          metadata: notificationMetadata,
+        })
+        return
+      }
+      if (currentStatus.includes('request')) {
+        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_confirmation_required', {
+          visibility: updatedRecord.visibility,
+          metadata: {
+            source: 'updateAppointmentAsync',
+            attachCalendarInvite: updater?.attachCalendarInvite !== false,
+            listingId: normalizeText(updater?.listingId || updatedRecord?.listingId) || '',
+            listingLabel: normalizeText(updater?.listingLabel || updater?.listingReference || updater?.listingReferenceSnapshot) || '',
+          },
+        })
+        return
+      }
+      if (currentStatus.includes('reschedule') || currentStatus.includes('proposed')) {
+        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_rescheduled', {
+          visibility: updatedRecord.visibility,
+          metadata: notificationMetadata,
+        })
+        await scheduleAppointmentReminders(updatedRecord.appointmentId)
+        return
+      }
+      if (appointmentTimingChanged) {
+        await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_updated', {
+          visibility: updatedRecord.visibility,
+          metadata: notificationMetadata,
+        })
+      }
       await scheduleAppointmentReminders(updatedRecord.appointmentId)
-      return
-    }
-    if (appointmentTimingChanged) {
-      await notifyAppointmentParticipants(updatedRecord.appointmentId, 'appointment_updated', {
-        visibility: updatedRecord.visibility,
-        metadata: notificationMetadata,
-      })
-    }
-    await scheduleAppointmentReminders(updatedRecord.appointmentId)
-  })
+    })
+  }
   emitAgencyCrmUpdated()
   return {
     ...updatedRecord,
