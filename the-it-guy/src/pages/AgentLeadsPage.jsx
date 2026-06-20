@@ -30,7 +30,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
@@ -15239,15 +15239,48 @@ function OwnershipCard({ organisationId, lead, actor, onSaved }) {
 function AgentLeadWorkspace() {
   const { leadId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const workspaceContext = useWorkspace()
   const organisationId = getOrganisationId(workspaceContext)
   const actor = useMemo(() => getActor({
     ...(workspaceContext.profile || {}),
     workspaceRole: workspaceContext.currentMembership?.workspace_role || workspaceContext.currentMembership?.organisation_role || workspaceContext.currentMembership?.role || workspaceContext.profile?.role,
   }), [workspaceContext.currentMembership, workspaceContext.profile])
+  const optimisticWorkspace = (() => {
+    const workspace = location.state?.leadWorkspace
+    const row = workspace?.row || workspace?.lead
+    if (!row || normalizeText(row?.leadId || row?.id) !== normalizeText(leadId)) return null
+    return {
+      appointments: [],
+      offers: [],
+      transactions: [],
+      listings: [],
+      requirements: [],
+      recommendations: [],
+      savedSearches: [],
+      propertyShares: [],
+      timeline: [],
+      ...workspace,
+      row: {
+        communicationTimeline: [],
+        tasks: [],
+        appointments: [],
+        documents: [],
+        documentPackets: [],
+        offers: [],
+        transactions: [],
+        listings: [],
+        requirements: [],
+        savedSearches: [],
+        recommendations: [],
+        ...row,
+        leadId: normalizeText(row?.leadId || row?.id || leadId),
+      },
+    }
+  })()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [data, setData] = useState(null)
+  const [data, setData] = useState(optimisticWorkspace)
   const [activeTab, setActiveTab] = useState('overview')
   const [qualificationFocusSignal, setQualificationFocusSignal] = useState(0)
   const [shareDraft, setShareDraft] = useState(null)
@@ -15813,8 +15846,8 @@ function AgentLeadWorkspace() {
 
   return (
     <main className={pageShell}>
-      {loading ? <LoadingSkeleton lines={10} className={panelClass} /> : null}
-      {error && !loading ? <EmptyState title="Lead workspace could not be loaded" copy={error} /> : null}
+      {loading && !row ? <LoadingSkeleton lines={10} className={panelClass} /> : null}
+      {error && !loading && !row ? <EmptyState title="Lead workspace could not be loaded" copy={error} /> : null}
       {!loading && !error && !row ? <EmptyState title="Lead not found" copy="This lead was not returned by the existing lead repository for the selected workspace." /> : null}
       {row ? (
         <>

@@ -1923,7 +1923,44 @@ function PipelineCanvassingPage() {
       setMessage(existingConvertedLeadId ? 'Converted prospect lead restored.' : 'Prospect converted to lead.')
       setError('')
       await loadData(organisationId)
-      navigate(`/pipeline/leads/${targetLeadId}`)
+      const optimisticLead = {
+        ...conversionPayload,
+        ...(createdLead || {}),
+        leadId: targetLeadId,
+        id: targetLeadId,
+        leadCategory,
+        category: leadCategory,
+        canvassingProspectId: targetProspectId,
+        communicationTimeline: [],
+        tasks: [],
+        appointments: [],
+        documents: [],
+        documentPackets: [],
+        offers: [],
+        transactions: [],
+        listings: [],
+        requirements: [],
+        savedSearches: [],
+        recommendations: [],
+      }
+      navigate(`/pipeline/leads/${targetLeadId}`, {
+        state: {
+          fromCanvassingConversion: true,
+          leadWorkspace: {
+            row: optimisticLead,
+            lead: optimisticLead,
+            timeline: [],
+            appointments: [],
+            offers: [],
+            transactions: [],
+            listings: [],
+            requirements: [],
+            recommendations: [],
+            savedSearches: [],
+            propertyShares: [],
+          },
+        },
+      })
     } catch (convertError) {
       setError(convertError?.message || 'Unable to convert prospect to lead.')
     }
