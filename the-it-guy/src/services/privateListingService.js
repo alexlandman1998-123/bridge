@@ -799,6 +799,27 @@ function stripUnsupportedPortalColumns(payload = {}) {
   return next
 }
 
+const PRIVATE_LISTING_LOCATION_COLUMNS = [
+  'formatted_address',
+  'street_address',
+  'country',
+  'latitude',
+  'longitude',
+  'google_place_id',
+]
+
+function hasMissingPrivateListingLocationColumn(error) {
+  return PRIVATE_LISTING_LOCATION_COLUMNS.some((column) => isMissingColumnError(error, column))
+}
+
+function stripUnsupportedLocationColumns(payload = {}) {
+  const next = { ...(payload || {}) }
+  for (const column of PRIVATE_LISTING_LOCATION_COLUMNS) {
+    delete next[column]
+  }
+  return next
+}
+
 function extractQuickAddMandateDates(value = '') {
   const mandateLine = String(value || '')
     .split('\n')
@@ -1103,11 +1124,17 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     askingPrice: Number(row.asking_price || 0) || 0,
     estimatedValue: Number(row.estimated_value || 0) || 0,
     addressLine1: row.address_line_1 || '',
+    formattedAddress: row.formatted_address || '',
+    streetAddress: row.street_address || row.address_line_1 || '',
     addressLine2: row.address_line_2 || '',
     suburb: row.suburb || '',
     city: row.city || '',
     province: row.province || '',
+    country: row.country || 'South Africa',
     postalCode: row.postal_code || '',
+    latitude: row.latitude === null || row.latitude === undefined ? null : Number(row.latitude),
+    longitude: row.longitude === null || row.longitude === undefined ? null : Number(row.longitude),
+    googlePlaceId: row.google_place_id || '',
     sellerType: row.seller_type || '',
     financeContext: row.finance_context || '',
     mandateType: row.mandate_type || 'sole',
@@ -1819,11 +1846,17 @@ function buildPrivateListingPayload(payload = {}, userId = null) {
     asking_price: normalizeNumber(payload.askingPrice),
     estimated_value: normalizeNumber(payload.estimatedValue),
     address_line_1: normalizeNullableText(payload.addressLine1 || payload.propertyAddress),
+    formatted_address: normalizeNullableText(payload.formattedAddress),
+    street_address: normalizeNullableText(payload.streetAddress || payload.addressLine1 || payload.propertyAddress),
     address_line_2: normalizeNullableText(payload.addressLine2),
     suburb: normalizeNullableText(payload.suburb),
     city: normalizeNullableText(payload.city),
     province: normalizeNullableText(payload.province),
+    country: normalizeNullableText(payload.country) || 'South Africa',
     postal_code: normalizeNullableText(payload.postalCode),
+    latitude: normalizeNumber(payload.latitude),
+    longitude: normalizeNumber(payload.longitude),
+    google_place_id: normalizeNullableText(payload.googlePlaceId || payload.placeId),
     seller_type: normalizeNullableText(payload.sellerType),
     finance_context: normalizeNullableText(payload.financeContext),
     mandate_type: normalizeNullableText(payload.mandateType) || 'sole',
@@ -1879,6 +1912,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
     isMissingColumnError(insert.error, 'listing_source') ||
     isMissingColumnError(insert.error, 'property_structure_type') ||
     isMissingColumnError(insert.error, 'assigned_agent_email') ||
+    hasMissingPrivateListingLocationColumn(insert.error) ||
     hasMissingPrivateListingPortalColumn(insert.error)
   )) {
     const fallbackPayload = { ...listingPayload }
@@ -1886,7 +1920,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
     const shouldStripBranchId = isMissingColumnError(insert.error, 'branch_id')
     insert = await client
       .from('private_listings')
-      .insert(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(Object.fromEntries(Object.entries(fallbackPayload).filter(([key]) => !shouldStripBranchId || key !== 'branch_id')))))
+      .insert(stripUnsupportedLocationColumns(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(Object.fromEntries(Object.entries(fallbackPayload).filter(([key]) => !shouldStripBranchId || key !== 'branch_id'))))))
       .select('*')
       .single()
   }
@@ -1991,11 +2025,17 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   if (payload.askingPrice !== undefined) patch.asking_price = normalizeNumber(payload.askingPrice)
   if (payload.estimatedValue !== undefined) patch.estimated_value = normalizeNumber(payload.estimatedValue)
   if (payload.addressLine1 !== undefined) patch.address_line_1 = normalizeNullableText(payload.addressLine1)
+  if (payload.formattedAddress !== undefined) patch.formatted_address = normalizeNullableText(payload.formattedAddress)
+  if (payload.streetAddress !== undefined) patch.street_address = normalizeNullableText(payload.streetAddress)
   if (payload.addressLine2 !== undefined) patch.address_line_2 = normalizeNullableText(payload.addressLine2)
   if (payload.suburb !== undefined) patch.suburb = normalizeNullableText(payload.suburb)
   if (payload.city !== undefined) patch.city = normalizeNullableText(payload.city)
   if (payload.province !== undefined) patch.province = normalizeNullableText(payload.province)
+  if (payload.country !== undefined) patch.country = normalizeNullableText(payload.country) || 'South Africa'
   if (payload.postalCode !== undefined) patch.postal_code = normalizeNullableText(payload.postalCode)
+  if (payload.latitude !== undefined) patch.latitude = normalizeNumber(payload.latitude)
+  if (payload.longitude !== undefined) patch.longitude = normalizeNumber(payload.longitude)
+  if (payload.googlePlaceId !== undefined || payload.placeId !== undefined) patch.google_place_id = normalizeNullableText(payload.googlePlaceId || payload.placeId)
   if (payload.sellerType !== undefined) patch.seller_type = normalizeNullableText(payload.sellerType)
   if (payload.financeContext !== undefined) patch.finance_context = normalizeNullableText(payload.financeContext)
   if (payload.mandateType !== undefined) patch.mandate_type = normalizeNullableText(payload.mandateType)
@@ -2024,6 +2064,7 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     isMissingColumnError(updateQuery.error, 'seller_canonical_facts_json') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_fact_readiness_json') ||
     isMissingColumnError(updateQuery.error, 'seller_canonical_facts_updated_at') ||
+    hasMissingPrivateListingLocationColumn(updateQuery.error) ||
     hasMissingPrivateListingPortalColumn(updateQuery.error)
   )) {
     const compatiblePatch = { ...patch }
@@ -2033,7 +2074,7 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
     delete compatiblePatch.seller_canonical_facts_updated_at
     updateQuery = await client
       .from('private_listings')
-      .update(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(compatiblePatch)))
+      .update(stripUnsupportedLocationColumns(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(compatiblePatch))))
       .eq('id', normalizedId)
       .select('*')
       .single()
@@ -2569,7 +2610,7 @@ export async function getAgentPrivateListingSummaries(
   const queryBuilder = applyVisiblePrivateListingFilters(
     client
       .from('private_listings')
-      .select('id, listing_reference, listing_status, listing_visibility, seller_onboarding_status, mandate_status, mandate_packet_id, asking_price, estimated_value, title, address_line_1, address_line_2, suburb, city, province, postal_code, seller_type, finance_context, mandate_type, property_category, property_type, property_structure_type, listing_category, listing_source, stock_source, seller_canonical_facts_json, seller_canonical_fact_readiness_json, seller_lead_id, seller_profile_id, property_profile_id, organisation_id, branch_id, assigned_agent_id, created_at, updated_at'),
+      .select('id, listing_reference, listing_status, listing_visibility, seller_onboarding_status, mandate_status, mandate_packet_id, asking_price, estimated_value, title, address_line_1, address_line_2, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, seller_type, finance_context, mandate_type, property_category, property_type, property_structure_type, listing_category, listing_source, stock_source, seller_canonical_facts_json, seller_canonical_fact_readiness_json, seller_lead_id, seller_profile_id, property_profile_id, organisation_id, branch_id, assigned_agent_id, created_at, updated_at'),
   )
 
   if (normalizedOrgId) {

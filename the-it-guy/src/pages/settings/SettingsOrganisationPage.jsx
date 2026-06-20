@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useOrganisation } from '../../context/OrganisationContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { createAgencyBranchDraft } from '../../lib/agencyOnboarding'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { saveAgencyOnboardingDraft, updateOrganisationSettings, uploadOrganisationBrandingAsset } from '../../lib/settingsApi'
 import {
   SettingsBanner,
@@ -75,6 +77,30 @@ const BOND_SETTINGS_COPY = {
     title: 'Permissions & Visibility',
     description: 'Controls for application ownership, consultant visibility, and regional/branch collaboration defaults.',
   },
+}
+
+function buildOrganisationAddressValue(organisation = {}, onboarding = {}) {
+  const agencyInfo = onboarding?.agencyInformation || {}
+  const formattedAddress = String(
+    organisation?.formattedAddress ||
+      agencyInfo.formattedAddress ||
+      [organisation?.addressLine1 || agencyInfo.physicalAddress, organisation?.suburb, organisation?.city, organisation?.province || agencyInfo.province].filter(Boolean).join(', '),
+  ).trim()
+
+  if (!formattedAddress) return null
+
+  return {
+    formattedAddress,
+    streetAddress: String(organisation?.addressLine1 || agencyInfo.physicalAddress || '').trim(),
+    suburb: String(organisation?.suburb || '').trim(),
+    city: String(organisation?.city || '').trim(),
+    province: String(organisation?.province || agencyInfo.province || '').trim(),
+    country: String(organisation?.country || agencyInfo.country || 'South Africa').trim(),
+    postalCode: String(organisation?.postalCode || '').trim(),
+    latitude: typeof organisation?.latitude === 'number' ? organisation.latitude : Number(organisation?.latitude) || undefined,
+    longitude: typeof organisation?.longitude === 'number' ? organisation.longitude : Number(organisation?.longitude) || undefined,
+    placeId: String(organisation?.googlePlaceId || '').trim(),
+  }
 }
 
 const AGENCY_SETTINGS_COPY = {
@@ -220,6 +246,54 @@ export default function SettingsOrganisationPage() {
         },
       },
     }))
+  }
+
+  function updateOrganisationAddress(value) {
+    setState((previous) => {
+      const nextAddress = value
+        ? {
+            formattedAddress: value.formattedAddress || '',
+            addressLine1: value.streetAddress || value.formattedAddress || '',
+            suburb: value.suburb || '',
+            city: value.city || '',
+            province: value.province || '',
+            country: value.country || 'South Africa',
+            postalCode: value.postalCode || '',
+            latitude: value.latitude ?? null,
+            longitude: value.longitude ?? null,
+            googlePlaceId: value.placeId || '',
+          }
+        : {
+            formattedAddress: '',
+            addressLine1: '',
+            suburb: '',
+            city: '',
+            province: '',
+            country: 'South Africa',
+            postalCode: '',
+            latitude: null,
+            longitude: null,
+            googlePlaceId: '',
+          }
+
+      return {
+        ...previous,
+        organisation: {
+          ...previous.organisation,
+          ...nextAddress,
+        },
+        onboarding: {
+          ...previous.onboarding,
+          agencyInformation: {
+            ...(previous.onboarding?.agencyInformation || {}),
+            physicalAddress: nextAddress.addressLine1,
+            formattedAddress: nextAddress.formattedAddress,
+            province: nextAddress.province,
+            country: nextAddress.country,
+          },
+        },
+      }
+    })
   }
 
   function updatePrincipalField(key, value) {
@@ -401,6 +475,8 @@ export default function SettingsOrganisationPage() {
         }, { syncCommercialAccess: true }),
       ])
 
+      await upsertAreaFromAddress(buildOrganisationAddressValue(state.organisation, state.onboarding), { incrementListingCount: false })
+
       const nextState = {
         ...state,
         ...organisationResponse,
@@ -576,16 +652,30 @@ export default function SettingsOrganisationPage() {
                 }}
               />
             </label>
-            <label className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
-              <span className="text-sm font-medium text-[#51657b]">Physical address</span>
-              <Field
-                value={onboarding.agencyInformation?.physicalAddress || ''}
+            <div className={`${settingsFieldClass} ${settingsFieldSpanClass}`}>
+              <AddressAutocomplete
+                label="Physical address"
+                value={buildOrganisationAddressValue(form, onboarding)}
                 disabled={!canEdit}
-                onChange={(event) => {
-                  const value = event.target.value
-                  updateAgencyField('physicalAddress', value)
-                  updateField('addressLine1', value)
-                }}
+                onChange={updateOrganisationAddress}
+                placeholder="12 Main Road Bedfordview"
+                description="Used for branch routing, profile quality, local search, and platform analytics."
+              />
+            </div>
+            <label className={settingsFieldClass}>
+              <span className="text-sm font-medium text-[#51657b]">Suburb</span>
+              <Field
+                value={form.suburb || ''}
+                disabled={!canEdit}
+                onChange={(event) => updateField('suburb', event.target.value)}
+              />
+            </label>
+            <label className={settingsFieldClass}>
+              <span className="text-sm font-medium text-[#51657b]">City</span>
+              <Field
+                value={form.city || ''}
+                disabled={!canEdit}
+                onChange={(event) => updateField('city', event.target.value)}
               />
             </label>
             <label className={settingsFieldClass}>
@@ -598,6 +688,14 @@ export default function SettingsOrganisationPage() {
                   updateAgencyField('province', value)
                   updateField('province', value)
                 }}
+              />
+            </label>
+            <label className={settingsFieldClass}>
+              <span className="text-sm font-medium text-[#51657b]">Postal code</span>
+              <Field
+                value={form.postalCode || ''}
+                disabled={!canEdit}
+                onChange={(event) => updateField('postalCode', event.target.value)}
               />
             </label>
             <label className={settingsFieldClass}>

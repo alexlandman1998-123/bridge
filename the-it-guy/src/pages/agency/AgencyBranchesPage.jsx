@@ -21,9 +21,11 @@ import {
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
+import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { createBranch, getBranches } from '../../services/agencyBranchService'
 
 const PERFORMANCE_FILTERS = [
@@ -37,6 +39,59 @@ function normalizeText(value) {
 function toNumber(value) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+function buildBranchAddressValue(branch = {}) {
+  const formattedAddress = String(
+    branch.formattedAddress ||
+      [branch.address, branch.suburb, branch.city, branch.province].filter(Boolean).join(', '),
+  ).trim()
+  if (!formattedAddress) return null
+
+  return {
+    formattedAddress,
+    streetAddress: String(branch.address || '').trim(),
+    suburb: String(branch.suburb || '').trim(),
+    city: String(branch.city || '').trim(),
+    province: String(branch.province || '').trim(),
+    country: String(branch.country || 'South Africa').trim(),
+    postalCode: String(branch.postalCode || '').trim(),
+    latitude: typeof branch.latitude === 'number' ? branch.latitude : Number(branch.latitude) || undefined,
+    longitude: typeof branch.longitude === 'number' ? branch.longitude : Number(branch.longitude) || undefined,
+    placeId: String(branch.googlePlaceId || '').trim(),
+  }
+}
+
+function mergeBranchAddress(previous = {}, value = null) {
+  if (!value) {
+    return {
+      ...previous,
+      address: '',
+      formattedAddress: '',
+      suburb: '',
+      city: '',
+      province: '',
+      country: 'South Africa',
+      postalCode: '',
+      latitude: null,
+      longitude: null,
+      googlePlaceId: '',
+    }
+  }
+
+  return {
+    ...previous,
+    address: value.streetAddress || value.formattedAddress || '',
+    formattedAddress: value.formattedAddress || '',
+    suburb: value.suburb || '',
+    city: value.city || '',
+    province: value.province || '',
+    country: value.country || 'South Africa',
+    postalCode: value.postalCode || '',
+    latitude: value.latitude ?? null,
+    longitude: value.longitude ?? null,
+    googlePlaceId: value.placeId || '',
+  }
 }
 
 function getValidDate(value) {
@@ -395,6 +450,13 @@ function NewBranchModal({ open, onClose, onCreated }) {
     city: '',
     province: '',
     address: '',
+    formattedAddress: '',
+    suburb: '',
+    country: 'South Africa',
+    postalCode: '',
+    latitude: null,
+    longitude: null,
+    googlePlaceId: '',
     managerName: '',
     email: '',
     phone: '',
@@ -404,7 +466,7 @@ function NewBranchModal({ open, onClose, onCreated }) {
 
   useEffect(() => {
     if (!open) {
-      setForm({ name: '', city: '', province: '', address: '', managerName: '', email: '', phone: '' })
+      setForm({ name: '', city: '', province: '', address: '', formattedAddress: '', suburb: '', country: 'South Africa', postalCode: '', latitude: null, longitude: null, googlePlaceId: '', managerName: '', email: '', phone: '' })
       setSaving(false)
       setError('')
     }
@@ -415,6 +477,7 @@ function NewBranchModal({ open, onClose, onCreated }) {
     setError('')
     try {
       const created = await createBranch(form)
+      await upsertAreaFromAddress(buildBranchAddressValue(form), { incrementListingCount: false })
       if (typeof onCreated === 'function') {
         onCreated(created)
       }
@@ -452,9 +515,22 @@ function NewBranchModal({ open, onClose, onCreated }) {
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Province</span>
           <Field value={form.province} onChange={(event) => setForm((previous) => ({ ...previous, province: event.target.value }))} placeholder="e.g. Gauteng" />
         </label>
-        <label className="grid gap-1.5 md:col-span-2">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Address</span>
-          <Field value={form.address} onChange={(event) => setForm((previous) => ({ ...previous, address: event.target.value }))} placeholder="Street address" />
+        <div className="md:col-span-2">
+          <AddressAutocomplete
+            label="Address"
+            value={buildBranchAddressValue(form)}
+            onChange={(nextAddress) => setForm((previous) => mergeBranchAddress(previous, nextAddress))}
+            placeholder="12 Main Road Bedfordview"
+            description="Used for branch location quality, reporting, and local search."
+          />
+        </div>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Suburb</span>
+          <Field value={form.suburb} onChange={(event) => setForm((previous) => ({ ...previous, suburb: event.target.value }))} placeholder="e.g. Bedfordview" />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Postal Code</span>
+          <Field value={form.postalCode} onChange={(event) => setForm((previous) => ({ ...previous, postalCode: event.target.value }))} placeholder="e.g. 2007" />
         </label>
         <label className="grid gap-1.5">
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Principal / Manager</span>

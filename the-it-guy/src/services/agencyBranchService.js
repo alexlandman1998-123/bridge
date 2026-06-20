@@ -153,6 +153,13 @@ async function listOrganisationBranches(client, organisationId) {
     'province',
     'city',
     'address',
+    'formatted_address',
+    'suburb',
+    'country',
+    'postal_code',
+    'latitude',
+    'longitude',
+    'google_place_id',
     'location',
     'manager_name',
     'principal_user_id',
@@ -328,6 +335,13 @@ function buildBranchViewModel(branch = {}, related = {}) {
     province,
     city,
     address: normalizeText(branch?.address),
+    formattedAddress: normalizeText(branch?.formatted_address),
+    suburb: normalizeText(branch?.suburb),
+    country: normalizeText(branch?.country) || 'South Africa',
+    postalCode: normalizeText(branch?.postal_code),
+    latitude: branch?.latitude === null || branch?.latitude === undefined ? null : Number(branch.latitude),
+    longitude: branch?.longitude === null || branch?.longitude === undefined ? null : Number(branch.longitude),
+    googlePlaceId: normalizeText(branch?.google_place_id),
     location: locationText,
     principalUserId: normalizeText(branch?.principal_user_id),
     principalName,
@@ -438,6 +452,13 @@ export async function createBranch(payload = {}) {
     province: normalizeText(payload?.province) || null,
     city: normalizeText(payload?.city) || null,
     address: normalizeText(payload?.address) || null,
+    formatted_address: normalizeText(payload?.formattedAddress) || null,
+    suburb: normalizeText(payload?.suburb) || null,
+    country: normalizeText(payload?.country) || 'South Africa',
+    postal_code: normalizeText(payload?.postalCode) || null,
+    latitude: payload?.latitude === null || payload?.latitude === undefined || payload?.latitude === '' ? null : Number(payload.latitude),
+    longitude: payload?.longitude === null || payload?.longitude === undefined || payload?.longitude === '' ? null : Number(payload.longitude),
+    google_place_id: normalizeText(payload?.googlePlaceId || payload?.placeId) || null,
     location: normalizeText(payload?.location) || [normalizeText(payload?.city), normalizeText(payload?.province)].filter(Boolean).join(', ') || null,
     manager_name: normalizeText(payload?.managerName) || null,
     principal_user_id: normalizeText(payload?.principalUserId) || null,
@@ -486,6 +507,13 @@ export async function updateBranch(branchId, payload = {}) {
   if (payload?.province !== undefined) patch.province = normalizeText(payload.province) || null
   if (payload?.city !== undefined) patch.city = normalizeText(payload.city) || null
   if (payload?.address !== undefined) patch.address = normalizeText(payload.address) || null
+  if (payload?.formattedAddress !== undefined) patch.formatted_address = normalizeText(payload.formattedAddress) || null
+  if (payload?.suburb !== undefined) patch.suburb = normalizeText(payload.suburb) || null
+  if (payload?.country !== undefined) patch.country = normalizeText(payload.country) || 'South Africa'
+  if (payload?.postalCode !== undefined) patch.postal_code = normalizeText(payload.postalCode) || null
+  if (payload?.latitude !== undefined) patch.latitude = payload.latitude === null || payload.latitude === '' ? null : Number(payload.latitude)
+  if (payload?.longitude !== undefined) patch.longitude = payload.longitude === null || payload.longitude === '' ? null : Number(payload.longitude)
+  if (payload?.googlePlaceId !== undefined || payload?.placeId !== undefined) patch.google_place_id = normalizeText(payload.googlePlaceId || payload.placeId) || null
   if (payload?.location !== undefined) patch.location = normalizeText(payload.location) || null
   if (payload?.managerName !== undefined) patch.manager_name = normalizeText(payload.managerName) || null
   if (payload?.principalUserId !== undefined) patch.principal_user_id = normalizeText(payload.principalUserId) || null

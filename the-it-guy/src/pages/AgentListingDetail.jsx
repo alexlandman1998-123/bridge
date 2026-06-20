@@ -32,6 +32,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -110,6 +111,7 @@ import {
   rejectSuggestion,
 } from '../services/leadSuggestionService'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
 const PIPELINE_STORAGE_KEY = 'itg:pipeline-leads:v1'
@@ -361,9 +363,16 @@ function createExternalLinkDraft() {
 function buildListingSnapshotFormData(draft = {}) {
   return {
     propertyAddress: String(draft.addressLine1 || '').trim(),
+    formattedAddress: String(draft.formattedAddress || '').trim(),
+    streetAddress: String(draft.streetAddress || draft.addressLine1 || '').trim(),
     suburb: String(draft.suburb || '').trim(),
     city: String(draft.city || '').trim(),
     province: String(draft.province || '').trim(),
+    country: String(draft.country || 'South Africa').trim(),
+    postalCode: String(draft.postalCode || '').trim(),
+    latitude: draft.latitude ?? null,
+    longitude: draft.longitude ?? null,
+    googlePlaceId: String(draft.googlePlaceId || '').trim(),
     propertyType: draft.propertyType,
     listingType: draft.listingType,
     bedrooms: draft.bedrooms,
@@ -1131,9 +1140,16 @@ function buildPropertyDraft(listingRecord) {
     listingStatus: normalizedListingStatus,
     source: String(firstDraftValue(marketing?.source, propertyDetails?.source, listingRecord?.listingSource, onboardingFormData.listingSource, 'seller_onboarding')).trim(),
     addressLine1: String(firstDraftValue(propertyDetails?.addressLine1, listingRecord?.addressLine1, onboardingFormData.propertyAddress, onboardingFormData.residentialAddress)).trim(),
+    formattedAddress: String(firstDraftValue(propertyDetails?.formattedAddress, listingRecord?.formattedAddress, listingRecord?.formatted_address, onboardingFormData.formattedAddress)).trim(),
+    streetAddress: String(firstDraftValue(propertyDetails?.streetAddress, listingRecord?.streetAddress, listingRecord?.street_address, onboardingFormData.streetAddress, propertyDetails?.addressLine1, listingRecord?.addressLine1, onboardingFormData.propertyAddress)).trim(),
     suburb: String(firstDraftValue(propertyDetails?.suburb, listingRecord?.suburb, onboardingFormData.suburb)).trim(),
     city: String(firstDraftValue(propertyDetails?.city, listingRecord?.city, onboardingFormData.city)).trim(),
     province: String(firstDraftValue(propertyDetails?.province, listingRecord?.province, onboardingFormData.province)).trim(),
+    country: String(firstDraftValue(propertyDetails?.country, listingRecord?.country, onboardingFormData.country, 'South Africa')).trim(),
+    postalCode: String(firstDraftValue(propertyDetails?.postalCode, listingRecord?.postalCode, listingRecord?.postal_code, onboardingFormData.postalCode)).trim(),
+    latitude: firstDraftValue(propertyDetails?.latitude, listingRecord?.latitude, onboardingFormData.latitude) ?? null,
+    longitude: firstDraftValue(propertyDetails?.longitude, listingRecord?.longitude, onboardingFormData.longitude) ?? null,
+    googlePlaceId: String(firstDraftValue(propertyDetails?.googlePlaceId, listingRecord?.googlePlaceId, listingRecord?.google_place_id, onboardingFormData.googlePlaceId)).trim(),
     bedrooms: String(firstDraftValue(propertyDetails?.bedrooms, onboardingFormData.bedrooms)).trim(),
     bathrooms: String(firstDraftValue(propertyDetails?.bathrooms, onboardingFormData.bathrooms)).trim(),
     garages: String(firstDraftValue(propertyDetails?.garages, onboardingFormData.garages)).trim(),
@@ -1181,6 +1197,62 @@ function buildPropertyDraft(listingRecord) {
     videoLink: String(firstDraftValue(propertyDetails?.videoLink, onboardingFormData.videoLink, marketing?.videoLink)).trim(),
     virtualTourLink: String(firstDraftValue(propertyDetails?.virtualTourLink, onboardingFormData.virtualTourLink, marketing?.virtualTourLink)).trim(),
     externalLinks,
+  }
+}
+
+function buildAddressAutocompleteValueFromDraft(draft = {}) {
+  const formattedAddress = String(
+    draft.formattedAddress ||
+      [draft.addressLine1 || draft.streetAddress, draft.suburb, draft.city, draft.province].filter(Boolean).join(', '),
+  ).trim()
+
+  if (!formattedAddress) return null
+
+  return {
+    formattedAddress,
+    streetAddress: String(draft.streetAddress || draft.addressLine1 || '').trim(),
+    suburb: String(draft.suburb || '').trim(),
+    city: String(draft.city || '').trim(),
+    province: String(draft.province || '').trim(),
+    country: String(draft.country || 'South Africa').trim(),
+    postalCode: String(draft.postalCode || '').trim(),
+    latitude: typeof draft.latitude === 'number' ? draft.latitude : Number(draft.latitude) || undefined,
+    longitude: typeof draft.longitude === 'number' ? draft.longitude : Number(draft.longitude) || undefined,
+    placeId: String(draft.googlePlaceId || '').trim(),
+  }
+}
+
+function mergeAddressIntoMarketingDraft(previous, value) {
+  if (!value) {
+    return {
+      ...previous,
+      formattedAddress: '',
+      streetAddress: '',
+      addressLine1: '',
+      suburb: '',
+      city: '',
+      province: '',
+      country: 'South Africa',
+      postalCode: '',
+      latitude: null,
+      longitude: null,
+      googlePlaceId: '',
+    }
+  }
+
+  return {
+    ...previous,
+    formattedAddress: value.formattedAddress || '',
+    streetAddress: value.streetAddress || value.formattedAddress || '',
+    addressLine1: value.streetAddress || value.formattedAddress || '',
+    suburb: value.suburb || '',
+    city: value.city || '',
+    province: value.province || '',
+    country: value.country || 'South Africa',
+    postalCode: value.postalCode || '',
+    latitude: value.latitude ?? null,
+    longitude: value.longitude ?? null,
+    googlePlaceId: value.placeId || '',
   }
 }
 
@@ -1571,9 +1643,16 @@ function AgentListingDetail() {
             propertyType: nextDraft.propertyType || row?.propertyType || 'House',
             status: nextDraft.publicationStatus === 'Published' ? 'active' : nextDraft.listingStatus || row?.status || 'active',
             addressLine1: nextDraft.addressLine1.trim(),
+            formattedAddress: nextDraft.formattedAddress.trim(),
+            streetAddress: nextDraft.streetAddress.trim(),
             suburb: nextDraft.suburb.trim(),
             city: nextDraft.city.trim(),
             province: nextDraft.province.trim(),
+            country: nextDraft.country.trim() || 'South Africa',
+            postalCode: nextDraft.postalCode.trim(),
+            latitude: nextDraft.latitude ?? null,
+            longitude: nextDraft.longitude ?? null,
+            googlePlaceId: nextDraft.googlePlaceId.trim(),
             askingPrice: Number(nextDraft.price || 0),
           }
         : {}),
@@ -1602,9 +1681,16 @@ function AgentListingDetail() {
         listingStatus: nextDraft.listingStatus,
         source: nextDraft.source.trim(),
         addressLine1: nextDraft.addressLine1.trim(),
+        formattedAddress: nextDraft.formattedAddress.trim(),
+        streetAddress: nextDraft.streetAddress.trim(),
         suburb: nextDraft.suburb.trim(),
         city: nextDraft.city.trim(),
         province: nextDraft.province.trim(),
+        country: nextDraft.country.trim() || 'South Africa',
+        postalCode: nextDraft.postalCode.trim(),
+        latitude: nextDraft.latitude ?? null,
+        longitude: nextDraft.longitude ?? null,
+        googlePlaceId: nextDraft.googlePlaceId.trim(),
         bedrooms: nextDraft.bedrooms,
         bathrooms: nextDraft.bathrooms,
         garages: nextDraft.garages,
@@ -1649,8 +1735,15 @@ function AgentListingDetail() {
       publicationData: {
         title: nextDraft.headline.trim(),
         address: nextDraft.addressLine1.trim(),
+        formattedAddress: nextDraft.formattedAddress.trim(),
         suburb: nextDraft.suburb.trim(),
+        city: nextDraft.city.trim(),
         province: nextDraft.province.trim(),
+        country: nextDraft.country.trim() || 'South Africa',
+        postalCode: nextDraft.postalCode.trim(),
+        latitude: nextDraft.latitude ?? null,
+        longitude: nextDraft.longitude ?? null,
+        googlePlaceId: nextDraft.googlePlaceId.trim(),
         propertyType: nextDraft.propertyType,
         listingType: nextDraft.listingType,
         askingPrice: Number(nextDraft.price || 0),
@@ -1730,9 +1823,16 @@ function AgentListingDetail() {
         description: marketingDraft.description.trim(),
         askingPrice: Number(marketingDraft.price || 0),
         addressLine1: marketingDraft.addressLine1.trim(),
+        formattedAddress: marketingDraft.formattedAddress.trim(),
+        streetAddress: marketingDraft.streetAddress.trim(),
         suburb: marketingDraft.suburb.trim(),
         city: marketingDraft.city.trim(),
         province: marketingDraft.province.trim(),
+        country: marketingDraft.country.trim() || 'South Africa',
+        postalCode: marketingDraft.postalCode.trim(),
+        latitude: marketingDraft.latitude ?? null,
+        longitude: marketingDraft.longitude ?? null,
+        googlePlaceId: marketingDraft.googlePlaceId.trim(),
         isActive: String(marketingDraft.listingStatus || '').trim().toLowerCase() === 'active',
         property24ListingUrl: marketingDraft.property24ListingUrl.trim() || property24ExternalLink?.url || '',
         property24Reference: marketingDraft.property24Reference.trim(),
@@ -1752,8 +1852,15 @@ function AgentListingDetail() {
         publicationData: {
           title: marketingDraft.headline.trim(),
           address: marketingDraft.addressLine1.trim(),
+          formattedAddress: marketingDraft.formattedAddress.trim(),
           suburb: marketingDraft.suburb.trim(),
+          city: marketingDraft.city.trim(),
           province: marketingDraft.province.trim(),
+          country: marketingDraft.country.trim() || 'South Africa',
+          postalCode: marketingDraft.postalCode.trim(),
+          latitude: marketingDraft.latitude ?? null,
+          longitude: marketingDraft.longitude ?? null,
+          googlePlaceId: marketingDraft.googlePlaceId.trim(),
           propertyType: marketingDraft.propertyType,
           listingType: marketingDraft.listingType,
           askingPrice: Number(marketingDraft.price || 0),
@@ -1782,6 +1889,7 @@ function AgentListingDetail() {
       if (distributionSync?.skipped) {
         console.warn('[AgentListingDetail] listing distribution sync skipped', distributionSync.reason)
       }
+      await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(marketingDraft), { incrementListingCount: false })
       setDetailMessage('Listing details saved.')
     } catch (error) {
       console.error('[AgentListingDetail] Supabase listing save failed', error)
@@ -4903,10 +5011,15 @@ function AgentListingDetail() {
                     ))}
                   </Field>
                 </label>
-                <label className="grid gap-2 md:col-span-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Address</span>
-                  <Field value={marketingDraft.addressLine1} onChange={(event) => updateMarketingDraft('addressLine1', event.target.value)} placeholder="12 Riverside Drive" />
-                </label>
+                <div className="md:col-span-2">
+                  <AddressAutocomplete
+                    label="Address"
+                    value={buildAddressAutocompleteValueFromDraft(marketingDraft)}
+                    onChange={(nextAddress) => setMarketingDraft((previous) => mergeAddressIntoMarketingDraft(previous, nextAddress))}
+                    placeholder="12 Main Road Bedfordview"
+                    description="Select the closest Google Places result, then adjust suburb or city below if needed."
+                  />
+                </div>
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Suburb</span>
                   <Field value={marketingDraft.suburb} onChange={(event) => updateMarketingDraft('suburb', event.target.value)} placeholder="Sandton" />
@@ -4918,6 +5031,10 @@ function AgentListingDetail() {
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Province</span>
                   <Field value={marketingDraft.province} onChange={(event) => updateMarketingDraft('province', event.target.value)} placeholder="Gauteng" />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Postal Code</span>
+                  <Field value={marketingDraft.postalCode} onChange={(event) => updateMarketingDraft('postalCode', event.target.value)} placeholder="2007" />
                 </label>
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Listing Source</span>
@@ -6584,17 +6701,30 @@ function AgentListingDetail() {
                         {PUBLICATION_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                       </Field>
                     </label>
-                    <label className="grid gap-2 md:col-span-2">
-                      <span className="text-sm font-semibold text-[#2d445e]">Property Address</span>
-                      <Field value={marketingDraft.addressLine1} onChange={(event) => updateMarketingDraft('addressLine1', event.target.value)} placeholder="12 Oak Street" />
-                    </label>
+                    <div className="md:col-span-2">
+                      <AddressAutocomplete
+                        label="Property Address"
+                        value={buildAddressAutocompleteValueFromDraft(marketingDraft)}
+                        onChange={(nextAddress) => setMarketingDraft((previous) => mergeAddressIntoMarketingDraft(previous, nextAddress))}
+                        placeholder="12 Main Road Bedfordview"
+                        description="Used for future listing search, area pages, maps, analytics, and recommendations."
+                      />
+                    </div>
                     <label className="grid gap-2">
                       <span className="text-sm font-semibold text-[#2d445e]">Suburb</span>
                       <Field value={marketingDraft.suburb} onChange={(event) => updateMarketingDraft('suburb', event.target.value)} />
                     </label>
                     <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">City</span>
+                      <Field value={marketingDraft.city} onChange={(event) => updateMarketingDraft('city', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2">
                       <span className="text-sm font-semibold text-[#2d445e]">Province</span>
                       <Field value={marketingDraft.province} onChange={(event) => updateMarketingDraft('province', event.target.value)} />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Postal Code</span>
+                      <Field value={marketingDraft.postalCode} onChange={(event) => updateMarketingDraft('postalCode', event.target.value)} />
                     </label>
                     <label className="grid gap-2">
                       <span className="text-sm font-semibold text-[#2d445e]">Property Type</span>

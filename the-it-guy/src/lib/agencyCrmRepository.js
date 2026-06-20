@@ -22,10 +22,24 @@ const LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL =
   `${LEAD_SELECT_FIELDS}, assigned_agent_email`
 const LEAD_SELECT_FIELDS_EXTENDED =
   `${LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status, enquired_listing_id, enquired_property_title, enquired_property_address, enquired_property_price, source_reference_id, raw_enquiry_payload`
+const LEAD_SELECT_FIELDS_LOCATION =
+  `${LEAD_SELECT_FIELDS_EXTENDED}, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id`
 const LEAD_ACTIVITY_SELECT_FIELDS =
   'activity_id, organisation_id, lead_id, agent_id, activity_type, activity_note, activity_date, outcome, created_at'
 const TASK_SELECT_FIELDS =
   'task_id, organisation_id, lead_id, assigned_agent_id, title, description, due_date, status, priority, created_at, updated_at'
+const LEAD_LOCATION_DB_COLUMNS = [
+  'formatted_address',
+  'street_address',
+  'suburb',
+  'city',
+  'province',
+  'country',
+  'postal_code',
+  'latitude',
+  'longitude',
+  'google_place_id',
+]
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -133,6 +147,16 @@ function mapSupabaseLead(row = {}) {
     areaInterest: normalizeText(row?.area_interest),
     propertyInterest: normalizeText(row?.property_interest),
     sellerPropertyAddress: normalizeText(row?.seller_property_address),
+    formattedAddress: normalizeText(row?.formatted_address),
+    streetAddress: normalizeText(row?.street_address),
+    suburb: normalizeText(row?.suburb),
+    city: normalizeText(row?.city),
+    province: normalizeText(row?.province),
+    country: normalizeText(row?.country) || 'South Africa',
+    postalCode: normalizeText(row?.postal_code),
+    latitude: row?.latitude === null || row?.latitude === undefined ? null : Number(row.latitude),
+    longitude: row?.longitude === null || row?.longitude === undefined ? null : Number(row.longitude),
+    googlePlaceId: normalizeText(row?.google_place_id),
     estimatedValue: Number(row?.estimated_value || 0) || 0,
     notes: normalizeText(row?.notes),
     sellerOnboardingToken: normalizeText(row?.seller_onboarding_token),
@@ -235,6 +259,16 @@ function buildLocalLeadAndContactRows(payload = {}, organisationId = '') {
     areaInterest: normalizeText(leadPayload?.areaInterest),
     propertyInterest: normalizeText(leadPayload?.propertyInterest),
     sellerPropertyAddress: normalizeText(leadPayload?.sellerPropertyAddress),
+    formattedAddress: normalizeText(leadPayload?.formattedAddress),
+    streetAddress: normalizeText(leadPayload?.streetAddress),
+    suburb: normalizeText(leadPayload?.suburb),
+    city: normalizeText(leadPayload?.city),
+    province: normalizeText(leadPayload?.province),
+    country: normalizeText(leadPayload?.country) || 'South Africa',
+    postalCode: normalizeText(leadPayload?.postalCode),
+    latitude: leadPayload?.latitude === null || leadPayload?.latitude === undefined || leadPayload?.latitude === '' ? null : Number(leadPayload.latitude),
+    longitude: leadPayload?.longitude === null || leadPayload?.longitude === undefined || leadPayload?.longitude === '' ? null : Number(leadPayload.longitude),
+    googlePlaceId: normalizeText(leadPayload?.googlePlaceId || leadPayload?.placeId),
     estimatedValue: Number(leadPayload?.estimatedValue || 0) || 0,
     listingId: normalizeText(leadPayload?.listingId || leadPayload?.listing_id),
     enquiredListingId: normalizeText(leadPayload?.enquiredListingId || leadPayload?.enquired_listing_id),
@@ -405,6 +439,16 @@ function buildRemoteLeadUpdatePayload(patch = {}) {
   if (hasOwn(patch, 'areaInterest')) corePayload.area_interest = normalizeText(patch.areaInterest) || null
   if (hasOwn(patch, 'propertyInterest')) corePayload.property_interest = normalizeText(patch.propertyInterest) || null
   if (hasOwn(patch, 'sellerPropertyAddress')) corePayload.seller_property_address = normalizeText(patch.sellerPropertyAddress) || null
+  if (hasOwn(patch, 'formattedAddress')) corePayload.formatted_address = normalizeText(patch.formattedAddress) || null
+  if (hasOwn(patch, 'streetAddress')) corePayload.street_address = normalizeText(patch.streetAddress) || null
+  if (hasOwn(patch, 'suburb')) corePayload.suburb = normalizeText(patch.suburb) || null
+  if (hasOwn(patch, 'city')) corePayload.city = normalizeText(patch.city) || null
+  if (hasOwn(patch, 'province')) corePayload.province = normalizeText(patch.province) || null
+  if (hasOwn(patch, 'country')) corePayload.country = normalizeText(patch.country) || 'South Africa'
+  if (hasOwn(patch, 'postalCode')) corePayload.postal_code = normalizeText(patch.postalCode) || null
+  if (hasOwn(patch, 'latitude')) corePayload.latitude = patch.latitude === null || patch.latitude === '' ? null : Number(patch.latitude)
+  if (hasOwn(patch, 'longitude')) corePayload.longitude = patch.longitude === null || patch.longitude === '' ? null : Number(patch.longitude)
+  if (hasOwn(patch, 'googlePlaceId') || hasOwn(patch, 'placeId')) corePayload.google_place_id = normalizeText(patch.googlePlaceId || patch.placeId) || null
   if (hasOwn(patch, 'estimatedValue')) corePayload.estimated_value = Number(patch.estimatedValue || 0) || 0
   if (hasOwn(patch, 'notes')) corePayload.notes = normalizeText(patch.notes) || null
   if (hasOwn(patch, 'enquiredListingId')) corePayload.enquired_listing_id = normalizeText(patch.enquiredListingId) || null
@@ -465,6 +509,16 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
     area_interest: normalizeText(lead.areaInterest) || null,
     property_interest: normalizeText(lead.propertyInterest) || null,
     seller_property_address: normalizeText(lead.sellerPropertyAddress) || null,
+    formatted_address: normalizeText(lead.formattedAddress) || null,
+    street_address: normalizeText(lead.streetAddress) || null,
+    suburb: normalizeText(lead.suburb) || null,
+    city: normalizeText(lead.city) || null,
+    province: normalizeText(lead.province) || null,
+    country: normalizeText(lead.country) || 'South Africa',
+    postal_code: normalizeText(lead.postalCode) || null,
+    latitude: lead.latitude === null || lead.latitude === undefined || lead.latitude === '' ? null : Number(lead.latitude),
+    longitude: lead.longitude === null || lead.longitude === undefined || lead.longitude === '' ? null : Number(lead.longitude),
+    google_place_id: normalizeText(lead.googlePlaceId || lead.placeId) || null,
     estimated_value: Number(lead.estimatedValue || 0) || 0,
     listing_id: normalizeText(lead.listingId) || null,
     enquired_listing_id: hasOwn(lead, 'enquiredListingId') ? normalizeText(lead.enquiredListingId) || null : null,
@@ -482,7 +536,10 @@ function buildRemoteLeadCreatePayload(lead = {}, workspaceId = '', actor = null)
 }
 
 async function selectLeadsWithCompatibility(queryBuilderFactory) {
-  let leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_EXTENDED)
+  let leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_LOCATION)
+  if (leadResult.error && isMissingColumnError(leadResult.error)) {
+    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_EXTENDED)
+  }
   if (leadResult.error && isMissingColumnError(leadResult.error)) {
     leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL)
   }
@@ -679,6 +736,7 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
         'assigned_user_id',
         'assigned_agent_email',
         'created_by',
+        ...LEAD_LOCATION_DB_COLUMNS,
         'enquired_listing_id',
         'enquired_property_title',
         'enquired_property_address',
@@ -705,6 +763,9 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
         delete legacyLeadPayload.branch_id
         delete legacyLeadPayload.assigned_user_id
         delete legacyLeadPayload.created_by
+        for (const column of LEAD_LOCATION_DB_COLUMNS) {
+          delete legacyLeadPayload[column]
+        }
         delete legacyLeadPayload.enquired_listing_id
         delete legacyLeadPayload.enquired_property_title
         delete legacyLeadPayload.enquired_property_address
@@ -897,16 +958,33 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
       .eq('lead_id', dbLeadId)
       .select('lead_id')
 
-    if (updateResult.error && isMissingColumnError(updateResult.error) && Object.keys(bridgePayload).length > 0) {
+    if (updateResult.error && isMissingColumnError(updateResult.error)) {
+      const compatibleCorePayload = { ...corePayload }
+      for (const column of LEAD_LOCATION_DB_COLUMNS) {
+        delete compatibleCorePayload[column]
+      }
       updateResult = await supabase
         .from('leads')
         .update({
-          ...corePayload,
+          ...compatibleCorePayload,
+          ...bridgePayload,
           updated_at: payloadWithTimestamp.updated_at,
         })
         .eq('organisation_id', normalizedOrganisationId)
         .eq('lead_id', dbLeadId)
         .select('lead_id')
+
+      if (updateResult.error && isMissingColumnError(updateResult.error) && Object.keys(bridgePayload).length > 0) {
+        updateResult = await supabase
+          .from('leads')
+          .update({
+            ...compatibleCorePayload,
+            updated_at: payloadWithTimestamp.updated_at,
+          })
+          .eq('organisation_id', normalizedOrganisationId)
+          .eq('lead_id', dbLeadId)
+          .select('lead_id')
+      }
     }
 
     if (updateResult.error) {

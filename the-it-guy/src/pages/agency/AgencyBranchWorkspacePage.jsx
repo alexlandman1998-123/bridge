@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
@@ -32,6 +33,7 @@ import {
   fetchOrganisationSettings,
   listOrganisationCommissionStructures,
 } from '../../lib/settingsApi'
+import { upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
 import { createWorkspaceUserInvite, resendWorkspaceUserInvite } from '../../services/workspaceUserInviteService'
 import { getAgentLeaderboard } from '../../services/branchAnalyticsService'
@@ -58,6 +60,59 @@ const BRANCH_AGENT_ROLE_VALUES = new Set([
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function buildBranchAddressValue(branch = {}) {
+  const formattedAddress = String(
+    branch.formattedAddress ||
+      [branch.address, branch.suburb, branch.city, branch.province].filter(Boolean).join(', '),
+  ).trim()
+  if (!formattedAddress) return null
+
+  return {
+    formattedAddress,
+    streetAddress: String(branch.address || '').trim(),
+    suburb: String(branch.suburb || '').trim(),
+    city: String(branch.city || '').trim(),
+    province: String(branch.province || '').trim(),
+    country: String(branch.country || 'South Africa').trim(),
+    postalCode: String(branch.postalCode || '').trim(),
+    latitude: typeof branch.latitude === 'number' ? branch.latitude : Number(branch.latitude) || undefined,
+    longitude: typeof branch.longitude === 'number' ? branch.longitude : Number(branch.longitude) || undefined,
+    placeId: String(branch.googlePlaceId || '').trim(),
+  }
+}
+
+function mergeBranchAddress(previous = {}, value = null) {
+  if (!value) {
+    return {
+      ...previous,
+      address: '',
+      formattedAddress: '',
+      suburb: '',
+      city: '',
+      province: '',
+      country: 'South Africa',
+      postalCode: '',
+      latitude: null,
+      longitude: null,
+      googlePlaceId: '',
+    }
+  }
+
+  return {
+    ...previous,
+    address: value.streetAddress || value.formattedAddress || '',
+    formattedAddress: value.formattedAddress || '',
+    suburb: value.suburb || '',
+    city: value.city || '',
+    province: value.province || '',
+    country: value.country || 'South Africa',
+    postalCode: value.postalCode || '',
+    latitude: value.latitude ?? null,
+    longitude: value.longitude ?? null,
+    googlePlaceId: value.placeId || '',
+  }
 }
 
 function normalizeLower(value) {
@@ -244,6 +299,13 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
     city: '',
     province: '',
     address: '',
+    formattedAddress: '',
+    suburb: '',
+    country: 'South Africa',
+    postalCode: '',
+    latitude: null,
+    longitude: null,
+    googlePlaceId: '',
     location: '',
     managerName: '',
     email: '',
@@ -260,6 +322,13 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
       city: branch.city || '',
       province: branch.province || '',
       address: branch.address || '',
+      formattedAddress: branch.formattedAddress || '',
+      suburb: branch.suburb || '',
+      country: branch.country || 'South Africa',
+      postalCode: branch.postalCode || '',
+      latitude: branch.latitude ?? null,
+      longitude: branch.longitude ?? null,
+      googlePlaceId: branch.googlePlaceId || '',
       location: branch.location || '',
       managerName: branch.principalName === 'Principal pending' ? '' : branch.principalName || '',
       email: branch.email || '',
@@ -283,6 +352,7 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
       setSaving(true)
       setError('')
       const updated = await updateBranch(branch.id, form)
+      await upsertAreaFromAddress(buildBranchAddressValue(form), { incrementListingCount: false })
       onSaved?.(updated)
       onClose?.()
     } catch (saveError) {
@@ -319,9 +389,22 @@ function BranchSettingsModal({ open, branch, onClose, onSaved }) {
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Province</span>
           <Field value={form.province} onChange={(event) => updateField('province', event.target.value)} />
         </label>
-        <label className="grid gap-1.5 md:col-span-2">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Address</span>
-          <Field value={form.address} onChange={(event) => updateField('address', event.target.value)} />
+        <div className="md:col-span-2">
+          <AddressAutocomplete
+            label="Address"
+            value={buildBranchAddressValue(form)}
+            onChange={(nextAddress) => setForm((previous) => mergeBranchAddress(previous, nextAddress))}
+            placeholder="12 Main Road Bedfordview"
+            description="Used for branch reporting, routing, local search, and support context."
+          />
+        </div>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Suburb</span>
+          <Field value={form.suburb} onChange={(event) => updateField('suburb', event.target.value)} />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Postal Code</span>
+          <Field value={form.postalCode} onChange={(event) => updateField('postalCode', event.target.value)} />
         </label>
         <label className="grid gap-1.5">
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Display Location</span>

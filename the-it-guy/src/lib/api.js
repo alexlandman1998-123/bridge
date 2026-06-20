@@ -606,6 +606,12 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
   province: '',
   country: 'South Africa',
   address: '',
+  formattedAddress: '',
+  streetAddress: '',
+  postalCode: '',
+  latitude: null,
+  longitude: null,
+  googlePlaceId: '',
   description: '',
   status: 'Planning',
   developerCompany: '',
@@ -2080,6 +2086,12 @@ function normalizeDevelopmentProfile(rawProfile = {}) {
     province: normalizeTextValue(rawProfile.province),
     country: normalizeTextValue(rawProfile.country) || DEFAULT_DEVELOPMENT_PROFILE.country,
     address: normalizeTextValue(rawProfile.address),
+    formattedAddress: normalizeTextValue(rawProfile.formattedAddress || rawProfile.formatted_address),
+    streetAddress: normalizeTextValue(rawProfile.streetAddress || rawProfile.street_address || rawProfile.address),
+    postalCode: normalizeTextValue(rawProfile.postalCode || rawProfile.postal_code),
+    latitude: normalizeOptionalNumber(rawProfile.latitude),
+    longitude: normalizeOptionalNumber(rawProfile.longitude),
+    googlePlaceId: normalizeTextValue(rawProfile.googlePlaceId || rawProfile.google_place_id || rawProfile.placeId),
     description: normalizeTextValue(rawProfile.description),
     status: normalizeTextValue(rawProfile.status) || DEFAULT_DEVELOPMENT_PROFILE.status,
     developerCompany: normalizeTextValue(rawProfile.developerCompany || rawProfile.developer_company),
@@ -16354,10 +16366,17 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
     planned_units: Math.trunc(normalizeOptionalNumber(input.totalUnitsExpected ?? input.plannedUnits) ?? 0),
     code: normalizeNullableText(input.code),
     location: normalizeNullableText(input.location),
+    address: normalizeNullableText(input.address),
+    formatted_address: normalizeNullableText(input.formattedAddress),
+    street_address: normalizeNullableText(input.streetAddress || input.address),
     suburb: normalizeNullableText(input.suburb),
     city: normalizeNullableText(input.city),
     province: normalizeNullableText(input.province),
     country: normalizeNullableText(input.country) || 'South Africa',
+    postal_code: normalizeNullableText(input.postalCode),
+    latitude: normalizeOptionalNumber(input.latitude),
+    longitude: normalizeOptionalNumber(input.longitude),
+    google_place_id: normalizeNullableText(input.googlePlaceId || input.placeId),
     description: normalizeNullableText(input.description),
     status: normalizeNullableText(input.status) || 'Planning',
     developer_company: normalizeNullableText(input.developerCompany),
@@ -16372,7 +16391,17 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
 
   let updateResult = await client.from('developments').update(developmentPayload).eq('id', developmentId)
 
-  if (updateResult.error && isMissingColumnError(updateResult.error, 'code')) {
+  if (
+    updateResult.error &&
+    (isMissingColumnError(updateResult.error, 'code') ||
+      isMissingColumnError(updateResult.error, 'address') ||
+      isMissingColumnError(updateResult.error, 'formatted_address') ||
+      isMissingColumnError(updateResult.error, 'street_address') ||
+      isMissingColumnError(updateResult.error, 'postal_code') ||
+      isMissingColumnError(updateResult.error, 'latitude') ||
+      isMissingColumnError(updateResult.error, 'longitude') ||
+      isMissingColumnError(updateResult.error, 'google_place_id'))
+  ) {
     updateResult = await client
       .from('developments')
       .update({
@@ -16395,6 +16424,12 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
     province: normalizeNullableText(input.province),
     country: normalizeNullableText(input.country) || 'South Africa',
     address: normalizeNullableText(input.address),
+    formatted_address: normalizeNullableText(input.formattedAddress),
+    street_address: normalizeNullableText(input.streetAddress || input.address),
+    postal_code: normalizeNullableText(input.postalCode),
+    latitude: normalizeOptionalNumber(input.latitude),
+    longitude: normalizeOptionalNumber(input.longitude),
+    google_place_id: normalizeNullableText(input.googlePlaceId || input.placeId),
     description: normalizeNullableText(input.description),
     status: normalizeNullableText(input.status) || 'Planning',
     developer_company: normalizeNullableText(input.developerCompany),
@@ -39089,10 +39124,17 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
     planned_units: Math.trunc(normalizedPlannedUnits),
     code: normalizeNullableText(profile.code),
     location: normalizeNullableText(profile.location),
+    address: normalizeNullableText(profile.address),
+    formatted_address: normalizeNullableText(profile.formattedAddress || profile.formatted_address),
+    street_address: normalizeNullableText(profile.streetAddress || profile.street_address || profile.address),
     suburb: normalizeNullableText(profile.suburb),
     city: normalizeNullableText(profile.city),
     province: normalizeNullableText(profile.province),
     country: normalizeNullableText(profile.country) || 'South Africa',
+    postal_code: normalizeNullableText(profile.postalCode || profile.postal_code),
+    latitude: normalizeOptionalNumber(profile.latitude),
+    longitude: normalizeOptionalNumber(profile.longitude),
+    google_place_id: normalizeNullableText(profile.googlePlaceId || profile.google_place_id || profile.placeId),
     description: normalizeNullableText(profile.description),
     status: normalizeNullableText(profile.status) || DEFAULT_DEVELOPMENT_PROFILE.status,
     developer_company: normalizeNullableText(profile.developerCompany || profile.developer_company),
@@ -39112,7 +39154,7 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
   let result = await client
     .from('developments')
     .insert(basePayload)
-    .select('id, name, planned_units, code, location, suburb, city, province, country, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled')
+    .select('id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled')
     .single()
 
   if (result.error && result.error.code === '42703') {
@@ -39157,6 +39199,12 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
         province: normalizedProfile.province || null,
         country: normalizedProfile.country || DEFAULT_DEVELOPMENT_PROFILE.country,
         address: normalizedProfile.address || null,
+        formatted_address: normalizedProfile.formattedAddress || null,
+        street_address: normalizedProfile.streetAddress || null,
+        postal_code: normalizedProfile.postalCode || null,
+        latitude: normalizedProfile.latitude,
+        longitude: normalizedProfile.longitude,
+        google_place_id: normalizedProfile.googlePlaceId || null,
         description: normalizedProfile.description || null,
         status: normalizedProfile.status || DEFAULT_DEVELOPMENT_PROFILE.status,
         developer_company: normalizedProfile.developerCompany || null,

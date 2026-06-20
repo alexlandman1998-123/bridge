@@ -49,7 +49,7 @@ export const WORKSPACE_PLAN_CATALOG = Object.freeze({
     monthlyAmount: 0,
     entitlements: Object.freeze({
       [ENTITLEMENT_KEYS.maxUsers]: 3,
-      [ENTITLEMENT_KEYS.maxBranches]: 1,
+      [ENTITLEMENT_KEYS.maxBranches]: null,
       [ENTITLEMENT_KEYS.monthlyBondApplications]: 25,
       [ENTITLEMENT_KEYS.reportingLevel]: REPORTING_LEVELS.basic,
       [ENTITLEMENT_KEYS.integrations]: false,
@@ -66,7 +66,7 @@ export const WORKSPACE_PLAN_CATALOG = Object.freeze({
     monthlyAmount: 490,
     entitlements: Object.freeze({
       [ENTITLEMENT_KEYS.maxUsers]: 1,
-      [ENTITLEMENT_KEYS.maxBranches]: 1,
+      [ENTITLEMENT_KEYS.maxBranches]: null,
       [ENTITLEMENT_KEYS.monthlyBondApplications]: 75,
       [ENTITLEMENT_KEYS.reportingLevel]: REPORTING_LEVELS.basic,
       [ENTITLEMENT_KEYS.integrations]: false,
@@ -83,7 +83,7 @@ export const WORKSPACE_PLAN_CATALOG = Object.freeze({
     monthlyAmount: 1490,
     entitlements: Object.freeze({
       [ENTITLEMENT_KEYS.maxUsers]: 8,
-      [ENTITLEMENT_KEYS.maxBranches]: 2,
+      [ENTITLEMENT_KEYS.maxBranches]: null,
       [ENTITLEMENT_KEYS.monthlyBondApplications]: 250,
       [ENTITLEMENT_KEYS.reportingLevel]: REPORTING_LEVELS.advanced,
       [ENTITLEMENT_KEYS.integrations]: true,
@@ -100,7 +100,7 @@ export const WORKSPACE_PLAN_CATALOG = Object.freeze({
     monthlyAmount: 3990,
     entitlements: Object.freeze({
       [ENTITLEMENT_KEYS.maxUsers]: 40,
-      [ENTITLEMENT_KEYS.maxBranches]: 12,
+      [ENTITLEMENT_KEYS.maxBranches]: null,
       [ENTITLEMENT_KEYS.monthlyBondApplications]: 1200,
       [ENTITLEMENT_KEYS.reportingLevel]: REPORTING_LEVELS.advanced,
       [ENTITLEMENT_KEYS.integrations]: true,

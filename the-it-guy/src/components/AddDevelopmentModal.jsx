@@ -2,8 +2,10 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createDevelopmentWorkspace, fetchDeveloperAccessOptions } from '../lib/api'
+import { upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
+import AddressAutocomplete from './location/AddressAutocomplete'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -35,6 +37,12 @@ const DEFAULT_DETAILS = {
   province: '',
   country: 'South Africa',
   address: '',
+  formattedAddress: '',
+  streetAddress: '',
+  postalCode: '',
+  latitude: null,
+  longitude: null,
+  googlePlaceId: '',
   status: 'active',
   developerCompany: '',
   totalUnitsExpected: '',
@@ -250,6 +258,62 @@ function getResolvedDevelopmentLocation(details) {
   if (areaLabel) return areaLabel
 
   return String(details.address || '').trim()
+}
+
+function buildDevelopmentAddressValue(details = {}) {
+  const formattedAddress = String(
+    details.formattedAddress ||
+      [details.address || details.streetAddress, details.suburb, details.city, details.province].filter(Boolean).join(', '),
+  ).trim()
+
+  if (!formattedAddress) return null
+
+  return {
+    formattedAddress,
+    streetAddress: String(details.streetAddress || details.address || '').trim(),
+    suburb: String(details.suburb || '').trim(),
+    city: String(details.city || '').trim(),
+    province: String(details.province || '').trim(),
+    country: String(details.country || 'South Africa').trim(),
+    postalCode: String(details.postalCode || '').trim(),
+    latitude: typeof details.latitude === 'number' ? details.latitude : Number(details.latitude) || undefined,
+    longitude: typeof details.longitude === 'number' ? details.longitude : Number(details.longitude) || undefined,
+    placeId: String(details.googlePlaceId || '').trim(),
+  }
+}
+
+function mergeDevelopmentAddress(previous = {}, value = null) {
+  if (!value) {
+    return {
+      ...previous,
+      address: '',
+      formattedAddress: '',
+      streetAddress: '',
+      suburb: '',
+      city: '',
+      province: '',
+      country: 'South Africa',
+      postalCode: '',
+      latitude: null,
+      longitude: null,
+      googlePlaceId: '',
+    }
+  }
+
+  return {
+    ...previous,
+    address: value.streetAddress || value.formattedAddress || '',
+    formattedAddress: value.formattedAddress || '',
+    streetAddress: value.streetAddress || value.formattedAddress || '',
+    suburb: value.suburb || '',
+    city: value.city || '',
+    province: value.province || '',
+    country: value.country || 'South Africa',
+    postalCode: value.postalCode || '',
+    latitude: value.latitude ?? null,
+    longitude: value.longitude ?? null,
+    googlePlaceId: value.placeId || '',
+  }
 }
 
 function normalizeCodeFragment(value, fallback) {
@@ -1118,6 +1182,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           })),
       })
 
+      await upsertAreaFromAddress(buildDevelopmentAddressValue(details), { incrementListingCount: false })
+
       if (isAgentContext && developerAccess.mode === 'invite') {
         const inviteEntry = developerTeam[0] || null
         if (inviteEntry?.onboardingLink) {
@@ -1218,10 +1284,15 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 Development Code
                 <input value={details.code} onChange={(event) => setDetails((previous) => ({ ...previous, code: event.target.value }))} />
               </label>
-              <label className="full-width">
-                Street Address
-                <input value={details.address} onChange={(event) => setDetails((previous) => ({ ...previous, address: event.target.value }))} />
-              </label>
+              <div className="full-width">
+                <AddressAutocomplete
+                  label="Development Address"
+                  value={buildDevelopmentAddressValue(details)}
+                  onChange={(nextAddress) => setDetails((previous) => mergeDevelopmentAddress(previous, nextAddress))}
+                  placeholder="12 Main Road Bedfordview"
+                  description="Select the Google Places result to store clean suburb, city, province, and map data."
+                />
+              </div>
               <label>
                 Suburb
                 <input value={details.suburb} onChange={(event) => setDetails((previous) => ({ ...previous, suburb: event.target.value }))} />
@@ -1233,6 +1304,10 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
               <label>
                 Province
                 <input value={details.province} onChange={(event) => setDetails((previous) => ({ ...previous, province: event.target.value }))} />
+              </label>
+              <label>
+                Postal Code
+                <input value={details.postalCode} onChange={(event) => setDetails((previous) => ({ ...previous, postalCode: event.target.value }))} />
               </label>
               <label>
                 Status

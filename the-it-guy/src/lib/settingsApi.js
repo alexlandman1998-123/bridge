@@ -346,6 +346,12 @@ function normalizeNullableText(value) {
   return text || null
 }
 
+function normalizeOptionalNumber(value) {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function normalizeEmail(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -1257,10 +1263,15 @@ function buildDefaultOrganisation(profile = null) {
     website: '',
     addressLine1: '',
     addressLine2: '',
+    formattedAddress: '',
+    suburb: '',
     city: '',
     province: '',
     postalCode: '',
     country: 'South Africa',
+    latitude: null,
+    longitude: null,
+    googlePlaceId: '',
     supportEmail: profile?.email || '',
     supportPhone: profile?.phoneNumber || '',
     primaryContactPerson: profile?.fullName || '',
@@ -1300,10 +1311,15 @@ function normalizeOrganisationRow(row, profile = null) {
     website: normalizeText(row?.website),
     addressLine1: normalizeText(row?.address_line_1),
     addressLine2: normalizeText(row?.address_line_2),
+    formattedAddress: normalizeText(row?.formatted_address),
+    suburb: normalizeText(row?.suburb),
     city: normalizeText(row?.city),
     province: normalizeText(row?.province),
     postalCode: normalizeText(row?.postal_code),
     country: normalizeText(row?.country) || fallback.country,
+    latitude: row?.latitude === null || row?.latitude === undefined ? null : Number(row.latitude),
+    longitude: row?.longitude === null || row?.longitude === undefined ? null : Number(row.longitude),
+    googlePlaceId: normalizeText(row?.google_place_id),
     supportEmail: normalizeText(row?.support_email) || fallback.supportEmail,
     supportPhone: normalizeText(row?.support_phone) || fallback.supportPhone,
     primaryContactPerson: normalizeText(row?.primary_contact_person) || fallback.primaryContactPerson,
@@ -3288,12 +3304,18 @@ export async function updateOrganisationSettings(input = {}) {
     company_email: normalizeNullableText(input.companyEmail),
     company_phone: normalizeNullableText(input.companyPhone),
     website: normalizeNullableText(input.website),
+    address: normalizeNullableText(input.addressLine1),
     address_line_1: normalizeNullableText(input.addressLine1),
     address_line_2: normalizeNullableText(input.addressLine2),
+    formatted_address: normalizeNullableText(input.formattedAddress),
+    suburb: normalizeNullableText(input.suburb),
     city: normalizeNullableText(input.city),
     province: normalizeNullableText(input.province),
     postal_code: normalizeNullableText(input.postalCode),
     country: normalizeNullableText(input.country) || 'South Africa',
+    latitude: normalizeOptionalNumber(input.latitude),
+    longitude: normalizeOptionalNumber(input.longitude),
+    google_place_id: normalizeNullableText(input.googlePlaceId || input.placeId),
     support_email: normalizeNullableText(input.supportEmail),
     support_phone: normalizeNullableText(input.supportPhone),
     primary_contact_person: normalizeNullableText(input.primaryContactPerson),
@@ -3313,12 +3335,18 @@ export async function updateOrganisationSettings(input = {}) {
       company_email,
       company_phone,
       website,
+      address,
       address_line_1,
       address_line_2,
+      formatted_address,
+      suburb,
       city,
       province,
       postal_code,
       country,
+      latitude,
+      longitude,
+      google_place_id,
       support_email,
       support_phone,
       primary_contact_person

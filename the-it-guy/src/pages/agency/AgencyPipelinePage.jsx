@@ -2,6 +2,8 @@ import { AlertTriangle, ArrowUpRight, Bath, BedDouble, Bold, Bookmark, CalendarD
 import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../../components/LoadingSkeleton'
+import AddressAutocomplete from '../../components/location/AddressAutocomplete'
+import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import AppointmentDashboardSection from '../../components/appointments/dashboard/AppointmentDashboardSection'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import LegalDocumentWorkspace from '../../components/documents/LegalDocumentWorkspace'
@@ -53,6 +55,7 @@ import {
 } from '../../lib/agencyCrmRepository'
 import { listOrganisationUsers, fetchOrganisationSettings } from '../../lib/settingsApi'
 import { canAccessPrincipalExperience, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { upsertAreaByName, upsertAreaFromAddress } from '../../lib/location/upsertArea'
 import Modal from '../../components/ui/Modal'
 import {
   buildSellerClientPortalLink,
@@ -2092,7 +2095,76 @@ const LEAD_DETAIL_DEFAULTS = {
   areaInterest: '',
   propertyInterest: '',
   sellerPropertyAddress: '',
+  formattedAddress: '',
+  streetAddress: '',
+  suburb: '',
+  city: '',
+  province: '',
+  country: 'South Africa',
+  postalCode: '',
+  latitude: null,
+  longitude: null,
+  googlePlaceId: '',
   notes: '',
+}
+
+function buildLeadAddressValue(lead = {}) {
+  const formattedAddress = normalizeText(
+    lead.formattedAddress ||
+      [lead.sellerPropertyAddress || lead.streetAddress, lead.suburb || lead.areaInterest, lead.city, lead.province].filter(Boolean).join(', '),
+  )
+
+  if (!formattedAddress) return null
+
+  return {
+    formattedAddress,
+    streetAddress: normalizeText(lead.streetAddress || lead.sellerPropertyAddress),
+    suburb: normalizeText(lead.suburb || lead.areaInterest),
+    city: normalizeText(lead.city),
+    province: normalizeText(lead.province),
+    country: normalizeText(lead.country) || 'South Africa',
+    postalCode: normalizeText(lead.postalCode),
+    latitude: typeof lead.latitude === 'number' ? lead.latitude : Number(lead.latitude) || undefined,
+    longitude: typeof lead.longitude === 'number' ? lead.longitude : Number(lead.longitude) || undefined,
+    placeId: normalizeText(lead.googlePlaceId || lead.placeId),
+  }
+}
+
+function mergeLeadAddress(previous = {}, value = null) {
+  if (!value) {
+    return {
+      ...previous,
+      sellerPropertyAddress: '',
+      formattedAddress: '',
+      streetAddress: '',
+      suburb: '',
+      city: '',
+      province: '',
+      country: 'South Africa',
+      postalCode: '',
+      latitude: null,
+      longitude: null,
+      googlePlaceId: '',
+    }
+  }
+
+  const suburb = normalizeText(value.suburb)
+
+  return {
+    ...previous,
+    sellerPropertyAddress: normalizeText(value.streetAddress || value.formattedAddress),
+    formattedAddress: normalizeText(value.formattedAddress),
+    streetAddress: normalizeText(value.streetAddress || value.formattedAddress),
+    suburb,
+    city: normalizeText(value.city),
+    province: normalizeText(value.province),
+    country: normalizeText(value.country) || 'South Africa',
+    postalCode: normalizeText(value.postalCode),
+    latitude: value.latitude ?? null,
+    longitude: value.longitude ?? null,
+    googlePlaceId: normalizeText(value.placeId),
+    areaInterest: normalizeText(previous.areaInterest) || suburb,
+  }
 }
 
 const FINANCE_READINESS_FORM_DEFAULTS = {
@@ -3490,6 +3562,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       areaInterest: normalizeText(selectedLead?.areaInterest),
       propertyInterest: normalizeText(selectedLead?.propertyInterest),
       sellerPropertyAddress: normalizeText(selectedLead?.sellerPropertyAddress),
+      formattedAddress: normalizeText(selectedLead?.formattedAddress),
+      streetAddress: normalizeText(selectedLead?.streetAddress),
+      suburb: normalizeText(selectedLead?.suburb),
+      city: normalizeText(selectedLead?.city),
+      province: normalizeText(selectedLead?.province),
+      country: normalizeText(selectedLead?.country) || 'South Africa',
+      postalCode: normalizeText(selectedLead?.postalCode),
+      latitude: selectedLead?.latitude ?? null,
+      longitude: selectedLead?.longitude ?? null,
+      googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
       notes: normalizeText(selectedLead?.notes),
     })
   }, [selectedLead, selectedLeadContact])
@@ -5766,6 +5848,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         areaInterest: normalizeText(leadDetailForm.areaInterest),
         propertyInterest: normalizeText(leadDetailForm.propertyInterest),
         sellerPropertyAddress: normalizeText(leadDetailForm.sellerPropertyAddress),
+        formattedAddress: normalizeText(leadDetailForm.formattedAddress),
+        streetAddress: normalizeText(leadDetailForm.streetAddress),
+        suburb: normalizeText(leadDetailForm.suburb),
+        city: normalizeText(leadDetailForm.city),
+        province: normalizeText(leadDetailForm.province),
+        country: normalizeText(leadDetailForm.country) || 'South Africa',
+        postalCode: normalizeText(leadDetailForm.postalCode),
+        latitude: leadDetailForm.latitude ?? null,
+        longitude: leadDetailForm.longitude ?? null,
+        googlePlaceId: normalizeText(leadDetailForm.googlePlaceId),
         notes: normalizeText(leadDetailForm.notes),
       }
 
@@ -5813,6 +5905,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...leadPatch,
         contactId: resolvedContactId || selectedLead.contactId,
       })
+      await upsertAreaByName(leadPatch.areaInterest, { incrementListingCount: false })
+      await upsertAreaFromAddress(buildLeadAddressValue(leadPatch), { incrementListingCount: false })
 
       setRecords((previous) => ({
         ...previous,
@@ -6585,9 +6679,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
             estimatedValue: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
             addressLine1: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-            suburb: normalizeText(selectedLead?.areaInterest),
-            city: '',
-            province: '',
+            formattedAddress: normalizeText(selectedLead?.formattedAddress),
+            streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+            suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+            city: normalizeText(selectedLead?.city),
+            province: normalizeText(selectedLead?.province),
+            country: normalizeText(selectedLead?.country) || 'South Africa',
+            postalCode: normalizeText(selectedLead?.postalCode),
+            latitude: selectedLead?.latitude ?? null,
+            longitude: selectedLead?.longitude ?? null,
+            googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
             description: normalizeText(selectedLead?.notes),
             source: 'pipeline_seller_lead',
           }, {
@@ -6616,7 +6717,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           propertyType: normalizeText(selectedLeadPropertyType) || 'House',
           estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
           listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
-          suburb: normalizeText(selectedLead?.areaInterest),
+          suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+          city: normalizeText(selectedLead?.city),
+          province: normalizeText(selectedLead?.province),
+          country: normalizeText(selectedLead?.country) || 'South Africa',
+          propertyData: {
+            formattedAddress: normalizeText(selectedLead?.formattedAddress),
+            streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+            addressLine1: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+            suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+            city: normalizeText(selectedLead?.city),
+            province: normalizeText(selectedLead?.province),
+            country: normalizeText(selectedLead?.country) || 'South Africa',
+            postalCode: normalizeText(selectedLead?.postalCode),
+            latitude: selectedLead?.latitude ?? null,
+            longitude: selectedLead?.longitude ?? null,
+            googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
+          },
           assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
           assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
           leadSource: normalizeText(selectedLead?.leadSource) || 'Other',
@@ -7156,9 +7273,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
         estimatedValue: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
         addressLine1: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
-        suburb: normalizeText(selectedLead?.areaInterest),
-        city: '',
-        province: '',
+        formattedAddress: normalizeText(selectedLead?.formattedAddress),
+        streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+        suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+        city: normalizeText(selectedLead?.city),
+        province: normalizeText(selectedLead?.province),
+        country: normalizeText(selectedLead?.country) || 'South Africa',
+        postalCode: normalizeText(selectedLead?.postalCode),
+        latitude: selectedLead?.latitude ?? null,
+        longitude: selectedLead?.longitude ?? null,
+        googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
         source: 'pipeline_seller_conversion',
       })
       createdListingId = normalizeText(created?.listing?.id)
@@ -7192,7 +7316,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           propertyType: normalizeText(selectedLeadPropertyType) || 'House',
           estimatedPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
           listingTitle: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
-          suburb: normalizeText(selectedLead?.areaInterest),
+          suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+          city: normalizeText(selectedLead?.city),
+          province: normalizeText(selectedLead?.province),
+          country: normalizeText(selectedLead?.country) || 'South Africa',
+          propertyData: {
+            formattedAddress: normalizeText(selectedLead?.formattedAddress),
+            streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+            addressLine1: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+            suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+            city: normalizeText(selectedLead?.city),
+            province: normalizeText(selectedLead?.province),
+            country: normalizeText(selectedLead?.country) || 'South Africa',
+            postalCode: normalizeText(selectedLead?.postalCode),
+            latitude: selectedLead?.latitude ?? null,
+            longitude: selectedLead?.longitude ?? null,
+            googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
+          },
           assignedAgentName: normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName),
           assignedAgentEmail: normalizeText(selectedLead?.assignedAgentEmail || currentAgent.email),
           leadSource: normalizeText(selectedLead?.leadSource || 'Other'),
@@ -7204,6 +7344,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               : SELLER_ONBOARDING_STATUS.NOT_STARTED,
             formData: {
               propertyAddress: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+              formattedAddress: normalizeText(selectedLead?.formattedAddress),
+              streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+              suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+              city: normalizeText(selectedLead?.city),
+              province: normalizeText(selectedLead?.province),
+              country: normalizeText(selectedLead?.country) || 'South Africa',
+              postalCode: normalizeText(selectedLead?.postalCode),
+              latitude: selectedLead?.latitude ?? null,
+              longitude: selectedLead?.longitude ?? null,
+              googlePlaceId: normalizeText(selectedLead?.googlePlaceId),
               propertyType: normalizeText(selectedLeadPropertyType),
               askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
             },
@@ -11385,11 +11535,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </option>
                           ))}
                         </Field>
-                        <Field placeholder="Area of interest" value={leadDetailForm.areaInterest} onChange={(event) => updateLeadDetailField('areaInterest', event.target.value)} />
+                        <AreaAutocomplete
+                          label="Area of interest"
+                          value={leadDetailForm.areaInterest}
+                          onChange={(nextArea) => updateLeadDetailField('areaInterest', nextArea)}
+                          placeholder="Bedfordview, Garsfontein, Sandton..."
+                          description="Uses Arch9 saved areas for cleaner buyer matching. New areas can still be typed manually."
+                        />
                         <Field placeholder="Budget" value={leadDetailForm.budget} onChange={(event) => updateLeadDetailField('budget', event.target.value)} />
                         <Field placeholder="Estimated value" value={leadDetailForm.estimatedValue} onChange={(event) => updateLeadDetailField('estimatedValue', event.target.value)} />
                         <Field placeholder="Property type / interest" value={leadDetailForm.propertyInterest} onChange={(event) => updateLeadDetailField('propertyInterest', event.target.value)} />
-                        <Field placeholder="Seller property address" value={leadDetailForm.sellerPropertyAddress} onChange={(event) => updateLeadDetailField('sellerPropertyAddress', event.target.value)} />
+                        <div className="md:col-span-2">
+                          <AddressAutocomplete
+                            label="Seller property address"
+                            value={buildLeadAddressValue(leadDetailForm)}
+                            onChange={(nextAddress) => setLeadDetailForm((previous) => mergeLeadAddress(previous, nextAddress))}
+                            placeholder="12 Main Road Bedfordview"
+                            description="Used for seller lead conversion, listing creation, and future location matching."
+                          />
+                        </div>
+                        <Field placeholder="Suburb" value={leadDetailForm.suburb} onChange={(event) => updateLeadDetailField('suburb', event.target.value)} />
+                        <Field placeholder="City" value={leadDetailForm.city} onChange={(event) => updateLeadDetailField('city', event.target.value)} />
+                        <Field placeholder="Province" value={leadDetailForm.province} onChange={(event) => updateLeadDetailField('province', event.target.value)} />
+                        <Field placeholder="Postal code" value={leadDetailForm.postalCode} onChange={(event) => updateLeadDetailField('postalCode', event.target.value)} />
                       </div>
                       <div className="mt-3">
                         <Field

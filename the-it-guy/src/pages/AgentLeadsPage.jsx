@@ -33,6 +33,7 @@ import { createElement, useCallback, useEffect, useMemo, useRef, useState } from
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
+import AreaMultiSelect from '../components/location/AreaMultiSelect'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
@@ -88,6 +89,7 @@ import {
   formatPropertyAddress,
   normalizePropertyAddress,
 } from '../lib/sellerPropertyAddress'
+import { upsertAreaByName } from '../lib/location/upsertArea'
 import { listOrganisationCommissionStructures } from '../lib/settingsApi'
 import {
   activateLeadRequirement,
@@ -495,6 +497,20 @@ function draftToRequirementPayload(draft = {}, lead = {}, organisationId = '', a
     isPrimary: draft.isPrimary,
     createdBy: actor?.id,
   }
+}
+
+async function upsertLeadRequirementAreas(payload = {}) {
+  const areas = parseListInput(payload.areas)
+  if (!areas.length) return
+  await Promise.all(
+    areas.map((area) =>
+      upsertAreaByName(area, {
+        city: payload.city,
+        province: payload.province,
+        incrementListingCount: false,
+      }),
+    ),
+  )
 }
 
 function makeSavedSearchDraft(savedSearch = null, requirement = null) {
@@ -3356,6 +3372,7 @@ function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, fo
       } else {
         savedRequirement = await createLeadRequirement(payload, { actor })
       }
+      await upsertLeadRequirementAreas(payload)
       setOptimisticRequirement(savedRequirement)
       setEditing(false)
       Promise.resolve(onSaved?.()).catch((refreshError) => console.warn('[BuyerProfileCard] background refresh skipped', refreshError))
@@ -3438,10 +3455,12 @@ function BuyerProfileCard({ row, requirement, organisationId, actor, onSaved, fo
               </select>
             </label>
           </div>
-          <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
-            Areas
-            <input value={draft.areas} onChange={(event) => updateDraftField('areas', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900" placeholder="Olympus, Faerie Glen" />
-          </label>
+          <AreaMultiSelect
+            value={draft.areas}
+            onChange={(areas) => updateDraftField('areas', areas.join(', '))}
+            placeholder="Olympus, Faerie Glen"
+            description="Select saved Arch9 areas or add a new preference."
+          />
           <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
             Property type
             <select value={selectedPropertyType} onChange={(event) => updateDraftField('propertyTypes', event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-slate-900">
@@ -4222,6 +4241,7 @@ function RequirementForm({ organisationId, lead, actor, requirement = null, onCa
       } else {
         await createLeadRequirement(payload, { actor })
       }
+      await upsertLeadRequirementAreas(payload)
       await onSaved()
       onCancel()
     } catch (saveError) {
@@ -4243,7 +4263,13 @@ function RequirementForm({ organisationId, lead, actor, requirement = null, onCa
       </div>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <input value={draft.areas} onChange={(event) => updateField('areas', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Areas" />
+        <AreaMultiSelect
+          value={draft.areas}
+          onChange={(areas) => updateField('areas', areas.join(', '))}
+          placeholder="Areas"
+          description="Select saved Arch9 areas or add a new preference."
+          className="xl:col-span-2"
+        />
         <input value={draft.suburbs} onChange={(event) => updateField('suburbs', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Suburbs" />
         <input value={draft.city} onChange={(event) => updateField('city', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="City" />
         <input value={draft.province} onChange={(event) => updateField('province', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" placeholder="Province" />
