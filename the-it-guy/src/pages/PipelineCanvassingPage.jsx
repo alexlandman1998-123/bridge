@@ -1179,7 +1179,7 @@ function PipelineCanvassingPage() {
       resolvedEnquiryListingId: normalizeText(prospect?.enquiryListingId || prospect?.linkedListingId || prospect?.listingId),
       resolvedSellingIntent: normalizeText(prospect?.sellingIntent),
       resolvedLastContactOutcome: normalizeText(prospect?.lastContactOutcome),
-      resolvedNextStep: nextStep || 'Follow up with prospect',
+      resolvedNextStep: nextStep,
       resolvedNextStepDueDate: nextStepDueDate,
       assignedLabel: assignedProfile?.name || 'Unassigned',
     }
@@ -2185,14 +2185,19 @@ function PipelineCanvassingPage() {
                     : ''
                   const interestLine = normalizeText(prospect?.resolvedPropertyInterest) || 'No property interest'
                   const stage = prospectView === 'buyer' ? (prospect?.resolvedBuyerStatus || 'New') : (normalizeText(prospect?.status) || 'New')
-                  const nextStepLabel = prospectView === 'buyer'
-                    ? [prospect.resolvedFinanceStatus, prospect.resolvedTimeframe].filter(Boolean).join(' • ') || 'Readiness not captured'
-                    : (prospect?.resolvedNextStep || 'Follow up with prospect')
-                  const nextStepDueLabel = prospect?.resolvedNextStepDueDate
-                    ? `Due: ${formatShortDate(prospect.resolvedNextStepDueDate)}`
-                    : prospectView === 'buyer'
-                      ? (prospect.resolvedSubjectToSale ? `Subject to sale: ${prospect.resolvedSubjectToSale}` : 'Subject to sale unknown')
-                      : 'Due date not set'
+                  const stageMetaLine = prospectView === 'buyer'
+                    ? [prospect.resolvedFinanceStatus, prospect.resolvedTimeframe].filter(Boolean).join(' • ')
+                    : ''
+                  const subjectToSaleLabel = normalizeText(prospect.resolvedSubjectToSale)
+                  const stageSupportLine = prospectView === 'buyer' && subjectToSaleLabel && subjectToSaleLabel !== 'Unknown'
+                    ? `Subject to sale: ${subjectToSaleLabel}`
+                    : ''
+                  const sellerContextLine = prospectView === 'seller'
+                    ? [
+                        prospect.resolvedSellingIntent,
+                        prospect.resolvedLastContactOutcome ? `Outcome: ${prospect.resolvedLastContactOutcome}` : '',
+                      ].filter(Boolean).join(' • ')
+                    : ''
                   const estimatedValueLabel = prospectView === 'buyer'
                     ? (prospect.resolvedBudgetRange || 'Budget pending')
                     : prospect.resolvedEstimatedPropertyValue || formatOptionalCurrency(
@@ -2203,18 +2208,17 @@ function PipelineCanvassingPage() {
                   return (
                     <tr
                       key={prospect.id}
-                      className="h-[104px] cursor-pointer text-slate-700 transition hover:bg-slate-50"
+                      className="h-[88px] cursor-pointer text-slate-700 transition hover:bg-slate-50"
                       onClick={() => handleOpenProspectDetail(prospect)}
                     >
                       <td className="px-3 py-3 align-top">
                         <div className="flex min-w-0 items-start gap-3">
-                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
+                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
                             {getProspectInitials(prospect)}
                           </div>
                           <div className="min-w-0">
                             <p className="truncate text-[0.95rem] font-semibold text-slate-900">{displayName}</p>
                             <p className="mt-0.5 truncate text-xs text-slate-500">{prospectTypeLabel}</p>
-                            <p className="mt-0.5 truncate text-xs text-slate-500">{addressLine}</p>
                           </div>
                         </div>
                       </td>
@@ -2233,19 +2237,14 @@ function PipelineCanvassingPage() {
                         {prospectView === 'buyer' && prospect.resolvedBedrooms ? (
                           <p className="mt-0.5 text-xs text-slate-500">Bedrooms: {prospect.resolvedBedrooms}</p>
                         ) : null}
-                        {prospectView === 'seller' && prospect.resolvedSellingIntent ? (
-                          <p className="mt-0.5 text-xs font-semibold text-slate-600">{prospect.resolvedSellingIntent}</p>
-                        ) : null}
-                        {prospectView === 'seller' && prospect.resolvedLastContactOutcome ? (
-                          <p className="mt-0.5 text-xs text-slate-500">Outcome: {prospect.resolvedLastContactOutcome}</p>
-                        ) : null}
+                        {sellerContextLine ? <p className="mt-0.5 truncate text-xs text-slate-500">{sellerContextLine}</p> : null}
                       </td>
                       <td className="px-3 py-3 align-top">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusPillClass(stage)}`}>
                           {stage}
                         </span>
-                        <p className="mt-2 line-clamp-1 font-medium text-slate-700">{nextStepLabel}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">{nextStepDueLabel}</p>
+                        {stageMetaLine ? <p className="mt-2 line-clamp-1 font-medium text-slate-700">{stageMetaLine}</p> : null}
+                        {stageSupportLine ? <p className="mt-0.5 text-xs text-slate-500">{stageSupportLine}</p> : null}
                       </td>
                       <td className="px-3 py-3 align-top">
                         <ProspectOwnerCell agent={prospect.assignedProfile} />
@@ -2297,14 +2296,19 @@ function PipelineCanvassingPage() {
                 : ''
               const interestLine = normalizeText(prospect?.resolvedPropertyInterest) || 'No property interest'
               const stage = prospectView === 'buyer' ? (prospect?.resolvedBuyerStatus || 'New') : (normalizeText(prospect?.status) || 'New')
-              const nextStepLabel = prospectView === 'buyer'
-                ? [prospect.resolvedFinanceStatus, prospect.resolvedTimeframe].filter(Boolean).join(' • ') || 'Readiness not captured'
-                : (prospect?.resolvedNextStep || 'Follow up with prospect')
-              const nextStepDueLabel = prospect?.resolvedNextStepDueDate
-                ? `Due: ${formatShortDate(prospect.resolvedNextStepDueDate)}`
-                : prospectView === 'buyer'
-                  ? (prospect.resolvedSubjectToSale ? `Subject to sale: ${prospect.resolvedSubjectToSale}` : 'Subject to sale unknown')
-                  : 'Due date not set'
+              const stageMetaLine = prospectView === 'buyer'
+                ? [prospect.resolvedFinanceStatus, prospect.resolvedTimeframe].filter(Boolean).join(' • ')
+                : ''
+              const subjectToSaleLabel = normalizeText(prospect.resolvedSubjectToSale)
+              const stageSupportLine = prospectView === 'buyer' && subjectToSaleLabel && subjectToSaleLabel !== 'Unknown'
+                ? `Subject to sale: ${subjectToSaleLabel}`
+                : ''
+              const sellerContextLine = prospectView === 'seller'
+                ? [
+                    prospect.resolvedSellingIntent,
+                    prospect.resolvedLastContactOutcome ? `Outcome: ${prospect.resolvedLastContactOutcome}` : '',
+                  ].filter(Boolean).join(' • ')
+                : ''
               const estimatedValueLabel = prospectView === 'buyer'
                 ? (prospect.resolvedBudgetRange || 'Budget pending')
                 : prospect.resolvedEstimatedPropertyValue || formatOptionalCurrency(prospect.resolvedEstimatedValue)
@@ -2320,19 +2324,14 @@ function PipelineCanvassingPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
                       <p className="mt-1 text-xs text-slate-500">{prospectTypeLabel}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">{addressLine}</p>
+                      {prospectView === 'buyer' ? <p className="mt-0.5 text-xs text-slate-500">{addressLine}</p> : null}
                       {addressLine2 ? <p className="text-xs text-slate-500">{addressLine2}</p> : null}
                       {prospectView === 'buyer' ? <p className="text-xs text-slate-500">{interestLine}</p> : null}
                       <p className="mt-1 text-sm font-semibold text-slate-900">{estimatedValueLabel}</p>
                       {prospectView === 'buyer' && prospect.resolvedBedrooms ? (
                         <p className="text-xs text-slate-500">Bedrooms: {prospect.resolvedBedrooms}</p>
                       ) : null}
-                      {prospectView === 'seller' && prospect.resolvedSellingIntent ? (
-                        <p className="text-xs font-semibold text-slate-600">{prospect.resolvedSellingIntent}</p>
-                      ) : null}
-                      {prospectView === 'seller' && prospect.resolvedLastContactOutcome ? (
-                        <p className="text-xs text-slate-500">Outcome: {prospect.resolvedLastContactOutcome}</p>
-                      ) : null}
+                      {sellerContextLine ? <p className="text-xs text-slate-500">{sellerContextLine}</p> : null}
                     </div>
                     <div className="relative shrink-0" onClick={(event) => event.stopPropagation()}>
                       <button
@@ -2352,8 +2351,8 @@ function PipelineCanvassingPage() {
                   <div className="mt-3 grid gap-2 text-xs text-slate-500">
                     <CanvassingSourcePill source={prospect?.resolvedSource || prospect?.source || prospect?.canvassingMethod} />
                     <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusPillClass(stage)}`}>{stage}</span>
-                    <p>{nextStepLabel}</p>
-                    <p>{nextStepDueLabel}</p>
+                    {stageMetaLine ? <p>{stageMetaLine}</p> : null}
+                    {stageSupportLine ? <p>{stageSupportLine}</p> : null}
                     <p>
                       <span className="font-semibold text-slate-700">Assigned: </span>
                       <ProspectOwnerCell agent={prospect.assignedProfile} />
