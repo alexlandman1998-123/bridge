@@ -20,6 +20,7 @@ export type AddressAutocompleteValue = {
 export type AddressAutocompleteProps = {
   value?: AddressAutocompleteValue | null
   onChange: (value: AddressAutocompleteValue | null) => void
+  onInputValueChange?: (value: string) => void
   placeholder?: string
   label?: string
   description?: string
@@ -72,6 +73,7 @@ function mapPlaceToAddress(place: any): AddressAutocompleteValue {
 export default function AddressAutocomplete({
   value = null,
   onChange,
+  onInputValueChange,
   placeholder = 'Start typing an address...',
   label,
   description,
@@ -243,6 +245,7 @@ export default function AddressAutocomplete({
             const nextValue = event.target.value
             setInputValue(nextValue)
             setLoadError('')
+            onInputValueChange?.(nextValue)
             if (!nextValue.trim()) onChange(null)
           }}
           onFocus={() => {
@@ -252,6 +255,9 @@ export default function AddressAutocomplete({
           placeholder={placeholder}
           disabled={isDisabled}
           required={required}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           role="combobox"
           aria-autocomplete="list"
           aria-expanded={isOpen}

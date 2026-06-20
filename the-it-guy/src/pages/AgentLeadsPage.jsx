@@ -33,6 +33,7 @@ import { createElement, useCallback, useEffect, useMemo, useRef, useState } from
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import LoadingSkeleton from '../components/LoadingSkeleton'
+import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import AreaMultiSelect from '../components/location/AreaMultiSelect'
 import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -89,7 +90,7 @@ import {
   formatPropertyAddress,
   normalizePropertyAddress,
 } from '../lib/sellerPropertyAddress'
-import { upsertAreaByName } from '../lib/location/upsertArea'
+import { upsertAreaByName, upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { listOrganisationCommissionStructures } from '../lib/settingsApi'
 import {
   activateLeadRequirement,
@@ -251,6 +252,16 @@ const EMPTY_LEAD_CREATE_FORM = {
   areaInterest: '',
   propertyInterest: '',
   sellerPropertyAddress: '',
+  formattedAddress: '',
+  streetAddress: '',
+  suburb: '',
+  city: '',
+  province: '',
+  country: 'South Africa',
+  postalCode: '',
+  latitude: null,
+  longitude: null,
+  googlePlaceId: '',
   estimatedValue: '',
   assignedAgent: '',
   notes: '',
@@ -511,6 +522,57 @@ async function upsertLeadRequirementAreas(payload = {}) {
       }),
     ),
   )
+}
+
+function buildCreateLeadAddressValue(form = {}) {
+  const formattedAddress = normalizeText(form.formattedAddress || form.sellerPropertyAddress)
+  if (!formattedAddress) return null
+  return {
+    formattedAddress,
+    streetAddress: normalizeText(form.streetAddress || form.sellerPropertyAddress),
+    suburb: normalizeText(form.suburb),
+    city: normalizeText(form.city),
+    province: normalizeText(form.province),
+    country: normalizeText(form.country) || 'South Africa',
+    postalCode: normalizeText(form.postalCode),
+    latitude: form.latitude === null || form.latitude === undefined || form.latitude === '' ? undefined : Number(form.latitude),
+    longitude: form.longitude === null || form.longitude === undefined || form.longitude === '' ? undefined : Number(form.longitude),
+    placeId: normalizeText(form.googlePlaceId),
+  }
+}
+
+function mergeCreateLeadAddress(previous = {}, value = null) {
+  if (!value) {
+    return {
+      ...previous,
+      sellerPropertyAddress: '',
+      formattedAddress: '',
+      streetAddress: '',
+      suburb: '',
+      city: '',
+      province: '',
+      country: 'South Africa',
+      postalCode: '',
+      latitude: null,
+      longitude: null,
+      googlePlaceId: '',
+    }
+  }
+
+  return {
+    ...previous,
+    sellerPropertyAddress: normalizeText(value.streetAddress || value.formattedAddress),
+    formattedAddress: normalizeText(value.formattedAddress),
+    streetAddress: normalizeText(value.streetAddress),
+    suburb: normalizeText(value.suburb),
+    city: normalizeText(value.city),
+    province: normalizeText(value.province),
+    country: normalizeText(value.country) || 'South Africa',
+    postalCode: normalizeText(value.postalCode),
+    latitude: typeof value.latitude === 'number' ? value.latitude : null,
+    longitude: typeof value.longitude === 'number' ? value.longitude : null,
+    googlePlaceId: normalizeText(value.placeId),
+  }
 }
 
 function makeSavedSearchDraft(savedSearch = null, requirement = null) {
@@ -4197,10 +4259,20 @@ function LeadCreateModal({ open, category = 'buyer', form, setForm, saving, erro
           ) : null}
           {isSeller ? (
             <>
-              <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
-                Seller property address
-                <input value={form.sellerPropertyAddress} onChange={(event) => update('sellerPropertyAddress', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="116 Ridge Road" />
-              </label>
+              <div className="grid gap-1.5 text-sm font-semibold text-slate-600">
+                <AddressAutocomplete
+                  label="Seller property address"
+                  value={buildCreateLeadAddressValue(form)}
+                  onChange={(nextAddress) => setForm((previous) => mergeCreateLeadAddress(previous, nextAddress))}
+                  onInputValueChange={(nextValue) => setForm((previous) => ({
+                    ...previous,
+                    sellerPropertyAddress: nextValue,
+                    formattedAddress: nextValue,
+                  }))}
+                  placeholder="116 Ridge Road"
+                  description="Start typing and select the real property address."
+                />
+              </div>
               <label className="grid gap-1.5 text-sm font-semibold text-slate-600">
                 Estimated value
                 <input value={form.estimatedValue} onChange={(event) => update('estimatedValue', event.target.value)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-300" placeholder="3200000" />
@@ -5762,12 +5834,25 @@ function AgentLeadList() {
             areaInterest: category === 'buyer' ? normalizeText(createForm.areaInterest) : '',
             propertyInterest: category === 'buyer' ? normalizeText(createForm.propertyInterest) : '',
             sellerPropertyAddress: category === 'seller' ? normalizeText(createForm.sellerPropertyAddress) : '',
+            formattedAddress: category === 'seller' ? normalizeText(createForm.formattedAddress || createForm.sellerPropertyAddress) : '',
+            streetAddress: category === 'seller' ? normalizeText(createForm.streetAddress || createForm.sellerPropertyAddress) : '',
+            suburb: category === 'seller' ? normalizeText(createForm.suburb) : '',
+            city: category === 'seller' ? normalizeText(createForm.city) : '',
+            province: category === 'seller' ? normalizeText(createForm.province) : '',
+            country: category === 'seller' ? normalizeText(createForm.country) || 'South Africa' : 'South Africa',
+            postalCode: category === 'seller' ? normalizeText(createForm.postalCode) : '',
+            latitude: category === 'seller' ? createForm.latitude ?? null : null,
+            longitude: category === 'seller' ? createForm.longitude ?? null : null,
+            googlePlaceId: category === 'seller' ? normalizeText(createForm.googlePlaceId) : '',
             estimatedValue: category === 'seller' ? Number(createForm.estimatedValue || 0) || 0 : 0,
             notes: normalizeText(createForm.notes),
           },
         },
         { actor },
       )
+      if (category === 'seller') {
+        await upsertAreaFromAddress(buildCreateLeadAddressValue(createForm), { incrementListingCount: false })
+      }
       await loadRows()
       setCreateCategory('')
       setCreateError('')
