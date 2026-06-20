@@ -2520,22 +2520,19 @@ function PipelineCanvassingPage() {
               <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Enquiry Context</p>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
-                    Assigned agent
-                    <Field
-                      as="select"
-                      className="h-12 rounded-[16px]"
-                      value={prospectForm.assignedAgentId}
-                      onChange={(event) => setProspectForm((previous) => ({ ...previous, assignedAgentId: event.target.value }))}
-                      required
-                    >
-                      {agentOptions.map((agent) => (
-                        <option key={agent.id || agent.email} value={agent.id || agent.email}>
-                          {agent.name}{agent.email ? ` (${agent.email})` : ''}
-                        </option>
-                      ))}
-                    </Field>
-                  </label>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.assignedAgentId}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, assignedAgentId: event.target.value }))}
+                    required
+                  >
+                    {agentOptions.map((agent) => (
+                      <option key={agent.id || agent.email} value={agent.id || agent.email}>
+                        {agent.name}{agent.email ? ` (${agent.email})` : ''}
+                      </option>
+                    ))}
+                  </Field>
                   <Field
                     as="select"
                     className="h-12 rounded-[16px]"
@@ -2776,22 +2773,19 @@ function PipelineCanvassingPage() {
               <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Prospecting Context</p>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
-                    Assigned agent
-                    <Field
-                      as="select"
-                      className="h-12 rounded-[16px]"
-                      value={prospectForm.assignedAgentId}
-                      onChange={(event) => setProspectForm((previous) => ({ ...previous, assignedAgentId: event.target.value }))}
-                      required
-                    >
-                      {agentOptions.map((agent) => (
-                        <option key={agent.id || agent.email} value={agent.id || agent.email}>
-                          {agent.name}{agent.email ? ` (${agent.email})` : ''}
-                        </option>
-                      ))}
-                    </Field>
-                  </label>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.assignedAgentId}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, assignedAgentId: event.target.value }))}
+                    required
+                  >
+                    {agentOptions.map((agent) => (
+                      <option key={agent.id || agent.email} value={agent.id || agent.email}>
+                        {agent.name}{agent.email ? ` (${agent.email})` : ''}
+                      </option>
+                    ))}
+                  </Field>
                   <Field
                     as="select"
                     className="h-12 rounded-[16px]"

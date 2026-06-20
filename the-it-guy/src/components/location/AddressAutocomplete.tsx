@@ -162,13 +162,24 @@ export default function AddressAutocomplete({
   const placesLibraryRef = useRef<any>(null)
   const sessionTokenRef = useRef<any>(null)
   const requestIdRef = useRef(0)
+  const lastTypedValueRef = useRef('')
+  const suppressNextSearchRef = useRef(Boolean(value?.formattedAddress))
 
   const isApiKeyAvailable = hasGoogleMapsApiKey()
   const canSearchGoogle = !disabled && isApiKeyAvailable && !loadError
   const isDisabled = disabled
 
   useEffect(() => {
-    setInputValue(value?.formattedAddress || '')
+    const nextValue = value?.formattedAddress || ''
+    setInputValue(nextValue)
+    if (nextValue !== lastTypedValueRef.current) {
+      requestIdRef.current += 1
+      suppressNextSearchRef.current = true
+      setPredictions([])
+      setIsOpen(false)
+      setIsFetching(false)
+      setActiveIndex(-1)
+    }
   }, [value?.formattedAddress])
 
   useEffect(() => {
@@ -217,6 +228,15 @@ export default function AddressAutocomplete({
   }, [disabled, isApiKeyAvailable])
 
   useEffect(() => {
+    if (suppressNextSearchRef.current) {
+      suppressNextSearchRef.current = false
+      setPredictions([])
+      setIsFetching(false)
+      setIsOpen(false)
+      setActiveIndex(-1)
+      return
+    }
+
     if (!googleApi || !canSearchGoogle || inputValue.trim().length < 3) {
       setPredictions([])
       setIsFetching(false)
@@ -324,9 +344,13 @@ export default function AddressAutocomplete({
   }, [description, error, isApiKeyAvailable, loadError])
 
   function handleClear() {
+    requestIdRef.current += 1
+    lastTypedValueRef.current = ''
+    suppressNextSearchRef.current = true
     setInputValue('')
     setPredictions([])
     setIsOpen(false)
+    setIsFetching(false)
     sessionTokenRef.current = null
     onChange(null)
   }
@@ -347,6 +371,9 @@ export default function AddressAutocomplete({
             setLoadError('Selected address details could not be loaded.')
             return
           }
+          requestIdRef.current += 1
+          lastTypedValueRef.current = ''
+          suppressNextSearchRef.current = true
           setInputValue(mapped.formattedAddress)
           setPredictions([])
           setIsOpen(false)
@@ -391,6 +418,9 @@ export default function AddressAutocomplete({
           return
         }
         const mapped = mapPlaceToAddress(place)
+        requestIdRef.current += 1
+        lastTypedValueRef.current = ''
+        suppressNextSearchRef.current = true
         setInputValue(mapped.formattedAddress)
         setPredictions([])
         setIsOpen(false)
@@ -431,10 +461,18 @@ export default function AddressAutocomplete({
           value={inputValue}
           onChange={(event) => {
             const nextValue = event.target.value
+            lastTypedValueRef.current = nextValue
+            suppressNextSearchRef.current = false
             setInputValue(nextValue)
             setLoadError('')
             onInputValueChange?.(nextValue)
-            if (!nextValue.trim()) onChange(null)
+            if (!nextValue.trim()) {
+              requestIdRef.current += 1
+              setPredictions([])
+              setIsOpen(false)
+              setIsFetching(false)
+              onChange(null)
+            }
           }}
           onFocus={() => {
             if (predictions.length || inputValue.trim().length >= 3) setIsOpen(true)
