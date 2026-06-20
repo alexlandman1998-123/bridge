@@ -21,6 +21,7 @@ import { useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
+import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { createAgencyCrmLeadActivity, createAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { leadCategoryLabel, normalizeLeadCategory } from '../lib/leadCategory'
@@ -62,15 +63,100 @@ const PROSPECT_TYPES = [
 const CANVASSING_METHODS = [
   'Cold Call',
   'Door Knock',
-  'Area Farming',
+  'Referral',
+  'Social Media',
+  'Website',
+  'Walk In',
+  'Previous Client',
   'Expired Listing',
-  'Database Reactivation',
-  'WhatsApp Outreach',
-  'Email Outreach',
-  'Referral Follow-Up',
-  'Valuation Campaign',
+  'Area Farming',
   'Other',
 ]
+
+const BUYER_SOURCE_OPTIONS = [
+  'Website',
+  'Property24',
+  'Private Property',
+  'WhatsApp',
+  'Referral',
+  'Walk In',
+  'Social Media',
+  'Cold Call',
+  'Other',
+]
+
+const BUYER_STATUS_OPTIONS = [
+  'New',
+  'Contacted',
+  'Qualified',
+  'Viewing Scheduled',
+  'Offer Potential',
+  'Not Ready',
+  'Lost',
+]
+
+const BUYER_PROPERTY_TYPE_OPTIONS = [
+  'House',
+  'Apartment',
+  'Townhouse',
+  'Estate',
+  'Vacant Land',
+  'Commercial',
+  'Other',
+]
+
+const BUYER_BEDROOM_OPTIONS = ['Studio', '1', '2', '3', '4', '5+']
+
+const FINANCE_STATUS_OPTIONS = [
+  'Unknown',
+  'Cash Buyer',
+  'Needs Bond',
+  'Pre-Approved',
+  'Bond Application Started',
+]
+
+const BUYER_TIMEFRAME_OPTIONS = [
+  'Immediately',
+  '0-3 Months',
+  '3-6 Months',
+  '6+ Months',
+  'Just Browsing',
+]
+
+const SUBJECT_TO_SALE_OPTIONS = ['Unknown', 'Yes', 'No']
+
+const SELLING_INTENT_OPTIONS = [
+  'Just Gathering Information',
+  'Considering Selling',
+  'Planning To Sell (0-6 Months)',
+  'Actively Looking For Agent',
+  'Ready For Valuation',
+  'Mandate Opportunity',
+]
+
+const LAST_CONTACT_OUTCOME_OPTIONS = [
+  'No Answer',
+  'Voicemail',
+  'Spoke To Owner',
+  'Call Back Later',
+  'Not Interested',
+  'Interested',
+  'Valuation Requested',
+  'Appointment Scheduled',
+]
+
+const PROPERTY_OCCUPANCY_OPTIONS = ['Owner Occupied', 'Tenant Occupied', 'Vacant', 'Unknown']
+
+const ESTIMATED_PROPERTY_VALUE_OPTIONS = [
+  'Under R1m',
+  'R1m - R2m',
+  'R2m - R3m',
+  'R3m - R5m',
+  'R5m - R10m',
+  'R10m+',
+]
+
+const AREA_AUTOCOMPLETE_TYPES = ['(regions)']
 
 const PROSPECT_PROPERTY_TYPES = [
   'House',
@@ -114,14 +200,20 @@ const CANVASSING_SOURCE_PILL_STYLES = {
   privateProperty: { tone: 'green', label: 'Private Property' },
   website: { tone: 'violet', label: 'Website' },
   whatsapp: { tone: 'emerald', label: 'WhatsApp' },
-  call: { tone: 'red', label: 'Call' },
+  coldCall: { tone: 'red', label: 'Cold Call' },
+  doorKnock: { tone: 'amber', label: 'Door Knock' },
   referral: { tone: 'amber', label: 'Referral' },
+  socialMedia: { tone: 'violet', label: 'Social Media' },
   walkIn: { tone: 'slate', label: 'Walk-in' },
+  previousClient: { tone: 'green', label: 'Previous Client' },
+  expiredListing: { tone: 'blue', label: 'Expired Listing' },
+  areaFarming: { tone: 'emerald', label: 'Area Farming' },
+  other: { tone: 'slate', label: 'Other' },
   unknown: { tone: 'slate', label: 'Unknown' },
 }
 
 const CANVASSING_SOURCE_PILL_FALLBACK = CANVASSING_SOURCE_PILL_STYLES.unknown
-const CANVASSING_SOURCE_PILL_ORDER = ['property24', 'privateProperty', 'whatsapp', 'call', 'website', 'referral', 'walkIn', 'unknown']
+const CANVASSING_SOURCE_PILL_ORDER = ['coldCall', 'doorKnock', 'referral', 'socialMedia', 'website', 'walkIn', 'previousClient', 'expiredListing', 'areaFarming', 'other', 'property24', 'privateProperty', 'whatsapp', 'unknown']
 const CANVASSING_PROSPECT_VIEW_STORAGE_KEY = 'itg:canvassing:prospectView'
 
 const CANVASSING_SOURCE_TONE_STYLES = {
@@ -165,10 +257,17 @@ function resolveCanvassingSourceText(value = '') {
   if (normalized.includes('private') && normalized.includes('property')) return 'Private Property'
   if (normalized.includes('whatsapp')) return 'WhatsApp'
   if (normalized.includes('email') || normalized.includes('website')) return normalized.includes('website') ? 'Website' : 'Email'
-  if (normalized.includes('call') || normalized.includes('phone') || normalized.includes('cold call')) return 'Call'
+  if (normalized.includes('cold call')) return 'Cold Call'
+  if (normalized.includes('door knock')) return 'Door Knock'
+  if (normalized.includes('social')) return 'Social Media'
+  if (normalized.includes('previous client')) return 'Previous Client'
+  if (normalized.includes('expired listing')) return 'Expired Listing'
+  if (normalized.includes('area farming')) return 'Area Farming'
+  if (normalized.includes('call') || normalized.includes('phone')) return 'Cold Call'
   if (normalized.includes('referral')) return 'Referral'
   if (normalized.includes('walk in') || normalized.includes('walk-in')) return 'Walk-in'
   if (normalized.includes('facebook') || normalized.includes('google') || normalized.includes('signboard')) return 'Referral'
+  if (normalized.includes('other')) return 'Other'
   return fallback
 }
 
@@ -177,10 +276,16 @@ function normalizeCanvassingSourceKey(value = '') {
   if (source.includes('property24')) return 'property24'
   if (source.includes('private property')) return 'privateProperty'
   if (source.includes('whatsapp')) return 'whatsapp'
-  if (source.includes('call')) return 'call'
+  if (source.includes('cold call')) return 'coldCall'
+  if (source.includes('door knock')) return 'doorKnock'
+  if (source.includes('social media')) return 'socialMedia'
+  if (source.includes('previous client')) return 'previousClient'
+  if (source.includes('expired listing')) return 'expiredListing'
+  if (source.includes('area farming')) return 'areaFarming'
   if (source.includes('website')) return 'website'
   if (source.includes('referral')) return 'referral'
   if (source.includes('walk-in')) return 'walkIn'
+  if (source.includes('other')) return 'other'
   if (source.includes('email')) return 'unknown'
   return 'unknown'
 }
@@ -401,6 +506,80 @@ function appendLinkedListingNote(notes = '', listing = null) {
   ].join(' | ')
 }
 
+function buildCanvassingAddressValue(form = {}) {
+  const formattedAddress = normalizeText(form.formattedAddress || form.streetAddress)
+  if (!formattedAddress) return null
+  return {
+    formattedAddress,
+    streetAddress: normalizeText(form.streetAddress || formattedAddress),
+    suburb: normalizeText(form.areaSuburb || form.area),
+    city: normalizeText(form.city),
+    province: normalizeText(form.province),
+    country: normalizeText(form.country),
+    postalCode: normalizeText(form.postalCode),
+    latitude: form.latitude,
+    longitude: form.longitude,
+    placeId: normalizeText(form.googlePlaceId),
+  }
+}
+
+function buildCanvassingAreaValue(form = {}) {
+  const area = normalizeText(form.areaSuburb || form.area)
+  if (!area) return null
+  return {
+    formattedAddress: area,
+    suburb: area,
+    city: normalizeText(form.city),
+    province: normalizeText(form.province),
+    country: normalizeText(form.country),
+    placeId: normalizeText(form.areaSuburbPlaceId),
+  }
+}
+
+function mergeAddressIntoProspectDraft(previous = {}, value = null) {
+  if (!value) {
+    return {
+      ...previous,
+      streetAddress: '',
+      formattedAddress: '',
+      city: '',
+      province: '',
+      country: '',
+      postalCode: '',
+      latitude: null,
+      longitude: null,
+      googlePlaceId: '',
+    }
+  }
+  return {
+    ...previous,
+    streetAddress: normalizeText(value.streetAddress || value.formattedAddress),
+    formattedAddress: normalizeText(value.formattedAddress),
+    area: normalizeText(previous.area || value.suburb || value.city),
+    areaSuburb: normalizeText(previous.areaSuburb || value.suburb || value.city),
+    city: normalizeText(value.city),
+    province: normalizeText(value.province),
+    country: normalizeText(value.country),
+    postalCode: normalizeText(value.postalCode),
+    latitude: value.latitude ?? null,
+    longitude: value.longitude ?? null,
+    googlePlaceId: normalizeText(value.placeId),
+  }
+}
+
+function mergeAreaIntoProspectDraft(previous = {}, value = null, inputValue = '') {
+  const area = normalizeText(value?.suburb || value?.city || inputValue || value?.formattedAddress)
+  return {
+    ...previous,
+    area,
+    areaSuburb: area,
+    areaSuburbPlaceId: normalizeText(value?.placeId),
+    city: normalizeText(value?.city || previous.city),
+    province: normalizeText(value?.province || previous.province),
+    country: normalizeText(value?.country || previous.country),
+  }
+}
+
 function getProspectDisplayName(prospect = {}) {
   return [prospect?.firstName, prospect?.lastName].map(normalizeText).filter(Boolean).join(' ') || 'Unnamed prospect'
 }
@@ -460,6 +639,16 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'buyer', cur
   const notes = [
     normalizeText(prospect.notes),
     `Canvassing Method: ${normalizeText(prospect.canvassingMethod) || 'Other'}`,
+    `Source: ${normalizeText(prospect.source || prospect.canvassingMethod) || 'Other'}`,
+    normalizeText(prospect.areaOfInterest) ? `Area Of Interest: ${normalizeText(prospect.areaOfInterest)}` : '',
+    normalizeText(prospect.budgetRange) ? `Budget Range: ${normalizeText(prospect.budgetRange)}` : '',
+    normalizeText(prospect.bedrooms) ? `Bedrooms: ${normalizeText(prospect.bedrooms)}` : '',
+    normalizeText(prospect.financeStatus) ? `Finance Status: ${normalizeText(prospect.financeStatus)}` : '',
+    normalizeText(prospect.timeframe) ? `Timeframe: ${normalizeText(prospect.timeframe)}` : '',
+    normalizeText(prospect.subjectToSale) ? `Subject To Sale: ${normalizeText(prospect.subjectToSale)}` : '',
+    normalizeText(prospect.sellingIntent) ? `Selling Intent: ${normalizeText(prospect.sellingIntent)}` : '',
+    normalizeText(prospect.lastContactOutcome) ? `Last Contact Outcome: ${normalizeText(prospect.lastContactOutcome)}` : '',
+    normalizeText(prospect.propertyOccupancy) ? `Property Occupancy: ${normalizeText(prospect.propertyOccupancy)}` : '',
     `Canvassing Prospect ID: ${prospect.id}`,
   ]
     .filter(Boolean)
@@ -496,10 +685,10 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'buyer', cur
     priority: normalizeText(prospect.followUpPriority) || 'Medium',
     budget: Number(prospect.estimatedValue || 0) || 0,
     estimatedValue: Number(prospect.estimatedValue || 0) || 0,
-    areaInterest: normalizeText(prospect.area || linkedListingLabel),
-    propertyInterest: normalizeText(linkedListingLabel || prospect.propertyType),
-    listingId: linkedListingId,
-    sellerPropertyAddress: normalizedCategory === 'seller' ? normalizeText(prospect.area || linkedListingLabel) : '',
+    areaInterest: normalizeText(prospect.areaOfInterest || prospect.areaSuburb || prospect.area || linkedListingLabel),
+    propertyInterest: normalizeText(linkedListingLabel || prospect.preferredPropertyType || prospect.propertyType),
+    listingId: normalizeText(prospect.enquiryListingId || linkedListingId),
+    sellerPropertyAddress: normalizedCategory === 'seller' ? normalizeText(prospect.streetAddress || prospect.formattedAddress || prospect.areaSuburb || prospect.area || linkedListingLabel) : '',
     canvassingProspectId: prospect.id,
     sellerName: firstName,
     sellerSurname: lastName,
@@ -532,6 +721,12 @@ function PipelineCanvassingPage() {
   const [filters, setFilters] = useState({
     search: '',
     method: 'all',
+    area: 'all',
+    buyerBudget: 'all',
+    buyerStatus: 'all',
+    financeStatus: 'all',
+    sellingIntent: 'all',
+    lastContactOutcome: 'all',
     status: 'all',
     assigned: 'all',
     sort: 'newest',
@@ -556,7 +751,29 @@ function PipelineCanvassingPage() {
     email: '',
     prospectType: 'Seller Prospect',
     area: '',
+    areaSuburb: '',
+    areaSuburbPlaceId: '',
+    streetAddress: '',
+    formattedAddress: '',
+    city: '',
+    province: '',
+    country: '',
+    postalCode: '',
+    latitude: null,
+    longitude: null,
+    googlePlaceId: '',
     propertyType: '',
+    enquiryListingId: '',
+    buyerStatus: 'New',
+    areaOfInterest: '',
+    areaOfInterestPlaceId: '',
+    preferredPropertyType: '',
+    budgetRange: '',
+    bedrooms: '',
+    financeStatus: '',
+    timeframe: '',
+    subjectToSale: '',
+    source: 'Cold Call',
     canvassingMethod: 'Cold Call',
     assignedAgentId: '',
     linkedListingId: '',
@@ -565,6 +782,10 @@ function PipelineCanvassingPage() {
     followUpPriority: 'Medium',
     followUpNote: '',
     estimatedValue: '',
+    estimatedPropertyValue: '',
+    sellingIntent: '',
+    lastContactOutcome: '',
+    propertyOccupancy: '',
     notes: '',
   })
   const [activityForm, setActivityForm] = useState({ activityType: 'Call', activityNote: '', outcome: '' })
@@ -932,10 +1153,18 @@ function PipelineCanvassingPage() {
     const assignedProfile = getAssignedAgentProfile(prospect, agentOptions)
     const source = resolveCanvassingSourceText(prospect?.source || prospect?.canvassingMethod || prospect?.leadSource)
     const sourceKey = normalizeCanvassingSourceKey(source)
-    const propertyInterest = normalizeText(prospect?.propertyInterest || prospect?.property_interest || prospect?.propertyType || prospect?.listingType)
-    const propertyAddress = normalizeText(
-      prospect?.propertyAddress || prospect?.sellerPropertyAddress || prospect?.area || prospect?.address || '',
+    const propertyInterest = normalizeText(
+      prospect?.propertyInterest ||
+        prospect?.property_interest ||
+        prospect?.preferredPropertyType ||
+        prospect?.propertyType ||
+        prospect?.listingType,
     )
+    const propertyAddress = normalizeText(
+      prospect?.streetAddress || prospect?.formattedAddress || prospect?.propertyAddress || prospect?.sellerPropertyAddress || prospect?.areaSuburb || prospect?.area || prospect?.address || '',
+    )
+    const areaSuburb = normalizeText(prospect?.areaSuburb || prospect?.area)
+    const areaOfInterest = normalizeText(prospect?.areaOfInterest || prospect?.areaSuburb || prospect?.area)
     const nextStep = normalizeText(prospect?.followUpNote || prospect?.nextStep || prospect?.next_step)
     const nextStepDueDate = normalizeText(prospect?.nextFollowUpDate || prospect?.next_step_due_date)
 
@@ -944,9 +1173,21 @@ function PipelineCanvassingPage() {
       assignedProfile,
       resolvedSource: source,
       resolvedSourceKey: sourceKey,
+      resolvedAreaSuburb: areaSuburb,
+      resolvedAreaOfInterest: areaOfInterest,
       resolvedPropertyInterest: propertyInterest,
       resolvedPropertyAddress: propertyAddress,
       resolvedEstimatedValue: Number(prospect?.estimatedValue || prospect?.estimated_value || 0) || 0,
+      resolvedEstimatedPropertyValue: normalizeText(prospect?.estimatedPropertyValue),
+      resolvedBudgetRange: normalizeText(prospect?.budgetRange || prospect?.estimatedPropertyValue),
+      resolvedBuyerStatus: normalizeText(prospect?.buyerStatus || prospect?.status),
+      resolvedFinanceStatus: normalizeText(prospect?.financeStatus),
+      resolvedTimeframe: normalizeText(prospect?.timeframe),
+      resolvedSubjectToSale: normalizeText(prospect?.subjectToSale),
+      resolvedBedrooms: normalizeText(prospect?.bedrooms),
+      resolvedEnquiryListingId: normalizeText(prospect?.enquiryListingId || prospect?.linkedListingId || prospect?.listingId),
+      resolvedSellingIntent: normalizeText(prospect?.sellingIntent),
+      resolvedLastContactOutcome: normalizeText(prospect?.lastContactOutcome),
       resolvedNextStep: nextStep || 'Follow up with prospect',
       resolvedNextStepDueDate: nextStepDueDate,
       assignedLabel: assignedProfile?.name || 'Unassigned',
@@ -963,9 +1204,17 @@ function PipelineCanvassingPage() {
             prospect?.phone,
             prospect?.email,
             prospect?.area,
+            prospect?.areaSuburb,
+            prospect?.areaOfInterest,
             prospect?.resolvedPropertyInterest,
             prospect?.resolvedPropertyAddress,
             prospect?.resolvedSource,
+            prospect?.resolvedBudgetRange,
+            prospect?.resolvedBuyerStatus,
+            prospect?.resolvedFinanceStatus,
+            prospect?.resolvedTimeframe,
+            prospect?.resolvedSellingIntent,
+            prospect?.resolvedLastContactOutcome,
             prospect?.status,
           ]
             .join(' ')
@@ -975,6 +1224,24 @@ function PipelineCanvassingPage() {
       const methodMatch = filters.method === 'all'
         ? true
         : normalizeCanvassingSourceKey(prospect?.resolvedSource) === filters.method
+      const areaMatch = filters.area === 'all'
+        ? true
+        : normalizeKey(prospectView === 'buyer' ? prospect?.resolvedAreaOfInterest : prospect?.resolvedAreaSuburb) === normalizeKey(filters.area)
+      const buyerBudgetMatch = filters.buyerBudget === 'all'
+        ? true
+        : normalizeKey(prospect?.resolvedBudgetRange) === normalizeKey(filters.buyerBudget)
+      const buyerStatusMatch = filters.buyerStatus === 'all'
+        ? true
+        : normalizeKey(prospect?.resolvedBuyerStatus) === normalizeKey(filters.buyerStatus)
+      const financeStatusMatch = filters.financeStatus === 'all'
+        ? true
+        : normalizeKey(prospect?.resolvedFinanceStatus) === normalizeKey(filters.financeStatus)
+      const sellingIntentMatch = filters.sellingIntent === 'all'
+        ? true
+        : normalizeKey(prospect?.resolvedSellingIntent) === normalizeKey(filters.sellingIntent)
+      const lastContactOutcomeMatch = filters.lastContactOutcome === 'all'
+        ? true
+        : normalizeKey(prospect?.resolvedLastContactOutcome) === normalizeKey(filters.lastContactOutcome)
       const prospectStatus = normalizeText(prospect?.status)
       const prospectStatusKey = normalizeKey(prospectStatus)
       const convertedWithoutLead = prospectStatusKey === 'converted to lead' && !normalizeText(prospect?.convertedLeadId)
@@ -987,7 +1254,7 @@ function PipelineCanvassingPage() {
           ? prospect.assignedProfile?.isUnassigned
           : normalizeText(prospect.assignedProfile?.id) === filters.assigned ||
             normalizeText(prospect.assignedProfile?.email) === filters.assigned
-      return audienceMatch && searchMatch && methodMatch && statusMatch && assignedMatch
+      return audienceMatch && searchMatch && methodMatch && areaMatch && buyerBudgetMatch && buyerStatusMatch && financeStatusMatch && sellingIntentMatch && lastContactOutcomeMatch && statusMatch && assignedMatch
     })
 
     return rows.sort((left, right) => {
@@ -1003,7 +1270,7 @@ function PipelineCanvassingPage() {
       const rightTime = new Date(right?.createdAt || 0).getTime()
       return rightTime - leftTime
     })
-    }, [filters.assigned, filters.method, filters.search, filters.sort, filters.status, prospectView, prospectRows])
+    }, [filters.area, filters.assigned, filters.buyerBudget, filters.buyerStatus, filters.financeStatus, filters.lastContactOutcome, filters.method, filters.search, filters.sellingIntent, filters.sort, filters.status, prospectView, prospectRows])
 
   const availableSourceOptions = useMemo(() => {
     const list = Array.from(new Set(prospectRows.map((prospect) => prospect?.resolvedSourceKey || 'unknown')))
@@ -1029,6 +1296,36 @@ function PipelineCanvassingPage() {
     }
     const ordered = [...byKey.values()].sort((left, right) => normalizeText(left.label).localeCompare(normalizeText(right.label)))
     return ordered
+  }, [prospectRows])
+
+  const areaFilterOptions = useMemo(() => {
+    return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospectView === 'buyer' ? prospect?.resolvedAreaOfInterest : prospect?.resolvedAreaSuburb)).filter(Boolean)))
+      .sort((left, right) => left.localeCompare(right))
+  }, [prospectRows, prospectView])
+
+  const buyerBudgetFilterOptions = useMemo(() => {
+    return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedBudgetRange)).filter(Boolean)))
+      .sort((left, right) => left.localeCompare(right))
+  }, [prospectRows])
+
+  const buyerStatusFilterOptions = useMemo(() => {
+    return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedBuyerStatus)).filter(Boolean)))
+      .sort((left, right) => left.localeCompare(right))
+  }, [prospectRows])
+
+  const financeStatusFilterOptions = useMemo(() => {
+    return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedFinanceStatus)).filter(Boolean)))
+      .sort((left, right) => left.localeCompare(right))
+  }, [prospectRows])
+
+  const sellingIntentFilterOptions = useMemo(() => {
+    return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedSellingIntent)).filter(Boolean)))
+      .sort((left, right) => left.localeCompare(right))
+  }, [prospectRows])
+
+  const lastContactOutcomeFilterOptions = useMemo(() => {
+    return Array.from(new Set(prospectRows.map((prospect) => normalizeText(prospect?.resolvedLastContactOutcome)).filter(Boolean)))
+      .sort((left, right) => left.localeCompare(right))
   }, [prospectRows])
 
   const prospectById = useMemo(() => {
@@ -1096,10 +1393,32 @@ function PipelineCanvassingPage() {
       lastName: '',
       phone: '',
       email: '',
-      prospectType: 'Seller Prospect',
+      prospectType: prospectView === 'buyer' ? 'Buyer Prospect' : 'Seller Prospect',
       area: '',
+      areaSuburb: '',
+      areaSuburbPlaceId: '',
+      streetAddress: '',
+      formattedAddress: '',
+      city: '',
+      province: '',
+      country: '',
+      postalCode: '',
+      latitude: null,
+      longitude: null,
+      googlePlaceId: '',
       propertyType: '',
-      canvassingMethod: 'Cold Call',
+      enquiryListingId: '',
+      buyerStatus: 'New',
+      areaOfInterest: '',
+      areaOfInterestPlaceId: '',
+      preferredPropertyType: '',
+      budgetRange: '',
+      bedrooms: '',
+      financeStatus: '',
+      timeframe: '',
+      subjectToSale: '',
+      source: prospectView === 'buyer' ? 'Website' : 'Cold Call',
+      canvassingMethod: prospectView === 'buyer' ? 'Website' : 'Cold Call',
       assignedAgentId: currentAgentIdentity,
       linkedListingId: '',
       status: 'New',
@@ -1107,6 +1426,10 @@ function PipelineCanvassingPage() {
       followUpPriority: 'Medium',
       followUpNote: '',
       estimatedValue: '',
+      estimatedPropertyValue: '',
+      sellingIntent: '',
+      lastContactOutcome: '',
+      propertyOccupancy: '',
       notes: '',
     })
   }
@@ -1124,12 +1447,26 @@ function PipelineCanvassingPage() {
   async function handleCreateProspect(event) {
     event.preventDefault()
     if (!organisationId) return
-    if (!normalizeText(prospectForm.firstName) || (!normalizeText(prospectForm.phone) && !normalizeText(prospectForm.email))) {
-      setError('Prospect name and one contact method are required.')
+    if (!normalizeText(prospectForm.firstName) && !normalizeText(prospectForm.lastName)) {
+      setError('Add at least a first name or last name.')
       return
     }
+    if (!normalizeText(prospectForm.phone) && !normalizeText(prospectForm.email)) {
+      setError('Add at least one contact method.')
+      return
+    }
+    if (!normalizeText(prospectForm.assignedAgentId || currentAgentIdentity)) {
+      setError('Assign this prospect to an agent before saving.')
+      return
+    }
+    if (!normalizeText(prospectForm.source || prospectForm.canvassingMethod)) {
+      setError('Choose a source before saving.')
+      return
+    }
+    const prospectAudience = resolveProspectAudience(prospectForm)
     const assignedAgent = resolveAgentById(prospectForm.assignedAgentId || currentAgentIdentity)
-    const selectedListing = scopedListingOptions.find((listing) => normalizeText(listing.id) === normalizeText(prospectForm.linkedListingId)) || null
+    const selectedListingId = normalizeText(prospectForm.enquiryListingId || prospectForm.linkedListingId)
+    const selectedListing = scopedListingOptions.find((listing) => normalizeText(listing.id) === selectedListingId) || null
 
     const createdPayload = {
       organisationId,
@@ -1143,14 +1480,50 @@ function PipelineCanvassingPage() {
       phone: normalizeText(prospectForm.phone),
       email: normalizeText(prospectForm.email).toLowerCase(),
       prospectType: normalizeText(prospectForm.prospectType) || 'Other',
-      area: normalizeText(prospectForm.area),
-      propertyType: normalizeText(prospectForm.propertyType || selectedListing?.propertyType),
-      canvassingMethod: normalizeText(prospectForm.canvassingMethod) || 'Other',
-      status: normalizeText(prospectForm.status) || 'New',
+      area: prospectAudience === 'buyer'
+        ? normalizeText(prospectForm.areaOfInterest || prospectForm.areaSuburb || prospectForm.area)
+        : normalizeText(prospectForm.areaSuburb || prospectForm.area),
+      areaSuburb: prospectAudience === 'buyer'
+        ? normalizeText(prospectForm.areaOfInterest || prospectForm.areaSuburb || prospectForm.area)
+        : normalizeText(prospectForm.areaSuburb || prospectForm.area),
+      areaSuburbPlaceId: normalizeText(prospectForm.areaSuburbPlaceId),
+      streetAddress: normalizeText(prospectForm.streetAddress),
+      formattedAddress: normalizeText(prospectForm.formattedAddress || prospectForm.streetAddress),
+      city: normalizeText(prospectForm.city),
+      province: normalizeText(prospectForm.province),
+      country: normalizeText(prospectForm.country),
+      postalCode: normalizeText(prospectForm.postalCode),
+      latitude: prospectForm.latitude,
+      longitude: prospectForm.longitude,
+      googlePlaceId: normalizeText(prospectForm.googlePlaceId),
+      propertyType: prospectAudience === 'buyer'
+        ? normalizeText(prospectForm.preferredPropertyType || prospectForm.propertyType || selectedListing?.propertyType)
+        : normalizeText(prospectForm.propertyType || selectedListing?.propertyType),
+      enquiryListingId: prospectAudience === 'buyer' ? selectedListingId : '',
+      buyerStatus: prospectAudience === 'buyer' ? normalizeText(prospectForm.buyerStatus) || 'New' : '',
+      areaOfInterest: prospectAudience === 'buyer' ? normalizeText(prospectForm.areaOfInterest || prospectForm.areaSuburb || prospectForm.area) : '',
+      areaOfInterestPlaceId: prospectAudience === 'buyer' ? normalizeText(prospectForm.areaOfInterestPlaceId || prospectForm.areaSuburbPlaceId) : '',
+      preferredPropertyType: prospectAudience === 'buyer' ? normalizeText(prospectForm.preferredPropertyType || prospectForm.propertyType || selectedListing?.propertyType) : '',
+      budgetRange: prospectAudience === 'buyer' ? normalizeText(prospectForm.budgetRange || prospectForm.estimatedPropertyValue) : '',
+      bedrooms: prospectAudience === 'buyer' ? normalizeText(prospectForm.bedrooms) : '',
+      financeStatus: prospectAudience === 'buyer' ? normalizeText(prospectForm.financeStatus) : '',
+      timeframe: prospectAudience === 'buyer' ? normalizeText(prospectForm.timeframe) : '',
+      subjectToSale: prospectAudience === 'buyer' ? normalizeText(prospectForm.subjectToSale) : '',
+      source: normalizeText(prospectForm.source || prospectForm.canvassingMethod) || 'Other',
+      canvassingMethod: normalizeText(prospectForm.canvassingMethod || prospectForm.source) || 'Other',
+      status: prospectAudience === 'buyer'
+        ? normalizeText(prospectForm.buyerStatus || prospectForm.status) || 'New'
+        : normalizeText(prospectForm.status) || 'New',
       nextFollowUpDate: normalizeText(prospectForm.nextFollowUpDate),
       followUpPriority: normalizeText(prospectForm.followUpPriority) || 'Medium',
       followUpNote: normalizeText(prospectForm.followUpNote),
       estimatedValue: Number(prospectForm.estimatedValue || selectedListing?.askingPrice || 0) || 0,
+      estimatedPropertyValue: prospectAudience === 'buyer'
+        ? normalizeText(prospectForm.budgetRange || prospectForm.estimatedPropertyValue)
+        : normalizeText(prospectForm.estimatedPropertyValue),
+      sellingIntent: normalizeText(prospectForm.sellingIntent),
+      lastContactOutcome: normalizeText(prospectForm.lastContactOutcome),
+      propertyOccupancy: normalizeText(prospectForm.propertyOccupancy),
       notes: appendLinkedListingNote(prospectForm.notes, selectedListing),
       listingId: normalizeText(selectedListing?.id),
       listingLabel: normalizeText(selectedListing?.label),
@@ -1162,7 +1535,52 @@ function PipelineCanvassingPage() {
 
     try {
       const created = await createCanvassingProspect(organisationId, createdPayload)
+      const createdAudience = resolveProspectAudience(createdPayload)
+      const creationActivity = await createCanvassingActivity(organisationId, {
+        organisationId,
+        prospectId: created.id,
+        agentId: currentAgentForWrites.id || null,
+        agentName: currentAgent.fullName || null,
+        activityType: 'Prospect Created',
+        activityNote: createdAudience === 'seller' ? 'Seller prospect created' : 'Buyer prospect created',
+        outcome: normalizeText(createdPayload.lastContactOutcome),
+        metadata: {
+          source: createdPayload.source,
+          areaSuburb: createdPayload.areaSuburb,
+          areaOfInterest: createdPayload.areaOfInterest,
+          budgetRange: createdPayload.budgetRange,
+          financeStatus: createdPayload.financeStatus,
+          timeframe: createdPayload.timeframe,
+          sellingIntent: createdPayload.sellingIntent,
+          lastContactOutcome: createdPayload.lastContactOutcome,
+        },
+        activityDate: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
+      })
+      let outcomeActivity = null
+      if (createdAudience === 'seller' && normalizeText(createdPayload.lastContactOutcome)) {
+        outcomeActivity = await createCanvassingActivity(organisationId, {
+          organisationId,
+          prospectId: created.id,
+          agentId: currentAgentForWrites.id || null,
+          agentName: currentAgent.fullName || null,
+          activityType: 'Contact Outcome',
+          activityNote: `Initial contact outcome: ${createdPayload.lastContactOutcome}`,
+          outcome: createdPayload.lastContactOutcome,
+          metadata: {
+            source: createdPayload.source,
+            areaSuburb: createdPayload.areaSuburb,
+            sellingIntent: createdPayload.sellingIntent,
+            lastContactOutcome: createdPayload.lastContactOutcome,
+          },
+          activityDate: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
+        })
+      }
       setProspects((previous) => [created, ...previous.filter((row) => normalizeText(row?.id) !== normalizeText(created?.id))])
+      setActivities((previous) => [outcomeActivity, creationActivity, ...previous].filter(Boolean))
       setMessage('Prospect added.')
       setError('')
       setShowCreateModal(false)
@@ -1175,6 +1593,17 @@ function PipelineCanvassingPage() {
   async function handleSaveProspectDetail(event) {
     event.preventDefault()
     if (!organisationId || !selectedProspect) return
+    const selectedAudience = resolveProspectAudience(selectedProspect)
+    const nextArea = selectedAudience === 'buyer'
+      ? normalizeText(selectedProspect.areaOfInterest || selectedProspect.areaSuburb || selectedProspect.area)
+      : normalizeText(selectedProspect.areaSuburb || selectedProspect.area)
+    const nextPropertyType = selectedAudience === 'buyer'
+      ? normalizeText(selectedProspect.preferredPropertyType || selectedProspect.propertyType)
+      : normalizeText(selectedProspect.propertyType)
+    const nextBudgetRange = normalizeText(selectedProspect.budgetRange || selectedProspect.estimatedPropertyValue)
+    const nextStatus = selectedAudience === 'buyer'
+      ? normalizeText(selectedProspect.buyerStatus || selectedProspect.status) || 'New'
+      : normalizeText(selectedProspect.status) || 'New'
 
     const payload = {
       ...selectedProspect,
@@ -1183,14 +1612,40 @@ function PipelineCanvassingPage() {
       phone: normalizeText(selectedProspect.phone),
       email: normalizeText(selectedProspect.email).toLowerCase(),
       prospectType: normalizeText(selectedProspect.prospectType) || 'Other',
-      area: normalizeText(selectedProspect.area),
-      propertyType: normalizeText(selectedProspect.propertyType),
-      canvassingMethod: normalizeText(selectedProspect.canvassingMethod) || 'Other',
-      status: normalizeText(selectedProspect.status) || 'New',
+      area: nextArea,
+      areaSuburb: nextArea,
+      areaSuburbPlaceId: normalizeText(selectedProspect.areaSuburbPlaceId),
+      streetAddress: normalizeText(selectedProspect.streetAddress),
+      formattedAddress: normalizeText(selectedProspect.formattedAddress || selectedProspect.streetAddress),
+      city: normalizeText(selectedProspect.city),
+      province: normalizeText(selectedProspect.province),
+      country: normalizeText(selectedProspect.country),
+      postalCode: normalizeText(selectedProspect.postalCode),
+      latitude: selectedProspect.latitude,
+      longitude: selectedProspect.longitude,
+      googlePlaceId: normalizeText(selectedProspect.googlePlaceId),
+      propertyType: nextPropertyType,
+      enquiryListingId: normalizeText(selectedProspect.enquiryListingId || selectedProspect.linkedListingId || selectedProspect.listingId),
+      buyerStatus: selectedAudience === 'buyer' ? nextStatus : '',
+      areaOfInterest: selectedAudience === 'buyer' ? nextArea : '',
+      areaOfInterestPlaceId: selectedAudience === 'buyer' ? normalizeText(selectedProspect.areaOfInterestPlaceId || selectedProspect.areaSuburbPlaceId) : '',
+      preferredPropertyType: selectedAudience === 'buyer' ? nextPropertyType : '',
+      budgetRange: selectedAudience === 'buyer' ? nextBudgetRange : '',
+      bedrooms: selectedAudience === 'buyer' ? normalizeText(selectedProspect.bedrooms) : '',
+      financeStatus: selectedAudience === 'buyer' ? normalizeText(selectedProspect.financeStatus) : '',
+      timeframe: selectedAudience === 'buyer' ? normalizeText(selectedProspect.timeframe) : '',
+      subjectToSale: selectedAudience === 'buyer' ? normalizeText(selectedProspect.subjectToSale) : '',
+      source: normalizeText(selectedProspect.source || selectedProspect.canvassingMethod) || 'Other',
+      canvassingMethod: normalizeText(selectedProspect.canvassingMethod || selectedProspect.source) || 'Other',
+      status: nextStatus,
       nextFollowUpDate: normalizeText(selectedProspect.nextFollowUpDate),
       followUpPriority: normalizeText(selectedProspect.followUpPriority) || 'Medium',
       followUpNote: normalizeText(selectedProspect.followUpNote),
       estimatedValue: Number(selectedProspect.estimatedValue || 0) || 0,
+      estimatedPropertyValue: selectedAudience === 'buyer' ? nextBudgetRange : normalizeText(selectedProspect.estimatedPropertyValue),
+      sellingIntent: normalizeText(selectedProspect.sellingIntent),
+      lastContactOutcome: normalizeText(selectedProspect.lastContactOutcome),
+      propertyOccupancy: normalizeText(selectedProspect.propertyOccupancy),
       notes: normalizeText(selectedProspect.notes),
     }
 
@@ -1555,7 +2010,7 @@ function PipelineCanvassingPage() {
               value={filters.search}
               onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
             />
-            <div className="grid min-h-11 w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1 lg:flex lg:items-end lg:justify-end lg:gap-2">
+            <div className="grid min-h-11 w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1 lg:flex lg:flex-wrap lg:items-end lg:justify-end lg:gap-2">
               <Field
                 as="select"
                 className="h-11 lg:w-44"
@@ -1569,6 +2024,91 @@ function PipelineCanvassingPage() {
                   </option>
                 ))}
               </Field>
+              <Field
+                as="select"
+                className="h-11 lg:w-44"
+                value={filters.area}
+                onChange={(event) => setFilters((previous) => ({ ...previous, area: event.target.value }))}
+              >
+                <option value="all">Area / Suburb</option>
+                {areaFilterOptions.map((area) => (
+                  <option key={area} value={area}>
+                    {area}
+                  </option>
+                ))}
+              </Field>
+              {prospectView === 'buyer' ? (
+                <>
+                  <Field
+                    as="select"
+                    className="h-11 lg:w-44"
+                    value={filters.buyerBudget}
+                    onChange={(event) => setFilters((previous) => ({ ...previous, buyerBudget: event.target.value }))}
+                  >
+                    <option value="all">Budget</option>
+                    {buyerBudgetFilterOptions.map((budget) => (
+                      <option key={budget} value={budget}>
+                        {budget}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-11 lg:w-44"
+                    value={filters.buyerStatus}
+                    onChange={(event) => setFilters((previous) => ({ ...previous, buyerStatus: event.target.value }))}
+                  >
+                    <option value="all">Buyer Status</option>
+                    {buyerStatusFilterOptions.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-11 lg:w-44"
+                    value={filters.financeStatus}
+                    onChange={(event) => setFilters((previous) => ({ ...previous, financeStatus: event.target.value }))}
+                  >
+                    <option value="all">Finance</option>
+                    {financeStatusFilterOptions.map((finance) => (
+                      <option key={finance} value={finance}>
+                        {finance}
+                      </option>
+                    ))}
+                  </Field>
+                </>
+              ) : (
+                <>
+                  <Field
+                    as="select"
+                    className="h-11 lg:w-44"
+                    value={filters.sellingIntent}
+                    onChange={(event) => setFilters((previous) => ({ ...previous, sellingIntent: event.target.value }))}
+                  >
+                    <option value="all">Selling Intent</option>
+                    {sellingIntentFilterOptions.map((intent) => (
+                      <option key={intent} value={intent}>
+                        {intent}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-11 lg:w-44"
+                    value={filters.lastContactOutcome}
+                    onChange={(event) => setFilters((previous) => ({ ...previous, lastContactOutcome: event.target.value }))}
+                  >
+                    <option value="all">Last Outcome</option>
+                    {lastContactOutcomeFilterOptions.map((outcome) => (
+                      <option key={outcome} value={outcome}>
+                        {outcome}
+                      </option>
+                    ))}
+                  </Field>
+                </>
+              )}
               <Field
                 as="select"
                 className="h-11 lg:w-44"
@@ -1610,7 +2150,17 @@ function PipelineCanvassingPage() {
                 <Button
                   type="button"
                   className="h-11 min-h-11 w-full justify-center whitespace-nowrap rounded-xl lg:w-auto"
-                  onClick={() => setShowCreateModal(true)}
+                  onClick={() => {
+                    resetProspectForm()
+                    setProspectForm((previous) => ({
+                      ...previous,
+                      prospectType: prospectView === 'buyer' ? 'Buyer Prospect' : 'Seller Prospect',
+                      source: prospectView === 'buyer' ? 'Website' : 'Cold Call',
+                      canvassingMethod: prospectView === 'buyer' ? 'Website' : 'Cold Call',
+                      buyerStatus: prospectView === 'buyer' ? 'New' : '',
+                    }))
+                    setShowCreateModal(true)
+                  }}
                 >
                   <Plus size={14} />
                   + Prospect
@@ -1625,7 +2175,7 @@ function PipelineCanvassingPage() {
               <tr>
                 <th className="w-[22%] px-4 py-3">Prospect</th>
                 <th className="w-[14%] px-4 py-3">Source</th>
-                <th className="w-[22%] px-4 py-3">{prospectView === 'seller' ? 'Property Address' : 'Property Interest'}</th>
+                <th className="w-[22%] px-4 py-3">{prospectView === 'seller' ? 'Property / Area' : 'Property Interest'}</th>
                 <th className="w-[22%] px-4 py-3">Stage / Next Step</th>
                 <th className="w-[16%] px-4 py-3">Assigned</th>
                 <th className="w-[12%] px-4 py-3">Last Activity</th>
@@ -1639,17 +2189,25 @@ function PipelineCanvassingPage() {
                   const displayName = getProspectDisplayName(prospect)
                   const prospectTypeLabel =
                     resolveProspectAudience(prospect) === 'seller' ? 'Seller Prospect' : 'Buyer Prospect'
-                  const addressLine = prospect?.resolvedPropertyAddress || '—'
-                  const addressLine2 = normalizeText(prospect.area) && normalizeText(prospect.area) !== normalizeText(addressLine)
-                    ? normalizeText(prospect.area)
+                  const addressLine = prospectView === 'buyer'
+                    ? (prospect?.resolvedAreaOfInterest || 'Area pending')
+                    : (prospect?.resolvedPropertyAddress || '—')
+                  const addressLine2 = normalizeText(prospectView === 'buyer' ? prospect.resolvedEnquiryListingId : prospect.resolvedAreaSuburb) && normalizeText(prospectView === 'buyer' ? prospect.resolvedEnquiryListingId : prospect.resolvedAreaSuburb) !== normalizeText(addressLine)
+                    ? normalizeText(prospectView === 'buyer' ? `Listing: ${prospect.resolvedEnquiryListingId}` : prospect.resolvedAreaSuburb)
                     : ''
                   const interestLine = normalizeText(prospect?.resolvedPropertyInterest) || 'No property interest'
-                  const stage = normalizeText(prospect?.status) || 'New'
-                  const nextStepLabel = prospect?.resolvedNextStep || 'Follow up with prospect'
+                  const stage = prospectView === 'buyer' ? (prospect?.resolvedBuyerStatus || 'New') : (normalizeText(prospect?.status) || 'New')
+                  const nextStepLabel = prospectView === 'buyer'
+                    ? [prospect.resolvedFinanceStatus, prospect.resolvedTimeframe].filter(Boolean).join(' • ') || 'Readiness not captured'
+                    : (prospect?.resolvedNextStep || 'Follow up with prospect')
                   const nextStepDueLabel = prospect?.resolvedNextStepDueDate
                     ? `Due: ${formatShortDate(prospect.resolvedNextStepDueDate)}`
-                    : 'Due date not set'
-                  const estimatedValueLabel = formatOptionalCurrency(
+                    : prospectView === 'buyer'
+                      ? (prospect.resolvedSubjectToSale ? `Subject to sale: ${prospect.resolvedSubjectToSale}` : 'Subject to sale unknown')
+                      : 'Due date not set'
+                  const estimatedValueLabel = prospectView === 'buyer'
+                    ? (prospect.resolvedBudgetRange || 'Budget pending')
+                    : prospect.resolvedEstimatedPropertyValue || formatOptionalCurrency(
                     prospect.resolvedEstimatedValue,
                   )
                   const actionMenuOpen = openActionMenuId === normalizeText(prospect.id)
@@ -1684,6 +2242,15 @@ function PipelineCanvassingPage() {
                         {prospectView === 'seller' ? null : <p className="mt-0.5 text-xs text-slate-500">{addressLine}</p>}
                         {addressLine2 ? <p className="mt-0.5 text-xs text-slate-500">{addressLine2}</p> : null}
                         <p className="mt-1 text-sm font-semibold text-slate-900">{estimatedValueLabel}</p>
+                        {prospectView === 'buyer' && prospect.resolvedBedrooms ? (
+                          <p className="mt-0.5 text-xs text-slate-500">Bedrooms: {prospect.resolvedBedrooms}</p>
+                        ) : null}
+                        {prospectView === 'seller' && prospect.resolvedSellingIntent ? (
+                          <p className="mt-0.5 text-xs font-semibold text-slate-600">{prospect.resolvedSellingIntent}</p>
+                        ) : null}
+                        {prospectView === 'seller' && prospect.resolvedLastContactOutcome ? (
+                          <p className="mt-0.5 text-xs text-slate-500">Outcome: {prospect.resolvedLastContactOutcome}</p>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 align-top">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusPillClass(stage)}`}>
@@ -1740,17 +2307,25 @@ function PipelineCanvassingPage() {
               const displayName = getProspectDisplayName(prospect)
               const prospectTypeLabel =
                 resolveProspectAudience(prospect) === 'seller' ? 'Seller Prospect' : 'Buyer Prospect'
-              const addressLine = prospect?.resolvedPropertyAddress || 'Address Pending'
-              const addressLine2 = normalizeText(prospect.area) && normalizeText(prospect.area) !== normalizeText(addressLine)
-                ? normalizeText(prospect.area)
+              const addressLine = prospectView === 'buyer'
+                ? (prospect?.resolvedAreaOfInterest || 'Area pending')
+                : (prospect?.resolvedPropertyAddress || 'Address Pending')
+              const addressLine2 = normalizeText(prospectView === 'buyer' ? prospect.resolvedEnquiryListingId : prospect.resolvedAreaSuburb) && normalizeText(prospectView === 'buyer' ? prospect.resolvedEnquiryListingId : prospect.resolvedAreaSuburb) !== normalizeText(addressLine)
+                ? normalizeText(prospectView === 'buyer' ? `Listing: ${prospect.resolvedEnquiryListingId}` : prospect.resolvedAreaSuburb)
                 : ''
               const interestLine = normalizeText(prospect?.resolvedPropertyInterest) || 'No property interest'
-              const stage = normalizeText(prospect?.status) || 'New'
-              const nextStepLabel = prospect?.resolvedNextStep || 'Follow up with prospect'
+              const stage = prospectView === 'buyer' ? (prospect?.resolvedBuyerStatus || 'New') : (normalizeText(prospect?.status) || 'New')
+              const nextStepLabel = prospectView === 'buyer'
+                ? [prospect.resolvedFinanceStatus, prospect.resolvedTimeframe].filter(Boolean).join(' • ') || 'Readiness not captured'
+                : (prospect?.resolvedNextStep || 'Follow up with prospect')
               const nextStepDueLabel = prospect?.resolvedNextStepDueDate
                 ? `Due: ${formatShortDate(prospect.resolvedNextStepDueDate)}`
-                : 'Due date not set'
-              const estimatedValueLabel = formatOptionalCurrency(prospect.resolvedEstimatedValue)
+                : prospectView === 'buyer'
+                  ? (prospect.resolvedSubjectToSale ? `Subject to sale: ${prospect.resolvedSubjectToSale}` : 'Subject to sale unknown')
+                  : 'Due date not set'
+              const estimatedValueLabel = prospectView === 'buyer'
+                ? (prospect.resolvedBudgetRange || 'Budget pending')
+                : prospect.resolvedEstimatedPropertyValue || formatOptionalCurrency(prospect.resolvedEstimatedValue)
               const actionMenuOpen = openActionMenuId === normalizeText(prospect.id)
 
               return (
@@ -1767,6 +2342,15 @@ function PipelineCanvassingPage() {
                       {addressLine2 ? <p className="text-xs text-slate-500">{addressLine2}</p> : null}
                       {prospectView === 'buyer' ? <p className="text-xs text-slate-500">{interestLine}</p> : null}
                       <p className="mt-1 text-sm font-semibold text-slate-900">{estimatedValueLabel}</p>
+                      {prospectView === 'buyer' && prospect.resolvedBedrooms ? (
+                        <p className="text-xs text-slate-500">Bedrooms: {prospect.resolvedBedrooms}</p>
+                      ) : null}
+                      {prospectView === 'seller' && prospect.resolvedSellingIntent ? (
+                        <p className="text-xs font-semibold text-slate-600">{prospect.resolvedSellingIntent}</p>
+                      ) : null}
+                      {prospectView === 'seller' && prospect.resolvedLastContactOutcome ? (
+                        <p className="text-xs text-slate-500">Outcome: {prospect.resolvedLastContactOutcome}</p>
+                      ) : null}
                     </div>
                     <div className="relative shrink-0" onClick={(event) => event.stopPropagation()}>
                       <button
@@ -1855,16 +2439,23 @@ function PipelineCanvassingPage() {
           resetProspectForm()
         }}
         title="Add Canvassing Prospect"
-        subtitle="Capture outbound prospecting contacts and set follow-up actions."
-        className="max-w-3xl"
+        subtitle="Capture outbound prospecting contacts and seller context."
+        className="max-w-4xl overflow-hidden"
       >
-        <form className="grid gap-4" onSubmit={handleCreateProspect}>
+        <form className="-m-5 flex max-h-[calc(100dvh-7rem)] flex-col sm:-m-6" onSubmit={handleCreateProspect}>
+          <div className="grid gap-4 overflow-y-auto px-5 py-4 sm:px-6">
           <div className="rounded-[14px] border border-[#dbe4ee] bg-[#f8fbff] p-3">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Prospect Type</p>
             <div className="mt-2 inline-flex items-center rounded-full border border-[#dbe4ee] bg-white p-1">
               <button
                 type="button"
-                onClick={() => setProspectForm((previous) => ({ ...previous, prospectType: 'Buyer Prospect' }))}
+                onClick={() => setProspectForm((previous) => ({
+                  ...previous,
+                  prospectType: 'Buyer Prospect',
+                  source: normalizeText(previous.source) && previous.source !== 'Cold Call' ? previous.source : 'Website',
+                  canvassingMethod: normalizeText(previous.canvassingMethod) && previous.canvassingMethod !== 'Cold Call' ? previous.canvassingMethod : 'Website',
+                  buyerStatus: normalizeText(previous.buyerStatus) || 'New',
+                }))}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                   resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'buyer'
                     ? 'bg-[#1f4f78] text-white'
@@ -1875,7 +2466,14 @@ function PipelineCanvassingPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setProspectForm((previous) => ({ ...previous, prospectType: 'Seller Prospect', linkedListingId: '' }))}
+                onClick={() => setProspectForm((previous) => ({
+                  ...previous,
+                  prospectType: 'Seller Prospect',
+                  linkedListingId: '',
+                  enquiryListingId: '',
+                  source: normalizeText(previous.source) && previous.source !== 'Website' ? previous.source : 'Cold Call',
+                  canvassingMethod: normalizeText(previous.canvassingMethod) && previous.canvassingMethod !== 'Website' ? previous.canvassingMethod : 'Cold Call',
+                }))}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                   resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller'
                     ? 'bg-[#1f4f78] text-white'
@@ -1891,21 +2489,25 @@ function PipelineCanvassingPage() {
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Contact Details</p>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <Field
+                className="h-12 rounded-[16px]"
                 placeholder="First name"
                 value={prospectForm.firstName}
                 onChange={(event) => setProspectForm((previous) => ({ ...previous, firstName: event.target.value }))}
               />
               <Field
+                className="h-12 rounded-[16px]"
                 placeholder="Last name"
                 value={prospectForm.lastName}
                 onChange={(event) => setProspectForm((previous) => ({ ...previous, lastName: event.target.value }))}
               />
               <Field
+                className="h-12 rounded-[16px]"
                 placeholder="Phone"
                 value={prospectForm.phone}
                 onChange={(event) => setProspectForm((previous) => ({ ...previous, phone: event.target.value }))}
               />
               <Field
+                className="h-12 rounded-[16px]"
                 placeholder="Email"
                 value={prospectForm.email}
                 onChange={(event) => setProspectForm((previous) => ({ ...previous, email: event.target.value }))}
@@ -1913,138 +2515,359 @@ function PipelineCanvassingPage() {
             </div>
           </div>
 
-          <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Prospecting Context</p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
-                Agent
-                <Field
-                  as="select"
-                  value={prospectForm.assignedAgentId}
-                  onChange={(event) => setProspectForm((previous) => ({ ...previous, assignedAgentId: event.target.value }))}
-                >
-                  {agentOptions.map((agent) => (
-                    <option key={agent.id || agent.email} value={agent.id || agent.email}>
-                      {agent.name}{agent.email ? ` (${agent.email})` : ''}
-                    </option>
-                  ))}
-                </Field>
-              </label>
-              {resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'buyer' ? (
-                <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
-                  Listing / Property
+          {resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'buyer' ? (
+            <>
+              <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Enquiry Context</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
+                    Assigned agent
                     <Field
                       as="select"
-                      value={prospectForm.linkedListingId}
-                      onChange={(event) => {
-                        const selectedListing = scopedListingOptions.find((listing) => normalizeText(listing.id) === normalizeText(event.target.value))
-                        setProspectForm((previous) => ({
-                          ...previous,
-                          linkedListingId: event.target.value,
+                      className="h-12 rounded-[16px]"
+                      value={prospectForm.assignedAgentId}
+                      onChange={(event) => setProspectForm((previous) => ({ ...previous, assignedAgentId: event.target.value }))}
+                      required
+                    >
+                      {agentOptions.map((agent) => (
+                        <option key={agent.id || agent.email} value={agent.id || agent.email}>
+                          {agent.name}{agent.email ? ` (${agent.email})` : ''}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.source}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, source: event.target.value, canvassingMethod: event.target.value }))}
+                    required
+                  >
+                    {BUYER_SOURCE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.enquiryListingId || prospectForm.linkedListingId}
+                    onChange={(event) => {
+                      const selectedListing = scopedListingOptions.find((listing) => normalizeText(listing.id) === normalizeText(event.target.value))
+                      setProspectForm((previous) => ({
+                        ...previous,
+                        enquiryListingId: event.target.value,
+                        linkedListingId: event.target.value,
+                        areaOfInterest: normalizeText(previous.areaOfInterest) || normalizeText(selectedListing?.suburb),
                         area: normalizeText(previous.area) || normalizeText(selectedListing?.suburb),
+                        areaSuburb: normalizeText(previous.areaSuburb) || normalizeText(selectedListing?.suburb),
+                        preferredPropertyType: normalizeText(previous.preferredPropertyType) || normalizeText(selectedListing?.propertyType),
                         propertyType: normalizeText(previous.propertyType) || normalizeText(selectedListing?.propertyType),
-                        estimatedValue: normalizeText(previous.estimatedValue) || (selectedListing?.askingPrice ? String(selectedListing.askingPrice) : ''),
                       }))
                     }}
                   >
-                    <option value="">Select listing/property</option>
+                    <option value="">Enquiry listing (optional)</option>
                     {scopedListingOptions.map((listing) => (
                       <option key={listing.id} value={listing.id}>
                         {listing.label}
                       </option>
                     ))}
                   </Field>
-                </label>
-              ) : null}
-              <Field
-                as="select"
-                value={prospectForm.canvassingMethod}
-                onChange={(event) => setProspectForm((previous) => ({ ...previous, canvassingMethod: event.target.value }))}
-              >
-                {CANVASSING_METHODS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Field>
-              <Field
-                as="select"
-                value={prospectForm.propertyType}
-                onChange={(event) => setProspectForm((previous) => ({ ...previous, propertyType: event.target.value }))}
-              >
-                <option value="">
-                  {resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller'
-                    ? 'Select property type (optional)'
-                    : 'Select preferred property type (optional)'}
-                </option>
-                {getProspectPropertyTypeOptions(prospectForm.propertyType).map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Field>
-              <Field
-                placeholder={resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller' ? 'Property area / suburb' : 'Area of interest'}
-                value={prospectForm.area}
-                onChange={(event) => setProspectForm((previous) => ({ ...previous, area: event.target.value }))}
-              />
-              <Field
-                placeholder={resolveProspectAudience({ prospectType: prospectForm.prospectType }) === 'seller' ? 'Estimated property value' : 'Budget'}
-                value={prospectForm.estimatedValue}
-                onChange={(event) => setProspectForm((previous) => ({ ...previous, estimatedValue: event.target.value }))}
-              />
-            </div>
-          </div>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.buyerStatus}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, buyerStatus: event.target.value, status: event.target.value }))}
+                  >
+                    <option value="">Buyer status (optional)</option>
+                    {BUYER_STATUS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                </div>
+              </div>
 
-          <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Follow-Up Plan</p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <Field
-                type="date"
-                value={prospectForm.nextFollowUpDate}
-                onChange={(event) => setProspectForm((previous) => ({ ...previous, nextFollowUpDate: event.target.value }))}
-              />
-              <Field
-                as="select"
-                value={prospectForm.followUpPriority}
-                onChange={(event) => setProspectForm((previous) => ({ ...previous, followUpPriority: event.target.value }))}
-              >
-                {['Low', 'Medium', 'High', 'Urgent'].map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Field>
-              <Field
-                as="select"
-                value={prospectForm.status}
-                onChange={(event) => setProspectForm((previous) => ({ ...previous, status: event.target.value }))}
-              >
-                {PROSPECT_STATUSES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Field>
-              <Field
-                as="textarea"
-                rows={2}
-                placeholder="Follow-up note"
-                value={prospectForm.followUpNote}
-                onChange={(event) => setProspectForm((previous) => ({ ...previous, followUpNote: event.target.value }))}
-              />
-            </div>
-            <Field
-              as="textarea"
-              className="mt-4"
-              rows={3}
-              placeholder="Notes"
-              value={prospectForm.notes}
-              onChange={(event) => setProspectForm((previous) => ({ ...previous, notes: event.target.value }))}
-            />
+              <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Buyer Requirements</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <AddressAutocomplete
+                    label=""
+                    placeholder="Area of interest"
+                    description=""
+                    predictionTypes={AREA_AUTOCOMPLETE_TYPES}
+                    value={prospectForm.areaOfInterest ? {
+                      formattedAddress: prospectForm.areaOfInterest,
+                      suburb: prospectForm.areaOfInterest,
+                      city: prospectForm.city,
+                      province: prospectForm.province,
+                      country: prospectForm.country,
+                      placeId: prospectForm.areaOfInterestPlaceId,
+                    } : null}
+                    onInputValueChange={(nextValue) => setProspectForm((previous) => ({
+                      ...previous,
+                      areaOfInterest: nextValue,
+                      area: nextValue,
+                      areaSuburb: nextValue,
+                    }))}
+                    onChange={(value) => setProspectForm((previous) => {
+                      const area = normalizeText(value?.suburb || value?.city || value?.formattedAddress)
+                      return {
+                        ...previous,
+                        areaOfInterest: area,
+                        area,
+                        areaSuburb: area,
+                        areaOfInterestPlaceId: normalizeText(value?.placeId),
+                        areaSuburbPlaceId: normalizeText(value?.placeId),
+                        city: normalizeText(value?.city || previous.city),
+                        province: normalizeText(value?.province || previous.province),
+                        country: normalizeText(value?.country || previous.country),
+                      }
+                    })}
+                  />
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.preferredPropertyType || prospectForm.propertyType}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, preferredPropertyType: event.target.value, propertyType: event.target.value }))}
+                  >
+                    <option value="">Preferred property type (optional)</option>
+                    {BUYER_PROPERTY_TYPE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.budgetRange || prospectForm.estimatedPropertyValue}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, budgetRange: event.target.value, estimatedPropertyValue: event.target.value }))}
+                  >
+                    <option value="">Budget range (optional)</option>
+                    {ESTIMATED_PROPERTY_VALUE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.bedrooms}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, bedrooms: event.target.value }))}
+                  >
+                    <option value="">Bedrooms (optional)</option>
+                    {BUYER_BEDROOM_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                </div>
+              </div>
+
+              <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Buyer Readiness</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.financeStatus}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, financeStatus: event.target.value }))}
+                  >
+                    <option value="">Finance status (optional)</option>
+                    {FINANCE_STATUS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.timeframe}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, timeframe: event.target.value }))}
+                  >
+                    <option value="">Timeframe (optional)</option>
+                    {BUYER_TIMEFRAME_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.subjectToSale}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, subjectToSale: event.target.value }))}
+                  >
+                    <option value="">Subject to sale (optional)</option>
+                    {SUBJECT_TO_SALE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="textarea"
+                    className="!min-h-[80px] rounded-[16px]"
+                    rows={3}
+                    placeholder="Notes (optional)"
+                    value={prospectForm.notes}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, notes: event.target.value }))}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Property Details</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.propertyType}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, propertyType: event.target.value }))}
+                  >
+                    <option value="">Property type (optional)</option>
+                    {getProspectPropertyTypeOptions(prospectForm.propertyType).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <AddressAutocomplete
+                    label=""
+                    placeholder="Area / suburb"
+                    description=""
+                    predictionTypes={AREA_AUTOCOMPLETE_TYPES}
+                    value={buildCanvassingAreaValue(prospectForm)}
+                    onInputValueChange={(nextValue) => setProspectForm((previous) => mergeAreaIntoProspectDraft(previous, null, nextValue))}
+                    onChange={(value) => setProspectForm((previous) => mergeAreaIntoProspectDraft(previous, value, value?.formattedAddress))}
+                  />
+                  <AddressAutocomplete
+                    label=""
+                    placeholder="Street address (optional)"
+                    description=""
+                    value={buildCanvassingAddressValue(prospectForm)}
+                    onInputValueChange={(nextValue) => setProspectForm((previous) => ({ ...previous, streetAddress: nextValue, formattedAddress: nextValue }))}
+                    onChange={(value) => setProspectForm((previous) => mergeAddressIntoProspectDraft(previous, value))}
+                  />
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.estimatedPropertyValue}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, estimatedPropertyValue: event.target.value }))}
+                  >
+                    <option value="">Estimated property value (optional)</option>
+                    {ESTIMATED_PROPERTY_VALUE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                </div>
+              </div>
+
+              <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Prospecting Context</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">
+                    Assigned agent
+                    <Field
+                      as="select"
+                      className="h-12 rounded-[16px]"
+                      value={prospectForm.assignedAgentId}
+                      onChange={(event) => setProspectForm((previous) => ({ ...previous, assignedAgentId: event.target.value }))}
+                      required
+                    >
+                      {agentOptions.map((agent) => (
+                        <option key={agent.id || agent.email} value={agent.id || agent.email}>
+                          {agent.name}{agent.email ? ` (${agent.email})` : ''}
+                        </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.source}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, source: event.target.value, canvassingMethod: event.target.value }))}
+                    required
+                  >
+                    {CANVASSING_METHODS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.sellingIntent}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, sellingIntent: event.target.value }))}
+                  >
+                    <option value="">Selling intent (optional)</option>
+                    {SELLING_INTENT_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.lastContactOutcome}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, lastContactOutcome: event.target.value }))}
+                  >
+                    <option value="">Last contact outcome (optional)</option>
+                    {LAST_CONTACT_OUTCOME_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                </div>
+              </div>
+
+              <div className="rounded-[14px] border border-[#dbe4ee] bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Additional Information</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <Field
+                    as="select"
+                    className="h-12 rounded-[16px]"
+                    value={prospectForm.propertyOccupancy}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, propertyOccupancy: event.target.value }))}
+                  >
+                    <option value="">Property occupancy (optional)</option>
+                    {PROPERTY_OCCUPANCY_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Field>
+                  <Field
+                    as="textarea"
+                    className="!min-h-[80px] rounded-[16px]"
+                    rows={3}
+                    placeholder="Notes (optional)"
+                    value={prospectForm.notes}
+                    onChange={(event) => setProspectForm((previous) => ({ ...previous, notes: event.target.value }))}
+                  />
+                </div>
+              </div>
+            </>
+          )}
           </div>
-          <div className="mt-2 flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setShowCreateModal(false)}>
+          <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#dbe4ee] bg-white/95 px-5 py-4 backdrop-blur sm:px-6">
+            <Button type="button" variant="secondary" onClick={() => {
+              setShowCreateModal(false)
+              resetProspectForm()
+            }}>
               Cancel
             </Button>
             <Button type="submit">Save Prospect</Button>
@@ -2152,7 +2975,7 @@ function PipelineCanvassingPage() {
                         </span>
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1">
                           <WalletCards size={14} />
-                          {formatCurrency(selectedProspect.estimatedValue)}
+                          {selectedProspect.estimatedPropertyValue || formatCurrency(selectedProspect.estimatedValue)}
                         </span>
                       </div>
                     </div>
@@ -2221,13 +3044,16 @@ function PipelineCanvassingPage() {
                         </Field>
                       </label>
                       <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                        Canvassing method
+                        Source
                         <Field
                           as="select"
-                          value={selectedProspect.canvassingMethod || 'Other'}
-                          onChange={(event) => handleUpdateSelectedProspect('canvassingMethod', event.target.value)}
+                          value={selectedProspect.source || selectedProspect.canvassingMethod || 'Other'}
+                          onChange={(event) => {
+                            handleUpdateSelectedProspect('source', event.target.value)
+                            handleUpdateSelectedProspect('canvassingMethod', event.target.value)
+                          }}
                         >
-                          {CANVASSING_METHODS.map((option) => (
+                          {(resolveProspectAudience(selectedProspect) === 'buyer' ? BUYER_SOURCE_OPTIONS : CANVASSING_METHODS).map((option) => (
                             <option key={option} value={option}>
                               {option}
                             </option>
@@ -2239,104 +3065,247 @@ function PipelineCanvassingPage() {
 
                   <section className="rounded-[18px] border border-[#dfe8f3] bg-white p-4 shadow-[0_12px_30px_rgba(15,35,55,0.04)]">
                     <div className="mb-4">
-                      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8293aa]">Property opportunity</p>
-                      <h4 className="mt-1 text-base font-semibold text-[#17263a]">Area, value and follow-up context</h4>
+                      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#8293aa]">
+                        {resolveProspectAudience(selectedProspect) === 'buyer' ? 'Buyer opportunity' : 'Property opportunity'}
+                      </p>
+                      <h4 className="mt-1 text-base font-semibold text-[#17263a]">
+                        {resolveProspectAudience(selectedProspect) === 'buyer' ? 'Requirements, readiness and enquiry context' : 'Area, value and seller context'}
+                      </h4>
                     </div>
 
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                        Area or address
-                        <Field value={selectedProspect.area || ''} onChange={(event) => handleUpdateSelectedProspect('area', event.target.value)} />
-                      </label>
-                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                        Property type
-                        <Field
-                          as="select"
-                          value={selectedProspect.propertyType || ''}
-                          onChange={(event) => handleUpdateSelectedProspect('propertyType', event.target.value)}
-                        >
-                          <option value="">Select property type (optional)</option>
-                          {getProspectPropertyTypeOptions(selectedProspect.propertyType).map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </Field>
-                      </label>
-                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                        Next follow-up date
-                        <Field
-                          type="date"
-                          value={selectedProspect.nextFollowUpDate || ''}
-                          onChange={(event) => handleUpdateSelectedProspect('nextFollowUpDate', event.target.value)}
-                        />
-                      </label>
-                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                        Follow-up priority
-                        <Field
-                          as="select"
-                          value={selectedProspect.followUpPriority || 'Medium'}
-                          onChange={(event) => handleUpdateSelectedProspect('followUpPriority', event.target.value)}
-                        >
-                          {['Low', 'Medium', 'High', 'Urgent'].map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </Field>
-                      </label>
-                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                        Prospect status
-                        <Field
-                          as="select"
-                          value={selectedProspect.status || 'New'}
-                          onChange={(event) => handleUpdateSelectedProspect('status', event.target.value)}
-                        >
-                          {PROSPECT_STATUSES.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </Field>
-                      </label>
-                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                        Estimated value
-                        <Field
-                          value={selectedProspect.estimatedValue || ''}
-                          onChange={(event) => handleUpdateSelectedProspect('estimatedValue', event.target.value)}
-                        />
-                      </label>
-                    </div>
-
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                        Follow-up note
-                        <Field
-                          as="textarea"
-                          rows={3}
-                          className="min-h-[96px]"
-                          value={selectedProspect.followUpNote || ''}
-                          onChange={(event) => handleUpdateSelectedProspect('followUpNote', event.target.value)}
-                        />
-                      </label>
-                      <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
-                        Internal notes
-                        <Field
-                          as="textarea"
-                          rows={3}
-                          className="min-h-[96px]"
-                          value={selectedProspect.notes || ''}
-                          onChange={(event) => handleUpdateSelectedProspect('notes', event.target.value)}
-                        />
-                      </label>
-                    </div>
+                    {resolveProspectAudience(selectedProspect) === 'buyer' ? (
+                      <>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Enquiry listing
+                            <Field
+                              as="select"
+                              value={selectedProspect.enquiryListingId || selectedProspect.linkedListingId || selectedProspect.listingId || ''}
+                              onChange={(event) => {
+                                handleUpdateSelectedProspect('enquiryListingId', event.target.value)
+                                handleUpdateSelectedProspect('linkedListingId', event.target.value)
+                              }}
+                            >
+                              <option value="">Select listing/property</option>
+                              {scopedListingOptions.map((listing) => (
+                                <option key={listing.id} value={listing.id}>
+                                  {listing.label}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Buyer status
+                            <Field
+                              as="select"
+                              value={selectedProspect.buyerStatus || selectedProspect.status || 'New'}
+                              onChange={(event) => {
+                                handleUpdateSelectedProspect('buyerStatus', event.target.value)
+                                handleUpdateSelectedProspect('status', event.target.value)
+                              }}
+                            >
+                              {BUYER_STATUS_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Area of interest
+                            <Field
+                              value={selectedProspect.areaOfInterest || selectedProspect.areaSuburb || selectedProspect.area || ''}
+                              onChange={(event) => {
+                                handleUpdateSelectedProspect('areaOfInterest', event.target.value)
+                                handleUpdateSelectedProspect('areaSuburb', event.target.value)
+                                handleUpdateSelectedProspect('area', event.target.value)
+                              }}
+                            />
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Preferred property type
+                            <Field
+                              as="select"
+                              value={selectedProspect.preferredPropertyType || selectedProspect.propertyType || ''}
+                              onChange={(event) => {
+                                handleUpdateSelectedProspect('preferredPropertyType', event.target.value)
+                                handleUpdateSelectedProspect('propertyType', event.target.value)
+                              }}
+                            >
+                              <option value="">Select type (optional)</option>
+                              {BUYER_PROPERTY_TYPE_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Budget range
+                            <Field
+                              as="select"
+                              value={selectedProspect.budgetRange || selectedProspect.estimatedPropertyValue || ''}
+                              onChange={(event) => {
+                                handleUpdateSelectedProspect('budgetRange', event.target.value)
+                                handleUpdateSelectedProspect('estimatedPropertyValue', event.target.value)
+                              }}
+                            >
+                              <option value="">Select budget (optional)</option>
+                              {ESTIMATED_PROPERTY_VALUE_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Bedrooms
+                            <Field as="select" value={selectedProspect.bedrooms || ''} onChange={(event) => handleUpdateSelectedProspect('bedrooms', event.target.value)}>
+                              <option value="">Select bedrooms (optional)</option>
+                              {BUYER_BEDROOM_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Finance status
+                            <Field as="select" value={selectedProspect.financeStatus || ''} onChange={(event) => handleUpdateSelectedProspect('financeStatus', event.target.value)}>
+                              <option value="">Select finance status</option>
+                              {FINANCE_STATUS_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Timeframe
+                            <Field as="select" value={selectedProspect.timeframe || ''} onChange={(event) => handleUpdateSelectedProspect('timeframe', event.target.value)}>
+                              <option value="">Select timeframe</option>
+                              {BUYER_TIMEFRAME_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Subject to sale
+                            <Field as="select" value={selectedProspect.subjectToSale || ''} onChange={(event) => handleUpdateSelectedProspect('subjectToSale', event.target.value)}>
+                              <option value="">Select subject to sale</option>
+                              {SUBJECT_TO_SALE_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                        </div>
+                        <label className="mt-4 grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                          Internal notes
+                          <Field
+                            as="textarea"
+                            rows={3}
+                            className="min-h-[88px]"
+                            value={selectedProspect.notes || ''}
+                            onChange={(event) => handleUpdateSelectedProspect('notes', event.target.value)}
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Area / suburb
+                            <Field
+                              value={selectedProspect.areaSuburb || selectedProspect.area || ''}
+                              onChange={(event) => {
+                                handleUpdateSelectedProspect('areaSuburb', event.target.value)
+                                handleUpdateSelectedProspect('area', event.target.value)
+                              }}
+                            />
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Street address
+                            <Field
+                              value={selectedProspect.streetAddress || ''}
+                              onChange={(event) => {
+                                handleUpdateSelectedProspect('streetAddress', event.target.value)
+                                handleUpdateSelectedProspect('formattedAddress', event.target.value)
+                              }}
+                            />
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Property type
+                            <Field as="select" value={selectedProspect.propertyType || ''} onChange={(event) => handleUpdateSelectedProspect('propertyType', event.target.value)}>
+                              <option value="">Select property type (optional)</option>
+                              {getProspectPropertyTypeOptions(selectedProspect.propertyType).map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Estimated value
+                            <Field as="select" value={selectedProspect.estimatedPropertyValue || ''} onChange={(event) => handleUpdateSelectedProspect('estimatedPropertyValue', event.target.value)}>
+                              <option value="">Select value band (optional)</option>
+                              {ESTIMATED_PROPERTY_VALUE_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Selling intent
+                            <Field as="select" value={selectedProspect.sellingIntent || ''} onChange={(event) => handleUpdateSelectedProspect('sellingIntent', event.target.value)}>
+                              <option value="">Select intent (optional)</option>
+                              {SELLING_INTENT_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Last contact outcome
+                            <Field as="select" value={selectedProspect.lastContactOutcome || ''} onChange={(event) => handleUpdateSelectedProspect('lastContactOutcome', event.target.value)}>
+                              <option value="">Select outcome (optional)</option>
+                              {LAST_CONTACT_OUTCOME_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                          <label className="grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                            Property occupancy
+                            <Field as="select" value={selectedProspect.propertyOccupancy || ''} onChange={(event) => handleUpdateSelectedProspect('propertyOccupancy', event.target.value)}>
+                              <option value="">Select occupancy (optional)</option>
+                              {PROPERTY_OCCUPANCY_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </Field>
+                          </label>
+                        </div>
+                        <label className="mt-4 grid gap-1.5 text-sm font-semibold text-[#29435d]">
+                          Internal notes
+                          <Field as="textarea" rows={3} className="min-h-[88px]" value={selectedProspect.notes || ''} onChange={(event) => handleUpdateSelectedProspect('notes', event.target.value)} />
+                        </label>
+                      </>
+                    )}
                   </section>
 
                   <section className="rounded-[18px] border border-[#dfe8f3] bg-[#f8fbff] p-4">
                     <div className="grid gap-3 md:grid-cols-3">
                       <div className="rounded-[14px] border border-[#dfe8f3] bg-white px-3 py-3">
                         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8293aa]">Estimated value</p>
-                        <p className="mt-1 text-lg font-semibold text-[#17263a]">{formatCurrency(selectedProspect.estimatedValue)}</p>
+                      <p className="mt-1 text-lg font-semibold text-[#17263a]">{selectedProspect.estimatedPropertyValue || formatCurrency(selectedProspect.estimatedValue)}</p>
                       </div>
                       <div className="rounded-[14px] border border-[#dfe8f3] bg-white px-3 py-3">
                         <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#8293aa]">Lead status</p>

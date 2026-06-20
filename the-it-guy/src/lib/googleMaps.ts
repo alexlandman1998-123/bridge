@@ -2,6 +2,7 @@ let googleMapsPromise: Promise<any> | null = null
 
 const GOOGLE_MAPS_SCRIPT_ID = 'arch9-google-maps-js'
 const GOOGLE_MAPS_SRC = 'https://maps.googleapis.com/maps/api/js'
+const GOOGLE_MAPS_LOAD_TIMEOUT_MS = 10000
 
 function getGoogleMapsApiKey() {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : {}
@@ -36,19 +37,38 @@ export function loadGoogleMaps() {
 
   googleMapsPromise = new Promise((resolve, reject) => {
     const existingScript = document.getElementById(GOOGLE_MAPS_SCRIPT_ID) as HTMLScriptElement | null
+    let settled = false
+
+    const settleResolve = (google: any) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      resolve(google)
+    }
+
+    const settleReject = (error: Error) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      reject(error)
+    }
+
+    const timeout = window.setTimeout(() => {
+      settleReject(new Error('Google Maps took too long to load. Check that Maps JavaScript API and the Places library are enabled for this key.'))
+    }, GOOGLE_MAPS_LOAD_TIMEOUT_MS)
 
     const resolveWhenReady = () => {
       const loadedGoogle = getExistingGoogle()
       if (loadedGoogle) {
-        resolve(loadedGoogle)
+        settleResolve(loadedGoogle)
         return
       }
-      reject(new Error('Google Maps loaded, but the Places library is unavailable.'))
+      settleReject(new Error('Google Maps loaded, but the Places library is unavailable. Enable Maps JavaScript API and Places API for this key.'))
     }
 
     if (existingScript) {
       existingScript.addEventListener('load', resolveWhenReady, { once: true })
-      existingScript.addEventListener('error', () => reject(new Error('Google Maps failed to load.')), { once: true })
+      existingScript.addEventListener('error', () => settleReject(new Error('Google Maps failed to load.')), { once: true })
       if ((existingScript as any).dataset.loaded === 'true') resolveWhenReady()
       return
     }
@@ -62,7 +82,7 @@ export function loadGoogleMaps() {
       script.dataset.loaded = 'true'
       resolveWhenReady()
     })
-    script.addEventListener('error', () => reject(new Error('Google Maps failed to load.')))
+    script.addEventListener('error', () => settleReject(new Error('Google Maps failed to load.')))
 
     document.head.appendChild(script)
   }).catch((error) => {

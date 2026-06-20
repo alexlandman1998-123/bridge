@@ -21,6 +21,7 @@ export type AddressAutocompleteProps = {
   value?: AddressAutocompleteValue | null
   onChange: (value: AddressAutocompleteValue | null) => void
   onInputValueChange?: (value: string) => void
+  predictionTypes?: string[]
   placeholder?: string
   label?: string
   description?: string
@@ -36,25 +37,34 @@ type Prediction = {
     main_text?: string
     secondary_text?: string
   }
+  source?: 'modern' | 'legacy'
+  placePrediction?: any
 }
 
 const DETAIL_FIELDS = ['address_components', 'formatted_address', 'geometry', 'place_id']
+const MODERN_DETAIL_FIELDS = ['addressComponents', 'formattedAddress', 'location', 'id']
+const PLACES_REQUEST_TIMEOUT_MS = 7000
 
 function getComponent(components: any[] = [], types: string[]) {
   const match = components.find((component) => types.some((type) => component.types?.includes(type)))
-  return String(match?.long_name || '').trim()
+  return String(match?.long_name || match?.longText || '').trim()
 }
 
 function mapPlaceToAddress(place: any): AddressAutocompleteValue {
-  const components = Array.isArray(place?.address_components) ? place.address_components : []
+  const components = Array.isArray(place?.address_components)
+    ? place.address_components
+    : Array.isArray(place?.addressComponents)
+      ? place.addressComponents
+      : []
   const streetNumber = getComponent(components, ['street_number'])
   const route = getComponent(components, ['route'])
   const streetAddress = [streetNumber, route].filter(Boolean).join(' ').trim()
   const sublocality = getComponent(components, ['sublocality', 'sublocality_level_1', 'sublocality_level_2'])
   const neighborhood = getComponent(components, ['neighborhood'])
   const city = getComponent(components, ['locality']) || getComponent(components, ['administrative_area_level_2'])
-  const formattedAddress = String(place?.formatted_address || '').trim()
+  const formattedAddress = String(place?.formatted_address || place?.formattedAddress || '').trim()
   const location = place?.geometry?.location
+  const modernLocation = place?.location
 
   return {
     formattedAddress,
@@ -64,16 +74,74 @@ function mapPlaceToAddress(place: any): AddressAutocompleteValue {
     province: getComponent(components, ['administrative_area_level_1']),
     country: getComponent(components, ['country']) || 'South Africa',
     postalCode: getComponent(components, ['postal_code']),
-    latitude: typeof location?.lat === 'function' ? location.lat() : undefined,
-    longitude: typeof location?.lng === 'function' ? location.lng() : undefined,
-    placeId: String(place?.place_id || '').trim(),
+    latitude:
+      typeof location?.lat === 'function'
+        ? location.lat()
+        : typeof modernLocation?.lat === 'function'
+          ? modernLocation.lat()
+          : typeof modernLocation?.lat === 'number'
+            ? modernLocation.lat
+            : undefined,
+    longitude:
+      typeof location?.lng === 'function'
+        ? location.lng()
+        : typeof modernLocation?.lng === 'function'
+          ? modernLocation.lng()
+          : typeof modernLocation?.lng === 'number'
+            ? modernLocation.lng
+            : undefined,
+    placeId: String(place?.place_id || place?.id || '').trim(),
   }
+}
+
+function textValue(value: any) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.trim()
+  if (typeof value?.toString === 'function') {
+    const nextValue = value.toString()
+    if (nextValue && nextValue !== '[object Object]') return String(nextValue).trim()
+  }
+  return String(value?.text || value?.value || '').trim()
+}
+
+function mapModernSuggestion(suggestion: any): Prediction | null {
+  const placePrediction = suggestion?.placePrediction
+  if (!placePrediction) return null
+  const mainText = textValue(placePrediction.mainText || placePrediction.structuredFormat?.mainText)
+  const secondaryText = textValue(placePrediction.secondaryText || placePrediction.structuredFormat?.secondaryText)
+  const description =
+    textValue(placePrediction.text) ||
+    [mainText, secondaryText].filter(Boolean).join(', ') ||
+    textValue(placePrediction.place)
+  if (!description) return null
+
+  return {
+    description,
+    place_id: String(placePrediction.placeId || placePrediction.place || description),
+    structured_formatting: {
+      main_text: mainText || description,
+      secondary_text: secondaryText,
+    },
+    source: 'modern',
+    placePrediction,
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMessage: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error(timeoutMessage)), PLACES_REQUEST_TIMEOUT_MS)
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timeout))
+  })
 }
 
 export default function AddressAutocomplete({
   value = null,
   onChange,
   onInputValueChange,
+  predictionTypes,
   placeholder = 'Start typing an address...',
   label,
   description,
@@ -91,10 +159,13 @@ export default function AddressAutocomplete({
   const [googleApi, setGoogleApi] = useState<any>(null)
   const autocompleteServiceRef = useRef<any>(null)
   const placesServiceRef = useRef<any>(null)
+  const placesLibraryRef = useRef<any>(null)
+  const sessionTokenRef = useRef<any>(null)
   const requestIdRef = useRef(0)
 
   const isApiKeyAvailable = hasGoogleMapsApiKey()
-  const isDisabled = disabled || !isApiKeyAvailable || Boolean(loadError)
+  const canSearchGoogle = !disabled && isApiKeyAvailable && !loadError
+  const isDisabled = disabled
 
   useEffect(() => {
     setInputValue(value?.formattedAddress || '')
@@ -111,11 +182,24 @@ export default function AddressAutocomplete({
     let cancelled = false
     setIsLoadingMaps(true)
     loadGoogleMaps()
-      .then((google) => {
+      .then(async (google) => {
+        if (cancelled) return
+        const placesLibrary =
+          typeof google?.maps?.importLibrary === 'function'
+            ? await google.maps.importLibrary('places').catch((libraryError: unknown) => {
+                console.warn('[Google Maps] Modern Places library unavailable; trying legacy Places services.', libraryError)
+                return null
+              })
+            : null
         if (cancelled) return
         setGoogleApi(google)
-        autocompleteServiceRef.current = new google.maps.places.AutocompleteService()
-        placesServiceRef.current = new google.maps.places.PlacesService(document.createElement('div'))
+        placesLibraryRef.current = placesLibrary
+        if (!placesLibrary?.AutocompleteSuggestion && google.maps.places?.AutocompleteService) {
+          autocompleteServiceRef.current = new google.maps.places.AutocompleteService()
+        }
+        if (google.maps.places?.PlacesService) {
+          placesServiceRef.current = new google.maps.places.PlacesService(document.createElement('div'))
+        }
         setLoadError('')
       })
       .catch((loadProblem) => {
@@ -133,7 +217,7 @@ export default function AddressAutocomplete({
   }, [disabled, isApiKeyAvailable])
 
   useEffect(() => {
-    if (!googleApi || isDisabled || inputValue.trim().length < 3) {
+    if (!googleApi || !canSearchGoogle || inputValue.trim().length < 3) {
       setPredictions([])
       setIsFetching(false)
       return
@@ -144,18 +228,75 @@ export default function AddressAutocomplete({
     setIsFetching(true)
 
     const timer = window.setTimeout(() => {
-      autocompleteServiceRef.current?.getPlacePredictions(
+      const placesLibrary = placesLibraryRef.current
+      const modernAutocomplete = placesLibrary?.AutocompleteSuggestion
+
+      if (modernAutocomplete?.fetchAutocompleteSuggestions) {
+        if (!sessionTokenRef.current && placesLibrary?.AutocompleteSessionToken) {
+          sessionTokenRef.current = new placesLibrary.AutocompleteSessionToken()
+        }
+
+        withTimeout(
+          modernAutocomplete.fetchAutocompleteSuggestions({
+            input: inputValue.trim(),
+            includedRegionCodes: ['za'],
+            sessionToken: sessionTokenRef.current,
+          }),
+          'Address suggestions timed out. You can keep typing manually, or check the Google Maps JavaScript API and Places API settings.',
+        )
+          .then((response: any) => {
+            if (requestIdRef.current !== requestId) return
+            const nextPredictions = Array.isArray(response?.suggestions)
+              ? response.suggestions.map(mapModernSuggestion).filter(Boolean)
+              : []
+            setIsFetching(false)
+            setPredictions(nextPredictions)
+            setIsOpen(true)
+            setActiveIndex(-1)
+          })
+          .catch((suggestionError: any) => {
+            if (requestIdRef.current !== requestId) return
+            setIsFetching(false)
+            setPredictions([])
+            setIsOpen(false)
+            setLoadError(`Address suggestions are unavailable (${suggestionError?.message || 'Google Places request denied'}). You can keep typing manually.`)
+          })
+        return
+      }
+
+      if (!autocompleteServiceRef.current) {
+        setIsFetching(false)
+        setPredictions([])
+        setIsOpen(false)
+        setLoadError('Address suggestions are unavailable because the Google Places autocomplete service is not available for this key.')
+        return
+      }
+
+      let completed = false
+      const timeout = window.setTimeout(() => {
+        if (completed || requestIdRef.current !== requestId) return
+        completed = true
+        setIsFetching(false)
+        setPredictions([])
+        setIsOpen(false)
+        setLoadError('Address suggestions timed out. You can keep typing manually, or check the Google Maps JavaScript API and Places API settings.')
+      }, PLACES_REQUEST_TIMEOUT_MS)
+
+      autocompleteServiceRef.current.getPlacePredictions(
         {
           input: inputValue.trim(),
           componentRestrictions: { country: 'za' },
-          types: ['address'],
+          types: predictionTypes && predictionTypes.length ? predictionTypes : ['address'],
         },
         (results: Prediction[] | null, status: string) => {
+          if (completed) return
+          completed = true
+          window.clearTimeout(timeout)
           if (requestIdRef.current !== requestId) return
           setIsFetching(false)
           const placesStatus = googleApi.maps.places.PlacesServiceStatus
           if (status === placesStatus.OK && Array.isArray(results)) {
-            setPredictions(results)
+            setPredictions(results.map((result) => ({ ...result, source: 'legacy' })))
             setIsOpen(true)
             setActiveIndex(-1)
             return
@@ -166,13 +307,14 @@ export default function AddressAutocomplete({
             return
           }
           setPredictions([])
-          setLoadError('Address suggestions are temporarily unavailable.')
+          setIsOpen(false)
+          setLoadError(`Address suggestions are unavailable (${status || 'unknown status'}). You can keep typing manually.`)
         },
       )
     }, 300)
 
     return () => window.clearTimeout(timer)
-  }, [googleApi, inputValue, isDisabled])
+  }, [googleApi, inputValue, canSearchGoogle, predictionTypes])
 
   const helperText = useMemo(() => {
     if (error) return error
@@ -185,22 +327,67 @@ export default function AddressAutocomplete({
     setInputValue('')
     setPredictions([])
     setIsOpen(false)
+    sessionTokenRef.current = null
     onChange(null)
   }
 
   function handleSelect(prediction: Prediction) {
-    if (!prediction?.place_id || !placesServiceRef.current) return
+    if (!prediction?.place_id) return
     setIsFetching(true)
+
+    if (prediction.source === 'modern' && prediction.placePrediction?.toPlace) {
+      const place = prediction.placePrediction.toPlace()
+      withTimeout(
+        place.fetchFields({ fields: MODERN_DETAIL_FIELDS }),
+        'Selected address details timed out. You can keep the typed address manually.',
+      )
+        .then((response: any) => {
+          const mapped = mapPlaceToAddress(response?.place || place)
+          if (!mapped.formattedAddress) {
+            setLoadError('Selected address details could not be loaded.')
+            return
+          }
+          setInputValue(mapped.formattedAddress)
+          setPredictions([])
+          setIsOpen(false)
+          setActiveIndex(-1)
+          sessionTokenRef.current = null
+          onChange(mapped)
+        })
+        .catch((detailError: any) => {
+          setLoadError(`Selected address details could not be loaded (${detailError?.message || 'Google Places request failed'}).`)
+        })
+        .finally(() => setIsFetching(false))
+      return
+    }
+
+    if (!placesServiceRef.current) {
+      setIsFetching(false)
+      setLoadError('Selected address details could not be loaded because Google Places details are unavailable for this key.')
+      return
+    }
+
+    let completed = false
+    const timeout = window.setTimeout(() => {
+      if (completed) return
+      completed = true
+      setIsFetching(false)
+      setLoadError('Selected address details timed out. You can keep the typed address manually.')
+    }, PLACES_REQUEST_TIMEOUT_MS)
+
     placesServiceRef.current.getDetails(
       {
         placeId: prediction.place_id,
         fields: DETAIL_FIELDS,
       },
       (place: any, status: string) => {
+        if (completed) return
+        completed = true
+        window.clearTimeout(timeout)
         setIsFetching(false)
         const placesStatus = googleApi?.maps?.places?.PlacesServiceStatus
         if (status !== placesStatus?.OK || !place) {
-          setLoadError('Selected address details could not be loaded.')
+          setLoadError(`Selected address details could not be loaded (${status || 'unknown status'}).`)
           return
         }
         const mapped = mapPlaceToAddress(place)
@@ -208,6 +395,7 @@ export default function AddressAutocomplete({
         setPredictions([])
         setIsOpen(false)
         setActiveIndex(-1)
+        sessionTokenRef.current = null
         onChange(mapped)
       },
     )
@@ -286,7 +474,7 @@ export default function AddressAutocomplete({
           {helperText}
         </p>
       ) : null}
-      {isOpen && !isDisabled ? (
+      {isOpen && canSearchGoogle ? (
         <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-72 overflow-auto rounded-[18px] border border-[#dbe6f2] bg-white p-1 shadow-[0_18px_50px_rgba(15,23,42,0.14)]">
           {isFetching ? (
             <div className="flex items-center gap-2 px-3 py-3 text-sm text-[#607387]">
