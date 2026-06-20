@@ -3211,7 +3211,7 @@ export async function sendSellerOnboarding(
     normalizeText(listing?.originatingCrmLeadId),
   ].filter(Boolean)))
   const sentAtIso = new Date().toISOString()
-  await syncSellerJourneyLeadStage(client, {
+  void syncSellerJourneyLeadStage(client, {
     organisationId: leadOrganisationId,
     leadIds: leadIdsToSync,
     onboardingToken: token,

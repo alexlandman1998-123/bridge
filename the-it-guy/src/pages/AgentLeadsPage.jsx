@@ -168,6 +168,7 @@ const leadListShell = 'mx-auto flex w-full min-w-0 max-w-[1760px] flex-col gap-5
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm'
 const buyerWorkspaceCardClass = `${panelClass} rounded-[24px] border-slate-200/80 bg-white p-6 shadow-[0_16px_36px_rgba(15,23,42,0.05)]`
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const SELLER_ONBOARDING_EMAIL_TIMEOUT_MS = 20000
 const LEAD_APPOINTMENT_TYPES = [
   { value: 'viewing', label: 'Viewing' },
   { value: 'buyer_consultation', label: 'Buyer Consultation' },
@@ -269,6 +270,18 @@ const EMPTY_LEAD_CREATE_FORM = {
 
 function normalizeText(value) {
   return String(value ?? '').trim()
+}
+
+function withActionTimeout(promise, message, timeoutMs) {
+  let timeoutId = null
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+    }),
+  ]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId)
+  })
 }
 
 function splitName(fullName = '') {
@@ -15290,18 +15303,24 @@ function AgentLeadWorkspace() {
   const [sendingSellerPortalLink, setSendingSellerPortalLink] = useState(false)
   const [savingSellerCommission, setSavingSellerCommission] = useState(false)
 
-  const loadWorkspace = useCallback(async () => {
+  const loadWorkspace = useCallback(async ({ silent = false } = {}) => {
     if (!organisationId || !leadId) return
     try {
-      setLoading(true)
-      setError('')
+      if (!silent) {
+        setLoading(true)
+        setError('')
+      }
       const result = await fetchAgentLeadWorkspace({ organisationId, leadId, actor })
       setData(result)
     } catch (loadError) {
-      setData(null)
-      setError(loadError?.message || 'Unable to load this lead.')
+      if (silent) {
+        console.warn('[Seller onboarding] Background workspace refresh failed.', loadError)
+      } else {
+        setData(null)
+        setError(loadError?.message || 'Unable to load this lead.')
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [actor, leadId, organisationId])
 
@@ -15452,9 +15471,11 @@ function AgentLeadWorkspace() {
       sellerOnboardingInFlightRef.current = true
       setSendingSellerOnboarding(true)
       setSellerActionError('')
-      setSellerActionMessage('')
+      setSellerActionMessage('Preparing seller onboarding link...')
       let listingId = normalizeText(linkedSellerListing?.id || row.listingId || row.listing_id)
+      let sellerListingForEmail = linkedSellerListing
       if (!listingId) {
+        setSellerActionMessage('Creating seller listing shell...')
         const created = await createPrivateListing({
           organisationId,
           assignedAgentId: normalizeText(row.assignedAgentId || actor.id),
@@ -15478,23 +15499,30 @@ function AgentLeadWorkspace() {
           syncRequirements: false,
         })
         listingId = normalizeText(created?.listing?.id)
+        sellerListingForEmail = created?.listing || sellerListingForEmail
       }
       if (!listingId) throw new Error('Create or link a seller listing before sending onboarding.')
 
+      setSellerActionMessage('Creating seller onboarding link...')
       const onboarding = await sendSellerOnboarding(listingId, {
         sellerContactEmail: sellerEmail,
         sellerContactPhone: normalizeText(row.phone || row.contact?.phone),
       })
-      const onboardingEmail = await invokeEdgeFunction('send-email', {
-        body: buildSellerOnboardingEmailPayload({
-          row,
-          listing: linkedSellerListing,
-          onboarding,
-          organisationId,
-          actor,
-          workspaceName,
+      setSellerActionMessage('Sending seller onboarding email...')
+      const onboardingEmail = await withActionTimeout(
+        invokeEdgeFunction('send-email', {
+          body: buildSellerOnboardingEmailPayload({
+            row,
+            listing: sellerListingForEmail,
+            onboarding,
+            organisationId,
+            actor,
+            workspaceName,
+          }),
         }),
-      })
+        'Seller onboarding email is taking too long. Please try again in a moment.',
+        SELLER_ONBOARDING_EMAIL_TIMEOUT_MS,
+      )
       if (onboardingEmail?.error || onboardingEmail?.data?.error) {
         throw new Error(
           onboardingEmail?.error?.message ||
@@ -15502,13 +15530,17 @@ function AgentLeadWorkspace() {
             'Seller onboarding email could not be sent.',
         )
       }
-      await updateAgencyCrmLeadRecord(organisationId, row.leadId, {
+      setSellerActionMessage('Updating seller lead...')
+      const sentLeadPatch = {
         stage: 'Seller Onboarding Sent',
         status: 'Sent',
         sellerOnboardingToken: onboarding?.token,
         sellerOnboardingLink: onboarding?.link,
         sellerOnboardingStatus: 'sent',
         listingId,
+      }
+      await updateAgencyCrmLeadRecord(organisationId, row.leadId, {
+        ...sentLeadPatch,
       })
       await createAgencyCrmLeadActivity(organisationId, row.leadId, {
         agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
@@ -15517,8 +15549,18 @@ function AgentLeadWorkspace() {
         outcome: 'Onboarding link sent',
         activityDate: new Date().toISOString(),
       }, { actor })
+      setData((previous) => {
+        if (!previous?.row) return previous
+        return {
+          ...previous,
+          row: {
+            ...previous.row,
+            ...sentLeadPatch,
+          },
+        }
+      })
       setSellerActionMessage('Seller onboarding email sent.')
-      await loadWorkspace()
+      void loadWorkspace({ silent: true })
     } catch (actionError) {
       setSellerActionError(actionError?.message || 'Unable to send seller onboarding right now.')
     } finally {
