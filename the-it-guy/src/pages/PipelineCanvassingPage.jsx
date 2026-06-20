@@ -702,7 +702,6 @@ function PipelineCanvassingPage() {
   const navigate = useNavigate()
   const { profile, currentWorkspace, role, currentMembership, workspaceRole } = useWorkspace()
   const [organisationId, setOrganisationId] = useState('')
-  const [organisationName, setOrganisationName] = useState('Organisation')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -969,14 +968,6 @@ function PipelineCanvassingPage() {
         const orgId = normalizeText(context?.organisation?.id || currentWorkspace?.id)
         if (!orgId) throw new Error('A resolved workspace is required before loading canvassing data.')
         setOrganisationId(orgId)
-        setOrganisationName(
-          normalizeText(
-            context?.organisation?.displayName ||
-              context?.organisation?.name ||
-              currentWorkspace?.name ||
-              'Organisation',
-          ),
-        )
         const store = await listCanvassingWorkspace(orgId)
         setProspects(Array.isArray(store.prospects) ? store.prospects : [])
         setActivities(Array.isArray(store.activities) ? store.activities : [])
@@ -1949,21 +1940,20 @@ function PipelineCanvassingPage() {
   return (
     <section className="space-y-5">
       <header className="rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-[0.72rem] uppercase tracking-[0.11em] text-slate-500">{organisationName}</p>
-            <h2 className="mt-1 text-[1.35rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h2>
+            <h2 className="text-[1.45rem] font-semibold tracking-[-0.02em] text-slate-900">Canvassing</h2>
             <p className="mt-1 text-sm text-slate-600">Track prospecting activity and convert interested prospects into leads.</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+            <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100 p-1 shadow-inner">
               <button
                 type="button"
                 onClick={() => setProspectView('buyer')}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
                   prospectView === 'buyer'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-600 hover:bg-white hover:text-blue-700'
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 Buyer Prospects
@@ -1971,10 +1961,10 @@ function PipelineCanvassingPage() {
               <button
                 type="button"
                 onClick={() => setProspectView('seller')}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
                   prospectView === 'seller'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-600 hover:bg-white hover:text-blue-700'
+                    ? 'bg-white text-slate-950 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 Seller Prospects
@@ -2003,17 +1993,37 @@ function PipelineCanvassingPage() {
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-2">
+          <div className="grid gap-3">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <Field
-              className="h-11 flex-1"
+              className="h-10 w-full md:max-w-sm"
               placeholder="Search prospects..."
               value={filters.search}
               onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
             />
-            <div className="grid min-h-11 w-full grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-1 lg:flex lg:flex-wrap lg:items-end lg:justify-end lg:gap-2">
+              <Button
+                type="button"
+                className="h-10 min-h-10 w-full justify-center whitespace-nowrap rounded-xl px-4 md:w-auto"
+                onClick={() => {
+                  resetProspectForm()
+                  setProspectForm((previous) => ({
+                    ...previous,
+                    prospectType: prospectView === 'buyer' ? 'Buyer Prospect' : 'Seller Prospect',
+                    source: prospectView === 'buyer' ? 'Website' : 'Cold Call',
+                    canvassingMethod: prospectView === 'buyer' ? 'Website' : 'Cold Call',
+                    buyerStatus: prospectView === 'buyer' ? 'New' : '',
+                  }))
+                  setShowCreateModal(true)
+                }}
+              >
+                <Plus size={14} />
+                Prospect
+              </Button>
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
               <Field
                 as="select"
-                className="h-11 lg:w-44"
+                className="h-10 min-w-0 text-sm"
                 value={filters.method}
                 onChange={(event) => setFilters((previous) => ({ ...previous, method: event.target.value }))}
               >
@@ -2026,7 +2036,7 @@ function PipelineCanvassingPage() {
               </Field>
               <Field
                 as="select"
-                className="h-11 lg:w-44"
+                className="h-10 min-w-0 text-sm"
                 value={filters.area}
                 onChange={(event) => setFilters((previous) => ({ ...previous, area: event.target.value }))}
               >
@@ -2041,7 +2051,7 @@ function PipelineCanvassingPage() {
                 <>
                   <Field
                     as="select"
-                    className="h-11 lg:w-44"
+                    className="h-10 min-w-0 text-sm"
                     value={filters.buyerBudget}
                     onChange={(event) => setFilters((previous) => ({ ...previous, buyerBudget: event.target.value }))}
                   >
@@ -2054,7 +2064,7 @@ function PipelineCanvassingPage() {
                   </Field>
                   <Field
                     as="select"
-                    className="h-11 lg:w-44"
+                    className="h-10 min-w-0 text-sm"
                     value={filters.buyerStatus}
                     onChange={(event) => setFilters((previous) => ({ ...previous, buyerStatus: event.target.value }))}
                   >
@@ -2067,7 +2077,7 @@ function PipelineCanvassingPage() {
                   </Field>
                   <Field
                     as="select"
-                    className="h-11 lg:w-44"
+                    className="h-10 min-w-0 text-sm"
                     value={filters.financeStatus}
                     onChange={(event) => setFilters((previous) => ({ ...previous, financeStatus: event.target.value }))}
                   >
@@ -2083,7 +2093,7 @@ function PipelineCanvassingPage() {
                 <>
                   <Field
                     as="select"
-                    className="h-11 lg:w-44"
+                    className="h-10 min-w-0 text-sm"
                     value={filters.sellingIntent}
                     onChange={(event) => setFilters((previous) => ({ ...previous, sellingIntent: event.target.value }))}
                   >
@@ -2096,7 +2106,7 @@ function PipelineCanvassingPage() {
                   </Field>
                   <Field
                     as="select"
-                    className="h-11 lg:w-44"
+                    className="h-10 min-w-0 text-sm"
                     value={filters.lastContactOutcome}
                     onChange={(event) => setFilters((previous) => ({ ...previous, lastContactOutcome: event.target.value }))}
                   >
@@ -2111,7 +2121,7 @@ function PipelineCanvassingPage() {
               )}
               <Field
                 as="select"
-                className="h-11 lg:w-44"
+                className="h-10 min-w-0 text-sm"
                 value={filters.status}
                 onChange={(event) => setFilters((previous) => ({ ...previous, status: event.target.value }))}
               >
@@ -2124,7 +2134,7 @@ function PipelineCanvassingPage() {
               </Field>
               <Field
                 as="select"
-                className="h-11 lg:w-44"
+                className="h-10 min-w-0 text-sm"
                 value={filters.assigned}
                 onChange={(event) => setFilters((previous) => ({ ...previous, assigned: event.target.value }))}
               >
@@ -2138,7 +2148,7 @@ function PipelineCanvassingPage() {
               </Field>
               <Field
                 as="select"
-                className="h-11 lg:w-44"
+                className="h-10 min-w-0 text-sm"
                 value={filters.sort}
                 onChange={(event) => setFilters((previous) => ({ ...previous, sort: event.target.value }))}
               >
@@ -2146,46 +2156,24 @@ function PipelineCanvassingPage() {
                 <option value="next_follow_up">Sort: Follow Up</option>
                 <option value="status">Sort: Status</option>
               </Field>
-              <div className="lg:ml-auto">
-                <Button
-                  type="button"
-                  className="h-11 min-h-11 w-full justify-center whitespace-nowrap rounded-xl lg:w-auto"
-                  onClick={() => {
-                    resetProspectForm()
-                    setProspectForm((previous) => ({
-                      ...previous,
-                      prospectType: prospectView === 'buyer' ? 'Buyer Prospect' : 'Seller Prospect',
-                      source: prospectView === 'buyer' ? 'Website' : 'Cold Call',
-                      canvassingMethod: prospectView === 'buyer' ? 'Website' : 'Cold Call',
-                      buyerStatus: prospectView === 'buyer' ? 'New' : '',
-                    }))
-                    setShowCreateModal(true)
-                  }}
-                >
-                  <Plus size={14} />
-                  + Prospect
-                </Button>
-              </div>
             </div>
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-collapse text-sm">
+          <table className="w-full min-w-[960px] border-collapse text-sm">
             <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
               <tr>
-                <th className="w-[22%] px-4 py-3">Prospect</th>
-                <th className="w-[14%] px-4 py-3">Source</th>
-                <th className="w-[22%] px-4 py-3">{prospectView === 'seller' ? 'Property / Area' : 'Property Interest'}</th>
-                <th className="w-[22%] px-4 py-3">Stage / Next Step</th>
-                <th className="w-[16%] px-4 py-3">Assigned</th>
-                <th className="w-[12%] px-4 py-3">Last Activity</th>
-                <th className="w-[7%] px-4 py-3 text-right">Action</th>
+                <th className="w-[24%] px-3 py-3">Prospect</th>
+                <th className="w-[13%] px-3 py-3">Source</th>
+                <th className="w-[25%] px-3 py-3">{prospectView === 'seller' ? 'Property / Area' : 'Property Interest'}</th>
+                <th className="w-[23%] px-3 py-3">Stage / Next Step</th>
+                <th className="w-[10%] px-3 py-3">Assigned</th>
+                <th className="w-[5%] px-3 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {filteredProspects.length ? (
                 filteredProspects.map((prospect) => {
-                  const lastActivity = latestActivityByProspectId.get(normalizeText(prospect?.id))
                   const displayName = getProspectDisplayName(prospect)
                   const prospectTypeLabel =
                     resolveProspectAudience(prospect) === 'seller' ? 'Seller Prospect' : 'Buyer Prospect'
@@ -2218,7 +2206,7 @@ function PipelineCanvassingPage() {
                       className="h-[104px] cursor-pointer text-slate-700 transition hover:bg-slate-50"
                       onClick={() => handleOpenProspectDetail(prospect)}
                     >
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-3 py-3 align-top">
                         <div className="flex min-w-0 items-start gap-3">
                           <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700">
                             {getProspectInitials(prospect)}
@@ -2230,10 +2218,10 @@ function PipelineCanvassingPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-3 py-3 align-top">
                         <CanvassingSourcePill source={prospect?.resolvedSource || prospect?.source || prospect?.canvassingMethod} />
                       </td>
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-3 py-3 align-top">
                         <p className="truncate font-medium text-slate-700">
                           {prospectView === 'seller'
                             ? (addressLine || 'Address Pending')
@@ -2252,23 +2240,17 @@ function PipelineCanvassingPage() {
                           <p className="mt-0.5 text-xs text-slate-500">Outcome: {prospect.resolvedLastContactOutcome}</p>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-3 py-3 align-top">
                         <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusPillClass(stage)}`}>
                           {stage}
                         </span>
                         <p className="mt-2 line-clamp-1 font-medium text-slate-700">{nextStepLabel}</p>
                         <p className="mt-0.5 text-xs text-slate-500">{nextStepDueLabel}</p>
                       </td>
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-3 py-3 align-top">
                         <ProspectOwnerCell agent={prospect.assignedProfile} />
                       </td>
-                      <td className="px-4 py-3 align-top">
-                        <p className="truncate font-medium text-slate-700">
-                          {formatRelativeActivityTime(lastActivity?.activityDate || lastActivity?.createdAt)}
-                        </p>
-                        <p className="mt-0.5 truncate text-xs text-slate-500">{lastActivity?.activityType || '—'}</p>
-                      </td>
-                      <td className="px-4 py-3 text-right align-top">
+                      <td className="px-3 py-3 text-right align-top">
                         <div className="relative inline-flex" onClick={(event) => event.stopPropagation()}>
                           <button
                             type="button"
@@ -2289,7 +2271,7 @@ function PipelineCanvassingPage() {
                 })
               ) : (
                 <tr>
-                  <td className="px-4 py-8 text-sm text-slate-500" colSpan={7}>
+                  <td className="px-4 py-8 text-sm text-slate-500" colSpan={6}>
                     {prospectView === 'seller'
                       ? 'No seller prospects yet. Add seller canvassing prospects to track valuation and mandate potential.'
                       : 'No buyer prospects yet. Add buyer canvassing prospects to track criteria and conversion readiness.'}
