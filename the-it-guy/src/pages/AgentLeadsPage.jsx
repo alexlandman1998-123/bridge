@@ -15025,7 +15025,6 @@ function SellerLeadWorkspaceLayout({
 }) {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('overview')
   const [appointmentComposerSignal, setAppointmentComposerSignal] = useState(0)
-  const sellerOnboardingInFlightRef = useRef(false)
   const commissionSummary = useMemo(() => getSellerCommissionWorkspace(row, linkedSellerListing), [linkedSellerListing, row])
   const [commissionDraft, setCommissionDraft] = useState(() => buildSellerCommissionDraft(commissionSummary))
   const [commissionStructures, setCommissionStructures] = useState([])
@@ -15302,6 +15301,7 @@ function AgentLeadWorkspace() {
   const [sendingSellerOnboarding, setSendingSellerOnboarding] = useState(false)
   const [sendingSellerPortalLink, setSendingSellerPortalLink] = useState(false)
   const [savingSellerCommission, setSavingSellerCommission] = useState(false)
+  const sellerOnboardingInFlightRef = useRef(false)
 
   const loadWorkspace = useCallback(async ({ silent = false } = {}) => {
     if (!organisationId || !leadId) return
