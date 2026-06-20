@@ -2442,8 +2442,8 @@ function PipelineCanvassingPage() {
         subtitle="Capture outbound prospecting contacts and seller context."
         className="max-w-4xl overflow-hidden"
       >
-        <form className="-m-5 flex max-h-[calc(100dvh-7rem)] flex-col sm:-m-6" onSubmit={handleCreateProspect}>
-          <div className="grid gap-4 overflow-y-auto px-5 py-4 sm:px-6">
+        <form className="flex max-h-[calc(100dvh-13rem)] min-h-0 flex-col overflow-hidden" onSubmit={handleCreateProspect}>
+          <div className="grid min-h-0 gap-3 overflow-y-auto pb-3 pr-2">
           <div className="rounded-[14px] border border-[#dbe4ee] bg-[#f8fbff] p-3">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">Prospect Type</p>
             <div className="mt-2 inline-flex items-center rounded-full border border-[#dbe4ee] bg-white p-1">
@@ -2713,7 +2713,7 @@ function PipelineCanvassingPage() {
                   </Field>
                   <Field
                     as="textarea"
-                    className="!min-h-[80px] rounded-[16px]"
+                    className="!min-h-[76px] max-h-[88px] rounded-[16px]"
                     rows={3}
                     placeholder="Notes (optional)"
                     value={prospectForm.notes}
@@ -2852,7 +2852,7 @@ function PipelineCanvassingPage() {
                   </Field>
                   <Field
                     as="textarea"
-                    className="!min-h-[80px] rounded-[16px]"
+                    className="!min-h-[76px] max-h-[88px] rounded-[16px]"
                     rows={3}
                     placeholder="Notes (optional)"
                     value={prospectForm.notes}
@@ -2863,7 +2863,7 @@ function PipelineCanvassingPage() {
             </>
           )}
           </div>
-          <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[#dbe4ee] bg-white/95 px-5 py-4 backdrop-blur sm:px-6">
+          <div className="mt-3 flex shrink-0 justify-end gap-2 border-t border-[#dbe4ee] bg-white pt-4">
             <Button type="button" variant="secondary" onClick={() => {
               setShowCreateModal(false)
               resetProspectForm()
