@@ -29,6 +29,9 @@ const LEGAL_TEMPLATES_BUCKET = 'legal-templates'
 const LEGAL_TEMPLATE_COLUMNS =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, change_summary, content_hash, created_by, updated_by, published_by, published_at, archived_by, archived_at, created_at, updated_at'
 
+const LEGACY_LEGAL_TEMPLATE_COLUMNS =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, is_active, metadata_json, created_by, created_at, updated_at'
+
 const LEGAL_TEMPLATE_VERSION_COLUMNS =
   'id, template_id, organisation_id, module_type, packet_type, template_key, template_label, template_format, version_tag, status, storage_bucket, storage_path, file_name, content_hash, description, change_summary, sections_snapshot_json, placeholder_keys, metadata_json, created_by, updated_by, published_by, archived_by, created_at, updated_at, published_at, archived_at'
 
@@ -408,6 +411,85 @@ async function tryQuery(label, queryFactory) {
   } catch (error) {
     return { data: [], error: { label, message: error?.message || 'Query failed' } }
   }
+}
+
+function isMissingSchemaError(error = {}) {
+  const code = normalizeText(error.code).toUpperCase()
+  const message = normalizeText(error.message).toLowerCase()
+  return (
+    code === '42P01' ||
+    code === '42703' ||
+    code === 'PGRST204' ||
+    code === 'PGRST205' ||
+    message.includes('does not exist') ||
+    message.includes('schema cache') ||
+    message.includes('could not find the table')
+  )
+}
+
+async function tryOptionalQuery(label, queryFactory) {
+  if (!supabase) return { data: [], error: null, skipped: true }
+  try {
+    const { data, error } = await queryFactory()
+    if (error) {
+      return { data: [], error: isMissingSchemaError(error) ? null : { label, message: error.message } }
+    }
+    return { data: Array.isArray(data) ? data : [], error: null }
+  } catch (error) {
+    return { data: [], error: isMissingSchemaError(error) ? null : { label, message: error?.message || 'Query failed' } }
+  }
+}
+
+async function queryOrganisationsForAdmin() {
+  return tryQuery('organisations', () =>
+    supabase
+      .from('organisations')
+      .select('*')
+      .limit(1000),
+  )
+}
+
+async function queryLegalTemplateRows({ organisationId = '', moduleType = '', packetType = '', limit = 500 } = {}) {
+  const buildQuery = (columns) => {
+    let builder = supabase
+      .from('document_packet_templates')
+      .select(columns)
+      .order('updated_at', { ascending: false })
+      .limit(limit)
+    if (organisationId) builder = builder.eq('organisation_id', organisationId)
+    if (moduleType) builder = builder.eq('module_type', moduleType)
+    if (packetType) builder = builder.eq('packet_type', packetType)
+    return builder
+  }
+
+  const modern = await tryQuery('document_packet_templates', () => buildQuery(LEGAL_TEMPLATE_COLUMNS))
+  if (!modern.error) return modern
+  if (!isMissingSchemaError(modern.error)) return modern
+  return tryQuery('document_packet_templates', () => buildQuery(LEGACY_LEGAL_TEMPLATE_COLUMNS))
+}
+
+async function queryLegalTemplateVersions({ templateId = '', limit = 1000 } = {}) {
+  return tryOptionalQuery('document_packet_template_versions', () => {
+    let builder = supabase
+      .from('document_packet_template_versions')
+      .select(LEGAL_TEMPLATE_VERSION_COLUMNS)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (templateId) builder = builder.eq('template_id', templateId)
+    return builder
+  })
+}
+
+async function queryLegalTemplateAudit({ templateId = '', limit = 50 } = {}) {
+  return tryOptionalQuery('document_packet_template_audit', () => {
+    let builder = supabase
+      .from('document_packet_template_audit')
+      .select('id, template_id, template_version_id, organisation_id, module_type, packet_type, event_type, actor_user_id, actor_role, change_summary, event_payload_json, created_at')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (templateId) builder = builder.eq('template_id', templateId)
+    return builder
+  })
 }
 
 async function tryRpc(label, functionName, args = {}) {
@@ -1247,31 +1329,9 @@ export async function loadLegalTemplateRegistry({ organisationId = '', moduleTyp
   if (!supabase) return { organisations: [], templates: [], warnings: [{ label: 'Supabase', message: 'Not configured' }] }
 
   const [organisations, templates, versions] = await Promise.all([
-    tryQuery('organisations', () =>
-      supabase
-        .from('organisations')
-        .select('id, name, organisation_name, organization_name, company_name, trading_name, type, workspace_kind, status, created_at, updated_at')
-        .order('name', { ascending: true })
-        .limit(1000),
-    ),
-    tryQuery('document_packet_templates', () => {
-      let builder = supabase
-        .from('document_packet_templates')
-        .select(LEGAL_TEMPLATE_COLUMNS)
-        .order('updated_at', { ascending: false })
-        .limit(500)
-      if (organisationId) builder = builder.eq('organisation_id', organisationId)
-      if (moduleType) builder = builder.eq('module_type', moduleType)
-      if (packetType) builder = builder.eq('packet_type', packetType)
-      return builder
-    }),
-    tryQuery('document_packet_template_versions', () =>
-      supabase
-        .from('document_packet_template_versions')
-        .select('id, template_id, organisation_id, module_type, packet_type, version_tag, status, storage_bucket, storage_path, file_name, created_at, updated_at, published_at')
-        .order('created_at', { ascending: false })
-        .limit(1000),
-    ),
+    queryOrganisationsForAdmin(),
+    queryLegalTemplateRows({ organisationId, moduleType, packetType }),
+    queryLegalTemplateVersions(),
   ])
 
   const organisationsById = new Map(organisations.data.map((row) => [row.id, row]))
@@ -1301,32 +1361,12 @@ export async function loadAdminLegalTemplateGovernance(templateId = '') {
   if (!supabase || !templateId) return { audit: [], fileUrl: '', versions: [], warnings: [] }
 
   const [templateResult, versions, audit] = await Promise.all([
-    tryQuery('document_packet_templates', () =>
-      supabase
-        .from('document_packet_templates')
-        .select(LEGAL_TEMPLATE_COLUMNS)
-        .eq('id', templateId)
-        .limit(1),
-    ),
-    tryQuery('document_packet_template_versions', () =>
-      supabase
-        .from('document_packet_template_versions')
-        .select(LEGAL_TEMPLATE_VERSION_COLUMNS)
-        .eq('template_id', templateId)
-        .order('created_at', { ascending: false })
-        .limit(50),
-    ),
-    tryQuery('document_packet_template_audit', () =>
-      supabase
-        .from('document_packet_template_audit')
-        .select('id, template_id, template_version_id, organisation_id, module_type, packet_type, event_type, actor_user_id, actor_role, change_summary, event_payload_json, created_at')
-        .eq('template_id', templateId)
-        .order('created_at', { ascending: false })
-        .limit(50),
-    ),
+    queryLegalTemplateRows({ limit: 1000 }),
+    queryLegalTemplateVersions({ templateId, limit: 50 }),
+    queryLegalTemplateAudit({ templateId, limit: 50 }),
   ])
 
-  const template = templateResult.data[0] || null
+  const template = templateResult.data.find((row) => row.id === templateId) || null
   let fileUrl = ''
   const bucket = normalizeText(template?.template_storage_bucket)
   const path = normalizeText(template?.template_storage_path)
@@ -1348,20 +1388,8 @@ export async function loadLegalTemplateBridgeReadiness({ organisationId = '', mo
   if (!supabase) return { checks: [], summary: { ready: 0, warning: 0, missing: 0, total: 0 }, warnings: [{ label: 'Supabase', message: 'Not configured' }] }
 
   const [organisations, templates] = await Promise.all([
-    tryQuery('organisations', () =>
-      supabase
-        .from('organisations')
-        .select('id, name, organisation_name, organization_name, company_name, trading_name, type, workspace_kind, status, created_at, updated_at')
-        .order('name', { ascending: true })
-        .limit(1000),
-    ),
-    tryQuery('document_packet_templates', () =>
-      supabase
-        .from('document_packet_templates')
-        .select(LEGAL_TEMPLATE_COLUMNS)
-        .order('updated_at', { ascending: false })
-        .limit(1000),
-    ),
+    queryOrganisationsForAdmin(),
+    queryLegalTemplateRows({ limit: 1000 }),
   ])
 
   const scopedOrganisations = organisations.data.filter((organisation) => !organisationId || organisation.id === organisationId)
@@ -1491,6 +1519,31 @@ function buildLegalTemplatePayload(input = {}, upload = null, userId = '') {
   }
 }
 
+function buildLegacyLegalTemplatePayload(payload = {}) {
+  const metadata = payload.metadata_json && typeof payload.metadata_json === 'object' ? payload.metadata_json : {}
+  return {
+    organisation_id: payload.organisation_id,
+    module_type: payload.module_type,
+    packet_type: payload.packet_type,
+    template_key: payload.template_key,
+    template_label: payload.template_label,
+    template_format: payload.template_format,
+    template_storage_path: payload.template_storage_path,
+    version_tag: payload.version_tag,
+    description: payload.description,
+    is_default: payload.is_default,
+    is_active: payload.status !== 'archived',
+    metadata_json: {
+      ...metadata,
+      template_storage_bucket: payload.template_storage_bucket || metadata.template_storage_bucket || metadata.template_bucket || '',
+      template_file_name: payload.template_file_name || metadata.template_file_name || metadata.template_filename || '',
+      status: payload.status,
+      change_summary: payload.change_summary,
+    },
+    created_by: payload.created_by,
+  }
+}
+
 async function getCurrentUserId() {
   if (!supabase) return ''
   const { data } = await supabase.auth.getUser()
@@ -1544,7 +1597,10 @@ async function upsertTemplateVersion(template = {}, userId = '') {
     .select()
     .maybeSingle()
 
-  if (error) throw new Error(error.message || 'Unable to record template version.')
+  if (error) {
+    if (isMissingSchemaError(error)) return null
+    throw new Error(error.message || 'Unable to record template version.')
+  }
   return data
 }
 
@@ -1562,11 +1618,17 @@ export async function saveAdminLegalTemplate(input = {}, upload = null) {
     })
   }
 
-  const query = input.id
-    ? supabase.from('document_packet_templates').update(payload).eq('id', input.id).select(LEGAL_TEMPLATE_COLUMNS).maybeSingle()
-    : supabase.from('document_packet_templates').insert({ ...payload, created_by: userId || null }).select(LEGAL_TEMPLATE_COLUMNS).maybeSingle()
+  const runSave = (nextPayload, columns) => input.id
+    ? supabase.from('document_packet_templates').update(nextPayload).eq('id', input.id).select(columns).maybeSingle()
+    : supabase.from('document_packet_templates').insert({ ...nextPayload, created_by: userId || null }).select(columns).maybeSingle()
 
-  const { data, error } = await query
+  let { data, error } = await runSave(payload, LEGAL_TEMPLATE_COLUMNS)
+  if (error && isMissingSchemaError(error)) {
+    const legacyPayload = buildLegacyLegalTemplatePayload({ ...payload, created_by: userId || null })
+    const legacyResult = await runSave(legacyPayload, LEGACY_LEGAL_TEMPLATE_COLUMNS)
+    data = legacyResult.data
+    error = legacyResult.error
+  }
   if (error) throw new Error(error.message || 'Unable to save legal template.')
   await upsertTemplateVersion(data, userId)
   return data

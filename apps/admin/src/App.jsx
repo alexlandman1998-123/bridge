@@ -154,6 +154,7 @@ function viewFromPath(level = '', isMobile = false) {
   if (typeof window === 'undefined') return getDefaultView(level)
   const path = window.location.pathname
   if (isMobile) {
+    if (path.includes('/admin/organisations')) return 'organisations'
     if (path.includes('/admin/roleplayers')) return 'roleplayers'
     if (path.includes('/admin/legal-templates')) return 'legalTemplates'
     if (path.includes('/admin/alerts')) return 'alerts'
@@ -161,6 +162,7 @@ function viewFromPath(level = '', isMobile = false) {
     if (path.includes('/admin/more')) return 'more'
     return 'dashboard'
   }
+  if (path.includes('/admin/organisations')) return 'organisations'
   if (path.includes('/admin/roleplayers')) return 'roleplayers'
   if (path.includes('/admin/legal-templates')) return 'legalTemplates'
   if (path.includes('/admin/search')) return 'search'
@@ -174,6 +176,7 @@ function pushAdminPath(path) {
 }
 
 function adminPathForView(viewId = '') {
+  if (viewId === 'organisations') return '/admin/organisations'
   if (viewId === 'roleplayers') return '/admin/roleplayers'
   if (viewId === 'legalTemplates') return '/admin/legal-templates'
   if (viewId === 'search') return '/admin/search'
@@ -896,7 +899,7 @@ function RoleplayerLogo({ roleplayer, size = 'large' }) {
   )
 }
 
-function RoleplayerCard({ isSelected, onSelect, roleplayer }) {
+function RoleplayerCard({ isSelected, onManageLegalTemplates, onSelect, roleplayer }) {
   return (
     <article className={isSelected ? 'roleplayer-card selected' : 'roleplayer-card'} onClick={onSelect}>
       <div className="roleplayer-card-top">
@@ -911,6 +914,7 @@ function RoleplayerCard({ isSelected, onSelect, roleplayer }) {
           </summary>
           <div>
             <button type="button">View Workspace</button>
+            <button onClick={onManageLegalTemplates} type="button">Legal Templates</button>
             <button type="button">Manage Users</button>
             <button type="button">View Transactions</button>
             <button type="button">View Billing</button>
@@ -953,7 +957,7 @@ function WorkspaceMetric({ label, value }) {
   )
 }
 
-function RoleplayerWorkspace({ onClose, roleplayer }) {
+function RoleplayerWorkspace({ onClose, onManageLegalTemplates, roleplayer }) {
   if (!roleplayer) {
     return (
       <aside className="roleplayer-workspace empty">
@@ -990,6 +994,10 @@ function RoleplayerWorkspace({ onClose, roleplayer }) {
       </section>
 
       <div className="workspace-actions">
+        <button className="secondary-button compact" onClick={onManageLegalTemplates} type="button">
+          <FileText size={15} />
+          Legal Templates
+        </button>
         <button className="secondary-button compact" type="button">
           <UserCog size={15} />
           Manage Users
@@ -1082,6 +1090,7 @@ function RoleplayerWorkspace({ onClose, roleplayer }) {
       <section className="workspace-section">
         <h3>Quick Actions</h3>
         <div className="quick-actions">
+          <button onClick={onManageLegalTemplates} type="button">Legal Templates</button>
           <button type="button">View All Transactions</button>
           <button type="button">View All Matters</button>
           <button type="button">View Applications</button>
@@ -1092,7 +1101,7 @@ function RoleplayerWorkspace({ onClose, roleplayer }) {
   )
 }
 
-function RoleplayersView({ snapshot }) {
+function RoleplayersView({ basePath = '/admin/roleplayers', onManageLegalTemplates, snapshot, subtitle = 'Manage and monitor every organisation within the Arch9 ecosystem.', title = 'Roleplayers' }) {
   const [activeFilter, setActiveFilter] = useState('All')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState('Most Active')
@@ -1125,23 +1134,28 @@ function RoleplayersView({ snapshot }) {
   function selectRoleplayer(roleplayer) {
     setSelectedId(roleplayer.id)
     if (window.history?.pushState) {
-      window.history.pushState({}, '', `/admin/roleplayers/${encodeURIComponent(roleplayer.id)}`)
+      window.history.pushState({}, '', `${basePath}/${encodeURIComponent(roleplayer.id)}`)
     }
   }
 
   function closeWorkspace() {
     setSelectedId('')
     if (window.history?.pushState) {
-      window.history.pushState({}, '', '/admin/roleplayers')
+      window.history.pushState({}, '', basePath)
     }
+  }
+
+  function manageLegalTemplates(roleplayer) {
+    if (!roleplayer) return
+    onManageLegalTemplates?.(roleplayer)
   }
 
   return (
     <section className="roleplayers-module">
       <div className="roleplayers-header">
         <div>
-          <h1>Roleplayers</h1>
-          <p>Manage and monitor every organisation within the Arch9 ecosystem.</p>
+          <h1>{title}</h1>
+          <p>{subtitle}</p>
         </div>
         <button className="primary-button compact" type="button">
           <Plus size={16} />
@@ -1179,6 +1193,7 @@ function RoleplayersView({ snapshot }) {
                 <RoleplayerCard
                   isSelected={selectedRoleplayer?.id === roleplayer.id}
                   key={roleplayer.id}
+                  onManageLegalTemplates={() => manageLegalTemplates(roleplayer)}
                   onSelect={() => selectRoleplayer(roleplayer)}
                   roleplayer={roleplayer}
                 />
@@ -1188,7 +1203,7 @@ function RoleplayersView({ snapshot }) {
             <EmptyData />
           )}
         </div>
-        <RoleplayerWorkspace onClose={closeWorkspace} roleplayer={selectedRoleplayer} />
+        <RoleplayerWorkspace onClose={closeWorkspace} onManageLegalTemplates={() => manageLegalTemplates(selectedRoleplayer)} roleplayer={selectedRoleplayer} />
       </div>
     </section>
   )
@@ -1760,8 +1775,8 @@ function readinessTone(severity = '') {
   return 'danger'
 }
 
-function LegalTemplatesView() {
-  const [filters, setFilters] = useState({ organisationId: '', moduleType: '', packetType: '', query: '' })
+function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName = '', onClearScope }) {
+  const [filters, setFilters] = useState({ organisationId: scopedOrganisationId || '', moduleType: '', packetType: '', query: '' })
   const [registry, setRegistry] = useState({ organisations: [], templates: [], warnings: [] })
   const [governance, setGovernance] = useState({ audit: [], fileUrl: '', versions: [], warnings: [] })
   const [readiness, setReadiness] = useState({ checks: [], summary: { ready: 0, warning: 0, missing: 0, total: 0 }, warnings: [] })
@@ -1816,6 +1831,14 @@ function LegalTemplatesView() {
     void loadRegistry()
     void loadReadiness()
   }, [])
+
+  useEffect(() => {
+    if (!scopedOrganisationId) return
+    const next = { ...filters, organisationId: scopedOrganisationId }
+    setFilters(next)
+    void loadRegistry(next)
+    void loadReadiness(next)
+  }, [scopedOrganisationId])
 
   const selectedTemplate = registry.templates.find((template) => template.id === selectedId) || null
 
@@ -1950,13 +1973,20 @@ function LegalTemplatesView() {
     <section className="legal-template-module">
       <div className="roleplayers-header">
         <div>
-          <h1>Legal Templates</h1>
+          <h1>{scopedOrganisationName ? `${scopedOrganisationName} Legal Templates` : 'Legal Templates'}</h1>
           <p>Manage organisation legal templates used by residential and commercial document generation.</p>
         </div>
-        <button className="primary-button compact" onClick={startNewTemplate} type="button">
-          <Plus size={16} />
-          Add Template
-        </button>
+        <div className="legal-template-header-actions">
+          {scopedOrganisationId ? (
+            <button className="secondary-button compact" onClick={onClearScope} type="button">
+              All Organisations
+            </button>
+          ) : null}
+          <button className="primary-button compact" onClick={startNewTemplate} type="button">
+            <Plus size={16} />
+            Add Template
+          </button>
+        </div>
       </div>
 
       <div className="legal-template-toolbar panel">
@@ -2298,6 +2328,7 @@ export default function App() {
   const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT)
   const [isBooting, setIsBooting] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
+  const [legalTemplateScope, setLegalTemplateScope] = useState({ organisationId: '', organisationName: '' })
 
   async function refreshData(nextRange = dateRange) {
     if (!session?.user) return
@@ -2321,7 +2352,17 @@ export default function App() {
 
   function handleDesktopNavigate(viewId) {
     setActiveView(viewId)
+    if (viewId !== 'legalTemplates') setLegalTemplateScope({ organisationId: '', organisationName: '' })
     pushAdminPath(adminPathForView(viewId))
+  }
+
+  function handleManageLegalTemplates(roleplayer) {
+    setLegalTemplateScope({
+      organisationId: roleplayer?.organisationId || roleplayer?.id || '',
+      organisationName: roleplayer?.name || '',
+    })
+    setActiveView('legalTemplates')
+    pushAdminPath('/admin/legal-templates')
   }
 
   useEffect(() => {
@@ -2467,10 +2508,24 @@ export default function App() {
         {activeView === 'ecosystem' && canViewActive ? <EcosystemSection ecosystem={snapshot.ecosystem} /> : null}
         {activeView === 'health' && canViewActive ? <HealthView snapshot={snapshot} /> : null}
         {activeView === 'organisations' && canViewActive ? (
-          <PlaceholderView icon={Building2} items={snapshot.organisations} title="Organisations" />
+          <RoleplayersView
+            basePath="/admin/organisations"
+            onManageLegalTemplates={handleManageLegalTemplates}
+            snapshot={snapshot}
+            subtitle="Every organisation using the platform, with workspace actions and operational health."
+            title="Organisations"
+          />
         ) : null}
-        {activeView === 'legalTemplates' && canViewActive ? <LegalTemplatesView /> : null}
-        {activeView === 'roleplayers' && canViewActive ? <RoleplayersView snapshot={snapshot} /> : null}
+        {activeView === 'legalTemplates' && canViewActive ? (
+          <LegalTemplatesView
+            onClearScope={() => setLegalTemplateScope({ organisationId: '', organisationName: '' })}
+            scopedOrganisationId={legalTemplateScope.organisationId}
+            scopedOrganisationName={legalTemplateScope.organisationName}
+          />
+        ) : null}
+        {activeView === 'roleplayers' && canViewActive ? (
+          <RoleplayersView onManageLegalTemplates={handleManageLegalTemplates} snapshot={snapshot} />
+        ) : null}
         {activeView === 'users' && canViewActive ? <PlaceholderView icon={Users} items={snapshot.users} title="Users" /> : null}
         {activeView === 'transactions' && canViewActive ? (
           <PlaceholderView icon={Database} items={snapshot.transactions} title="Transactions" />

@@ -19,6 +19,12 @@
   grid-template-columns: minmax(180px, 1fr) 160px 190px minmax(220px, 1.2fr) auto;
 }
 
+.legal-template-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .legal-template-toolbar label,
 .legal-template-form-grid label {
   display: grid;
