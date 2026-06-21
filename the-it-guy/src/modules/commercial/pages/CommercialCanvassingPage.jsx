@@ -12,7 +12,6 @@ import {
   Download,
   DollarSign,
   Factory,
-  Info,
   Mail,
   MapPin,
   MessageCircle,
@@ -28,7 +27,6 @@ import {
   Upload,
   UserPlus,
   Users,
-  X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -82,7 +80,16 @@ const LEASE_ASSET_CLASS_OPTIONS = [
   { value: 'industrial', label: 'Industrial', icon: Factory, tone: 'rose' },
   { value: 'agricultural', label: 'Agricultural', icon: Sprout, tone: 'emerald' },
 ]
+const SALES_ASSET_CLASS_OPTIONS = [
+  { value: 'retail', label: 'Retail', icon: Building2, tone: 'violet' },
+  { value: 'office', label: 'Office', icon: Building2, tone: 'blue' },
+  { value: 'industrial', label: 'Industrial', icon: Factory, tone: 'rose' },
+  { value: 'commercial', label: 'Commercial', icon: Building2, tone: 'blue' },
+  { value: 'mixed_use', label: 'Mixed-use', icon: Building2, tone: 'amber' },
+  { value: 'agricultural', label: 'Agricultural', icon: Sprout, tone: 'emerald' },
+]
 const LEASE_AREA_OPTIONS = ['Rosebank', 'Sandton', 'Midrand', 'Centurion', 'Menlyn', 'Bedfordview']
+const SALES_AREA_OPTIONS = ['Rosebank', 'Sandton', 'Midrand', 'Centurion', 'Menlyn', 'Bedfordview']
 const PROSPECT_TYPES = [
   'Seller Prospect',
   'Buyer Prospect',
@@ -123,6 +130,17 @@ function isFollowUpDue(prospect = {}) {
 
 function isConvertedProspect(prospect = {}) {
   return normalizeKey(getProspectStatus(prospect)).includes('converted')
+}
+
+function getConvertedRequirementId(prospect = {}) {
+  const linkedEntityType = normalizeKey(prospect.linkedEntityType || prospect.linked_entity_type)
+  return normalizeText(
+    prospect.convertedRequirementId
+      || prospect.converted_requirement_id
+      || prospect.requirementId
+      || prospect.requirement_id
+      || (linkedEntityType === 'commercial_requirement' ? prospect.linkedEntityId || prospect.linked_entity_id : ''),
+  )
 }
 
 function isCanvassingFollowUp(prospect = {}) {
@@ -255,23 +273,6 @@ function splitContactName(value = '') {
   return { firstName: first || '', lastName: rest.join(' ') || '' }
 }
 
-function formatRelativeDate(value) {
-  if (!value) return 'No follow-up set'
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return 'No follow-up set'
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const target = new Date(parsed)
-  target.setHours(0, 0, 0, 0)
-  const diffDays = Math.round((target.getTime() - today.getTime()) / 86400000)
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Tomorrow'
-  if (diffDays === -1) return 'Yesterday'
-  if (diffDays > 0 && diffDays < 7) return `In ${diffDays} days`
-  if (diffDays < 0 && diffDays > -7) return `${Math.abs(diffDays)} days ago`
-  return formatDate(value)
-}
-
 function toneForStatus(status = '') {
   const normalized = normalizeKey(status)
   if (normalized.includes('converted')) return 'emerald'
@@ -376,6 +377,7 @@ function buildInitialDraft(defaultBrokerId = '', defaults = {}) {
 function buildDraftFromSearchParams(searchParams, defaultBrokerId = '') {
   const getParam = (key) => normalizeText(searchParams?.get(key))
   const role = getParam('role') || getParam('prospectRole') || 'seller'
+  const roleLabel = getRoleLabel(role)
   return buildInitialDraft(defaultBrokerId, {
     companyName: getParam('companyName'),
     contactName: getParam('contactName'),
@@ -406,7 +408,7 @@ function buildDraftFromSearchParams(searchParams, defaultBrokerId = '') {
     followUpNote: getParam('followUpNote'),
     estimatedValue: getParam('estimatedValue'),
     notes: getParam('notes'),
-    prospectType: getParam('prospectType') || 'Landlord Prospect',
+    prospectType: getParam('prospectType') || `${roleLabel} Prospect`,
     canvassingMethod: getParam('canvassingMethod') || 'Cold Call',
     companyId: getParam('companyId'),
     contactId: getParam('contactId'),
@@ -476,6 +478,10 @@ function isOpenProspect(prospect = {}) {
 }
 
 function inferRequirementType(prospect = {}) {
+  const role = normalizeKey(prospect.prospectRole)
+  const dealType = normalizeKey(prospect.dealType)
+  if (dealType === 'sale' || role === 'seller' || role === 'buyer') return 'purchase'
+  if (dealType === 'lease' || role === 'landlord' || role === 'tenant') return 'lease'
   const type = normalizeKey(prospect.prospectType)
   if (type.includes('investor') || type.includes('buyer')) return 'purchase'
   if (type.includes('owner occupier') || type.includes('occupier')) return 'lease'
@@ -484,6 +490,10 @@ function inferRequirementType(prospect = {}) {
 }
 
 function inferClientType(prospect = {}) {
+  const role = normalizeKey(prospect.prospectRole)
+  if (role === 'tenant') return 'tenant'
+  if (role === 'buyer') return 'owner_occupier'
+  if (role === 'seller' || role === 'landlord') return 'investor'
   const type = normalizeKey(prospect.prospectType)
   if (type.includes('tenant') || type.includes('occupier')) return 'tenant'
   if (type.includes('investor')) return 'investor'
@@ -587,11 +597,17 @@ function LeaseAssetClass({ category = '' }) {
   )
 }
 
-function LeaseKpiStrip({ loading = false, metrics = {}, counts = {} }) {
+function CanvassingKpiStrip({ loading = false, metrics = {}, counts = {}, mode = 'lease' }) {
+  const firstRole = mode === 'sale'
+    ? { label: 'Sellers', value: counts.sellers, icon: Building2, tone: 'green' }
+    : { label: 'Landlords', value: counts.landlords, icon: Building2, tone: 'green' }
+  const secondRole = mode === 'sale'
+    ? { label: 'Buyers', value: counts.buyers, icon: Users, tone: 'violet' }
+    : { label: 'Tenants', value: counts.tenants, icon: Users, tone: 'violet' }
   const items = [
     { label: 'Total Prospects', value: counts.total ?? metrics.prospects, icon: Users, tone: 'blue' },
-    { label: 'Landlords', value: counts.landlords, icon: Building2, tone: 'green' },
-    { label: 'Tenants', value: counts.tenants, icon: Users, tone: 'violet' },
+    firstRole,
+    secondRole,
     { label: 'Qualified', value: counts.qualified, icon: Star, tone: 'amber' },
     { label: 'Converted', value: metrics.converted, icon: CheckCircle2, tone: 'emerald' },
   ]
@@ -697,22 +713,28 @@ function InlineTableEmptyState({ icon, title, description, actionLabel, onAction
   )
 }
 
-function LeaseProspectsEmptyState({ onAddLandlord, onAddTenant }) {
+function FocusedProspectsEmptyState({ mode = 'lease', onAddPrimary, onAddSecondary }) {
+  const primaryLabel = mode === 'sale' ? 'Add Seller' : 'Add Landlord'
+  const secondaryLabel = mode === 'sale' ? 'Add Buyer' : 'Add Tenant'
+  const title = mode === 'sale' ? 'Build your sales prospect database' : 'Build your leasing prospect database'
+  const description = mode === 'sale'
+    ? 'Start capturing sellers and buyers. Qualified prospects can be converted into sales leads.'
+    : 'Start capturing landlords and tenants. Qualified prospects can be converted into leads.'
   return (
     <div className="flex min-h-[320px] flex-col items-center justify-center px-6 py-12 text-center">
       <span className="inline-flex h-14 w-14 items-center justify-center rounded-[16px] bg-[#eef5fb] text-[#0c5fd7]">
         <ClipboardList size={24} />
       </span>
-      <p className="mt-4 text-lg font-semibold tracking-[-0.02em] text-[#102236]">Build your leasing prospect database</p>
-      <p className="mt-2 max-w-[440px] text-sm leading-6 text-[#60758d]">Start capturing landlords and tenants. Qualified prospects can be converted into leads.</p>
+      <p className="mt-4 text-lg font-semibold tracking-[-0.02em] text-[#102236]">{title}</p>
+      <p className="mt-2 max-w-[440px] text-sm leading-6 text-[#60758d]">{description}</p>
       <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <Button type="button" onClick={onAddLandlord} className="h-11 rounded-[10px] bg-[#082f56] px-5 text-white hover:bg-[#0b3d70]">
+        <Button type="button" onClick={onAddPrimary} className="h-11 rounded-[10px] bg-[#082f56] px-5 text-white hover:bg-[#0b3d70]">
           <Plus size={16} />
-          Add Landlord
+          {primaryLabel}
         </Button>
-        <Button type="button" variant="secondary" onClick={onAddTenant} className="h-11 rounded-[10px] px-5">
+        <Button type="button" variant="secondary" onClick={onAddSecondary} className="h-11 rounded-[10px] px-5">
           <Plus size={16} />
-          Add Tenant
+          {secondaryLabel}
         </Button>
       </div>
     </div>
@@ -795,34 +817,6 @@ function LeaseAssetPill({ option, active = false, onClick }) {
       {IconComponent ? <IconComponent size={16} /> : null}
       {option.label}
     </button>
-  )
-}
-
-function LeaseHelperPanel() {
-  return (
-    <aside className="overflow-hidden rounded-[8px] border border-[#dce8f6] bg-[#f4f9ff] lg:sticky lg:top-0">
-      <div className="border-b border-[#dce8f6] p-4">
-        <div className="flex items-start gap-3">
-          <Info size={18} className="mt-0.5 shrink-0 text-[#0969e8]" />
-          <div>
-            <p className="text-sm font-semibold text-[#0969e8]">Capturing early information</p>
-            <p className="mt-2 text-sm leading-6 text-[#344966]">Focus on the basics. You can add more details once qualified.</p>
-          </div>
-        </div>
-      </div>
-      <div className="p-4">
-        <p className="text-sm font-semibold text-[#102236]">Keep it simple</p>
-        <p className="mt-3 text-sm leading-6 text-[#344966]">At this stage you only need the essentials:</p>
-        <div className="mt-4 grid gap-3 text-sm text-[#344966]">
-          {['Who they are', 'Where the property is', 'What type of asset', 'How to contact them'].map((item) => (
-            <div key={item} className="flex items-center gap-3">
-              <CheckCircle2 size={16} className="shrink-0 text-[#1d8a45]" />
-              <span>{item}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </aside>
   )
 }
 
@@ -1107,7 +1101,7 @@ function renderTenantFields({ createDraft, createErrors, updateCreateDraftField,
   )
 }
 
-function renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField, label = 'Asset Class *' }) {
+function renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField, label = 'Asset Class *', options = LEASE_ASSET_CLASS_OPTIONS }) {
   return (
     <div className="grid gap-2">
       <CreateLabel label={label} error={createErrors.propertyCategory}>
@@ -1118,11 +1112,11 @@ function renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDra
           className="h-12 rounded-[8px] bg-white text-sm"
         >
           <option value="">Select asset class</option>
-          {LEASE_ASSET_CLASS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </Field>
       </CreateLabel>
       <div className="flex flex-wrap gap-2">
-        {LEASE_ASSET_CLASS_OPTIONS.map((option) => (
+        {options.map((option) => (
           <LeaseAssetPill
             key={option.value}
             option={option}
@@ -1190,7 +1184,7 @@ function renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraf
       </LeaseCreateSection>
 
       <LeaseCreateSection number="2" title="Property Details" icon={Building2}>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,0.75fr)_minmax(0,0.85fr)]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,1.15fr)]">
           <CreateLabel label="Property Address *" error={createErrors.propertyAddress}>
             <div className="relative">
               <Field value={createDraft.propertyAddress} onChange={(event) => updateCreateDraftField('propertyAddress', event.target.value)} placeholder="Start typing an address..." className="h-12 rounded-[8px] pr-10 text-sm" />
@@ -1234,7 +1228,7 @@ function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftF
       </LeaseCreateSection>
 
       <LeaseCreateSection number="2" title="Business Details" icon={Building2}>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.15fr)]">
           <CreateLabel label="Current Address / Area">
             <Field value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} placeholder="Current address or operating node" className="h-12 rounded-[8px] text-sm" />
           </CreateLabel>
@@ -1242,6 +1236,115 @@ function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftF
             <Field value={createDraft.industry} onChange={(event) => updateCreateDraftField('industry', event.target.value)} placeholder="e.g. Logistics" className="h-12 rounded-[8px] text-sm" />
           </CreateLabel>
           {renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField, label: 'Asset Class Interest *' })}
+        </div>
+      </LeaseCreateSection>
+
+      {renderLeaseProspectingFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions })}
+    </div>
+  )
+}
+
+function renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+  return (
+    <div className="space-y-6">
+      <LeaseCreateSection number="1" title="Owner / Company Details" icon={Users}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <CreateLabel label="Seller / Company Name *" error={createErrors.companyName}>
+            <Field value={createDraft.companyName} onChange={(event) => updateCreateDraftField('companyName', event.target.value)} placeholder="e.g. ABC Properties (Pty) Ltd" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Contact Person">
+            <Field value={createDraft.contactName} onChange={(event) => updateCreateDraftField('contactName', event.target.value)} placeholder="e.g. John Smith" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Contact Number">
+            <Field value={createDraft.phone} onChange={(event) => updateCreateDraftField('phone', event.target.value)} placeholder="e.g. 082 123 4567" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Email Address">
+            <Field value={createDraft.email} onChange={(event) => updateCreateDraftField('email', event.target.value)} placeholder="e.g. owner@company.co.za" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+        </div>
+      </LeaseCreateSection>
+
+      <LeaseCreateSection number="2" title="Sale Property Details" icon={Building2}>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)_minmax(0,1.15fr)]">
+          <CreateLabel label="Property Address / Area *" error={createErrors.propertyAddress}>
+            <div className="relative">
+              <Field value={createDraft.propertyAddress} onChange={(event) => updateCreateDraftField('propertyAddress', event.target.value)} placeholder="Start typing an address or area..." className="h-12 rounded-[8px] pr-10 text-sm" />
+              <MapPin size={17} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#183153]" />
+            </div>
+            <p className="text-xs font-medium text-[#5d718b]">Use the suburb, node, street address, or asset name if the exact address is not confirmed.</p>
+          </CreateLabel>
+          <CreateLabel label="Area / Node">
+            <Field as="select" value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
+              <option value="">Select area</option>
+              {SALES_AREA_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </Field>
+          </CreateLabel>
+          {renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField, label: 'Asset Class *', options: SALES_ASSET_CLASS_OPTIONS })}
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <CreateLabel label="Estimated Sale Value">
+            <div className="relative">
+              <DollarSign size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#6f8197]" />
+              <Field as="input" type="number" value={createDraft.estimatedSaleValue} onChange={(event) => updateCreateDraftField('estimatedSaleValue', event.target.value)} placeholder="0" className="h-12 rounded-[8px] pl-9 text-sm" />
+            </div>
+          </CreateLabel>
+          <CreateLabel label="Reason for Selling">
+            <Field as="select" value={createDraft.reasonForSelling} onChange={(event) => updateCreateDraftField('reasonForSelling', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
+              <option value="">Select reason</option>
+              {SELL_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </Field>
+          </CreateLabel>
+        </div>
+      </LeaseCreateSection>
+
+      {renderLeaseProspectingFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions })}
+    </div>
+  )
+}
+
+function renderSalesBuyerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+  return (
+    <div className="space-y-6">
+      <LeaseCreateSection number="1" title="Buyer / Company Details" icon={Users}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <CreateLabel label="Buyer / Company Name *" error={createErrors.companyName}>
+            <Field value={createDraft.companyName} onChange={(event) => updateCreateDraftField('companyName', event.target.value)} placeholder="e.g. Bright Logistics (Pty) Ltd" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Contact Person">
+            <Field value={createDraft.contactName} onChange={(event) => updateCreateDraftField('contactName', event.target.value)} placeholder="e.g. Sarah Mokoena" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Contact Number">
+            <Field value={createDraft.phone} onChange={(event) => updateCreateDraftField('phone', event.target.value)} placeholder="e.g. 082 123 4567" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Email Address">
+            <Field value={createDraft.email} onChange={(event) => updateCreateDraftField('email', event.target.value)} placeholder="e.g. buyer@company.co.za" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+        </div>
+      </LeaseCreateSection>
+
+      <LeaseCreateSection number="2" title="Purchase Requirement" icon={Building2}>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.15fr)]">
+          <CreateLabel label="Preferred Area *" error={createErrors.preferredArea}>
+            <Field value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} placeholder="Preferred suburb, node, or region" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Looking For *" error={createErrors.lookingFor}>
+            <Field as="select" value={createDraft.lookingFor} onChange={(event) => updateCreateDraftField('lookingFor', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
+              <option value="">Select requirement</option>
+              {BUY_LOOKING_FOR_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </Field>
+          </CreateLabel>
+          {renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField, label: 'Asset Class Interest *', options: SALES_ASSET_CLASS_OPTIONS })}
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <CreateLabel label="Budget Range">
+            <Field value={createDraft.budgetRange} onChange={(event) => updateCreateDraftField('budgetRange', event.target.value)} placeholder="e.g. R8m - R12m" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Target Purchase Timeline">
+            <Field as="select" value={createDraft.targetPurchaseTimeline} onChange={(event) => updateCreateDraftField('targetPurchaseTimeline', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
+              <option value="">Select timeline</option>
+              {PURCHASE_TIMELINE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </Field>
+          </CreateLabel>
         </div>
       </LeaseCreateSection>
 
@@ -1432,12 +1535,12 @@ function CommercialCanvassingPage({ dealType = '' }) {
     const rows = filterCommercialProspects(normalizedProspects, {
       search,
       dealType: pageView.showDepartmentTabs ? pageView.baseDealType : dealFilter,
-      role: pageView.key === 'lease' ? roleFilter : pageView.showDepartmentTabs ? 'all' : roleFilter,
+      role: pageView.key === 'lease' || pageView.key === 'sale' ? roleFilter : pageView.showDepartmentTabs ? 'all' : roleFilter,
       category: categoryFilter,
       assigned: brokerFilter,
     })
       .filter((prospect) => statusFilter === 'all' || (
-        pageView.key === 'lease'
+        pageView.key === 'lease' || pageView.key === 'sale'
           ? normalizeKey(getLeaseStatusLabel(prospect.stageLabel || prospect.status)) === normalizeKey(statusFilter)
           : normalizeKey(prospect.stageLabel || prospect.status) === normalizeKey(statusFilter)
       ))
@@ -1445,7 +1548,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
       .filter((prospect) => isWithinRelativeDate(prospect.createdAt || prospect.created_at, dateAddedFilter))
       .filter((prospect) => isWithinRelativeDate(prospect.lastActivity?.activityDate || prospect.lastActivity?.createdAt, lastContactFilter))
 
-    if (pageView.key === 'lease') {
+    if (pageView.key === 'lease' || pageView.key === 'sale') {
       return rows
     }
 
@@ -1544,6 +1647,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
     }
     return {
       total: buildSeries((row) => isOpenProspect(row)),
+      sellers: buildSeries((row) => normalizeKey(row.prospectRole) === 'seller' && isOpenProspect(row)),
+      buyers: buildSeries((row) => normalizeKey(row.prospectRole) === 'buyer' && isOpenProspect(row)),
       landlords: buildSeries((row) => normalizeKey(row.prospectRole) === 'landlord' && isOpenProspect(row)),
       tenants: buildSeries((row) => normalizeKey(row.prospectRole) === 'tenant' && isOpenProspect(row)),
       followUps: buildFollowUpSeries(),
@@ -1810,8 +1915,14 @@ function CommercialCanvassingPage({ dealType = '' }) {
         propertyId: normalizeText(selectedProspect.propertyId),
         vacancyId: normalizeText(selectedProspect.vacancyId),
         listingId: normalizeText(selectedProspect.listingId),
+        requirementId: normalizeText(selectedProspect.requirementId),
+        dealId: normalizeText(selectedProspect.dealId),
         linkedEntityType: normalizeText(selectedProspect.linkedEntityType),
         linkedEntityId: normalizeText(selectedProspect.linkedEntityId),
+        convertedRequirementId: normalizeText(selectedProspect.convertedRequirementId),
+        convertedDealId: normalizeText(selectedProspect.convertedDealId),
+        convertedContactId: normalizeText(selectedProspect.convertedContactId),
+        convertedCompanyId: normalizeText(selectedProspect.convertedCompanyId),
       })
       setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(selectedProspect.id) ? (updated || selectedProspect) : row))
       setMessage('Prospect saved.')
@@ -1831,7 +1942,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
       const updated = await updateCommercialCanvassingProspect(organisationId, prospect.id, {
         ...prospect,
         status: nextStatus,
-        followUpNote: nextStatus === 'Contacted' ? 'Contacted from leasing prospects table' : prospect.followUpNote,
+        followUpNote: nextStatus === 'Contacted' ? `Contacted from ${pageView.key === 'sale' ? 'sales' : 'leasing'} prospects table` : prospect.followUpNote,
       })
       setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(prospect.id) ? (updated || { ...prospect, status: nextStatus }) : row))
       setMessage(`Prospect marked ${getLeaseStatusLabel(nextStatus).toLowerCase()}.`)
@@ -1854,7 +1965,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
 
   async function handleConvertProspectToLead(prospect) {
     if (!prospect) return
-    await handleUpdateProspectStatus(prospect, 'Converted to Lead')
+    await handleConvert('requirement', prospect)
   }
 
   async function handleLogActivity(type = 'Note') {
@@ -1886,14 +1997,15 @@ function CommercialCanvassingPage({ dealType = '' }) {
     }
   }
 
-  async function handleConvert(type) {
-    if (!organisationId || !selectedProspect) return
+  async function handleConvert(type, prospectOverride = null) {
+    const targetProspect = prospectOverride || selectedProspect
+    if (!organisationId || !targetProspect) return
     setBusyAction(`convert-${type}`)
     setError('')
     try {
-      const brokerId = normalizeText(selectedProspect.assignedBrokerId || createDraft.assignedBrokerId || brokerOptions[0]?.value || '')
-      const companyId = normalizeText(selectedProspect.companyId)
-      const contactId = normalizeText(selectedProspect.contactId)
+      const brokerId = normalizeText(targetProspect.assignedBrokerId || createDraft.assignedBrokerId || brokerOptions[0]?.value || '')
+      const companyId = normalizeText(targetProspect.companyId)
+      const contactId = normalizeText(targetProspect.contactId)
       let resolvedCompanyId = companyId
       let resolvedContactId = contactId
 
@@ -1901,27 +2013,27 @@ function CommercialCanvassingPage({ dealType = '' }) {
         if (!resolvedCompanyId) {
           const company = await createCommercialCompany({
             organisation_id: organisationId,
-            company_name: normalizeText(selectedProspect.companyName) || normalizeText(selectedProspect.contactName) || 'Canvassed company',
-            broker_id: brokerId || selectedProspect.assignedBrokerId || brokerOptions[0]?.value || '',
+            company_name: normalizeText(targetProspect.companyName) || normalizeText(targetProspect.contactName) || 'Canvassed company',
+            broker_id: brokerId || targetProspect.assignedBrokerId || brokerOptions[0]?.value || '',
             status: 'prospect',
-            notes: normalizeText(selectedProspect.notes) || 'Created from canvassing prospect',
+            notes: normalizeText(targetProspect.notes) || 'Created from canvassing prospect',
           })
           resolvedCompanyId = company.id
         }
         if (!resolvedCompanyId) {
           throw new Error('A company is required before creating a contact from this canvassing prospect.')
         }
-        const contactName = splitContactName(selectedProspect.contactName || selectedProspect.companyName || 'Prospect Contact')
+        const contactName = splitContactName(targetProspect.contactName || targetProspect.companyName || 'Prospect Contact')
         const contact = await createCommercialContact({
           organisation_id: organisationId,
           company_id: resolvedCompanyId,
           broker_id: brokerId,
-          first_name: contactName.firstName || normalizeText(selectedProspect.firstName) || 'Commercial',
-          last_name: contactName.lastName || normalizeText(selectedProspect.lastName) || 'Prospect',
-          email: normalizeText(selectedProspect.email) || null,
-          phone: normalizeText(selectedProspect.phone) || null,
+          first_name: contactName.firstName || normalizeText(targetProspect.firstName) || 'Commercial',
+          last_name: contactName.lastName || normalizeText(targetProspect.lastName) || 'Prospect',
+          email: normalizeText(targetProspect.email) || null,
+          phone: normalizeText(targetProspect.phone) || null,
           status: 'active',
-          notes: normalizeText(selectedProspect.notes) || 'Created from commercial canvassing',
+          notes: normalizeText(targetProspect.notes) || 'Created from commercial canvassing',
         })
         resolvedContactId = contact.id
       }
@@ -1931,84 +2043,85 @@ function CommercialCanvassingPage({ dealType = '' }) {
           organisation_id: organisationId,
           company_id: resolvedCompanyId || null,
           contact_id: resolvedContactId || null,
-          requirement_name: `${getProspectDisplayName(selectedProspect)} Requirement`,
-          requirement_type: inferRequirementType(selectedProspect),
-          client_type: inferClientType(selectedProspect),
-          property_type: normalizeText(selectedProspect.propertyType) || null,
-          preferred_locations: normalizeText(selectedProspect.area) ? [normalizeText(selectedProspect.area)] : [],
+          requirement_name: `${getProspectDisplayName(targetProspect)} Lead`,
+          requirement_type: inferRequirementType(targetProspect),
+          client_type: inferClientType(targetProspect),
+          property_type: normalizeText(targetProspect.propertyType) || null,
+          preferred_locations: normalizeText(targetProspect.area) ? [normalizeText(targetProspect.area)] : [],
           budget_min: 0,
-          budget_max: Number(selectedProspect.estimatedValue || 0) || null,
-          target_occupation_date: normalizeText(selectedProspect.nextFollowUpDate) || null,
+          budget_max: Number(targetProspect.estimatedValue || 0) || null,
+          target_occupation_date: normalizeText(targetProspect.nextFollowUpDate) || null,
           assigned_broker: brokerId,
           broker_id: brokerId,
           stage: 'new_requirement',
           status: 'active',
-          notes: normalizeText(selectedProspect.notes) || null,
-          special_requirements: normalizeText(selectedProspect.followUpNote) || null,
+          notes: normalizeText(targetProspect.notes) || null,
+          special_requirements: normalizeText(targetProspect.followUpNote) || null,
         })
-        const updated = await updateCommercialCanvassingProspect(organisationId, selectedProspect.id, {
-          ...selectedProspect,
-          status: 'Converted to Requirement',
+        const updated = await updateCommercialCanvassingProspect(organisationId, targetProspect.id, {
+          ...targetProspect,
+          status: 'Converted to Lead',
           linkedEntityType: 'commercial_requirement',
           linkedEntityId: createdRequirement.id,
-          companyId: resolvedCompanyId || selectedProspect.companyId,
-          contactId: resolvedContactId || selectedProspect.contactId,
+          requirementId: createdRequirement.id,
+          companyId: resolvedCompanyId || targetProspect.companyId,
+          contactId: resolvedContactId || targetProspect.contactId,
           convertedRequirementId: createdRequirement.id,
         })
-        setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(selectedProspect.id) ? (updated || selectedProspect) : row))
-        setMessage('Prospect converted to a requirement.')
+        setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(targetProspect.id) ? (updated || targetProspect) : row))
+        setMessage('Prospect converted to a lead.')
       } else if (type === 'deal') {
         const createdDeal = await createCommercialDeal({
           organisation_id: organisationId,
           company_id: resolvedCompanyId || null,
           contact_id: resolvedContactId || null,
-          deal_name: `${getProspectDisplayName(selectedProspect)} Deal`,
-          deal_type: inferDealType(selectedProspect),
-          requirement_id: normalizeText(selectedProspect.requirementId) || null,
-          property_id: normalizeText(selectedProspect.propertyId) || null,
-          vacancy_id: normalizeText(selectedProspect.vacancyId) || null,
-          listing_id: normalizeText(selectedProspect.listingId) || null,
+          deal_name: `${getProspectDisplayName(targetProspect)} Deal`,
+          deal_type: inferDealType(targetProspect),
+          requirement_id: normalizeText(targetProspect.requirementId) || null,
+          property_id: normalizeText(targetProspect.propertyId) || null,
+          vacancy_id: normalizeText(targetProspect.vacancyId) || null,
+          listing_id: normalizeText(targetProspect.listingId) || null,
           assigned_broker: brokerId,
           broker_id: brokerId,
           stage: 'new',
           status: 'active',
-          deal_value: Number(selectedProspect.estimatedValue || 0) || null,
-          expected_close_date: normalizeText(selectedProspect.nextFollowUpDate) || null,
-          notes: normalizeText(selectedProspect.notes) || null,
+          deal_value: Number(targetProspect.estimatedValue || 0) || null,
+          expected_close_date: normalizeText(targetProspect.nextFollowUpDate) || null,
+          notes: normalizeText(targetProspect.notes) || null,
         })
-        const updated = await updateCommercialCanvassingProspect(organisationId, selectedProspect.id, {
-          ...selectedProspect,
+        const updated = await updateCommercialCanvassingProspect(organisationId, targetProspect.id, {
+          ...targetProspect,
           status: 'Converted to Deal',
           linkedEntityType: 'commercial_deal',
           linkedEntityId: createdDeal.id,
-          companyId: resolvedCompanyId || selectedProspect.companyId,
-          contactId: resolvedContactId || selectedProspect.contactId,
+          companyId: resolvedCompanyId || targetProspect.companyId,
+          contactId: resolvedContactId || targetProspect.contactId,
           convertedDealId: createdDeal.id,
         })
-        setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(selectedProspect.id) ? (updated || selectedProspect) : row))
+        setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(targetProspect.id) ? (updated || targetProspect) : row))
         setMessage('Prospect converted to a deal.')
       } else if (type === 'contact') {
-        const updated = await updateCommercialCanvassingProspect(organisationId, selectedProspect.id, {
-          ...selectedProspect,
+        const updated = await updateCommercialCanvassingProspect(organisationId, targetProspect.id, {
+          ...targetProspect,
           status: 'Converted to Contact',
           linkedEntityType: 'commercial_contact',
           linkedEntityId: resolvedContactId,
-          companyId: resolvedCompanyId || selectedProspect.companyId,
+          companyId: resolvedCompanyId || targetProspect.companyId,
           contactId: resolvedContactId,
           convertedContactId: resolvedContactId,
           convertedCompanyId: resolvedCompanyId,
         })
-        setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(selectedProspect.id) ? (updated || selectedProspect) : row))
+        setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(targetProspect.id) ? (updated || targetProspect) : row))
         setMessage('Contact created from canvassing prospect.')
       }
 
       await createCommercialCanvassingActivity(organisationId, {
-        prospectId: selectedProspect.id,
+        prospectId: targetProspect.id,
         brokerId,
-        brokerName: selectedProspect.assignedBrokerName || pickLookupLabel(brokerOptions, brokerId, ''),
+        brokerName: targetProspect.assignedBrokerName || pickLookupLabel(brokerOptions, brokerId, ''),
         activityType: 'Note',
-        activityNote: `Converted to ${type}`,
-        outcome: type,
+        activityNote: type === 'requirement' ? 'Converted to commercial lead' : `Converted to ${type}`,
+        outcome: type === 'requirement' ? 'lead' : type,
         activityDate: new Date().toISOString(),
       })
       void loadData({ showLoading: false, preserveOnError: true })
@@ -2089,21 +2202,22 @@ function CommercialCanvassingPage({ dealType = '' }) {
     createDraft.nextFollowUpDate ? formatShortDate(createDraft.nextFollowUpDate) : 'No follow-up date',
   ]
 
-  const isLeaseCreateFlow = pageView.key === 'lease'
-  const createModal = isLeaseCreateFlow ? (
+  const isFocusedCreateFlow = pageView.key === 'lease' || pageView.key === 'sale'
+  const createModalTitle = pageView.key === 'sale' ? 'New Sales Canvassing Record' : 'New Canvassing Record'
+  const createModalSubtitle = pageView.key === 'sale'
+    ? 'Capture a potential seller or buyer. Qualify them later to convert into a sales lead.'
+    : 'Capture basic details of a potential landlord or tenant. Qualify them later to convert into a lead.'
+  const createModal = isFocusedCreateFlow ? (
     <Modal
       open={createOpen}
       onClose={() => setCreateOpen(false)}
-      title="New Canvassing Record"
-      subtitle="Capture basic details of a potential landlord or tenant. Qualify them later to convert into a lead."
+      title={createModalTitle}
+      subtitle={createModalSubtitle}
       className="max-w-[1140px]"
       footer={(
         <div className="flex w-full flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
           <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} className="h-11 min-w-[96px] rounded-[8px]">
             Cancel
-          </Button>
-          <Button type="button" variant="secondary" disabled={busyAction === 'create'} onClick={() => void submitCreateProspect({ addAnother: true })} className="h-11 min-w-[170px] rounded-[8px] border-[#7fb0ff] text-[#095ed8]">
-            {busyAction === 'create' ? 'Saving...' : 'Save & Add Another'}
           </Button>
           <Button type="submit" form="commercial-canvassing-create-form" disabled={busyAction === 'create'} className="h-11 min-w-[150px] rounded-[8px] bg-[#082f56] text-white hover:bg-[#0b3d70]">
             {busyAction === 'create' ? 'Saving...' : 'Save'}
@@ -2112,29 +2226,45 @@ function CommercialCanvassingPage({ dealType = '' }) {
       )}
     >
       <form id="commercial-canvassing-create-form" onSubmit={handleCreateProspect} className="min-h-0">
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_210px]">
-          <div className="min-w-0">
-            <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:max-w-[560px]">
-              <LeaseRoleTab
-                active={createRole === 'landlord'}
-                icon={Building2}
-                label="Landlord (Property)"
-                onClick={() => updateCreateRole('landlord')}
-              />
-              <LeaseRoleTab
-                active={createRole === 'tenant'}
-                icon={Users}
-                label="Tenant (Company)"
-                onClick={() => updateCreateRole('tenant')}
-              />
-            </div>
-
-            {createRole === 'tenant'
-              ? renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions })
-              : renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions })}
+        <div className="min-w-0">
+          <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:max-w-[640px]">
+            {pageView.key === 'sale' ? (
+              <>
+                <LeaseRoleTab
+                  active={createRole === 'seller'}
+                  icon={Building2}
+                  label="Seller (Property)"
+                  onClick={() => updateCreateRole('seller')}
+                />
+                <LeaseRoleTab
+                  active={createRole === 'buyer'}
+                  icon={Users}
+                  label="Buyer (Requirement)"
+                  onClick={() => updateCreateRole('buyer')}
+                />
+              </>
+            ) : (
+              <>
+                <LeaseRoleTab
+                  active={createRole === 'landlord'}
+                  icon={Building2}
+                  label="Landlord (Property)"
+                  onClick={() => updateCreateRole('landlord')}
+                />
+                <LeaseRoleTab
+                  active={createRole === 'tenant'}
+                  icon={Users}
+                  label="Tenant (Company)"
+                  onClick={() => updateCreateRole('tenant')}
+                />
+              </>
+            )}
           </div>
 
-          <LeaseHelperPanel />
+          {createRole === 'seller' ? renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
+          {createRole === 'buyer' ? renderSalesBuyerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
+          {createRole === 'landlord' ? renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
+          {createRole === 'tenant' ? renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
         </div>
       </form>
     </Modal>
@@ -2311,18 +2441,24 @@ function CommercialCanvassingPage({ dealType = '' }) {
     statusFilter,
   ].filter((value) => normalizeText(value) && value !== 'all').length
   const shouldShowAdvancedFilters = showAdvancedFilters || advancedFilterCount > 0
+  const isFocusedCanvassingView = pageView.key === 'lease' || pageView.key === 'sale'
+  const primaryCreateRole = pageView.key === 'sale' ? 'seller' : 'landlord'
+  const secondaryCreateRole = pageView.key === 'sale' ? 'buyer' : 'tenant'
+  const primaryCreateLabel = pageView.key === 'sale' ? 'Add Seller' : 'Add Landlord'
+  const secondaryCreateLabel = pageView.key === 'sale' ? 'Add Buyer' : 'Add Tenant'
+  const focusedProspectNoun = pageView.key === 'sale' ? 'sales prospects' : 'lease prospects'
   const hasAnyProspects = pageScopedProspects.length > 0
   const tableTotalCount = sortedProspects.length
   const tableStart = tableTotalCount ? 1 : 0
   const tableEnd = tableTotalCount
   const currentSortLabel = SORT_OPTIONS.find((option) => option.value === `${sortKey}:${sortDirection}`)?.label || 'Newest Updated'
-  const tableColumnLabels = pageView.key === 'lease'
-    ? ['Prospect', 'Type', 'Asset Class', 'Area / Node', 'Broker', 'Status', 'Last Contact', 'Actions']
+  const tableColumnLabels = isFocusedCanvassingView
+    ? ['Prospect', 'Type', 'Asset Class', 'Area / Asset', 'Broker', 'Status', 'Last Contact', 'Actions']
     : ['Prospect', 'Type', 'Category', 'Source', 'Area / Asset', 'Stage / Next Step', 'Broker', 'Last Activity', 'Actions']
   const roleMetricCards = pageView.key === 'sale'
     ? [
-        { label: 'Sellers', value: leaseRoleCounts.sellers, icon: Building2, trendLabel: '8%', series: kpiSeries.landlords, color: '#16a34a' },
-        { label: 'Buyers', value: leaseRoleCounts.buyers, icon: Users, trendLabel: '18%', series: kpiSeries.tenants, color: '#8b5cf6' },
+        { label: 'Sellers', value: leaseRoleCounts.sellers, icon: Building2, trendLabel: '8%', series: kpiSeries.sellers, color: '#16a34a' },
+        { label: 'Buyers', value: leaseRoleCounts.buyers, icon: Users, trendLabel: '18%', series: kpiSeries.buyers, color: '#8b5cf6' },
       ]
     : [
         { label: 'Landlords', value: leaseRoleCounts.landlords, icon: Building2, trendLabel: '8%', series: kpiSeries.landlords, color: '#16a34a' },
@@ -2333,8 +2469,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
       return {
         icon: Clock3,
         title: 'No follow-ups due.',
-        description: 'Lease prospect follow-ups will appear here when a next action date is scheduled.',
-        actionLabel: 'View All Lease Prospects',
+        description: `${titleize(focusedProspectNoun)} follow-ups will appear here when a next action date is scheduled.`,
+        actionLabel: pageView.key === 'sale' ? 'View All Sales Prospects' : 'View All Lease Prospects',
         onAction: () => {
           setActiveTab('all')
           setSearch('')
@@ -2350,7 +2486,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
       return {
         icon: SlidersHorizontal,
         title: 'No prospects match these filters.',
-        description: 'Try widening the category, broker, status, source, or search filters to bring more lease prospects back into view.',
+        description: `Try widening the category, broker, status, source, or search filters to bring more ${focusedProspectNoun} back into view.`,
         actionLabel: 'Clear Filters',
         onAction: () => {
           setSearch('')
@@ -2365,8 +2501,10 @@ function CommercialCanvassingPage({ dealType = '' }) {
     }
     return {
       icon: ClipboardList,
-      title: 'No active lease prospects yet.',
-      description: 'Lease prospects will appear here once landlord and tenant prospecting begins moving through the platform.',
+      title: pageView.key === 'sale' ? 'No active sales prospects yet.' : 'No active lease prospects yet.',
+      description: pageView.key === 'sale'
+        ? 'Sales prospects will appear here once seller and buyer prospecting begins moving through the platform.'
+        : 'Lease prospects will appear here once landlord and tenant prospecting begins moving through the platform.',
       actionLabel: pageView.createLabel.replace(/^\+\s*/, ''),
       onAction: () => openCreateModal(pageView.defaultCreateRole),
     }
@@ -2424,13 +2562,13 @@ function CommercialCanvassingPage({ dealType = '' }) {
           {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
           {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-          <article className={pageView.key === 'lease' ? 'space-y-6' : `${CARD_CLASS} overflow-hidden p-5 sm:p-6`}>
+          <article className={isFocusedCanvassingView ? 'space-y-6' : `${CARD_CLASS} overflow-hidden p-5 sm:p-6`}>
             <section className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <h1 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h1>
                 <p className="mt-2 text-sm leading-6 text-[#4f6680]">{pageView.description}</p>
               </div>
-              {pageView.key === 'lease' ? (
+              {isFocusedCanvassingView ? (
                 <div className="relative">
                   <Button type="button" onClick={() => setCreateMenuOpen((current) => !current)} className="h-12 rounded-[10px] bg-[#082f56] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#0b3d70]">
                     <Plus size={16} />
@@ -2439,13 +2577,13 @@ function CommercialCanvassingPage({ dealType = '' }) {
                   </Button>
                   {createMenuOpen ? (
                     <div className="absolute right-0 top-14 z-30 w-44 overflow-hidden rounded-[12px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
-                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal('landlord') }}>
+                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(primaryCreateRole) }}>
                         <Building2 size={15} />
-                        Add Landlord
+                        {primaryCreateLabel}
                       </button>
-                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal('tenant') }}>
+                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(secondaryCreateRole) }}>
                         <Users size={15} />
-                        Add Tenant
+                        {secondaryCreateLabel}
                       </button>
                     </div>
                   ) : null}
@@ -2471,8 +2609,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
               )}
             </section>
 
-            {pageView.key === 'lease' ? (
-              <LeaseKpiStrip loading={loading} metrics={metrics} counts={leaseRoleCounts} />
+            {isFocusedCanvassingView ? (
+              <CanvassingKpiStrip loading={loading} metrics={metrics} counts={leaseRoleCounts} mode={pageView.key} />
             ) : (
               <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <ProspectStat label="Total Prospects" value={loading ? '...' : metrics.prospects} detail="vs last 30 days" icon={Users} trendLabel="12%" series={kpiSeries.total} color="#2d6ecf" />
@@ -2484,7 +2622,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
               </section>
             )}
 
-            {pageView.showDepartmentTabs && pageView.key !== 'lease' ? (
+            {pageView.showDepartmentTabs && !isFocusedCanvassingView ? (
               <div className="mt-7 border-b border-[#e8eef5]">
                 <div className="flex gap-9 overflow-x-auto">
                   {pageView.tabs.map((tab) => (
@@ -2501,14 +2639,14 @@ function CommercialCanvassingPage({ dealType = '' }) {
               </div>
             ) : null}
 
-            <section className={`${pageView.key === 'lease' ? 'rounded-[14px] border border-[#dce6f0] bg-white shadow-[0_14px_34px_rgba(15,35,70,0.05)]' : 'rounded-b-[18px] border border-t-0 border-[#dce6f0] bg-white'}`}>
+            <section className={`${isFocusedCanvassingView ? 'rounded-[14px] border border-[#dce6f0] bg-white shadow-[0_14px_34px_rgba(15,35,70,0.05)]' : 'rounded-b-[18px] border border-t-0 border-[#dce6f0] bg-white'}`}>
               <div className="border-b border-[#e8eef5] px-4 py-4">
-                <div className={pageView.key === 'lease' ? 'grid gap-3 lg:grid-cols-[minmax(260px,1fr)_154px_154px_154px_164px]' : 'flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between'}>
-                  <SearchField value={search} onChange={setSearch} placeholder={pageView.searchPlaceholder} className={pageView.key === 'lease' ? 'w-full' : 'w-full 2xl:max-w-[34%] 2xl:flex-1'} />
-                  <div className={pageView.key === 'lease' ? 'contents' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:flex 2xl:flex-wrap 2xl:items-center'}>
-                    {pageView.key === 'lease' ? (
+                <div className={isFocusedCanvassingView ? 'grid gap-3 lg:grid-cols-[minmax(260px,1fr)_154px_154px_154px_164px]' : 'flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between'}>
+                  <SearchField value={search} onChange={setSearch} placeholder={pageView.searchPlaceholder} className={isFocusedCanvassingView ? 'w-full' : 'w-full 2xl:max-w-[34%] 2xl:flex-1'} />
+                  <div className={isFocusedCanvassingView ? 'contents' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:flex 2xl:flex-wrap 2xl:items-center'}>
+                    {isFocusedCanvassingView ? (
                       <>
-                        <FilterSelect value={roleFilter} onChange={setRoleFilter} options={[{ value: 'landlord', label: 'Landlord' }, { value: 'tenant', label: 'Tenant' }]} placeholder="Type" className="!w-full" />
+                        <FilterSelect value={roleFilter} onChange={setRoleFilter} options={pageView.roleOptions} placeholder="Type" className="!w-full" />
                         <FilterSelect value={brokerFilter} onChange={setBrokerFilter} options={brokerOptions} placeholder="Broker" className="!w-full" />
                         <FilterSelect value={statusFilter} onChange={setStatusFilter} options={LEASE_STATUS_OPTIONS.map((value) => ({ value, label: value }))} placeholder="Status" className="!w-full" />
                       </>
@@ -2549,7 +2687,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
                       }`}
                     >
                       <SlidersHorizontal size={15} />
-                      {pageView.key === 'lease' ? 'More Filters' : 'Filters'}
+                      {isFocusedCanvassingView ? 'More Filters' : 'Filters'}
                       {advancedFilterCount ? (
                         <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#e7efff] px-1.5 text-[11px] font-semibold text-[#1952c6]">
                           {advancedFilterCount}
@@ -2583,9 +2721,9 @@ function CommercialCanvassingPage({ dealType = '' }) {
                         Clear filters
                       </button>
                     </div>
-                    {pageView.key === 'lease' ? (
+                    {isFocusedCanvassingView ? (
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                        <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={LEASE_ASSET_CLASS_OPTIONS.map(({ value, label }) => ({ value, label }))} placeholder="Asset Class" className="!w-full" />
+                        <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={(pageView.key === 'sale' ? SALES_ASSET_CLASS_OPTIONS : LEASE_ASSET_CLASS_OPTIONS).map(({ value, label }) => ({ value, label }))} placeholder="Asset Class" className="!w-full" />
                         <FilterSelect value={methodFilter} onChange={setMethodFilter} options={CANVASSING_METHODS.map((value) => ({ value, label: value }))} placeholder="Source" className="!w-full" />
                         <FilterSelect value={dateAddedFilter} onChange={setDateAddedFilter} options={DATE_FILTER_OPTIONS.slice(1)} placeholder="Date Added" className="!w-full" />
                         <FilterSelect value={lastContactFilter} onChange={setLastContactFilter} options={DATE_FILTER_OPTIONS.slice(1)} placeholder="Last Contact" className="!w-full" />
@@ -2665,22 +2803,22 @@ function CommercialCanvassingPage({ dealType = '' }) {
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-semibold text-[#102236]">{getProspectDisplayName(prospect)}</p>
                                   <p className="mt-1 truncate text-xs text-[#6d839b]">{normalizeText(prospect.contactName) || prospect.secondaryLine || 'No contact captured'}</p>
-                                  {pageView.key !== 'lease' ? <p className="mt-1 truncate text-xs text-[#6d839b]">{normalizeText(prospect.phone) || 'No phone captured'}</p> : null}
+                                  {!isFocusedCanvassingView ? <p className="mt-1 truncate text-xs text-[#6d839b]">{normalizeText(prospect.phone) || 'No phone captured'}</p> : null}
                                 </div>
                               </div>
                             </td>
                             <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <div className="space-y-2">
                                 <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(roleTone)}`}>{prospect.roleLabel}</span>
-                                {pageView.key !== 'lease' ? <p className="text-xs text-[#63768b]">{prospect.dealTypeLabel}</p> : null}
+                                {!isFocusedCanvassingView ? <p className="text-xs text-[#63768b]">{prospect.dealTypeLabel}</p> : null}
                               </div>
                             </td>
                             <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
-                              {pageView.key === 'lease'
+                              {isFocusedCanvassingView
                                 ? <LeaseAssetClass category={prospect.propertyCategory || prospect.propertyType} />
                                 : <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(categoryTone)}`}>{prospect.categoryLabel}</span>}
                             </td>
-                            {pageView.key !== 'lease' ? (
+                            {!isFocusedCanvassingView ? (
                               <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                                 <span className="inline-flex rounded-full border border-[#e0e8f2] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#38506a]">
                                   {titleize(prospect.sourceLabel)}
@@ -2689,14 +2827,14 @@ function CommercialCanvassingPage({ dealType = '' }) {
                             ) : null}
                             <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <div className="space-y-1">
-                                {pageView.key !== 'lease' ? <p className="text-sm font-semibold text-[#102236]">{getAssetLine(prospect)}</p> : null}
+                                {pageView.key === 'sale' || !isFocusedCanvassingView ? <p className="text-sm font-semibold text-[#102236]">{getAssetLine(prospect)}</p> : null}
                                 <div className="inline-flex items-center gap-1.5 text-xs text-[#63768b]">
                                   <MapPin size={12} className="text-[#9cb0c4]" />
                                   <span>{getAreaLine(prospect)}</span>
                                 </div>
                               </div>
                             </td>
-                            {pageView.key === 'lease' ? (
+                            {isFocusedCanvassingView ? (
                               <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                                 <div className="inline-flex items-center gap-2">
                                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#2b4f71]">
@@ -2707,7 +2845,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
                               </td>
                             ) : null}
                             <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
-                              {pageView.key === 'lease' ? (
+                              {isFocusedCanvassingView ? (
                                 <LeaseStatusPill status={prospect.stageLabel || prospect.status} />
                               ) : (
                                 <div className="space-y-2">
@@ -2717,7 +2855,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
                                 </div>
                               )}
                             </td>
-                            {pageView.key !== 'lease' ? (
+                            {!isFocusedCanvassingView ? (
                               <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                                 <div className="inline-flex items-center gap-2">
                                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#2b4f71]">
@@ -2743,16 +2881,16 @@ function CommercialCanvassingPage({ dealType = '' }) {
                                 </button>
                                 {showMenu ? (
                                   <div className="absolute right-0 top-10 z-20 w-48 overflow-hidden rounded-[14px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
-                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setMessage('Edit the prospect in the detail drawer.'); setOpenActionMenuId('') }}>Edit</button>
-                                    {pageView.key === 'lease' ? (
+                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setMessage('Edit the prospect in the detail popup.'); setOpenActionMenuId('') }}>Edit</button>
+                                    {isFocusedCanvassingView ? (
                                       <>
                                         <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setOpenActionMenuId(''); void handleUpdateProspectStatus(prospect, 'Contacted') }}>Mark Contacted</button>
-                                        {getLeaseStatusLabel(prospect.status || prospect.stageLabel) !== 'Converted' ? (
+                                        {!getConvertedRequirementId(prospect) && getLeaseStatusLabel(prospect.status || prospect.stageLabel) !== 'Converted' ? (
                                           <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setOpenActionMenuId(''); void handleConvertProspectToLead(prospect) }}>Convert to Lead</button>
                                         ) : null}
                                       </>
                                     ) : (
-                                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setMessage('Use the detail drawer to log a call or add notes.'); setOpenActionMenuId('') }}>Log activity</button>
+                                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setMessage('Use the detail popup to log a call or add notes.'); setOpenActionMenuId('') }}>Log activity</button>
                                     )}
                                     <div className="my-1 border-t border-[#eef3f7]" />
                                     <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#a13b35] transition hover:bg-[#fff5f5]" onClick={() => { setSelectedProspectId(prospect.id); setArchiveOpen(true); setOpenActionMenuId('') }}>Archive</button>
@@ -2765,8 +2903,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
                       }) : (
                         <tr>
                           <td colSpan={tableColumnLabels.length} className="px-0 py-0">
-                            {pageView.key === 'lease' && !hasAnyProspects ? (
-                              <LeaseProspectsEmptyState onAddLandlord={() => openCreateModal('landlord')} onAddTenant={() => openCreateModal('tenant')} />
+                            {isFocusedCanvassingView && !hasAnyProspects ? (
+                              <FocusedProspectsEmptyState mode={pageView.key} onAddPrimary={() => openCreateModal(primaryCreateRole)} onAddSecondary={() => openCreateModal(secondaryCreateRole)} />
                             ) : (
                               <InlineTableEmptyState
                                 icon={emptyStateConfig.icon}
@@ -2835,7 +2973,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
                         </div>
                         <p>{getAssetLine(prospect)} · {getAreaLine(prospect)}</p>
                         <p>
-                          {pageView.key === 'lease'
+                          {isFocusedCanvassingView
                             ? `${normalizeText(prospect.phone) || 'No contact number'} · ${normalizeText(prospect.email) || normalizeText(prospect.contactName) || 'Email pending'}`
                             : `${prospect.stageLabel} · ${prospect.nextStepLabel}`}
                         </p>
@@ -2845,8 +2983,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
                     </div>
                   )
                 }) : (
-                  pageView.key === 'lease' && !hasAnyProspects ? (
-                    <LeaseProspectsEmptyState onAddLandlord={() => openCreateModal('landlord')} onAddTenant={() => openCreateModal('tenant')} />
+                  isFocusedCanvassingView && !hasAnyProspects ? (
+                    <FocusedProspectsEmptyState mode={pageView.key} onAddPrimary={() => openCreateModal(primaryCreateRole)} onAddSecondary={() => openCreateModal(secondaryCreateRole)} />
                   ) : (
                     <InlineTableEmptyState
                       icon={emptyStateConfig.icon}
@@ -2877,215 +3015,243 @@ function CommercialCanvassingPage({ dealType = '' }) {
             </section>
           </article>
 
-          {drawerOpen && selectedProspect ? (
-            <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/20">
-              <button type="button" className="flex-1 cursor-default" aria-label="Close drawer backdrop" onClick={() => setDrawerOpen(false)} />
-              <aside className="h-full w-full max-w-[560px] overflow-y-auto border-l border-[#dce6f0] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
-                <div className="sticky top-0 z-10 border-b border-[#e8eef5] bg-white/95 px-5 py-4 backdrop-blur">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b899a]">Prospect Detail</p>
-                      <h2 className="mt-2 truncate text-[1.3rem] font-semibold tracking-[-0.03em] text-[#102236]">{getProspectDisplayName(selectedProspect)}</h2>
-                      <p className="mt-1 text-sm text-[#63768b]">{getAreaLine(selectedProspect)} · {getAssetLine(selectedProspect)}</p>
+          <Modal
+            open={drawerOpen && Boolean(selectedProspect)}
+            onClose={() => setDrawerOpen(false)}
+            title="Prospect Detail"
+            subtitle={`Review touchpoints, qualify the prospect, and convert it into a ${pageView.key === 'sale' ? 'sales' : 'commercial'} lead.`}
+            className="max-w-[1120px]"
+          >
+            {selectedProspect ? (
+              <div className="-mx-6 -mb-6 -mt-6 overflow-hidden bg-[#f6f8fb]">
+                <div className="bg-[#0f2237] px-5 py-5 text-white sm:px-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex min-w-0 items-start gap-4">
+                      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] border border-white/15 bg-white/10 text-lg font-semibold shadow-inner">
+                        {getProspectInitials(selectedProspect)}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#9fb2c8]">{pageView.key === 'sale' ? 'Sales Prospect' : pageView.key === 'lease' ? 'Leasing Prospect' : 'Commercial Prospect'}</p>
+                        <h2 className="mt-1 truncate text-2xl font-semibold tracking-[-0.035em] text-white">{getProspectDisplayName(selectedProspect)}</h2>
+                        <div className="mt-2 flex flex-wrap gap-2 text-sm text-[#d4deea]">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1">
+                            <Building2 size={14} />
+                            {getAssetLine(selectedProspect)}
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1">
+                            <MapPin size={14} />
+                            {getAreaLine(selectedProspect)}
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1">
+                            <CheckCircle2 size={14} />
+                            {selectedProspect.status || 'New'}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button type="button" onClick={handleSaveProspect} disabled={busyAction === 'save'} className="rounded-[12px]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="secondary" onClick={handleSaveProspect} disabled={busyAction === 'save'} className="h-11 rounded-[12px] border-white/20 bg-white/10 px-4 text-white hover:bg-white/15">
                         <Save size={16} />
                         {busyAction === 'save' ? 'Saving...' : 'Save'}
                       </Button>
-                      <button
+                      <Button
                         type="button"
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dce6f0] bg-white text-[#62758b] transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
-                        onClick={() => setDrawerOpen(false)}
-                        aria-label="Close prospect drawer"
+                        onClick={() => void handleConvert('requirement')}
+                        disabled={busyAction.startsWith('convert-') || Boolean(getConvertedRequirementId(selectedProspect))}
+                        className="h-11 rounded-[12px] bg-white px-4 text-[#0f2237] hover:bg-[#f2f6fb]"
                       >
-                        <X size={16} />
-                      </button>
+                        <ArrowRight size={16} />
+                        {getConvertedRequirementId(selectedProspect) ? 'Lead Created' : busyAction === 'convert-requirement' ? 'Converting...' : 'Convert to Lead'}
+                      </Button>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-6 px-5 py-5">
-                  <section className="space-y-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Overview</h3>
-                      <ProspectTonePill value={selectedProspect.status} />
-                    </div>
-                    <div className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] px-4 py-3 text-sm text-[#60758d]">
-                      Assigned broker: <span className="font-semibold text-[#102236]">{pickLookupLabel(brokerOptions, selectedProspect.assignedBrokerId, selectedProspect.assignedBrokerName || 'Unassigned')}</span>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Company</span>
-                        <Field value={selectedProspect.companyName || ''} onChange={(event) => updateSelectedProspectField('companyName', event.target.value)} />
-                      </label>
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Contact</span>
-                        <Field value={selectedProspect.contactName || ''} onChange={(event) => updateSelectedProspectField('contactName', event.target.value)} />
-                      </label>
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Phone</span>
-                        <Field value={selectedProspect.phone || ''} onChange={(event) => updateSelectedProspectField('phone', event.target.value)} />
-                      </label>
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Email</span>
-                        <Field value={selectedProspect.email || ''} onChange={(event) => updateSelectedProspectField('email', event.target.value)} />
-                      </label>
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Category</span>
-                        <Field as="select" value={selectedProspect.propertyType || ''} onChange={(event) => updateSelectedProspectField('propertyType', event.target.value)}>
-                          <option value="">Select type</option>
-                          {PROSPECT_PROPERTY_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-                        </Field>
-                      </label>
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Area</span>
-                        <Field value={selectedProspect.area || ''} onChange={(event) => updateSelectedProspectField('area', event.target.value)} />
-                      </label>
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Broker</span>
-                        <Field as="select" value={selectedProspect.assignedBrokerId || ''} onChange={(event) => updateSelectedProspectField('assignedBrokerId', event.target.value)}>
-                          <option value="">Unassigned</option>
-                          {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </Field>
-                      </label>
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Status</span>
-                        <Field as="select" value={selectedProspect.status || 'New'} onChange={(event) => updateSelectedProspectField('status', event.target.value)}>
-                          {PROSPECT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
-                        </Field>
-                      </label>
-                    </div>
-                  </section>
+                <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_340px]">
+                  <div className="space-y-5 p-5 sm:p-6">
+                    <section className="rounded-[20px] border border-[#dde7f2] bg-white p-4 shadow-[0_16px_36px_rgba(15,35,55,0.06)]">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8293aa]">Overview</p>
+                          <h3 className="mt-1 text-base font-semibold text-[#102236]">Contact and qualification details</h3>
+                        </div>
+                        <ProspectTonePill value={selectedProspect.status} />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Company</span>
+                          <Field value={selectedProspect.companyName || ''} onChange={(event) => updateSelectedProspectField('companyName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Contact</span>
+                          <Field value={selectedProspect.contactName || ''} onChange={(event) => updateSelectedProspectField('contactName', event.target.value)} />
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Phone</span>
+                          <Field value={selectedProspect.phone || ''} onChange={(event) => updateSelectedProspectField('phone', event.target.value)} />
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Email</span>
+                          <Field value={selectedProspect.email || ''} onChange={(event) => updateSelectedProspectField('email', event.target.value)} />
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Category</span>
+                          <Field as="select" value={selectedProspect.propertyType || ''} onChange={(event) => updateSelectedProspectField('propertyType', event.target.value)}>
+                            <option value="">Select type</option>
+                            {PROSPECT_PROPERTY_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </Field>
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Area</span>
+                          <Field value={selectedProspect.area || ''} onChange={(event) => updateSelectedProspectField('area', event.target.value)} />
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Broker</span>
+                          <Field as="select" value={selectedProspect.assignedBrokerId || ''} onChange={(event) => updateSelectedProspectField('assignedBrokerId', event.target.value)}>
+                            <option value="">Unassigned</option>
+                            {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </Field>
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Status</span>
+                          <Field as="select" value={selectedProspect.status || 'New'} onChange={(event) => updateSelectedProspectField('status', event.target.value)}>
+                            {PROSPECT_STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </Field>
+                        </label>
+                      </div>
+                    </section>
 
-                  <section className="space-y-4">
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Activity</h3>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <Button type="button" variant="secondary" onClick={() => handleLogActivity('Call')} disabled={busyAction.startsWith('activity-')}>
-                        <Phone size={16} />
-                        Call
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={() => handleLogActivity('WhatsApp')} disabled={busyAction.startsWith('activity-')}>
-                        <MessageCircle size={16} />
-                        WhatsApp
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={() => handleLogActivity('Email')} disabled={busyAction.startsWith('activity-')}>
-                        <Mail size={16} />
-                        Email
-                      </Button>
-                    </div>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Activity note</span>
-                      <Field as="textarea" value={activityDraft.activityNote} onChange={(event) => setActivityDraft((current) => ({ ...current, activityNote: event.target.value }))} placeholder="What happened in the latest touchpoint?" />
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Outcome</span>
-                      <Field value={activityDraft.outcome} onChange={(event) => setActivityDraft((current) => ({ ...current, outcome: event.target.value }))} placeholder="Next step or outcome" />
-                    </label>
-                    <Button type="button" onClick={() => handleLogActivity('Note')} disabled={busyAction.startsWith('activity-')}>
-                      <Save size={16} />
-                      Log activity
-                    </Button>
-                    <div className="space-y-3">
-                      {selectedActivities.length ? selectedActivities.map((activityRow) => (
-                        <div key={activityRow.id} className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-[#102236]">{titleize(activityRow.activityType)}</p>
-                              <p className="mt-1 text-sm leading-6 text-[#60758d]">{activityRow.activityNote || 'No note recorded'}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-[#7b899a]">{formatDate(activityRow.activityDate || activityRow.createdAt)}</span>
+                    <section className="rounded-[20px] border border-[#dde7f2] bg-white p-4 shadow-[0_16px_36px_rgba(15,35,55,0.06)]">
+                      <div className="mb-4">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8293aa]">Tasks</p>
+                        <h3 className="mt-1 text-base font-semibold text-[#102236]">Follow-up and notes</h3>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up date</span>
+                          <Field as="input" type="date" value={selectedProspect.nextFollowUpDate || ''} onChange={(event) => updateSelectedProspectField('nextFollowUpDate', event.target.value)} />
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Priority</span>
+                          <Field as="select" value={selectedProspect.followUpPriority || 'Medium'} onChange={(event) => updateSelectedProspectField('followUpPriority', event.target.value)}>
+                            {FOLLOW_UP_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </Field>
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Estimated value</span>
+                          <Field as="input" type="number" value={selectedProspect.estimatedValue || ''} onChange={(event) => updateSelectedProspectField('estimatedValue', event.target.value)} />
+                        </label>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up note</span>
+                          <Field value={selectedProspect.followUpNote || ''} onChange={(event) => updateSelectedProspectField('followUpNote', event.target.value)} />
+                        </label>
+                        <label className="grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Notes</span>
+                          <Field as="textarea" value={selectedProspect.notes || ''} onChange={(event) => updateSelectedProspectField('notes', event.target.value)} />
+                        </label>
+                      </div>
+                    </section>
+                  </div>
+
+                  <aside className="border-t border-[#dde7f2] bg-[#fbfcfe] p-5 sm:p-6 lg:border-l lg:border-t-0">
+                    <div className="space-y-5 lg:sticky lg:top-0">
+                      <section className="rounded-[20px] border border-[#dde7f2] bg-white p-4 shadow-[0_16px_36px_rgba(15,35,55,0.06)]">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#eaf4ff] text-[#0c5fd7]">
+                            <CheckCircle2 size={18} />
+                          </span>
+                          <div>
+                            <p className="text-sm font-semibold text-[#102236]">Qualification</p>
+                            <p className="text-xs text-[#6d839b]">Move this record into Commercial Leads.</p>
                           </div>
-                          {activityRow.outcome ? <p className="mt-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a6e3a]">{activityRow.outcome}</p> : null}
                         </div>
-                      )) : (
-                        <InlineTableEmptyState icon={CalendarDays} title="No activity yet." description="Calls, emails, WhatsApp notes, and follow-up touchpoints will appear here." />
-                      )}
-                    </div>
-                  </section>
+                        <Button
+                          type="button"
+                          onClick={() => void handleConvert('requirement')}
+                          disabled={busyAction.startsWith('convert-') || Boolean(getConvertedRequirementId(selectedProspect))}
+                          className="mt-4 h-11 w-full rounded-[12px] bg-[#082f56] text-white hover:bg-[#0b3d70]"
+                        >
+                          <ArrowRight size={16} />
+                          {getConvertedRequirementId(selectedProspect) ? 'Lead Created' : busyAction === 'convert-requirement' ? 'Converting...' : 'Convert to Lead'}
+                        </Button>
+                        {getWorkspaceLink('commercial_requirement', getConvertedRequirementId(selectedProspect)) ? (
+                          <Link to={getWorkspaceLink('commercial_requirement', getConvertedRequirementId(selectedProspect))} className="mt-3 inline-flex w-full items-center justify-center rounded-[12px] border border-[#dbe6f0] bg-white px-4 py-2.5 text-sm font-semibold text-[#102236] transition hover:bg-[#f7fafc]">
+                            Open lead
+                          </Link>
+                        ) : null}
+                      </section>
 
-                  <section className="space-y-4">
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Notes</h3>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up note</span>
-                      <Field value={selectedProspect.followUpNote || ''} onChange={(event) => updateSelectedProspectField('followUpNote', event.target.value)} />
-                    </label>
-                    <label className="grid gap-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Notes</span>
-                      <Field as="textarea" value={selectedProspect.notes || ''} onChange={(event) => updateSelectedProspectField('notes', event.target.value)} />
-                    </label>
-                  </section>
-
-                  <section className="space-y-4">
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Tasks</h3>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Follow-up date</span>
-                        <Field as="input" type="date" value={selectedProspect.nextFollowUpDate || ''} onChange={(event) => updateSelectedProspectField('nextFollowUpDate', event.target.value)} />
-                      </label>
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Priority</span>
-                        <Field as="select" value={selectedProspect.followUpPriority || 'Medium'} onChange={(event) => updateSelectedProspectField('followUpPriority', event.target.value)}>
-                          {FOLLOW_UP_PRIORITIES.map((option) => <option key={option} value={option}>{option}</option>)}
-                        </Field>
-                      </label>
-                      <label className="grid gap-1.5">
-                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Estimated value</span>
-                        <Field as="input" type="number" value={selectedProspect.estimatedValue || ''} onChange={(event) => updateSelectedProspectField('estimatedValue', event.target.value)} />
-                      </label>
-                    </div>
-                    <div className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] p-4 text-sm text-[#60758d]">
-                      {selectedProspect.nextFollowUpDate ? `Next follow-up ${formatRelativeDate(selectedProspect.nextFollowUpDate)}.` : 'No scheduled follow-up yet.'}
-                    </div>
-                  </section>
-
-                  <section className="space-y-4">
-                    <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Conversion History</h3>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Button type="button" variant="secondary" onClick={() => void handleConvert('requirement')} disabled={busyAction.startsWith('convert-')}>
-                        <ClipboardList size={16} />
-                        {busyAction === 'convert-requirement' ? 'Creating...' : 'Requirement'}
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={() => void handleConvert('deal')} disabled={busyAction.startsWith('convert-')}>
-                        <DollarSign size={16} />
-                        {busyAction === 'convert-deal' ? 'Creating...' : 'Deal'}
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={() => void handleConvert('contact')} disabled={busyAction.startsWith('convert-')}>
-                        <UserPlus size={16} />
-                        {busyAction === 'convert-contact' ? 'Creating...' : 'Contact'}
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={() => setArchiveOpen(true)}>
-                        <Archive size={16} />
-                        Archive
-                      </Button>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Linked company</p>
-                        <div className="mt-2 flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold text-[#102236]">{pickLookupLabel(lookupOptions.companies, selectedProspect.companyId, selectedProspect.companyName || 'Not linked')}</p>
-                          {getWorkspaceLink('commercial_company', selectedProspect.companyId) ? <Link to={getWorkspaceLink('commercial_company', selectedProspect.companyId)} className="text-xs font-semibold text-[#1f6dd5]">Open</Link> : null}
+                      <section className="rounded-[20px] border border-[#dde7f2] bg-white p-4 shadow-[0_16px_36px_rgba(15,35,55,0.06)]">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#8293aa]">Activity</p>
+                        <div className="mt-3 grid gap-2">
+                          <Button type="button" variant="secondary" onClick={() => handleLogActivity('Call')} disabled={busyAction.startsWith('activity-')} className="justify-center rounded-[12px]">
+                            <Phone size={16} />
+                            Call
+                          </Button>
+                          <Button type="button" variant="secondary" onClick={() => handleLogActivity('WhatsApp')} disabled={busyAction.startsWith('activity-')} className="justify-center rounded-[12px]">
+                            <MessageCircle size={16} />
+                            WhatsApp
+                          </Button>
+                          <Button type="button" variant="secondary" onClick={() => handleLogActivity('Email')} disabled={busyAction.startsWith('activity-')} className="justify-center rounded-[12px]">
+                            <Mail size={16} />
+                            Email
+                          </Button>
                         </div>
+                        <label className="mt-3 grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Activity note</span>
+                          <Field as="textarea" value={activityDraft.activityNote} onChange={(event) => setActivityDraft((current) => ({ ...current, activityNote: event.target.value }))} placeholder="What happened in the latest touchpoint?" />
+                        </label>
+                        <label className="mt-3 grid gap-1.5">
+                          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Outcome</span>
+                          <Field value={activityDraft.outcome} onChange={(event) => setActivityDraft((current) => ({ ...current, outcome: event.target.value }))} placeholder="Next step or outcome" />
+                        </label>
+                        <Button type="button" onClick={() => handleLogActivity('Note')} disabled={busyAction.startsWith('activity-')} className="mt-3 w-full rounded-[12px]">
+                          <Save size={16} />
+                          Log activity
+                        </Button>
+                      </section>
+
+                      <section className="rounded-[20px] border border-[#dde7f2] bg-white p-4 shadow-[0_16px_36px_rgba(15,35,55,0.06)]">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-[#102236]">Timeline</p>
+                          <span className="text-xs font-semibold text-[#7b899a]">{selectedActivities.length} touchpoints</span>
+                        </div>
+                        <div className="mt-3 max-h-[300px] space-y-3 overflow-y-auto pr-1">
+                          {selectedActivities.length ? selectedActivities.map((activityRow) => (
+                            <div key={activityRow.id} className="rounded-[14px] border border-[#eef3f7] bg-[#fbfdff] p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-[#102236]">{titleize(activityRow.activityType)}</p>
+                                  <p className="mt-1 text-sm leading-6 text-[#60758d]">{activityRow.activityNote || 'No note recorded'}</p>
+                                </div>
+                                <span className="text-xs font-semibold text-[#7b899a]">{formatDate(activityRow.activityDate || activityRow.createdAt)}</span>
+                              </div>
+                              {activityRow.outcome ? <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a6e3a]">{activityRow.outcome}</p> : null}
+                            </div>
+                          )) : (
+                            <InlineTableEmptyState icon={CalendarDays} title="No activity yet." description="Calls, emails, WhatsApp notes, and follow-up touchpoints will appear here." />
+                          )}
+                        </div>
+                      </section>
+
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" variant="secondary" onClick={() => setArchiveOpen(true)} className="rounded-[12px]">
+                          <Archive size={16} />
+                          Archive
+                        </Button>
+                        <Button type="button" variant="secondary" onClick={() => setDeleteOpen(true)} className="rounded-[12px] text-[#9b2f28]">
+                          <Trash2 size={16} />
+                          Delete
+                        </Button>
                       </div>
-                      <div className="rounded-[16px] border border-[#eef3f7] bg-[#fbfdff] p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#7b899a]">Workflow link</p>
-                        <div className="mt-2 flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold text-[#102236]">{selectedProspect.linkedEntityType ? `${titleize(selectedProspect.linkedEntityType)} ${selectedProspect.linkedEntityId || ''}`.trim() : 'Not linked'}</p>
-                          {getWorkspaceLink(selectedProspect.linkedEntityType, selectedProspect.linkedEntityId) ? <Link to={getWorkspaceLink(selectedProspect.linkedEntityType, selectedProspect.linkedEntityId)} className="text-xs font-semibold text-[#1f6dd5]">Open</Link> : null}
-                        </div>
-                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-3">
-                      <Button type="button" variant="secondary" onClick={() => setDeleteOpen(true)}>
-                        <Trash2 size={16} />
-                        Delete
-                      </Button>
-                    </div>
-                  </section>
+                  </aside>
                 </div>
-              </aside>
-            </div>
-          ) : null}
+              </div>
+            ) : null}
+          </Modal>
 
           {createModal}
 
