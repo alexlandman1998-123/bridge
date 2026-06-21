@@ -618,8 +618,10 @@ function isCommercialSchemaMismatchError(error) {
 function getMissingCommercialColumn(error) {
   const message = String(error?.message || '')
   const details = String(error?.details || '')
+  const dottedMatch = message.match(/column\s+["']?(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)["']?\s+does not exist/i) ||
+    details.match(/column\s+["']?(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)["']?\s+does not exist/i)
   const quotedMatch = message.match(/'([a-zA-Z0-9_]+)'/) || details.match(/column\s+"?([a-zA-Z0-9_]+)"?/i)
-  return quotedMatch?.[1] || ''
+  return dottedMatch?.[1] || quotedMatch?.[1] || ''
 }
 
 function withoutSelectColumns(fields, columns = []) {

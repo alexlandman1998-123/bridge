@@ -40,6 +40,17 @@ function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function isMissingCommercialRoleColumn(error) {
+  const code = normalizeText(error?.code).toUpperCase()
+  const message = normalizeLower(`${error?.message || ''} ${error?.details || ''} ${error?.hint || ''}`)
+  return (
+    code === '42703' ||
+    code === 'PGRST204' ||
+    message.includes('platform_role') ||
+    message.includes('commercial_role')
+  )
+}
+
 function toNumber(value) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -158,11 +169,21 @@ async function listCommercialTeams(organisationId) {
 
 async function listCommercialMembers(organisationId) {
   if (!organisationId || !isSupabaseConfigured || !supabase) return listOrganisationUsers().catch(() => [])
-  const query = await supabase
+  const fullSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, platform_role, commercial_role, module_context, workspace_type, module_metadata, status, invited_at, accepted_at, last_active_at'
+  const legacySelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, invited_at, accepted_at, last_active_at'
+  let query = await supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, platform_role, commercial_role, module_context, workspace_type, module_metadata, status, invited_at, accepted_at, last_active_at')
+    .select(fullSelect)
     .eq('organisation_id', organisationId)
     .order('created_at', { ascending: true })
+
+  if (query.error && isMissingCommercialRoleColumn(query.error)) {
+    query = await supabase
+      .from('organisation_users')
+      .select(legacySelect)
+      .eq('organisation_id', organisationId)
+      .order('created_at', { ascending: true })
+  }
 
   if (query.error) {
     const users = await listOrganisationUsers().catch(() => [])
