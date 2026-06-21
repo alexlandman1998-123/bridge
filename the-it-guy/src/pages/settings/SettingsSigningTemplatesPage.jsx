@@ -25,7 +25,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { renderPacketPreview } from '../../core/documents/packetService'
 import {
-  buildCanonicalMergeSampleData,
   listCanonicalMergeFields,
   suggestCanonicalMergeFieldKey,
   validateTemplateTokensAgainstRegistry,
@@ -460,19 +459,6 @@ function statusPillClass(status = '') {
 
 function formatRenderModeLabel(renderMode = TEMPLATE_RENDER_MODES.LEGACY_DOCX) {
   return renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED ? 'Built in app' : 'File based'
-}
-
-function getTemplateReadinessTone(classification = {}) {
-  if (classification.key === 'structured_ready_native') return 'success'
-  if (classification.key === 'legacy_docx_only') return 'info'
-  return 'warning'
-}
-
-function getTemplateReadinessLabel(classification = {}) {
-  if (classification.key === 'structured_ready_native') return 'Ready'
-  if (classification.key === 'structured_incomplete') return 'Needs attention'
-  if (classification.key === 'legacy_docx_only') return 'Legacy'
-  return classification.label || 'Draft'
 }
 
 function canDeleteTemplateRecord(template = null, siblingTemplates = []) {
@@ -1179,10 +1165,6 @@ export default function SettingsSigningTemplatesPage({
     () => listCanonicalMergeFields({ packetType }),
     [packetType],
   )
-  const canonicalSampleMap = useMemo(
-    () => buildCanonicalMergeSampleData({ packetType }),
-    [packetType],
-  )
   const canonicalCategories = useMemo(
     () => ['all', ...Array.from(new Set(canonicalFields.map((row) => normalizeText(row.category)).filter(Boolean)))],
     [canonicalFields],
@@ -1440,6 +1422,7 @@ export default function SettingsSigningTemplatesPage({
         templateLabel: `${templateTypeConfig.shortLabel} Template ${new Date().toLocaleDateString()}`,
         description: 'Draft legal template',
         versionTag: 'v1',
+        templateStatus: 'draft',
         templateFormat: getTemplateFormatForMode(renderMode),
         isDefault: false,
         isActive: false,
@@ -1476,8 +1459,11 @@ export default function SettingsSigningTemplatesPage({
         templateLabel: `${normalizeText(templateDetail.template_label || templateTypeConfig.label)} (Organisation)`,
         description: templateDetail.description || '',
         versionTag: normalizeText(templateDetail.version_tag || 'v1') || 'v1',
+        templateStatus: normalizeTemplateStatus(templateDetail),
         templateFormat: normalizeText(templateDetail.template_format || getTemplateFormatForMode(getDefaultRenderMode(packetType))) || getTemplateFormatForMode(getDefaultRenderMode(packetType)),
+        templateStorageBucket: normalizeText(templateDetail.template_storage_bucket || ''),
         templateStoragePath: normalizeText(templateDetail.template_storage_path || ''),
+        templateFileName: normalizeText(templateDetail.template_file_name || ''),
         metadataJson: {
           ...(templateDetail?.metadata_json && typeof templateDetail.metadata_json === 'object' ? templateDetail.metadata_json : {}),
           lifecycle_status: normalizeTemplateStatus(templateDetail),
@@ -1521,8 +1507,11 @@ export default function SettingsSigningTemplatesPage({
         templateLabel: `${normalizeText(form.templateLabel || selectedTemplate.template_label || templateTypeConfig.label)} ${nextVersion.toUpperCase()}`,
         description: form.description,
         versionTag: nextVersion,
+        templateStatus: 'draft',
         templateFormat: getTemplateFormatForMode(form.renderMode),
+        templateStorageBucket: normalizeText(form.templateStorageBucket),
         templateStoragePath: normalizeText(form.templateStoragePath),
+        templateFileName: normalizeText(form.templateFileName),
         isDefault: false,
         isActive: false,
         metadataJson: buildTemplateMetadata({ ...form, templateStatus: 'draft', validationSummary }, form.metadataJson || {}, null),
@@ -1637,6 +1626,7 @@ export default function SettingsSigningTemplatesPage({
         packetType,
         moduleType: normalizedModuleType,
         templateKey: normalizeText(selectedTemplate.template_key || selectedTemplateId),
+        versionTag: normalizeText(form.versionTag || selectedTemplate.version_tag || 'v1') || 'v1',
       })
 
       setForm((previous) => ({
@@ -1685,8 +1675,11 @@ export default function SettingsSigningTemplatesPage({
         templateLabel: form.templateLabel,
         description: form.description,
         versionTag: form.versionTag,
+        templateStatus: form.templateStatus,
         templateFormat: getTemplateFormatForMode(form.renderMode),
+        templateStorageBucket: form.templateStorageBucket,
         templateStoragePath: form.templateStoragePath,
+        templateFileName: form.templateFileName,
         isActive: form.isActive,
         isDefault: form.isDefault,
         metadataJson,
@@ -1727,8 +1720,11 @@ export default function SettingsSigningTemplatesPage({
         templateLabel: form.templateLabel,
         description: form.description,
         versionTag: form.versionTag,
+        templateStatus: 'active',
         templateFormat: getTemplateFormatForMode(form.renderMode),
+        templateStorageBucket: form.templateStorageBucket,
         templateStoragePath: form.templateStoragePath,
+        templateFileName: form.templateFileName,
         isActive: true,
         isDefault: true,
         metadataJson,

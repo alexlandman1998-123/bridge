@@ -21,6 +21,7 @@ import {
   generateSigningLinks,
   listPacketTemplates,
   prepareSigningFields,
+  resolveActiveTemplate,
 } from '../../core/documents/packetService'
 import {
   getCanonicalMergeFieldDefinition,
@@ -3680,15 +3681,31 @@ export default function LegalDocumentWorkspace({
       }
     }
 
-    const templates = await listPacketTemplates({
+    const resolvedOrganisationId = packet.organisation_id || organisationId || null
+    const activeTemplateResolution = await resolveActiveTemplate({
       packetType,
-      moduleType: 'agency',
-      includeInactive: false,
-      organisationId: packet.organisation_id || organisationId || null,
+      moduleType: 'residential',
+      organisationId: resolvedOrganisationId,
+      context: { organisationId: resolvedOrganisationId },
+    }).catch((templateError) => {
+      console.warn('[LegalDocumentWorkspace] active template resolution failed before send; trying legacy template list.', templateError)
+      return null
     })
-    const template = Array.isArray(templates)
-      ? templates.find((item) => normalizeText(item?.id) && templateHasUsableSource(item))
+    let template = activeTemplateResolution?.template && templateHasUsableSource(activeTemplateResolution.template)
+      ? activeTemplateResolution.template
       : null
+
+    if (!template?.id) {
+      const templates = await listPacketTemplates({
+        packetType,
+        moduleType: 'agency',
+        includeInactive: false,
+        organisationId: resolvedOrganisationId,
+      })
+      template = Array.isArray(templates)
+        ? templates.find((item) => normalizeText(item?.id) && templateHasUsableSource(item))
+        : null
+    }
     if (!template?.id) {
       return packet
     }

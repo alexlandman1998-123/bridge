@@ -24,6 +24,20 @@ const RANGE_OPTIONS = {
 }
 
 const TRANSACTION_FEE_ESTIMATE = 1000
+const LEGAL_TEMPLATES_BUCKET = 'legal-templates'
+
+const LEGAL_TEMPLATE_COLUMNS =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, change_summary, content_hash, created_by, updated_by, published_by, published_at, archived_by, archived_at, created_at, updated_at'
+
+const LEGAL_TEMPLATE_VERSION_COLUMNS =
+  'id, template_id, organisation_id, module_type, packet_type, template_key, template_label, template_format, version_tag, status, storage_bucket, storage_path, file_name, content_hash, description, change_summary, sections_snapshot_json, placeholder_keys, metadata_json, created_by, updated_by, published_by, archived_by, created_at, updated_at, published_at, archived_at'
+
+const LEGAL_TEMPLATE_READINESS_REQUIREMENTS = [
+  { moduleType: 'residential', packetType: 'mandate', label: 'Residential mandate' },
+  { moduleType: 'residential', packetType: 'otp', label: 'Residential OTP' },
+  { moduleType: 'commercial', packetType: 'commercial_lease', label: 'Commercial lease' },
+  { moduleType: 'commercial', packetType: 'commercial_sale', label: 'Commercial sale' },
+]
 
 function normalizeText(value = '') {
   return String(value || '').trim()
@@ -31,6 +45,19 @@ function normalizeText(value = '') {
 
 function normalizeToken(value = '') {
   return normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function normalizeKey(value = '', fallback = 'template') {
+  const normalized = normalizeToken(value).replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')
+  return normalized || fallback
+}
+
+function normalizeStorageName(value = '', fallback = 'template.docx') {
+  const normalized = normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return normalized || fallback
 }
 
 function asArray(value) {
@@ -179,6 +206,17 @@ function rowEmail(row = {}) {
 
 function rowStatus(row = {}) {
   return normalizeText(row.status) || normalizeText(row.stage) || normalizeText(row.workflow_status) || 'open'
+}
+
+function organisationName(row = {}) {
+  return (
+    normalizeText(row.name) ||
+    normalizeText(row.organisation_name) ||
+    normalizeText(row.organization_name) ||
+    normalizeText(row.company_name) ||
+    normalizeText(row.trading_name) ||
+    `Organisation ${String(row.id || '').slice(0, 8)}`
+  )
 }
 
 function rowRole(row = {}) {
@@ -1107,6 +1145,470 @@ export async function loadAdminProfile(userId) {
   }
 
   return null
+}
+
+function normalizeLegalTemplate(row = {}, organisationsById = new Map(), versions = []) {
+  const organisation = organisationsById.get(row.organisation_id) || null
+  const templateVersions = versions.filter((version) => version.template_id === row.id)
+  const publishedVersions = templateVersions.filter((version) => normalizeText(version.status).toLowerCase() === 'published')
+  return {
+    ...row,
+    bucket: normalizeText(row.template_storage_bucket),
+    fileName: normalizeText(row.template_file_name),
+    moduleType: normalizeText(row.module_type),
+    organisation,
+    organisationName: organisation ? organisationName(organisation) : 'Global template',
+    packetType: normalizeText(row.packet_type),
+    status: normalizeText(row.status || (row.is_active === false ? 'archived' : 'published')),
+    storagePath: normalizeText(row.template_storage_path),
+    templateKey: normalizeText(row.template_key),
+    templateLabel: normalizeText(row.template_label || row.template_key),
+    versionCount: templateVersions.length,
+    publishedVersionCount: publishedVersions.length,
+  }
+}
+
+function normalizeLegalTemplateVersion(row = {}) {
+  return {
+    ...row,
+    bucket: normalizeText(row.storage_bucket),
+    fileName: normalizeText(row.file_name),
+    moduleType: normalizeText(row.module_type),
+    packetType: normalizeText(row.packet_type),
+    placeholderCount: Array.isArray(row.placeholder_keys) ? row.placeholder_keys.length : 0,
+    sectionCount: Array.isArray(row.sections_snapshot_json) ? row.sections_snapshot_json.length : 0,
+    status: normalizeText(row.status || 'draft'),
+    storagePath: normalizeText(row.storage_path),
+    templateKey: normalizeText(row.template_key),
+    templateLabel: normalizeText(row.template_label || row.template_key),
+  }
+}
+
+function normalizeLegalTemplateAudit(row = {}) {
+  return {
+    ...row,
+    eventType: normalizeText(row.event_type),
+    summary: normalizeText(row.change_summary) || normalizeText(row.event_type).replace(/_/g, ' '),
+    time: formatDate(row.created_at),
+  }
+}
+
+function isPublishedLegalTemplate(template = {}) {
+  const status = normalizeText(template.status || (template.is_active === false ? 'archived' : 'published')).toLowerCase()
+  return status === 'published' && template.is_active !== false
+}
+
+function pickReadyTemplate(templates = [], { organisationId, moduleType, packetType } = {}) {
+  const candidates = templates
+    .filter((template) => normalizeText(template.module_type) === moduleType)
+    .filter((template) => normalizeText(template.packet_type) === packetType)
+    .filter(isPublishedLegalTemplate)
+    .map((template) => {
+      const isOrgTemplate = normalizeText(template.organisation_id) === normalizeText(organisationId)
+      const isGlobalTemplate = !normalizeText(template.organisation_id)
+      const ownerScore = isOrgTemplate ? 0 : isGlobalTemplate ? 1 : 4
+      const defaultScore = template.is_default ? 0 : 1
+      const updatedScore = -(Date.parse(template.published_at || template.updated_at || template.created_at || '') || 0)
+      return { template, score: [ownerScore, defaultScore, updatedScore] }
+    })
+    .sort((left, right) => {
+      for (let index = 0; index < left.score.length; index += 1) {
+        if (left.score[index] !== right.score[index]) return left.score[index] - right.score[index]
+      }
+      return 0
+    })
+
+  return candidates[0]?.template || null
+}
+
+function templateNeedsStorage(template = {}) {
+  const format = normalizeText(template.template_format || 'docx').toLowerCase()
+  return ['docx', 'pdf'].includes(format)
+}
+
+async function probeTemplateStorage(template = {}) {
+  if (!template) return { ok: false, status: 'missing_template', message: 'No published template found.' }
+  if (!templateNeedsStorage(template)) return { ok: true, status: 'ready', message: 'Inline template format.' }
+
+  const bucket = normalizeText(template.template_storage_bucket)
+  const path = normalizeText(template.template_storage_path)
+  if (!bucket || !path) {
+    return { ok: false, status: 'missing_file', message: 'Published template has no storage path.' }
+  }
+
+  const { error } = await supabase.storage.from(bucket).createSignedUrl(path, 60)
+  if (error) {
+    return { ok: false, status: 'file_unreachable', message: error.message || 'Storage file could not be signed.' }
+  }
+  return { ok: true, status: 'ready', message: 'Template file is reachable.' }
+}
+
+export async function loadLegalTemplateRegistry({ organisationId = '', moduleType = '', packetType = '', query = '' } = {}) {
+  if (!supabase) return { organisations: [], templates: [], warnings: [{ label: 'Supabase', message: 'Not configured' }] }
+
+  const [organisations, templates, versions] = await Promise.all([
+    tryQuery('organisations', () =>
+      supabase
+        .from('organisations')
+        .select('id, name, organisation_name, organization_name, company_name, trading_name, type, workspace_kind, status, created_at, updated_at')
+        .order('name', { ascending: true })
+        .limit(1000),
+    ),
+    tryQuery('document_packet_templates', () => {
+      let builder = supabase
+        .from('document_packet_templates')
+        .select(LEGAL_TEMPLATE_COLUMNS)
+        .order('updated_at', { ascending: false })
+        .limit(500)
+      if (organisationId) builder = builder.eq('organisation_id', organisationId)
+      if (moduleType) builder = builder.eq('module_type', moduleType)
+      if (packetType) builder = builder.eq('packet_type', packetType)
+      return builder
+    }),
+    tryQuery('document_packet_template_versions', () =>
+      supabase
+        .from('document_packet_template_versions')
+        .select('id, template_id, organisation_id, module_type, packet_type, version_tag, status, storage_bucket, storage_path, file_name, created_at, updated_at, published_at')
+        .order('created_at', { ascending: false })
+        .limit(1000),
+    ),
+  ])
+
+  const organisationsById = new Map(organisations.data.map((row) => [row.id, row]))
+  const search = normalizeText(query).toLowerCase()
+  const templatesList = templates.data
+    .map((row) => normalizeLegalTemplate(row, organisationsById, versions.data))
+    .filter((template) => {
+      if (!search) return true
+      return [
+        template.templateLabel,
+        template.templateKey,
+        template.packetType,
+        template.moduleType,
+        template.organisationName,
+        template.status,
+      ].join(' ').toLowerCase().includes(search)
+    })
+
+  return {
+    organisations: organisations.data.map((row) => ({ ...row, displayName: organisationName(row) })),
+    templates: templatesList,
+    warnings: [organisations.error, templates.error, versions.error].filter(Boolean),
+  }
+}
+
+export async function loadAdminLegalTemplateGovernance(templateId = '') {
+  if (!supabase || !templateId) return { audit: [], fileUrl: '', versions: [], warnings: [] }
+
+  const [templateResult, versions, audit] = await Promise.all([
+    tryQuery('document_packet_templates', () =>
+      supabase
+        .from('document_packet_templates')
+        .select(LEGAL_TEMPLATE_COLUMNS)
+        .eq('id', templateId)
+        .limit(1),
+    ),
+    tryQuery('document_packet_template_versions', () =>
+      supabase
+        .from('document_packet_template_versions')
+        .select(LEGAL_TEMPLATE_VERSION_COLUMNS)
+        .eq('template_id', templateId)
+        .order('created_at', { ascending: false })
+        .limit(50),
+    ),
+    tryQuery('document_packet_template_audit', () =>
+      supabase
+        .from('document_packet_template_audit')
+        .select('id, template_id, template_version_id, organisation_id, module_type, packet_type, event_type, actor_user_id, actor_role, change_summary, event_payload_json, created_at')
+        .eq('template_id', templateId)
+        .order('created_at', { ascending: false })
+        .limit(50),
+    ),
+  ])
+
+  const template = templateResult.data[0] || null
+  let fileUrl = ''
+  const bucket = normalizeText(template?.template_storage_bucket)
+  const path = normalizeText(template?.template_storage_path)
+  if (bucket && path) {
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 300)
+    if (!error) fileUrl = data?.signedUrl || ''
+  }
+
+  return {
+    audit: audit.data.map(normalizeLegalTemplateAudit),
+    fileUrl,
+    template,
+    versions: versions.data.map(normalizeLegalTemplateVersion),
+    warnings: [templateResult.error, versions.error, audit.error].filter(Boolean),
+  }
+}
+
+export async function loadLegalTemplateBridgeReadiness({ organisationId = '', moduleType = '' } = {}) {
+  if (!supabase) return { checks: [], summary: { ready: 0, warning: 0, missing: 0, total: 0 }, warnings: [{ label: 'Supabase', message: 'Not configured' }] }
+
+  const [organisations, templates] = await Promise.all([
+    tryQuery('organisations', () =>
+      supabase
+        .from('organisations')
+        .select('id, name, organisation_name, organization_name, company_name, trading_name, type, workspace_kind, status, created_at, updated_at')
+        .order('name', { ascending: true })
+        .limit(1000),
+    ),
+    tryQuery('document_packet_templates', () =>
+      supabase
+        .from('document_packet_templates')
+        .select(LEGAL_TEMPLATE_COLUMNS)
+        .order('updated_at', { ascending: false })
+        .limit(1000),
+    ),
+  ])
+
+  const scopedOrganisations = organisations.data.filter((organisation) => !organisationId || organisation.id === organisationId)
+  const requirements = LEGAL_TEMPLATE_READINESS_REQUIREMENTS.filter((requirement) => !moduleType || requirement.moduleType === moduleType)
+  const checks = []
+
+  for (const organisation of scopedOrganisations) {
+    for (const requirement of requirements) {
+      const template = pickReadyTemplate(templates.data, {
+        organisationId: organisation.id,
+        moduleType: requirement.moduleType,
+        packetType: requirement.packetType,
+      })
+      const probe = await probeTemplateStorage(template)
+      const source = template
+        ? normalizeText(template.organisation_id) === normalizeText(organisation.id)
+          ? template.is_default
+            ? 'organisation_default'
+            : 'organisation_published'
+          : 'global_fallback'
+        : 'missing'
+      const severity = probe.ok && source !== 'global_fallback'
+        ? 'ready'
+        : probe.ok
+          ? 'warning'
+          : 'missing'
+      checks.push({
+        id: `${organisation.id}-${requirement.moduleType}-${requirement.packetType}`,
+        organisationId: organisation.id,
+        organisationName: organisationName(organisation),
+        moduleType: requirement.moduleType,
+        packetType: requirement.packetType,
+        label: requirement.label,
+        severity,
+        source,
+        status: probe.status,
+        message: source === 'global_fallback'
+          ? 'Using global fallback. Add an organisation default before rollout.'
+          : probe.message,
+        templateId: template?.id || '',
+        templateLabel: template?.template_label || template?.template_key || '',
+        storagePath: template?.template_storage_path || '',
+        updatedAt: template?.updated_at || template?.created_at || '',
+      })
+    }
+  }
+
+  const summary = checks.reduce(
+    (acc, check) => {
+      acc.total += 1
+      acc[check.severity] += 1
+      return acc
+    },
+    { ready: 0, warning: 0, missing: 0, total: 0 },
+  )
+
+  return {
+    checks,
+    summary,
+    warnings: [organisations.error, templates.error].filter(Boolean),
+  }
+}
+
+export async function uploadAdminLegalTemplateAsset({ file, moduleType, organisationId, packetType, templateKey, versionTag } = {}) {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  if (!file) return null
+  if (!organisationId) throw new Error('Choose an organisation before uploading a legal template.')
+
+  const safeModule = normalizeKey(moduleType, 'residential')
+  const safePacket = normalizeKey(packetType, 'mandate')
+  const safeTemplate = normalizeKey(templateKey, 'template')
+  const safeVersion = normalizeStorageName(versionTag, 'v1')
+  const safeFile = normalizeStorageName(file.name, `${safePacket}.docx`)
+  const objectPath = `organisations/${organisationId}/${safeModule}/${safePacket}/${safeTemplate}/${safeVersion}/${Date.now()}-${safeFile}`
+
+  const { data, error } = await supabase.storage
+    .from(LEGAL_TEMPLATES_BUCKET)
+    .upload(objectPath, file, {
+      cacheControl: '3600',
+      contentType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      upsert: true,
+    })
+
+  if (error) throw new Error(error.message || 'Template upload failed.')
+
+  return {
+    bucket: LEGAL_TEMPLATES_BUCKET,
+    fileName: safeFile,
+    path: data?.path || objectPath,
+  }
+}
+
+function buildLegalTemplatePayload(input = {}, upload = null, userId = '') {
+  const moduleType = normalizeKey(input.moduleType || input.module_type, 'residential')
+  const packetType = normalizeKey(input.packetType || input.packet_type, moduleType === 'commercial' ? 'commercial_lease' : 'mandate')
+  const templateLabel = normalizeText(input.templateLabel || input.template_label) || 'Legal Template'
+  const templateKey = normalizeKey(input.templateKey || input.template_key || templateLabel, `${packetType}_template`)
+  const status = normalizeText(input.status || 'draft').toLowerCase()
+  const now = new Date().toISOString()
+
+  return {
+    organisation_id: normalizeText(input.organisationId || input.organisation_id) || null,
+    module_type: moduleType,
+    packet_type: packetType,
+    template_key: templateKey,
+    template_label: templateLabel,
+    template_format: normalizeText(input.templateFormat || input.template_format || 'docx').toLowerCase(),
+    template_storage_bucket: upload?.bucket || normalizeText(input.templateStorageBucket || input.template_storage_bucket) || null,
+    template_storage_path: upload?.path || normalizeText(input.templateStoragePath || input.template_storage_path) || null,
+    template_file_name: upload?.fileName || normalizeText(input.templateFileName || input.template_file_name) || null,
+    version_tag: normalizeText(input.versionTag || input.version_tag || 'v1'),
+    description: normalizeText(input.description),
+    status: ['draft', 'published', 'archived'].includes(status) ? status : 'draft',
+    is_default: Boolean(input.isDefault || input.is_default),
+    is_active: status !== 'archived',
+    change_summary: normalizeText(input.changeSummary || input.change_summary),
+    metadata_json: {
+      ...(input.metadata_json && typeof input.metadata_json === 'object' ? input.metadata_json : {}),
+      admin_bridge: true,
+      last_admin_bridge_update_at: now,
+    },
+    updated_by: userId || null,
+    published_by: status === 'published' ? userId || null : input.published_by || null,
+    published_at: status === 'published' ? now : input.published_at || null,
+    archived_by: status === 'archived' ? userId || null : input.archived_by || null,
+    archived_at: status === 'archived' ? now : input.archived_at || null,
+  }
+}
+
+async function getCurrentUserId() {
+  if (!supabase) return ''
+  const { data } = await supabase.auth.getUser()
+  return data?.user?.id || ''
+}
+
+async function clearTemplateDefaults({ organisationId, moduleType, packetType, excludeId = '' } = {}) {
+  if (!organisationId || !moduleType || !packetType) return
+  let builder = supabase
+    .from('document_packet_templates')
+    .update({ is_default: false })
+    .eq('organisation_id', organisationId)
+    .eq('module_type', moduleType)
+    .eq('packet_type', packetType)
+  if (excludeId) builder = builder.neq('id', excludeId)
+  const { error } = await builder
+  if (error) throw new Error(error.message || 'Unable to clear existing default templates.')
+}
+
+async function upsertTemplateVersion(template = {}, userId = '') {
+  if (!template?.id) return null
+  const row = {
+    template_id: template.id,
+    organisation_id: template.organisation_id,
+    module_type: template.module_type,
+    packet_type: template.packet_type,
+    template_key: template.template_key,
+    template_label: template.template_label,
+    template_format: template.template_format || 'docx',
+    version_tag: template.version_tag || 'v1',
+    status: template.status === 'archived' ? 'archived' : template.status === 'published' ? 'published' : 'draft',
+    storage_bucket: template.template_storage_bucket,
+    storage_path: template.template_storage_path,
+    file_name: template.template_file_name,
+    content_hash: template.content_hash,
+    description: template.description,
+    change_summary: template.change_summary,
+    sections_snapshot_json: [],
+    placeholder_keys: [],
+    metadata_json: template.metadata_json || {},
+    updated_by: userId || null,
+    published_by: template.status === 'published' ? userId || template.published_by || null : template.published_by || null,
+    published_at: template.status === 'published' ? template.published_at || new Date().toISOString() : template.published_at || null,
+    archived_by: template.status === 'archived' ? userId || template.archived_by || null : template.archived_by || null,
+    archived_at: template.status === 'archived' ? template.archived_at || new Date().toISOString() : template.archived_at || null,
+  }
+
+  const { data, error } = await supabase
+    .from('document_packet_template_versions')
+    .upsert(row, { onConflict: 'template_id,version_tag' })
+    .select()
+    .maybeSingle()
+
+  if (error) throw new Error(error.message || 'Unable to record template version.')
+  return data
+}
+
+export async function saveAdminLegalTemplate(input = {}, upload = null) {
+  if (!supabase) throw new Error('Supabase is not configured.')
+  const userId = await getCurrentUserId()
+  const payload = buildLegalTemplatePayload(input, upload, userId)
+  if (!payload.organisation_id) throw new Error('Choose an organisation for this legal template.')
+  if (payload.is_default) {
+    await clearTemplateDefaults({
+      organisationId: payload.organisation_id,
+      moduleType: payload.module_type,
+      packetType: payload.packet_type,
+      excludeId: input.id || '',
+    })
+  }
+
+  const query = input.id
+    ? supabase.from('document_packet_templates').update(payload).eq('id', input.id).select(LEGAL_TEMPLATE_COLUMNS).maybeSingle()
+    : supabase.from('document_packet_templates').insert({ ...payload, created_by: userId || null }).select(LEGAL_TEMPLATE_COLUMNS).maybeSingle()
+
+  const { data, error } = await query
+  if (error) throw new Error(error.message || 'Unable to save legal template.')
+  await upsertTemplateVersion(data, userId)
+  return data
+}
+
+export async function publishAdminLegalTemplate(template = {}) {
+  return saveAdminLegalTemplate({ ...template, status: 'published', isDefault: true })
+}
+
+export async function archiveAdminLegalTemplate(template = {}) {
+  return saveAdminLegalTemplate({ ...template, status: 'archived', isDefault: false })
+}
+
+export async function setAdminLegalTemplateDefault(template = {}) {
+  return saveAdminLegalTemplate({ ...template, status: 'published', isDefault: true })
+}
+
+export async function restoreAdminLegalTemplateVersion(template = {}, version = {}) {
+  if (!template?.id || !version?.id) throw new Error('Choose a template version to restore.')
+  const restoredAt = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 12)
+  return saveAdminLegalTemplate({
+    ...template,
+    id: template.id,
+    moduleType: version.module_type,
+    packetType: version.packet_type,
+    templateKey: version.template_key,
+    templateLabel: version.template_label,
+    templateFormat: version.template_format,
+    templateStorageBucket: version.storage_bucket,
+    templateStoragePath: version.storage_path,
+    templateFileName: version.file_name,
+    versionTag: `restore_${normalizeKey(version.version_tag || 'version')}_${restoredAt}`,
+    description: version.description || template.description || '',
+    changeSummary: `Restored from ${version.version_tag || 'previous version'}`,
+    status: 'draft',
+    isDefault: false,
+    metadata_json: {
+      ...(version.metadata_json && typeof version.metadata_json === 'object' ? version.metadata_json : {}),
+      restored_from_template_version_id: version.id,
+      restored_from_version_tag: version.version_tag || '',
+    },
+  })
 }
 
 export async function loadDashboardSnapshot(rangeKey = '30d') {

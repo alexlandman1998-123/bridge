@@ -18,6 +18,7 @@ export {
   listDocumentSigningFields,
   listDocumentPacketVersions,
   listDocumentPackets as getPackets,
+  resolveActiveDocumentPacketTemplate as resolveActivePacketTemplate,
   resolveDocumentPacketBranding,
   updateDocumentPacket as updatePacket,
   updateDocumentSigningFieldStatus,

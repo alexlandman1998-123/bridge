@@ -30,7 +30,20 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { ADMIN_LEVELS, formatAdminLevelLabel, formatRoleLabel, resolveAdminAccess } from './lib/adminAccess'
-import { loadAdminProfile, loadDashboardSnapshot, searchPlatform } from './lib/adminData'
+import {
+  archiveAdminLegalTemplate,
+  loadAdminProfile,
+  loadAdminLegalTemplateGovernance,
+  loadDashboardSnapshot,
+  loadLegalTemplateBridgeReadiness,
+  loadLegalTemplateRegistry,
+  publishAdminLegalTemplate,
+  restoreAdminLegalTemplateVersion,
+  saveAdminLegalTemplate,
+  searchPlatform,
+  setAdminLegalTemplateDefault,
+  uploadAdminLegalTemplateAsset,
+} from './lib/adminData'
 import { getSupabaseConfigStatus, isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
 const DATE_RANGES = [
@@ -57,6 +70,7 @@ const NAV_GROUPS = [
     label: 'Operations',
     items: [
       { id: 'organisations', label: 'Organisations', icon: Building2, levels: [ADMIN_LEVELS.EXECUTIVE] },
+      { id: 'legalTemplates', label: 'Legal Templates', icon: FileText, levels: [ADMIN_LEVELS.EXECUTIVE] },
       { id: 'roleplayers', label: 'Roleplayers', icon: UserCog, levels: [ADMIN_LEVELS.EXECUTIVE] },
       { id: 'users', label: 'Users', icon: Users, levels: [ADMIN_LEVELS.EXECUTIVE] },
       { id: 'transactions', label: 'Transactions', icon: Database, levels: [ADMIN_LEVELS.EXECUTIVE] },
@@ -141,12 +155,14 @@ function viewFromPath(level = '', isMobile = false) {
   const path = window.location.pathname
   if (isMobile) {
     if (path.includes('/admin/roleplayers')) return 'roleplayers'
+    if (path.includes('/admin/legal-templates')) return 'legalTemplates'
     if (path.includes('/admin/alerts')) return 'alerts'
     if (path.includes('/admin/search')) return 'search'
     if (path.includes('/admin/more')) return 'more'
     return 'dashboard'
   }
   if (path.includes('/admin/roleplayers')) return 'roleplayers'
+  if (path.includes('/admin/legal-templates')) return 'legalTemplates'
   if (path.includes('/admin/search')) return 'search'
   return getDefaultView(level)
 }
@@ -155,6 +171,13 @@ function pushAdminPath(path) {
   if (typeof window !== 'undefined' && window.history?.pushState) {
     window.history.pushState({}, '', path)
   }
+}
+
+function adminPathForView(viewId = '') {
+  if (viewId === 'roleplayers') return '/admin/roleplayers'
+  if (viewId === 'legalTemplates') return '/admin/legal-templates'
+  if (viewId === 'search') return '/admin/search'
+  return '/admin'
 }
 
 function LoginScreen({ authError, onSignIn, onMagicLink }) {
@@ -1583,6 +1606,7 @@ function MobileSearch({ snapshot }) {
 function MobileMore({ onNavigate, onSignOut, snapshot }) {
   const items = [
     { id: 'health', label: 'Platform Health' },
+    { id: 'legalTemplates', label: 'Legal Templates' },
     { id: 'revenue', label: 'Revenue' },
     { id: 'growth', label: 'Growth' },
     { id: 'ecosystem', label: 'Ecosystem' },
@@ -1606,6 +1630,7 @@ function MobileMore({ onNavigate, onSignOut, snapshot }) {
 
 function MobileSecondaryView({ activeView, access, onNavigate, profile, snapshot }) {
   if (activeView === 'health') return <><MobileHeader snapshot={snapshot} title="Platform Health" subtitle="Current platform operating signals." /><PlatformHealthSection health={snapshot.platformHealth} /></>
+  if (activeView === 'legalTemplates') return <><MobileHeader snapshot={snapshot} title="Legal Templates" subtitle="Residential and commercial template bridge." /><LegalTemplatesView /></>
   if (activeView === 'revenue') return <><MobileHeader snapshot={snapshot} title="Revenue" subtitle="Financial overview." /><FinancialSection financials={snapshot.financials} /></>
   if (activeView === 'growth') return <><MobileHeader snapshot={snapshot} title="Growth" subtitle="Adoption and organisation growth." /><GrowthSection growth={snapshot.growth} /></>
   if (activeView === 'ecosystem') return <><MobileHeader snapshot={snapshot} title="Ecosystem" subtitle="Participants and role coverage." /><EcosystemSection ecosystem={snapshot.ecosystem} /></>
@@ -1647,6 +1672,567 @@ function PlaceholderView({ icon: Icon, items, title }) {
     <div className="single-column">
       <RecordList emptyLabel={`No ${title.toLowerCase()} records found.`} icon={Icon} items={items} title={title} />
     </div>
+  )
+}
+
+const LEGAL_TEMPLATE_MODULES = [
+  { value: '', label: 'All Modules' },
+  { value: 'residential', label: 'Residential' },
+  { value: 'commercial', label: 'Commercial' },
+]
+
+const LEGAL_TEMPLATE_PACKET_TYPES = [
+  { value: '', label: 'All Documents', module: '' },
+  { value: 'mandate', label: 'Residential Mandate', module: 'residential' },
+  { value: 'otp', label: 'Offer to Purchase', module: 'residential' },
+  { value: 'addendum', label: 'Addendum', module: 'residential' },
+  { value: 'supporting_legal', label: 'Supporting Legal', module: 'residential' },
+  { value: 'commercial_lease', label: 'Commercial Lease', module: 'commercial' },
+  { value: 'commercial_sale', label: 'Commercial Sale', module: 'commercial' },
+]
+
+const EMPTY_LEGAL_TEMPLATE_FORM = {
+  id: '',
+  organisationId: '',
+  moduleType: 'residential',
+  packetType: 'mandate',
+  templateKey: '',
+  templateLabel: '',
+  templateFormat: 'docx',
+  versionTag: 'v1',
+  status: 'draft',
+  isDefault: false,
+  description: '',
+  changeSummary: '',
+  templateStorageBucket: '',
+  templateStoragePath: '',
+  templateFileName: '',
+}
+
+function formatAdminDate(value = '') {
+  if (!value) return 'No date'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'No date'
+  return new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function titleizeToken(value = '') {
+  return String(value || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function legalTemplateToForm(template = {}) {
+  return {
+    ...EMPTY_LEGAL_TEMPLATE_FORM,
+    id: template.id || '',
+    organisationId: template.organisation_id || template.organisationId || '',
+    moduleType: template.module_type || template.moduleType || 'residential',
+    packetType: template.packet_type || template.packetType || 'mandate',
+    templateKey: template.template_key || template.templateKey || '',
+    templateLabel: template.template_label || template.templateLabel || '',
+    templateFormat: template.template_format || 'docx',
+    versionTag: template.version_tag || 'v1',
+    status: template.status || 'draft',
+    isDefault: Boolean(template.is_default || template.isDefault),
+    description: template.description || '',
+    changeSummary: template.change_summary || template.changeSummary || '',
+    templateStorageBucket: template.template_storage_bucket || template.bucket || '',
+    templateStoragePath: template.template_storage_path || template.storagePath || '',
+    templateFileName: template.template_file_name || template.fileName || '',
+  }
+}
+
+function templateStatusTone(status = '') {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized === 'published') return 'success'
+  if (normalized === 'archived') return 'danger'
+  return 'warning'
+}
+
+function readinessTone(severity = '') {
+  if (severity === 'ready') return 'success'
+  if (severity === 'warning') return 'warning'
+  return 'danger'
+}
+
+function LegalTemplatesView() {
+  const [filters, setFilters] = useState({ organisationId: '', moduleType: '', packetType: '', query: '' })
+  const [registry, setRegistry] = useState({ organisations: [], templates: [], warnings: [] })
+  const [governance, setGovernance] = useState({ audit: [], fileUrl: '', versions: [], warnings: [] })
+  const [readiness, setReadiness] = useState({ checks: [], summary: { ready: 0, warning: 0, missing: 0, total: 0 }, warnings: [] })
+  const [selectedId, setSelectedId] = useState('')
+  const [form, setForm] = useState(EMPTY_LEGAL_TEMPLATE_FORM)
+  const [file, setFile] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isGovernanceLoading, setIsGovernanceLoading] = useState(false)
+  const [isReadinessLoading, setIsReadinessLoading] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  const packetOptions = useMemo(
+    () => LEGAL_TEMPLATE_PACKET_TYPES.filter((option) => !option.module || !form.moduleType || option.module === form.moduleType),
+    [form.moduleType],
+  )
+
+  async function loadRegistry(nextFilters = filters) {
+    setIsLoading(true)
+    setError('')
+    try {
+      const nextRegistry = await loadLegalTemplateRegistry(nextFilters)
+      setRegistry(nextRegistry)
+      setSelectedId((previous) => previous && nextRegistry.templates.some((template) => template.id === previous) ? previous : nextRegistry.templates[0]?.id || '')
+    } catch (loadError) {
+      setError(loadError?.message || 'Unable to load legal templates.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function loadReadiness(nextFilters = filters) {
+    setIsReadinessLoading(true)
+    try {
+      setReadiness(await loadLegalTemplateBridgeReadiness({
+        organisationId: nextFilters.organisationId,
+        moduleType: nextFilters.moduleType,
+      }))
+    } catch (loadError) {
+      setReadiness({
+        checks: [],
+        summary: { ready: 0, warning: 0, missing: 0, total: 0 },
+        warnings: [{ label: 'Template readiness', message: loadError?.message || 'Unable to scan legal template readiness.' }],
+      })
+    } finally {
+      setIsReadinessLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadRegistry()
+    void loadReadiness()
+  }, [])
+
+  const selectedTemplate = registry.templates.find((template) => template.id === selectedId) || null
+
+  async function loadGovernance(templateId = selectedId) {
+    if (!templateId) {
+      setGovernance({ audit: [], fileUrl: '', versions: [], warnings: [] })
+      return
+    }
+    setIsGovernanceLoading(true)
+    try {
+      setGovernance(await loadAdminLegalTemplateGovernance(templateId))
+    } catch (loadError) {
+      setGovernance({ audit: [], fileUrl: '', versions: [], warnings: [{ label: 'Template governance', message: loadError?.message || 'Unable to load template history.' }] })
+    } finally {
+      setIsGovernanceLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (selectedTemplate) {
+      setForm(legalTemplateToForm(selectedTemplate))
+      setFile(null)
+    }
+  }, [selectedTemplate])
+
+  useEffect(() => {
+    void loadGovernance(selectedId)
+  }, [selectedId])
+
+  function updateFilters(patch) {
+    const next = { ...filters, ...patch }
+    if (patch.moduleType !== undefined) {
+      const stillValid = LEGAL_TEMPLATE_PACKET_TYPES.some((option) => option.value === next.packetType && (!option.module || option.module === next.moduleType))
+      if (!stillValid) next.packetType = ''
+    }
+    setFilters(next)
+    void loadRegistry(next)
+    void loadReadiness(next)
+  }
+
+  function updateForm(patch) {
+    setForm((previous) => {
+      const next = { ...previous, ...patch }
+      if (patch.moduleType && !LEGAL_TEMPLATE_PACKET_TYPES.some((option) => option.value === next.packetType && option.module === patch.moduleType)) {
+        next.packetType = patch.moduleType === 'commercial' ? 'commercial_lease' : 'mandate'
+      }
+      return next
+    })
+  }
+
+  function startNewTemplate() {
+    setSelectedId('')
+    setFile(null)
+    setMessage('')
+    setError('')
+    setForm({
+      ...EMPTY_LEGAL_TEMPLATE_FORM,
+      organisationId: filters.organisationId || registry.organisations[0]?.id || '',
+      moduleType: filters.moduleType || 'residential',
+      packetType: filters.moduleType === 'commercial' ? 'commercial_lease' : filters.packetType || 'mandate',
+    })
+  }
+
+  async function handleSave(event) {
+    event?.preventDefault()
+    setIsSaving(true)
+    setMessage('')
+    setError('')
+    try {
+      const upload = file
+        ? await uploadAdminLegalTemplateAsset({
+            file,
+            moduleType: form.moduleType,
+            organisationId: form.organisationId,
+            packetType: form.packetType,
+            templateKey: form.templateKey || form.templateLabel,
+            versionTag: form.versionTag,
+          })
+        : null
+      const saved = await saveAdminLegalTemplate(form, upload)
+      setMessage('Legal template saved.')
+      setFile(null)
+      await loadRegistry(filters)
+      await loadReadiness(filters)
+      setSelectedId(saved?.id || '')
+      await loadGovernance(saved?.id || selectedId)
+    } catch (saveError) {
+      setError(saveError?.message || 'Unable to save legal template.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function runTemplateAction(action, successMessage) {
+    if (!form.id) return
+    setIsSaving(true)
+    setMessage('')
+    setError('')
+    try {
+      await action(form)
+      setMessage(successMessage)
+      await loadRegistry(filters)
+      await loadReadiness(filters)
+      await loadGovernance(selectedId)
+    } catch (actionError) {
+      setError(actionError?.message || 'Template action failed.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleRestoreVersion(version) {
+    if (!form.id) return
+    setIsSaving(true)
+    setMessage('')
+    setError('')
+    try {
+      const restored = await restoreAdminLegalTemplateVersion(form, version)
+      setMessage(`Restored ${version.version_tag || 'previous version'} as a draft.`)
+      await loadRegistry(filters)
+      await loadReadiness(filters)
+      setSelectedId(restored?.id || form.id)
+      await loadGovernance(restored?.id || form.id)
+    } catch (restoreError) {
+      setError(restoreError?.message || 'Unable to restore template version.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <section className="legal-template-module">
+      <div className="roleplayers-header">
+        <div>
+          <h1>Legal Templates</h1>
+          <p>Manage organisation legal templates used by residential and commercial document generation.</p>
+        </div>
+        <button className="primary-button compact" onClick={startNewTemplate} type="button">
+          <Plus size={16} />
+          Add Template
+        </button>
+      </div>
+
+      <div className="legal-template-toolbar panel">
+        <label>
+          <span>Organisation</span>
+          <select onChange={(event) => updateFilters({ organisationId: event.target.value })} value={filters.organisationId}>
+            <option value="">All organisations</option>
+            {registry.organisations.map((organisation) => (
+              <option key={organisation.id} value={organisation.id}>{organisation.displayName}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Module</span>
+          <select onChange={(event) => updateFilters({ moduleType: event.target.value })} value={filters.moduleType}>
+            {LEGAL_TEMPLATE_MODULES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Document</span>
+          <select onChange={(event) => updateFilters({ packetType: event.target.value })} value={filters.packetType}>
+            {LEGAL_TEMPLATE_PACKET_TYPES.filter((option) => !option.module || !filters.moduleType || option.module === filters.moduleType).map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="legal-template-search">
+          <span>Search</span>
+          <input onChange={(event) => updateFilters({ query: event.target.value })} placeholder="Template, organisation, packet..." value={filters.query} />
+        </label>
+        <button className="secondary-button compact" disabled={isLoading} onClick={() => loadRegistry(filters)} type="button">
+          <RefreshCw className={isLoading ? 'spin' : ''} size={16} />
+          Refresh
+        </button>
+      </div>
+
+      {registry.warnings.length ? <WarningStrip warnings={registry.warnings} /> : null}
+      {readiness.warnings.length ? <WarningStrip warnings={readiness.warnings} /> : null}
+      {error ? <div className="notice danger"><AlertTriangle size={16} /><span>{error}</span></div> : null}
+      {message ? <div className="notice success"><CheckCircle2 size={16} /><span>{message}</span></div> : null}
+
+      <section className="panel legal-template-readiness">
+        <div className="panel-heading">
+          <h2>Bridge Readiness</h2>
+          <button className="secondary-button compact" disabled={isReadinessLoading} onClick={() => loadReadiness(filters)} type="button">
+            <RefreshCw className={isReadinessLoading ? 'spin' : ''} size={16} />
+            Scan
+          </button>
+        </div>
+        <div className="legal-template-readiness-summary">
+          <div className="success">
+            <span>Ready</span>
+            <strong>{readiness.summary.ready}</strong>
+          </div>
+          <div className="warning">
+            <span>Fallback</span>
+            <strong>{readiness.summary.warning}</strong>
+          </div>
+          <div className="danger">
+            <span>Missing</span>
+            <strong>{readiness.summary.missing}</strong>
+          </div>
+          <div>
+            <span>Total Checks</span>
+            <strong>{readiness.summary.total}</strong>
+          </div>
+        </div>
+        <div className="legal-template-readiness-list">
+          {readiness.checks.length ? readiness.checks.map((check) => (
+            <article className={check.severity} key={check.id}>
+              <div>
+                <strong>{check.organisationName}</strong>
+                <span>{check.label}</span>
+              </div>
+              <em className={`pill ${readinessTone(check.severity)}`}>{check.source.replace(/_/g, ' ')}</em>
+              <p>{check.message}</p>
+              <small>{check.templateLabel || 'No template'}{check.storagePath ? ` / ${check.storagePath}` : ''}</small>
+            </article>
+          )) : <EmptyData compact />}
+        </div>
+      </section>
+
+      <div className="legal-template-layout">
+        <section className="panel legal-template-list-panel">
+          <div className="panel-heading">
+            <h2>Template Registry</h2>
+            <span>{registry.templates.length}</span>
+          </div>
+          <div className="legal-template-list">
+            {registry.templates.length ? registry.templates.map((template) => (
+              <button
+                className={selectedId === template.id ? 'legal-template-row active' : 'legal-template-row'}
+                key={template.id}
+                onClick={() => setSelectedId(template.id)}
+                type="button"
+              >
+                <FileText size={18} />
+                <div>
+                  <strong>{template.templateLabel}</strong>
+                  <span>{template.organisationName}</span>
+                  <small>{titleizeToken(template.moduleType)} / {titleizeToken(template.packetType)} / {template.version_tag || 'v1'}</small>
+                </div>
+                <em className={`pill ${templateStatusTone(template.status)}`}>{template.status}</em>
+                {template.is_default ? <b>Default</b> : null}
+              </button>
+            )) : <EmptyData />}
+          </div>
+        </section>
+
+        <form className="panel legal-template-editor" onSubmit={handleSave}>
+          <div className="panel-heading">
+            <h2>{form.id ? 'Edit Template' : 'New Template'}</h2>
+            <span>{form.status}</span>
+          </div>
+
+          <div className="legal-template-form-grid">
+            <label>
+              <span>Organisation</span>
+              <select required onChange={(event) => updateForm({ organisationId: event.target.value })} value={form.organisationId}>
+                <option value="">Choose organisation</option>
+                {registry.organisations.map((organisation) => (
+                  <option key={organisation.id} value={organisation.id}>{organisation.displayName}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Module</span>
+              <select onChange={(event) => updateForm({ moduleType: event.target.value })} value={form.moduleType}>
+                {LEGAL_TEMPLATE_MODULES.filter((option) => option.value).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Document Type</span>
+              <select onChange={(event) => updateForm({ packetType: event.target.value })} value={form.packetType}>
+                {packetOptions.filter((option) => option.value).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Status</span>
+              <select onChange={(event) => updateForm({ status: event.target.value })} value={form.status}>
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+                <option value="archived">Archived</option>
+              </select>
+            </label>
+            <label>
+              <span>Template Label</span>
+              <input required onChange={(event) => updateForm({ templateLabel: event.target.value })} value={form.templateLabel} />
+            </label>
+            <label>
+              <span>Template Key</span>
+              <input onChange={(event) => updateForm({ templateKey: event.target.value })} placeholder="auto from label" value={form.templateKey} />
+            </label>
+            <label>
+              <span>Version</span>
+              <input onChange={(event) => updateForm({ versionTag: event.target.value })} value={form.versionTag} />
+            </label>
+            <label>
+              <span>Format</span>
+              <select onChange={(event) => updateForm({ templateFormat: event.target.value })} value={form.templateFormat}>
+                <option value="docx">DOCX</option>
+                <option value="html">HTML</option>
+                <option value="structured">Structured</option>
+                <option value="pdf">PDF</option>
+                <option value="json">JSON</option>
+              </select>
+            </label>
+            <label className="wide">
+              <span>Description</span>
+              <textarea onChange={(event) => updateForm({ description: event.target.value })} value={form.description} />
+            </label>
+            <label className="wide">
+              <span>Change Summary</span>
+              <textarea onChange={(event) => updateForm({ changeSummary: event.target.value })} placeholder="What changed in this version?" value={form.changeSummary} />
+            </label>
+            <label className="wide legal-template-upload">
+              <span>Upload Template File</span>
+              <input accept=".doc,.docx,.pdf,.html,.json,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => setFile(event.target.files?.[0] || null)} type="file" />
+              <small>{file ? file.name : form.templateFileName || form.templateStoragePath || 'No file selected'}</small>
+            </label>
+            <label className="wide checkbox-row">
+              <input checked={form.isDefault} onChange={(event) => updateForm({ isDefault: event.target.checked })} type="checkbox" />
+              <span>Use as the active default for this organisation, module, and document type.</span>
+            </label>
+          </div>
+
+          <div className="legal-template-storage">
+            <div>
+              <span>Bucket</span>
+              <strong>{form.templateStorageBucket || 'legal-templates'}</strong>
+            </div>
+            <div>
+              <span>Path</span>
+              <strong>{form.templateStoragePath || 'Upload a file to generate a canonical path.'}</strong>
+            </div>
+            <div>
+              <span>Updated</span>
+              <strong>{selectedTemplate ? formatAdminDate(selectedTemplate.updated_at) : 'Not saved yet'}</strong>
+            </div>
+          </div>
+
+          <div className="legal-template-governance">
+            <section>
+              <div className="legal-template-governance-heading">
+                <h3>Source File</h3>
+                {isGovernanceLoading ? <RefreshCw className="spin" size={15} /> : null}
+              </div>
+              {governance.fileUrl ? (
+                <a className="secondary-button compact" href={governance.fileUrl} rel="noreferrer" target="_blank">
+                  Open template file
+                </a>
+              ) : (
+                <p>No signed file link is available for the current template.</p>
+              )}
+            </section>
+
+            <section>
+              <div className="legal-template-governance-heading">
+                <h3>Version History</h3>
+                <span>{governance.versions.length}</span>
+              </div>
+              <div className="legal-template-version-list">
+                {governance.versions.length ? governance.versions.map((version) => (
+                  <article key={version.id}>
+                    <div>
+                      <strong>{version.version_tag || 'v1'}</strong>
+                      <span className={`pill ${templateStatusTone(version.status)}`}>{version.status}</span>
+                    </div>
+                    <p>{version.change_summary || version.description || 'No change summary captured.'}</p>
+                    <small>{version.fileName || version.storagePath || 'No file'} / {formatAdminDate(version.updated_at || version.created_at)}</small>
+                    <button disabled={isSaving} onClick={() => handleRestoreVersion(version)} type="button">
+                      Restore as Draft
+                    </button>
+                  </article>
+                )) : <EmptyData compact />}
+              </div>
+            </section>
+
+            <section>
+              <div className="legal-template-governance-heading">
+                <h3>Audit Trail</h3>
+                <span>{governance.audit.length}</span>
+              </div>
+              <div className="legal-template-audit-list">
+                {governance.audit.length ? governance.audit.map((event) => (
+                  <div key={event.id}>
+                    <ShieldCheck size={15} />
+                    <span>{titleizeToken(event.eventType)}</span>
+                    <small>{event.summary}</small>
+                    <time>{event.time}</time>
+                  </div>
+                )) : <EmptyData compact />}
+              </div>
+            </section>
+          </div>
+
+          {governance.warnings.length ? <WarningStrip warnings={governance.warnings} /> : null}
+
+          <div className="legal-template-actions">
+            <button className="primary-button compact" disabled={isSaving} type="submit">
+              <FileText size={16} />
+              {isSaving ? 'Saving...' : 'Save Template'}
+            </button>
+            <button className="secondary-button compact" disabled={!form.id || isSaving} onClick={() => runTemplateAction(publishAdminLegalTemplate, 'Template published and set as default.')} type="button">
+              Publish
+            </button>
+            <button className="secondary-button compact" disabled={!form.id || isSaving} onClick={() => runTemplateAction(setAdminLegalTemplateDefault, 'Template set as active default.')} type="button">
+              Set Default
+            </button>
+            <button className="secondary-button compact danger" disabled={!form.id || isSaving} onClick={() => runTemplateAction(archiveAdminLegalTemplate, 'Template archived.')} type="button">
+              Archive
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
   )
 }
 
@@ -1731,6 +2317,11 @@ export default function App() {
     if (navItem) {
       pushAdminPath(navItem.path)
     }
+  }
+
+  function handleDesktopNavigate(viewId) {
+    setActiveView(viewId)
+    pushAdminPath(adminPathForView(viewId))
   }
 
   useEffect(() => {
@@ -1858,7 +2449,7 @@ export default function App() {
         allowedGroups={allowedGroups}
         level={access.level}
         onSignOut={handleSignOut}
-        onViewChange={setActiveView}
+        onViewChange={handleDesktopNavigate}
         profile={profile}
       />
       <main className="admin-main">
@@ -1878,6 +2469,7 @@ export default function App() {
         {activeView === 'organisations' && canViewActive ? (
           <PlaceholderView icon={Building2} items={snapshot.organisations} title="Organisations" />
         ) : null}
+        {activeView === 'legalTemplates' && canViewActive ? <LegalTemplatesView /> : null}
         {activeView === 'roleplayers' && canViewActive ? <RoleplayersView snapshot={snapshot} /> : null}
         {activeView === 'users' && canViewActive ? <PlaceholderView icon={Users} items={snapshot.users} title="Users" /> : null}
         {activeView === 'transactions' && canViewActive ? (

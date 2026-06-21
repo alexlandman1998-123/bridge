@@ -20,6 +20,7 @@ import {
   listDocumentSigningFields as listPacketSigningFieldsRecord,
   listDocumentPacketVersions,
   resolveDocumentPacketBranding,
+  resolveActivePacketTemplate,
   updatePacket,
   updateDocumentSigningFieldStatus as updateSigningFieldStatusRecord,
   validateDocumentPacketPlaceholders,
@@ -222,6 +223,7 @@ async function recordGenerationFailure({
   pdfPlaceholders = {},
   generationPayload = null,
   templateVersion = null,
+  templateResolution = null,
   generatedAt = null,
   sourceContextSnapshot = null,
   context = {},
@@ -252,6 +254,7 @@ async function recordGenerationFailure({
       failureMessage,
       generationPayload,
       templateVersion,
+      templateResolution,
       generatedAt,
       render_provenance: renderProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
@@ -295,6 +298,7 @@ async function recordGenerationFailure({
       lastFailureVersion: failedVersion.version_number,
       generationPayload,
       templateVersion,
+      templateResolution,
       generatedAt,
       renderProvenance,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
@@ -383,6 +387,76 @@ function resolveTemplateConfig(template = null) {
 
 function resolveTemplateRenderMode(template = null, packetType = '') {
   return normalizeTemplateRenderMode(template, packetType)
+}
+
+function resolveTemplateModuleType(packetType = '', context = {}, template = null) {
+  const explicit =
+    normalizeText(context?.moduleType) ||
+    normalizeText(context?.module_type) ||
+    normalizeText(context?.templateModuleType) ||
+    normalizeText(context?.template_module_type) ||
+    normalizeText(template?.module_type)
+  if (explicit) return explicit.toLowerCase()
+
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(normalizedPacketType)) return 'commercial'
+  return 'residential'
+}
+
+function resolveTemplateOrganisationId(context = {}) {
+  return normalizeNullableUuid(
+    context?.organisationId ||
+    context?.organisation_id ||
+    context?.transaction?.organisation_id ||
+    context?.lead?.organisation_id ||
+    context?.privateListing?.organisation_id ||
+    context?.listing?.organisation_id ||
+    context?.property?.organisation_id ||
+    context?.deal?.organisation_id ||
+    context?.landlord?.organisation_id ||
+    context?.company?.organisation_id,
+  )
+}
+
+async function resolveTemplateForPacket({ packetType, context = {}, template = null } = {}) {
+  if (template?.id) {
+    return {
+      template,
+      source: 'explicit',
+      candidateCount: 1,
+    }
+  }
+
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  if (!normalizedPacketType) {
+    return {
+      template: null,
+      source: 'none',
+      candidateCount: 0,
+    }
+  }
+
+  try {
+    return await resolveActivePacketTemplate({
+      packetType: normalizedPacketType,
+      moduleType: resolveTemplateModuleType(normalizedPacketType, context, template),
+      organisationId: resolveTemplateOrganisationId(context),
+      includeSections: true,
+    })
+  } catch (error) {
+    if (isMissingPacketTemplateSchemaError(error)) {
+      console.warn('[PACKETS] active template resolution unavailable; continuing with runtime fallback.', {
+        code: error?.code || null,
+        message: error?.message || null,
+      })
+      return {
+        template: null,
+        source: 'schema_unavailable',
+        candidateCount: 0,
+      }
+    }
+    throw error
+  }
 }
 
 function shouldUseNativeGeneration(template = null, packetType = '') {
@@ -1121,6 +1195,21 @@ export async function fetchPacketTemplate(templateId, options = {}) {
   return getPacketTemplate(templateId, options)
 }
 
+export async function resolveActiveTemplate({
+  packetType,
+  moduleType = '',
+  organisationId = null,
+  context = {},
+  includeSections = true,
+} = {}) {
+  return resolveActivePacketTemplate({
+    packetType,
+    moduleType: normalizeText(moduleType) || resolveTemplateModuleType(packetType, context),
+    organisationId: organisationId || resolveTemplateOrganisationId(context),
+    includeSections,
+  })
+}
+
 export async function listPackets(options = {}) {
   return getPackets(options)
 }
@@ -1251,10 +1340,12 @@ export async function renderPacketPreview({
   template = null,
   validationAction = 'preview',
 } = {}) {
+  const templateResolution = await resolveTemplateForPacket({ packetType, context, template })
+  const resolvedTemplate = templateResolution.template || null
   const validation = await validatePacket({
     packetType,
     context,
-    template,
+    template: resolvedTemplate,
     validationAction,
   })
   if (
@@ -1286,6 +1377,8 @@ export async function renderPacketPreview({
     ...validation,
     branding: packetBranding,
     previewHtml,
+    template: resolvedTemplate,
+    templateResolution,
   }
 }
 
@@ -1336,11 +1429,13 @@ export async function savePacketDraft({
   template = null,
   validationAction = 'preview',
 } = {}) {
+  const templateResolution = await resolveTemplateForPacket({ packetType, context, template })
+  const resolvedTemplate = templateResolution.template || null
   const rendered = await renderPacketPreview({
     packetType,
     context,
     title: buildPacketTitle(packetType, context),
-    template,
+    template: resolvedTemplate,
     validationAction,
   })
 
@@ -1348,33 +1443,33 @@ export async function savePacketDraft({
     packetId,
     packetType: rendered.packetType,
     context,
-    template,
+    template: resolvedTemplate,
   })
   const preparedAt = new Date().toISOString()
   const generationPayload = buildGenerationPayload({
     packet,
     context,
     validation: rendered,
-    template,
+    template: resolvedTemplate,
     generatedAt: preparedAt,
   })
   const previewRenderProvenance = buildRenderProvenance({
     packetType: rendered.packetType,
-    template,
+    template: resolvedTemplate,
     validation: rendered,
     pdfPlaceholders: sanitizeTemplatePlaceholders(rendered.placeholders || {}),
     generationPayload,
-    templateVersion: resolveTemplateVersion(template),
+    templateVersion: resolveTemplateVersion(resolvedTemplate),
     generatedAt: preparedAt,
   })
 
   const updated = await updatePacketFresh(packet.id, {
     status: 'draft',
-    ...(template?.id && !packet?.template_id
+    ...(resolvedTemplate?.id && !packet?.template_id
       ? {
-          templateId: template.id,
-          templateKeySnapshot: template.template_key || template.key || null,
-          templateLabelSnapshot: template.template_label || template.label || null,
+          templateId: resolvedTemplate.id,
+          templateKeySnapshot: resolvedTemplate.template_key || resolvedTemplate.key || null,
+          templateLabelSnapshot: resolvedTemplate.template_label || resolvedTemplate.label || null,
         }
       : {}),
     sourceContextJson: {
@@ -1383,7 +1478,8 @@ export async function savePacketDraft({
       packetType: rendered.packetType,
       generationPayload,
       renderProvenancePreview: previewRenderProvenance,
-      templateVersion: resolveTemplateVersion(template),
+      templateVersion: resolveTemplateVersion(resolvedTemplate),
+      templateResolution,
       generatedDataSnapshot: context?.mandateData || context?.generatedDataSnapshot || null,
       missingFieldsSnapshot: context?.mandateValidation?.missingRequiredFields || rendered?.critical || [],
       warningsSnapshot: context?.mandateValidation?.warnings || rendered?.warnings || [],
@@ -1403,6 +1499,8 @@ export async function savePacketDraft({
     packet: updated,
     validation: rendered,
     previewHtml: rendered.previewHtml,
+    template: resolvedTemplate,
+    templateResolution,
   }
 }
 
@@ -1426,6 +1524,7 @@ export async function generatePacketVersion({
   })
 
   const { packet, validation } = prepared
+  const effectiveTemplate = prepared.template || template || null
   const isMandatePacket = validation.packetType === 'mandate'
   const allowGenerationBypass = isMandatePacket || forceGenerate
   if (!validation.isValidForGeneration && !allowGenerationBypass) {
@@ -1451,11 +1550,11 @@ export async function generatePacketVersion({
     packet,
     context,
     validation,
-    template,
+    template: effectiveTemplate,
     generatedAt,
   })
   const pdfPlaceholders = sanitizeTemplatePlaceholders(validation.placeholders || {})
-  const templateVersion = resolveTemplateVersion(template)
+  const templateVersion = resolveTemplateVersion(effectiveTemplate)
   const sourceContextSnapshot = context?.mandateData?.sourceContext || context?.sourceContext || null
   await addPacketEvent({
     packetId: packet.id,
@@ -1504,10 +1603,10 @@ export async function generatePacketVersion({
       artifact = extractGeneratedArtifact(otpResult)
       assertGenerationOutput(artifact, 'otp')
     } else if (validation.packetType === 'mandate' || COMMERCIAL_DOCUMENT_PACKET_TYPES.includes(validation.packetType)) {
-      const templateConfig = resolveTemplateConfig(template)
-      const renderMode = resolveTemplateRenderMode(template, validation.packetType)
-      const useNativeRenderer = shouldUseNativeGeneration(template, validation.packetType)
-      if (!templateIsUsableForGeneration(template, validation.packetType) && !shouldAllowMandateTemplateFallback(template, validation.packetType)) {
+      const templateConfig = resolveTemplateConfig(effectiveTemplate)
+      const renderMode = resolveTemplateRenderMode(effectiveTemplate, validation.packetType)
+      const useNativeRenderer = shouldUseNativeGeneration(effectiveTemplate, validation.packetType)
+      if (!templateIsUsableForGeneration(effectiveTemplate, validation.packetType) && !shouldAllowMandateTemplateFallback(effectiveTemplate, validation.packetType)) {
         throw createPacketError(
           useNativeRenderer ? 'NATIVE_TEMPLATE_NOT_RENDERABLE' : 'MISSING_TEMPLATE_FILE',
           useNativeRenderer
@@ -1565,7 +1664,7 @@ export async function generatePacketVersion({
       if (isTimeoutFailure) {
         void recordGenerationFailure({
           packet,
-          template,
+          template: effectiveTemplate,
           validation,
           artifact,
           failureCode,
@@ -1573,6 +1672,7 @@ export async function generatePacketVersion({
           pdfPlaceholders,
           generationPayload,
           templateVersion,
+          templateResolution: prepared.templateResolution || null,
           generatedAt,
           sourceContextSnapshot,
           context,
@@ -1587,7 +1687,7 @@ export async function generatePacketVersion({
 
       const failedVersion = await recordGenerationFailure({
         packet,
-        template,
+        template: effectiveTemplate,
         validation,
         artifact,
         failureCode,
@@ -1595,6 +1695,7 @@ export async function generatePacketVersion({
         pdfPlaceholders,
         generationPayload,
         templateVersion,
+        templateResolution: prepared.templateResolution || null,
         generatedAt,
         sourceContextSnapshot,
         context,
@@ -1615,7 +1716,7 @@ export async function generatePacketVersion({
 
   const renderProvenance = buildRenderProvenance({
     packetType: validation.packetType,
-    template,
+    template: effectiveTemplate,
     validation,
     pdfPlaceholders,
     generationPayload,
@@ -1721,6 +1822,8 @@ export async function generatePacketVersion({
     version,
     validation,
     previewHtml: prepared.previewHtml,
+    template: effectiveTemplate,
+    templateResolution: prepared.templateResolution || null,
   }
 }
 

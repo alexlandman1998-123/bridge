@@ -4,7 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import LegalDocumentWorkspace from '../components/documents/LegalDocumentWorkspace'
 import Button from '../components/ui/Button'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { archivePacket, generatePacketVersion, listPacketTemplates } from '../core/documents/packetService'
+import { archivePacket, generatePacketVersion, listPacketTemplates, resolveActiveTemplate } from '../core/documents/packetService'
 import {
   buildPacketSectionManifest,
   renderPacketPreviewHtml,
@@ -1495,17 +1495,30 @@ export default function LegalDocumentWorkspacePage() {
   const handleGenerate = useCallback(async ({ onProgress, persistForSend = false, resetExisting = false } = {}) => {
     onProgress?.('Preparing draft...')
     const generationLookupTimeoutMs = 8000
-    const templates = await withLegalWorkspaceTimeout(
-      listPacketTemplates({
+    const templateResolution = await withLegalWorkspaceTimeout(
+      resolveActiveTemplate({
         packetType,
-        moduleType: 'agency',
-        includeInactive: false,
+        moduleType: 'residential',
         organisationId,
+        context: { organisationId },
       }),
       'Template lookup is taking too long.',
       generationLookupTimeoutMs,
     )
-    const template = getFirstTemplate(templates, packetType)
+    let template = templateResolution?.template || null
+    if (!template?.id) {
+      const templates = await withLegalWorkspaceTimeout(
+        listPacketTemplates({
+          packetType,
+          moduleType: 'agency',
+          includeInactive: false,
+          organisationId,
+        }),
+        'Template lookup is taking too long.',
+        generationLookupTimeoutMs,
+      )
+      template = getFirstTemplate(templates, packetType)
+    }
     const resetMandatePacket = packetType === 'mandate' && resetExisting === true
     const existingPacketIdForReset = normalizeText(
       validatedRoutePacketId ||

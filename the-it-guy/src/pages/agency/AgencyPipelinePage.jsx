@@ -75,7 +75,7 @@ import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, su
 import { activatePrivateListing, createPrivateListing, createPrivateListingActivity, getOrganisationPrivateListings, getSellerOnboardingByToken, sendSellerOnboarding, updatePrivateListing } from '../../services/privateListingService'
 import { buildSellerJourney, getSellerJourneyMetrics } from '../../services/sellerJourneyService'
 import { buildSellerReadinessSummary } from '../../services/sellerReadinessService'
-import { generatePacketVersion, generateSigningLinks, listPacketTemplates, prepareSigningFields } from '../../core/documents/packetService'
+import { generatePacketVersion, generateSigningLinks, prepareSigningFields, resolveActiveTemplate } from '../../core/documents/packetService'
 import { createDocumentPacket, fetchDocumentPacket, listDocumentPackets } from '../../lib/documentPacketsApi'
 import {
   mapSellerOnboardingToMandateData,
@@ -6905,8 +6905,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     onProgress?.('Preparing template…')
     try {
       const packetTitle = `Mandate - ${[selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ') || 'Seller'}`
-      const templates = await listPacketTemplates({ packetType: 'mandate', moduleType: 'agency', includeInactive: false, limit: 1 })
-      const template = Array.isArray(templates) ? templates[0] : null
+      const templateResolution = await resolveActiveTemplate({
+        packetType: 'mandate',
+        moduleType: 'residential',
+        organisationId,
+        context: { organisationId },
+      }).catch((templateError) => {
+        console.warn('[MANDATE] active residential template resolution failed; generation will use runtime fallback where possible.', templateError)
+        return null
+      })
+      const template = templateResolution?.template || null
       const dbLeadId = normalizeLeadUuid(selectedLead.leadId)
       const mandatePacketId = normalizeText(selectedLead?.mandatePacketId)
       const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)

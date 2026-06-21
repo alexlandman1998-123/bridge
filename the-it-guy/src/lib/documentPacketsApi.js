@@ -5,7 +5,7 @@ import {
   resolveMandateSecondarySignerConfig,
   resolveMandateSpouseRequirementFromFields,
 } from './mandateSignatureRules'
-import { DOCUMENTS_BUCKET_CANDIDATES, supabase } from './supabaseClient'
+import { DOCUMENTS_BUCKET_CANDIDATES, LEGAL_TEMPLATES_BUCKET_CANDIDATES, supabase } from './supabaseClient'
 import { linkPacketToRequirement } from '../services/documents/canonicalDocumentLifecycleService'
 
 export const DOCUMENT_PACKET_TYPES = ['otp', 'mandate', 'addendum', 'supporting_legal', 'custom', 'commercial_sale', 'commercial_lease']
@@ -196,6 +196,82 @@ function normalizeStorageSafeName(value = '', fallback = 'asset') {
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
   return normalized || fallback
+}
+
+function normalizeTemplateRegistryStatus(value = '', { isActive = false, isDefault = false } = {}) {
+  const normalized = normalizeText(value).toLowerCase()
+  if (['published', 'active', 'approved', 'live'].includes(normalized)) return 'published'
+  if (['archived', 'deprecated', 'superseded'].includes(normalized)) return 'archived'
+  if (['draft', 'in_review', 'review'].includes(normalized)) return 'draft'
+  return isActive || isDefault ? 'published' : 'draft'
+}
+
+function isTemplatePublished(template = {}) {
+  const status = normalizeText(template?.status).toLowerCase()
+  if (status) return status === 'published'
+  return template?.is_active !== false
+}
+
+function resolveTemplateModuleCandidates(packetType = '', moduleType = '') {
+  const normalizedPacketType = normalizeText(packetType).toLowerCase()
+  const normalizedModuleType = normalizeText(moduleType).toLowerCase()
+  const candidates = []
+
+  if (normalizedModuleType) candidates.push(normalizedModuleType)
+
+  if (normalizedPacketType.startsWith('commercial_')) {
+    candidates.push('commercial')
+  } else if (['mandate', 'otp', 'addendum', 'supporting_legal', 'custom'].includes(normalizedPacketType)) {
+    candidates.push('residential', 'agency')
+  }
+
+  candidates.push('shared')
+  return Array.from(new Set(candidates.filter(Boolean)))
+}
+
+function resolveTemplateUpdatedAt(template = {}) {
+  const date = Date.parse(template?.published_at || template?.updated_at || template?.created_at || '')
+  return Number.isFinite(date) ? date : 0
+}
+
+function scoreTemplateCandidate(template = {}, { organisationId = '', moduleCandidates = [] } = {}) {
+  const templateOrgId = normalizeText(template?.organisation_id)
+  const templateModuleType = normalizeText(template?.module_type).toLowerCase()
+  const moduleIndex = moduleCandidates.includes(templateModuleType)
+    ? moduleCandidates.indexOf(templateModuleType)
+    : moduleCandidates.length + 1
+  const ownerRank = templateOrgId && templateOrgId === normalizeText(organisationId)
+    ? 0
+    : templateOrgId
+      ? 1
+      : 2
+  const defaultRank = template?.is_default ? 0 : 1
+  const updatedRank = -resolveTemplateUpdatedAt(template)
+
+  return [
+    ownerRank,
+    moduleIndex,
+    defaultRank,
+    updatedRank,
+  ]
+}
+
+function compareTemplateCandidates(left = {}, right = {}, context = {}) {
+  const leftScore = scoreTemplateCandidate(left, context)
+  const rightScore = scoreTemplateCandidate(right, context)
+  for (let index = 0; index < leftScore.length; index += 1) {
+    if (leftScore[index] !== rightScore[index]) return leftScore[index] - rightScore[index]
+  }
+  return normalizeText(left?.id).localeCompare(normalizeText(right?.id))
+}
+
+function resolveTemplateResolutionSource(template = {}, organisationId = '') {
+  const isOrgTemplate = normalizeText(template?.organisation_id) === normalizeText(organisationId)
+  if (isOrgTemplate && template?.is_default) return 'organisation_default'
+  if (isOrgTemplate) return 'organisation_active'
+  if (!template?.organisation_id && template?.is_default) return 'global_default'
+  if (!template?.organisation_id) return 'global_active'
+  return 'fallback'
 }
 
 function normalizeFileExtension(fileName = '', fallback = 'docx') {
@@ -414,6 +490,8 @@ function hydrateTemplateRecord(template = {}) {
   }
 }
 
+const DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2 =
+  'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_bucket, template_storage_path, template_file_name, version_tag, description, status, is_default, is_active, metadata_json, created_by, updated_by, published_by, published_at, archived_by, archived_at, created_at, updated_at'
 const DOCUMENT_PACKET_TEMPLATE_SELECT =
   'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, is_active, metadata_json, created_by, created_at, updated_at'
 const DOCUMENT_PACKET_TEMPLATE_SELECT_NO_IS_ACTIVE =
@@ -431,6 +509,10 @@ async function queryDocumentPacketTemplatesWithFallback(client, {
 } = {}) {
   const context = await resolvePacketContext(client, { organisationId })
   const queryPlans = [
+    {
+      select: DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2,
+      activeFilter: !includeInactive,
+    },
     {
       select: DOCUMENT_PACKET_TEMPLATE_SELECT,
       activeFilter: !includeInactive,
@@ -473,6 +555,9 @@ async function queryDocumentPacketTemplatesWithFallback(client, {
     lastError = result.error
     const compatibleMissingColumn =
       isMissingColumnError(result.error, 'is_active') ||
+      isMissingColumnError(result.error, 'template_storage_bucket') ||
+      isMissingColumnError(result.error, 'template_file_name') ||
+      isMissingColumnError(result.error, 'status') ||
       isMissingColumnError(result.error, 'template_storage_path') ||
       isMissingColumnError(result.error, 'version_tag') ||
       isMissingColumnError(result.error, 'description')
@@ -708,6 +793,56 @@ export async function listDocumentPacketTemplates({
   })
 }
 
+export async function resolveActiveDocumentPacketTemplate({
+  packetType,
+  moduleType = '',
+  organisationId = null,
+  includeSections = true,
+} = {}) {
+  const client = requireClient()
+  const normalizedPacketType = assertPacketType(packetType)
+  const context = await resolvePacketContext(client, { organisationId })
+  const moduleCandidates = resolveTemplateModuleCandidates(normalizedPacketType, moduleType)
+  const templateGroups = await Promise.all(
+    moduleCandidates.map((candidateModuleType) => queryDocumentPacketTemplatesWithFallback(client, {
+      packetType: normalizedPacketType,
+      moduleType: candidateModuleType,
+      includeInactive: false,
+      organisationId: context.organisationId,
+    }).catch((error) => {
+      if (isMissingTableOrSchemaError(error)) return []
+      throw error
+    })),
+  )
+
+  const templateById = new Map()
+  for (const template of templateGroups.flat()) {
+    if (!template?.id || !isTemplatePublished(template)) continue
+    templateById.set(template.id, template)
+  }
+
+  const candidates = Array.from(templateById.values())
+    .sort((left, right) => compareTemplateCandidates(left, right, {
+      organisationId: context.organisationId,
+      moduleCandidates,
+    }))
+
+  const selected = candidates[0] || null
+  const hydratedTemplate = selected?.id && includeSections
+    ? await fetchDocumentPacketTemplate(selected.id, { includeSections: true })
+    : selected
+
+  return {
+    template: hydratedTemplate || null,
+    source: hydratedTemplate ? resolveTemplateResolutionSource(hydratedTemplate, context.organisationId) : 'none',
+    organisationId: context.organisationId,
+    moduleType: normalizeText(hydratedTemplate?.module_type || moduleCandidates[0] || moduleType),
+    packetType: normalizedPacketType,
+    candidateModuleTypes: moduleCandidates,
+    candidateCount: candidates.length,
+  }
+}
+
 export async function listDocumentPlaceholderDefinitions({
   packetType = null,
   includeInactive = false,
@@ -739,6 +874,7 @@ export async function uploadDocumentPacketTemplateAsset({
   packetType = 'mandate',
   moduleType = 'agency',
   templateKey = '',
+  versionTag = 'v1',
   organisationId = null,
 } = {}) {
   const selectedFile = typeof File !== 'undefined' && file instanceof File ? file : null
@@ -760,11 +896,12 @@ export async function uploadDocumentPacketTemplateAsset({
   const normalizedPacketType = assertPacketType(packetType)
   const normalizedModuleType = normalizeText(moduleType || 'agency').toLowerCase() || 'agency'
   const safeTemplateKey = normalizeTemplateKey(templateKey || `${normalizedPacketType}_template`, normalizedPacketType)
-  const objectPath = `legal-templates/${context.organisationId}/${normalizedModuleType}/${normalizedPacketType}/${safeTemplateKey}/${Date.now()}-${normalizeStorageSafeName(selectedFile.name, `${normalizedPacketType}.docx`)}`
+  const safeVersionTag = normalizeStorageSafeName(versionTag, 'v1')
+  const objectPath = `organisations/${context.organisationId}/${normalizedModuleType}/${normalizedPacketType}/${safeTemplateKey}/${safeVersionTag}/${Date.now()}-${normalizeStorageSafeName(selectedFile.name, `${normalizedPacketType}.docx`)}`
 
   let uploadedBucket = ''
   let lastError = null
-  for (const bucketName of DOCUMENTS_BUCKET_CANDIDATES) {
+  for (const bucketName of LEGAL_TEMPLATES_BUCKET_CANDIDATES) {
     const { error } = await client.storage.from(bucketName).upload(objectPath, selectedFile, {
       upsert: true,
       cacheControl: '3600',
@@ -787,7 +924,7 @@ export async function uploadDocumentPacketTemplateAsset({
   if (!uploadedBucket) {
     if (lastError) {
       throw new Error(
-        `Unable to upload legal template. Checked buckets: ${DOCUMENTS_BUCKET_CANDIDATES.join(', ')}.`,
+        `Unable to upload legal template. Checked buckets: ${LEGAL_TEMPLATES_BUCKET_CANDIDATES.join(', ')}.`,
       )
     }
     throw new Error('Unable to upload legal template.')
@@ -849,6 +986,8 @@ export async function createDocumentPacketTemplate(input = {}) {
   )
   const templateFormat = normalizeText(input.templateFormat || 'docx').toLowerCase() || 'docx'
   const versionTag = normalizeText(input.versionTag || 'v1') || 'v1'
+  const isActive = input.isActive === undefined ? true : Boolean(input.isActive)
+  const isDefault = Boolean(input.isDefault)
 
   const payload = {
     organisation_id: context.organisationId,
@@ -857,11 +996,17 @@ export async function createDocumentPacketTemplate(input = {}) {
     template_key: templateKey,
     template_label: templateLabel,
     template_format: templateFormat,
+    template_storage_bucket: normalizeNullableText(input.templateStorageBucket),
     template_storage_path: normalizeNullableText(input.templateStoragePath),
+    template_file_name: normalizeNullableText(input.templateFileName),
     version_tag: versionTag,
     description: normalizeNullableText(input.description),
-    is_default: Boolean(input.isDefault),
-    is_active: input.isActive === undefined ? true : Boolean(input.isActive),
+    status: normalizeTemplateRegistryStatus(input.status || input.templateStatus, {
+      isActive,
+      isDefault,
+    }),
+    is_default: isDefault,
+    is_active: isActive,
     metadata_json: input.metadataJson && typeof input.metadataJson === 'object' ? input.metadataJson : {},
     created_by: context.user.id,
   }
@@ -870,7 +1015,7 @@ export async function createDocumentPacketTemplate(input = {}) {
     .from('document_packet_templates')
     .insert(payload)
     .select(
-      'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, is_active, metadata_json, created_by, created_at, updated_at',
+      DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2,
     )
     .single()
   if (error) throw error
@@ -895,7 +1040,7 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
   const { data: existing, error: existingError } = await client
     .from('document_packet_templates')
     .select(
-      'id, organisation_id, module_type, packet_type, template_key, template_label, template_format, template_storage_path, version_tag, description, is_default, is_active, metadata_json, created_by, created_at, updated_at',
+      DOCUMENT_PACKET_TEMPLATE_SELECT_PHASE2,
     )
     .eq('id', templateId)
     .maybeSingle()
@@ -910,9 +1055,17 @@ export async function updateDocumentPacketTemplate(templateId, updates = {}) {
   if (updates.description !== undefined) payload.description = normalizeNullableText(updates.description)
   if (updates.isActive !== undefined) payload.is_active = Boolean(updates.isActive)
   if (updates.isDefault !== undefined) payload.is_default = Boolean(updates.isDefault)
+  if (updates.templateStorageBucket !== undefined) payload.template_storage_bucket = normalizeNullableText(updates.templateStorageBucket)
   if (updates.templateStoragePath !== undefined) payload.template_storage_path = normalizeNullableText(updates.templateStoragePath)
+  if (updates.templateFileName !== undefined) payload.template_file_name = normalizeNullableText(updates.templateFileName)
   if (updates.templateFormat !== undefined) payload.template_format = normalizeText(updates.templateFormat).toLowerCase() || 'docx'
   if (updates.versionTag !== undefined) payload.version_tag = normalizeText(updates.versionTag) || existing.version_tag
+  if (updates.status !== undefined || updates.templateStatus !== undefined || updates.isActive !== undefined || updates.isDefault !== undefined) {
+    payload.status = normalizeTemplateRegistryStatus(updates.status || updates.templateStatus || existing.status, {
+      isActive: updates.isActive === undefined ? existing.is_active : updates.isActive,
+      isDefault: updates.isDefault === undefined ? existing.is_default : updates.isDefault,
+    })
+  }
   if (updates.metadataJson !== undefined) {
     payload.metadata_json =
       updates.metadataJson && typeof updates.metadataJson === 'object'

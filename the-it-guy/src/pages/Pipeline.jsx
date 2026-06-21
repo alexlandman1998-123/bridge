@@ -29,7 +29,7 @@ import {
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { resolveCommissionSnapshotForAgent } from '../lib/settingsApi'
-import { listPacketTemplates } from '../core/documents/packetService'
+import { listPacketTemplates, resolveActiveTemplate } from '../core/documents/packetService'
 import {
   createViewingRequest,
   formatViewingStatusLabel,
@@ -737,12 +737,27 @@ function LegacyPipeline() {
     setMandateError('')
     setMandatePacketId('')
     try {
-      const templates = await listPacketTemplates({
+      const resolvedOrganisationId = workspace.id && workspace.id !== 'all' ? workspace.id : null
+      const activeTemplate = await resolveActiveTemplate({
+        packetType: 'mandate',
+        moduleType: 'residential',
+        organisationId: resolvedOrganisationId,
+        context: { organisationId: resolvedOrganisationId },
+      }).catch((templateError) => {
+        console.warn('[Packet Templates][Mandate] active residential template resolution failed; loading legacy list.', templateError)
+        return null
+      })
+      const legacyTemplates = await listPacketTemplates({
         packetType: 'mandate',
         moduleType: 'agency',
         includeInactive: false,
       })
-      setMandatePacketTemplates(templates || [])
+      const templatesById = new Map()
+      ;[activeTemplate?.template, ...(legacyTemplates || [])].filter(Boolean).forEach((template) => {
+        const key = String(template?.id || template?.template_key || template?.templateKey || '')
+        if (key && !templatesById.has(key)) templatesById.set(key, template)
+      })
+      setMandatePacketTemplates(Array.from(templatesById.values()))
     } catch (templateError) {
       console.error('[Packet Templates][Mandate]', templateError)
       setMandatePacketTemplates([])
@@ -2457,6 +2472,7 @@ function LegacyPipeline() {
                     onPacketIdChange={setMandatePacketId}
                     templates={mandatePacketTemplates}
                     context={{
+                      organisationId: workspace.id && workspace.id !== 'all' ? workspace.id : null,
                       lead: selectedMandateLead,
                       mandateDraft,
                     }}

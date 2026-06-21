@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import CommercialEmptyState from '../components/CommercialEmptyState'
 import CommercialStatusPill from '../components/CommercialStatusPill'
-import { formatCurrency, formatDate, formatNumber, titleize } from '../commercialFormatters'
+import { titleize } from '../commercialFormatters'
 import { useCommercialData } from '../hooks/useCommercialData'
 import {
   createCommercialCompany,
@@ -21,10 +21,12 @@ import {
   generatePacketVersion,
   listPacketTemplates,
   renderPacketPreview,
+  resolveActiveTemplate,
   savePacketDraft,
 } from '../../../core/documents/packetService'
 
 const CARD_CLASS = 'rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]'
+const EMPTY_ARRAY = Object.freeze([])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -44,6 +46,20 @@ function toOption(row = {}) {
     label: row.company_name || row.name || row.title || row.vacancy_name || row.property_name || row.deal_name || row.fullName || row.full_name || row.email || 'Record',
     row,
   }
+}
+
+function resolveTemplateIdentity(template = {}) {
+  return normalizeText(template.id || template.template_id || template.template_key || template.key)
+}
+
+function mergeTemplateOptions(...templateGroups) {
+  const templatesByIdentity = new Map()
+  templateGroups.flat().filter(Boolean).forEach((template) => {
+    const identity = resolveTemplateIdentity(template)
+    if (!identity || templatesByIdentity.has(identity)) return
+    templatesByIdentity.set(identity, template)
+  })
+  return Array.from(templatesByIdentity.values())
 }
 
 function RecordSelect({ label, value, onChange, options = [], placeholder = 'Select…', details = '' }) {
@@ -93,6 +109,7 @@ function CommercialDocumentGeneratorPage() {
   const [vacancyId, setVacancyId] = useState(normalizeText(searchParams.get('vacancyId')))
   const [listingId, setListingId] = useState(normalizeText(searchParams.get('listingId')))
   const [dealId, setDealId] = useState(normalizeText(searchParams.get('dealId')))
+  const [transactionId, setTransactionId] = useState(normalizeText(searchParams.get('transactionId')))
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [templateDetail, setTemplateDetail] = useState(null)
   const [previewHtml, setPreviewHtml] = useState('')
@@ -104,6 +121,7 @@ function CommercialDocumentGeneratorPage() {
   const [actionMessage, setActionMessage] = useState('')
   const [generatedDocument, setGeneratedDocument] = useState(null)
   const [templates, setTemplates] = useState([])
+  const [activeTemplateId, setActiveTemplateId] = useState('')
   const [createCompanyForm, setCreateCompanyForm] = useState({
     companyName: '',
     brokerId: '',
@@ -127,14 +145,15 @@ function CommercialDocumentGeneratorPage() {
 
   const fetcher = useMemo(() => (organisationId) => getCommercialLookupData(organisationId), [])
   const { data, loading, error, organisationId } = useCommercialData(fetcher, [fetcher])
-  const brokers = Array.isArray(data?.brokers) ? data.brokers : []
-  const companies = Array.isArray(data?.companies) ? data.companies : []
-  const landlords = Array.isArray(data?.landlords) ? data.landlords : []
-  const contacts = Array.isArray(data?.contacts) ? data.contacts : []
-  const properties = Array.isArray(data?.properties) ? data.properties : []
-  const vacancies = Array.isArray(data?.vacancies) ? data.vacancies : []
-  const listings = Array.isArray(data?.listings) ? data.listings : []
-  const deals = Array.isArray(data?.deals) ? data.deals : []
+  const brokers = Array.isArray(data?.brokers) ? data.brokers : EMPTY_ARRAY
+  const companies = Array.isArray(data?.companies) ? data.companies : EMPTY_ARRAY
+  const landlords = Array.isArray(data?.landlords) ? data.landlords : EMPTY_ARRAY
+  const contacts = Array.isArray(data?.contacts) ? data.contacts : EMPTY_ARRAY
+  const properties = Array.isArray(data?.properties) ? data.properties : EMPTY_ARRAY
+  const vacancies = Array.isArray(data?.vacancies) ? data.vacancies : EMPTY_ARRAY
+  const listings = Array.isArray(data?.listings) ? data.listings : EMPTY_ARRAY
+  const deals = Array.isArray(data?.deals) ? data.deals : EMPTY_ARRAY
+  const transactions = Array.isArray(data?.transactions) ? data.transactions : EMPTY_ARRAY
 
   const selectedBrokerId = createCompanyForm.brokerId || createContactForm.brokerId || brokers[0]?.userId || brokers[0]?.id || ''
   const selectedCompany = resolveContextRecord(companies, companyId)
@@ -143,7 +162,22 @@ function CommercialDocumentGeneratorPage() {
   const selectedProperty = resolveContextRecord(properties, propertyId)
   const selectedVacancy = resolveContextRecord(vacancies, vacancyId)
   const selectedListing = resolveContextRecord(listings, listingId)
-  const selectedDeal = resolveContextRecord(deals, dealId)
+  const selectedTransaction = resolveContextRecord(transactions, transactionId)
+  const selectedDeal = resolveContextRecord(deals, dealId || selectedTransaction?.deal_id || selectedTransaction?.deal?.id)
+
+  useEffect(() => {
+    if (!selectedTransaction) return
+    if (selectedTransaction.deal_id && !dealId) setDealId(selectedTransaction.deal_id)
+    if (selectedTransaction.property_id && !propertyId) setPropertyId(selectedTransaction.property_id)
+    if (selectedTransaction.vacancy_id && !vacancyId) setVacancyId(selectedTransaction.vacancy_id)
+    if (selectedTransaction.listing_id && !listingId) setListingId(selectedTransaction.listing_id)
+  }, [
+    dealId,
+    listingId,
+    propertyId,
+    selectedTransaction,
+    vacancyId,
+  ])
 
   useEffect(() => {
     if (!createCompanyForm.brokerId && selectedBrokerId) {
@@ -164,17 +198,35 @@ function CommercialDocumentGeneratorPage() {
     let active = true
     async function loadTemplates() {
       try {
+        const activeTemplateResolution = await resolveActiveTemplate({
+          packetType,
+          moduleType: 'commercial',
+          organisationId,
+          context: {
+            organisationId,
+            moduleType: 'commercial',
+            documentContextType: 'commercial',
+          },
+          includeSections: false,
+        }).catch((resolveError) => {
+          console.warn('[COMMERCIAL] Active commercial template resolution failed; falling back to template list.', resolveError)
+          return null
+        })
         const rows = await listPacketTemplates({
           packetType,
           moduleType: 'commercial',
+          organisationId,
           includeInactive: true,
         })
         if (!active) return
-        const next = Array.isArray(rows) ? rows : []
+        const activeTemplate = activeTemplateResolution?.template || null
+        const next = mergeTemplateOptions([activeTemplate], Array.isArray(rows) ? rows : [])
+        const nextActiveTemplateId = resolveTemplateIdentity(activeTemplate)
         setTemplates(next)
+        setActiveTemplateId(nextActiveTemplateId)
         setSelectedTemplateId((previous) => {
-          if (previous && next.some((row) => row.id === previous)) return previous
-          return next[0]?.id || ''
+          if (previous && next.some((row) => resolveTemplateIdentity(row) === previous)) return previous
+          return nextActiveTemplateId || resolveTemplateIdentity(next[0]) || ''
         })
       } catch (loadError) {
         if (active) {
@@ -186,7 +238,7 @@ function CommercialDocumentGeneratorPage() {
     return () => {
       active = false
     }
-  }, [packetType])
+  }, [organisationId, packetType])
 
   useEffect(() => {
     let active = true
@@ -196,7 +248,9 @@ function CommercialDocumentGeneratorPage() {
         return
       }
       try {
-        const detail = await fetchPacketTemplate(selectedTemplateId, { includeSections: true })
+        const selectedTemplate = templates.find((row) => resolveTemplateIdentity(row) === selectedTemplateId) || null
+        const selectedTemplateRecordId = normalizeText(selectedTemplate?.id || selectedTemplateId)
+        const detail = await fetchPacketTemplate(selectedTemplateRecordId, { includeSections: true })
         if (!active) return
         setTemplateDetail(detail)
       } catch (loadError) {
@@ -207,14 +261,18 @@ function CommercialDocumentGeneratorPage() {
     return () => {
       active = false
     }
-  }, [selectedTemplateId])
+  }, [selectedTemplateId, templates])
 
   const context = useMemo(() => ({
+    organisationId,
+    moduleType: 'commercial',
+    templateModuleType: 'commercial',
     documentContextType: 'commercial',
     commercialTransactionType: packetType === 'commercial_sale' ? 'sale' : 'lease',
     assetCategory,
-    company: selectedCompany,
-    landlord: selectedLandlord || selectedCompany,
+    transaction: selectedTransaction,
+    company: selectedCompany || selectedTransaction?.company || null,
+    landlord: selectedLandlord || selectedTransaction?.landlord || selectedCompany,
     assetManager: selectedAssetManager || {
       full_name: createContactForm.fullName,
       position: createContactForm.position,
@@ -224,10 +282,10 @@ function CommercialDocumentGeneratorPage() {
       signing_capacity: createContactForm.signingCapacity,
       authorityConfirmed: createContactForm.authorityConfirmed,
     },
-    property: selectedProperty,
-    vacancy: selectedVacancy,
-    listing: selectedListing,
-    deal: selectedDeal,
+    property: selectedProperty || selectedTransaction?.property || null,
+    vacancy: selectedVacancy || selectedTransaction?.vacancy || null,
+    listing: selectedListing || selectedTransaction?.listing || null,
+    deal: selectedDeal || selectedTransaction?.deal || null,
     broker: resolveContextRecord(brokers, selectedBrokerId) || null,
     organisation: data?.organisation || null,
     commissionPercentage: selectedDeal?.estimated_commission || selectedListing?.commission_percentage || '',
@@ -243,6 +301,7 @@ function CommercialDocumentGeneratorPage() {
     createContactForm.position,
     createContactForm.signingCapacity,
     data?.organisation,
+    organisationId,
     packetType,
     selectedBrokerId,
     selectedCompany,
@@ -250,6 +309,7 @@ function CommercialDocumentGeneratorPage() {
     selectedDeal,
     selectedListing,
     selectedProperty,
+    selectedTransaction,
     selectedVacancy,
     selectedAssetManager,
   ])
@@ -369,9 +429,11 @@ function CommercialDocumentGeneratorPage() {
         context,
         template: templateDetail,
       })
-      const entityType = selectedVacancy?.id
-        ? 'commercial_vacancy'
-        : selectedListing?.id
+      const entityType = selectedTransaction?.id
+        ? 'commercial_transaction'
+        : selectedVacancy?.id
+          ? 'commercial_vacancy'
+          : selectedListing?.id
           ? 'commercial_listing'
           : selectedProperty?.id
             ? 'commercial_property'
@@ -382,7 +444,7 @@ function CommercialDocumentGeneratorPage() {
                 : selectedCompany?.id
                   ? 'commercial_company'
                   : 'commercial_property'
-      const entityId = selectedVacancy?.id || selectedListing?.id || selectedProperty?.id || selectedDeal?.id || selectedLandlord?.id || selectedCompany?.id || ''
+      const entityId = selectedTransaction?.id || selectedVacancy?.id || selectedListing?.id || selectedProperty?.id || selectedDeal?.id || selectedLandlord?.id || selectedCompany?.id || ''
       if (result?.version?.rendered_file_path && entityId) {
         const generatedDocument = await registerCommercialGeneratedDocument({
           organisationId,
@@ -423,6 +485,7 @@ function CommercialDocumentGeneratorPage() {
     .filter((row) => !vacancyId || String(row.vacancy_id || '') === String(vacancyId) || !row.vacancy_id)
     .map(toOption)
   const dealOptions = deals
+  const transactionOptions = transactions
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
@@ -611,6 +674,7 @@ function CommercialDocumentGeneratorPage() {
             <RecordSelect label="Vacancy" value={vacancyId} onChange={setVacancyId} options={vacancyOptions} placeholder="Optional" />
             <RecordSelect label="Listing" value={listingId} onChange={setListingId} options={listingOptions} placeholder="Optional" />
             <RecordSelect label="Deal" value={dealId} onChange={setDealId} options={dealOptions.map(toOption)} placeholder="Optional" />
+            <RecordSelect label="Transaction" value={transactionId} onChange={setTransactionId} options={transactionOptions.map(toOption)} placeholder="Optional" />
           </div>
         </section>
 
@@ -633,7 +697,10 @@ function CommercialDocumentGeneratorPage() {
                     <p className="text-sm font-semibold text-[#102236]">{template.template_label || template.template_key}</p>
                     <p className="mt-1 text-xs text-slate-500">{template.version_tag || 'v1'} · {titleize(template.template_format || 'docx')}</p>
                   </div>
-                  {selectedTemplateId === template.id ? <CheckCircle2 size={16} className="text-emerald-600" /> : null}
+                  <div className="flex shrink-0 items-center gap-2">
+                    {resolveTemplateIdentity(template) === activeTemplateId ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-emerald-700">Active</span> : null}
+                    {selectedTemplateId === resolveTemplateIdentity(template) ? <CheckCircle2 size={16} className="text-emerald-600" /> : null}
+                  </div>
                 </div>
                 <p className="mt-2 text-xs text-slate-500">{template.description || 'Commercial document template'}</p>
               </button>
@@ -746,6 +813,7 @@ function CommercialDocumentGeneratorPage() {
             {selectedVacancy ? <div className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Vacancy</p><p className="mt-1 font-semibold text-[#102236]">{selectedVacancy.vacancy_name}</p></div> : null}
             {selectedListing ? <div className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Listing</p><p className="mt-1 font-semibold text-[#102236]">{selectedListing.title}</p></div> : null}
             {selectedDeal ? <div className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Deal</p><p className="mt-1 font-semibold text-[#102236]">{selectedDeal.deal_name}</p></div> : null}
+            {selectedTransaction ? <div className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Transaction</p><p className="mt-1 font-semibold text-[#102236]">{selectedTransaction.transaction_name || selectedTransaction.title || selectedTransaction.id}</p></div> : null}
           </div>
         </section>
       </aside>

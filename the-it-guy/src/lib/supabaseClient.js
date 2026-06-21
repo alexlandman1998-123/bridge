@@ -370,6 +370,17 @@ export const DOCUMENTS_BUCKET_CANDIDATES = Array.from(
   new Set([DOCUMENTS_BUCKET, ...configuredDocumentsBuckets, 'documents'].filter(Boolean)),
 )
 
+const configuredLegalTemplateBuckets = [
+  ...parseBucketCandidates(viteEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET || processEnv.VITE_SUPABASE_LEGAL_TEMPLATES_BUCKET),
+  ...parseBucketCandidates(viteEnv.VITE_LEGAL_TEMPLATES_BUCKET || processEnv.VITE_LEGAL_TEMPLATES_BUCKET),
+]
+
+export const LEGAL_TEMPLATES_BUCKET = configuredLegalTemplateBuckets[0] || 'legal-templates'
+
+export const LEGAL_TEMPLATES_BUCKET_CANDIDATES = Array.from(
+  new Set([LEGAL_TEMPLATES_BUCKET, ...configuredLegalTemplateBuckets, ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)),
+)
+
 const configuredBrandingBuckets = [
   ...parseBucketCandidates(viteEnv.VITE_SUPABASE_BRANDING_BUCKET || processEnv.VITE_SUPABASE_BRANDING_BUCKET),
   ...parseBucketCandidates(viteEnv.VITE_BRANDING_BUCKET || processEnv.VITE_BRANDING_BUCKET),
