@@ -1076,6 +1076,8 @@ export async function submitCommercialLandlordOnboarding(token, formInput = {}) 
       fica_applicable: form.landlord_details.fica_applicable !== false,
       primary_regions: unique(form.portfolio.primary_regions),
       existing_broker_relationships: form.broker_relationships.relationships || [],
+      banking_details: form.banking_details || {},
+      approval_permissions: form.approval_permissions || {},
       onboarding_notes: normalizeText(form.onboarding_notes) || null,
     },
   }

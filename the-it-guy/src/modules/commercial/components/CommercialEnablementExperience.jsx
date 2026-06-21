@@ -204,7 +204,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
   const [draft, setDraft] = useState(null)
-  const [actionState, setActionState] = useState({ saving: false, error: '', completion: null, selfActivating: false })
+  const [actionState, setActionState] = useState({ saving: false, error: '', completion: null, selfActivating: false, progress: '' })
   const [requestState, setRequestState] = useState({
     loading: false,
     reminding: false,
@@ -289,7 +289,10 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
     return REVIEWER_ROLES.has(membershipRole) || REVIEWER_ROLES.has(profileRole)
   }, [setupState.context?.membershipRole, setupState.context?.profile?.role])
 
-  const canSelfActivate = Boolean(accessState?.scope?.eligibleForCommercialSelfActivation)
+  const canActivatePreparedWorkspace = Boolean(
+    accessState?.scope?.eligibleForCommercialSelfActivation ||
+      (accessState?.reason === 'organisation_module_ready_to_activate' && canEnableCommercial),
+  )
   const activeStepLabel = WIZARD_STEPS[stepIndex] || WIZARD_STEPS[0]
   const selectedExistingUserCount = (draft?.selectedOrganisationUserIds || []).length
   const invitedUserCount = (draft?.invitedUsers || []).length
@@ -403,7 +406,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
     }
 
     try {
-      setActionState({ saving: true, error: '', completion: null, selfActivating: false })
+      setActionState({ saving: true, error: '', completion: null, selfActivating: false, progress: 'Loading users and branches...' })
       const result = await enableCommercialWorkspaceForCurrentUser({
         businessModel: draft.businessModel,
         selectedOrganisationUserIds: draft.selectedOrganisationUserIds,
@@ -411,21 +414,25 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
         dedicatedBranches: draft.branchMode === 'dedicated' ? draft.dedicatedBranches : [],
         featureSelections: draft.featureSelections,
         invitedUsers: draft.invitedUsers,
+        onProgress: (progress) => {
+          setActionState((previous) => ({ ...previous, progress: normalizeText(progress) }))
+        },
       })
-      setActionState({ saving: false, error: '', completion: result, selfActivating: false })
+      setActionState({ saving: false, error: '', completion: result, selfActivating: false, progress: '' })
     } catch (error) {
       setActionState({
         saving: false,
         error: formatCommercialError(error, 'Commercial workspace could not be enabled right now.'),
         completion: null,
         selfActivating: false,
+        progress: '',
       })
     }
   }
 
   async function handleSelfActivate() {
     try {
-      setActionState({ saving: false, error: '', completion: null, selfActivating: true })
+      setActionState({ saving: false, error: '', completion: null, selfActivating: true, progress: 'Activating your Commercial access...' })
       const scope = await activateCommercialWorkspaceForCurrentUser()
       if (!scope?.hasCommercialAccess) {
         throw new Error('Commercial access could not be confirmed for your account. Ask your principal to grant Commercial access from Settings > Users, then try again.')
@@ -438,6 +445,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
         error: formatCommercialError(error, 'Commercial access could not be opened right now.'),
         completion: null,
         selfActivating: false,
+        progress: '',
       })
     }
   }
@@ -626,21 +634,21 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
     )
   }
 
-  if (canSelfActivate || !canEnableCommercial) {
-    const accessTitle = canSelfActivate
+  if (canActivatePreparedWorkspace || !canEnableCommercial) {
+    const accessTitle = canActivatePreparedWorkspace
       ? 'Commercial Workspace'
       : 'Commercial Workspace access'
 
     return (
       <section className="flex min-h-full items-center justify-center bg-[#f6f8fb] px-4 py-10 text-[#102236]">
         <div className="w-full max-w-2xl rounded-[32px] border border-[#dbe6f2] bg-white p-8 shadow-[0_28px_80px_rgba(15,23,42,0.08)] sm:p-10">
-          <span className={`inline-flex h-14 w-14 items-center justify-center rounded-[20px] ${canSelfActivate ? 'bg-[#eef5fb] text-[#15324f]' : 'bg-amber-50 text-amber-700'}`}>
-            {canSelfActivate ? <Building2 size={24} /> : <Bell size={24} />}
+          <span className={`inline-flex h-14 w-14 items-center justify-center rounded-[20px] ${canActivatePreparedWorkspace ? 'bg-[#eef5fb] text-[#15324f]' : 'bg-amber-50 text-amber-700'}`}>
+            {canActivatePreparedWorkspace ? <Building2 size={24} /> : <Bell size={24} />}
           </span>
           <p className="mt-5 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Commercial workspace</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.045em]">{accessTitle}</h1>
           <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500">
-            {canSelfActivate
+            {canActivatePreparedWorkspace
               ? 'Commercial has already been prepared for this organisation. Open the workspace to start working with listings, leasing, reporting, and brokerage workflows.'
               : 'Commercial is available for this organisation, but your account still needs permission before you can open it. Ask your principal for access and we will notify them right away.'}
           </p>
@@ -678,7 +686,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
           ) : null}
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            {canSelfActivate ? (
+            {canActivatePreparedWorkspace ? (
               <button
                 type="button"
                 onClick={handleSelfActivate}
@@ -686,7 +694,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                 className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {actionState.selfActivating ? <Loader2 size={16} className="animate-spin" /> : <Building2 size={16} />}
-                Open Commercial Workspace
+                {actionState.selfActivating ? actionState.progress || 'Opening Commercial Workspace...' : 'Open Commercial Workspace'}
               </button>
             ) : (
               <button
@@ -699,7 +707,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                 Request Commercial access
               </button>
             )}
-            {!canSelfActivate && requestState.reusedExistingRequest ? (
+            {!canActivatePreparedWorkspace && requestState.reusedExistingRequest ? (
               <button
                 type="button"
                 onClick={handleRemindPrincipal}
@@ -786,6 +794,11 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                 {actionState.error ? (
                   <p className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
                     {actionState.error}
+                  </p>
+                ) : null}
+                {actionState.saving && actionState.progress ? (
+                  <p className="mt-6 rounded-2xl border border-[#d8e7f6] bg-[#f3f9ff] px-4 py-3 text-sm leading-6 text-[#15324f]">
+                    {actionState.progress}
                   </p>
                 ) : null}
 
@@ -1324,7 +1337,7 @@ function CommercialEnablementExperience({ accessState, onAccessGranted }) {
                           className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {actionState.saving ? <Loader2 size={16} className="animate-spin" /> : <Building2 size={16} />}
-                          Enable Commercial Workspace
+                          {actionState.saving ? actionState.progress || 'Enabling Commercial Workspace...' : 'Enable Commercial Workspace'}
                         </button>
                       )}
                     </div>

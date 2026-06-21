@@ -56,11 +56,21 @@ import {
   normalizePropertyAddress,
 } from '../lib/sellerPropertyAddress'
 import {
+  PROPERTY_DISCLOSURE_DECISION,
+  buildPropertyDisclosureDocument,
+  createBlankDisclosureIssue,
+  getDisclosureCategories,
+  getPropertyDisclosureStatus,
+  getPropertyDisclosureStatusLabel,
+  isPropertyDisclosureDigitallyComplete,
+  normalizePropertyDisclosure,
+} from '../lib/propertyDisclosure'
+import {
   buildSellerRequirementProfile,
   getRequiredSellerDocuments,
 } from '../lib/privateListingRequirementEngine'
 
-const STEPS = ['Seller Information', 'Property Details', 'FICA & Compliance', 'Review & Submit']
+const STEPS = ['Seller Information', 'Property Details', 'Property Disclosure', 'FICA & Compliance', 'Review & Submit']
 
 const SELLER_STATUS_LABELS = {
   [SELLER_ONBOARDING_STATUS.NOT_STARTED]: 'Not Started',
@@ -154,6 +164,11 @@ const STEP_META = [
     icon: Home,
   },
   {
+    label: 'Property Disclosure',
+    helper: 'Capture known material facts and seller declaration.',
+    icon: ClipboardCheck,
+  },
+  {
     label: 'FICA & Compliance',
     helper: 'Review document requirements for your seller profile.',
     icon: ShieldCheck,
@@ -164,6 +179,7 @@ const STEP_META = [
     icon: ClipboardCheck,
   },
 ]
+const FINAL_STEP_INDEX = STEPS.length - 1
 
 function resolveSellerOnboardingSubmitError(error) {
   const message = String(error?.message || '').trim()
@@ -752,6 +768,15 @@ function normalizeFormData(listing) {
     },
   )
   const propertyBranch = String(flow?.property_branch || '').trim()
+  const disclosureKind = propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential'
+  const propertyDisclosure = normalizePropertyDisclosure(
+    existing.propertyDisclosure ||
+      existing.property_disclosure ||
+      canonicalFacts?.property_disclosure ||
+      canonicalFacts?.propertyDisclosure ||
+      {},
+    { kind: disclosureKind },
+  )
   const canonicalPropertyType = normalizeCanonicalPropertyType({
     propertyCategory: resolvedPropertyCategory,
     propertyStructureType: existing.propertyStructureType || canonicalFacts?.property?.property_structure_type || listing?.propertyStructureType || listing?.property_structure_type || existing.propertyType,
@@ -913,6 +938,8 @@ function normalizeFormData(listing) {
     flowVisibleFields: Array.isArray(flow.visible_fields) ? flow.visible_fields : [],
     flowRequiredFields: Array.isArray(flow.required_fields) ? flow.required_fields : [],
     flowDocumentTriggers: Array.isArray(flow.document_triggers) ? flow.document_triggers : [],
+    propertyDisclosure,
+    propertyDisclosureStatus: getPropertyDisclosureStatus(propertyDisclosure),
 
     features: Array.isArray(existing.features) ? existing.features : [],
     propertyCondition: existing.propertyCondition || 'good',
@@ -1084,7 +1111,7 @@ function SellerStepProgress({ currentStep, progress }) {
           style={{ width: `${progress}%` }}
         />
       </div>
-      <div className="mt-4 hidden gap-2 sm:grid sm:grid-cols-4">
+      <div className="mt-4 hidden gap-2 sm:grid sm:grid-cols-5">
         {STEP_META.map((step, index) => {
           const Icon = step.icon
           const isActive = index === currentStep
@@ -1222,6 +1249,171 @@ function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, d
   )
 }
 
+function PropertyDisclosureSection({
+  disclosure,
+  disclosureKind = 'residential',
+  sellerName = '',
+  onDecisionChange,
+  onAddIssue,
+  onUpdateIssue,
+  onRemoveIssue,
+  onDisclosureChange,
+}) {
+  const normalized = normalizePropertyDisclosure(disclosure, { kind: disclosureKind })
+  const categories = getDisclosureCategories(disclosureKind)
+  const statusLabel = getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(normalized))
+  const hasKnownIssues = normalized.decision === PROPERTY_DISCLOSURE_DECISION.disclose
+
+  return (
+    <StepShell
+      eyebrow="Property Disclosure"
+      title="Help buyers and agents understand known property matters"
+      description="This declaration captures any known defects, disputes, risks, or material facts in a structured format. If there are no known issues, you only need to sign the declaration."
+    >
+      <div className="space-y-5">
+        <FormSection
+          icon={ShieldCheck}
+          title="Disclosure question"
+          description="Are you aware of any defects, issues, disputes or material facts relating to the property that should be disclosed?"
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <ChoiceCard
+              active={normalized.decision === PROPERTY_DISCLOSURE_DECISION.none}
+              title="No known defects or issues"
+              description="I am not aware of any known material issue that should be disclosed."
+              onClick={() => onDecisionChange(PROPERTY_DISCLOSURE_DECISION.none)}
+            />
+            <ChoiceCard
+              active={normalized.decision === PROPERTY_DISCLOSURE_DECISION.disclose}
+              title="Yes, there are matters to disclose"
+              description="I need to provide structured details about known issues."
+              onClick={() => onDecisionChange(PROPERTY_DISCLOSURE_DECISION.disclose)}
+            />
+          </div>
+          <div className="mt-4 rounded-[14px] border border-[#dbe6f2] bg-white px-4 py-3 text-sm leading-6 text-[#4f6378]">
+            Status: <strong className="text-[#22364a]">{statusLabel}</strong>
+          </div>
+        </FormSection>
+
+        {hasKnownIssues ? (
+          <FormSection
+            icon={ClipboardCheck}
+            title="Disclosure categories"
+            description="Add one row for each category that needs detail. Supporting document names or notes are optional here; file uploads stay available in the document step."
+          >
+            <div className="space-y-3">
+              {categories.map((category) => {
+                const categoryIssues = normalized.issues.filter((issue) => issue.categoryKey === category.key)
+                return (
+                  <details key={category.key} className="rounded-[18px] border border-[#dfe8f2] bg-white p-4" open={categoryIssues.length > 0 || category.key === 'structural'}>
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-[#172334]">{category.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-[#60748b]">{category.issueTypes.join(', ')}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            onAddIssue(category.key)
+                          }}
+                          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-3 text-xs font-semibold text-[#35546c]"
+                        >
+                          <Plus size={13} />
+                          Add
+                        </button>
+                      </div>
+                    </summary>
+                    <div className="mt-4 space-y-3">
+                      {categoryIssues.length ? categoryIssues.map((issue) => (
+                        <article key={issue.id} className="rounded-[16px] border border-[#dbe6f2] bg-[#fbfcfe] p-4">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-[#22364a]">Disclosure item</p>
+                            <button type="button" className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#ffd2d2] bg-white text-[#9f1239]" onClick={() => onRemoveIssue(issue.id)}>
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                              Issue Type
+                              <select className={DETAIL_INPUT_CLASS} value={issue.issueType} onChange={(event) => onUpdateIssue(issue.id, 'issueType', event.target.value)}>
+                                <option value="">Select issue type</option>
+                                {category.issueTypes.map((issueType) => (
+                                  <option key={issueType} value={issueType}>{issueType}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                              Date first identified
+                              <input className={DETAIL_INPUT_CLASS} value={issue.dateFirstIdentified} onChange={(event) => onUpdateIssue(issue.id, 'dateFirstIdentified', event.target.value)} placeholder="January 2026" />
+                            </label>
+                            <label className="grid gap-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                              Description
+                              <textarea className={`${DETAIL_INPUT_CLASS} min-h-[110px] resize-y`} value={issue.description} onChange={(event) => onUpdateIssue(issue.id, 'description', event.target.value)} placeholder="Describe the known issue clearly." />
+                            </label>
+                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                              Current status
+                              <input className={DETAIL_INPUT_CLASS} value={issue.currentStatus} onChange={(event) => onUpdateIssue(issue.id, 'currentStatus', event.target.value)} placeholder="Temporary repair completed" />
+                            </label>
+                            <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                              Supporting documents
+                              <input className={DETAIL_INPUT_CLASS} value={issue.supportingDocuments} onChange={(event) => onUpdateIssue(issue.id, 'supportingDocuments', event.target.value)} placeholder="Roof invoice, engineer report, photos" />
+                            </label>
+                          </div>
+                        </article>
+                      )) : (
+                        <p className="rounded-[14px] border border-dashed border-[#dbe6f2] bg-[#fbfcfe] px-4 py-3 text-sm text-[#60748b]">
+                          No disclosure items added for {category.label}.
+                        </p>
+                      )}
+                    </div>
+                  </details>
+                )
+              })}
+            </div>
+            <label className="mt-4 grid gap-2 text-sm font-medium text-[#2a4057]">
+              Other known issues
+              <textarea
+                className={`${DETAIL_INPUT_CLASS} min-h-[120px] resize-y`}
+                value={normalized.otherDisclosure}
+                onChange={(event) => onDisclosureChange('otherDisclosure', event.target.value)}
+                placeholder="Please disclose any other known issue that may affect a buyer's decision."
+              />
+            </label>
+          </FormSection>
+        ) : null}
+
+        {normalized.decision ? (
+          <FormSection
+            icon={FileCheck2}
+            title="Seller Declaration"
+            description="Sign only when the disclosure information is true and complete to the best of your knowledge."
+          >
+            <div className="rounded-[18px] border border-[#d8ecdf] bg-[#f5fbf7] p-4 text-sm leading-6 text-[#25603d]">
+              I declare that the information provided above is true and complete to the best of my knowledge and that I have disclosed all known material facts relating to the property.
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="flex min-h-[52px] items-center gap-2 rounded-[12px] border border-[#d9e2ee] bg-white px-3 py-2 text-sm font-medium text-[#2a4057] md:col-span-2">
+                <input type="checkbox" checked={Boolean(normalized.declarationAccepted)} onChange={(event) => onDisclosureChange('declarationAccepted', event.target.checked)} />
+                I accept the seller declaration
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                Signature
+                <input className={DETAIL_INPUT_CLASS} value={normalized.signature} onChange={(event) => onDisclosureChange('signature', event.target.value)} placeholder={sellerName || 'Full name'} />
+              </label>
+              <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+                Date
+                <input className={DETAIL_INPUT_CLASS} type="date" value={normalized.signedAt} onChange={(event) => onDisclosureChange('signedAt', event.target.value)} />
+              </label>
+            </div>
+          </FormSection>
+        ) : null}
+      </div>
+    </StepShell>
+  )
+}
+
 function SellerCompletedState({ token, listing, form, brand }) {
   const clientSellingPath = `/client/${token}/selling/documents`
   const mandateTypeLabel = MANDATE_TYPE_OPTIONS.find((item) => item.value === form.mandateType)?.label || 'Not selected'
@@ -1318,8 +1510,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             onboardingStatus === SELLER_ONBOARDING_STATUS.SUBMITTED ||
             onboardingStatus === SELLER_ONBOARDING_STATUS.UNDER_REVIEW ||
             onboardingStatus === SELLER_ONBOARDING_STATUS.COMPLETED
-              ? 3
-              : Math.min(Math.max(persistedStep, 0), 3)
+              ? FINAL_STEP_INDEX
+              : Math.min(Math.max(persistedStep, 0), FINAL_STEP_INDEX)
 
           let nextListing = found
           if (onboardingStatus === SELLER_ONBOARDING_STATUS.NOT_STARTED) {
@@ -1354,8 +1546,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         onboardingStatus === SELLER_ONBOARDING_STATUS.SUBMITTED ||
         onboardingStatus === SELLER_ONBOARDING_STATUS.UNDER_REVIEW ||
         onboardingStatus === SELLER_ONBOARDING_STATUS.COMPLETED
-          ? 3
-          : Math.min(Math.max(persistedStep, 0), 3)
+          ? FINAL_STEP_INDEX
+          : Math.min(Math.max(persistedStep, 0), FINAL_STEP_INDEX)
 
       const nextListing =
         onboardingStatus === SELLER_ONBOARDING_STATUS.NOT_STARTED
@@ -1631,6 +1823,94 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     })
   }
 
+  function patchPropertyDisclosure(patch = {}) {
+    setForm((previous) => {
+      const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
+        kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
+      })
+      const next = normalizePropertyDisclosure({ ...current, ...patch }, { kind: current.kind })
+      return {
+        ...(previous || {}),
+        propertyDisclosure: next,
+        propertyDisclosureStatus: getPropertyDisclosureStatus(next),
+      }
+    })
+  }
+
+  function handleDisclosureDecisionChange(decision) {
+    setForm((previous) => {
+      const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
+        kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
+      })
+      const next = normalizePropertyDisclosure({
+        ...current,
+        decision,
+        issues: decision === PROPERTY_DISCLOSURE_DECISION.none ? [] : current.issues,
+        otherDisclosure: decision === PROPERTY_DISCLOSURE_DECISION.none ? '' : current.otherDisclosure,
+        declarationAccepted: false,
+        signature: '',
+        signedAt: '',
+      }, { kind: current.kind })
+      return {
+        ...(previous || {}),
+        propertyDisclosure: next,
+        propertyDisclosureStatus: getPropertyDisclosureStatus(next),
+      }
+    })
+  }
+
+  function addDisclosureIssue(categoryKey) {
+    setForm((previous) => {
+      const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
+        kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
+      })
+      const next = normalizePropertyDisclosure({
+        ...current,
+        decision: PROPERTY_DISCLOSURE_DECISION.disclose,
+        issues: [...current.issues, createBlankDisclosureIssue(categoryKey)],
+      }, { kind: current.kind })
+      return {
+        ...(previous || {}),
+        propertyDisclosure: next,
+        propertyDisclosureStatus: getPropertyDisclosureStatus(next),
+      }
+    })
+  }
+
+  function updateDisclosureIssue(issueId, key, value) {
+    setForm((previous) => {
+      const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
+        kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
+      })
+      const next = normalizePropertyDisclosure({
+        ...current,
+        issues: current.issues.map((issue) => issue.id === issueId ? { ...issue, [key]: value } : issue),
+      }, { kind: current.kind })
+      return {
+        ...(previous || {}),
+        propertyDisclosure: next,
+        propertyDisclosureStatus: getPropertyDisclosureStatus(next),
+      }
+    })
+  }
+
+  function removeDisclosureIssue(issueId) {
+    setForm((previous) => {
+      const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
+        kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
+      })
+      const next = normalizePropertyDisclosure({
+        ...current,
+        issues: current.issues.filter((issue) => issue.id !== issueId),
+      }, { kind: current.kind })
+      return {
+        ...(previous || {}),
+        propertyDisclosure: next,
+        propertyDisclosureStatus: getPropertyDisclosureStatus(next),
+      }
+    })
+  }
+
   function updateCollectionItem(collectionKey, itemId, key, value) {
     setForm((previous) => ({
       ...(previous || {}),
@@ -1845,6 +2125,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
 
     if (currentStep === 2) {
+      if (!isPropertyDisclosureDigitallyComplete(form.propertyDisclosure || {})) {
+        return 'Please complete the Property Disclosure declaration before continuing.'
+      }
+    }
+
+    if (currentStep === 3) {
       if (!form.ownershipType) {
         return 'Please confirm ownership structure before submitting compliance requirements.'
       }
@@ -1880,7 +2166,22 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setSuccess('')
 
     try {
-      const canonicalPayload = buildCanonicalPayload({ ...(form || {}), currentStep: 3 }, {
+      const disclosureDocument = buildPropertyDisclosureDocument(form.propertyDisclosure || {}, {
+        sellerId: String(listing?.seller?.id || listing?.sellerId || '').trim(),
+        propertyId: String(listing?.propertyId || listing?.property_id || '').trim(),
+        listingId: String(listing?.id || '').trim(),
+        transactionId: String(listing?.transactionId || listing?.transaction_id || '').trim(),
+      })
+      const finalForm = {
+        ...(form || {}),
+        propertyDisclosure: {
+          ...(form.propertyDisclosure || {}),
+          generatedDocument: disclosureDocument,
+        },
+        propertyDisclosureStatus: getPropertyDisclosureStatus(form.propertyDisclosure || {}),
+        currentStep: FINAL_STEP_INDEX,
+      }
+      const canonicalPayload = buildCanonicalPayload(finalForm, {
         draft: false,
         source: 'seller_onboarding_submit',
       })
@@ -1890,7 +2191,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           throw new Error(factValidation.required[0]?.message || 'Please complete the required seller onboarding facts before submitting.')
         }
       }
-      const submitFormData = { ...(form || {}), currentStep: 3, ...canonicalPayload }
+      const submitFormData = { ...finalForm, ...canonicalPayload }
       let updated = null
       if (useDbFirstSellerOnboarding) {
         const submitted = await submitSellerOnboarding(token, {
@@ -1914,7 +2215,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             status: SELLER_ONBOARDING_STATUS.COMPLETED,
             submittedAt: new Date().toISOString(),
             completedAt: new Date().toISOString(),
-            currentStep: 3,
+            currentStep: FINAL_STEP_INDEX,
             formData: submitFormData,
           },
         }))
@@ -1929,7 +2230,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       }
 
       setListing(updated)
-      setCurrentStep(3)
+      setCurrentStep(FINAL_STEP_INDEX)
       setSuccess('Your property details have been submitted.\nYour seller portal is ready now. Open the client portal selling module to upload the required seller documents.')
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
@@ -3196,6 +3497,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ) : null}
 
           {currentStep === 2 ? (
+            <PropertyDisclosureSection
+              disclosure={form.propertyDisclosure}
+              disclosureKind={propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential'}
+              sellerName={getSellerDisplayName(listing, form)}
+              onDecisionChange={handleDisclosureDecisionChange}
+              onAddIssue={addDisclosureIssue}
+              onUpdateIssue={updateDisclosureIssue}
+              onRemoveIssue={removeDisclosureIssue}
+              onDisclosureChange={patchPropertyDisclosure}
+            />
+          ) : null}
+
+          {currentStep === 3 ? (
             <StepShell
               eyebrow="FICA & Compliance"
               title="Documents upload next"
@@ -3255,7 +3569,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             </StepShell>
           ) : null}
 
-          {currentStep === 3 ? (
+          {currentStep === 4 ? (
             <StepShell
               eyebrow="Review & Submit"
               title="Check your seller file"
@@ -3312,8 +3626,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   ]}
                 />
                 <ReviewCard
-                  title="Compliance Summary"
+                  title="Property Disclosure"
+                  missing={isPropertyDisclosureDigitallyComplete(form.propertyDisclosure || {}) ? [] : ['Property Disclosure']}
                   onEdit={() => setCurrentStep(2)}
+                  collapsible
+                  items={[
+                    { label: 'Disclosure Status', value: getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(form.propertyDisclosure || {})) },
+                    { label: 'Known Issues', value: form.propertyDisclosure?.decision === PROPERTY_DISCLOSURE_DECISION.disclose ? `${form.propertyDisclosure?.issues?.length || 0} item${(form.propertyDisclosure?.issues?.length || 0) === 1 ? '' : 's'} captured` : 'No known defects or issues declared' },
+                    { label: 'Declaration', value: form.propertyDisclosure?.declarationAccepted ? 'Signed' : 'Not signed' },
+                  ]}
+                />
+                <ReviewCard
+                  title="Compliance Summary"
+                  onEdit={() => setCurrentStep(3)}
                   collapsible
                   items={[
                     { label: 'Seller Profile', value: OWNERSHIP_TYPES.find((item) => item.value === form.ownershipType)?.label || 'Individual' },
@@ -3343,18 +3668,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 Back
               </Button>
             ) : null}
-            {currentStep < 3 ? (
+            {currentStep < FINAL_STEP_INDEX ? (
               <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
                 {saving ? 'Saving...' : 'Save Draft'}
               </Button>
             ) : null}
-            {currentStep < 3 ? (
+            {currentStep < FINAL_STEP_INDEX ? (
               <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
                 Save & Continue
                 <ChevronRight size={14} />
               </Button>
             ) : null}
-            {currentStep === 3 && !isCompleted ? (
+            {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
               <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[46px] w-full sm:w-auto">
                 {submitting ? 'Submitting...' : 'Submit Seller Information'}
                 <CheckCircle2 size={14} />
@@ -3396,20 +3721,20 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   Back
                 </Button>
               ) : null}
-              {currentStep < 3 ? (
+              {currentStep < FINAL_STEP_INDEX ? (
                 <Button type="button" onClick={handleNext} disabled={saving || submitting} className="min-h-[50px] w-full">
                   {saving ? 'Saving...' : 'Save & Continue'}
                   <ChevronRight size={14} />
                 </Button>
               ) : null}
-              {currentStep === 3 && !isCompleted ? (
+              {currentStep === FINAL_STEP_INDEX && !isCompleted ? (
                 <Button type="button" onClick={handleSubmit} disabled={submitting} className="min-h-[50px] w-full">
                   {submitting ? 'Submitting...' : 'Submit Seller Information'}
                   <CheckCircle2 size={14} />
                 </Button>
               ) : null}
             </div>
-            {currentStep < 3 ? (
+            {currentStep < FINAL_STEP_INDEX ? (
               <Button type="button" variant="ghost" onClick={() => saveDraft(currentStep)} disabled={saving || submitting} className="min-h-[44px] w-full">
                 {saving ? 'Saving...' : 'Save Draft'}
               </Button>

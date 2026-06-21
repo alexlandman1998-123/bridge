@@ -14,9 +14,9 @@ function excludes(source, marker, message) {
 }
 
 const commercialApi = await read('../src/modules/commercial/services/commercialApi.js')
+const commercialRoleResolver = await read('../src/modules/commercial/utils/resolveCommercialRole.js')
 for (const marker of [
   'export function isCommercialMembershipRow',
-  'COMMERCIAL_MODULE_MARKERS',
   'module_context',
   'hasCommercialAccess',
   "scopeLevel: isPlatformAdmin ? 'organisation' : hasCommercialAccess ? resolveScopeLevel(role) : 'none'",
@@ -27,6 +27,7 @@ for (const marker of [
 ]) {
   includes(commercialApi, marker, `Commercial API should enforce explicit commercial module context: ${marker}`)
 }
+includes(commercialRoleResolver, 'COMMERCIAL_MODULE_MARKERS', 'Commercial role resolver should own commercial module markers.')
 excludes(commercialApi, "return BROKER_ROLES.has(normalizeLower(member.role))", 'Commercial access must not be granted from a generic residential broker/agent role alone.')
 
 const brokerageApi = await read('../src/modules/commercial/services/commercialBrokerageApi.js')

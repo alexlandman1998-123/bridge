@@ -23,6 +23,11 @@ import {
   updateCommercialVacancy,
   updateHeadsOfTerms,
 } from './commercialApi'
+import {
+  isCommercialBroker,
+  isCommercialManager,
+  resolveCommercialRole,
+} from '../utils/resolveCommercialRole.js'
 
 const BROKER_ROLES = new Set(['broker', 'commercial_broker', 'agent', 'senior_agent'])
 const MANAGER_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'admin', 'admin_staff', 'manager', 'hq_manager', 'commercial_hq_admin', 'branch_manager', 'branch_admin'])
@@ -54,7 +59,7 @@ function isOpenVacancy(row) {
 }
 
 function isBrokerMember(member = {}) {
-  return BROKER_ROLES.has(normalizeLower(member.role)) || normalizeLower(member.role).includes('broker')
+  return isCommercialBroker(member) || BROKER_ROLES.has(normalizeLower(member.role)) || normalizeLower(member.role).includes('broker')
 }
 
 function parseObject(value) {
@@ -73,6 +78,8 @@ function parseObject(value) {
 
 function resolveCommercialBrokerageRole(row = {}) {
   const safeRow = row && typeof row === 'object' ? row : {}
+  const resolvedRole = resolveCommercialRole(safeRow)
+  if (resolvedRole) return resolvedRole
   const metadata = parseObject(safeRow.module_metadata || safeRow.moduleMetadata || safeRow.metadata)
   const commercialRole = normalizeLower(metadata.commercial_role || metadata.commercialRole || metadata.broker_role || metadata.brokerRole)
   if (commercialRole === 'commercial broker' || commercialRole === 'broker') return 'commercial_broker'
@@ -82,7 +89,7 @@ function resolveCommercialBrokerageRole(row = {}) {
 }
 
 function isManagerMember(member = {}) {
-  return MANAGER_ROLES.has(normalizeLower(member.role))
+  return isCommercialManager(member) || MANAGER_ROLES.has(normalizeLower(member.role))
 }
 
 function brokerIdFor(row = {}, kind = '') {
@@ -153,7 +160,7 @@ async function listCommercialMembers(organisationId) {
   if (!organisationId || !isSupabaseConfigured || !supabase) return listOrganisationUsers().catch(() => [])
   const query = await supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, invited_at, accepted_at, last_active_at')
+    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, platform_role, commercial_role, module_context, workspace_type, module_metadata, status, invited_at, accepted_at, last_active_at')
     .eq('organisation_id', organisationId)
     .order('created_at', { ascending: true })
 

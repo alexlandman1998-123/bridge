@@ -43,13 +43,15 @@ assert.match(permissionRegistry, /\{ prefix: '\/commercial' \}/, 'Commercial rou
 assert.doesNotMatch(permissionRegistry, /\{ prefix: '\/commercial', appRole: APP_ROLES\.agent, workspaceType: WORKSPACE_TYPES\.agency/, 'Commercial should not use the residential agent workspace guard.')
 
 const commercialApi = await read('../src/modules/commercial/services/commercialApi.js')
+const commercialRoleResolver = await read('../src/modules/commercial/utils/resolveCommercialRole.js')
 for (const role of ['commercial_principal', 'commercial_admin', 'commercial_branch_manager', 'commercial_broker']) {
-  assert.match(commercialApi, new RegExp(role), `Commercial access resolver should know ${role}.`)
+  assert.match(commercialRoleResolver, new RegExp(role), `Commercial role resolver should know ${role}.`)
 }
 for (const marker of [
   'resolveCommercialMembershipRole',
-  'metadata.commercial_role',
-  "role === 'agent') return 'commercial_broker'",
+  'resolveCommercialRole(member)',
+  'buildCommercialRolePatch',
+  'canManageCommercialBrokerage',
   "scope.scopeLevel === 'broker'",
   'applyCommercialScope(supabase',
 ]) {

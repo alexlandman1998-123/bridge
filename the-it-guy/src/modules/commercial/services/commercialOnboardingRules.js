@@ -1,3 +1,9 @@
+import {
+  getPropertyDisclosureStatus,
+  isPropertyDisclosureDigitallyComplete,
+  normalizePropertyDisclosure,
+} from '../../../lib/propertyDisclosure'
+
 const CLIENT_TYPES = [
   { value: 'tenant', label: 'Tenant' },
   { value: 'seller', label: 'Seller' },
@@ -99,16 +105,28 @@ function requiredDoc(key, label, options = {}) {
 
 function tenantBaseFields() {
   return [
+    field('tenantProfileType', 'Tenant Type', {
+      type: FORM_FIELD_TYPE.select,
+      options: [
+        { value: 'new_lease', label: 'New Lease' },
+        { value: 'relocation', label: 'Relocation' },
+        { value: 'expansion', label: 'Expansion' },
+        { value: 'renewal', label: 'Renewal / Stay vs Go' },
+        { value: 'investor', label: 'Investor / Owner Occupier' },
+      ],
+    }),
     field('tenantName', 'Tenant Name', { required: true }),
     field('tradingName', 'Trading Name'),
     field('registrationNumber', 'Registration Number'),
     field('vatNumber', 'VAT Number'),
+    field('vatRegistered', 'VAT Registered', { type: FORM_FIELD_TYPE.checkbox }),
     field('registeredAddress', 'Registered Address'),
     field('tradingAddress', 'Trading Address'),
     field('contactPerson', 'Contact Person'),
     field('email', 'Email', { type: FORM_FIELD_TYPE.email, required: true }),
     field('mobileNumber', 'Mobile Number', { type: FORM_FIELD_TYPE.phone }),
     field('industry', 'Industry / Business Type'),
+    field('businessActivity', 'Business Activity', { type: FORM_FIELD_TYPE.textarea }),
     field('website', 'Website'),
     field('yearsTrading', 'Years Trading', { type: FORM_FIELD_TYPE.number }),
     field('numberOfEmployees', 'Number of Employees', { type: FORM_FIELD_TYPE.number }),
@@ -128,6 +146,7 @@ function individualTenantFields() {
 
 function signatoryFields() {
   return [
+    field('directorsMembers', 'Directors / Members / Trustees', { type: FORM_FIELD_TYPE.textarea, placeholder: 'Names, roles, and email addresses if available' }),
     field('signatoryFullName', 'Full Name', { required: true }),
     field('signatoryPosition', 'Position / Title', { required: true }),
     field('signatoryEmail', 'Email', { type: FORM_FIELD_TYPE.email, required: true }),
@@ -141,13 +160,11 @@ function signatoryFields() {
 function leaseRequirementFields() {
   return [
     field('preferredProperty', 'Preferred Property / Vacancy'),
+    field('currentPremises', 'Current Premises', { type: FORM_FIELD_TYPE.textarea }),
+    field('preferredArea', 'Preferred Area / Node', { required: true }),
     field('requiredArea', 'Required Area', { type: FORM_FIELD_TYPE.number }),
-    field('targetOccupationDate', 'Target Occupation Date', { type: FORM_FIELD_TYPE.date }),
-    field('leaseTerm', 'Lease Term'),
-    field('budgetRange', 'Budget / Rental Range'),
     field('parkingRequirement', 'Parking Requirement', { type: FORM_FIELD_TYPE.number }),
     field('operationalRequirements', 'Operational Requirements', { type: FORM_FIELD_TYPE.textarea }),
-    field('specialConditions', 'Special Conditions', { type: FORM_FIELD_TYPE.textarea }),
   ]
 }
 
@@ -218,6 +235,7 @@ function sellerBaseFields() {
     field('sellerName', 'Seller Name', { required: true }),
     field('registrationNumber', 'Registration Number'),
     field('vatNumber', 'VAT Number'),
+    field('vatRegistered', 'VAT Registered', { type: FORM_FIELD_TYPE.checkbox }),
     field('registeredAddress', 'Registered Address'),
     field('postalAddress', 'Postal Address'),
     field('contactPerson', 'Contact Person'),
@@ -241,19 +259,58 @@ function saleInformationFields() {
   return [
     field('propertyName', 'Property Name', { required: true }),
     field('propertyAddress', 'Property Address', { required: true }),
+    field('ownershipDetails', 'Ownership Details', { type: FORM_FIELD_TYPE.textarea }),
     field('erfOrPortionNumber', 'Erf / Portion Number'),
     field('titleDeedNumber', 'Title Deed Number', { optional: true }),
-    field('askingPrice', 'Asking Price', { type: FORM_FIELD_TYPE.number, required: true }),
     field('vatApplicable', 'VAT Applicable', { type: FORM_FIELD_TYPE.checkbox }),
     field('currentOccupancyStatus', 'Current Occupancy Status'),
     field('existingTenants', 'Existing Tenants', { type: FORM_FIELD_TYPE.checkbox }),
     field('currentLeaseAgreements', 'Current Lease Agreements', { type: FORM_FIELD_TYPE.checkbox }),
-    field('ratesAndTaxes', 'Rates and Taxes'),
+    field('tenantSchedule', 'Tenant Schedule', { type: FORM_FIELD_TYPE.textarea }),
+    field('existingLeaseSummary', 'Existing Leases Summary', { type: FORM_FIELD_TYPE.textarea }),
     field('operatingCosts', 'Operating Costs'),
     field('municipalAccountNumber', 'Municipal Account Number', { optional: true }),
+    field('disclosureInformation', 'Disclosure Information / Known Defects', { type: FORM_FIELD_TYPE.textarea }),
+  ]
+}
+
+function tenantDealFields() {
+  return [
+    field('budgetRange', 'Budget / Rental Range', { required: true }),
+    field('depositReadiness', 'Deposit Readiness', {
+      type: FORM_FIELD_TYPE.select,
+      options: [
+        { value: 'ready_now', label: 'Ready Now' },
+        { value: 'ready_on_approval', label: 'Ready on Approval' },
+        { value: 'requires_finance_approval', label: 'Requires Finance Approval' },
+        { value: 'unknown', label: 'Not Sure Yet' },
+      ],
+    }),
+    field('leaseTerm', 'Lease Term Preference'),
+    field('targetOccupationDate', 'Move-in Timeline', { type: FORM_FIELD_TYPE.date }),
+    field('specialConditions', 'Deal Conditions', { type: FORM_FIELD_TYPE.textarea }),
+  ]
+}
+
+function sellerDealFields() {
+  return [
+    field('askingPrice', 'Asking Price', { type: FORM_FIELD_TYPE.number, required: true }),
+    field('mandateType', 'Mandate Type', {
+      type: FORM_FIELD_TYPE.select,
+      options: [
+        { value: 'open', label: 'Open Mandate' },
+        { value: 'sole', label: 'Sole Mandate' },
+        { value: 'joint_sole', label: 'Joint Sole Mandate' },
+        { value: 'exclusive', label: 'Exclusive Mandate' },
+      ],
+    }),
+    field('reasonForSale', 'Reason for Sale', { type: FORM_FIELD_TYPE.textarea }),
+    field('ratesAndTaxes', 'Rates and Taxes'),
+    field('levies', 'Levies / Body Corporate Charges'),
     field('existingBond', 'Existing Bond', { type: FORM_FIELD_TYPE.checkbox }),
-    field('bondBank', 'Bank'),
+    field('bondBank', 'Bond Bank'),
     field('bondAccountNumber', 'Bond Account Number', { optional: true }),
+    field('outstandingBondAmount', 'Outstanding Bond Amount', { type: FORM_FIELD_TYPE.number, optional: true }),
     field('cancellationAttorneyRequired', 'Cancellation Attorney Required', { type: FORM_FIELD_TYPE.checkbox }),
   ]
 }
@@ -490,6 +547,14 @@ export function buildCommercialOnboardingPlan(context = {}) {
       fields: clientType === 'tenant' ? leaseRequirementFields() : saleInformationFields(),
     },
     {
+      key: 'deal-details',
+      title: 'Deal Details',
+      description: clientType === 'tenant'
+        ? 'Confirm timing, budget, deposit readiness, and commercial terms.'
+        : 'Confirm pricing, mandate, rates, bond, and sale readiness details.',
+      fields: clientType === 'tenant' ? tenantDealFields() : sellerDealFields(),
+    },
+    {
       key: 'category',
       title: assetCategory === 'office'
         ? 'Commercial / Office'
@@ -565,8 +630,14 @@ export function buildCommercialOnboardingCompletion({ plan = {}, responses = {},
 
   const totalItems = requiredFields.size + requiredDocuments.length
   const completedItems = completedRequiredFields + completedRequiredDocuments
-  const completionPercentage = totalItems ? Math.round((completedItems / totalItems) * 100) : 0
+  const disclosure = normalizePropertyDisclosure(responses.propertyDisclosure || responses.property_disclosure || {}, { kind: 'commercial' })
+  const disclosureRequired = plan.clientType === 'seller'
+  const disclosureComplete = !disclosureRequired || isPropertyDisclosureDigitallyComplete(disclosure)
+  const adjustedTotalItems = totalItems + (disclosureRequired ? 1 : 0)
+  const adjustedCompletedItems = completedItems + (disclosureComplete && disclosureRequired ? 1 : 0)
+  const completionPercentage = adjustedTotalItems ? Math.round((adjustedCompletedItems / adjustedTotalItems) * 100) : 0
   const missingFields = [...requiredFields].filter((name) => !hasFieldValue(responses?.[name]))
+  if (disclosureRequired && !disclosureComplete) missingFields.push('Property Disclosure')
   const missingDocuments = requiredDocuments.filter((requirement) => {
     return ![...(documents || []), ...(documentRequests || [])].some((document) => documentMatchesRequirement(document, requirement))
   })
@@ -579,6 +650,8 @@ export function buildCommercialOnboardingCompletion({ plan = {}, responses = {},
     requiredDocumentCount: requiredDocuments.length,
     missingFields,
     missingDocuments,
+    propertyDisclosureStatus: getPropertyDisclosureStatus(disclosure),
+    propertyDisclosureComplete: disclosureComplete,
     isComplete: completionPercentage === 100,
   }
 }

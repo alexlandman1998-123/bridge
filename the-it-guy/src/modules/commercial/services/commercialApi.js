@@ -4,6 +4,21 @@ import { recordSecurityAuditEvent } from '../../../services/auditLogService'
 import { createBranch, getBranches } from '../../../services/agencyBranchService'
 import { isActiveMembershipStatus, normalizeMembershipStatus } from '../../../constants/membershipStatuses'
 import { normalizeCommercialLifecycleStage } from '../commercialWorkflow'
+import {
+  COMMERCIAL_BRANCH_SCOPE_ROLES,
+  COMMERCIAL_BROKER_SCOPE_ROLES,
+  COMMERCIAL_ORGANISATION_SCOPE_ROLES,
+  COMMERCIAL_PLATFORM_ROLE,
+  COMMERCIAL_ROLES,
+  COMMERCIAL_TEAM_SCOPE_ROLES,
+  buildCommercialRolePatch,
+  canManageCommercialBrokerage,
+  getCommercialMetadata,
+  getCommercialScopeLevel,
+  hasCommercialAccessMarker,
+  isCommercialAccessReviewer,
+  resolveCommercialRole,
+} from '../utils/resolveCommercialRole.js'
 
 const TABLES = {
   companies: 'commercial_companies',
@@ -85,11 +100,10 @@ const COMMERCIAL_PLATFORM_MIGRATION_GUIDE = Object.freeze({
   commercial_commissions: '202606110007_commercial_brokerage_os_phase5.sql',
   'commercial access request workflow': '202606100003_commercial_access_requests_phase4.sql',
 })
-const COMMERCIAL_HQ_ROLES = new Set(['owner', 'principal', 'commercial_principal', 'director', 'partner', 'admin', 'commercial_admin', 'admin_staff', 'manager', 'hq_manager', 'commercial_hq_admin', 'commercial_hq_manager', 'super_admin'])
-const COMMERCIAL_BRANCH_ROLES = new Set(['branch_manager', 'commercial_branch_manager', 'branch_admin', 'commercial_branch_admin', 'regional_manager'])
-const COMMERCIAL_TEAM_ROLES = new Set(['team_leader', 'team_manager', 'commercial_team_leader'])
-const COMMERCIAL_BROKER_ROLES = new Set(['broker', 'commercial_broker', 'agent', 'senior_agent'])
-const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
+const COMMERCIAL_HQ_ROLES = COMMERCIAL_ORGANISATION_SCOPE_ROLES
+const COMMERCIAL_BRANCH_ROLES = COMMERCIAL_BRANCH_SCOPE_ROLES
+const COMMERCIAL_TEAM_ROLES = COMMERCIAL_TEAM_SCOPE_ROLES
+const COMMERCIAL_BROKER_ROLES = COMMERCIAL_BROKER_SCOPE_ROLES
 const COMMERCIAL_ACCESS_REVIEWER_ROLES = new Set(['owner', 'principal', 'director', 'partner', 'admin', 'super_admin'])
 const COMMERCIAL_ACCESS_AUDIT_ACTIONS = Object.freeze({
   requested: 'commercial_access_requested',
@@ -102,6 +116,9 @@ const COMMERCIAL_ACCESS_AUDIT_ACTIONS = Object.freeze({
   userRevoked: 'commercial_user_access_revoked',
 })
 const COMMERCIAL_ACCESS_AUDIT_ACTION_LIST = Object.freeze(Object.values(COMMERCIAL_ACCESS_AUDIT_ACTIONS))
+const COMMERCIAL_ACCESS_REQUEST_SELECT = 'id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, platform_role, commercial_role, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at'
+const COMMERCIAL_ACCESS_REQUEST_LEGACY_SELECT = 'id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at'
+const COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS = 'platform_role, commercial_role'
 const REQUIRED_COMMERCIAL_CORE_PLATFORM_PROBES = [
   { table: 'organisation_modules', fields: 'id, organisation_id, module_key, status, source, metadata', label: 'commercial organisation module entitlement' },
   { table: 'organisation_users', fields: 'id, module_context, module_metadata', label: 'organisation commercial activation columns' },
@@ -119,24 +136,14 @@ let commercialPlatformInstallInflight = null
 export const COMMERCIAL_TABLES = TABLES
 
 function getCommercialMembershipMetadata(member = {}) {
-  const safeMember = member && typeof member === 'object' ? member : {}
-  return parseJsonObject(safeMember.metadata || safeMember.metadata_json || safeMember.module_metadata || safeMember.moduleMetadata)
+  return getCommercialMetadata(member)
 }
 
 function resolveCommercialMembershipRole(member = {}, fallback = 'viewer') {
-  const metadata = getCommercialMembershipMetadata(member)
-  const metadataRole = normalizeLower(
-    metadata.commercial_role ||
-      metadata.commercialRole ||
-      metadata.broker_role ||
-      metadata.brokerRole,
-  )
-  if (metadataRole === 'commercial broker' || metadataRole === 'broker') return 'commercial_broker'
-  if (metadataRole.startsWith('commercial_')) return metadataRole
-
-  const role = normalizeLower(member.workspace_role || member.workspaceRole || member.organisation_role || member.organisationRole || member.role || fallback)
-  if (isCommercialMembershipRow(member) && role === 'agent') return 'commercial_broker'
-  return role || normalizeLower(fallback)
+  const resolvedRole = resolveCommercialRole(member)
+  if (resolvedRole) return resolvedRole
+  const fallbackRole = resolveCommercialRole(fallback)
+  return fallbackRole || normalizeLower(fallback)
 }
 
 function buildCommercialPlatformMigrationHint(missing = []) {
@@ -441,26 +448,7 @@ function isCommercialEnabledInOrganisationSettings(settings = {}) {
 }
 
 export function isCommercialMembershipRow(member = {}) {
-  const metadata = getCommercialMembershipMetadata(member)
-  const moduleValue = normalizeLower(
-    member.module_context ||
-      member.moduleContext ||
-      member.module ||
-      member.module_type ||
-      member.moduleType ||
-      metadata.module ||
-      metadata.module_context,
-  )
-  if (COMMERCIAL_MODULE_MARKERS.has(moduleValue)) return true
-
-  const workspaceType = normalizeLower(member.workspace_type || member.workspaceType)
-  if (COMMERCIAL_MODULE_MARKERS.has(workspaceType)) return true
-
-  const commercialRole = normalizeLower(metadata.commercial_role || metadata.commercialRole || metadata.broker_role || metadata.brokerRole)
-  if (commercialRole === 'broker' || commercialRole.startsWith('commercial_')) return true
-
-  const role = normalizeLower(member.workspace_role || member.workspaceRole || member.organisation_role || member.organisationRole || member.role)
-  return role.startsWith('commercial_') || role.includes('commercial_broker')
+  return hasCommercialAccessMarker(member)
 }
 
 function pickPreferredOrganisationMembership(rows = [], matcher = null) {
@@ -641,6 +629,17 @@ function withoutSelectColumns(fields, columns = []) {
     .map((field) => field.trim())
     .filter((field) => field && !blocked.has(field))
     .join(', ')
+}
+
+function withoutCommercialRoleColumns(payload = {}) {
+  const { platform_role: _platformRole, commercial_role: _commercialRole, ...rest } = payload || {}
+  return rest
+}
+
+function isMissingCommercialRoleColumn(error) {
+  if (!isCommercialSchemaMismatchError(error)) return false
+  const missingColumn = getMissingCommercialColumn(error)
+  return ['platform_role', 'commercial_role'].includes(missingColumn)
 }
 
 function isAuthSessionMissingError(error) {
@@ -828,6 +827,8 @@ function normalizeCommercialAccessRequest(row = {}) {
     requesterEmail: normalizeText(row.requester_email),
     requesterName: normalizeText(row.requester_name),
     moduleKey: normalizeText(row.module_key) || COMMERCIAL_MODULE_KEY,
+    platformRole: normalizeLower(row.platform_role || metadata.platform_role || metadata.platformRole),
+    commercialRole: resolveCommercialRole(row) || resolveCommercialRole(metadata),
     status: normalizeLower(row.status || 'pending'),
     message: normalizeText(row.request_message),
     principalNote: normalizeText(row.principal_note),
@@ -839,9 +840,11 @@ function normalizeCommercialAccessRequest(row = {}) {
   }
 }
 
-function buildCommercialAccessRequestMetadata({ scope = {}, organisationModuleStatus = null } = {}) {
+function buildCommercialAccessRequestMetadata({ scope = {}, organisationModuleStatus = null, commercialRole = COMMERCIAL_ROLES.broker } = {}) {
   return {
     source: 'commercial_blocked_access_prompt',
+    platform_role: COMMERCIAL_PLATFORM_ROLE,
+    commercial_role: commercialRole,
     organisation_module_status: organisationModuleStatus?.status || 'disabled',
     organisation_module_source: organisationModuleStatus?.source || '',
     membership_role: scope?.membershipRole || '',
@@ -849,10 +852,12 @@ function buildCommercialAccessRequestMetadata({ scope = {}, organisationModuleSt
   }
 }
 
-function buildCommercialAccessApprovalMetadata({ request = {}, reviewerId = '' } = {}) {
+function buildCommercialAccessApprovalMetadata({ request = {}, reviewerId = '', commercialRole = COMMERCIAL_ROLES.broker } = {}) {
   return {
     module: COMMERCIAL_MODULE_KEY,
     module_context: COMMERCIAL_MODULE_KEY,
+    platform_role: COMMERCIAL_PLATFORM_ROLE,
+    commercial_role: commercialRole,
     source: 'commercial_access_request',
     request_id: normalizeText(request.id),
     approved_at: new Date().toISOString(),
@@ -860,10 +865,12 @@ function buildCommercialAccessApprovalMetadata({ request = {}, reviewerId = '' }
   }
 }
 
-function buildCommercialManualGrantMetadata({ organisationUserId = '', reviewerId = '' } = {}) {
+function buildCommercialManualGrantMetadata({ organisationUserId = '', reviewerId = '', commercialRole = COMMERCIAL_ROLES.broker } = {}) {
   return {
     module: COMMERCIAL_MODULE_KEY,
     module_context: COMMERCIAL_MODULE_KEY,
+    platform_role: COMMERCIAL_PLATFORM_ROLE,
+    commercial_role: commercialRole,
     source: 'manual_grant',
     organisation_user_id: normalizeText(organisationUserId),
     granted_at: new Date().toISOString(),
@@ -883,7 +890,7 @@ function buildCommercialManualRevokeMetadata({ organisationUserId = '', reviewer
 
 function assertCommercialAccessReviewer(context = {}) {
   const role = normalizeLower(context.membershipRole || context.membership?.role || 'viewer')
-  if (!COMMERCIAL_ACCESS_REVIEWER_ROLES.has(role)) {
+  if (!COMMERCIAL_ACCESS_REVIEWER_ROLES.has(role) && !isCommercialAccessReviewer(context)) {
     throw new Error('Only a principal or workspace administrator can review Commercial access requests.')
   }
 }
@@ -898,6 +905,8 @@ function normalizeCommercialAccessAssignment(row = {}) {
     email: normalizeText(safeRow.email),
     fullName: [normalizeText(safeRow.first_name), normalizeText(safeRow.last_name)].filter(Boolean).join(' ') || normalizeText(safeRow.email),
     role: normalizeLower(safeRow.workspace_role || safeRow.organisation_role || safeRow.role || 'viewer'),
+    commercialRole: resolveCommercialRole(safeRow),
+    platformRole: normalizeLower(safeRow.platform_role || metadata.platform_role || metadata.platformRole),
     status: normalizeLower(safeRow.status || 'invited'),
     hasCommercialAccess: isCommercialMembershipRow(safeRow),
     moduleContext: normalizeLower(safeRow.module_context),
@@ -1126,7 +1135,7 @@ async function findPendingCommercialAccessRequest(organisationId, userId) {
   if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
   const query = await supabase
     .from('commercial_access_requests')
-    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .select(COMMERCIAL_ACCESS_REQUEST_SELECT)
     .eq('organisation_id', organisationId)
     .eq('requester_user_id', userId)
     .eq('module_key', COMMERCIAL_MODULE_KEY)
@@ -1136,6 +1145,23 @@ async function findPendingCommercialAccessRequest(organisationId, userId) {
     .maybeSingle()
 
   if (query.error) {
+    if (isMissingCommercialRoleColumn(query.error)) {
+      const fallback = await supabase
+        .from('commercial_access_requests')
+        .select(COMMERCIAL_ACCESS_REQUEST_LEGACY_SELECT)
+        .eq('organisation_id', organisationId)
+        .eq('requester_user_id', userId)
+        .eq('module_key', COMMERCIAL_MODULE_KEY)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (fallback.error) {
+        if (isMissingCommercialTableError(fallback.error) || isCommercialSchemaMismatchError(fallback.error)) return null
+        throw fallback.error
+      }
+      return fallback.data ? normalizeCommercialAccessRequest(fallback.data) : null
+    }
     if (isMissingCommercialTableError(query.error) || isCommercialSchemaMismatchError(query.error)) return null
     throw query.error
   }
@@ -1179,6 +1205,7 @@ export async function requestCommercialAccessForCurrentUser({ message = '' } = {
 
   const requesterName = [normalizeText(member.first_name), normalizeText(member.last_name)].filter(Boolean).join(' ') || normalizeText(member.email)
   const organisationModuleStatus = currentScope?.commercialModuleStatus || await getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh: true })
+  const requestedCommercialRole = resolveCommercialRole(member) || COMMERCIAL_ROLES.broker
   const payload = {
     organisation_id: context.organisationId,
     requester_user_id: userId,
@@ -1186,16 +1213,26 @@ export async function requestCommercialAccessForCurrentUser({ message = '' } = {
     requester_email: normalizeText(member.email || context.profile?.email),
     requester_name: requesterName,
     module_key: COMMERCIAL_MODULE_KEY,
+    platform_role: COMMERCIAL_PLATFORM_ROLE,
+    commercial_role: requestedCommercialRole,
     status: 'pending',
     request_message: normalizeText(message) || null,
-    metadata: buildCommercialAccessRequestMetadata({ scope: context, organisationModuleStatus }),
+    metadata: buildCommercialAccessRequestMetadata({ scope: context, organisationModuleStatus, commercialRole: requestedCommercialRole }),
   }
 
-  const insert = await supabase
+  let insert = await supabase
     .from('commercial_access_requests')
     .insert(payload)
-    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .select(COMMERCIAL_ACCESS_REQUEST_SELECT)
     .single()
+
+  if (insert.error && isMissingCommercialRoleColumn(insert.error)) {
+    insert = await supabase
+      .from('commercial_access_requests')
+      .insert(withoutCommercialRoleColumns(payload))
+      .select(COMMERCIAL_ACCESS_REQUEST_LEGACY_SELECT)
+      .single()
+  }
 
   if (insert.error) {
     if (isUniqueConstraintError(insert.error)) {
@@ -1300,7 +1337,7 @@ export async function listCommercialAccessRequests({ status = 'pending' } = {}) 
 
   let query = supabase
     .from('commercial_access_requests')
-    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .select(COMMERCIAL_ACCESS_REQUEST_SELECT)
     .eq('organisation_id', context.organisationId)
     .eq('module_key', COMMERCIAL_MODULE_KEY)
     .order('created_at', { ascending: false })
@@ -1312,6 +1349,24 @@ export async function listCommercialAccessRequests({ status = 'pending' } = {}) 
 
   const result = await query
   if (result.error) {
+    if (isMissingCommercialRoleColumn(result.error)) {
+      let fallbackQuery = supabase
+        .from('commercial_access_requests')
+        .select(COMMERCIAL_ACCESS_REQUEST_LEGACY_SELECT)
+        .eq('organisation_id', context.organisationId)
+        .eq('module_key', COMMERCIAL_MODULE_KEY)
+        .order('created_at', { ascending: false })
+      const normalizedStatus = normalizeLower(status)
+      if (normalizedStatus && normalizedStatus !== 'all') {
+        fallbackQuery = fallbackQuery.eq('status', normalizedStatus)
+      }
+      const fallback = await fallbackQuery
+      if (fallback.error) {
+        if (isMissingCommercialTableError(fallback.error) || isCommercialSchemaMismatchError(fallback.error)) return []
+        throw fallback.error
+      }
+      return (fallback.data || []).map(normalizeCommercialAccessRequest)
+    }
     if (isMissingCommercialTableError(result.error) || isCommercialSchemaMismatchError(result.error)) return []
     throw result.error
   }
@@ -1332,13 +1387,28 @@ export async function reviewCommercialAccessRequest(requestId, { decision = 'app
 
   const requestQuery = await supabase
     .from('commercial_access_requests')
-    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .select(COMMERCIAL_ACCESS_REQUEST_SELECT)
     .eq('id', requestId)
     .eq('organisation_id', context.organisationId)
     .eq('module_key', COMMERCIAL_MODULE_KEY)
     .maybeSingle()
 
-  if (requestQuery.error) throw requestQuery.error
+  if (requestQuery.error) {
+    if (isMissingCommercialRoleColumn(requestQuery.error)) {
+      const fallback = await supabase
+        .from('commercial_access_requests')
+        .select(COMMERCIAL_ACCESS_REQUEST_LEGACY_SELECT)
+        .eq('id', requestId)
+        .eq('organisation_id', context.organisationId)
+        .eq('module_key', COMMERCIAL_MODULE_KEY)
+        .maybeSingle()
+      if (fallback.error) throw fallback.error
+      requestQuery.data = fallback.data
+      requestQuery.error = null
+    } else {
+      throw requestQuery.error
+    }
+  }
   const request = requestQuery.data ? normalizeCommercialAccessRequest(requestQuery.data) : null
   if (!request?.id) throw new Error('Commercial access request was not found.')
   if (request.status !== 'pending') throw new Error('Commercial access request has already been reviewed.')
@@ -1371,9 +1441,11 @@ export async function reviewCommercialAccessRequest(requestId, { decision = 'app
 
     if (moduleUpsert.error) throw moduleUpsert.error
 
+    const requestCommercialRole = request.commercialRole || resolveCommercialRole(request) || COMMERCIAL_ROLES.broker
     const membershipPayload = {
       module_context: COMMERCIAL_MODULE_KEY,
-      module_metadata: buildCommercialAccessApprovalMetadata({ request, reviewerId: userId }),
+      module_metadata: buildCommercialAccessApprovalMetadata({ request, reviewerId: userId, commercialRole: requestCommercialRole }),
+      ...buildCommercialRolePatch({ ...request, commercial_role: requestCommercialRole }, requestCommercialRole),
     }
     let membershipUpdate = supabase
       .from('organisation_users')
@@ -1386,16 +1458,19 @@ export async function reviewCommercialAccessRequest(requestId, { decision = 'app
     }
 
     let updatedMembership = await membershipUpdate
-      .select('id, organisation_id, user_id, module_context, module_metadata, role, workspace_role, organisation_role, status, email')
+      .select(`id, organisation_id, user_id, module_context, module_metadata, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, email`)
       .maybeSingle()
 
     if (updatedMembership.error && isMissingCommercialActivationColumn(updatedMembership.error)) {
+      const retryPayload = getMissingCommercialColumn(updatedMembership.error) === 'module_metadata'
+        ? { module_context: COMMERCIAL_MODULE_KEY, ...buildCommercialRolePatch({ ...request, commercial_role: requestCommercialRole }, requestCommercialRole) }
+        : withoutCommercialRoleColumns(membershipPayload)
       updatedMembership = await supabase
         .from('organisation_users')
-        .update({ module_context: COMMERCIAL_MODULE_KEY })
+        .update(retryPayload)
         .eq('organisation_id', request.organisationId)
         .eq('user_id', request.requesterUserId)
-        .select('id, organisation_id, user_id, module_context, role, workspace_role, organisation_role, status, email')
+        .select(withoutSelectColumns(`id, organisation_id, user_id, module_context, module_metadata, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, email`, [getMissingCommercialColumn(updatedMembership.error)]))
         .maybeSingle()
     }
 
@@ -1403,7 +1478,7 @@ export async function reviewCommercialAccessRequest(requestId, { decision = 'app
     membership = updatedMembership.data || null
   }
 
-  const review = await supabase
+  let review = await supabase
     .from('commercial_access_requests')
     .update({
       status: normalizedDecision,
@@ -1413,8 +1488,23 @@ export async function reviewCommercialAccessRequest(requestId, { decision = 'app
     })
     .eq('id', request.id)
     .eq('organisation_id', request.organisationId)
-    .select('id, organisation_id, requester_user_id, requester_membership_id, requester_email, requester_name, module_key, status, request_message, principal_note, reviewed_by, reviewed_at, metadata, created_at, updated_at')
+    .select(COMMERCIAL_ACCESS_REQUEST_SELECT)
     .maybeSingle()
+
+  if (review.error && isMissingCommercialRoleColumn(review.error)) {
+    review = await supabase
+      .from('commercial_access_requests')
+      .update({
+        status: normalizedDecision,
+        principal_note: normalizeText(note) || null,
+        reviewed_by: userId,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq('id', request.id)
+      .eq('organisation_id', request.organisationId)
+      .select(COMMERCIAL_ACCESS_REQUEST_LEGACY_SELECT)
+      .maybeSingle()
+  }
 
   if (review.error) throw review.error
   const reviewedRequest = normalizeCommercialAccessRequest(review.data || requestQuery.data)
@@ -1484,7 +1574,7 @@ export async function listCommercialAccessManagementState() {
     getCommercialOrganisationModuleStatus({ organisationId: context.organisationId }),
     supabase
       .from('organisation_users')
-      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, workspace_type, module_metadata, updated_at')
+      .select(`id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, module_context, workspace_type, module_metadata, updated_at`)
       .eq('organisation_id', context.organisationId)
       .neq('status', 'deactivated')
       .order('created_at', { ascending: true }),
@@ -1492,6 +1582,20 @@ export async function listCommercialAccessManagementState() {
   ])
 
   if (usersQuery.error) {
+    if (isMissingCommercialRoleColumn(usersQuery.error)) {
+      const fallbackUsersQuery = await supabase
+        .from('organisation_users')
+        .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, workspace_type, module_metadata, updated_at')
+        .eq('organisation_id', context.organisationId)
+        .neq('status', 'deactivated')
+        .order('created_at', { ascending: true })
+      if (fallbackUsersQuery.error) throw fallbackUsersQuery.error
+      return {
+        organisationModuleStatus,
+        users: (fallbackUsersQuery.data || []).map(normalizeCommercialAccessAssignment),
+        auditEvents,
+      }
+    }
     if (isMissingCommercialTableError(usersQuery.error) || isCommercialSchemaMismatchError(usersQuery.error)) {
       throw createCommercialPlatformInstallError({
         installed: false,
@@ -1536,6 +1640,8 @@ export async function enableCommercialWorkspaceForCurrentUser(input = {}) {
     throw new Error('Commercial setup requires Supabase to be configured.')
   }
 
+  const notifyProgress = typeof input.onProgress === 'function' ? input.onProgress : () => {}
+  notifyProgress('Checking Commercial platform setup...')
   await assertCommercialPlatformInstalled({ forceRefresh: true })
   const context = await resolveCommercialOrganisationContext()
   assertCommercialAccessReviewer(context)
@@ -1557,6 +1663,7 @@ export async function enableCommercialWorkspaceForCurrentUser(input = {}) {
   const featureSelections = normalizeCommercialWorkspaceFeatureSelections(input.featureSelections)
   const enabledFeatureKeys = resolveCommercialWorkspaceEnabledFeatureKeys(featureSelections)
 
+  notifyProgress('Loading users and branches...')
   const [allUsers, allBranches] = await Promise.all([
     listOrganisationUsers().catch(() => []),
     getBranches().catch(() => []),
@@ -1756,7 +1863,9 @@ export async function enableCommercialWorkspaceForCurrentUser(input = {}) {
     commercialWorkspace: nextCommercialWorkspace,
   }
 
+  notifyProgress('Saving workspace preferences...')
   await updateWorkflowSettings(nextSettings)
+  notifyProgress('Activating Commercial module...')
   const commercialModuleStatus = await setCommercialOrganisationModuleEnabled(true, {
     // Persist a DB-safe source value; the richer setup context is kept in metadata.
     source: 'manual',
@@ -1771,10 +1880,18 @@ export async function enableCommercialWorkspaceForCurrentUser(input = {}) {
     },
   })
 
-  for (const userRow of selectedUsers) {
-    await setCommercialUserAccess(userRow.id, true)
-  }
+  notifyProgress(`Granting Commercial access to ${selectedUsers.length} ${selectedUsers.length === 1 ? 'user' : 'users'}...`)
+  await Promise.all(selectedUsers.map((userRow) =>
+    setCommercialUserAccess(userRow.id, true, {
+      context,
+      reviewerId: userId,
+      skipPlatformInstallCheck: true,
+      skipModuleStatusCheck: true,
+      skipTeamAccessSync: true,
+    }),
+  ))
 
+  notifyProgress('Opening Commercial workspace...')
   const scope = await resolveCommercialAccessContext({ forceRefresh: true })
   return {
     scope,
@@ -1791,7 +1908,9 @@ export async function setCommercialOrganisationModuleEnabled(enabled = true, opt
     throw new Error('Commercial setup requires Supabase to be configured.')
   }
 
-  await assertCommercialPlatformInstalled({ forceRefresh: true })
+  if (!options.skipPlatformInstallCheck) {
+    await assertCommercialPlatformInstalled({ forceRefresh: true })
+  }
   const context = await resolveCommercialOrganisationContext()
   assertCommercialAccessReviewer(context)
   const userId = context.userId || await getCurrentUserId()
@@ -1849,15 +1968,15 @@ export async function setCommercialOrganisationModuleEnabled(enabled = true, opt
   return getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh: true })
 }
 
-export async function setCommercialUserAccess(organisationUserId, enabled = true) {
+export async function setCommercialUserAccess(organisationUserId, enabled = true, options = {}) {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Commercial setup requires Supabase to be configured.')
   }
 
   await assertCommercialPlatformInstalled({ forceRefresh: true })
-  const context = await resolveCommercialOrganisationContext()
+  const context = options.context || await resolveCommercialOrganisationContext()
   assertCommercialAccessReviewer(context)
-  const reviewerId = context.userId || await getCurrentUserId()
+  const reviewerId = options.reviewerId || context.userId || await getCurrentUserId()
   const safeOrganisationUserId = normalizeText(organisationUserId)
   if (!context.organisationId || !reviewerId || !safeOrganisationUserId) {
     throw new Error('A valid organisation user is required to manage Commercial access.')
@@ -1865,29 +1984,43 @@ export async function setCommercialUserAccess(organisationUserId, enabled = true
 
   const existing = await supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, workspace_type, module_metadata')
+    .select(`id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, module_context, workspace_type, module_metadata`)
     .eq('id', safeOrganisationUserId)
     .eq('organisation_id', context.organisationId)
     .maybeSingle()
 
-  if (existing.error) throw existing.error
+  if (existing.error && isMissingCommercialRoleColumn(existing.error)) {
+    const fallbackExisting = await supabase
+      .from('organisation_users')
+      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, workspace_type, module_metadata')
+      .eq('id', safeOrganisationUserId)
+      .eq('organisation_id', context.organisationId)
+      .maybeSingle()
+    if (fallbackExisting.error) throw fallbackExisting.error
+    existing.data = fallbackExisting.data
+    existing.error = null
+  } else if (existing.error) throw existing.error
   if (!existing.data?.id) throw new Error('Organisation user not found.')
 
-  if (enabled) {
+  if (enabled && !options.skipModuleStatusCheck) {
     const moduleStatus = await getCommercialOrganisationModuleStatus({ organisationId: context.organisationId, forceRefresh: true })
     if (!moduleStatus.enabled) {
       await setCommercialOrganisationModuleEnabled(true)
     }
   }
 
+  const commercialRole = resolveCommercialRole(existing.data) || COMMERCIAL_ROLES.broker
   const payload = enabled
     ? {
         module_context: COMMERCIAL_MODULE_KEY,
-        module_metadata: buildCommercialManualGrantMetadata({ organisationUserId: safeOrganisationUserId, reviewerId }),
+        module_metadata: buildCommercialManualGrantMetadata({ organisationUserId: safeOrganisationUserId, reviewerId, commercialRole }),
+        ...buildCommercialRolePatch({ ...existing.data, commercial_role: commercialRole }, commercialRole),
       }
     : {
         module_context: null,
         module_metadata: buildCommercialManualRevokeMetadata({ organisationUserId: safeOrganisationUserId, reviewerId }),
+        platform_role: null,
+        commercial_role: null,
       }
 
   let result = await supabase
@@ -1895,16 +2028,19 @@ export async function setCommercialUserAccess(organisationUserId, enabled = true
     .update(payload)
     .eq('id', safeOrganisationUserId)
     .eq('organisation_id', context.organisationId)
-    .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, workspace_type, module_metadata, updated_at')
+    .select(`id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, module_context, workspace_type, module_metadata, updated_at`)
     .maybeSingle()
 
   if (result.error && isMissingCommercialActivationColumn(result.error)) {
+    const retryPayload = getMissingCommercialColumn(result.error) === 'module_metadata'
+      ? { module_context: enabled ? COMMERCIAL_MODULE_KEY : null, ...withoutCommercialRoleColumns(enabled ? buildCommercialRolePatch({ ...existing.data, commercial_role: commercialRole }, commercialRole) : {}) }
+      : withoutCommercialRoleColumns(payload)
     result = await supabase
       .from('organisation_users')
-      .update({ module_context: enabled ? COMMERCIAL_MODULE_KEY : null })
+      .update(retryPayload)
       .eq('id', safeOrganisationUserId)
       .eq('organisation_id', context.organisationId)
-      .select('id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, status, module_context, updated_at')
+      .select(withoutSelectColumns(`id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, module_context, module_metadata, updated_at`, [getMissingCommercialColumn(result.error)]))
       .maybeSingle()
   }
 
@@ -1923,6 +2059,11 @@ export async function setCommercialUserAccess(organisationUserId, enabled = true
       source: enabled ? 'manual_grant' : 'manual_revoke',
     },
   })
+  if (options.skipTeamAccessSync) {
+    commercialScopeCache = null
+    return normalizeCommercialAccessAssignment(result.data)
+  }
+
   if (enabled) {
     await syncCommercialWorkspaceTeamAccessEntries({
       context,
@@ -1978,6 +2119,8 @@ export async function resolveCommercialOrganisationContext() {
 }
 
 function resolveScopeLevel(role) {
+  const resolvedScopeLevel = getCommercialScopeLevel(role)
+  if (resolvedScopeLevel) return resolvedScopeLevel
   const normalized = normalizeLower(role || 'viewer')
   if (COMMERCIAL_HQ_ROLES.has(normalized)) return 'organisation'
   if (COMMERCIAL_BRANCH_ROLES.has(normalized)) return 'branch'
@@ -1990,7 +2133,7 @@ async function findCurrentCommercialMembership(organisationId, userId) {
   if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
   const query = await supabase
     .from('organisation_users')
-    .select('id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, email, first_name, last_name, last_active_at')
+    .select(`id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, module_context, workspace_type, module_metadata, status, email, first_name, last_name, last_active_at`)
     .eq('organisation_id', organisationId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
@@ -2022,7 +2165,7 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
     const context = await resolveCommercialOrganisationContext()
     const userId = context.userId || await getCurrentUserId()
     const isPlatformAdmin = normalizeLower(context.profile?.role) === 'platform_admin' || normalizeLower(context.membershipRole) === 'platform_admin'
-    const canReviewCommercialAccess = isPlatformAdmin || COMMERCIAL_ACCESS_REVIEWER_ROLES.has(context.membershipRole)
+    const canReviewCommercialAccess = isPlatformAdmin || COMMERCIAL_ACCESS_REVIEWER_ROLES.has(context.membershipRole) || isCommercialAccessReviewer(context)
     const organisationSettingsCommercialEnabled = isCommercialEnabledInOrganisationSettings(context.organisationSettings)
     const currentMembershipPromise = findCurrentOrganisationMembership(context.organisationId, userId).catch(() => null)
     const [commercialModuleStatus, currentMembership] = await Promise.all([
@@ -2058,13 +2201,14 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
       commercialCanvassingEnabled: organisationCommercialEnabled && isCommercialWorkspaceFeatureEnabled(context.organisationSettings, 'commercialCanvassing', true),
       memberHasCommercialAccess,
       membershipRole: isPlatformAdmin ? 'platform_admin' : role,
+      commercialRole: role,
       branchId: normalizeText(membership?.primary_branch_id || membership?.branch_id),
       teamId: normalizeText(membership?.team_id),
       scopeLevel: isPlatformAdmin ? 'organisation' : hasCommercialAccess ? resolveScopeLevel(role) : 'none',
       hasCommercialAccess,
       eligibleForCommercialSelfActivation,
       canReviewCommercialAccess,
-      canManageBrokerage: isPlatformAdmin || (hasCommercialAccess && resolveScopeLevel(role) !== 'broker'),
+      canManageBrokerage: isPlatformAdmin || (hasCommercialAccess && canManageCommercialBrokerage({ ...membership, commercial_role: role })),
     }
     commercialScopeCache = { value: scope, expiresAt: Date.now() + COMMERCIAL_SCOPE_CACHE_TTL_MS }
     return scope
@@ -2077,7 +2221,7 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
 
 async function findCurrentOrganisationMembership(organisationId, userId) {
   if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
-  const fullSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, email'
+  const fullSelect = `id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, module_context, workspace_type, module_metadata, status, email`
   const basicSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, role, workspace_role, organisation_role, status, email'
   const query = await supabase
     .from('organisation_users')
@@ -2105,16 +2249,19 @@ async function findCurrentOrganisationMembership(organisationId, userId) {
 function isMissingCommercialActivationColumn(error) {
   if (!isCommercialSchemaMismatchError(error)) return false
   const missingColumn = getMissingCommercialColumn(error)
-  return ['module_context', 'module_metadata'].includes(missingColumn)
+  return ['module_context', 'module_metadata', 'platform_role', 'commercial_role'].includes(missingColumn)
 }
 
 function buildCommercialActivationMetadata(member = {}, userId = '') {
   const safeMember = member && typeof member === 'object' ? member : {}
   const previousMetadata = parseJsonObject(safeMember.module_metadata || safeMember.moduleMetadata)
+  const commercialRole = resolveCommercialRole(safeMember) || COMMERCIAL_ROLES.broker
   return {
     ...previousMetadata,
     module: 'commercial',
     module_context: 'commercial',
+    platform_role: COMMERCIAL_PLATFORM_ROLE,
+    commercial_role: commercialRole,
     activated_at: new Date().toISOString(),
     activated_by: userId,
     source: 'commercial_access_setup_prompt',
@@ -2174,8 +2321,9 @@ export async function activateCommercialWorkspaceForCurrentUser() {
   const fullPayload = {
     module_context: 'commercial',
     module_metadata: buildCommercialActivationMetadata(member, userId),
+    ...buildCommercialRolePatch(member, COMMERCIAL_ROLES.broker),
   }
-  const fullSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, email'
+  const fullSelect = `id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, module_context, workspace_type, module_metadata, status, email`
   const update = await supabase
     .from('organisation_users')
     .update(fullPayload)
@@ -2188,12 +2336,15 @@ export async function activateCommercialWorkspaceForCurrentUser() {
     if (getMissingCommercialColumn(update.error) === 'module_context') {
       throw createCommercialPlatformInstallError({ installed: false, reason: 'schema_missing', missing: ['organisation_users.module_context'] })
     }
+    const fallbackPayload = getMissingCommercialColumn(update.error) === 'module_metadata'
+      ? { module_context: 'commercial' }
+      : withoutCommercialRoleColumns(fullPayload)
     const fallback = await supabase
       .from('organisation_users')
-      .update({ module_context: 'commercial' })
+      .update(fallbackPayload)
       .eq('id', member.id)
       .eq('organisation_id', context.organisationId)
-      .select('id, organisation_id, user_id, branch_id, primary_branch_id, role, workspace_role, organisation_role, module_context, status, email')
+      .select(withoutSelectColumns(fullSelect, [getMissingCommercialColumn(update.error)]))
       .maybeSingle()
     if (fallback.error) throw fallback.error
   } else if (update.error) {

@@ -40,6 +40,7 @@
     "test:commercial-agency-routing": "node scripts/commercial-agency-routing.test.mjs",
     "test:commercial-module-isolation": "node scripts/commercial-module-isolation.test.mjs",
     "test:commercial-access-setup": "node scripts/commercial-access-setup.test.mjs",
+    "test:commercial-role-formalisation": "node scripts/commercial-role-formalisation.test.mjs",
     "test:commercial-signup-phase2": "node scripts/commercial-signup-phase2.test.mjs",
     "test:commercial-signup-phase3": "node scripts/commercial-signup-phase3.test.mjs",
     "test:commercial-signup-phase4": "node scripts/commercial-signup-phase4.test.mjs",

@@ -14,6 +14,7 @@ import {
   Workflow,
   KeyRound,
 } from 'lucide-react'
+import { canManageCommercialBrokerage } from './utils/resolveCommercialRole.js'
 
 export const COMMERCIAL_DASHBOARD_NAV_ITEM = {
   label: 'Overview',
@@ -135,7 +136,12 @@ export function isCommercialNavItemAvailable(item = {}, scope = null) {
     return false
   }
   const path = String(item.to || '')
-  if ((path.startsWith('/commercial/agency') || path === '/commercial/reports') && scope?.canManageBrokerage === false) {
+  const canManageBrokerage = typeof scope?.canManageBrokerage === 'boolean'
+    ? scope.canManageBrokerage
+    : scope
+      ? canManageCommercialBrokerage(scope)
+      : true
+  if ((path.startsWith('/commercial/agency') || path === '/commercial/reports') && canManageBrokerage === false) {
     return false
   }
   return true

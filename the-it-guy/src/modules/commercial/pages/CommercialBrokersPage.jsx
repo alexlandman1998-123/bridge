@@ -325,6 +325,7 @@ function CommercialBrokersPage() {
           metadata: {
             module: 'commercial',
             module_context: 'commercial',
+            platform_role: 'commercial',
             commercial_role: inviteDraft.role,
           },
         })

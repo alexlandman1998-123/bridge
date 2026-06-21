@@ -329,6 +329,21 @@ export function createEmptyLandlordOnboardingForm(source = {}) {
         ? formData.broker_relationships.relationships.map(createBrokerRelationshipDraft)
         : [],
     },
+    banking_details: {
+      account_holder: formData.banking_details?.account_holder || '',
+      bank_name: formData.banking_details?.bank_name || '',
+      branch_code: formData.banking_details?.branch_code || '',
+      account_number: formData.banking_details?.account_number || '',
+      account_type: formData.banking_details?.account_type || '',
+      finance_contact_email: formData.banking_details?.finance_contact_email || '',
+      payment_reference: formData.banking_details?.payment_reference || '',
+    },
+    approval_permissions: {
+      broker_can_prepare_mandates: formData.approval_permissions?.broker_can_prepare_mandates !== false,
+      broker_can_market_vacancies: formData.approval_permissions?.broker_can_market_vacancies !== false,
+      broker_can_share_documents: Boolean(formData.approval_permissions?.broker_can_share_documents),
+      requires_owner_approval_before_terms: formData.approval_permissions?.requires_owner_approval_before_terms !== false,
+    },
     onboarding_notes: formData.onboarding_notes || '',
   }
 }
@@ -345,13 +360,13 @@ export function getLandlordOnboardingOptionalDocuments(context = {}) {
 
 export function getLandlordOnboardingStepDefinitions() {
   return [
-    { id: 'entity', label: 'Entity Type', helper: 'Confirm who owns the property or portfolio.' },
-    { id: 'details', label: 'Landlord Details', helper: 'Capture the legal entity and main contact details.' },
-    { id: 'contacts', label: 'Managers & Contacts', helper: 'Capture asset managers, property managers, and supporting contacts.' },
-    { id: 'portfolio', label: 'Portfolio', helper: 'Describe the asset profile and add properties or vacancies.' },
-    { id: 'mandates', label: 'Mandates', helper: 'Capture mandate context and existing broker relationships.' },
+    { id: 'welcome', label: 'Welcome', helper: 'Start here.' },
+    { id: 'entity', label: 'Entity / Personal Details', helper: 'Confirm who owns the property or portfolio.' },
+    { id: 'contacts', label: 'Contacts & Signatories', helper: 'Capture directors, signatories, asset managers, and property managers.' },
+    { id: 'portfolio', label: 'Property / Requirement Details', helper: 'Describe the asset profile and add properties or vacancies.' },
+    { id: 'mandates', label: 'Deal Details', helper: 'Capture mandate, banking, approval, and broker relationship details.' },
     { id: 'documents', label: 'Documents', helper: 'Upload the required supporting documents.' },
-    { id: 'review', label: 'Review', helper: 'Check the submission before sending it through.' },
+    { id: 'review', label: 'Review & Submit', helper: 'Check the submission before sending it through.' },
   ]
 }
 
@@ -501,5 +516,6 @@ export function buildLandlordOnboardingSummary(form = {}) {
     ['Vacancies', String(totalVacancies)],
     ['Estimated Total GLA', totalGla ? `${totalGla.toLocaleString()} m²` : '-'],
     ['Mandate Request', LANDLORD_MANDATE_OPTIONS.find((option) => option.value === normalizeLower(form.mandate_request))?.label || 'Not now'],
+    ['Banking Details', normalizeText(form.banking_details?.bank_name || form.banking_details?.account_holder) ? 'Captured' : 'Outstanding'],
   ]
 }

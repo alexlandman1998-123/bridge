@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { resolveCommercialAccessContext } from '../services/commercialApi'
+import { canManageCommercialBrokerage } from '../utils/resolveCommercialRole.js'
 
 function CommercialManagerRouteGate({ children }) {
   const [state, setState] = useState({ loading: true, allowed: false, error: '' })
@@ -14,7 +15,7 @@ function CommercialManagerRouteGate({ children }) {
         if (!cancelled) {
           setState({
             loading: false,
-            allowed: scope?.canManageBrokerage === true,
+            allowed: scope?.canManageBrokerage === true || canManageCommercialBrokerage(scope),
             error: '',
           })
         }

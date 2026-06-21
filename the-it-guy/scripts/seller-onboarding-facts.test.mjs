@@ -179,10 +179,17 @@ test('builds canonical payload with readiness and resolver input', () => {
     estateOrHoa: true,
     occupancyStatus: 'vacant',
     mandateType: 'exclusive',
+    propertyDisclosure: {
+      decision: 'none',
+      declarationAccepted: true,
+      signature: 'Taylor Trustee',
+      signedAt: '2026-06-21',
+    },
   }, listing, { contextType: 'private_listing', contextId: listing.id, listingId: listing.id })
 
   assert.equal(payload.canonicalSellerFacts.seller.legal_type, 'trust')
   assert.equal(payload.canonicalSellerFacts.property.estate_or_hoa, true)
+  assert.equal(payload.canonicalSellerFacts.property_disclosure.digitally_complete, true)
   assert.equal(payload.canonicalSellerFactReadiness.validation.ok, true)
   assert.equal(typeof payload.canonicalSellerFactReadiness.percent, 'number')
 

@@ -74,6 +74,8 @@ function emitUpdated(organisationId) {
 }
 
 function mapProspectRow(row = {}) {
+  const metadata = row.metadata_json || row.metadata || {}
+  const roleSpecific = metadata.roleSpecific || metadata.role_specific || {}
   return {
     id: normalizeText(row.id),
     organisationId: normalizeText(row.organisation_id || row.organisationId),
@@ -88,6 +90,11 @@ function mapProspectRow(row = {}) {
     phone: normalizeText(row.phone),
     email: normalizeEmail(row.email),
     prospectType: normalizeText(row.prospect_type || row.prospectType) || 'Landlord Prospect',
+    dealType: normalizeText(row.deal_type || row.dealType || metadata.dealType || metadata.deal_type),
+    prospectRole: normalizeText(row.prospect_role || row.prospectRole || metadata.prospectRole || metadata.prospect_role),
+    propertyCategory: normalizeText(row.property_category || row.propertyCategory || metadata.propertyCategory || metadata.property_category),
+    roleSpecific,
+    metadata,
     canvassingMethod: normalizeText(row.canvassing_method || row.canvassingMethod) || 'Cold Call',
     propertyType: normalizeText(row.property_type || row.propertyType),
     area: normalizeText(row.area),
@@ -135,7 +142,12 @@ function mapActivityRow(row = {}) {
 }
 
 function prospectPayloadToRow(organisationId, payload = {}) {
-  return {
+  const createdBy = toNullableUuid(payload.createdBy || payload.created_by)
+  const metadata = {
+    ...(payload.metadata || payload.metadata_json || {}),
+    roleSpecific: payload.roleSpecific || payload.role_specific || payload.metadata?.roleSpecific || payload.metadata_json?.roleSpecific || {},
+  }
+  const row = {
     organisation_id: normalizeText(organisationId),
     branch_id: toNullableUuid(payload.branchId || payload.branch_id),
     assigned_broker_id: toNullableUuid(payload.assignedBrokerId || payload.assigned_broker_id || payload.brokerId || payload.broker_id),
@@ -148,6 +160,10 @@ function prospectPayloadToRow(organisationId, payload = {}) {
     phone: normalizeText(payload.phone) || null,
     email: normalizeEmail(payload.email) || null,
     prospect_type: normalizeText(payload.prospectType || payload.prospect_type) || 'Landlord Prospect',
+    deal_type: normalizeText(payload.dealType || payload.deal_type) || null,
+    prospect_role: normalizeText(payload.prospectRole || payload.prospect_role) || null,
+    property_category: normalizeText(payload.propertyCategory || payload.property_category) || null,
+    metadata_json: metadata,
     canvassing_method: normalizeText(payload.canvassingMethod || payload.canvassing_method) || 'Cold Call',
     property_type: normalizeText(payload.propertyType || payload.property_type) || null,
     area: normalizeText(payload.area) || null,
@@ -172,8 +188,9 @@ function prospectPayloadToRow(organisationId, payload = {}) {
     converted_company_id: toNullableUuid(payload.convertedCompanyId || payload.converted_company_id),
     lost_reason: normalizeText(payload.lostReason || payload.lost_reason) || null,
     archived_at: normalizeText(payload.archivedAt || payload.archived_at) || null,
-    created_by: toNullableUuid(payload.createdBy || payload.created_by),
   }
+  if (createdBy) row.created_by = createdBy
+  return row
 }
 
 function activityPayloadToRow(organisationId, payload = {}) {
@@ -246,18 +263,7 @@ export async function createCommercialCanvassingProspect(organisationId, payload
   if (!orgId) throw new Error('A resolved workspace is required before creating a commercial canvassing prospect.')
 
   if (!isSupabaseConfigured || !supabase) {
-    const created = {
-      ...payload,
-      id: payload.id || `commercial_prospect_${Date.now().toString(36)}`,
-      organisationId: orgId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-    const store = readFallbackStore(orgId)
-    store.prospects = [created, ...(store.prospects || [])]
-    writeFallbackStore(orgId, store)
-    emitUpdated(orgId)
-    return created
+    return createCommercialCanvassingProspectLocal(orgId, payload)
   }
 
   const insert = await supabase
@@ -268,12 +274,30 @@ export async function createCommercialCanvassingProspect(organisationId, payload
 
   if (insert.error) {
     if (isMissingCommercialCanvassingSchemaError(insert.error)) {
-      return createCommercialCanvassingProspect(orgId, payload)
+      return createCommercialCanvassingProspectLocal(orgId, payload)
     }
     throw insert.error
   }
 
   const created = mapProspectRow(insert.data)
+  emitUpdated(orgId)
+  return created
+}
+
+function createCommercialCanvassingProspectLocal(orgId, payload = {}) {
+  if (!isUnsafeFallbackAllowed()) {
+    throw new Error('Commercial canvassing persistence is unavailable. Apply the commercial canvassing database migration before saving prospects.')
+  }
+  const created = {
+    ...payload,
+    id: payload.id || `commercial_prospect_${Date.now().toString(36)}`,
+    organisationId: orgId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  const store = readFallbackStore(orgId)
+  store.prospects = [created, ...(store.prospects || [])]
+  writeFallbackStore(orgId, store)
   emitUpdated(orgId)
   return created
 }
@@ -284,17 +308,7 @@ export async function updateCommercialCanvassingProspect(organisationId, prospec
   if (!orgId || !prospectId) throw new Error('A prospect and workspace are required before saving.')
 
   if (!isSupabaseConfigured || !supabase || !id) {
-    const store = readFallbackStore(orgId)
-    const updatedAt = new Date().toISOString()
-    let updated = null
-    store.prospects = (store.prospects || []).map((row) => {
-      if (normalizeText(row?.id) !== normalizeText(prospectId)) return row
-      updated = { ...row, ...payload, id: row.id, updatedAt }
-      return updated
-    })
-    writeFallbackStore(orgId, store)
-    emitUpdated(orgId)
-    return updated
+    return updateCommercialCanvassingProspectLocal(orgId, prospectId, payload)
   }
 
   const update = await supabase
@@ -307,12 +321,29 @@ export async function updateCommercialCanvassingProspect(organisationId, prospec
 
   if (update.error) {
     if (isMissingCommercialCanvassingSchemaError(update.error)) {
-      return updateCommercialCanvassingProspect(orgId, prospectId, payload)
+      return updateCommercialCanvassingProspectLocal(orgId, prospectId, payload)
     }
     throw update.error
   }
 
   const updated = mapProspectRow(update.data)
+  emitUpdated(orgId)
+  return updated
+}
+
+function updateCommercialCanvassingProspectLocal(orgId, prospectId, payload = {}) {
+  if (!isUnsafeFallbackAllowed()) {
+    throw new Error('Commercial canvassing persistence is unavailable. Apply the commercial canvassing database migration before saving prospects.')
+  }
+  const store = readFallbackStore(orgId)
+  const updatedAt = new Date().toISOString()
+  let updated = null
+  store.prospects = (store.prospects || []).map((row) => {
+    if (normalizeText(row?.id) !== normalizeText(prospectId)) return row
+    updated = { ...row, ...payload, id: row.id, updatedAt }
+    return updated
+  })
+  writeFallbackStore(orgId, store)
   emitUpdated(orgId)
   return updated
 }
@@ -357,17 +388,7 @@ export async function createCommercialCanvassingActivity(organisationId, payload
   if (!orgId) throw new Error('A resolved workspace is required before logging canvassing activity.')
 
   if (!isSupabaseConfigured || !supabase || !toNullableUuid(payload.prospectId)) {
-    const created = {
-      ...payload,
-      id: payload.id || `commercial_canvassing_activity_${Date.now().toString(36)}`,
-      organisationId: orgId,
-      createdAt: new Date().toISOString(),
-    }
-    const store = readFallbackStore(orgId)
-    store.activities = [created, ...(store.activities || [])]
-    writeFallbackStore(orgId, store)
-    emitUpdated(orgId)
-    return created
+    return createCommercialCanvassingActivityLocal(orgId, payload)
   }
 
   const insert = await supabase
@@ -378,12 +399,29 @@ export async function createCommercialCanvassingActivity(organisationId, payload
 
   if (insert.error) {
     if (isMissingCommercialCanvassingSchemaError(insert.error)) {
-      return createCommercialCanvassingActivity(orgId, payload)
+      return createCommercialCanvassingActivityLocal(orgId, payload)
     }
     throw insert.error
   }
 
   const created = mapActivityRow(insert.data)
+  emitUpdated(orgId)
+  return created
+}
+
+function createCommercialCanvassingActivityLocal(orgId, payload = {}) {
+  if (!isUnsafeFallbackAllowed()) {
+    throw new Error('Commercial canvassing persistence is unavailable. Apply the commercial canvassing database migration before logging activity.')
+  }
+  const created = {
+    ...payload,
+    id: payload.id || `commercial_canvassing_activity_${Date.now().toString(36)}`,
+    organisationId: orgId,
+    createdAt: new Date().toISOString(),
+  }
+  const store = readFallbackStore(orgId)
+  store.activities = [created, ...(store.activities || [])]
+  writeFallbackStore(orgId, store)
   emitUpdated(orgId)
   return created
 }

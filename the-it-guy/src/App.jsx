@@ -31,6 +31,7 @@ const WARNING_BEFORE_LOGOUT_MINUTES = 1
 const INACTIVITY_TIMEOUT_MS = INACTIVITY_TIMEOUT_MINUTES * 60 * 1000
 const WARNING_BEFORE_LOGOUT_MS = WARNING_BEFORE_LOGOUT_MINUTES * 60 * 1000
 const WARNING_DELAY_MS = Math.max(INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_LOGOUT_MS, 0)
+const ACTIVITY_TIMER_RESET_THROTTLE_MS = 1000
 
 const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => ({ default: module[exportName] })))
 
@@ -408,8 +409,12 @@ function AppLayout({ onLogout, session = null, user }) {
   const mainScrollRef = useRef(null)
   const inactivityTimerRef = useRef(null)
   const warningTimerRef = useRef(null)
+  const lastActivityAtRef = useRef(Date.now())
+  const lastTimerResetAtRef = useRef(0)
+  const resetInactivityTimerRef = useRef(null)
   const securityLogoutInProgressRef = useRef(false)
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false)
+  const sessionWarningOpenRef = useRef(false)
   const [wizardOpen, setWizardOpen] = useState(false)
   const [wizardInitialDevelopmentId, setWizardInitialDevelopmentId] = useState('')
   const [wizardInitialListingId, setWizardInitialListingId] = useState('')
@@ -441,6 +446,7 @@ function AppLayout({ onLogout, session = null, user }) {
       if (securityLogoutInProgressRef.current) return
       securityLogoutInProgressRef.current = true
       clearSessionTimers()
+      sessionWarningOpenRef.current = false
       setSessionWarningOpen(false)
       try {
         await Promise.resolve(onLogout?.())
@@ -454,22 +460,46 @@ function AppLayout({ onLogout, session = null, user }) {
     function scheduleInactivityTimers() {
       if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
       if (warningTimerRef.current) window.clearTimeout(warningTimerRef.current)
+      const now = Date.now()
+      const inactiveForMs = now - lastActivityAtRef.current
+      const nextWarningDelayMs = Math.max(WARNING_DELAY_MS - inactiveForMs, 0)
+      const nextLogoutDelayMs = Math.max(INACTIVITY_TIMEOUT_MS - inactiveForMs, 0)
       warningTimerRef.current = window.setTimeout(() => {
+        const latestInactiveForMs = Date.now() - lastActivityAtRef.current
+        if (latestInactiveForMs < WARNING_DELAY_MS) {
+          scheduleInactivityTimers()
+          return
+        }
+        sessionWarningOpenRef.current = true
         setSessionWarningOpen(true)
-      }, WARNING_DELAY_MS)
+      }, nextWarningDelayMs)
       inactivityTimerRef.current = window.setTimeout(() => {
+        const latestInactiveForMs = Date.now() - lastActivityAtRef.current
+        if (latestInactiveForMs < INACTIVITY_TIMEOUT_MS) {
+          scheduleInactivityTimers()
+          return
+        }
         void performSecurityLogout()
-      }, INACTIVITY_TIMEOUT_MS)
+      }, nextLogoutDelayMs)
     }
 
     function resetInactivityTimer() {
       if (securityLogoutInProgressRef.current) return
+      const now = Date.now()
+      lastActivityAtRef.current = now
+      if (now - lastTimerResetAtRef.current < ACTIVITY_TIMER_RESET_THROTTLE_MS && !sessionWarningOpenRef.current) return
+      lastTimerResetAtRef.current = now
+      sessionWarningOpenRef.current = false
       setSessionWarningOpen(false)
       scheduleInactivityTimers()
     }
+    resetInactivityTimerRef.current = resetInactivityTimer
 
     clearSessionTimers()
     securityLogoutInProgressRef.current = false
+    sessionWarningOpenRef.current = false
+    lastActivityAtRef.current = Date.now()
+    lastTimerResetAtRef.current = 0
     scheduleInactivityTimers()
 
     const activityEvents = [
@@ -495,6 +525,7 @@ function AppLayout({ onLogout, session = null, user }) {
 
     return () => {
       clearSessionTimers()
+      resetInactivityTimerRef.current = null
       activityEvents.forEach((eventName) => {
         window.removeEventListener(eventName, resetInactivityTimer)
       })
@@ -503,20 +534,7 @@ function AppLayout({ onLogout, session = null, user }) {
   }, [navigate, onLogout, session?.access_token])
 
   function handleStaySignedIn() {
-    setSessionWarningOpen(false)
-    if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
-    if (warningTimerRef.current) window.clearTimeout(warningTimerRef.current)
-    warningTimerRef.current = window.setTimeout(() => {
-      setSessionWarningOpen(true)
-    }, WARNING_DELAY_MS)
-    inactivityTimerRef.current = window.setTimeout(() => {
-      if (securityLogoutInProgressRef.current) return
-      securityLogoutInProgressRef.current = true
-      setSessionWarningOpen(false)
-      void Promise.resolve(onLogout?.())
-        .catch((logoutError) => console.error('[SESSION] security logout failed', logoutError))
-        .finally(() => navigate('/auth?security=1', { replace: true }))
-    }, INACTIVITY_TIMEOUT_MS)
+    resetInactivityTimerRef.current?.()
   }
 
   useEffect(() => {

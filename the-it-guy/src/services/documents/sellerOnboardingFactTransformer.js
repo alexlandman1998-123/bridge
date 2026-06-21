@@ -5,6 +5,12 @@ import {
 } from '../../lib/sellerOnboardingFlowContract.js'
 import { formatPropertyAddress, normalizePropertyAddress } from '../../lib/sellerPropertyAddress.js'
 import { resolveSellerOnboardingFlow } from '../../lib/sellerOnboardingFlow.js'
+import {
+  buildPropertyDisclosureDocument,
+  getPropertyDisclosureStatus,
+  isPropertyDisclosureDigitallyComplete,
+  normalizePropertyDisclosure,
+} from '../../lib/propertyDisclosure.js'
 
 export const CANONICAL_SELLER_FACTS_VERSION = 'seller_onboarding_facts_v1'
 
@@ -341,6 +347,8 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
   const commercialUseDescription = normalizeText(form.commercialUseDescription)
   const mixedUseSplit = normalizeText(form.mixedUseSplit)
   const tenantScheduleAvailable = normalizeBoolean(form.tenantScheduleAvailable, false)
+  const disclosureKind = flow.property_branch === 'commercial' || flow.property_branch === 'mixed_use' ? 'commercial' : 'residential'
+  const propertyDisclosure = normalizePropertyDisclosure(form.propertyDisclosure || form.property_disclosure || {}, { kind: disclosureKind })
 
   return {
     seller_branch: flow.seller_branch,
@@ -575,6 +583,18 @@ export function transformSellerOnboardingToFacts(form = {}, listing = {}, option
       solar_compliance_available: normalizeBoolean(form.solarComplianceAvailable, false),
       recent_alterations: recentAlterations,
     },
+    property_disclosure: {
+      ...propertyDisclosure,
+      status: getPropertyDisclosureStatus(propertyDisclosure),
+      digitally_complete: isPropertyDisclosureDigitallyComplete(propertyDisclosure),
+      generated_document: propertyDisclosure.generatedDocument || buildPropertyDisclosureDocument(propertyDisclosure, {
+        sellerId: form.sellerId || listing.sellerId || listing.seller_id,
+        propertyId: form.propertyId || listing.propertyId || listing.property_id,
+        listingId: options.listingId || listing.id,
+        transactionId: form.transactionId || listing.transactionId || listing.transaction_id,
+        kind: disclosureKind,
+      }),
+    },
     transaction: {
       asking_price: normalizeNumber(form.askingPrice || listing.askingPrice),
       selling_timeline: normalizeKey(form.sellingTimeline),
@@ -682,6 +702,11 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
   push(missingIf(!hasValue(facts.property?.property_category), 'property_category_missing', 'Property category is required.'))
   push(missingIf(!hasValue(facts.property?.property_structure_type), 'property_structure_type_missing', 'Property structure type is required.'))
   push(missingIf(!hasValue(facts.transaction?.mandate_type), 'mandate_type_missing', 'Mandate type is required.'))
+  push(missingIf(
+    !facts.property_disclosure?.digitally_complete && !facts.property_disclosure?.uploadedDocumentReviewed && !facts.property_disclosure?.uploaded_document_reviewed,
+    'property_disclosure_missing',
+    'Property Disclosure declaration is required before seller onboarding can be completed.',
+  ))
   push(missingIf(!hasValue(facts.property?.address_details?.municipality || facts.property?.municipality), 'municipality_missing', 'Municipality helps determine readiness and compliance.', 'recommended'))
   push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.name || facts.property?.scheme_name), 'sectional_scheme_missing', 'Scheme name should be captured for sectional title properties.', 'recommended'))
   push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.unit_number || facts.property?.unit_number), 'sectional_unit_missing', 'Section or unit number should be captured for sectional title properties.', 'recommended'))

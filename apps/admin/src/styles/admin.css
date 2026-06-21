@@ -2699,6 +2699,86 @@ h3 {
   animation: spin 0.9s linear infinite;
 }
 
+/* Tone down the executive UI so hierarchy feels crisp without shouting. */
+h1 {
+  font-weight: 680;
+}
+
+h2,
+.section-title h2 {
+  font-weight: 620;
+}
+
+h3,
+.chart-panel h3,
+.roleplayer-card h3,
+.workspace-section h3,
+.panel-heading h2 {
+  font-weight: 620;
+}
+
+.sidebar-brand strong {
+  font-weight: 680;
+}
+
+.admin-identity strong,
+.sidebar-user strong,
+.card-label,
+.metric-caption,
+.nav-group button,
+.range-select select,
+.roleplayer-filter-bar button,
+.roleplayer-sort span,
+.text-button,
+.quick-actions button,
+.secondary-button,
+.primary-button,
+.icon-button {
+  font-weight: 560;
+}
+
+.nav-group p,
+.eyebrow,
+.section-title p,
+.executive-kpi-card em,
+.positive,
+.negative,
+.settings-panel dt,
+.mobile-header p,
+.mobile-metric-card span,
+.mobile-card span {
+  font-weight: 600;
+}
+
+.nav-group button.active,
+.executive-kpi-card strong,
+.velocity-number,
+.revenue-number,
+.ecosystem-total strong,
+.roleplayer-revenue strong,
+.workspace-metric strong {
+  font-weight: 650;
+}
+
+.kpi-breakdown b,
+.funnel-bar,
+.adoption-stack strong,
+.forecast-list b,
+.rank-list span,
+.attention-list strong,
+.ecosystem-grid span,
+.empty-data strong,
+.type-badge,
+.card-actions button,
+.roleplayer-logo.fallback,
+.mobile-action-grid button,
+.mobile-workspace-grid button,
+.mobile-link-list button,
+.pill,
+.panel-heading span {
+  font-weight: 600;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
