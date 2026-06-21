@@ -38,7 +38,7 @@ export const COMMERCIAL_NAV_SECTIONS = [
     label: 'Leasing',
     icon: KeyRound,
     items: [
-      { label: 'Canvassing', to: '/commercial/leasing/canvassing', icon: Radar, activePaths: ['/commercial/leasing/canvassing', '/commercial/canvassing'] },
+      { label: 'Prospects', to: '/commercial/leasing/canvassing', icon: Radar, activePaths: ['/commercial/leasing/canvassing', '/commercial/canvassing'] },
       { label: 'Leads', to: '/commercial/leasing/leads', icon: ClipboardList, activePaths: ['/commercial/leasing/leads', '/commercial/leads', '/commercial/requirements'] },
       { label: 'Vacancies', to: '/commercial/leasing/vacancies', icon: Building2, activePaths: ['/commercial/leasing/vacancies', '/commercial/vacancies'] },
       { label: 'Deals', to: '/commercial/leasing/deals', icon: FileText, activePaths: ['/commercial/leasing/deals', '/commercial/deals/leasing', '/commercial/heads-of-terms', '/commercial/hot', '/commercial/leases'] },

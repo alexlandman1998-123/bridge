@@ -11,6 +11,7 @@ export function validateCommercialProspectDraft(draft = {}) {
   const companyName = normalizeText(draft.companyName || draft.ownerCompanyName || draft.landlordCompanyName || draft.buyerCompanyName || draft.tenantCompanyName)
   const propertyCategory = normalizeKey(draft.propertyCategory || draft.propertyType)
   const assignedBrokerId = normalizeText(draft.assignedBrokerId)
+  const phone = normalizeText(draft.phone || draft.contactNumber || draft.contact_number)
 
   if (!COMMERCIAL_ROLE_OPTIONS.some((option) => option.value === role)) {
     errors.prospectRole = 'Choose seller, buyer, landlord, or tenant.'
@@ -38,14 +39,13 @@ export function validateCommercialProspectDraft(draft = {}) {
   }
 
   if (role === 'landlord') {
-    if (!hasValue(draft.propertyName || draft.portfolioName)) errors.propertyName = 'Add a property or portfolio name.'
+    if (!phone) errors.phone = 'Add a contact number.'
+    if (!hasValue(draft.propertyAddress || draft.area || draft.preferredArea)) errors.propertyAddress = 'Add a property address.'
   }
 
   if (role === 'tenant') {
-    if (!hasValue(draft.spaceRequirement)) errors.spaceRequirement = 'Add the tenant space requirement.'
-    if (!hasValue(draft.preferredArea)) errors.preferredArea = 'Add a preferred area.'
+    if (!phone) errors.phone = 'Add a contact number.'
   }
 
   return errors
 }
-

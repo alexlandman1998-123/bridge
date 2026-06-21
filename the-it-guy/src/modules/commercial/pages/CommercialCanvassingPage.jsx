@@ -11,6 +11,8 @@ import {
   ChevronRight,
   Download,
   DollarSign,
+  Factory,
+  Info,
   Mail,
   MapPin,
   MessageCircle,
@@ -20,6 +22,8 @@ import {
   Save,
   Search,
   SlidersHorizontal,
+  Sprout,
+  Star,
   Trash2,
   Upload,
   UserPlus,
@@ -33,7 +37,6 @@ import { formatDate, titleize } from '../commercialFormatters'
 import { toLookupOptions } from '../commercialPipelineHelpers'
 import { formatRelativeTime, formatShortDate } from '../commercialProspectFormatters'
 import {
-  COMMERCIAL_CANVASSING_METHODS,
   COMMERCIAL_CATEGORY_OPTIONS,
   COMMERCIAL_PRIORITY_OPTIONS,
   COMMERCIAL_PROSPECT_STATUSES,
@@ -62,8 +65,24 @@ import { getCommercialCanvassingContext, listCommercialCanvassingWorkspace, crea
 const CARD_CLASS = 'rounded-[24px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.06)]'
 const FOLLOW_UP_PRIORITIES = COMMERCIAL_PRIORITY_OPTIONS
 const PROSPECT_STATUSES = COMMERCIAL_PROSPECT_STATUSES
-const CANVASSING_METHODS = COMMERCIAL_CANVASSING_METHODS
+const CANVASSING_METHODS = [
+  'Cold Call',
+  'Referral',
+  'Existing Database',
+  'Deeds Search',
+  'Lightstone',
+  'Walk-in',
+  'Website',
+  'Other',
+]
 const PROSPECT_PROPERTY_TYPES = COMMERCIAL_CATEGORY_OPTIONS.map((option) => option.label)
+const LEASE_ASSET_CLASS_OPTIONS = [
+  { value: 'retail', label: 'Retail', icon: Building2, tone: 'violet' },
+  { value: 'office', label: 'Office', icon: Building2, tone: 'blue' },
+  { value: 'industrial', label: 'Industrial', icon: Factory, tone: 'rose' },
+  { value: 'agricultural', label: 'Agricultural', icon: Sprout, tone: 'emerald' },
+]
+const LEASE_AREA_OPTIONS = ['Rosebank', 'Sandton', 'Midrand', 'Centurion', 'Menlyn', 'Bedfordview']
 const PROSPECT_TYPES = [
   'Seller Prospect',
   'Buyer Prospect',
@@ -110,16 +129,28 @@ function isCanvassingFollowUp(prospect = {}) {
   return isOpenProspect(prospect) && (normalizeKey(getProspectStatus(prospect)).includes('follow') || isFollowUpDue(prospect))
 }
 
+function isWithinRelativeDate(value = '', filter = 'all') {
+  if (!filter || filter === 'all') return true
+  const parsed = new Date(value || '')
+  if (Number.isNaN(parsed.getTime())) return false
+  const days = filter === '7d' ? 7 : filter === '30d' ? 30 : filter === '90d' ? 90 : 0
+  if (!days) return true
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - days)
+  return parsed.getTime() >= start.getTime()
+}
+
 function getCanvassingPageViewConfig(dealType = '') {
   const normalizedDealType = normalizeKey(dealType)
   if (normalizedDealType === 'lease') {
     const roleOptions = COMMERCIAL_ROLE_OPTIONS.filter((option) => ['landlord', 'tenant'].includes(option.value))
     return {
       key: 'lease',
-      title: 'Leasing Canvassing',
-      description: 'Track landlord and tenant prospecting before converting them into lease leads.',
-      createLabel: '+ Add Lease Prospect',
-      searchPlaceholder: 'Search lease prospects, companies, brokers...',
+      title: 'Leasing Prospects',
+      description: 'Capture and qualify landlords and tenants. Convert them into leads when ready.',
+      createLabel: '+ Add Prospect',
+      searchPlaceholder: 'Search prospects by name, company, area...',
       tabs: [
         { id: 'all', label: 'All Lease Prospects', matches: () => true },
         { id: 'landlords', label: 'Landlords', matches: (prospect) => normalizeKey(prospect.prospectRole) === 'landlord' },
@@ -201,6 +232,13 @@ const BUY_LOOKING_FOR_OPTIONS = [
 
 const PURCHASE_TIMELINE_OPTIONS = ['Immediately', '0–3 months', '3–6 months', '6–12 months', '12+ months', 'Unknown']
 const LEASE_TIMELINE_OPTIONS = ['Immediately', '0–3 months', '3–6 months', '6–12 months', '12+ months', 'Unknown']
+const LEASE_STATUS_OPTIONS = ['New', 'Contacted', 'Qualified', 'Converted', 'Not Interested']
+const DATE_FILTER_OPTIONS = [
+  { value: 'all', label: 'All dates' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+  { value: '90d', label: 'Last 90 days' },
+]
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -313,6 +351,7 @@ function buildInitialDraft(defaultBrokerId = '', defaults = {}) {
     targetPurchaseTimeline: '',
     leaseTimeline: '',
     vacancyDetails: '',
+    industry: '',
     estimatedSaleValue: '',
     estimatedMonthlyRental: '',
     estimatedAnnualRental: '',
@@ -355,6 +394,7 @@ function buildDraftFromSearchParams(searchParams, defaultBrokerId = '') {
     targetPurchaseTimeline: getParam('targetPurchaseTimeline'),
     leaseTimeline: getParam('leaseTimeline'),
     vacancyDetails: getParam('vacancyDetails'),
+    industry: getParam('industry'),
     estimatedSaleValue: getParam('estimatedSaleValue'),
     estimatedMonthlyRental: getParam('estimatedMonthlyRental'),
     estimatedAnnualRental: getParam('estimatedAnnualRental'),
@@ -504,6 +544,78 @@ function ProspectStat({ label, value, detail, icon, trendLabel = '', series = []
   )
 }
 
+function getLeaseStatusLabel(status = '') {
+  const normalized = normalizeKey(status)
+  if (normalized.includes('converted')) return 'Converted'
+  if (normalized.includes('not interested') || normalized.includes('lost') || normalized.includes('archived')) return 'Not Interested'
+  if (normalized.includes('qualified')) return 'Qualified'
+  if (normalized.includes('contacted')) return 'Contacted'
+  return 'New'
+}
+
+function getLeaseStatusTone(status = '') {
+  const normalized = normalizeKey(getLeaseStatusLabel(status))
+  if (normalized === 'converted') return 'emerald'
+  if (normalized === 'qualified') return 'violet'
+  if (normalized === 'contacted') return 'blue'
+  if (normalized === 'not interested') return 'slate'
+  return 'green'
+}
+
+function LeaseStatusPill({ status }) {
+  const label = getLeaseStatusLabel(status)
+  return (
+    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${toneClass(getLeaseStatusTone(label))}`}>
+      {label}
+    </span>
+  )
+}
+
+function LeaseAssetClass({ category = '' }) {
+  const normalized = normalizeKey(category)
+  const option = LEASE_ASSET_CLASS_OPTIONS.find((item) => item.value === normalized)
+    || LEASE_ASSET_CLASS_OPTIONS.find((item) => normalizeKey(item.label) === normalized)
+    || { value: normalized || 'other', label: getPropertyCategoryLabel(category), icon: Building2, tone: 'slate' }
+  const IconComponent = option.icon || Building2
+  return (
+    <span className="inline-flex items-center gap-2 text-sm font-semibold text-[#102236]">
+      <span className={`inline-flex h-8 w-8 items-center justify-center rounded-[8px] border ${toneClass(option.tone)}`}>
+        <IconComponent size={15} />
+      </span>
+      {option.label}
+    </span>
+  )
+}
+
+function LeaseKpiStrip({ loading = false, metrics = {}, counts = {} }) {
+  const items = [
+    { label: 'Total Prospects', value: counts.total ?? metrics.prospects, icon: Users, tone: 'blue' },
+    { label: 'Landlords', value: counts.landlords, icon: Building2, tone: 'green' },
+    { label: 'Tenants', value: counts.tenants, icon: Users, tone: 'violet' },
+    { label: 'Qualified', value: counts.qualified, icon: Star, tone: 'amber' },
+    { label: 'Converted', value: metrics.converted, icon: CheckCircle2, tone: 'emerald' },
+  ]
+
+  return (
+    <section className="grid overflow-hidden rounded-[12px] border border-[#dfe8f3] bg-white shadow-[0_10px_30px_rgba(15,35,70,0.04)] md:grid-cols-5">
+      {items.map((item, index) => {
+        const IconComponent = item.icon
+        return (
+          <div key={item.label} className={`flex min-h-[76px] items-center gap-4 px-5 py-4 ${index ? 'border-t border-[#e8eef5] md:border-l md:border-t-0' : ''}`}>
+            <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border ${toneClass(item.tone)}`}>
+              <IconComponent size={20} />
+            </span>
+            <div>
+              <p className="text-[1.45rem] font-semibold leading-none tracking-[-0.03em] text-[#0b2344]">{loading ? '...' : item.value || 0}</p>
+              <p className="mt-2 text-sm font-medium text-[#405a78]">{item.label}</p>
+            </div>
+          </div>
+        )
+      })}
+    </section>
+  )
+}
+
 function SearchField({ value, onChange, placeholder = 'Search canvassing prospects...', className = '' }) {
   return (
     <label className={`relative block ${className}`.trim()}>
@@ -585,6 +697,28 @@ function InlineTableEmptyState({ icon, title, description, actionLabel, onAction
   )
 }
 
+function LeaseProspectsEmptyState({ onAddLandlord, onAddTenant }) {
+  return (
+    <div className="flex min-h-[320px] flex-col items-center justify-center px-6 py-12 text-center">
+      <span className="inline-flex h-14 w-14 items-center justify-center rounded-[16px] bg-[#eef5fb] text-[#0c5fd7]">
+        <ClipboardList size={24} />
+      </span>
+      <p className="mt-4 text-lg font-semibold tracking-[-0.02em] text-[#102236]">Build your leasing prospect database</p>
+      <p className="mt-2 max-w-[440px] text-sm leading-6 text-[#60758d]">Start capturing landlords and tenants. Qualified prospects can be converted into leads.</p>
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <Button type="button" onClick={onAddLandlord} className="h-11 rounded-[10px] bg-[#082f56] px-5 text-white hover:bg-[#0b3d70]">
+          <Plus size={16} />
+          Add Landlord
+        </Button>
+        <Button type="button" variant="secondary" onClick={onAddTenant} className="h-11 rounded-[10px] px-5">
+          <Plus size={16} />
+          Add Tenant
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function FieldError({ error }) {
   if (!error) return null
   return <p className="text-xs font-medium text-rose-600">{error}</p>
@@ -608,10 +742,87 @@ function ReviewCard({ title, lines = [] }) {
 function CreateLabel({ label, error, children, className = '' }) {
   return (
     <label className={`grid gap-1.5 ${className}`.trim()}>
-      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</span>
+      <span className="text-xs font-semibold text-[#183153]">{label}</span>
       {children}
       <FieldError error={error} />
     </label>
+  )
+}
+
+function LeaseCreateSection({ number, title, icon, children }) {
+  const IconComponent = icon
+  return (
+    <section className="border-t border-[#dfe8f3] pt-5 first:border-t-0 first:pt-0">
+      <div className="mb-4 flex items-center gap-3">
+        {IconComponent ? <IconComponent size={22} className="text-[#0f2a4a]" /> : null}
+        <h4 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#102236]">{number}. {title}</h4>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function LeaseRoleTab({ active = false, icon, label, onClick }) {
+  const IconComponent = icon
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex h-14 min-w-0 items-center justify-center gap-3 rounded-[8px] border px-5 text-sm font-semibold transition ${
+        active
+          ? 'border-[#6da0ff] bg-[#f3f8ff] text-[#095ed8] shadow-[0_0_0_1px_rgba(45,108,240,0.08)]'
+          : 'border-[#dfe8f3] bg-white text-[#253a55] hover:border-[#bcd1ea] hover:bg-[#fbfdff]'
+      }`}
+    >
+      {IconComponent ? <IconComponent size={19} /> : null}
+      {label}
+    </button>
+  )
+}
+
+function LeaseAssetPill({ option, active = false, onClick }) {
+  const IconComponent = option.icon
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-10 items-center gap-2 rounded-[8px] border px-3 text-sm font-semibold transition ${
+        active
+          ? `${toneClass(option.tone)} shadow-[0_0_0_1px_rgba(15,23,42,0.04)]`
+          : 'border-[#dfe8f3] bg-white text-[#1e3450] hover:border-[#bfd2e6] hover:bg-[#fbfdff]'
+      }`}
+    >
+      {IconComponent ? <IconComponent size={16} /> : null}
+      {option.label}
+    </button>
+  )
+}
+
+function LeaseHelperPanel() {
+  return (
+    <aside className="overflow-hidden rounded-[8px] border border-[#dce8f6] bg-[#f4f9ff] lg:sticky lg:top-0">
+      <div className="border-b border-[#dce8f6] p-4">
+        <div className="flex items-start gap-3">
+          <Info size={18} className="mt-0.5 shrink-0 text-[#0969e8]" />
+          <div>
+            <p className="text-sm font-semibold text-[#0969e8]">Capturing early information</p>
+            <p className="mt-2 text-sm leading-6 text-[#344966]">Focus on the basics. You can add more details once qualified.</p>
+          </div>
+        </div>
+      </div>
+      <div className="p-4">
+        <p className="text-sm font-semibold text-[#102236]">Keep it simple</p>
+        <p className="mt-3 text-sm leading-6 text-[#344966]">At this stage you only need the essentials:</p>
+        <div className="mt-4 grid gap-3 text-sm text-[#344966]">
+          {['Who they are', 'Where the property is', 'What type of asset', 'How to contact them'].map((item) => (
+            <div key={item} className="flex items-center gap-3">
+              <CheckCircle2 size={16} className="shrink-0 text-[#1d8a45]" />
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </aside>
   )
 }
 
@@ -896,6 +1107,149 @@ function renderTenantFields({ createDraft, createErrors, updateCreateDraftField,
   )
 }
 
+function renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField, label = 'Asset Class *' }) {
+  return (
+    <div className="grid gap-2">
+      <CreateLabel label={label} error={createErrors.propertyCategory}>
+        <Field
+          as="select"
+          value={createDraft.propertyCategory}
+          onChange={(event) => updateCreateDraftField('propertyCategory', event.target.value)}
+          className="h-12 rounded-[8px] bg-white text-sm"
+        >
+          <option value="">Select asset class</option>
+          {LEASE_ASSET_CLASS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </Field>
+      </CreateLabel>
+      <div className="flex flex-wrap gap-2">
+        {LEASE_ASSET_CLASS_OPTIONS.map((option) => (
+          <LeaseAssetPill
+            key={option.value}
+            option={option}
+            active={normalizeKey(createDraft.propertyCategory) === option.value}
+            onClick={() => updateCreateDraftField('propertyCategory', option.value)}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function renderLeaseProspectingFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+  return (
+    <LeaseCreateSection number="3" title="Prospecting Information" icon={ClipboardList}>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,220px)_minmax(0,220px)_minmax(0,1fr)]">
+        <CreateLabel label="Assigned Broker *" error={createErrors.assignedBrokerId}>
+          <Field as="select" value={createDraft.assignedBrokerId} onChange={(event) => updateCreateDraftField('assignedBrokerId', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
+            <option value="">Select broker</option>
+            {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Source">
+          <Field as="select" value={createDraft.canvassingMethod} onChange={(event) => updateCreateDraftField('canvassingMethod', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
+            <option value="">Select source</option>
+            {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
+          </Field>
+        </CreateLabel>
+        <CreateLabel label="Notes">
+          <div className="relative">
+            <Field
+              as="textarea"
+              value={createDraft.notes}
+              maxLength={500}
+              onChange={(event) => updateCreateDraftField('notes', event.target.value)}
+              placeholder="Any additional notes..."
+              className="min-h-[72px] rounded-[8px] pb-7 text-sm"
+            />
+            <span className="pointer-events-none absolute bottom-3 right-3 text-xs font-semibold text-[#7a8da6]">{normalizeText(createDraft.notes).length}/500</span>
+          </div>
+        </CreateLabel>
+      </div>
+    </LeaseCreateSection>
+  )
+}
+
+function renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+  return (
+    <div className="space-y-6">
+      <LeaseCreateSection number="1" title="Contact / Company Details" icon={Users}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <CreateLabel label="Landlord / Company Name *" error={createErrors.companyName}>
+            <Field value={createDraft.companyName} onChange={(event) => updateCreateDraftField('companyName', event.target.value)} placeholder="e.g. ABC Properties (Pty) Ltd" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Contact Person">
+            <Field value={createDraft.contactName} onChange={(event) => updateCreateDraftField('contactName', event.target.value)} placeholder="e.g. John Smith" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Contact Number *" error={createErrors.phone}>
+            <Field value={createDraft.phone} onChange={(event) => updateCreateDraftField('phone', event.target.value)} placeholder="e.g. 082 123 4567" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Email Address">
+            <Field value={createDraft.email} onChange={(event) => updateCreateDraftField('email', event.target.value)} placeholder="e.g. john@abcproperties.co.za" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+        </div>
+      </LeaseCreateSection>
+
+      <LeaseCreateSection number="2" title="Property Details" icon={Building2}>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,0.75fr)_minmax(0,0.85fr)]">
+          <CreateLabel label="Property Address *" error={createErrors.propertyAddress}>
+            <div className="relative">
+              <Field value={createDraft.propertyAddress} onChange={(event) => updateCreateDraftField('propertyAddress', event.target.value)} placeholder="Start typing an address..." className="h-12 rounded-[8px] pr-10 text-sm" />
+              <MapPin size={17} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#183153]" />
+            </div>
+            <p className="text-xs font-medium text-[#5d718b]">We'll capture the area and suburb automatically.</p>
+          </CreateLabel>
+          <CreateLabel label="Area / Node">
+            <Field as="select" value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
+              <option value="">Select area</option>
+              {LEASE_AREA_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </Field>
+          </CreateLabel>
+          {renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField })}
+        </div>
+      </LeaseCreateSection>
+
+      {renderLeaseProspectingFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions })}
+    </div>
+  )
+}
+
+function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+  return (
+    <div className="space-y-6">
+      <LeaseCreateSection number="1" title="Contact / Company Details" icon={Users}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <CreateLabel label="Company Name *" error={createErrors.companyName}>
+            <Field value={createDraft.companyName} onChange={(event) => updateCreateDraftField('companyName', event.target.value)} placeholder="e.g. Bright Logistics (Pty) Ltd" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Contact Person">
+            <Field value={createDraft.contactName} onChange={(event) => updateCreateDraftField('contactName', event.target.value)} placeholder="e.g. Sarah Mokoena" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Contact Number *" error={createErrors.phone}>
+            <Field value={createDraft.phone} onChange={(event) => updateCreateDraftField('phone', event.target.value)} placeholder="e.g. 082 123 4567" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Email Address">
+            <Field value={createDraft.email} onChange={(event) => updateCreateDraftField('email', event.target.value)} placeholder="e.g. sarah@brightlogistics.co.za" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+        </div>
+      </LeaseCreateSection>
+
+      <LeaseCreateSection number="2" title="Business Details" icon={Building2}>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
+          <CreateLabel label="Current Address / Area">
+            <Field value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} placeholder="Current address or operating node" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          <CreateLabel label="Industry">
+            <Field value={createDraft.industry} onChange={(event) => updateCreateDraftField('industry', event.target.value)} placeholder="e.g. Logistics" className="h-12 rounded-[8px] text-sm" />
+          </CreateLabel>
+          {renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField, label: 'Asset Class Interest *' })}
+        </div>
+      </LeaseCreateSection>
+
+      {renderLeaseProspectingFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions })}
+    </div>
+  )
+}
+
 function CommercialCanvassingPage({ dealType = '' }) {
   const [searchParams] = useSearchParams()
   const pageView = useMemo(() => getCanvassingPageViewConfig(dealType), [dealType])
@@ -917,10 +1271,13 @@ function CommercialCanvassingPage({ dealType = '' }) {
   const [brokerFilter, setBrokerFilter] = useState('all')
   const [sortKey, setSortKey] = useState('updatedAt')
   const [sortDirection, setSortDirection] = useState('desc')
+  const [dateAddedFilter, setDateAddedFilter] = useState('all')
+  const [lastContactFilter, setLastContactFilter] = useState('all')
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [selectedProspectId, setSelectedProspectId] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [createStep, setCreateStep] = useState(2)
   const [createErrors, setCreateErrors] = useState({})
   const [createDraft, setCreateDraft] = useState(buildInitialDraft())
@@ -1079,19 +1436,23 @@ function CommercialCanvassingPage({ dealType = '' }) {
       category: categoryFilter,
       assigned: brokerFilter,
     })
-      .filter((prospect) => statusFilter === 'all' || normalizeKey(prospect.stageLabel || prospect.status) === normalizeKey(statusFilter))
+      .filter((prospect) => statusFilter === 'all' || (
+        pageView.key === 'lease'
+          ? normalizeKey(getLeaseStatusLabel(prospect.stageLabel || prospect.status)) === normalizeKey(statusFilter)
+          : normalizeKey(prospect.stageLabel || prospect.status) === normalizeKey(statusFilter)
+      ))
       .filter((prospect) => methodFilter === 'all' || normalizeKey(prospect.sourceLabel || prospect.canvassingMethod || prospect.source) === normalizeKey(methodFilter))
+      .filter((prospect) => isWithinRelativeDate(prospect.createdAt || prospect.created_at, dateAddedFilter))
+      .filter((prospect) => isWithinRelativeDate(prospect.lastActivity?.activityDate || prospect.lastActivity?.createdAt, lastContactFilter))
 
     if (pageView.key === 'lease') {
-      if (activeTab === 'followups') return rows.filter((prospect) => isCanvassingFollowUp(prospect))
-      if (activeTab === 'converted') return rows.filter((prospect) => isConvertedProspect(prospect))
       return rows
     }
 
     return pageView.showDepartmentTabs
       ? rows.filter((prospect) => activeTabConfig.matches(prospect))
       : rows
-  }, [activeTab, activeTabConfig, brokerFilter, categoryFilter, dealFilter, methodFilter, normalizedProspects, pageView.baseDealType, pageView.key, pageView.showDepartmentTabs, roleFilter, search, statusFilter])
+  }, [activeTabConfig, brokerFilter, categoryFilter, dateAddedFilter, dealFilter, lastContactFilter, methodFilter, normalizedProspects, pageView.baseDealType, pageView.key, pageView.showDepartmentTabs, roleFilter, search, statusFilter])
 
   const sortedProspects = useMemo(() => {
     const rows = [...filteredProspects]
@@ -1135,10 +1496,12 @@ function CommercialCanvassingPage({ dealType = '' }) {
   const leaseRoleCounts = useMemo(() => {
     const activeProspects = pageScopedProspects.filter((prospect) => !['archived', 'lost', 'closed'].includes(normalizeKey(prospect.status)))
     return {
+      total: activeProspects.length,
       landlords: activeProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'landlord').length,
       tenants: activeProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'tenant').length,
       sellers: activeProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'seller').length,
       buyers: activeProspects.filter((prospect) => normalizeKey(prospect.prospectRole) === 'buyer').length,
+      qualified: activeProspects.filter((prospect) => getLeaseStatusLabel(prospect.status || prospect.stageLabel) === 'Qualified').length,
     }
   }, [pageScopedProspects])
 
@@ -1326,8 +1689,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
       : role === 'buyer'
         ? normalizeText(createDraft.preferredArea)
         : role === 'landlord'
-          ? normalizeText(createDraft.propertyName || createDraft.portfolioName)
-          : normalizeText(createDraft.preferredArea)
+          ? normalizeText(createDraft.preferredArea || createDraft.propertyAddress || createDraft.propertyName || createDraft.portfolioName)
+          : normalizeText(createDraft.preferredArea || createDraft.propertyAddress)
 
     return {
       companyName,
@@ -1368,6 +1731,10 @@ function CommercialCanvassingPage({ dealType = '' }) {
         targetPurchaseTimeline: normalizeText(createDraft.targetPurchaseTimeline),
         leaseTimeline: normalizeText(createDraft.leaseTimeline),
         vacancyDetails: normalizeText(createDraft.vacancyDetails),
+        industry: normalizeText(createDraft.industry),
+        currentAddress: role === 'tenant' ? normalizeText(createDraft.preferredArea || createDraft.propertyAddress) : '',
+        areaNode: normalizeText(createDraft.preferredArea),
+        assetClassInterest: role === 'tenant' ? propertyCategory : '',
         estimatedSaleValue: normalizeText(createDraft.estimatedSaleValue),
         estimatedMonthlyRental: normalizeText(createDraft.estimatedMonthlyRental),
         estimatedAnnualRental: normalizeText(createDraft.estimatedAnnualRental),
@@ -1375,8 +1742,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
     }
   }
 
-  async function handleCreateProspect(event) {
-    event.preventDefault()
+  async function submitCreateProspect({ addAnother = false } = {}) {
     if (!organisationId) return
     const errors = validateCreateDraft()
     if (Object.keys(errors).length > 0) {
@@ -1392,9 +1758,13 @@ function CommercialCanvassingPage({ dealType = '' }) {
       const created = await createCommercialCanvassingProspect(organisationId, payload)
       setProspects((current) => [created, ...current.filter((row) => normalizeText(row.id) !== normalizeText(created.id))])
       setSelectedProspectId(created.id)
-      setCreateOpen(false)
-      setCreateStep(2)
-      setCreateErrors({})
+      if (addAnother) {
+        resetCreateDraft(payload.prospectRole || pageView.defaultCreateRole)
+      } else {
+        setCreateOpen(false)
+        setCreateStep(2)
+        setCreateErrors({})
+      }
       setMessage(`${getRoleLabel(payload.prospectRole)} prospect added.`)
       void loadData({ showLoading: false, preserveOnError: true })
     } catch (createError) {
@@ -1402,6 +1772,11 @@ function CommercialCanvassingPage({ dealType = '' }) {
     } finally {
       setBusyAction('')
     }
+  }
+
+  async function handleCreateProspect(event) {
+    event.preventDefault()
+    await submitCreateProspect()
   }
 
   async function handleSaveProspect() {
@@ -1446,6 +1821,40 @@ function CommercialCanvassingPage({ dealType = '' }) {
     } finally {
       setBusyAction('')
     }
+  }
+
+  async function handleUpdateProspectStatus(prospect, nextStatus = 'Contacted') {
+    if (!organisationId || !prospect) return
+    setBusyAction(`status-${prospect.id}`)
+    setError('')
+    try {
+      const updated = await updateCommercialCanvassingProspect(organisationId, prospect.id, {
+        ...prospect,
+        status: nextStatus,
+        followUpNote: nextStatus === 'Contacted' ? 'Contacted from leasing prospects table' : prospect.followUpNote,
+      })
+      setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(prospect.id) ? (updated || { ...prospect, status: nextStatus }) : row))
+      setMessage(`Prospect marked ${getLeaseStatusLabel(nextStatus).toLowerCase()}.`)
+      void createCommercialCanvassingActivity(organisationId, {
+        prospectId: prospect.id,
+        brokerId: prospect.assignedBrokerId || '',
+        brokerName: prospect.assignedBrokerName || pickLookupLabel(brokerOptions, prospect.assignedBrokerId, ''),
+        activityType: 'Note',
+        activityNote: `Status updated to ${nextStatus}`,
+        outcome: nextStatus,
+        activityDate: new Date().toISOString(),
+      })
+      void loadData({ showLoading: false, preserveOnError: true })
+    } catch (statusError) {
+      setError(statusError?.message || 'Prospect status could not be updated.')
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  async function handleConvertProspectToLead(prospect) {
+    if (!prospect) return
+    await handleUpdateProspectStatus(prospect, 'Converted to Lead')
   }
 
   async function handleLogActivity(type = 'Note') {
@@ -1680,7 +2089,56 @@ function CommercialCanvassingPage({ dealType = '' }) {
     createDraft.nextFollowUpDate ? formatShortDate(createDraft.nextFollowUpDate) : 'No follow-up date',
   ]
 
-  const createModal = (
+  const isLeaseCreateFlow = pageView.key === 'lease'
+  const createModal = isLeaseCreateFlow ? (
+    <Modal
+      open={createOpen}
+      onClose={() => setCreateOpen(false)}
+      title="New Canvassing Record"
+      subtitle="Capture basic details of a potential landlord or tenant. Qualify them later to convert into a lead."
+      className="max-w-[1140px]"
+      footer={(
+        <div className="flex w-full flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} className="h-11 min-w-[96px] rounded-[8px]">
+            Cancel
+          </Button>
+          <Button type="button" variant="secondary" disabled={busyAction === 'create'} onClick={() => void submitCreateProspect({ addAnother: true })} className="h-11 min-w-[170px] rounded-[8px] border-[#7fb0ff] text-[#095ed8]">
+            {busyAction === 'create' ? 'Saving...' : 'Save & Add Another'}
+          </Button>
+          <Button type="submit" form="commercial-canvassing-create-form" disabled={busyAction === 'create'} className="h-11 min-w-[150px] rounded-[8px] bg-[#082f56] text-white hover:bg-[#0b3d70]">
+            {busyAction === 'create' ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
+      )}
+    >
+      <form id="commercial-canvassing-create-form" onSubmit={handleCreateProspect} className="min-h-0">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_210px]">
+          <div className="min-w-0">
+            <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:max-w-[560px]">
+              <LeaseRoleTab
+                active={createRole === 'landlord'}
+                icon={Building2}
+                label="Landlord (Property)"
+                onClick={() => updateCreateRole('landlord')}
+              />
+              <LeaseRoleTab
+                active={createRole === 'tenant'}
+                icon={Users}
+                label="Tenant (Company)"
+                onClick={() => updateCreateRole('tenant')}
+              />
+            </div>
+
+            {createRole === 'tenant'
+              ? renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions })
+              : renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions })}
+          </div>
+
+          <LeaseHelperPanel />
+        </div>
+      </form>
+    </Modal>
+  ) : (
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
@@ -1842,13 +2300,25 @@ function CommercialCanvassingPage({ dealType = '' }) {
     </Modal>
   )
 
-  const advancedFilterCount = [categoryFilter, statusFilter, brokerFilter, methodFilter, search, roleFilter, activeTab].filter((value) => normalizeText(value) && value !== 'all').length
+  const advancedFilterCount = [
+    categoryFilter,
+    methodFilter,
+    dateAddedFilter,
+    lastContactFilter,
+    search,
+    roleFilter,
+    brokerFilter,
+    statusFilter,
+  ].filter((value) => normalizeText(value) && value !== 'all').length
   const shouldShowAdvancedFilters = showAdvancedFilters || advancedFilterCount > 0
   const hasAnyProspects = pageScopedProspects.length > 0
   const tableTotalCount = sortedProspects.length
   const tableStart = tableTotalCount ? 1 : 0
   const tableEnd = tableTotalCount
   const currentSortLabel = SORT_OPTIONS.find((option) => option.value === `${sortKey}:${sortDirection}`)?.label || 'Newest Updated'
+  const tableColumnLabels = pageView.key === 'lease'
+    ? ['Prospect', 'Type', 'Asset Class', 'Area / Node', 'Broker', 'Status', 'Last Contact', 'Actions']
+    : ['Prospect', 'Type', 'Category', 'Source', 'Area / Asset', 'Stage / Next Step', 'Broker', 'Last Activity', 'Actions']
   const roleMetricCards = pageView.key === 'sale'
     ? [
         { label: 'Sellers', value: leaseRoleCounts.sellers, icon: Building2, trendLabel: '8%', series: kpiSeries.landlords, color: '#16a34a' },
@@ -1912,11 +2382,32 @@ function CommercialCanvassingPage({ dealType = '' }) {
   }
 
   const getAreaLine = (prospect = {}) => {
-    return normalizeText(prospect.area || prospect.propertyAddress || prospect.preferredArea) || 'Area pending'
+    const roleSpecific = prospect.roleSpecific || prospect.role_specific || {}
+    return normalizeText(
+      prospect.area ||
+      prospect.propertyAddress ||
+      prospect.preferredArea ||
+      roleSpecific.areaNode ||
+      roleSpecific.preferredArea ||
+      roleSpecific.currentAddress ||
+      roleSpecific.propertyAddress,
+    ) || 'Area pending'
   }
 
   const getAssetLine = (prospect = {}) => {
-    return normalizeText(prospect.propertyName || prospect.portfolioName || prospect.vacancyName || prospect.lookingFor || prospect.spaceRequirement) || 'Asset pending'
+    const roleSpecific = prospect.roleSpecific || prospect.role_specific || {}
+    return normalizeText(
+      prospect.propertyName ||
+      prospect.portfolioName ||
+      prospect.vacancyName ||
+      prospect.lookingFor ||
+      prospect.spaceRequirement ||
+      roleSpecific.propertyAddress ||
+      roleSpecific.propertyName ||
+      roleSpecific.portfolioName ||
+      roleSpecific.industry ||
+      roleSpecific.currentAddress,
+    ) || 'Asset pending'
   }
 
   return (
@@ -1933,41 +2424,67 @@ function CommercialCanvassingPage({ dealType = '' }) {
           {error ? <div className="rounded-[18px] border border-[#f6d4d4] bg-[#fff4f4] px-4 py-3 text-sm text-[#9f1d1d]">{error}</div> : null}
           {message ? <div className="rounded-[18px] border border-[#d4e8dc] bg-[#eef9f1] px-4 py-3 text-sm text-[#1a6e3a]">{message}</div> : null}
 
-          <article className={`${CARD_CLASS} overflow-hidden p-5 sm:p-6`}>
+          <article className={pageView.key === 'lease' ? 'space-y-6' : `${CARD_CLASS} overflow-hidden p-5 sm:p-6`}>
             <section className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <h1 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h1>
                 <p className="mt-2 text-sm leading-6 text-[#4f6680]">{pageView.description}</p>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)} className="h-12 rounded-[14px] bg-[#102b46] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#143858]">
-                  <Plus size={16} />
-                  {pageView.createLabel.replace(/^\+\s*/, '')}
-                </Button>
-                <Button type="button" variant="secondary" className="h-12 rounded-[14px] px-5" disabled title="Import is coming soon">
-                  <Download size={16} />
-                  Import
-                </Button>
-                <button
-                  type="button"
-                  className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white text-[#62758b] shadow-sm transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
-                  aria-label="More page actions"
-                >
-                  <MoreHorizontal size={17} />
-                </button>
-              </div>
+              {pageView.key === 'lease' ? (
+                <div className="relative">
+                  <Button type="button" onClick={() => setCreateMenuOpen((current) => !current)} className="h-12 rounded-[10px] bg-[#082f56] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#0b3d70]">
+                    <Plus size={16} />
+                    Add Prospect
+                    <ChevronRight size={15} className={`transition ${createMenuOpen ? 'rotate-90' : ''}`} />
+                  </Button>
+                  {createMenuOpen ? (
+                    <div className="absolute right-0 top-14 z-30 w-44 overflow-hidden rounded-[12px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
+                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal('landlord') }}>
+                        <Building2 size={15} />
+                        Add Landlord
+                      </button>
+                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal('tenant') }}>
+                        <Users size={15} />
+                        Add Tenant
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)} className="h-12 rounded-[14px] bg-[#102b46] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#143858]">
+                    <Plus size={16} />
+                    {pageView.createLabel.replace(/^\+\s*/, '')}
+                  </Button>
+                  <Button type="button" variant="secondary" className="h-12 rounded-[14px] px-5" disabled title="Import is coming soon">
+                    <Download size={16} />
+                    Import
+                  </Button>
+                  <button
+                    type="button"
+                    className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white text-[#62758b] shadow-sm transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
+                    aria-label="More page actions"
+                  >
+                    <MoreHorizontal size={17} />
+                  </button>
+                </div>
+              )}
             </section>
 
-            <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-              <ProspectStat label="Total Prospects" value={loading ? '...' : metrics.prospects} detail="vs last 30 days" icon={Users} trendLabel="12%" series={kpiSeries.total} color="#2d6ecf" />
-              {roleMetricCards.map((card) => (
-                <ProspectStat key={card.label} label={card.label} value={loading ? '...' : card.value} detail="vs last 30 days" icon={card.icon} trendLabel={card.trendLabel} series={card.series} color={card.color} />
-              ))}
-              <ProspectStat label="Follow Ups Due" value={loading ? '...' : metrics.followUpsDue} detail="vs last 30 days" icon={CalendarDays} trendLabel="6%" series={kpiSeries.followUps} color="#f59e0b" />
-              <ProspectStat label="Converted" value={loading ? '...' : metrics.converted} detail="vs last 30 days" icon={CheckCircle2} trendLabel="15%" series={kpiSeries.converted} color="#0f766e" />
-            </section>
+            {pageView.key === 'lease' ? (
+              <LeaseKpiStrip loading={loading} metrics={metrics} counts={leaseRoleCounts} />
+            ) : (
+              <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <ProspectStat label="Total Prospects" value={loading ? '...' : metrics.prospects} detail="vs last 30 days" icon={Users} trendLabel="12%" series={kpiSeries.total} color="#2d6ecf" />
+                {roleMetricCards.map((card) => (
+                  <ProspectStat key={card.label} label={card.label} value={loading ? '...' : card.value} detail="vs last 30 days" icon={card.icon} trendLabel={card.trendLabel} series={card.series} color={card.color} />
+                ))}
+                <ProspectStat label="Follow Ups Due" value={loading ? '...' : metrics.followUpsDue} detail="vs last 30 days" icon={CalendarDays} trendLabel="6%" series={kpiSeries.followUps} color="#f59e0b" />
+                <ProspectStat label="Converted" value={loading ? '...' : metrics.converted} detail="vs last 30 days" icon={CheckCircle2} trendLabel="15%" series={kpiSeries.converted} color="#0f766e" />
+              </section>
+            )}
 
-            {pageView.showDepartmentTabs ? (
+            {pageView.showDepartmentTabs && pageView.key !== 'lease' ? (
               <div className="mt-7 border-b border-[#e8eef5]">
                 <div className="flex gap-9 overflow-x-auto">
                   {pageView.tabs.map((tab) => (
@@ -1984,34 +2501,44 @@ function CommercialCanvassingPage({ dealType = '' }) {
               </div>
             ) : null}
 
-            <section className="rounded-b-[18px] border border-t-0 border-[#dce6f0] bg-white">
+            <section className={`${pageView.key === 'lease' ? 'rounded-[14px] border border-[#dce6f0] bg-white shadow-[0_14px_34px_rgba(15,35,70,0.05)]' : 'rounded-b-[18px] border border-t-0 border-[#dce6f0] bg-white'}`}>
               <div className="border-b border-[#e8eef5] px-4 py-4">
-                <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
-                  <SearchField value={search} onChange={setSearch} placeholder={pageView.searchPlaceholder} className="w-full 2xl:max-w-[34%] 2xl:flex-1" />
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:flex 2xl:flex-wrap 2xl:items-center">
-                    <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Category" className="!w-full 2xl:!w-[148px]" />
-                    <FilterSelect value={brokerFilter} onChange={setBrokerFilter} options={brokerOptions} placeholder="Broker" className="!w-full 2xl:!w-[138px]" />
-                    <FilterSelect value={statusFilter} onChange={setStatusFilter} options={PROSPECT_STATUSES.map((value) => ({ value, label: value }))} placeholder="Status" className="!w-full 2xl:!w-[138px]" />
-                    <FilterSelect value={methodFilter} onChange={setMethodFilter} options={CANVASSING_METHODS.map((value) => ({ value, label: value }))} placeholder="Source" className="!w-full 2xl:!w-[138px]" />
-                    <label className="relative block">
-                      <ArrowUpDown size={15} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#1f6dd5]" />
-                      <Field
-                        as="select"
-                        value={`${sortKey}:${sortDirection}`}
-                        onChange={(event) => {
-                          const [nextKey, nextDirection] = String(event.target.value || '').split(':')
-                          if (!nextKey) return
-                          setSortDirection(nextDirection || 'desc')
-                          setSortKey(nextKey)
-                        }}
-                        aria-label={`Sort: ${currentSortLabel}`}
-                        className="h-11 !w-full rounded-[14px] bg-white pl-9 text-sm 2xl:!w-[198px]"
-                      >
-                        {SORT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>Sort: {option.label}</option>
-                        ))}
-                      </Field>
-                    </label>
+                <div className={pageView.key === 'lease' ? 'grid gap-3 lg:grid-cols-[minmax(260px,1fr)_154px_154px_154px_164px]' : 'flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between'}>
+                  <SearchField value={search} onChange={setSearch} placeholder={pageView.searchPlaceholder} className={pageView.key === 'lease' ? 'w-full' : 'w-full 2xl:max-w-[34%] 2xl:flex-1'} />
+                  <div className={pageView.key === 'lease' ? 'contents' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:flex 2xl:flex-wrap 2xl:items-center'}>
+                    {pageView.key === 'lease' ? (
+                      <>
+                        <FilterSelect value={roleFilter} onChange={setRoleFilter} options={[{ value: 'landlord', label: 'Landlord' }, { value: 'tenant', label: 'Tenant' }]} placeholder="Type" className="!w-full" />
+                        <FilterSelect value={brokerFilter} onChange={setBrokerFilter} options={brokerOptions} placeholder="Broker" className="!w-full" />
+                        <FilterSelect value={statusFilter} onChange={setStatusFilter} options={LEASE_STATUS_OPTIONS.map((value) => ({ value, label: value }))} placeholder="Status" className="!w-full" />
+                      </>
+                    ) : (
+                      <>
+                        <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Category" className="!w-full 2xl:!w-[148px]" />
+                        <FilterSelect value={brokerFilter} onChange={setBrokerFilter} options={brokerOptions} placeholder="Broker" className="!w-full 2xl:!w-[138px]" />
+                        <FilterSelect value={statusFilter} onChange={setStatusFilter} options={PROSPECT_STATUSES.map((value) => ({ value, label: value }))} placeholder="Status" className="!w-full 2xl:!w-[138px]" />
+                        <FilterSelect value={methodFilter} onChange={setMethodFilter} options={CANVASSING_METHODS.map((value) => ({ value, label: value }))} placeholder="Source" className="!w-full 2xl:!w-[138px]" />
+                        <label className="relative block">
+                          <ArrowUpDown size={15} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#1f6dd5]" />
+                          <Field
+                            as="select"
+                            value={`${sortKey}:${sortDirection}`}
+                            onChange={(event) => {
+                              const [nextKey, nextDirection] = String(event.target.value || '').split(':')
+                              if (!nextKey) return
+                              setSortDirection(nextDirection || 'desc')
+                              setSortKey(nextKey)
+                            }}
+                            aria-label={`Sort: ${currentSortLabel}`}
+                            className="h-11 !w-full rounded-[14px] bg-white pl-9 text-sm 2xl:!w-[198px]"
+                          >
+                            {SORT_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>Sort: {option.label}</option>
+                            ))}
+                          </Field>
+                        </label>
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => setShowAdvancedFilters((current) => !current)}
@@ -2022,7 +2549,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
                       }`}
                     >
                       <SlidersHorizontal size={15} />
-                      Filters
+                      {pageView.key === 'lease' ? 'More Filters' : 'Filters'}
                       {advancedFilterCount ? (
                         <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#e7efff] px-1.5 text-[11px] font-semibold text-[#1952c6]">
                           {advancedFilterCount}
@@ -2045,6 +2572,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
                           setStatusFilter('all')
                           setMethodFilter('all')
                           setBrokerFilter('all')
+                          setDateAddedFilter('all')
+                          setLastContactFilter('all')
                           setActiveTab('all')
                           setShowAdvancedFilters(false)
                           if (!pageView.showDepartmentTabs) setDealFilter('all')
@@ -2055,9 +2584,30 @@ function CommercialCanvassingPage({ dealType = '' }) {
                       </button>
                     </div>
                     {pageView.key === 'lease' ? (
-                      <div className="grid gap-3 sm:grid-cols-[minmax(0,180px)_minmax(0,180px)]">
-                        <FilterSelect value={roleFilter} onChange={setRoleFilter} options={pageView.roleOptions} placeholder="Type" className="!w-full" />
-                        <FilterSelect value={activeTab} onChange={setActiveTab} options={LEASE_QUEUE_OPTIONS} placeholder="View" className="!w-full" />
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                        <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={LEASE_ASSET_CLASS_OPTIONS.map(({ value, label }) => ({ value, label }))} placeholder="Asset Class" className="!w-full" />
+                        <FilterSelect value={methodFilter} onChange={setMethodFilter} options={CANVASSING_METHODS.map((value) => ({ value, label: value }))} placeholder="Source" className="!w-full" />
+                        <FilterSelect value={dateAddedFilter} onChange={setDateAddedFilter} options={DATE_FILTER_OPTIONS.slice(1)} placeholder="Date Added" className="!w-full" />
+                        <FilterSelect value={lastContactFilter} onChange={setLastContactFilter} options={DATE_FILTER_OPTIONS.slice(1)} placeholder="Last Contact" className="!w-full" />
+                        <label className="relative block">
+                          <ArrowUpDown size={15} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#1f6dd5]" />
+                          <Field
+                            as="select"
+                            value={`${sortKey}:${sortDirection}`}
+                            onChange={(event) => {
+                              const [nextKey, nextDirection] = String(event.target.value || '').split(':')
+                              if (!nextKey) return
+                              setSortDirection(nextDirection || 'desc')
+                              setSortKey(nextKey)
+                            }}
+                            aria-label={`Sort: ${currentSortLabel}`}
+                            className="h-11 !w-full rounded-[14px] bg-white pl-9 text-sm"
+                          >
+                            {SORT_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>Sort: {option.label}</option>
+                            ))}
+                          </Field>
+                        </label>
                       </div>
                     ) : null}
                     {pageView.showRoleFilters ? (
@@ -2079,7 +2629,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
                     <table className="min-w-[1260px] w-full border-separate border-spacing-0">
                     <thead className="sticky top-0 z-10 bg-[#f7fafc] text-left text-[12px] font-semibold uppercase tracking-[0.12em] text-[#61758b]">
                       <tr>
-                        {['Prospect', 'Type', 'Category', 'Source', 'Area / Asset', 'Stage / Next Step', 'Broker', 'Last Activity', 'Actions'].map((label) => (
+                        {tableColumnLabels.map((label) => (
                           <th key={label} className="border-b border-[#e7edf4] px-5 py-3">{label}</th>
                         ))}
                       </tr>
@@ -2087,7 +2637,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
                     <tbody>
                       {loading ? Array.from({ length: 6 }).map((_, index) => (
                         <tr key={`loading-${index}`}>
-                          <td colSpan={9} className="border-b border-[#eef3f7] px-5 py-4">
+                          <td colSpan={tableColumnLabels.length} className="border-b border-[#eef3f7] px-5 py-4">
                             <div className="h-16 animate-pulse rounded-[16px] bg-slate-100" />
                           </td>
                         </tr>
@@ -2115,48 +2665,68 @@ function CommercialCanvassingPage({ dealType = '' }) {
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-semibold text-[#102236]">{getProspectDisplayName(prospect)}</p>
                                   <p className="mt-1 truncate text-xs text-[#6d839b]">{normalizeText(prospect.contactName) || prospect.secondaryLine || 'No contact captured'}</p>
-                                  <p className="mt-1 truncate text-xs text-[#6d839b]">{normalizeText(prospect.phone) || 'No phone captured'}</p>
+                                  {pageView.key !== 'lease' ? <p className="mt-1 truncate text-xs text-[#6d839b]">{normalizeText(prospect.phone) || 'No phone captured'}</p> : null}
                                 </div>
                               </div>
                             </td>
                             <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <div className="space-y-2">
                                 <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(roleTone)}`}>{prospect.roleLabel}</span>
-                                <p className="text-xs text-[#63768b]">{prospect.dealTypeLabel}</p>
+                                {pageView.key !== 'lease' ? <p className="text-xs text-[#63768b]">{prospect.dealTypeLabel}</p> : null}
                               </div>
                             </td>
                             <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
-                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(categoryTone)}`}>{prospect.categoryLabel}</span>
+                              {pageView.key === 'lease'
+                                ? <LeaseAssetClass category={prospect.propertyCategory || prospect.propertyType} />
+                                : <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(categoryTone)}`}>{prospect.categoryLabel}</span>}
                             </td>
-                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
-                              <span className="inline-flex rounded-full border border-[#e0e8f2] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#38506a]">
-                                {titleize(prospect.sourceLabel)}
-                              </span>
-                            </td>
+                            {pageView.key !== 'lease' ? (
+                              <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
+                                <span className="inline-flex rounded-full border border-[#e0e8f2] bg-[#f8fbff] px-2.5 py-1 text-xs font-semibold text-[#38506a]">
+                                  {titleize(prospect.sourceLabel)}
+                                </span>
+                              </td>
+                            ) : null}
                             <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <div className="space-y-1">
-                                <p className="text-sm font-semibold text-[#102236]">{getAssetLine(prospect)}</p>
+                                {pageView.key !== 'lease' ? <p className="text-sm font-semibold text-[#102236]">{getAssetLine(prospect)}</p> : null}
                                 <div className="inline-flex items-center gap-1.5 text-xs text-[#63768b]">
                                   <MapPin size={12} className="text-[#9cb0c4]" />
                                   <span>{getAreaLine(prospect)}</span>
                                 </div>
                               </div>
                             </td>
+                            {pageView.key === 'lease' ? (
+                              <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
+                                <div className="inline-flex items-center gap-2">
+                                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#2b4f71]">
+                                    {brokerLabel === 'Unassigned' ? 'U' : brokerLabel.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')}
+                                  </span>
+                                  <span className="text-sm font-semibold text-[#102236]">{brokerLabel}</span>
+                                </div>
+                              </td>
+                            ) : null}
                             <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
-                              <div className="space-y-2">
-                                <ProspectTonePill value={prospect.stageLabel} />
-                                <p className="line-clamp-1 text-sm font-medium text-[#4f6176]">{prospect.nextStepLabel}</p>
-                                <p className="text-xs text-[#8a96a8]">{prospect.nextFollowUpDate ? formatShortDate(prospect.nextFollowUpDate) : 'No follow-up date'}</p>
-                              </div>
+                              {pageView.key === 'lease' ? (
+                                <LeaseStatusPill status={prospect.stageLabel || prospect.status} />
+                              ) : (
+                                <div className="space-y-2">
+                                  <ProspectTonePill value={prospect.stageLabel} />
+                                  <p className="line-clamp-1 text-sm font-medium text-[#4f6176]">{prospect.nextStepLabel}</p>
+                                  <p className="text-xs text-[#8a96a8]">{prospect.nextFollowUpDate ? formatShortDate(prospect.nextFollowUpDate) : 'No follow-up date'}</p>
+                                </div>
+                              )}
                             </td>
-                            <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
-                              <div className="inline-flex items-center gap-2">
-                                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#2b4f71]">
-                                  {brokerLabel === 'Unassigned' ? 'U' : brokerLabel.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')}
-                                </span>
-                                <span className="text-sm font-semibold text-[#102236]">{brokerLabel}</span>
-                              </div>
-                            </td>
+                            {pageView.key !== 'lease' ? (
+                              <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
+                                <div className="inline-flex items-center gap-2">
+                                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7edf6] text-xs font-semibold text-[#2b4f71]">
+                                    {brokerLabel === 'Unassigned' ? 'U' : brokerLabel.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('')}
+                                  </span>
+                                  <span className="text-sm font-semibold text-[#102236]">{brokerLabel}</span>
+                                </div>
+                              </td>
+                            ) : null}
                             <td className="border-b border-[#eef3f7] px-4 py-4 align-top">
                               <p className="text-sm font-medium text-[#4f6176]">{formatRelativeTime(lastActivity?.activityDate || lastActivity?.createdAt)}</p>
                               <p className="mt-1 line-clamp-1 text-xs text-[#8a96a8]">{lastActivity?.activityNote || lastActivity?.outcome || lastActivity?.activityType || 'No activity yet'}</p>
@@ -2173,9 +2743,17 @@ function CommercialCanvassingPage({ dealType = '' }) {
                                 </button>
                                 {showMenu ? (
                                   <div className="absolute right-0 top-10 z-20 w-48 overflow-hidden rounded-[14px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
-                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setOpenActionMenuId('') }}>Open details</button>
                                     <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setMessage('Edit the prospect in the detail drawer.'); setOpenActionMenuId('') }}>Edit</button>
-                                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setMessage('Use the detail drawer to log a call or add notes.'); setOpenActionMenuId('') }}>Log activity</button>
+                                    {pageView.key === 'lease' ? (
+                                      <>
+                                        <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setOpenActionMenuId(''); void handleUpdateProspectStatus(prospect, 'Contacted') }}>Mark Contacted</button>
+                                        {getLeaseStatusLabel(prospect.status || prospect.stageLabel) !== 'Converted' ? (
+                                          <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setOpenActionMenuId(''); void handleConvertProspectToLead(prospect) }}>Convert to Lead</button>
+                                        ) : null}
+                                      </>
+                                    ) : (
+                                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#102236] transition hover:bg-[#f7fafc]" onClick={() => { setSelectedProspectId(prospect.id); setDrawerOpen(true); setMessage('Use the detail drawer to log a call or add notes.'); setOpenActionMenuId('') }}>Log activity</button>
+                                    )}
                                     <div className="my-1 border-t border-[#eef3f7]" />
                                     <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[#a13b35] transition hover:bg-[#fff5f5]" onClick={() => { setSelectedProspectId(prospect.id); setArchiveOpen(true); setOpenActionMenuId('') }}>Archive</button>
                                   </div>
@@ -2186,14 +2764,18 @@ function CommercialCanvassingPage({ dealType = '' }) {
                         )
                       }) : (
                         <tr>
-                          <td colSpan={9} className="px-0 py-0">
-                            <InlineTableEmptyState
-                              icon={emptyStateConfig.icon}
-                              title={emptyStateConfig.title}
-                              description={emptyStateConfig.description}
-                              actionLabel={emptyStateConfig.actionLabel}
-                              onAction={emptyStateConfig.onAction}
-                            />
+                          <td colSpan={tableColumnLabels.length} className="px-0 py-0">
+                            {pageView.key === 'lease' && !hasAnyProspects ? (
+                              <LeaseProspectsEmptyState onAddLandlord={() => openCreateModal('landlord')} onAddTenant={() => openCreateModal('tenant')} />
+                            ) : (
+                              <InlineTableEmptyState
+                                icon={emptyStateConfig.icon}
+                                title={emptyStateConfig.title}
+                                description={emptyStateConfig.description}
+                                actionLabel={emptyStateConfig.actionLabel}
+                                onAction={emptyStateConfig.onAction}
+                              />
+                            )}
                           </td>
                         </tr>
                       )}
@@ -2252,20 +2834,28 @@ function CommercialCanvassingPage({ dealType = '' }) {
                           <span className="inline-flex rounded-full border border-[#e0e8f2] bg-[#f8fbff] px-2.5 py-1 font-semibold text-[#38506a]">{titleize(prospect.sourceLabel)}</span>
                         </div>
                         <p>{getAssetLine(prospect)} · {getAreaLine(prospect)}</p>
-                        <p>{prospect.stageLabel} · {prospect.nextStepLabel}</p>
+                        <p>
+                          {pageView.key === 'lease'
+                            ? `${normalizeText(prospect.phone) || 'No contact number'} · ${normalizeText(prospect.email) || normalizeText(prospect.contactName) || 'Email pending'}`
+                            : `${prospect.stageLabel} · ${prospect.nextStepLabel}`}
+                        </p>
                         <p>Assigned: {brokerLabel}</p>
                         <p>{formatRelativeTime(lastActivity?.activityDate || lastActivity?.createdAt)} · {lastActivity?.activityNote || lastActivity?.activityType || 'No activity yet'}</p>
                       </div>
                     </div>
                   )
                 }) : (
-                  <InlineTableEmptyState
-                    icon={emptyStateConfig.icon}
-                    title={emptyStateConfig.title}
-                    description={emptyStateConfig.description}
-                    actionLabel={emptyStateConfig.actionLabel}
-                    onAction={emptyStateConfig.onAction}
-                  />
+                  pageView.key === 'lease' && !hasAnyProspects ? (
+                    <LeaseProspectsEmptyState onAddLandlord={() => openCreateModal('landlord')} onAddTenant={() => openCreateModal('tenant')} />
+                  ) : (
+                    <InlineTableEmptyState
+                      icon={emptyStateConfig.icon}
+                      title={emptyStateConfig.title}
+                      description={emptyStateConfig.description}
+                      actionLabel={emptyStateConfig.actionLabel}
+                      onAction={emptyStateConfig.onAction}
+                    />
+                  )
                 )}
                 </div>
 
