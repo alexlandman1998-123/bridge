@@ -638,6 +638,10 @@ function withoutCommercialRoleColumns(payload = {}) {
   return rest
 }
 
+function withoutCommercialRoleSelectColumns(fields, columns = []) {
+  return withoutSelectColumns(fields, ['platform_role', 'commercial_role', ...columns])
+}
+
 function isMissingCommercialRoleColumn(error) {
   if (!isCommercialSchemaMismatchError(error)) return false
   const missingColumn = getMissingCommercialColumn(error)
@@ -1472,7 +1476,7 @@ export async function reviewCommercialAccessRequest(requestId, { decision = 'app
         .update(retryPayload)
         .eq('organisation_id', request.organisationId)
         .eq('user_id', request.requesterUserId)
-        .select(withoutSelectColumns(`id, organisation_id, user_id, module_context, module_metadata, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, email`, [getMissingCommercialColumn(updatedMembership.error)]))
+        .select(withoutCommercialRoleSelectColumns(`id, organisation_id, user_id, module_context, module_metadata, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, email`, [getMissingCommercialColumn(updatedMembership.error)]))
         .maybeSingle()
     }
 
@@ -2042,7 +2046,7 @@ export async function setCommercialUserAccess(organisationUserId, enabled = true
       .update(retryPayload)
       .eq('id', safeOrganisationUserId)
       .eq('organisation_id', context.organisationId)
-      .select(withoutSelectColumns(`id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, module_context, module_metadata, updated_at`, [getMissingCommercialColumn(result.error)]))
+      .select(withoutCommercialRoleSelectColumns(`id, organisation_id, user_id, first_name, last_name, email, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, status, module_context, module_metadata, updated_at`, [getMissingCommercialColumn(result.error)]))
       .maybeSingle()
   }
 
@@ -2133,9 +2137,10 @@ function resolveScopeLevel(role) {
 
 async function findCurrentCommercialMembership(organisationId, userId) {
   if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
+  const compatibilitySelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, email, first_name, last_name, last_active_at'
   const query = await supabase
     .from('organisation_users')
-    .select(`id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, module_context, workspace_type, module_metadata, status, email, first_name, last_name, last_active_at`)
+    .select(compatibilitySelect)
     .eq('organisation_id', organisationId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
@@ -2223,11 +2228,10 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
 
 async function findCurrentOrganisationMembership(organisationId, userId) {
   if (!organisationId || !userId || !isSupabaseConfigured || !supabase) return null
-  const fullSelect = `id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, module_context, workspace_type, module_metadata, status, email`
-  const basicSelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, role, workspace_role, organisation_role, status, email'
+  const compatibilitySelect = 'id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, module_context, workspace_type, module_metadata, status, email'
   const query = await supabase
     .from('organisation_users')
-    .select(fullSelect)
+    .select(compatibilitySelect)
     .eq('organisation_id', organisationId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
@@ -2238,7 +2242,7 @@ async function findCurrentOrganisationMembership(organisationId, userId) {
 
   const fallback = await supabase
     .from('organisation_users')
-    .select(basicSelect)
+    .select(compatibilitySelect)
     .eq('organisation_id', organisationId)
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
@@ -2346,7 +2350,7 @@ export async function activateCommercialWorkspaceForCurrentUser() {
       .update(fallbackPayload)
       .eq('id', member.id)
       .eq('organisation_id', context.organisationId)
-      .select(withoutSelectColumns(fullSelect, [getMissingCommercialColumn(update.error)]))
+      .select(withoutCommercialRoleSelectColumns(fullSelect, [getMissingCommercialColumn(update.error)]))
       .maybeSingle()
     if (fallback.error) throw fallback.error
   } else if (update.error) {
