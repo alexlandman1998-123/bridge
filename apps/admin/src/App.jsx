@@ -292,15 +292,13 @@ function Sidebar({ activeView, allowedGroups, level, onViewChange, profile, onSi
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="brand-mark small" aria-hidden="true">
-          9
-        </div>
+        <div className="arch9-mark" aria-hidden="true" />
         <strong>ARCH9</strong>
       </div>
 
       <div className="admin-identity">
-        <div className="brand-mark mini" aria-hidden="true">
-          9
+        <div className="admin-avatar" aria-hidden="true">
+          BA
         </div>
         <div>
           <strong>Bridge Admin</strong>
