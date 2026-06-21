@@ -963,18 +963,18 @@ function normalizeFormData(listing) {
 function AgencyMark({ brand, tone = 'dark' }) {
   if (brand?.logoUrl) {
     return (
-      <span className={`inline-flex h-12 min-w-12 max-w-[220px] items-center justify-center rounded-[16px] px-2 py-1 shadow-[0_12px_30px_rgba(0,0,0,0.18)] ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white/5'}`}>
+      <span className={`inline-flex h-16 min-w-16 max-w-[260px] items-center justify-center rounded-[18px] px-3 py-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)] ${tone === 'light' ? 'border border-[#dbe5ef] bg-white' : 'border border-white/15 bg-white/5'}`}>
         <img
           src={brand.logoUrl}
-          alt={`${brand.name} logo`}
-          className="max-h-10 w-auto max-w-[200px] object-contain"
+          alt={`${brand?.name || 'Agency'} logo`}
+          className="max-h-12 w-auto max-w-[230px] object-contain"
         />
       </span>
     )
   }
 
   return (
-    <span className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-xs font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-12 sm:w-12 sm:rounded-[16px] sm:text-sm ${tone === 'light' ? 'border border-[#dbe5ef] bg-[#172334] text-white' : 'border border-white/15 bg-white/10 text-white'}`}>
+    <span className={`inline-flex h-12 w-12 items-center justify-center rounded-[16px] text-sm font-semibold shadow-[0_12px_30px_rgba(0,0,0,0.18)] sm:h-16 sm:w-16 sm:rounded-[18px] sm:text-base ${tone === 'light' ? 'border border-[#dbe5ef] bg-[#172334] text-white' : 'border border-white/15 bg-white/10 text-white'}`}>
       {brand?.initials || 'AG'}
     </span>
   )
@@ -985,14 +985,10 @@ function SellerBrandBar({ brand }) {
     <div className="flex flex-col gap-3 border-b border-white/8 pb-4 sm:flex-row sm:items-center sm:justify-between sm:pb-5">
       <div className="flex min-w-0 items-center gap-3">
         <AgencyMark brand={brand} />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white sm:text-base">{brand.name}</p>
-          <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/55 sm:text-xs sm:tracking-[0.16em]">Seller Onboarding</p>
-        </div>
       </div>
       <div className="flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-[11px] font-semibold text-white/75 sm:gap-3 sm:py-2 sm:text-xs">
         <span>Powered by</span>
-        <span className="rounded-full bg-white px-2.5 py-1 text-[#101827]">Bridge9</span>
+        <span className="rounded-full bg-white px-2.5 py-1 text-[#101827]">arch9</span>
       </div>
     </div>
   )
@@ -3339,7 +3335,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         </div>
 
         <div className="mt-6 hidden flex-col gap-3 border-t border-[#e4ebf5] pt-4 sm:mt-7 lg:flex lg:flex-row lg:items-center lg:justify-between">
-          <p className="text-center text-sm text-[#6b7d93] lg:text-left">{saving ? 'Saving your progress...' : success ? 'Saved just now' : 'Secure seller onboarding powered by Bridge9'}</p>
+          <p className="text-center text-sm text-[#6b7d93] lg:text-left">{saving ? 'Saving your progress...' : success ? 'Saved just now' : 'Secure seller onboarding powered by arch9'}</p>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             {currentStep > 0 ? (
               <Button type="button" variant="secondary" onClick={handleBack} disabled={saving || submitting} className="min-h-[46px] w-full sm:w-auto">
@@ -3370,7 +3366,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       )}
 
       <footer className="flex flex-col gap-2 px-1 pb-2 text-center text-sm text-[#6b7d93] sm:flex-row sm:items-center sm:justify-between sm:text-left">
-        <span>Secure seller onboarding powered by Bridge9</span>
+        <span>Secure seller onboarding powered by arch9</span>
         <span>Need help? Contact {resolveAgentName(listing)}.</span>
       </footer>
     </div>
