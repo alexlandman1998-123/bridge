@@ -11,6 +11,7 @@ import {
   Settings2,
   TrendingUp,
   UserRoundCheck,
+  UsersRound,
   Workflow,
   KeyRound,
 } from 'lucide-react'
@@ -52,6 +53,7 @@ export const COMMERCIAL_NAV_SECTIONS = [
       { label: 'Leads', to: '/commercial/leasing/leads', icon: ClipboardList, activePaths: ['/commercial/leasing/leads', '/commercial/leads', '/commercial/requirements'] },
       { label: 'Vacancies', to: '/commercial/leasing/vacancies', icon: Building2, activePaths: ['/commercial/leasing/vacancies', '/commercial/vacancies'] },
       { label: 'Deals', to: '/commercial/leasing/deals', icon: FileText, activePaths: ['/commercial/leasing/deals', '/commercial/deals/leasing', '/commercial/heads-of-terms', '/commercial/hot', '/commercial/leases'] },
+      { label: 'Tenants', to: '/commercial/leasing/tenants', icon: UsersRound, activePaths: ['/commercial/leasing/tenants', '/commercial/tenants'] },
     ],
   },
   {
@@ -116,6 +118,7 @@ export const COMMERCIAL_MOBILE_MORE_NAV_ITEMS = [
   COMMERCIAL_NAV_SECTIONS[1].items[0],
   COMMERCIAL_NAV_SECTIONS[1].items[2],
   COMMERCIAL_NAV_SECTIONS[1].items[3],
+  COMMERCIAL_NAV_SECTIONS[1].items[4],
   COMMERCIAL_NAV_SECTIONS[2].items[0],
   COMMERCIAL_NAV_SECTIONS[2].items[2],
   COMMERCIAL_NAV_SECTIONS[2].items[3],

@@ -252,6 +252,8 @@ const CommercialLandlordWorkspacePage = lazy(() => import('./modules/commercial/
 const CommercialLeadDetailPage = lazy(() => import('./modules/commercial/pages/CommercialLeadDetailPage'))
 const CommercialLeadsPage = lazy(() => import('./modules/commercial/pages/CommercialLeadsPage'))
 const CommercialLeaseExpiryWatchPage = lazy(() => import('./modules/commercial/pages/CommercialLeaseExpiryWatchPage'))
+const CommercialLeaseTenantWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialLeaseTenantWorkspacePage'))
+const CommercialLeasingTenantsPage = lazy(() => import('./modules/commercial/pages/CommercialLeasingTenantsPage'))
 const CommercialLeasingPage = lazy(() => import('./modules/commercial/pages/CommercialLeasingPage'))
 const CommercialListingWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialListingWorkspacePage'))
 const CommercialListingsPage = lazy(() => import('./modules/commercial/pages/CommercialListingsPage'))
@@ -1394,11 +1396,13 @@ function AppRoutes() {
                 <Route path="companies/:companyId" element={<CommercialCompanyWorkspacePage />} />
                 <Route path="contacts" element={<Navigate to="/commercial/clients?tab=contacts" replace />} />
                 <Route path="contacts/:contactId" element={<CommercialContactWorkspacePage />} />
-                <Route path="tenants" element={<Navigate to="/commercial/clients?tab=contacts" replace />} />
+                <Route path="tenants" element={<Navigate to="/commercial/leasing/tenants" replace />} />
                 <Route path="clients" element={<CommercialClientsPage />} />
                 <Route path="expiring-occupiers" element={<CommercialExpiringOccupiersPage />} />
                 <Route path="vacancies" element={<CommercialVacanciesPage />} />
                 <Route path="leasing/vacancies" element={<CommercialVacanciesPage />} />
+                <Route path="leasing/tenants" element={<CommercialLeasingTenantsPage />} />
+                <Route path="leasing/tenants/:leaseId" element={<CommercialLeaseTenantWorkspacePage />} />
                 <Route path="vacancies/:vacancyId" element={<CommercialVacancyWorkspacePage />} />
                 <Route path="listings" element={<CommercialListingsPage />} />
                 <Route path="sales/listings" element={<CommercialSalesListingsPage />} />

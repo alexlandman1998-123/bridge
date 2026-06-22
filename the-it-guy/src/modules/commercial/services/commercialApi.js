@@ -3973,6 +3973,9 @@ export async function updateCommercialRequirementStage(id, stage, previousStage 
 export async function updateCommercialDealStage(id, stage, previousStage = '') {
   const nextStage = normalizeCommercialLifecycleStage('deals', stage, 'new')
   const updated = await updateCommercialRecord('deals', id, { stage: nextStage }, { logActivity: false })
+  if (isClosedCommercialLeaseDeal(updated)) {
+    await ensureCommercialLeaseForClosedDeal(updated)
+  }
   await logCommercialActivity({
     organisation_id: updated?.organisation_id,
     entityType: 'commercial_deal',
@@ -4473,6 +4476,203 @@ export async function updateCommercialCommission(id, payload = {}, options = {})
   return updated
 }
 
+function isClosedCommercialLeaseDeal(deal = {}) {
+  const transactionType = transactionTypeFromRecord(deal)
+  if (transactionType !== 'lease') return false
+  const stage = normalizeCommercialLifecycleStage('deals', deal.stage, '')
+  return ['converted'].includes(stage)
+}
+
+function buildCommercialLeasePayloadFromDeal(deal = {}, existing = null) {
+  const closeDate = deal.expected_close_date || existing?.lease_start_date || new Date().toISOString().slice(0, 10)
+  return {
+    organisation_id: deal.organisation_id,
+    deal_id: deal.id,
+    tenant_id: deal.tenant_id || existing?.tenant_id || null,
+    landlord_id: deal.landlord_id || existing?.landlord_id || null,
+    property_id: deal.property_id || existing?.property_id || null,
+    vacancy_id: deal.vacancy_id || existing?.vacancy_id || null,
+    branch_id: deal.branch_id || existing?.branch_id || null,
+    team_id: deal.team_id || existing?.team_id || null,
+    broker_id: deal.broker_id || deal.assigned_broker || existing?.broker_id || null,
+    lease_start_date: existing?.lease_start_date || closeDate,
+    occupation_date: existing?.occupation_date || closeDate,
+    lease_end_date: existing?.lease_end_date || null,
+    monthly_rental: existing?.monthly_rental ?? deal.deal_value ?? null,
+    status: ['executed', 'active'].includes(normalizeLower(existing?.status)) ? existing.status : 'active',
+    notes: existing?.notes || deal.notes || 'Lease outcome generated from a closed leasing deal.',
+  }
+}
+
+function leasePayloadChanged(existing = {}, payload = {}) {
+  return Object.entries(payload).some(([key, value]) => {
+    if (key === 'organisation_id' || key === 'deal_id') return false
+    return String(existing?.[key] ?? '') !== String(value ?? '')
+  })
+}
+
+export async function ensureCommercialLeaseForClosedDeal(deal = {}) {
+  if (!deal?.id || !deal?.organisation_id || !isClosedCommercialLeaseDeal(deal)) return null
+  const leases = await getCommercialLeases(deal.organisation_id)
+  const existing = leases.find((row) => String(row.deal_id || '') === String(deal.id)) || null
+  const payload = buildCommercialLeasePayloadFromDeal(deal, existing)
+
+  if (existing?.id) {
+    if (!leasePayloadChanged(existing, payload)) return existing
+    return updateCommercialLease(existing.id, { ...payload, previousRecord: existing }, { logActivity: false })
+  }
+
+  return createCommercialLease(payload)
+}
+
+export async function syncClosedCommercialLeaseDeals(organisationId = '') {
+  const resolvedOrganisationId = await resolveOrganisationId(organisationId)
+  if (!resolvedOrganisationId) return []
+  const deals = await getCommercialDeals(resolvedOrganisationId)
+  const closedLeaseDeals = deals.filter(isClosedCommercialLeaseDeal)
+  for (const deal of closedLeaseDeals) {
+    await ensureCommercialLeaseForClosedDeal(deal)
+  }
+  return getCommercialLeases(resolvedOrganisationId)
+}
+
+export async function getCommercialLeaseTenancies(organisationId = '') {
+  return syncClosedCommercialLeaseDeals(organisationId)
+}
+
+export async function getCommercialLeaseWorkspaceData(organisationId = '', leaseId = '') {
+  const resolvedOrganisationId = await resolveOrganisationId(organisationId)
+  const safeLeaseId = normalizeText(leaseId)
+  if (!resolvedOrganisationId || !safeLeaseId) return null
+
+  const lookups = await getCommercialLookupData(resolvedOrganisationId)
+  const lease = (lookups.leases || []).find((row) => String(row.id) === safeLeaseId) || null
+  if (!lease) return { lease: null, lookups, activity: [] }
+
+  const tenant = (lookups.tenants || []).find((row) => String(row.id || '') === String(lease.tenant_id || '')) || null
+  const landlord = (lookups.landlords || []).find((row) => String(row.id || '') === String(lease.landlord_id || '')) || null
+  const property = (lookups.properties || []).find((row) => String(row.id || '') === String(lease.property_id || '')) || null
+  const vacancy = (lookups.vacancies || []).find((row) => String(row.id || '') === String(lease.vacancy_id || '')) || null
+  const deal = (lookups.deals || []).find((row) => String(row.id || '') === String(lease.deal_id || '')) || null
+  const headsOfTerms = (lookups.headsOfTerms || []).find((row) => String(row.id || '') === String(lease.heads_of_terms_id || '')) || null
+  const transaction = (lookups.transactions || []).find((row) => String(row.deal_id || '') === String(lease.deal_id || '')) || null
+  const activityGroups = await Promise.all([
+    getCommercialActivity({ organisationId: resolvedOrganisationId, entityType: 'commercial_lease', entityId: lease.id }),
+    lease.deal_id ? getCommercialActivity({ organisationId: resolvedOrganisationId, entityType: 'commercial_deal', entityId: lease.deal_id }) : [],
+    lease.vacancy_id ? getCommercialActivity({ organisationId: resolvedOrganisationId, entityType: 'commercial_vacancy', entityId: lease.vacancy_id }) : [],
+  ])
+  const activity = activityGroups.flat().filter(Boolean).sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0))
+
+  return {
+    lease,
+    tenant,
+    landlord,
+    property,
+    vacancy,
+    deal,
+    headsOfTerms,
+    transaction,
+    activity,
+    lookups,
+  }
+}
+
+export async function renewCommercialLease(id, payload = {}) {
+  const existing = await findCommercialRecordById('leases', id, payload.organisation_id || payload.organisationId)
+  if (!existing?.id) throw new Error('Lease record could not be found.')
+  const months = Number(payload.lease_term_months || payload.renewalTermMonths || existing.lease_term_months || 36)
+  const leaseStartDate = payload.lease_start_date || existing.lease_end_date || new Date().toISOString().slice(0, 10)
+  const leaseEndDate = payload.lease_end_date || (Number.isFinite(months) && months > 0 ? addMonthsToDate(leaseStartDate, months) : existing.lease_end_date)
+  const updated = await updateCommercialLease(existing.id, {
+    ...payload,
+    previousRecord: existing,
+    lease_start_date: leaseStartDate,
+    lease_end_date: leaseEndDate,
+    occupation_date: payload.occupation_date || existing.occupation_date || leaseStartDate,
+    lease_term_months: Number.isFinite(months) && months > 0 ? months : existing.lease_term_months,
+    status: payload.status || 'active',
+    renewal_option: payload.renewal_option ?? true,
+  })
+
+  await logCommercialActivity({
+    organisation_id: updated?.organisation_id,
+    branch_id: updated?.branch_id,
+    team_id: updated?.team_id,
+    broker_id: updated?.broker_id,
+    entityType: 'commercial_lease',
+    entityId: updated?.id,
+    activityType: 'lease_renewed',
+    title: 'Lease renewed',
+    body: `Lease renewed until ${updated?.lease_end_date || 'the next term'}.`,
+    metadata: {
+      previousLeaseEndDate: existing.lease_end_date || null,
+      leaseEndDate: updated?.lease_end_date || null,
+      termMonths: updated?.lease_term_months || null,
+    },
+  })
+
+  return updated
+}
+
+export async function vacateCommercialLease(id, payload = {}) {
+  const existing = await findCommercialRecordById('leases', id, payload.organisation_id || payload.organisationId)
+  if (!existing?.id) throw new Error('Lease record could not be found.')
+  const updated = await updateCommercialLease(existing.id, {
+    ...payload,
+    previousRecord: existing,
+    status: 'terminated',
+    notes: payload.notes || existing.notes,
+  })
+
+  if (updated?.vacancy_id) {
+    await updateCommercialVacancy(updated.vacancy_id, {
+      status: payload.vacancyStatus || 'available',
+      availability_date: payload.availability_date || new Date().toISOString().slice(0, 10),
+    }, { logActivity: false }).catch(() => null)
+  }
+
+  await logCommercialActivity({
+    organisation_id: updated?.organisation_id,
+    branch_id: updated?.branch_id,
+    team_id: updated?.team_id,
+    broker_id: updated?.broker_id,
+    entityType: 'commercial_lease',
+    entityId: updated?.id,
+    activityType: 'lease_vacated',
+    title: 'Tenant vacated',
+    body: updated?.vacancy_id ? 'Lease marked vacated and linked vacancy returned to available stock.' : 'Lease marked vacated.',
+    metadata: { vacancyId: updated?.vacancy_id || null },
+  })
+
+  return updated
+}
+
+export async function relistCommercialLeaseVacancy(id, payload = {}) {
+  const existing = await findCommercialRecordById('leases', id, payload.organisation_id || payload.organisationId)
+  if (!existing?.id) throw new Error('Lease record could not be found.')
+  if (!existing.vacancy_id) throw new Error('This lease is not linked to a vacancy.')
+
+  const vacancy = await updateCommercialVacancy(existing.vacancy_id, {
+    status: payload.status || 'marketing',
+    availability_date: payload.availability_date || existing.lease_end_date || new Date().toISOString().slice(0, 10),
+  }, { logActivity: false })
+
+  await logCommercialActivity({
+    organisation_id: existing.organisation_id,
+    branch_id: existing.branch_id,
+    team_id: existing.team_id,
+    broker_id: existing.broker_id,
+    entityType: 'commercial_lease',
+    entityId: existing.id,
+    activityType: 'vacancy_relisted',
+    title: 'Vacancy re-listed',
+    body: `${vacancy?.vacancy_name || 'Linked vacancy'} was moved back into marketing.`,
+    metadata: { vacancyId: existing.vacancy_id, vacancyStatus: vacancy?.status || null },
+  })
+
+  return vacancy
+}
+
 export async function createCommercialLease(payload = {}) {
   const lease = await createCommercialRecord('leases', payload)
   if (lease?.deal_id) {
@@ -4529,11 +4729,15 @@ export async function updateCommercialDeal(id, payload = {}, options = {}) {
   const existing = await findCommercialRecordById('deals', id, payload.organisation_id || payload.organisationId)
   const relationshipContext = await resolveCommercialRelationshipContext({ ...existing, ...payload }, existing?.organisation_id || payload.organisation_id)
   const brokerId = normalizeText(payload.broker_id || payload.assigned_broker || existing?.broker_id || existing?.assigned_broker || relationshipContext.company?.broker_id)
-  return updateCommercialRecord('deals', id, withCommercialRelationshipPayload({
+  const updated = await updateCommercialRecord('deals', id, withCommercialRelationshipPayload({
     ...payload,
     broker_id: brokerId || null,
     assigned_broker: payload.assigned_broker || existing?.assigned_broker || brokerId || null,
   }, relationshipContext, existing), options)
+  if (isClosedCommercialLeaseDeal(updated)) {
+    await ensureCommercialLeaseForClosedDeal(updated)
+  }
+  return updated
 }
 
 export async function updateCommercialLease(id, payload = {}, options = {}) {
