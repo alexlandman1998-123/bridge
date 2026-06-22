@@ -228,17 +228,6 @@ function getCanvassingPageViewConfig(dealType = '') {
   }
 }
 
-const SELL_REASON_OPTIONS = [
-  'Relocating',
-  'Scaling down',
-  'Portfolio optimisation',
-  'Owner-occupier exit',
-  'Investment disposal',
-  'Development opportunity',
-  'Unknown',
-  'Other',
-]
-
 const BUY_LOOKING_FOR_OPTIONS = [
   'Owner-occupier premises',
   'Investment property',
@@ -429,7 +418,6 @@ function buildDraftFromSearchParams(searchParams, defaultBrokerId = '') {
     spaceRequirement: getParam('spaceRequirement'),
     sizeRange: getParam('sizeRange'),
     budgetRange: getParam('budgetRange'),
-    reasonForSelling: getParam('reasonForSelling'),
     targetPurchaseTimeline: getParam('targetPurchaseTimeline'),
     leaseTimeline: getParam('leaseTimeline'),
     vacancyDetails: getParam('vacancyDetails'),
@@ -753,6 +741,7 @@ function InlineTableEmptyState({ icon, title, description, actionLabel, onAction
 function FocusedProspectsEmptyState({ mode = 'lease', onAddPrimary, onAddSecondary }) {
   const primaryLabel = mode === 'sale' ? 'Add Seller' : 'Add Landlord'
   const secondaryLabel = mode === 'sale' ? 'Add Buyer' : 'Add Tenant'
+  const singleActionLabel = mode === 'sale' ? '' : 'Add Prospect'
   const title = mode === 'sale' ? 'Build your sales prospect database' : 'Build your leasing prospect database'
   const description = mode === 'sale'
     ? 'Start capturing sellers and buyers. Qualified prospects can be converted into sales leads.'
@@ -765,14 +754,23 @@ function FocusedProspectsEmptyState({ mode = 'lease', onAddPrimary, onAddSeconda
       <p className="mt-4 text-lg font-semibold tracking-[-0.02em] text-[#102236]">{title}</p>
       <p className="mt-2 max-w-[440px] text-sm leading-6 text-[#60758d]">{description}</p>
       <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <Button type="button" onClick={onAddPrimary} className="h-11 rounded-[10px] bg-[#082f56] px-5 text-white hover:bg-[#0b3d70]">
-          <Plus size={16} />
-          {primaryLabel}
-        </Button>
-        <Button type="button" variant="secondary" onClick={onAddSecondary} className="h-11 rounded-[10px] px-5">
-          <Plus size={16} />
-          {secondaryLabel}
-        </Button>
+        {singleActionLabel ? (
+          <Button type="button" onClick={onAddPrimary} className="h-11 rounded-[10px] bg-[#082f56] px-5 text-white hover:bg-[#0b3d70]">
+            <Plus size={16} />
+            {singleActionLabel}
+          </Button>
+        ) : (
+          <>
+            <Button type="button" onClick={onAddPrimary} className="h-11 rounded-[10px] bg-[#082f56] px-5 text-white hover:bg-[#0b3d70]">
+              <Plus size={16} />
+              {primaryLabel}
+            </Button>
+            <Button type="button" variant="secondary" onClick={onAddSecondary} className="h-11 rounded-[10px] px-5">
+              <Plus size={16} />
+              {secondaryLabel}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   )
@@ -920,12 +918,6 @@ function renderSellerFields({ createDraft, createErrors, updateCreateDraftField,
       <div className="grid gap-4 md:grid-cols-2">
         <CreateLabel label="Estimated Sale Value">
           <Field as="input" type="number" value={createDraft.estimatedSaleValue} onChange={(event) => updateCreateDraftField('estimatedSaleValue', event.target.value)} placeholder="e.g. R5 000 000" />
-        </CreateLabel>
-        <CreateLabel label="Reason for Selling">
-          <Field as="select" value={createDraft.reasonForSelling} onChange={(event) => updateCreateDraftField('reasonForSelling', event.target.value)}>
-            <option value="">Select reason</option>
-            {SELL_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-          </Field>
         </CreateLabel>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
@@ -1359,7 +1351,7 @@ function renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftF
       </LeaseCreateSection>
 
       <LeaseCreateSection number="2" title="Sale Property Details" icon={Building2}>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)_minmax(0,1.15fr)]">
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(220px,0.65fr)]">
           <CreateLabel label="Property Address / Area *" error={createErrors.propertyAddress}>
             <ProspectAddressField
               createDraft={createDraft}
@@ -1369,9 +1361,7 @@ function renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftF
               valueField="propertyAddressValue"
               mode="full_address"
               placeholder="Start typing an address or area..."
-              description="Use the suburb, node, street address, or asset name if the exact address is not confirmed."
             />
-            <p className="text-xs font-medium text-[#5d718b]">Use the suburb, node, street address, or asset name if the exact address is not confirmed.</p>
           </CreateLabel>
           <CreateLabel label="Area / Node">
             <Field as="select" value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
@@ -1379,21 +1369,15 @@ function renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftF
               {SALES_AREA_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
             </Field>
           </CreateLabel>
-          {renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField, label: 'Asset Class *', options: SALES_ASSET_CLASS_OPTIONS })}
         </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <CreateLabel label="Estimated Sale Value">
+        <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,0.48fr)_minmax(0,1fr)]">
+          <CreateLabel label="Estimated Sale Value" className="max-w-full lg:max-w-[420px]">
             <div className="relative">
               <DollarSign size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#6f8197]" />
               <Field as="input" type="number" value={createDraft.estimatedSaleValue} onChange={(event) => updateCreateDraftField('estimatedSaleValue', event.target.value)} placeholder="0" className="h-12 rounded-[8px] pl-9 text-sm" />
             </div>
           </CreateLabel>
-          <CreateLabel label="Reason for Selling">
-            <Field as="select" value={createDraft.reasonForSelling} onChange={(event) => updateCreateDraftField('reasonForSelling', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
-              <option value="">Select reason</option>
-              {SELL_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-            </Field>
-          </CreateLabel>
+          {renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDraftField, label: 'Asset Class *', options: SALES_ASSET_CLASS_OPTIONS })}
         </div>
       </LeaseCreateSection>
 
@@ -1860,7 +1844,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
           spaceRequirement: '',
           sizeRange: '',
           budgetRange: '',
-          reasonForSelling: current.reasonForSelling || '',
+          reasonForSelling: '',
           targetPurchaseTimeline: '',
           leaseTimeline: '',
           vacancyDetails: '',
@@ -1971,7 +1955,6 @@ function CommercialCanvassingPage({ dealType = '' }) {
         spaceRequirement: normalizeText(createDraft.spaceRequirement),
         sizeRange: normalizeText(createDraft.sizeRange),
         budgetRange: normalizeText(createDraft.budgetRange),
-        reasonForSelling: normalizeText(createDraft.reasonForSelling),
         targetPurchaseTimeline: normalizeText(createDraft.targetPurchaseTimeline),
         leaseTimeline: normalizeText(createDraft.leaseTimeline),
         vacancyDetails: normalizeText(createDraft.vacancyDetails),
@@ -2520,7 +2503,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
                   <ReviewCard title="Company / Contact" lines={[createDraft.companyName || 'No company captured', createDraft.contactName || 'No contact captured', createDraft.phone || 'No phone captured', createDraft.email || 'No email captured']} />
                   <ReviewCard title="Commercial details" lines={[
                     createDraft.propertyAddress || createDraft.propertyName || createDraft.portfolioName || createDraft.preferredArea || 'No property context captured',
-                    createDraft.lookingFor || createDraft.spaceRequirement || createDraft.reasonForSelling || createDraft.vacancyDetails || 'No detail captured',
+                    createDraft.lookingFor || createDraft.spaceRequirement || createDraft.vacancyDetails || 'No detail captured',
                     createDraft.propertyCategory ? `Category: ${createCategoryLabel}` : 'No category selected',
                   ]} />
                   <ReviewCard title="Follow-up" lines={[
@@ -2714,25 +2697,32 @@ function CommercialCanvassingPage({ dealType = '' }) {
                 <p className="mt-2 text-sm leading-6 text-[#4f6680]">{pageView.description}</p>
               </div>
               {isFocusedCanvassingView ? (
-                <div className="relative">
-                  <Button type="button" onClick={() => setCreateMenuOpen((current) => !current)} className="h-12 rounded-[10px] bg-[#082f56] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#0b3d70]">
+                pageView.key === 'lease' ? (
+                  <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)} className="h-12 rounded-[10px] bg-[#082f56] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#0b3d70]">
                     <Plus size={16} />
                     Add Prospect
-                    <ChevronRight size={15} className={`transition ${createMenuOpen ? 'rotate-90' : ''}`} />
                   </Button>
-                  {createMenuOpen ? (
-                    <div className="absolute right-0 top-14 z-30 w-44 overflow-hidden rounded-[12px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
-                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(primaryCreateRole) }}>
-                        <Building2 size={15} />
-                        {primaryCreateLabel}
-                      </button>
-                      <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(secondaryCreateRole) }}>
-                        <Users size={15} />
-                        {secondaryCreateLabel}
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                ) : (
+                  <div className="relative">
+                    <Button type="button" onClick={() => setCreateMenuOpen((current) => !current)} className="h-12 rounded-[10px] bg-[#082f56] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#0b3d70]">
+                      <Plus size={16} />
+                      Add Prospect
+                      <ChevronRight size={15} className={`transition ${createMenuOpen ? 'rotate-90' : ''}`} />
+                    </Button>
+                    {createMenuOpen ? (
+                      <div className="absolute right-0 top-14 z-30 w-44 overflow-hidden rounded-[12px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
+                        <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(primaryCreateRole) }}>
+                          <Building2 size={15} />
+                          {primaryCreateLabel}
+                        </button>
+                        <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(secondaryCreateRole) }}>
+                          <Users size={15} />
+                          {secondaryCreateLabel}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                )
               ) : (
                 <div className="flex flex-wrap items-center gap-3">
                   <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)} className="h-12 rounded-[14px] bg-[#102b46] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#143858]">

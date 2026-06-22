@@ -3,7 +3,14 @@ import { commercialCrudConfigs } from '../commercialCrudConfig'
 import { formatCurrency, formatDate, formatNumber } from '../commercialFormatters'
 import CommercialCrudPage from '../components/CommercialCrudPage'
 import CommercialStatusPill from '../components/CommercialStatusPill'
-import { getCommercialLeaseTenancies } from '../services/commercialApi'
+import CommercialTenantOnboardingModal from '../components/CommercialTenantOnboardingModal'
+import {
+  createCommercialLease,
+  createCommercialTenant,
+  getCommercialLeaseTenancies,
+  updateCommercialTenant,
+  updateCommercialVacancy,
+} from '../services/commercialApi'
 
 function lookupLabel(lookups, key, value, fallback = '-') {
   if (!value) return fallback
@@ -23,6 +30,71 @@ function tenantLabel(row, lookups) {
   const tenant = lookupLabel(lookups, 'tenants', row.tenant_id, '')
   const deal = lookupLabel(lookups, 'deals', row.deal_id, '')
   return tenant || deal || 'Tenant pending'
+}
+
+function cleanText(value) {
+  return String(value || '').trim()
+}
+
+function withSourceNotes(notes = '', sourceLabel = '') {
+  const cleanNotes = cleanText(notes)
+  const cleanSource = cleanText(sourceLabel)
+  return [cleanSource ? `Source: ${cleanSource}` : '', cleanNotes].filter(Boolean).join('\n\n') || null
+}
+
+async function createTenantOccupancyRecord(payload = {}) {
+  const tenantProfilePayload = {
+    organisation_id: payload.organisation_id,
+    branch_id: payload.branch_id || null,
+    team_id: payload.team_id || null,
+    broker_id: payload.broker_id || null,
+    name: payload.tenant_name,
+    contact_person: payload.contact_person,
+    phone: payload.contact_number,
+    email: payload.email,
+    registration_number: payload.registration_number || null,
+    vat_number: payload.vat_number || null,
+    industry: payload.industry || null,
+    website: payload.website || null,
+    current_lease_expiry: payload.lease_end_date || null,
+    status: 'active',
+  }
+  const tenant = payload.tenant_id
+    ? await updateCommercialTenant(payload.tenant_id, tenantProfilePayload).catch(() => ({ id: payload.tenant_id }))
+    : await createCommercialTenant(tenantProfilePayload)
+  const tenantId = tenant?.id || payload.tenant_id
+  if (!tenantId) throw new Error('Tenant profile could not be created.')
+
+  const lease = await createCommercialLease({
+    organisation_id: payload.organisation_id,
+    tenant_id: tenantId,
+    landlord_id: payload.landlord_id || null,
+    property_id: payload.property_id || null,
+    vacancy_id: payload.vacancy_id || null,
+    deal_id: payload.deal_id || null,
+    branch_id: payload.branch_id || null,
+    team_id: payload.team_id || null,
+    broker_id: payload.broker_id || null,
+    lease_start_date: payload.lease_start_date || null,
+    lease_end_date: payload.lease_end_date || null,
+    occupation_date: payload.occupation_date || payload.lease_start_date || null,
+    lease_term_months: payload.lease_term_months || null,
+    monthly_rental: payload.monthly_rental || null,
+    rental_per_m2: payload.rental_per_m2 || null,
+    escalation_percentage: payload.escalation_percentage || null,
+    deposit_amount: payload.deposit_amount || null,
+    renewal_option: Boolean(payload.renewal_option),
+    renewal_notice_date: payload.renewal_notice_date || null,
+    status: payload.status || 'active',
+    notes: withSourceNotes(payload.notes, payload.source_label),
+  })
+
+  const occupancyStatuses = new Set(['active', 'pending_occupation', 'notice_given', 'renewal_pending'])
+  if (lease?.vacancy_id && lease?.lease_start_date && occupancyStatuses.has(String(lease.status || '').toLowerCase())) {
+    await updateCommercialVacancy(lease.vacancy_id, { status: 'occupied' }, { logActivity: false }).catch(() => null)
+  }
+
+  return lease
 }
 
 const TENANT_OCCUPANCY_FIELDS = [
@@ -62,6 +134,8 @@ const LEASING_TENANTS_CONFIG = {
   emptyTitle: 'No leasing tenants yet',
   emptyDescription: 'Closed leasing deals and manually added tenant occupancies will appear here once brokers capture active lease records.',
   fetchRecords: getCommercialLeaseTenancies,
+  createRecord: createTenantOccupancyRecord,
+  createModal: CommercialTenantOnboardingModal,
   defaultSortKey: 'lease_end_date',
   defaultSortDirection: 'asc',
   sortOptions: [

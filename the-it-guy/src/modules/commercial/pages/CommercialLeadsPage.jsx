@@ -23,7 +23,6 @@ import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Field from '../../../components/ui/Field'
-import Modal from '../../../components/ui/Modal'
 import CommercialEmptyState from '../components/CommercialEmptyState'
 import CommercialStatusPill from '../components/CommercialStatusPill'
 import { toLookupOptions } from '../commercialPipelineHelpers'
@@ -37,8 +36,6 @@ import {
 import {
   COMMERCIAL_CANVASSING_METHODS,
   COMMERCIAL_CATEGORY_OPTIONS,
-  COMMERCIAL_PRIORITY_OPTIONS,
-  COMMERCIAL_PROSPECT_STATUSES,
   COMMERCIAL_ROLE_OPTIONS,
   getCategoryBadgeVariant,
   getDealTypeFromRole,
@@ -48,14 +45,13 @@ import {
   getRoleLabel,
 } from '../commercialProspectTypes'
 import { deriveCommercialCanvassingMetrics, filterCommercialProspects, normaliseCommercialProspect } from '../commercialProspectFilters'
-import { validateCommercialProspectDraft } from '../commercialProspectValidation'
 import {
   createCommercialCanvassingActivity,
   createCommercialCanvassingProspect,
   listCommercialCanvassingWorkspace,
   updateCommercialCanvassingProspect,
 } from '../services/commercialCanvassingApi'
-import { getCommercialLookupData, resolveCommercialOrganisationContext } from '../services/commercialApi'
+import { getCommercialLookupData, resolveCommercialAccessContext, resolveCommercialOrganisationContext } from '../services/commercialApi'
 
 const LEAD_STAGE_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -82,6 +78,20 @@ const LEASE_TYPE_OPTIONS = [
   { value: 'tenant', label: 'Tenant' },
 ]
 
+const LEAD_MODAL_SOURCE_OPTIONS = [
+  'Cold Call',
+  'Referral',
+  'Website',
+  'Email Campaign',
+  'Walk-In',
+  'Existing Relationship',
+  'Portal Enquiry',
+  'Other',
+].map((value) => ({ value, label: value }))
+
+const LEAD_MODAL_STATUS_OPTIONS = ['New', 'Contacted', 'Qualified', 'Unqualified', 'Converted', 'Lost'].map((value) => ({ value, label: value }))
+const LEAD_MODAL_PRIORITY_OPTIONS = ['Low', 'Medium', 'High', 'Urgent'].map((value) => ({ value, label: value }))
+const LEAD_MODAL_FUNDING_OPTIONS = ['Cash', 'Bond / Finance Required', 'Pre-approved', 'Unknown'].map((value) => ({ value, label: value }))
 const CARD_CLASS = 'rounded-[18px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.04)]'
 
 const LEAD_SORT_OPTIONS = [
@@ -323,14 +333,20 @@ function buildInitialDraft(record = null, defaultBroker = null) {
     phone: record?.phone || preserved.contactNumber || '',
     email: record?.email || preserved.email || '',
     propertyAddress: extractNoteValue(record?.notes, 'Property / Asset Address or Area') || preserved.address || record?.area || '',
-    propertyName: extractNoteValue(record?.notes, 'Property / Portfolio Name') || roleSpecific.propertyDetails || '',
-    lookingFor: extractNoteValue(record?.notes, 'Looking For') || roleSpecific.requirementType || '',
-    preferredArea: extractNoteValue(record?.notes, 'Preferred Area') || preserved.area || record?.area || '',
-    spaceRequirement: extractNoteValue(record?.notes, 'Space Requirement') || roleSpecific.requirementType || '',
+    propertyName: extractNoteValue(record?.notes, 'Property / Portfolio Name') || roleSpecific.propertyDetails || roleSpecific.propertyName || '',
+    areaNode: extractNoteValue(record?.notes, 'Area / Node') || roleSpecific.areaNode || preserved.area || record?.area || '',
+    requirementName: extractNoteValue(record?.notes, 'Requirement Name') || roleSpecific.requirementName || roleSpecific.requirementType || '',
+    lookingFor: extractNoteValue(record?.notes, 'Looking For') || roleSpecific.requirementType || roleSpecific.requirementName || '',
+    preferredArea: extractNoteValue(record?.notes, 'Preferred Area / Node') || extractNoteValue(record?.notes, 'Preferred Area') || roleSpecific.areaNode || preserved.area || record?.area || '',
+    spaceRequirement: extractNoteValue(record?.notes, 'Space Requirement') || roleSpecific.requirementType || roleSpecific.requirementName || '',
     sizeRange: extractNoteValue(record?.notes, 'Size Range') || roleSpecific.minSize || roleSpecific.maxSize || '',
     budgetRange: extractNoteValue(record?.notes, 'Budget Range') || roleSpecific.budget || '',
     vacancyDetails: extractNoteValue(record?.notes, 'Vacancy Details') || roleSpecific.vacancyPotential || '',
     reasonForSelling: extractNoteValue(record?.notes, 'Reason for Selling') || roleSpecific.mandateType || '',
+    desiredOccupationDate: roleSpecific.desiredOccupationDate || roleSpecific.targetOccupationDate || '',
+    fundingStatus: roleSpecific.fundingStatus || 'Unknown',
+    expectedAskingPrice: roleSpecific.expectedAskingPrice || '',
+    estimatedPropertyValue: roleSpecific.estimatedPropertyValue || '',
     targetPurchaseTimeline: extractNoteValue(record?.notes, 'Target Purchase Timeline') || '',
     leaseTimeline: extractNoteValue(record?.notes, 'Lease Timeline') || roleSpecific.timing || roleSpecific.availability || '',
     estimatedSaleValue: String(record?.estimatedValue || ''),
@@ -591,13 +607,20 @@ function buildNotesSummary(draft = {}) {
     draft.roleNote ? `Role note: ${draft.roleNote}` : '',
     draft.propertyAddress ? `Property / Asset Address or Area: ${draft.propertyAddress}` : '',
     draft.propertyName ? `Property / Portfolio Name: ${draft.propertyName}` : '',
+    draft.areaNode ? `Area / Node: ${draft.areaNode}` : '',
+    draft.requirementName ? `Requirement Name: ${draft.requirementName}` : '',
     draft.lookingFor ? `Looking For: ${draft.lookingFor}` : '',
-    draft.preferredArea ? `Preferred Area: ${draft.preferredArea}` : '',
+    draft.preferredArea ? `Preferred Area / Node: ${draft.preferredArea}` : '',
     draft.spaceRequirement ? `Space Requirement: ${draft.spaceRequirement}` : '',
     draft.sizeRange ? `Size Range: ${draft.sizeRange}` : '',
     draft.budgetRange ? `Budget Range: ${draft.budgetRange}` : '',
     draft.vacancyDetails ? `Vacancy Details: ${draft.vacancyDetails}` : '',
     draft.reasonForSelling ? `Reason for Selling: ${draft.reasonForSelling}` : '',
+    draft.expectedAskingPrice ? `Expected Asking Price: ${draft.expectedAskingPrice}` : '',
+    draft.estimatedPropertyValue ? `Estimated Property Value: ${draft.estimatedPropertyValue}` : '',
+    draft.desiredOccupationDate ? `Desired Occupation Date: ${draft.desiredOccupationDate}` : '',
+    draft.fundingStatus ? `Funding Status: ${draft.fundingStatus}` : '',
+    draft.requirementNotes ? `Requirement Notes: ${draft.requirementNotes}` : '',
     draft.targetPurchaseTimeline ? `Target Purchase Timeline: ${draft.targetPurchaseTimeline}` : '',
     draft.leaseTimeline ? `Lease Timeline: ${draft.leaseTimeline}` : '',
   ].filter(Boolean)
@@ -1148,6 +1171,34 @@ function LeadCard({
   )
 }
 
+function getLeadModalCompanyLabel(role = '') {
+  if (role === 'seller') return 'Seller / Company Name'
+  if (role === 'buyer') return 'Buyer / Company Name'
+  if (role === 'landlord') return 'Landlord / Company Name'
+  if (role === 'tenant') return 'Tenant / Company Name'
+  return 'Company Name'
+}
+
+function getLeadModalRoleDescription(role = '') {
+  if (role === 'seller') return 'Owner or vendor lead for a commercial sale instruction.'
+  if (role === 'buyer') return 'Buyer mandate, acquisition requirement or investor enquiry.'
+  if (role === 'landlord') return 'Landlord opportunity with stock, vacancy or mandate potential.'
+  if (role === 'tenant') return 'Tenant demand that can become a requirement or lease deal.'
+  return 'Qualified commercial opportunity.'
+}
+
+function LeadModalSectionHeader({ icon, title }) {
+  const Icon = icon
+  return (
+    <div className="mb-4 flex items-center gap-3 border-b border-slate-200 pb-3">
+      <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-[#eef5ff] text-[#0b4f82]">
+        {Icon ? <Icon size={17} /> : null}
+      </span>
+      <h3 className="text-base font-semibold tracking-[-0.02em] text-[#102236]">{title}</h3>
+    </div>
+  )
+}
+
 function NewCommercialLeadModal({
   open,
   mode = 'create',
@@ -1161,141 +1212,194 @@ function NewCommercialLeadModal({
 }) {
   const brokerOptions = useMemo(() => toLookupOptions(lookups).brokers || [], [lookups])
   const defaultBroker = useMemo(() => getDefaultBroker(lookups), [lookups])
-  const [step, setStep] = useState(2)
   const [selectedRole, setSelectedRole] = useState(defaultRole)
   const [draft, setDraft] = useState(() => buildInitialDraft(record, defaultBroker))
   const [saving, setSaving] = useState(false)
-  const [, setErrors] = useState({})
+  const [errors, setErrors] = useState({})
   const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
-    if (!open) return
-    const nextDraft = buildInitialDraft(record, defaultBroker)
-    const nextRole = normalizeKey(record?.prospectRole || (mode === 'edit' ? nextDraft.prospectRole : defaultRole) || defaultRole) || defaultRole
-    setSelectedRole(nextRole)
-    nextDraft.prospectRole = nextRole
-    nextDraft.dealType = getDealTypeFromRole(nextRole)
-    setDraft(nextDraft)
-    setStep(2)
-    setErrors({})
-    setSaveError('')
-  }, [defaultBroker, defaultRole, mode, open, record])
-  const categoryOptions = useMemo(() => COMMERCIAL_CATEGORY_OPTIONS, [])
+    if (!open) return undefined
+    let cancelled = false
 
-  const selectedBroker = useMemo(() => brokerOptions.find((item) => item.value === draft.assignedBrokerId) || brokerOptions[0] || defaultBroker, [brokerOptions, defaultBroker, draft.assignedBrokerId])
+    async function prepareDraft() {
+      const currentContext = await resolveCommercialAccessContext().catch(() => null)
+      const currentBroker = brokerOptions.find((item) => {
+        const userId = normalizeText(item.userId || item.user_id || item.value)
+        return userId && userId === normalizeText(currentContext?.userId)
+      })
+      const broker = currentBroker || defaultBroker || brokerOptions[0] || null
+      const nextDraft = buildInitialDraft(record, broker)
+      const nextRole = normalizeKey(record?.prospectRole || (mode === 'edit' ? nextDraft.prospectRole : defaultRole) || defaultRole) || defaultRole
+      nextDraft.prospectRole = nextRole
+      nextDraft.dealType = getDealTypeFromRole(nextRole)
+      if (!nextDraft.assignedBrokerId && broker?.value) nextDraft.assignedBrokerId = broker.value
+      if (!nextDraft.assignedBrokerName && broker?.label) nextDraft.assignedBrokerName = broker.label
+      if (!nextDraft.branchId && broker?.branchId) nextDraft.branchId = broker.branchId
+      if (!cancelled) {
+        setSelectedRole(nextRole)
+        setDraft(nextDraft)
+        setErrors({})
+        setSaveError('')
+      }
+    }
 
-  const formFields = useMemo(() => {
-    const common = [
-      { name: 'companyName', label: selectedRole === 'seller' ? 'Owner / Company Name' : selectedRole === 'buyer' ? 'Buyer / Company Name' : selectedRole === 'landlord' ? 'Landlord / Company Name' : 'Tenant / Company Name', required: true },
-      { name: 'contactPerson', label: 'Contact Person' },
-      { name: 'phone', label: 'Phone', type: 'tel' },
-      { name: 'email', label: 'Email', type: 'email' },
-      { name: 'propertyCategory', label: 'Property Category', type: 'select', required: true, options: categoryOptions },
-      { name: 'canvassingMethod', label: 'Source / Method', type: 'select', options: COMMERCIAL_CANVASSING_METHODS.map((value) => ({ value, label: value })) },
-      { name: 'status', label: 'Status', type: 'select', options: COMMERCIAL_PROSPECT_STATUSES.map((value) => ({ value, label: value })) },
-      { name: 'priority', label: 'Priority', type: 'select', options: COMMERCIAL_PRIORITY_OPTIONS.map((value) => ({ value, label: value })) },
-      { name: 'followUpDate', label: 'Follow-up Date', type: 'date' },
-      { name: 'assignedBrokerId', label: 'Assigned Broker', type: 'select', required: true, options: brokerOptions },
-      { name: 'notes', label: 'Notes', as: 'textarea', span: 'full' },
-    ]
+    prepareDraft()
+    return () => {
+      cancelled = true
+    }
+  }, [brokerOptions, defaultBroker, defaultRole, mode, open, record])
 
-    const saleFields = [
-      { name: 'propertyAddress', label: 'Property / Asset Address or Area', required: true },
-      { name: 'estimatedSaleValue', label: 'Estimated Sale Value', type: 'number' },
-      { name: 'reasonForSelling', label: 'Reason for Selling', type: 'select', options: [
-        'Relocating',
-        'Scaling down',
-        'Portfolio optimisation',
-        'Owner-occupier exit',
-        'Investment disposal',
-        'Development opportunity',
-        'Unknown',
-        'Other',
-      ].map((value) => ({ value, label: value })) },
-    ]
+  const selectedBroker = useMemo(
+    () => brokerOptions.find((item) => item.value === draft.assignedBrokerId) || defaultBroker || brokerOptions[0] || null,
+    [brokerOptions, defaultBroker, draft.assignedBrokerId],
+  )
 
-    const buyerFields = [
-      { name: 'lookingFor', label: 'Looking For', required: true },
-      { name: 'preferredArea', label: 'Preferred Area', required: true },
-      { name: 'budgetRange', label: 'Budget Range' },
-      { name: 'targetPurchaseTimeline', label: 'Target Purchase Timeline', type: 'select', options: ['Immediately', '0–3 months', '3–6 months', '6–12 months', '12+ months', 'Unknown'].map((value) => ({ value, label: value })) },
-    ]
+  const propertyFields = useMemo(() => {
+    const assetClass = { name: 'propertyCategory', label: 'Asset Class', type: 'select', required: true, options: COMMERCIAL_CATEGORY_OPTIONS }
+    const saleReasonOptions = [
+      'Relocating',
+      'Scaling down',
+      'Portfolio optimisation',
+      'Owner-occupier exit',
+      'Investment disposal',
+      'Development opportunity',
+      'Unknown',
+      'Other',
+    ].map((value) => ({ value, label: value }))
 
-    const landlordFields = [
+    if (selectedRole === 'landlord') {
+      return [
+        { name: 'propertyName', label: 'Property / Portfolio Name', required: true },
+        { name: 'propertyAddress', label: 'Property Address' },
+        { name: 'areaNode', label: 'Area / Node' },
+        assetClass,
+        { name: 'vacancyDetails', label: 'Vacancy Details', as: 'textarea', span: 'full' },
+        { name: 'estimatedMonthlyRental', label: 'Estimated Monthly Rental', type: 'number' },
+        { name: 'estimatedAnnualRental', label: 'Estimated Annual Rental', type: 'number' },
+      ]
+    }
+
+    if (selectedRole === 'tenant') {
+      return [
+        { name: 'requirementName', label: 'Requirement Name', required: true },
+        { name: 'preferredArea', label: 'Preferred Area / Node', required: true },
+        assetClass,
+        { name: 'sizeRange', label: 'Required Size Range' },
+        { name: 'budgetRange', label: 'Budget / Monthly Rental' },
+        { name: 'desiredOccupationDate', label: 'Desired Occupation Date', type: 'date' },
+        { name: 'requirementNotes', label: 'Requirement Notes', as: 'textarea', span: 'full' },
+      ]
+    }
+
+    if (selectedRole === 'buyer') {
+      return [
+        { name: 'requirementName', label: 'Requirement Name', required: true },
+        { name: 'preferredArea', label: 'Preferred Area / Node', required: true },
+        assetClass,
+        { name: 'budgetRange', label: 'Budget Range' },
+        { name: 'sizeRange', label: 'Required Size Range' },
+        { name: 'fundingStatus', label: 'Funding Status', type: 'select', options: LEAD_MODAL_FUNDING_OPTIONS },
+        { name: 'requirementNotes', label: 'Requirement Notes', as: 'textarea', span: 'full' },
+      ]
+    }
+
+    return [
       { name: 'propertyName', label: 'Property / Portfolio Name', required: true },
-      { name: 'vacancyDetails', label: 'Vacancy Details', as: 'textarea' },
-      { name: 'estimatedMonthlyRental', label: 'Estimated Monthly Rental', type: 'number' },
-      { name: 'estimatedAnnualRental', label: 'Estimated Annual Rental', type: 'number' },
+      { name: 'propertyAddress', label: 'Property Address' },
+      { name: 'areaNode', label: 'Area / Node' },
+      assetClass,
+      { name: 'expectedAskingPrice', label: 'Expected Asking Price', type: 'number' },
+      { name: 'estimatedPropertyValue', label: 'Estimated Property Value', type: 'number' },
+      { name: 'reasonForSelling', label: 'Reason for Selling', type: 'select', options: saleReasonOptions },
     ]
+  }, [selectedRole])
 
-    const tenantFields = [
-      { name: 'spaceRequirement', label: 'Space Requirement', required: true },
-      { name: 'preferredArea', label: 'Preferred Area', required: true },
-      { name: 'sizeRange', label: 'Size Range' },
-      { name: 'budgetRange', label: 'Budget / Rental Range' },
-      { name: 'leaseTimeline', label: 'Lease Timeline', type: 'select', options: ['Immediately', '0–3 months', '3–6 months', '6–12 months', '12+ months', 'Unknown'].map((value) => ({ value, label: value })) },
-    ]
-
-    if (selectedRole === 'seller') return [...saleFields, ...common]
-    if (selectedRole === 'buyer') return [...buyerFields, ...common]
-    if (selectedRole === 'landlord') return [...landlordFields, ...common]
-    return [...tenantFields, ...common]
-  }, [brokerOptions, categoryOptions, selectedRole])
+  const qualificationFields = useMemo(() => [
+    { name: 'assignedBrokerId', label: 'Assigned Broker', type: 'select', required: true, options: brokerOptions },
+    { name: 'canvassingMethod', label: 'Source / Method', type: 'select', options: LEAD_MODAL_SOURCE_OPTIONS },
+    { name: 'status', label: 'Status', type: 'select', options: LEAD_MODAL_STATUS_OPTIONS },
+    { name: 'priority', label: 'Priority', type: 'select', options: LEAD_MODAL_PRIORITY_OPTIONS },
+    { name: 'followUpDate', label: 'Follow-up Date', type: 'date' },
+    { name: 'notes', label: 'Notes', as: 'textarea', span: 'full' },
+  ], [brokerOptions])
 
   if (!open) return null
 
   function updateDraft(key, value) {
-    setDraft((previous) => ({ ...previous, [key]: value }))
+    setDraft((previous) => {
+      const next = { ...previous, [key]: value }
+      if (key === 'assignedBrokerId') {
+        const broker = brokerOptions.find((item) => item.value === value)
+        next.assignedBrokerName = broker?.label || ''
+        next.branchId = broker?.branchId || ''
+      }
+      return next
+    })
+    setErrors((previous) => {
+      if (!previous[key]) return previous
+      const next = { ...previous }
+      delete next[key]
+      return next
+    })
   }
 
   function handleRoleChange(nextRole) {
     if (nextRole === selectedRole) return
-    const hasTypedValues = Object.entries(draft).some(([key, value]) => {
-      if (['prospectRole', 'dealType', 'propertyCategory', 'companyName', 'contactPerson', 'phone', 'email', 'canvassingMethod', 'status', 'priority', 'followUpDate', 'assignedBrokerId', 'assignedBrokerName', 'branchId', 'notes'].includes(key)) return false
-      return Boolean(normalizeText(value))
-    })
-    if (hasTypedValues && !window.confirm('Changing the prospect type may hide some entered fields. Continue?')) return
+    const roleSpecificKeys = [
+      'propertyName',
+      'propertyAddress',
+      'areaNode',
+      'requirementName',
+      'lookingFor',
+      'preferredArea',
+      'spaceRequirement',
+      'sizeRange',
+      'budgetRange',
+      'vacancyDetails',
+      'reasonForSelling',
+      'desiredOccupationDate',
+      'fundingStatus',
+      'expectedAskingPrice',
+      'estimatedPropertyValue',
+      'requirementNotes',
+      'leaseTimeline',
+      'targetPurchaseTimeline',
+    ]
+    const hasTypedValues = roleSpecificKeys.some((key) => Boolean(normalizeText(draft[key])))
+    if (hasTypedValues && !window.confirm('Changing the lead type may hide some entered fields. Continue?')) return
     setSelectedRole(nextRole)
     setDraft((previous) => ({
       ...previous,
       prospectRole: nextRole,
       dealType: getDealTypeFromRole(nextRole),
-      propertyCategory: nextRole === 'seller' || nextRole === 'buyer' ? previous.propertyCategory || 'commercial' : previous.propertyCategory || 'commercial',
+      propertyCategory: previous.propertyCategory || 'commercial',
     }))
     setErrors({})
   }
 
-  function validateStep() {
-    const validationDraft = {
-      prospectRole: selectedRole,
-      companyName: draft.companyName,
-      propertyCategory: draft.propertyCategory,
-      assignedBrokerId: draft.assignedBrokerId,
-      propertyAddress: draft.propertyAddress,
-      lookingFor: draft.lookingFor,
-      preferredArea: draft.preferredArea,
-      propertyName: draft.propertyName,
-      spaceRequirement: draft.spaceRequirement,
+  function validateLead() {
+    const nextErrors = {}
+    if (!normalizeText(draft.companyName)) nextErrors.companyName = 'Add the company or client name.'
+    if (!normalizeText(draft.phone)) nextErrors.phone = 'Add a contact number.'
+    if (!normalizeText(draft.propertyCategory)) nextErrors.propertyCategory = 'Choose an asset class.'
+    if (!normalizeText(draft.assignedBrokerId)) nextErrors.assignedBrokerId = 'Assign a broker.'
+
+    if (selectedRole === 'landlord' || selectedRole === 'seller') {
+      if (!normalizeText(draft.propertyName)) nextErrors.propertyName = 'Add a property or portfolio name.'
     }
-    const baseErrors = validateCommercialProspectDraft(validationDraft)
-    const nextErrors = { ...baseErrors }
-    if (selectedRole === 'seller' && !normalizeText(draft.propertyAddress)) nextErrors.propertyAddress = 'Add a property or area.'
-    if (selectedRole === 'buyer') {
-      if (!normalizeText(draft.lookingFor)) nextErrors.lookingFor = 'Tell us what the buyer is looking for.'
-      if (!normalizeText(draft.preferredArea)) nextErrors.preferredArea = 'Add a preferred area.'
+    if (selectedRole === 'tenant' || selectedRole === 'buyer') {
+      if (!normalizeText(draft.requirementName || draft.spaceRequirement || draft.lookingFor)) nextErrors.requirementName = 'Add a requirement name.'
+      if (!normalizeText(draft.preferredArea)) nextErrors.preferredArea = 'Add a preferred area or node.'
     }
-    if (selectedRole === 'landlord' && !normalizeText(draft.propertyName)) nextErrors.propertyName = 'Add a property or portfolio name.'
-    if (selectedRole === 'tenant') {
-      if (!normalizeText(draft.spaceRequirement)) nextErrors.spaceRequirement = 'Add the tenant space requirement.'
-      if (!normalizeText(draft.preferredArea)) nextErrors.preferredArea = 'Add a preferred area.'
-    }
+
     setErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
   }
 
   async function handleSubmit(event) {
     event.preventDefault()
-    if (!validateStep(2)) return
+    if (!validateLead()) return
 
     const payload = buildLeadPayload(draft, selectedRole, selectedBroker, organisationId)
     try {
@@ -1315,26 +1419,26 @@ function NewCommercialLeadModal({
 
   function renderField(field) {
     const value = draft[field.name] ?? ''
-    const commonClass = 'min-h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-medium text-[#102236] outline-none transition focus:border-[#9fb9d1] focus:ring-4 focus:ring-[#dbeafe]'
-    const options = field.options || []
-    const labelText = field.label
+    const inputClass = `min-h-11 w-full rounded-2xl border bg-white px-3 text-sm font-medium text-[#102236] outline-none transition focus:border-[#9fb9d1] focus:ring-4 focus:ring-[#dbeafe] ${
+      errors[field.name] ? 'border-rose-300' : 'border-slate-200'
+    }`
 
     if (field.as === 'textarea') {
       return (
         <textarea
-          rows={4}
+          rows={field.rows || 4}
           value={value}
           onChange={(event) => updateDraft(field.name, event.target.value)}
-          className={`${commonClass} py-3`}
+          className={`${inputClass} py-3`}
         />
       )
     }
 
     if (field.type === 'select') {
       return (
-        <select value={value} onChange={(event) => updateDraft(field.name, event.target.value)} className={commonClass}>
+        <select value={value} onChange={(event) => updateDraft(field.name, event.target.value)} className={inputClass}>
           <option value="">{field.placeholder || 'Select...'}</option>
-          {options.map((option) => (
+          {(field.options || []).map((option) => (
             <option key={option.value || option} value={option.value || option}>
               {option.label || option}
             </option>
@@ -1347,156 +1451,106 @@ function NewCommercialLeadModal({
       <Field
         value={value}
         onChange={(event) => updateDraft(field.name, event.target.value)}
-        type={field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : field.type === 'email' ? 'email' : field.type === 'tel' ? 'tel' : 'text'}
-        placeholder={labelText}
-        className={commonClass}
+        type={field.type || 'text'}
+        placeholder={field.placeholder || field.label}
+        className={inputClass}
       />
     )
   }
 
-  const draftSummary = buildNotesSummary(draft)
+  function renderFieldShell(field) {
+    return (
+      <label key={field.name} className={field.span === 'full' ? 'grid gap-1.5 md:col-span-2' : 'grid gap-1.5'}>
+        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+          {field.label}
+          {field.required ? <span className="text-rose-500"> *</span> : null}
+        </span>
+        {renderField(field)}
+        {errors[field.name] ? <span className="text-xs font-semibold text-rose-600">{errors[field.name]}</span> : null}
+      </label>
+    )
+  }
+
+  const roleCards = roleOptions.filter((option) => ['seller', 'buyer', 'landlord', 'tenant'].includes(option.value))
+  const contactFields = [
+    { name: 'companyName', label: getLeadModalCompanyLabel(selectedRole), required: true },
+    { name: 'contactPerson', label: 'Contact Person' },
+    { name: 'phone', label: 'Contact Number', type: 'tel', required: true },
+    { name: 'email', label: 'Email Address', type: 'email' },
+  ]
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={mode === 'edit' ? 'Edit lead' : 'New lead'}
-      subtitle="Capture a qualified landlord or tenant opportunity for the commercial pipeline."
-      className="max-w-[1120px] max-h-[calc(100vh-80px)] overflow-hidden"
-      footer={(
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-xs text-slate-500">
-            Step {step} of 3
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0f1f33]/45 px-3 py-4 backdrop-blur-sm sm:px-6">
+      <form id="commercial-lead-form" onSubmit={handleSubmit} className="my-auto flex max-h-[calc(100dvh-32px)] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-[0_30px_90px_rgba(15,31,51,0.22)]">
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
+          <div>
+            <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#102236]">{mode === 'edit' ? 'Edit Lead' : 'New Lead'}</h2>
+            <p className="mt-1 text-sm text-slate-500">Capture a qualified commercial opportunity and route it into the correct pipeline.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="secondary" size="sm" className="rounded-xl" type="button" onClick={onClose}>
-              Cancel
-            </Button>
-            {step > 2 ? (
-              <Button variant="secondary" size="sm" className="rounded-xl" type="button" onClick={() => setStep(2)}>
-                Back
-              </Button>
-            ) : null}
-            {step < 3 ? (
-              <Button
-                variant="primary"
-                size="sm"
-                className="rounded-xl"
-                type="button"
-                onClick={() => {
-                  if (validateStep(2)) setStep(3)
-                }}
-              >
-                Next: Review & Save
-                <ArrowRight size={14} />
-              </Button>
-            ) : (
-              <Button variant="primary" size="sm" className="rounded-xl" type="submit" form="commercial-lead-form" disabled={saving}>
-                {saving ? 'Saving…' : 'Save Lead'}
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-    >
-      <form id="commercial-lead-form" onSubmit={handleSubmit} className="grid min-h-0 grid-cols-1 lg:grid-cols-[330px_minmax(0,1fr)]">
-        <aside className="border-b border-slate-200 bg-[#fbfcfe] p-5 lg:border-b-0 lg:border-r">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Step 1 of 3</p>
-          <h3 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[#102236]">What type of lead is this?</h3>
-          <p className="mt-1 text-sm text-slate-500">Choose the best fit so we can show you the right fields.</p>
-          <div className="mt-5 grid gap-3">
-            {roleOptions.map((option) => (
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-[#102236]" aria-label="Close lead modal">
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+          {saveError ? (
+            <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{saveError}</div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {roleCards.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => handleRoleChange(option.value)}
-                className={`rounded-[24px] border p-4 text-left transition ${
+                className={`rounded-[22px] border p-4 text-left transition ${
                   selectedRole === option.value
-                    ? 'border-blue-300 bg-blue-50/80 shadow-[0_10px_24px_rgba(45,110,207,0.08)]'
-                    : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50'
+                    ? 'border-[#8ab4e6] bg-[#eef6ff] shadow-[0_12px_30px_rgba(18,103,163,0.12)]'
+                    : 'border-slate-200 bg-white hover:border-[#b9cfe6] hover:bg-[#fbfcfe]'
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl ${selectedRole === option.value ? 'bg-white text-[#2d6ecf]' : 'bg-[#f5f8fd] text-[#2d6ecf]'}`}>
-                    <Users size={18} />
+                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl ${selectedRole === option.value ? 'bg-white text-[#0b4f82]' : 'bg-[#f5f8fd] text-slate-500'}`}>
+                    <Users size={17} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-[#102236]">{option.label} ({getDealTypeLabel(option.dealType)})</p>
-                      {selectedRole === option.value ? <CheckCircle2 size={16} className="text-[#2d6ecf]" /> : <span className="h-4 w-4 rounded-full border border-slate-300" />}
+                      <p className="text-sm font-semibold text-[#102236]">{option.label} Lead</p>
+                      {selectedRole === option.value ? <CheckCircle2 size={17} className="text-[#0b76bd]" /> : <span className="h-4 w-4 rounded-full border border-slate-300" />}
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">{option.description}</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">{getLeadModalRoleDescription(option.value)}</p>
                   </div>
                 </div>
               </button>
             ))}
           </div>
-        </aside>
 
-        <section className="min-h-0">
-          <div className="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Step 2 of 3</p>
-              <h3 className="mt-2 text-xl font-semibold tracking-[-0.035em] text-[#102236]">
-                About the {getRoleLabel(selectedRole).toLowerCase()}
-              </h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Capture the key details about the company, contact, property or requirement.
-              </p>
-            </div>
-            <Button variant="secondary" size="sm" className="rounded-xl" type="button" onClick={() => setStep(2)}>
-              Change type
-            </Button>
-          </div>
+          <section className="mt-5 rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5">
+            <LeadModalSectionHeader icon={Users} title="1. Contact / Company Details" />
+            <div className="grid gap-4 md:grid-cols-2">{contactFields.map(renderFieldShell)}</div>
+          </section>
 
-          <div className="max-h-[calc(100vh-280px)] overflow-y-auto p-5">
-            {saveError ? (
-              <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{saveError}</div>
-            ) : null}
+          <section className="mt-4 rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5">
+            <LeadModalSectionHeader icon={Building2} title="2. Property / Requirement Details" />
+            <div className="grid gap-4 md:grid-cols-2">{propertyFields.map(renderFieldShell)}</div>
+          </section>
 
-            {step < 3 ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                {formFields.map((field) => (
-                  <label key={field.name} className={field.span === 'full' ? 'grid gap-1.5 md:col-span-2' : 'grid gap-1.5'}>
-                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-                      {field.label}
-                      {field.required ? <span className="text-rose-500"> *</span> : null}
-                    </span>
-                    {renderField(field)}
-                  </label>
-                ))}
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                <div className="rounded-[24px] border border-slate-200 bg-[#fbfcfe] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Review prospect</p>
-                  <p className="mt-2 text-base font-semibold text-[#102236]">Confirm the details before adding this lead to the commercial pipeline.</p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {[
-                    ['Lead type', getRoleLabel(selectedRole)],
-                    ['Deal type', getDealTypeLabel(getDealTypeFromRole(selectedRole))],
-                    ['Company / Contact', [draft.companyName, draft.contactPerson].filter(Boolean).join(' · ') || 'Pending'],
-                    ['Commercial details', [draft.propertyAddress, draft.propertyName, draft.lookingFor, draft.spaceRequirement].filter(Boolean).join(' · ') || 'Pending'],
-                    ['Follow-up', draft.followUpDate ? formatShortDate(draft.followUpDate) : 'No date set'],
-                    ['Assignment', draft.assignedBrokerName || selectedBroker?.label || 'Unassigned'],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-[24px] border border-slate-200 bg-white px-4 py-3">
-                      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">{label}</p>
-                      <p className="mt-2 text-sm font-medium text-[#102236]">{value}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="rounded-[24px] border border-slate-200 bg-[#fbfcfe] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Notes</p>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#102236]">{draftSummary || draft.notes || 'No notes captured yet.'}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
+          <section className="mt-4 rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5">
+            <LeadModalSectionHeader icon={CheckCircle2} title="3. Lead Qualification" />
+            <div className="grid gap-4 md:grid-cols-2">{qualificationFields.map(renderFieldShell)}</div>
+          </section>
+        </div>
+
+        <footer className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-[#fbfcfe] px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+          <Button variant="secondary" className="rounded-2xl" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" className="rounded-2xl bg-[#092f57]" type="submit" disabled={saving}>
+            {saving ? 'Saving...' : 'Save Lead'}
+          </Button>
+        </footer>
       </form>
-    </Modal>
+    </div>
   )
 }
 
@@ -1505,13 +1559,17 @@ function buildLeadPayload(draft, selectedRole, selectedBroker, organisationId) {
   const companyName = normalizeText(draft.companyName)
   const contactName = normalizeText(draft.contactPerson)
   const split = splitContactName(contactName)
+  const estimatedFromAskingPrice = Number(draft.expectedAskingPrice || 0)
+  const estimatedFromPropertyValue = Number(draft.estimatedPropertyValue || 0)
   const estimatedFromSale = Number(draft.estimatedSaleValue || 0)
   const estimatedFromMonthly = Number(draft.estimatedMonthlyRental || 0) * 12
   const estimatedFromAnnual = Number(draft.estimatedAnnualRental || 0)
   const estimatedValue = dealType === 'lease'
-    ? (estimatedFromAnnual || estimatedFromMonthly || Number(draft.estimatedSaleValue || 0) || 0)
-    : (estimatedFromSale || Number(draft.estimatedAnnualRental || 0) || 0)
-  const addressOrArea = normalizeText(draft.propertyAddress || draft.preferredArea || draft.propertyName || draft.spaceRequirement)
+    ? (estimatedFromAnnual || estimatedFromMonthly || Number(draft.budgetRange || 0) || 0)
+    : (estimatedFromAskingPrice || estimatedFromPropertyValue || estimatedFromSale || Number(draft.budgetRange || 0) || 0)
+  const addressOrArea = normalizeText(draft.propertyAddress || draft.areaNode || draft.preferredArea || draft.propertyName || draft.requirementName || draft.spaceRequirement)
+  const preferredArea = normalizeText(draft.preferredArea || draft.areaNode)
+  const requirementName = normalizeText(draft.requirementName || draft.spaceRequirement || draft.lookingFor)
   const preservedProspectData = {
     type: selectedRole,
     companyName: companyName || null,
@@ -1519,36 +1577,73 @@ function buildLeadPayload(draft, selectedRole, selectedBroker, organisationId) {
     contactNumber: normalizeText(draft.phone) || null,
     email: normalizeText(draft.email) || null,
     address: addressOrArea || null,
-    area: normalizeText(draft.preferredArea || draft.propertyAddress) || addressOrArea || null,
+    area: preferredArea || normalizeText(draft.propertyAddress) || addressOrArea || null,
     assetClass: draft.propertyCategory || null,
     brokerId: draft.assignedBrokerId || selectedBroker?.value || null,
     brokerName: draft.assignedBrokerName || selectedBroker?.label || null,
     source: draft.canvassingMethod || 'Cold Call',
     notes: normalizeText(draft.notes) || null,
+    propertyName: normalizeText(draft.propertyName) || null,
+    propertyAddress: normalizeText(draft.propertyAddress) || null,
+    areaNode: normalizeText(draft.areaNode) || null,
+    requirementName: requirementName || null,
+    preferredArea: preferredArea || null,
+    budgetRange: normalizeText(draft.budgetRange) || null,
+    sizeRange: normalizeText(draft.sizeRange) || null,
   }
   const leadQualificationFields = selectedRole === 'landlord'
     ? {
       relationshipType: 'Owner',
+      propertyName: normalizeText(draft.propertyName) || null,
+      propertyAddress: normalizeText(draft.propertyAddress) || null,
+      areaNode: normalizeText(draft.areaNode) || null,
       propertyDetails: normalizeText(draft.propertyName || draft.propertyAddress) || null,
       vacancyPotential: normalizeText(draft.vacancyDetails) || null,
       mandateType: normalizeText(draft.reasonForSelling) || null,
       askingRental: normalizeText(draft.estimatedMonthlyRental || draft.estimatedAnnualRental) || null,
+      estimatedMonthlyRental: normalizeText(draft.estimatedMonthlyRental) || null,
+      estimatedAnnualRental: normalizeText(draft.estimatedAnnualRental) || null,
       availability: normalizeText(draft.leaseTimeline || draft.targetPurchaseTimeline) || null,
       followUpDate: draft.followUpDate || null,
       qualificationNotes: normalizeText(draft.notes) || null,
     }
     : selectedRole === 'tenant'
       ? {
-        requirementType: normalizeText(draft.spaceRequirement || draft.lookingFor) || null,
-        preferredAreas: normalizeText(draft.preferredArea) ? [normalizeText(draft.preferredArea)] : [],
+        requirementName: requirementName || null,
+        requirementType: requirementName || null,
+        preferredAreas: preferredArea ? [preferredArea] : [],
+        areaNode: preferredArea || null,
         minSize: normalizeText(draft.sizeRange) || null,
         maxSize: normalizeText(draft.sizeRange) || null,
         budget: normalizeText(draft.budgetRange || draft.estimatedMonthlyRental || draft.estimatedAnnualRental) || null,
-        timing: normalizeText(draft.leaseTimeline || draft.targetPurchaseTimeline) || null,
+        desiredOccupationDate: draft.desiredOccupationDate || null,
+        timing: normalizeText(draft.desiredOccupationDate || draft.leaseTimeline || draft.targetPurchaseTimeline) || null,
         decisionMaker: contactName || null,
-        qualificationNotes: normalizeText(draft.notes) || null,
+        requirementNotes: normalizeText(draft.requirementNotes) || null,
+        qualificationNotes: normalizeText(draft.notes || draft.requirementNotes) || null,
       }
-      : {}
+      : selectedRole === 'seller'
+        ? {
+          propertyName: normalizeText(draft.propertyName) || null,
+          propertyAddress: normalizeText(draft.propertyAddress) || null,
+          areaNode: normalizeText(draft.areaNode) || null,
+          propertyDetails: normalizeText(draft.propertyName || draft.propertyAddress) || null,
+          expectedAskingPrice: normalizeText(draft.expectedAskingPrice) || null,
+          estimatedPropertyValue: normalizeText(draft.estimatedPropertyValue) || null,
+          reasonForSelling: normalizeText(draft.reasonForSelling) || null,
+          qualificationNotes: normalizeText(draft.notes) || null,
+        }
+        : {
+          requirementName: requirementName || null,
+          requirementType: requirementName || null,
+          preferredAreas: preferredArea ? [preferredArea] : [],
+          areaNode: preferredArea || null,
+          budget: normalizeText(draft.budgetRange) || null,
+          sizeRange: normalizeText(draft.sizeRange) || null,
+          fundingStatus: normalizeText(draft.fundingStatus) || null,
+          requirementNotes: normalizeText(draft.requirementNotes) || null,
+          qualificationNotes: normalizeText(draft.notes || draft.requirementNotes) || null,
+        }
 
   return {
     organisationId: normalizeText(organisationId),
@@ -1575,6 +1670,14 @@ function buildLeadPayload(draft, selectedRole, selectedBroker, organisationId) {
       email: draft.email || null,
       area: addressOrArea || null,
       propertyCategory: draft.propertyCategory || null,
+      propertyName: normalizeText(draft.propertyName) || null,
+      propertyAddress: normalizeText(draft.propertyAddress) || null,
+      preferredArea: preferredArea || null,
+      lookingFor: requirementName || null,
+      spaceRequirement: normalizeText(draft.sizeRange || draft.spaceRequirement) || null,
+      sizeRange: normalizeText(draft.sizeRange) || null,
+      budgetRange: normalizeText(draft.budgetRange) || null,
+      vacancyDetails: normalizeText(draft.vacancyDetails) || null,
       roleSpecific: {
         preservedProspectData,
         ...leadQualificationFields,
@@ -1876,33 +1979,12 @@ function CommercialLeadsPage({ dealType = '' }) {
 
   function renderEmptyState() {
     const copy = pageView.emptyCopy[activeTab] || pageView.emptyCopy.all || EMPTY_LEAD_COPY.all
-    const leasingActions = pageView.key === 'lease' && activeTab === 'all'
-      ? (
-        <>
-          <button
-            type="button"
-            onClick={() => openCreateLead('landlord')}
-            className="inline-flex h-11 items-center justify-center rounded-[12px] border border-[#b9d2ff] bg-white px-5 text-sm font-semibold text-[#0d5ed0] transition hover:bg-[#f5f9ff]"
-          >
-            Add Landlord Lead
-          </button>
-          <button
-            type="button"
-            onClick={() => openCreateLead('tenant')}
-            className="inline-flex h-11 items-center justify-center rounded-[12px] bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#143858]"
-          >
-            Add Tenant Lead
-          </button>
-        </>
-      )
-      : null
     return (
       <InlineTableEmptyState
         icon={CalendarDays}
         title={copy.title}
         description={copy.description}
-        actions={leasingActions}
-        actionLabel={leasingActions ? '' : pageView.createLabel.replace(/^\+\s*/, '')}
+        actionLabel={pageView.createLabel.replace(/^\+\s*/, '')}
         onAction={() => openCreateLead(pageView.defaultCreateRole)}
       />
     )
@@ -1960,31 +2042,42 @@ function CommercialLeadsPage({ dealType = '' }) {
             <p className="mt-1.5 text-sm leading-6 text-[#4f6680]">{pageView.description}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
+            {pageView.key === 'lease' ? (
               <Button
                 type="button"
-                onClick={() => setShowCreateMenu((current) => !current)}
+                onClick={() => openCreateLead(pageView.defaultCreateRole)}
                 className="h-11 rounded-[14px] bg-[#102b46] px-4 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#143858]"
               >
                 <Plus size={16} />
                 {pageView.createLabel.replace(/^\+\s*/, '')}
               </Button>
-              {showCreateMenu ? (
-                <div className="absolute right-0 top-12 z-30 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
-                  {(pageView.key === 'lease' ? LEASE_TYPE_OPTIONS : pageView.roleOptions).map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => openCreateLead(option.value)}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
-                    >
-                      <Users size={14} />
-                      Add {option.label} Lead
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            ) : (
+              <div className="relative">
+                <Button
+                  type="button"
+                  onClick={() => setShowCreateMenu((current) => !current)}
+                  className="h-11 rounded-[14px] bg-[#102b46] px-4 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#143858]"
+                >
+                  <Plus size={16} />
+                  {pageView.createLabel.replace(/^\+\s*/, '')}
+                </Button>
+                {showCreateMenu ? (
+                  <div className="absolute right-0 top-12 z-30 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+                    {pageView.roleOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => openCreateLead(option.value)}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
+                      >
+                        <Users size={14} />
+                        Add {option.label} Lead
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
             <Button type="button" variant="secondary" className="h-11 rounded-[14px] px-4" disabled title="Import is coming soon">
               <Download size={16} />
               Import
