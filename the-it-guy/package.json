@@ -31,6 +31,7 @@
     "test:lead-property-sharing": "node scripts/lead-property-sharing.test.mjs",
     "test:commercial-lead-detail": "node scripts/commercial-lead-detail-foundation.test.mjs",
     "test:commercial-landlord-lead-detail": "node scripts/commercial-landlord-lead-detail.test.mjs",
+    "test:commercial-tenant-canvassing-modal": "node scripts/commercial-tenant-canvassing-modal.test.mjs",
     "test:commercial-tenant-lead-detail": "node scripts/commercial-tenant-lead-detail.test.mjs",
     "test:commercial-sales-seller-lead-detail": "node scripts/commercial-sales-seller-lead-detail.test.mjs",
     "test:commercial-sales-buyer-lead-detail": "node scripts/commercial-sales-buyer-lead-detail.test.mjs",

@@ -809,7 +809,7 @@ function CreateLabel({ label, error, children, className = '' }) {
 function LeaseCreateSection({ number, title, icon, children }) {
   const IconComponent = icon
   return (
-    <section className="border-t border-[#dfe8f3] pt-5 first:border-t-0 first:pt-0">
+    <section className="border-t border-[#dfe8f3] pt-6 first:border-t-0 first:pt-0">
       <div className="mb-4 flex items-center gap-3">
         {IconComponent ? <IconComponent size={22} className="text-[#0f2a4a]" /> : null}
         <h4 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#102236]">{number}. {title}</h4>
@@ -1203,7 +1203,7 @@ function renderLeaseAssetClassField({ createDraft, createErrors, updateCreateDra
 function renderLeaseProspectingFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
   return (
     <LeaseCreateSection number="3" title="Prospecting Information" icon={ClipboardList}>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,220px)_minmax(0,220px)_minmax(0,1fr)]">
+      <div className="grid gap-4 md:grid-cols-2">
         <CreateLabel label="Assigned Broker *" error={createErrors.assignedBrokerId}>
           <Field as="select" value={createDraft.assignedBrokerId} onChange={(event) => updateCreateDraftField('assignedBrokerId', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
             <option value="">Select broker</option>
@@ -1216,7 +1216,7 @@ function renderLeaseProspectingFields({ createDraft, createErrors, updateCreateD
             {CANVASSING_METHODS.map((option) => <option key={option} value={option}>{option}</option>)}
           </Field>
         </CreateLabel>
-        <CreateLabel label="Notes">
+        <CreateLabel label="Notes" className="md:col-span-2">
           <div className="relative">
             <Field
               as="textarea"
@@ -1284,9 +1284,9 @@ function renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraf
   )
 }
 
-function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) {
+function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <LeaseCreateSection number="1" title="Contact / Company Details" icon={Users}>
         <div className="grid gap-4 md:grid-cols-2">
           <CreateLabel label="Company Name *" error={createErrors.companyName}>
@@ -1305,19 +1305,7 @@ function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftF
       </LeaseCreateSection>
 
       <LeaseCreateSection number="2" title="Business Details" icon={Building2}>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.15fr)]">
-          <CreateLabel label="Current Address / Area">
-            <ProspectAddressField
-              createDraft={createDraft}
-              createErrors={createErrors}
-              updateCreateAddressField={updateCreateAddressField}
-              field="preferredArea"
-              valueField="preferredAreaValue"
-              mode="area"
-              placeholder="Search current premises..."
-              description="Use a premises address, suburb, or operating node."
-            />
-          </CreateLabel>
+        <div className="grid gap-4 md:grid-cols-2">
           <CreateLabel label="Industry">
             <Field value={createDraft.industry} onChange={(event) => updateCreateDraftField('industry', event.target.value)} placeholder="e.g. Logistics" className="h-12 rounded-[8px] text-sm" />
           </CreateLabel>
@@ -1887,6 +1875,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
         propertyName: '',
         portfolioName: '',
         lookingFor: '',
+        preferredArea: '',
+        preferredAreaValue: null,
         targetPurchaseTimeline: '',
         reasonForSelling: '',
         estimatedSaleValue: '',
@@ -1918,7 +1908,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
         ? normalizeText(createDraft.preferredArea)
         : role === 'landlord'
           ? normalizeText(createDraft.preferredArea || createDraft.propertyAddress || createDraft.propertyName || createDraft.portfolioName)
-          : normalizeText(createDraft.preferredArea || createDraft.propertyAddress)
+          : ''
 
     return {
       companyName,
@@ -1959,14 +1949,14 @@ function CommercialCanvassingPage({ dealType = '' }) {
         leaseTimeline: normalizeText(createDraft.leaseTimeline),
         vacancyDetails: normalizeText(createDraft.vacancyDetails),
         industry: normalizeText(createDraft.industry),
-        currentAddress: role === 'tenant' ? normalizeText(createDraft.preferredArea || createDraft.propertyAddress) : '',
+        currentAddress: role === 'tenant' ? null : '',
         areaNode: normalizeText(createDraft.preferredArea),
         assetClassInterest: role === 'tenant' ? propertyCategory : '',
         estimatedSaleValue: normalizeText(createDraft.estimatedSaleValue),
         estimatedMonthlyRental: normalizeText(createDraft.estimatedMonthlyRental),
         estimatedAnnualRental: normalizeText(createDraft.estimatedAnnualRental),
         propertyAddressDetails: compactCommercialAddressPayload(createDraft.propertyAddressValue),
-        preferredAreaAddress: compactCommercialAddressPayload(createDraft.preferredAreaValue),
+        preferredAreaAddress: role === 'tenant' ? null : compactCommercialAddressPayload(createDraft.preferredAreaValue),
       },
     }
   }
@@ -2344,10 +2334,10 @@ function CommercialCanvassingPage({ dealType = '' }) {
       className="max-w-[1140px]"
       footer={(
         <div className="flex w-full flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
-          <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} className="h-11 min-w-[96px] rounded-[8px]">
+          <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)} className="h-11 w-full rounded-[8px] sm:w-auto sm:min-w-[96px]">
             Cancel
           </Button>
-          <Button type="submit" form="commercial-canvassing-create-form" disabled={busyAction === 'create'} className="h-11 min-w-[150px] rounded-[8px] bg-[#082f56] text-white hover:bg-[#0b3d70]">
+          <Button type="submit" form="commercial-canvassing-create-form" disabled={busyAction === 'create'} className="h-11 w-full rounded-[8px] bg-[#082f56] text-white hover:bg-[#0b3d70] sm:w-auto sm:min-w-[150px]">
             {busyAction === 'create' ? 'Saving...' : 'Save'}
           </Button>
         </div>
