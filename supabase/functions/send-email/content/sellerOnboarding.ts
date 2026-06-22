@@ -129,7 +129,7 @@ export function buildSellerOnboardingEmailHtml({
     ...(portalDocumentsMode
       ? [
         "Your seller onboarding has been submitted and your seller portal is ready.",
-        "Use the secure link below to upload the documents needed for FICA, mandate preparation, and listing readiness.",
+        "Use the secure link below to open your seller portal. You will set a password before uploading the documents needed for FICA, mandate preparation, and listing readiness.",
         "Your agent can review the file in parallel while you complete the uploads.",
       ]
       : [
@@ -141,7 +141,7 @@ export function buildSellerOnboardingEmailHtml({
   const processSteps = pickLines(templateOverrides?.processSteps, [
     ...(portalDocumentsMode
       ? [
-        "Open your secure seller portal.",
+        "Open your secure seller portal and set your password.",
         "Upload the requested FICA, ownership, and property documents.",
         "Your agent reviews the file and prepares the next mandate step.",
         "You will receive secure updates as the sale progresses.",
@@ -172,7 +172,7 @@ export function buildSellerOnboardingEmailHtml({
      </div>`,
     `<div style="margin: 0 0 16px; padding: 14px 16px; border: 1px solid #e3eaf1; border-radius: 12px; background: #f6f8fb;">
        <p style="margin: 0 0 4px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #6d8096; font-weight: 700;">Estimated Completion Time</p>
-       <p style="margin: 0; font-size: 16px; line-height: 1.4; color: #0f2f4f; font-weight: 700;">5-10 Minutes</p>
+       <p style="margin: 0; font-size: 16px; line-height: 1.4; color: #0f2f4f; font-weight: 700;">${portalDocumentsMode ? "2-5 Minutes" : "5-10 Minutes"}</p>
      </div>`,
     renderBridgeSummaryCard(
       [
@@ -246,7 +246,7 @@ export function buildSellerOnboardingEmailText({
     ...(portalDocumentsMode
       ? [
         "Your seller onboarding has been submitted and your seller portal is ready.",
-        "Use the secure link below to upload the documents needed for FICA, mandate preparation, and listing readiness.",
+        "Use the secure link below to open your seller portal. You will set a password before uploading the documents needed for FICA, mandate preparation, and listing readiness.",
         "Your agent can review the file in parallel while you complete the uploads.",
       ]
       : [
@@ -258,7 +258,7 @@ export function buildSellerOnboardingEmailText({
   const processSteps = pickLines(templateOverrides?.processSteps, [
     ...(portalDocumentsMode
       ? [
-        "Open your secure seller portal.",
+        "Open your secure seller portal and set your password.",
         "Upload the requested FICA, ownership, and property documents.",
         "Your agent reviews the file and prepares the next mandate step.",
         "You will receive secure updates as the sale progresses.",

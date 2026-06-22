@@ -43,10 +43,14 @@ for (const field of [
 assert.ok(workspaceSource.includes('SELLER_MANDATE_TYPE_OPTIONS'), 'mandate type should use structured options')
 assert.ok(workspaceSource.includes('SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS'), 'special conditions should use structured options')
 assert.ok(workspaceSource.includes('validateSellerMandateDraft'), 'mandate save should validate required structured fields')
+assert.match(workspaceSource, /commission_percentage:\s*commissionType === 'percentage'/, 'mandate save should persist the canonical commission_percentage key')
+assert.match(workspaceSource, /formData\.commission_percentage/, 'mandate reload should hydrate the canonical commission_percentage key')
 assert.ok(workspaceSource.includes('updatePrivateListing(listingId'), 'mandate save should sync listing mandate_type')
 assert.ok(workspaceSource.includes('updatePrivateListingOnboardingFormData'), 'mandate save should persist to onboarding form data')
 assert.ok(workspaceSource.includes('Save Mandate'), 'mandate tab should keep a manual Save Mandate action')
 assert.ok(!workspaceSource.includes('placeholder="Sole mandate, payable on registration"'), 'mandate terms should not be captured as a free-form legal text field')
+assert.ok(!workspaceSource.includes('title="Mandate Status"'), 'mandate tab should not render the old mandate status container')
+assert.ok(!workspaceSource.includes('title="Mandate History"'), 'mandate tab should not render the old mandate history container')
 
 for (const legalField of [
   'onboarding.mandate_type',

@@ -56,7 +56,14 @@ import {
   submitTrustInvestmentForm,
 } from '../lib/api'
 import { getClientPortalWorkspaceData } from '../services/clientPortalWorkspaceService'
-import { createSellerClientPortalDocumentSignedUrl, uploadSellerClientPortalDocument } from '../services/privateListingService'
+import {
+  createSellerClientPortalDocumentSignedUrl,
+  getStoredSellerPortalAccessToken,
+  isSellerPortalAuthRequiredError,
+  setSellerPortalPassword,
+  uploadSellerClientPortalDocument,
+  verifySellerPortalPassword,
+} from '../services/privateListingService'
 import {
   dismissClientPortalNotification,
   markAllClientPortalNotificationsRead,
@@ -3049,6 +3056,91 @@ function SellerPortalDashboard({
   )
 }
 
+function SellerPortalPasswordGate({
+  authState = {},
+  form,
+  feedback = '',
+  saving = false,
+  onChange,
+  onSubmit,
+}) {
+  const passwordSet = Boolean(authState?.passwordSet)
+  const title = passwordSet ? 'Enter your seller portal password' : 'Set your seller portal password'
+  const description = passwordSet
+    ? 'Use the password you created for this seller portal.'
+    : 'Create a password before opening your seller portal and document centre.'
+  const propertyTitle = String(authState?.propertyTitle || '').trim()
+  const sellerEmail = String(authState?.sellerEmail || '').trim()
+
+  return (
+    <main className="min-h-screen bg-[#f3f6fb] px-5 py-8 md:px-8">
+      <section className="mx-auto max-w-[760px] rounded-[24px] border border-[#dbe5ef] bg-white px-6 py-7 shadow-[0_16px_34px_rgba(15,23,42,0.06)]">
+        <div className="flex items-start gap-4">
+          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[#eaf2fb] text-[#2f5478]">
+            <KeyRound size={22} aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6b7d93]">Seller portal</p>
+            <h1 className="mt-1 text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">{title}</h1>
+            <p className="mt-2 text-sm leading-6 text-[#5f7288]">{description}</p>
+          </div>
+        </div>
+
+        {propertyTitle || sellerEmail ? (
+          <div className="mt-5 rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-4">
+            {propertyTitle ? <strong className="block text-sm font-semibold text-[#142132]">{propertyTitle}</strong> : null}
+            {sellerEmail ? <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{sellerEmail}</p> : null}
+          </div>
+        ) : null}
+
+        <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+          <label className="block">
+            <span className="text-sm font-semibold text-[#24364a]">Password</span>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(event) => onChange('password', event.target.value)}
+              autoComplete={passwordSet ? 'current-password' : 'new-password'}
+              className="mt-2 h-12 w-full rounded-[14px] border border-[#dbe5ef] bg-white px-4 text-sm text-[#142132] outline-none transition focus:border-[#7ea1c4] focus:ring-4 focus:ring-[#d9e9f8]"
+              placeholder="At least 8 characters"
+            />
+          </label>
+
+          {!passwordSet ? (
+            <label className="block">
+              <span className="text-sm font-semibold text-[#24364a]">Confirm password</span>
+              <input
+                type="password"
+                value={form.confirmPassword}
+                onChange={(event) => onChange('confirmPassword', event.target.value)}
+                autoComplete="new-password"
+                className="mt-2 h-12 w-full rounded-[14px] border border-[#dbe5ef] bg-white px-4 text-sm text-[#142132] outline-none transition focus:border-[#7ea1c4] focus:ring-4 focus:ring-[#d9e9f8]"
+                placeholder="Re-enter password"
+              />
+            </label>
+          ) : null}
+
+          {feedback ? (
+            <div className="flex items-start gap-2 rounded-[14px] border border-[#f1d4cf] bg-[#fff8f6] px-3 py-3 text-sm leading-6 text-[#b42318]">
+              <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>{feedback}</span>
+            </div>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#2f5478] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#244463] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <ShieldCheck size={18} aria-hidden="true" />
+            {saving ? 'Checking password...' : passwordSet ? 'Open seller portal' : 'Set password and open portal'}
+          </button>
+        </form>
+      </section>
+    </main>
+  )
+}
+
 function ClientPortal() {
   const { token = '' } = useParams()
   const location = useLocation()
@@ -3058,6 +3150,11 @@ function ClientPortal() {
   const [hydratingPortal, setHydratingPortal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [sellerPortalAccessToken, setSellerPortalAccessToken] = useState(() => getStoredSellerPortalAccessToken(token))
+  const [sellerPortalAuth, setSellerPortalAuth] = useState(null)
+  const [sellerPortalPasswordForm, setSellerPortalPasswordForm] = useState({ password: '', confirmPassword: '' })
+  const [sellerPortalPasswordFeedback, setSellerPortalPasswordFeedback] = useState('')
+  const [sellerPortalPasswordSaving, setSellerPortalPasswordSaving] = useState(false)
   const [commentDraft, setCommentDraft] = useState('')
   const [uploadingDocumentKey, setUploadingDocumentKey] = useState('')
   const [activeDocumentsTab, setActiveDocumentsTab] = useState('sales')
@@ -3148,6 +3245,7 @@ function ClientPortal() {
   const [sellerRequestFeedback, setSellerRequestFeedback] = useState({ tone: '', message: '' })
 
   const requestedWorkspace = useMemo(() => getPortalWorkspaceFromPath(location.pathname), [location.pathname])
+  const isSellerPortalToken = useMemo(() => String(token || '').trim().toLowerCase().startsWith('seller-'), [token])
 
   const requestedSection = useMemo(() => {
     if (location.pathname.endsWith('/progress')) return 'progress'
@@ -3165,6 +3263,13 @@ function ClientPortal() {
     if (location.pathname.endsWith('/review')) return 'review'
     return 'overview'
   }, [location.pathname])
+
+  useEffect(() => {
+    setSellerPortalAccessToken(getStoredSellerPortalAccessToken(token))
+    setSellerPortalAuth(null)
+    setSellerPortalPasswordFeedback('')
+    setSellerPortalPasswordForm({ password: '', confirmPassword: '' })
+  }, [token])
 
   useEffect(() => {
     const normalizedToken = String(token || '').trim().toLowerCase()
@@ -3192,7 +3297,10 @@ function ClientPortal() {
       try {
         setError('')
         setHydratingPortal(true)
-        const data = await getClientPortalWorkspaceData(token, requestedWorkspace, { mode: 'full' })
+        const data = await getClientPortalWorkspaceData(token, requestedWorkspace, {
+          mode: 'full',
+          sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
+        })
         setPortalContexts({
           contexts: data?.portalContext?.contexts || [],
           hasBuyingContext: data?.portalContext?.hasBuyingContext !== false,
@@ -3200,11 +3308,19 @@ function ClientPortal() {
         })
         setWorkspaceData(data)
         setPortal(data?.legacyPortalData || null)
+        setSellerPortalAuth(null)
         console.log('[perf][client-portal] background refresh complete', {
           token,
           durationMs: Date.now() - backgroundStartedAt,
         })
       } catch (loadError) {
+        if (isSellerPortalAuthRequiredError(loadError)) {
+          setSellerPortalAuth(loadError.portalAuth || { authRequired: true })
+          setPortal(null)
+          setWorkspaceData(null)
+          setError('')
+          return
+        }
         setError(loadError?.message || 'We could not refresh your client workspace right now.')
       } finally {
         setHydratingPortal(false)
@@ -3217,7 +3333,10 @@ function ClientPortal() {
     try {
       setLoading(true)
       setError('')
-      const coreData = await getClientPortalWorkspaceData(token, requestedWorkspace, { mode: 'core' })
+      const coreData = await getClientPortalWorkspaceData(token, requestedWorkspace, {
+        mode: 'core',
+        sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
+      })
       setPortalContexts({
         contexts: coreData?.portalContext?.contexts || [],
         hasBuyingContext: coreData?.portalContext?.hasBuyingContext !== false,
@@ -3225,6 +3344,7 @@ function ClientPortal() {
       })
       setWorkspaceData(coreData)
       setPortal(coreData?.legacyPortalData || null)
+      setSellerPortalAuth(null)
       hasCoreData = Boolean(coreData?.legacyPortalData)
       setLoading(false)
       console.log('[perf][client-portal] core data loaded', {
@@ -3232,6 +3352,13 @@ function ClientPortal() {
         durationMs: Date.now() - startedAt,
       })
     } catch (coreError) {
+      if (isSellerPortalAuthRequiredError(coreError)) {
+        setSellerPortalAuth(coreError.portalAuth || { authRequired: true })
+        setPortal(null)
+        setWorkspaceData(null)
+        setLoading(false)
+        return
+      }
       if (!hasCoreData) {
         setError(coreError?.message || 'We could not load your client workspace.')
       }
@@ -3239,7 +3366,10 @@ function ClientPortal() {
 
     try {
       setHydratingPortal(true)
-      const fullData = await getClientPortalWorkspaceData(token, requestedWorkspace, { mode: 'full' })
+      const fullData = await getClientPortalWorkspaceData(token, requestedWorkspace, {
+        mode: 'full',
+        sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
+      })
       setPortalContexts({
         contexts: fullData?.portalContext?.contexts || [],
         hasBuyingContext: fullData?.portalContext?.hasBuyingContext !== false,
@@ -3247,12 +3377,20 @@ function ClientPortal() {
       })
       setWorkspaceData(fullData)
       setPortal(fullData?.legacyPortalData || null)
+      setSellerPortalAuth(null)
       setError('')
       console.log('[perf][client-portal] full data loaded', {
         token,
         durationMs: Date.now() - startedAt,
       })
     } catch (loadError) {
+      if (isSellerPortalAuthRequiredError(loadError)) {
+        setSellerPortalAuth(loadError.portalAuth || { authRequired: true })
+        setPortal(null)
+        setWorkspaceData(null)
+        setError('')
+        return
+      }
       if (!hasCoreData) {
         setError(loadError?.message || 'We could not finish loading your client workspace.')
       }
@@ -3260,7 +3398,50 @@ function ClientPortal() {
       setHydratingPortal(false)
       setLoading(false)
     }
-  }, [token, requestedWorkspace])
+  }, [isSellerPortalToken, sellerPortalAccessToken, token, requestedWorkspace])
+
+  const handleSellerPortalPasswordChange = useCallback((field, value) => {
+    setSellerPortalPasswordForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }))
+    setSellerPortalPasswordFeedback('')
+  }, [])
+
+  const handleSellerPortalPasswordSubmit = useCallback(async (event) => {
+    event.preventDefault()
+    const password = String(sellerPortalPasswordForm.password || '')
+    const confirmPassword = String(sellerPortalPasswordForm.confirmPassword || '')
+    const passwordSet = Boolean(sellerPortalAuth?.passwordSet)
+
+    if (password.length < 8) {
+      setSellerPortalPasswordFeedback('Password must be at least 8 characters.')
+      return
+    }
+
+    if (!passwordSet && password !== confirmPassword) {
+      setSellerPortalPasswordFeedback('Passwords do not match.')
+      return
+    }
+
+    try {
+      setSellerPortalPasswordSaving(true)
+      setSellerPortalPasswordFeedback('')
+      const session = passwordSet
+        ? await verifySellerPortalPassword({ token, password })
+        : await setSellerPortalPassword({ token, password })
+      const accessToken = session?.accessToken || getStoredSellerPortalAccessToken(token)
+      setLoading(true)
+      setSellerPortalAccessToken(accessToken)
+      setSellerPortalAuth(null)
+      setSellerPortalPasswordForm({ password: '', confirmPassword: '' })
+      setError('')
+    } catch (passwordError) {
+      setSellerPortalPasswordFeedback(passwordError?.message || 'Unable to open your seller portal right now.')
+    } finally {
+      setSellerPortalPasswordSaving(false)
+    }
+  }, [sellerPortalAuth?.passwordSet, sellerPortalPasswordForm.confirmPassword, sellerPortalPasswordForm.password, token])
 
   const applyUploadedPortalDocument = useCallback(
     (uploadedDocument, { requiredDocumentKey = null } = {}) => {
@@ -3867,6 +4048,7 @@ function ClientPortal() {
       const uploaded = effectiveWorkspace === 'seller'
         ? await uploadSellerClientPortalDocument({
             token,
+            accessToken: sellerPortalAccessToken,
             file,
             requirementKey: documentKey,
             requirementInstanceId: options.requirementInstanceId || null,
@@ -4032,6 +4214,7 @@ function ClientPortal() {
         ? effectiveWorkspace === 'seller'
           ? await createSellerClientPortalDocumentSignedUrl({
               token,
+              accessToken: sellerPortalAccessToken,
               filePath: document.file_path,
               expiresInSeconds: 60,
             })
@@ -4330,6 +4513,19 @@ function ClientPortal() {
           </p>
         </section>
       </main>
+    )
+  }
+
+  if (sellerPortalAuth?.authRequired) {
+    return (
+      <SellerPortalPasswordGate
+        authState={sellerPortalAuth}
+        form={sellerPortalPasswordForm}
+        feedback={sellerPortalPasswordFeedback}
+        saving={sellerPortalPasswordSaving}
+        onChange={handleSellerPortalPasswordChange}
+        onSubmit={handleSellerPortalPasswordSubmit}
+      />
     )
   }
 

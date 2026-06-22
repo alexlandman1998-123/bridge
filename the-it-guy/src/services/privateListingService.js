@@ -50,6 +50,7 @@ const MANDATE_STATUSES = ['not_started', 'ready', 'generated', 'sent', 'viewed',
 const DELETED_LISTING_STATUSES = new Set(['withdrawn', 'deleted', 'archived'])
 const DELETED_LISTING_VISIBILITIES = new Set(['archived', 'deleted'])
 const CANONICAL_ONBOARDING_RESOLVER_FLAG = 'VITE_CANONICAL_ONBOARDING_RESOLVER_ENABLED'
+const SELLER_PORTAL_ACCESS_STORAGE_PREFIX = 'bridge:seller-portal-access:'
 
 function requireClient() {
   if (!isSupabaseConfigured || !supabase) {
@@ -60,6 +61,69 @@ function requireClient() {
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function getSellerPortalAccessStorageKey(token = '') {
+  const normalizedToken = normalizeText(token)
+  return normalizedToken ? `${SELLER_PORTAL_ACCESS_STORAGE_PREFIX}${normalizedToken}` : ''
+}
+
+export function getStoredSellerPortalAccessToken(token = '') {
+  if (typeof window === 'undefined' || !window.localStorage) return ''
+  const storageKey = getSellerPortalAccessStorageKey(token)
+  if (!storageKey) return ''
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(storageKey) || '{}')
+    const accessToken = normalizeText(parsed?.accessToken)
+    const expiresAt = normalizeText(parsed?.expiresAt)
+    if (!accessToken) return ''
+    if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+      window.localStorage.removeItem(storageKey)
+      return ''
+    }
+    return accessToken
+  } catch {
+    window.localStorage.removeItem(storageKey)
+    return ''
+  }
+}
+
+export function storeSellerPortalAccessToken(token = '', session = {}) {
+  if (typeof window === 'undefined' || !window.localStorage) return ''
+  const storageKey = getSellerPortalAccessStorageKey(token)
+  const accessToken = normalizeText(session?.accessToken)
+  if (!storageKey || !accessToken) return ''
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify({
+      accessToken,
+      expiresAt: normalizeText(session?.expiresAt),
+    }))
+  } catch {
+    return ''
+  }
+
+  return accessToken
+}
+
+export function clearSellerPortalAccessToken(token = '') {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  const storageKey = getSellerPortalAccessStorageKey(token)
+  if (!storageKey) return
+  window.localStorage.removeItem(storageKey)
+}
+
+function buildSellerPortalAuthRequiredError(portalAuth = {}) {
+  const passwordSet = Boolean(portalAuth?.passwordSet)
+  const error = new Error(passwordSet ? 'Enter your seller portal password.' : 'Set a password to open your seller portal.')
+  error.code = 'seller_portal_auth_required'
+  error.portalAuth = portalAuth && typeof portalAuth === 'object' ? portalAuth : {}
+  return error
+}
+
+export function isSellerPortalAuthRequiredError(error = null) {
+  return Boolean(error?.code === 'seller_portal_auth_required' || error?.portalAuth?.authRequired)
 }
 
 function normalizeKey(value) {
@@ -1073,6 +1137,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     commission_percentage: pickFirstText(
       onboardingFormData.commissionPercentage,
       onboardingFormData.commissionPercent,
+      onboardingFormData.commission_percentage,
       onboardingFormData.commission_percent,
       onboardingFormData.mandateCommissionPercentage,
       onboardingFormData.mandateCommissionPercent,
@@ -1553,15 +1618,27 @@ function mapSellerClientPortalPayload(payload) {
   }
 }
 
-async function fetchSellerClientPortalPayloadByToken(client, token) {
+async function fetchSellerClientPortalPayloadByToken(client, token, options = {}) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) return null
-  const rpc = await client.rpc('bridge_private_listing_seller_portal_payload', {
-    p_token: normalizedToken,
-  })
+  const accessToken = normalizeText(options.accessToken)
+  const requirePortalAccess = Boolean(options.requirePortalAccess)
+  const rpcArgs = requirePortalAccess || accessToken
+    ? {
+        p_token: normalizedToken,
+        p_access_token: accessToken || null,
+        p_require_access: requirePortalAccess,
+      }
+    : {
+        p_token: normalizedToken,
+      }
+  const rpc = await client.rpc('bridge_private_listing_seller_portal_payload', rpcArgs)
   if (rpc.error) {
     if (isMissingRpcError(rpc.error, 'bridge_private_listing_seller_portal_payload')) return null
     throw rpc.error
+  }
+  if (rpc.data?.authRequired) {
+    return { portalAuth: rpc.data }
   }
   return mapSellerClientPortalPayload(rpc.data)
 }
@@ -1630,6 +1707,8 @@ function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {},
     emailKind: 'portal_documents',
     to,
     organisationId: normalizeText(listing?.organisationId || listing?.organisation_id),
+    leadId: normalizeText(listing?.sellerLeadId || listing?.seller_lead_id || listing?.originatingCrmLeadId || listing?.originating_crm_lead_id),
+    listingId: normalizeText(listing?.id || listing?.listingId || listing?.listing_id),
     sellerName: normalizeText(
       formData?.sellerFirstName && formData?.sellerSurname
         ? `${formData.sellerFirstName} ${formData.sellerSurname}`
@@ -1655,6 +1734,59 @@ async function notifySellerPortalDocumentsReady(client, { listing = {}, onboardi
   }
 
   return data || { ok: true }
+}
+
+export async function getSellerPortalAccessState(token) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller portal token is required.')
+
+  const { data, error } = await client.rpc('bridge_private_listing_seller_portal_access_state', {
+    p_token: normalizedToken,
+  })
+  if (error) throw error
+  return data || { valid: false, reason: 'unavailable' }
+}
+
+export async function setSellerPortalPassword({ token, password } = {}) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller portal token is required.')
+
+  const { data, error } = await client.rpc('bridge_set_private_listing_seller_portal_password', {
+    p_token: normalizedToken,
+    p_password: password || '',
+  })
+  if (error) throw error
+  const accessToken = storeSellerPortalAccessToken(normalizedToken, data)
+  return { ...(data || {}), accessToken }
+}
+
+export async function verifySellerPortalPassword({ token, password } = {}) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller portal token is required.')
+
+  const { data, error } = await client.rpc('bridge_verify_private_listing_seller_portal_password', {
+    p_token: normalizedToken,
+    p_password: password || '',
+  })
+  if (error) throw error
+  const accessToken = storeSellerPortalAccessToken(normalizedToken, data)
+  return { ...(data || {}), accessToken }
+}
+
+export async function resetSellerPortalPassword(token) {
+  const client = requireClient()
+  const normalizedToken = normalizeText(token)
+  if (!normalizedToken) throw new Error('Seller portal token is required.')
+
+  const { data, error } = await client.rpc('bridge_reset_private_listing_seller_portal_password', {
+    p_token: normalizedToken,
+  })
+  if (error) throw error
+  clearSellerPortalAccessToken(normalizedToken)
+  return data || { ok: true, passwordSet: false, passwordRequired: true }
 }
 
 async function ensureSellerClientPortalContext(client, { listing = {}, onboarding = {}, formData = {}, status = 'active' } = {}) {
@@ -3240,7 +3372,13 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
 
-  const portalPayload = await fetchSellerClientPortalPayloadByToken(client, normalizedToken)
+  const portalPayload = await fetchSellerClientPortalPayloadByToken(client, normalizedToken, {
+    accessToken: options?.sellerPortalAccessToken,
+    requirePortalAccess: options?.requirePortalAccess === true,
+  })
+  if (portalPayload?.portalAuth?.authRequired) {
+    throw buildSellerPortalAuthRequiredError(portalPayload.portalAuth)
+  }
   if (portalPayload?.listing) {
     const branding = await fetchOrganisationBrandingSnapshot(client, portalPayload.listing.organisationId)
     return {
@@ -3838,6 +3976,7 @@ export async function updatePrivateListingRequirementStatus(requirementId, statu
 
 export async function uploadSellerClientPortalDocument({
   token,
+  accessToken = '',
   file,
   requirementKey = '',
   requirementInstanceId = '',
@@ -3849,7 +3988,11 @@ export async function uploadSellerClientPortalDocument({
   if (!normalizedToken) throw new Error('Seller client portal token is required.')
   if (!file) throw new Error('A file is required.')
 
-  const context = await getSellerOnboardingByToken(normalizedToken, { includeRequirementsAndDocuments: true })
+  const context = await getSellerOnboardingByToken(normalizedToken, {
+    includeRequirementsAndDocuments: true,
+    requirePortalAccess: true,
+    sellerPortalAccessToken: accessToken || getStoredSellerPortalAccessToken(normalizedToken),
+  })
   const listing = context?.listing || null
   if (!listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
 
@@ -3886,6 +4029,7 @@ export async function uploadSellerClientPortalDocument({
     p_document_type: normalizedDocumentType,
     p_canonical_requirement_instance_id: canonicalRequirementInstanceId || null,
     p_category: category || 'Seller Document',
+    p_access_token: accessToken || getStoredSellerPortalAccessToken(normalizedToken) || null,
   })
 
   if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_upload_private_listing_seller_document')) {
@@ -4068,6 +4212,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
 
 export async function createSellerClientPortalDocumentSignedUrl({
   token,
+  accessToken = '',
   filePath,
   expiresInSeconds = 60,
 } = {}) {
@@ -4077,7 +4222,11 @@ export async function createSellerClientPortalDocumentSignedUrl({
   if (!normalizedToken) throw new Error('Seller client portal token is required.')
   if (!normalizedFilePath) throw new Error('Document path is required.')
 
-  const context = await getSellerOnboardingByToken(normalizedToken, { includeRequirementsAndDocuments: false })
+  const context = await getSellerOnboardingByToken(normalizedToken, {
+    includeRequirementsAndDocuments: false,
+    requirePortalAccess: true,
+    sellerPortalAccessToken: accessToken || getStoredSellerPortalAccessToken(normalizedToken),
+  })
   if (!context?.listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
   const listingPathPrefix = `seller-portal/${context.listing.id}/`
   if (!normalizedFilePath.startsWith(listingPathPrefix)) {

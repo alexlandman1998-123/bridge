@@ -6,6 +6,11 @@ import {
   buildSellerOnboardingSubject,
 } from "../content/sellerOnboarding.ts";
 import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplateSettings.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import {
@@ -228,6 +233,28 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     templateOverrides: templateOverrides || undefined,
   });
 
+  const communicationType = portalDocumentsMode
+    ? "seller_portal_link_seller"
+    : "seller_onboarding_link_seller";
+  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
+    communicationType,
+    recipient: to,
+    recipientRole: "seller",
+    subject,
+    messagePreview: text,
+    context: {
+      organisationId,
+      leadId: normalizeText(payload.leadId),
+      listingId: normalizeText(payload.listingId),
+      metadata: {
+        emailKind,
+        portalDocumentsMode,
+        onboardingLink,
+        emailPurpose: communicationType,
+      },
+    },
+  });
+
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
@@ -238,15 +265,26 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
   });
 
   if (!emailResult.ok) {
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage:
+        emailResult.error?.message ||
+        "Failed to send seller onboarding email.",
+    });
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send seller onboarding email.",
       details: emailResult.error,
     });
   }
 
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: emailResult.data?.id || null,
+  });
+
   return jsonResponse(200, {
     ok: true,
     type: portalDocumentsMode ? "seller_portal_link" : "seller_onboarding",
     emailId: emailResult.data?.id || null,
+    deliveryId: delivery?.id || null,
+    communicationType,
   });
 }

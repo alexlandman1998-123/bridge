@@ -6,6 +6,11 @@ import {
   buildSellerOnboardingSubmittedSubject,
 } from "../content/sellerOnboardingSubmitted.ts";
 import { fetchOrganisationEmailTemplateOverride } from "../services/emailTemplateSettings.ts";
+import {
+  markEmailDeliveryFailed,
+  markEmailDeliverySent,
+  prepareEmailDelivery,
+} from "../services/communicationDeliveryLogging.ts";
 import { sendViaResendApi } from "../services/resend.ts";
 import { jsonResponse } from "../utils/http.ts";
 import {
@@ -140,17 +145,33 @@ async function resolveAssignedAgentRecipient(
   payload: SendSellerOnboardingSubmittedPayload,
 ) {
   const explicitEmail = normalizeEmail(payload.to);
+  const listingId = normalizeText(payload.listingId);
+  const leadIds = collectUnique([payload.leadId]);
+  const agentIds = collectUnique([payload.assignedAgentId]);
+  const lookupContext = {
+    hasExplicitEmail: Boolean(explicitEmail),
+    listingId,
+    leadIds,
+    assignedAgentIds: agentIds,
+  };
+
   if (explicitEmail) {
     return {
       email: explicitEmail,
       agentName: normalizeText(payload.agentName),
+      resolvedBy: "payload.to",
+      lookupContext,
     };
   }
-  if (!supabase) return { email: "", agentName: normalizeText(payload.agentName) };
+  if (!supabase) {
+    return {
+      email: "",
+      agentName: normalizeText(payload.agentName),
+      resolvedBy: "",
+      lookupContext: { ...lookupContext, serviceRoleConfigured: false },
+    };
+  }
 
-  const listingId = normalizeText(payload.listingId);
-  const leadIds = collectUnique([payload.leadId]);
-  const agentIds = collectUnique([payload.assignedAgentId]);
   let resolvedAgentName = normalizeText(payload.agentName);
 
   if (listingId) {
@@ -163,7 +184,14 @@ async function resolveAssignedAgentRecipient(
     if (!listingQuery.error || isMissingColumnError(listingQuery.error) || isMissingTableError(listingQuery.error, "private_listings")) {
       const listing = listingQuery.data || {};
       const listingEmail = normalizeEmail(listing.assigned_agent_email);
-      if (listingEmail) return { email: listingEmail, agentName: resolvedAgentName };
+      if (listingEmail) {
+        return {
+          email: listingEmail,
+          agentName: resolvedAgentName,
+          resolvedBy: "private_listings.assigned_agent_email",
+          lookupContext,
+        };
+      }
       leadIds.push(...collectUnique([listing.seller_lead_id, listing.originating_crm_lead_id]));
       agentIds.push(...collectUnique([listing.assigned_agent_id]));
     } else if (listingQuery.error) {
@@ -181,7 +209,17 @@ async function resolveAssignedAgentRecipient(
     if (!leadQuery.error || isMissingColumnError(leadQuery.error) || isMissingTableError(leadQuery.error, "leads")) {
       const lead = leadQuery.data || {};
       const leadEmail = normalizeEmail(lead.assigned_agent_email);
-      if (leadEmail) return { email: leadEmail, agentName: resolvedAgentName };
+      if (leadEmail) {
+        return {
+          email: leadEmail,
+          agentName: resolvedAgentName,
+          resolvedBy: "leads.assigned_agent_email",
+          lookupContext: {
+            ...lookupContext,
+            leadIds: collectUnique(leadIds),
+          },
+        };
+      }
       agentIds.push(...collectUnique([lead.assigned_agent_id]));
     } else if (leadQuery.error) {
       console.error("[seller_onboarding_submitted] lead recipient lookup failed", leadQuery.error);
@@ -199,13 +237,34 @@ async function resolveAssignedAgentRecipient(
       const profile = profileQuery.data || {};
       const profileEmail = normalizeEmail(profile.email);
       if (!resolvedAgentName) resolvedAgentName = normalizeText(profile.full_name);
-      if (profileEmail) return { email: profileEmail, agentName: resolvedAgentName };
+      if (profileEmail) {
+        return {
+          email: profileEmail,
+          agentName: resolvedAgentName,
+          resolvedBy: "profiles.email",
+          lookupContext: {
+            ...lookupContext,
+            leadIds: collectUnique(leadIds),
+            assignedAgentIds: collectUnique(agentIds),
+          },
+        };
+      }
     } else if (profileQuery.error) {
       console.error("[seller_onboarding_submitted] profile recipient lookup failed", profileQuery.error);
     }
   }
 
-  return { email: "", agentName: resolvedAgentName };
+  return {
+    email: "",
+    agentName: resolvedAgentName,
+    resolvedBy: "",
+    lookupContext: {
+      ...lookupContext,
+      leadIds: collectUnique(leadIds),
+      assignedAgentIds: collectUnique(agentIds),
+      serviceRoleConfigured: true,
+    },
+  };
 }
 
 export async function handleSellerOnboardingSubmittedEmail(
@@ -227,8 +286,18 @@ export async function handleSellerOnboardingSubmittedEmail(
   const recipient = await resolveAssignedAgentRecipient(supabase, payload);
   const to = recipient.email;
   if (!to) {
-    return jsonResponse(400, { error: "Unable to resolve assigned agent email for seller onboarding submission." });
+    console.error("[seller_onboarding_submitted] unable to resolve assigned agent email", recipient.lookupContext);
+    return jsonResponse(400, {
+      error: "Unable to resolve assigned agent email for seller onboarding submission.",
+      lookupContext: recipient.lookupContext,
+    });
   }
+  console.info("[seller_onboarding_submitted] resolved assigned agent recipient", {
+    resolvedBy: recipient.resolvedBy,
+    listingId: payload.listingId || null,
+    leadId: payload.leadId || null,
+    assignedAgentId: payload.assignedAgentId || null,
+  });
 
   const sellerName = normalizeText(payload.sellerName) || "Seller";
   const propertyTitle = normalizeText(payload.propertyTitle) || "property";
@@ -306,6 +375,26 @@ export async function handleSellerOnboardingSubmittedEmail(
     organisationName: senderOrganisationName || organisationName,
   });
 
+  const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
+    communicationType: "seller_onboarding_submitted_agent",
+    recipient: to,
+    recipientRole: "agent",
+    subject,
+    messagePreview: text,
+    context: {
+      organisationId,
+      leadId,
+      listingId,
+      assignedUserId: normalizeText(payload.assignedAgentId),
+      metadata: {
+        resolvedBy: recipient.resolvedBy,
+        actionLink,
+        transactionReference,
+        emailPurpose: "seller_onboarding_submitted_agent",
+      },
+    },
+  });
+
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
@@ -316,16 +405,27 @@ export async function handleSellerOnboardingSubmittedEmail(
   });
 
   if (!emailResult.ok) {
+    await markEmailDeliveryFailed(delivery?.id || "", {
+      errorMessage:
+        emailResult.error?.message ||
+        "Failed to send seller onboarding submitted email.",
+    });
     return jsonResponse(500, {
       error: emailResult.error?.message || "Failed to send seller onboarding submitted email.",
       details: emailResult.error,
     });
   }
 
+  await markEmailDeliverySent(delivery?.id || "", {
+    emailId: emailResult.data?.id || null,
+  });
+
   return jsonResponse(200, {
     ok: true,
     type: "seller_onboarding_submitted",
     emailId: emailResult.data?.id || null,
+    deliveryId: delivery?.id || null,
+    resolvedBy: recipient.resolvedBy,
     actionLink,
     leadId: leadId || null,
     listingId: listingId || null,

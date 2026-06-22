@@ -19,7 +19,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
-import { invokeEdgeFunction } from '../lib/supabaseClient'
+import { getEdgeFunctionInvokeError, invokeEdgeFunction } from '../lib/supabaseClient'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   createListingDraftFromSellerLead,
@@ -228,21 +228,26 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
   let timeoutId = null
   try {
     await Promise.race([
-      invokeEdgeFunction('send-email', {
-        body: {
-          type: 'seller_onboarding_submitted',
-          to: hasValidAssignedAgentEmail ? assignedAgentEmail : '',
-          agentName: assignedAgentName,
-          sellerName,
-          propertyTitle,
-          transactionReference,
-          organisationId: String(updated?.organisationId || updated?.organisation_id || '').trim(),
-          leadId,
-          listingId,
-          assignedAgentId,
-          actionLink,
-        },
-      }),
+      (async () => {
+        const notificationResult = await invokeEdgeFunction('send-email', {
+          body: {
+            type: 'seller_onboarding_submitted',
+            to: hasValidAssignedAgentEmail ? assignedAgentEmail : '',
+            agentName: assignedAgentName,
+            sellerName,
+            propertyTitle,
+            transactionReference,
+            organisationId: String(updated?.organisationId || updated?.organisation_id || '').trim(),
+            leadId,
+            listingId,
+            assignedAgentId,
+            actionLink,
+          },
+        })
+        const notificationError = getEdgeFunctionInvokeError(notificationResult)
+        if (notificationError) throw notificationError
+        return notificationResult
+      })(),
       new Promise((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error('Seller onboarding notification timed out.')), SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS)
       }),

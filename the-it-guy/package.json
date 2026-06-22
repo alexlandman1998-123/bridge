@@ -133,6 +133,8 @@
     "test:seller-journey": "node scripts/seller-journey.test.mjs",
     "test:seller-analytics": "node scripts/seller-analytics.test.mjs",
     "test:seller-portal-alignment": "node scripts/seller-portal-alignment.test.mjs",
+    "test:seller-onboarding-phase5": "node scripts/seller-onboarding-phase5.test.mjs",
+    "test:seller-onboarding-phase6": "node scripts/seller-onboarding-phase6.test.mjs",
     "test:seller-readiness": "node scripts/seller-readiness.test.mjs",
     "test:canonical-document-workspace": "node scripts/canonical-document-workspace.test.mjs",
     "test:canonical-document-lifecycle": "node scripts/canonical-document-lifecycle.test.mjs",

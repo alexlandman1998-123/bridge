@@ -93,6 +93,8 @@ import {
   getPrivateListing,
   createPrivateListingDocumentDownloadUrl,
   deletePrivateListing,
+  getSellerPortalAccessState,
+  resetSellerPortalPassword,
   sendSellerOnboarding,
   syncPrivateListingDistributionData,
   updatePrivateListing,
@@ -125,6 +127,16 @@ const DETAIL_TABS = [
   { key: 'documents', label: 'Documents' },
   { key: 'role_players', label: 'Role Players' },
 ]
+
+const SELLER_ONBOARDING_EMAIL_TYPES = new Set([
+  'seller_onboarding',
+  'seller_onboarding_link',
+  'seller_onboarding_link_seller',
+  'seller_portal_link',
+  'seller_portal_link_seller',
+  'seller_onboarding_submitted',
+  'seller_onboarding_submitted_agent',
+])
 
 const CLIENT_INTAKE_PREFERENCE_OPTIONS = [
   { value: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL, label: getClientIntakePreferenceLabel(CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL) },
@@ -533,6 +545,17 @@ function extractSellerPortalTokenFromLink(link = '') {
   return ''
 }
 
+function resolveSellerPortalTokenFromListing(listing = {}) {
+  let token = toCleanText(
+    listing?.sellerOnboarding?.token ||
+      listing?.sellerOnboardingToken ||
+      listing?.seller_onboarding_token,
+  )
+  token = token || extractSellerPortalTokenFromLink(listing?.sellerOnboarding?.clientPortalLink)
+  token = token || extractSellerPortalTokenFromLink(listing?.sellerOnboarding?.link)
+  return token
+}
+
 function CompactActionButton({ active = false, disabled = false, className = '', children, ...props }) {
   return (
     <button
@@ -580,6 +603,52 @@ function formatStatusLabel(value) {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+function getDeliveryActivityDate(delivery = {}) {
+  return firstDraftValue(
+    delivery.deliveredAt,
+    delivery.delivered_at,
+    delivery.sentAt,
+    delivery.sent_at,
+    delivery.failedAt,
+    delivery.failed_at,
+    delivery.preparedAt,
+    delivery.prepared_at,
+    delivery.createdAt,
+    delivery.created_at,
+  )
+}
+
+function isSellerOnboardingEmailDelivery(delivery = {}) {
+  const type = normalizeKey(delivery.communicationType || delivery.communication_type || delivery.type)
+  return SELLER_ONBOARDING_EMAIL_TYPES.has(type)
+}
+
+function buildSellerOnboardingEmailDiagnostics(deliveries = []) {
+  const rows = (Array.isArray(deliveries) ? deliveries : [])
+    .filter(isSellerOnboardingEmailDelivery)
+    .sort((left, right) => new Date(getDeliveryActivityDate(right) || 0) - new Date(getDeliveryActivityDate(left) || 0))
+
+  const failed = rows.filter((row) => normalizeKey(row.status) === 'failed')
+  const sent = rows.filter((row) => ['sent', 'delivered'].includes(normalizeKey(row.status)))
+  const prepared = rows.filter((row) => ['prepared', 'queued'].includes(normalizeKey(row.status)))
+  const latest = rows[0] || null
+  const latestFailure = failed[0] || null
+
+  return {
+    rows,
+    recentRows: rows.slice(0, 4),
+    total: rows.length,
+    sent: sent.length,
+    failed: failed.length,
+    prepared: prepared.length,
+    latest,
+    latestFailure,
+    latestStatus: latest ? formatStatusLabel(latest.status) : 'No delivery logged',
+    latestAt: latest ? getDeliveryActivityDate(latest) : '',
+    latestFailureMessage: latestFailure?.errorMessage || latestFailure?.error_message || '',
+  }
 }
 
 function statusClass(status) {
@@ -1288,6 +1357,9 @@ function AgentListingDetail() {
   const [gallerySaving, setGallerySaving] = useState(false)
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
+  const [resettingSellerPortalPassword, setResettingSellerPortalPassword] = useState(false)
+  const [sellerPortalAccessState, setSellerPortalAccessState] = useState(null)
+  const [sellerPortalAccessLoading, setSellerPortalAccessLoading] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
@@ -1387,6 +1459,33 @@ function AgentListingDetail() {
     () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
     [activeOrganisationId, listingRecord?.organisationId, listingRecord?.organisation_id],
   )
+
+  useEffect(() => {
+    const token = resolveSellerPortalTokenFromListing(listingRecord)
+    if (!token || !isSupabaseConfigured) {
+      setSellerPortalAccessState(null)
+      setSellerPortalAccessLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setSellerPortalAccessLoading(true)
+    getSellerPortalAccessState(token)
+      .then((state) => {
+        if (!cancelled) setSellerPortalAccessState(state || null)
+      })
+      .catch((error) => {
+        console.warn('[AgentListingDetail] Seller portal access state unavailable', error)
+        if (!cancelled) setSellerPortalAccessState(null)
+      })
+      .finally(() => {
+        if (!cancelled) setSellerPortalAccessLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [listingRecord])
 
   useEffect(() => {
     if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
@@ -2030,13 +2129,7 @@ function AgentListingDetail() {
   async function resolveSellerClientPortalInviteContext() {
     if (!listingRecord?.id) throw new Error('Listing is not available yet.')
 
-    let token = toCleanText(
-      listingRecord?.sellerOnboarding?.token ||
-        listingRecord?.sellerOnboardingToken ||
-        listingRecord?.seller_onboarding_token,
-    )
-    token = token || extractSellerPortalTokenFromLink(listingRecord?.sellerOnboarding?.clientPortalLink)
-    token = token || extractSellerPortalTokenFromLink(listingRecord?.sellerOnboarding?.link)
+    let token = resolveSellerPortalTokenFromListing(listingRecord)
 
     let sellerEmail = resolveSellerEmailFromListing(listingRecord)
     let sellerName = resolveSellerNameFromListing(listingRecord)
@@ -2138,6 +2231,30 @@ function AgentListingDetail() {
       setDetailError(error?.message || 'Unable to resend the seller client portal link.')
     } finally {
       setResendingSellerPortalLink(false)
+    }
+  }
+
+  async function handleResetSellerPortalPasswordAndResend() {
+    setDetailError('')
+    setDetailMessage('')
+    try {
+      setResettingSellerPortalPassword(true)
+      const { token } = await resolveSellerClientPortalInviteContext()
+      await resetSellerPortalPassword(token)
+      setSellerPortalAccessState((previous) => ({
+        ...(previous || {}),
+        valid: true,
+        passwordSet: false,
+        passwordRequired: true,
+        passwordSetAt: null,
+        accessTokenExpiresAt: null,
+      }))
+      await handleResendSellerClientPortalLink()
+      setDetailMessage('Seller portal password reset. A fresh portal link was sent so the seller can set a new password.')
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to reset the seller portal password.')
+    } finally {
+      setResettingSellerPortalPassword(false)
     }
   }
 
@@ -3810,6 +3927,19 @@ function AgentListingDetail() {
       reportsSent: Number(listingRecord?.sellerReport?.sentCount || listingRecord?.sellerReportsSent || 0) || 0,
     }
   }, [listingRecord, mandateWorkspace.signedDate, offerRows, sellerDocumentTrackerRows, viewings])
+
+  const sellerPortalPasswordStatus = useMemo(() => {
+    if (!resolveSellerPortalTokenFromListing(listingRecord)) return 'No portal link'
+    if (sellerPortalAccessLoading) return 'Checking...'
+    if (!sellerPortalAccessState?.valid) return 'Unknown'
+    if (sellerPortalAccessState?.passwordSet) return 'Password set'
+    return 'Password not set'
+  }, [listingRecord, sellerPortalAccessLoading, sellerPortalAccessState])
+
+  const sellerOnboardingEmailDiagnostics = useMemo(
+    () => buildSellerOnboardingEmailDiagnostics(communicationDeliveryRows),
+    [communicationDeliveryRows],
+  )
 
   function handleEditSellerProfile() {
     const portalLink = String(listingRecord?.sellerOnboarding?.link || listingRecord?.sellerOnboarding?.clientPortalLink || '').trim()
@@ -6292,10 +6422,67 @@ function AgentListingDetail() {
                   <div className="mt-5 grid gap-x-6 sm:grid-cols-2">
                     <CompactSnapshotRow label="Portal Viewed" value={sellerCommunicationMetrics.portalViewedAt ? formatDate(sellerCommunicationMetrics.portalViewedAt) : 'Not viewed'} />
                     <CompactSnapshotRow label="Last Login" value={sellerCommunicationMetrics.lastLogin ? formatDate(sellerCommunicationMetrics.lastLogin) : 'No login yet'} />
+                    <CompactSnapshotRow label="Portal Password" value={sellerPortalPasswordStatus} />
                     <CompactSnapshotRow label="Unread Messages" value={formatCompactNumber(sellerCommunicationMetrics.unreadMessages)} />
                     <CompactSnapshotRow label="Documents Uploaded" value={formatCompactNumber(sellerCommunicationMetrics.uploadedDocuments)} />
                   </div>
-                  <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-2">
+                  <div className="mt-5 border-t border-[#e7edf5] pt-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#22374d]">Seller Onboarding Email Diagnostics</h4>
+                        <p className="mt-1 text-xs text-[#6b7d93]">
+                          Latest status: {sellerOnboardingEmailDiagnostics.latestStatus}
+                          {sellerOnboardingEmailDiagnostics.latestAt ? ` • ${formatDateTime(sellerOnboardingEmailDiagnostics.latestAt)}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#35546c]">
+                          {sellerOnboardingEmailDiagnostics.total} logged
+                        </span>
+                        <span className="inline-flex rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-2.5 py-1 text-[0.68rem] font-semibold text-[#1f7d44]">
+                          {sellerOnboardingEmailDiagnostics.sent} sent
+                        </span>
+                        {sellerOnboardingEmailDiagnostics.failed ? (
+                          <span className="inline-flex rounded-full border border-[#f6d7d7] bg-[#fff5f5] px-2.5 py-1 text-[0.68rem] font-semibold text-[#b42318]">
+                            {sellerOnboardingEmailDiagnostics.failed} failed
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    {sellerOnboardingEmailDiagnostics.latestFailureMessage ? (
+                      <p className="mt-3 rounded-[12px] border border-[#f6d7d7] bg-[#fff5f5] px-3 py-2 text-xs font-medium text-[#b42318]">
+                        Latest failure: {sellerOnboardingEmailDiagnostics.latestFailureMessage}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 space-y-2">
+                      {sentPropertiesLoading ? (
+                        <p className="text-xs text-[#607387]">Loading seller email diagnostics...</p>
+                      ) : null}
+                      {!sentPropertiesLoading && sellerOnboardingEmailDiagnostics.recentRows.length ? sellerOnboardingEmailDiagnostics.recentRows.map((delivery) => (
+                        <div key={delivery.id || `${delivery.communicationType}-${delivery.recipient}-${getDeliveryActivityDate(delivery)}`} className="flex flex-col gap-2 border-b border-[#edf2f7] pb-2 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-semibold text-[#2d445e]">{formatStatusLabel(delivery.communicationType || delivery.communication_type)}</p>
+                            <p className="mt-0.5 truncate text-xs text-[#6b7d93]">
+                              {delivery.recipient || 'Recipient pending'} {delivery.subject ? `• ${delivery.subject}` : ''}
+                            </p>
+                            {delivery.errorMessage || delivery.error_message ? (
+                              <p className="mt-0.5 truncate text-xs text-[#b42318]">{delivery.errorMessage || delivery.error_message}</p>
+                            ) : null}
+                          </div>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClass(delivery.status)}`}>
+                              {formatStatusLabel(delivery.status)}
+                            </span>
+                            <span className="text-[0.68rem] font-semibold text-[#7b8ca2]">{formatDateTime(getDeliveryActivityDate(delivery))}</span>
+                          </div>
+                        </div>
+                      )) : null}
+                      {!sentPropertiesLoading && !sellerOnboardingEmailDiagnostics.recentRows.length ? (
+                        <p className="text-xs text-[#607387]">No seller onboarding email delivery rows have been logged for this listing yet.</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="mt-auto grid gap-2 pt-5 sm:grid-cols-3">
                     {listingRecord?.sellerOnboarding?.link ? (
                       <a href={listingRecord.sellerOnboarding.link} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 py-2 text-sm font-semibold text-[#1f4f78]">
                         Open Seller Portal
@@ -6306,6 +6493,9 @@ function AgentListingDetail() {
                     )}
                     <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink}>
                       {resendingSellerPortalLink ? 'Sending...' : 'Resend Seller Link'}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || !resolveSellerPortalTokenFromListing(listingRecord)}>
+                      {resettingSellerPortalPassword ? 'Resetting...' : 'Reset Password'}
                     </Button>
                   </div>
                 </article>
@@ -6590,7 +6780,7 @@ function AgentListingDetail() {
                   </button>
                   <h2 className="mt-3 text-2xl font-semibold text-[#142132]">Seller Profile</h2>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap lg:justify-end">
+                <div className="grid gap-2 sm:grid-cols-4 lg:flex lg:flex-wrap lg:justify-end">
                   <Button size="sm" variant="secondary" onClick={handleEditSellerProfile}>
                     <FileText size={15} />
                     Edit Seller
@@ -6602,6 +6792,10 @@ function AgentListingDetail() {
                   <Button size="sm" onClick={() => void handleResendSellerClientPortalLink()} disabled={resendingSellerPortalLink}>
                     <Link2 size={15} />
                     {resendingSellerPortalLink ? 'Sending...' : 'Send Seller Portal Link'}
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => void handleResetSellerPortalPasswordAndResend()} disabled={resettingSellerPortalPassword || resendingSellerPortalLink || !resolveSellerPortalTokenFromListing(listingRecord)}>
+                    <ShieldCheck size={15} />
+                    {resettingSellerPortalPassword ? 'Resetting...' : 'Reset Portal Password'}
                   </Button>
                 </div>
               </div>

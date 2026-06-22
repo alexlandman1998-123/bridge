@@ -92,7 +92,6 @@ import {
   normalizePropertyAddress,
 } from '../lib/sellerPropertyAddress'
 import { upsertAreaByName, upsertAreaFromAddress } from '../lib/location/upsertArea'
-import { listOrganisationCommissionStructures } from '../lib/settingsApi'
 import {
   activateLeadRequirement,
   archiveLeadRequirement,
@@ -1034,9 +1033,12 @@ function getSellerCommissionWorkspace(row = {}, listing = {}) {
   ))
   const percentage = toFiniteNumber(firstFilledValue(
     commission.commission_percentage,
+    commission.commissionPercentage,
+    commission.commissionPercent,
     commission.percentage,
     formData.commissionPercentage,
     formData.commissionPercent,
+    formData.commission_percentage,
     formData.commission_percent,
     formData.mandateCommissionPercentage,
     formData.mandateCommissionPercent,
@@ -1174,8 +1176,8 @@ function buildSellerCommissionDraft(summary = {}) {
     mandateStartDate: summary.mandateStartDate || toIsoInputDate(new Date()),
     mandateEndDate: summary.mandateEndDate || addMonthsToIsoDate(6, summary.mandateStartDate || new Date()),
     commissionType: summary.commissionType || 'percentage',
-    percentage: summary.percentage ? String(summary.percentage) : '',
-    amount: summary.amount ? String(summary.amount) : '',
+    percentage: summary.percentage !== undefined && summary.percentage !== null && summary.percentage !== '' ? String(summary.percentage) : '',
+    amount: summary.amount !== undefined && summary.amount !== null && summary.amount !== '' ? String(summary.amount) : '',
     vatHandling: normalizeVatHandling(summary.vatHandling || 'inclusive'),
     agencyStructureId: summary.agencyStructureId || '',
     agencyStructureName: summary.agencyStructureName || '',
@@ -1224,6 +1226,7 @@ function buildSellerCommissionFormPatch(draft = {}, actor = {}) {
     commissionType,
     commission_type: commissionType,
     commissionPercentage: commissionType === 'percentage' ? String(percentage) : null,
+    commission_percentage: commissionType === 'percentage' ? String(percentage) : null,
     commissionPercent: commissionType === 'percentage' ? String(percentage) : null,
     commission_percent: commissionType === 'percentage' ? String(percentage) : null,
     mandateCommissionPercentage: commissionType === 'percentage' ? String(percentage) : null,
@@ -14519,69 +14522,21 @@ function SellerCommissionCard({
 }
 
 function SellerMandateTab({
-  row,
-  listing,
-  journey,
-  onboardingStatus = '',
   commissionDraft,
   commissionSummary,
-  commissionStructures = [],
-  commissionStructuresLoading = false,
   savingCommission = false,
   onCommissionDraftChange,
   onSaveCommission,
-  onGenerateMandate,
 }) {
-  const mandateMeta = getSellerMandateMeta(row, listing, journey)
-  const mandateRequiresOnboarding = !mandateMeta.hasRecord && !sellerOnboardingIsSubmitted(onboardingStatus)
-  const mandateActionHelp = mandateRequiresOnboarding
-    ? 'Seller onboarding must be submitted before generating a mandate.'
-    : mandateMeta.actionLabel
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-      <SellerWorkspaceCard title="Mandate Status" action={<StatusPill tone={mandateMeta.tone}>{mandateMeta.label}</StatusPill>}>
-        <dl className="flex flex-1 flex-col">
-          <SellerInfoRow label="Status" value={mandateMeta.label} />
-          <SellerInfoRow label="Packet Id" value={row.mandatePacketId || row.mandate_packet_id || listing?.mandatePacketId || listing?.mandate_packet_id} />
-          <SellerInfoRow label="Date Signed" value={formatDateTime(row.mandateSignedAt || row.mandate_signed_at || listing?.mandateSignedAt || listing?.mandate_signed_at)} />
-          <SellerInfoRow label="Seller Portal" value={journey?.sellerPortalStatus || 'Not opened'} />
-        </dl>
-        <button
-          type="button"
-          onClick={onGenerateMandate}
-          disabled={mandateRequiresOnboarding}
-          title={mandateActionHelp}
-          className={`mt-5 inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${mandateRequiresOnboarding ? 'bg-slate-200 text-slate-500' : 'bg-slate-950 text-white hover:bg-slate-800'}`}
-        >
-          {mandateMeta.actionLabel}
-        </button>
-        {mandateRequiresOnboarding ? <p className="mt-2 text-xs font-semibold text-slate-500">{mandateActionHelp}</p> : null}
-      </SellerWorkspaceCard>
-      <div className="grid gap-6">
-        <SellerCommissionCard
-          commissionDraft={commissionDraft}
-          commissionSummary={commissionSummary}
-          commissionStructures={commissionStructures}
-          commissionStructuresLoading={commissionStructuresLoading}
-          savingCommission={savingCommission}
-          onCommissionDraftChange={onCommissionDraftChange}
-          onSaveCommission={onSaveCommission}
-        />
-        <SellerWorkspaceCard title="Mandate History" className="min-h-[220px]">
-          <div className="space-y-3">
-            {[
-              ['Generated', sellerMandateHasRecord(row, listing, journey) ? 'Available' : 'Not generated'],
-              ['Sent', ['sent', 'signed'].includes(getSellerMandateStatus(row, listing, journey)) ? 'Sent' : 'Pending'],
-              ['Signed', mandateMeta.mode === 'signed' ? 'Signed' : 'Pending'],
-            ].map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between gap-4 rounded-xl bg-slate-50 px-3 py-3">
-                <span className="text-sm font-semibold text-slate-700">{label}</span>
-                <span className="text-sm font-semibold text-slate-950">{value}</span>
-              </div>
-            ))}
-          </div>
-        </SellerWorkspaceCard>
-      </div>
+    <div className="grid gap-5">
+      <SellerCommissionCard
+        commissionDraft={commissionDraft}
+        commissionSummary={commissionSummary}
+        savingCommission={savingCommission}
+        onCommissionDraftChange={onCommissionDraftChange}
+        onSaveCommission={onSaveCommission}
+      />
     </div>
   )
 }
@@ -15039,8 +14994,6 @@ function SellerTabContent({
   actor,
   commissionDraft,
   commissionSummary,
-  commissionStructures,
-  commissionStructuresLoading,
   savingCommission,
   sendingSellerOnboarding,
   onCommissionDraftChange,
@@ -15050,7 +15003,6 @@ function SellerTabContent({
   onResendSellerPortalLink,
   onCopySellerPortalLink,
   onTabChange,
-  onGenerateMandate,
   appointmentComposerSignal = 0,
 }) {
   if (activeTab === 'seller') {
@@ -15074,18 +15026,11 @@ function SellerTabContent({
   if (activeTab === 'mandate') {
     return (
       <SellerMandateTab
-        row={row}
-        listing={listing}
-        journey={journey}
-        onboardingStatus={onboardingStatus}
         commissionDraft={commissionDraft}
         commissionSummary={commissionSummary}
-        commissionStructures={commissionStructures}
-        commissionStructuresLoading={commissionStructuresLoading}
         savingCommission={savingCommission}
         onCommissionDraftChange={onCommissionDraftChange}
         onSaveCommission={onSaveCommission}
-        onGenerateMandate={onGenerateMandate}
       />
     )
   }
@@ -15342,29 +15287,9 @@ function SellerLeadWorkspaceLayout({
   const [appointmentComposerSignal, setAppointmentComposerSignal] = useState(0)
   const commissionSummary = useMemo(() => getSellerCommissionWorkspace(row, linkedSellerListing), [linkedSellerListing, row])
   const [commissionDraft, setCommissionDraft] = useState(() => buildSellerCommissionDraft(commissionSummary))
-  const [commissionStructures, setCommissionStructures] = useState([])
-  const [commissionStructuresLoading, setCommissionStructuresLoading] = useState(false)
   useEffect(() => {
     setCommissionDraft(buildSellerCommissionDraft(commissionSummary))
   }, [commissionSummary])
-  useEffect(() => {
-    let active = true
-    async function loadCommissionStructures() {
-      try {
-        setCommissionStructuresLoading(true)
-        const rows = await listOrganisationCommissionStructures()
-        if (active) setCommissionStructures(Array.isArray(rows) ? rows : [])
-      } catch {
-        if (active) setCommissionStructures([])
-      } finally {
-        if (active) setCommissionStructuresLoading(false)
-      }
-    }
-    void loadCommissionStructures()
-    return () => {
-      active = false
-    }
-  }, [])
   const updateCommissionDraft = useCallback((key, value) => {
     setCommissionDraft((previous) => ({ ...previous, [key]: value }))
   }, [])
@@ -15451,8 +15376,6 @@ function SellerLeadWorkspaceLayout({
         actor={actor}
         commissionDraft={commissionDraft}
         commissionSummary={commissionSummary}
-        commissionStructures={commissionStructures}
-        commissionStructuresLoading={commissionStructuresLoading}
         savingCommission={savingCommission}
         sendingSellerOnboarding={sendingSellerOnboarding}
         onCommissionDraftChange={updateCommissionDraft}
@@ -15462,7 +15385,6 @@ function SellerLeadWorkspaceLayout({
         onResendSellerPortalLink={onResendSellerPortalLink}
         onCopySellerPortalLink={onCopySellerPortalLink}
         onTabChange={setActiveWorkspaceTab}
-        onGenerateMandate={onGenerateMandate}
         appointmentComposerSignal={appointmentComposerSignal}
       />
     </div>

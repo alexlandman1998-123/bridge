@@ -163,6 +163,8 @@ export type SendSellerOnboardingPayload = {
   type: "seller_onboarding" | "seller_onboarding_link" | "seller_portal_link";
   to: string;
   organisationId?: string;
+  leadId?: string;
+  listingId?: string;
   sellerName?: string;
   propertyTitle?: string;
   propertyType?: string;

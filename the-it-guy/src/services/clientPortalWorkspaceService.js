@@ -367,8 +367,12 @@ function resolveSellerPortalWorkflowStage(listing = {}, onboarding = {}, status 
   return 'mandate_signed'
 }
 
-async function fetchSellerClientPortalDataByToken(token) {
-  const context = await getSellerOnboardingByToken(token, { includeRequirementsAndDocuments: true })
+async function fetchSellerClientPortalDataByToken(token, options = {}) {
+  const context = await getSellerOnboardingByToken(token, {
+    includeRequirementsAndDocuments: true,
+    requirePortalAccess: true,
+    sellerPortalAccessToken: options?.sellerPortalAccessToken,
+  })
   const listing = context?.listing || null
   if (!listing) {
     throw new Error('Client portal link is invalid or inactive.')
@@ -1305,14 +1309,16 @@ export async function resolveClientPortalContext(token) {
   }
 }
 
-async function fetchPortalDataForWorkspace(token, mode = 'full') {
+async function fetchPortalDataForWorkspace(token, mode = 'full', options = {}) {
   try {
     return mode === 'core'
       ? await fetchClientPortalCoreByToken(token)
       : await fetchClientPortalByToken(token)
   } catch (error) {
     if (isSellerOnboardingToken(token) && isInvalidClientPortalLinkError(error)) {
-      return fetchSellerClientPortalDataByToken(token)
+      return fetchSellerClientPortalDataByToken(token, {
+        sellerPortalAccessToken: options?.sellerPortalAccessToken,
+      })
     }
     throw error
   }
@@ -1327,7 +1333,9 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     hasSellingContext: context.hasSellingContext,
   })
 
-  let portalData = await fetchPortalDataForWorkspace(token, mode)
+  let portalData = await fetchPortalDataForWorkspace(token, mode, {
+    sellerPortalAccessToken: options?.sellerPortalAccessToken,
+  })
   const resolvedSellingContext = (Array.isArray(context.contexts) ? context.contexts : []).find((item) => {
     const type = String(item?.contextType || item?.context_type || '').trim().toLowerCase()
     const status = String(item?.status || '').trim().toLowerCase()
