@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import { Link } from 'react-router-dom'
 import CommercialListingWizard from './components/CommercialListingWizard'
+import CommercialVacancyCreateModal from './components/CommercialVacancyCreateModal'
 import CommercialStatusPill from './components/CommercialStatusPill'
 import { formatCurrency, formatDate, formatList, formatNumber, titleize } from './commercialFormatters'
 import { getCommercialNextAction, getCommercialUpdatedDate } from './commercialPresentation'
@@ -222,6 +223,13 @@ const LANDLORD_TYPES = [
   { value: 'institution', label: 'Institution' },
 ]
 
+const PROPERTY_ADDRESS_MAPPING = { streetAddress: 'address' }
+const COMPANY_ADDRESS_MAPPING = { streetAddress: 'address' }
+const LANDLORD_REGISTERED_ADDRESS_MAPPING = { streetAddress: 'registered_address' }
+const TENANT_CURRENT_LOCATION_MAPPING = { streetAddress: 'current_location' }
+const REQUIREMENT_AREA_MAPPING = { arrayField: 'preferred_locations' }
+const LISTING_ADDRESS_MAPPING = { streetAddress: 'address' }
+
 function getLookupLabel(lookups, kind, id, fallback = '-') {
   if (!id) return fallback
   const match = (lookups?.[kind] || []).find((item) => item.value === id)
@@ -313,7 +321,15 @@ export const commercialCrudConfigs = {
       { name: 'vat_number', label: 'VAT number' },
       { name: 'phone', label: 'Phone' },
       { name: 'email', label: 'Email', type: 'email' },
-      { name: 'address', label: 'Address', span: 'full' },
+      {
+        name: 'address',
+        label: 'Address',
+        type: 'address',
+        span: 'full',
+        placeholder: 'Start typing the company address...',
+        description: 'Select a Google Places result, or type manually if the address is not listed.',
+        addressMapping: COMPANY_ADDRESS_MAPPING,
+      },
       { name: 'city', label: 'City' },
       { name: 'province', label: 'Province' },
       { name: 'country', label: 'Country' },
@@ -409,7 +425,15 @@ export const commercialCrudConfigs = {
       { name: 'main_phone', label: 'Main phone' },
       { name: 'email', label: 'Legacy email', type: 'email' },
       { name: 'phone', label: 'Legacy phone' },
-      { name: 'registered_address', label: 'Registered address', type: 'textarea', span: 'full' },
+      {
+        name: 'registered_address',
+        label: 'Registered address',
+        type: 'address',
+        span: 'full',
+        placeholder: 'Start typing the registered address...',
+        description: 'Select the closest Google Places result, or keep a manual address.',
+        addressMapping: LANDLORD_REGISTERED_ADDRESS_MAPPING,
+      },
       { name: 'postal_address', label: 'Postal address', type: 'textarea', span: 'full' },
       { name: 'website', label: 'Website' },
       { name: 'preferred_contact_method', label: 'Preferred contact method', type: 'select', options: CONTACT_METHODS },
@@ -460,7 +484,16 @@ export const commercialCrudConfigs = {
       { name: 'phone', label: 'Phone' },
       { name: 'industry', label: 'Industry' },
       { name: 'company_size', label: 'Company size' },
-      { name: 'current_location', label: 'Current location' },
+      {
+        name: 'current_location',
+        label: 'Current location',
+        type: 'address',
+        mode: 'area',
+        span: 'full',
+        placeholder: 'Search current premises or area...',
+        description: 'Use a premises address or area-level result. Manual entries are allowed.',
+        addressMapping: TENANT_CURRENT_LOCATION_MAPPING,
+      },
       { name: 'current_lease_expiry', label: 'Current lease expiry', type: 'date' },
       { name: 'preferred_contact_method', label: 'Preferred contact method', type: 'select', options: CONTACT_METHODS },
       { name: 'status', label: 'Status', type: 'select', options: ACTIVE_STATUSES, defaultValue: 'active' },
@@ -530,10 +563,19 @@ export const commercialCrudConfigs = {
         visibleWhen: (values, record) => Boolean(values.property_category || record?.property_type || record?.property_category),
         help: 'Choose the subtype for the selected category.',
       },
-      { name: 'address', label: 'Address', span: 'full' },
+      {
+        name: 'address',
+        label: 'Property address',
+        type: 'address',
+        span: 'full',
+        placeholder: 'Start typing the property address...',
+        description: 'Select the Google Places result to store clean suburb, city, province, postal code, and map data.',
+        addressMapping: PROPERTY_ADDRESS_MAPPING,
+      },
       { name: 'suburb', label: 'Suburb' },
       { name: 'city', label: 'City' },
       { name: 'province', label: 'Province' },
+      { name: 'postal_code', label: 'Postal code' },
       { name: 'country', label: 'Country', defaultValue: 'South Africa' },
       { name: 'gla_m2', label: 'GLA m²', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
       { name: 'available_space_m2', label: 'Available space m²', type: 'number', visibleWhen: showForPropertyCategories('commercial', 'industrial', 'retail') },
@@ -591,6 +633,7 @@ export const commercialCrudConfigs = {
     title: 'Vacancies',
     description: 'Manage available units, floors, live GLA, asking rentals, landlord instructions, availability dates, broker assignments, and vacancy status.',
     createLabel: 'New vacancy',
+    createModal: CommercialVacancyCreateModal,
     documentsEntityType: 'commercial_vacancy',
     emptyTitle: 'No vacancies yet',
     emptyDescription: 'Capture live commercial availability so brokers can match tenant demand to stock.',
@@ -628,6 +671,14 @@ export const commercialCrudConfigs = {
       { name: 'available_area_m2', label: 'Available area m²', type: 'number' },
       { name: 'asking_rental', label: 'Asking rental', type: 'number' },
       { name: 'availability_date', label: 'Availability date', type: 'date' },
+      {
+        name: 'formatted_address',
+        label: 'Address override',
+        type: 'address',
+        span: 'full',
+        placeholder: 'Start typing an address if this vacancy is not tied to the selected property...',
+        description: 'Vacancies usually inherit address data from the selected property. Use this only for unlisted or temporary premises.',
+      },
       { name: 'broker_assignment', label: 'Assigned broker', type: 'select', optionsFrom: 'brokers', required: true },
       { name: 'status', label: 'Status', type: 'select', options: VACANCY_STATUSES, defaultValue: 'draft' },
       { name: 'incentives', label: 'Incentives', type: 'textarea', span: 'full' },
@@ -691,6 +742,15 @@ export const commercialCrudConfigs = {
       { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
       { name: 'broker_id', label: 'Broker owner', type: 'select', optionsFrom: 'brokers', required: true },
       { name: 'pricing', label: 'Pricing', type: 'number' },
+      {
+        name: 'formatted_address',
+        label: 'Listing address',
+        type: 'address',
+        span: 'full',
+        placeholder: 'Start typing the listing address...',
+        description: 'Use this when the listing is not fully represented by the linked property yet.',
+        addressMapping: LISTING_ADDRESS_MAPPING,
+      },
       { name: 'pricing_notes', label: 'Pricing notes', span: 'full' },
       { name: 'available_from', label: 'Available from', type: 'date' },
       { name: 'featured', label: 'Featured', type: 'checkbox' },
@@ -751,7 +811,16 @@ export const commercialCrudConfigs = {
       { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
       { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
       { name: 'property_type', label: 'Property type', type: 'select', options: PROPERTY_TYPES },
-      { name: 'preferred_locations', label: 'Preferred locations', type: 'multiText', help: 'Separate locations with commas.' },
+      {
+        name: 'preferred_locations',
+        label: 'Preferred area',
+        type: 'address',
+        mode: 'area',
+        span: 'full',
+        placeholder: 'Search suburb, city or node...',
+        description: 'Select an area-level Google result, or type a preferred node manually.',
+        addressMapping: REQUIREMENT_AREA_MAPPING,
+      },
       { name: 'min_size_m2', label: 'Min size m²', type: 'number' },
       { name: 'max_size_m2', label: 'Max size m²', type: 'number' },
       { name: 'budget_min', label: 'Budget min', type: 'number' },
@@ -820,6 +889,14 @@ export const commercialCrudConfigs = {
       { name: 'landlord_id', label: 'Linked landlord', type: 'select', optionsFrom: 'landlords' },
       { name: 'property_id', label: 'Linked property', type: 'select', optionsFrom: 'properties' },
       { name: 'listing_id', label: 'Linked listing', type: 'select', optionsFrom: 'listings' },
+      {
+        name: 'formatted_address',
+        label: 'Property address',
+        type: 'address',
+        span: 'full',
+        placeholder: 'Start typing the property address...',
+        description: 'Use when the deal is not linked to a property record yet.',
+      },
       { name: 'branch_id', label: 'Branch / office', type: 'select', optionsFrom: 'branches' },
       { name: 'team_id', label: 'Team', type: 'select', optionsFrom: 'teams' },
       { name: 'assigned_broker', label: 'Assigned broker', type: 'select', optionsFrom: 'brokers' },

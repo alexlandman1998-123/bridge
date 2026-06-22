@@ -9,21 +9,18 @@ import {
   ChevronRight,
   Clock3,
   Download,
-  Eye,
   MapPin,
   MessageSquare,
   MoreHorizontal,
   Pencil,
-  Phone,
   Plus,
   Search,
   SlidersHorizontal,
-  Trash2,
   Users,
   X,
 } from 'lucide-react'
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Field from '../../../components/ui/Field'
 import Modal from '../../../components/ui/Modal'
@@ -31,7 +28,6 @@ import CommercialEmptyState from '../components/CommercialEmptyState'
 import CommercialStatusPill from '../components/CommercialStatusPill'
 import { toLookupOptions } from '../commercialPipelineHelpers'
 import {
-  calculateMonthDelta,
   formatCurrencyZAR,
   formatRelativeTime,
   formatShortDate,
@@ -56,7 +52,6 @@ import { validateCommercialProspectDraft } from '../commercialProspectValidation
 import {
   createCommercialCanvassingActivity,
   createCommercialCanvassingProspect,
-  deleteCommercialCanvassingProspect,
   listCommercialCanvassingWorkspace,
   updateCommercialCanvassingProspect,
 } from '../services/commercialCanvassingApi'
@@ -66,14 +61,28 @@ const LEAD_STAGE_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'discovery', label: 'Discovery' },
   { value: 'qualification', label: 'Qualification' },
-  { value: 'site_search', label: 'Site Search' },
+  { value: 'requirement_captured', label: 'Requirement Captured' },
   { value: 'viewing', label: 'Viewing' },
   { value: 'proposal', label: 'Proposal' },
   { value: 'negotiation', label: 'Negotiation' },
   { value: 'converted', label: 'Converted' },
 ]
 
-const CARD_CLASS = 'rounded-[24px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.06)]'
+const LEAD_STATUS_FILTER_OPTIONS = [
+  { value: 'New', label: 'New' },
+  { value: 'Qualified', label: 'Qualified' },
+  { value: 'Active', label: 'Active' },
+  { value: 'Negotiation', label: 'Negotiation' },
+  { value: 'Converted', label: 'Converted' },
+  { value: 'Not Interested', label: 'Not Interested' },
+]
+
+const LEASE_TYPE_OPTIONS = [
+  { value: 'landlord', label: 'Landlord' },
+  { value: 'tenant', label: 'Tenant' },
+]
+
+const CARD_CLASS = 'rounded-[18px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.04)]'
 
 const LEAD_SORT_OPTIONS = [
   { value: 'updatedAt:desc', label: 'Newest Updated' },
@@ -94,6 +103,13 @@ const BUDGET_BANDS = [
   { value: '5m_plus', label: 'R5M+' },
 ]
 
+const DATE_FILTER_OPTIONS = [
+  { value: 'all', label: 'Any Time' },
+  { value: '7d', label: 'Last 7 Days' },
+  { value: '30d', label: 'Last 30 Days' },
+  { value: '90d', label: 'Last 90 Days' },
+]
+
 const ALL_LEAD_TABS = [
   { id: 'all', label: 'All Leads', matches: (lead) => leadTabMatches(lead, 'all') },
   { id: 'sales', label: 'Sales', matches: (lead) => leadTabMatches(lead, 'sales') },
@@ -104,7 +120,7 @@ const ALL_LEAD_TABS = [
 ]
 
 const LEASE_LEAD_TABS = [
-  { id: 'all', label: 'All Lease Leads', matches: () => true },
+  { id: 'all', label: 'All Leads', matches: () => true },
   { id: 'landlords', label: 'Landlords', matches: (lead) => normalizeLeadRole(lead) === 'landlord' },
   { id: 'tenants', label: 'Tenants', matches: (lead) => normalizeLeadRole(lead) === 'tenant' },
   { id: 'qualified', label: 'Qualified', matches: (lead) => ['qualified', 'proposal', 'negotiation'].includes(normalizeLeadStatus(lead.status)) },
@@ -146,8 +162,8 @@ const EMPTY_LEAD_COPY = {
   },
   leaseDepartment: {
     all: {
-      title: 'No lease leads yet',
-      description: 'Track landlords and tenants active in the leasing pipeline.',
+      title: 'No leasing leads yet',
+      description: 'Qualified prospects will appear here once brokers start converting landlord and tenant opportunities.',
     },
     landlords: {
       title: 'No landlord leads yet',
@@ -199,7 +215,7 @@ function getLeadPageViewConfig(dealType = '') {
       title: 'Leasing Leads',
       description: 'Qualify landlord and tenant opportunities before converting them into vacancies, requirements or lease deals.',
       createLabel: '+ Add Lease Lead',
-      searchPlaceholder: 'Search lease leads, companies, brokers...',
+      searchPlaceholder: 'Search leads by name, company, broker, area...',
       tabs: LEASE_LEAD_TABS,
       baseDealType: 'lease',
       showRoleFilters: false,
@@ -287,39 +303,45 @@ function splitContactName(value = '') {
   return { firstName: first || '', lastName: rest.join(' ') || '' }
 }
 
+function getLeadRoleSpecific(record = {}) {
+  return record?.roleSpecific || record?.role_specific || record?.metadata?.roleSpecific || record?.metadata_json?.roleSpecific || {}
+}
+
 function buildInitialDraft(record = null, defaultBroker = null) {
   const role = normalizeLeadRole(record)
-  const contact = record?.contactName || [record?.firstName, record?.lastName].filter(Boolean).join(' ')
-  const company = record?.companyName || record?.displayName || ''
-  const notes = extractNoteValue(record?.notes, 'Notes') || record?.notes || ''
+  const roleSpecific = getLeadRoleSpecific(record)
+  const preserved = roleSpecific.preservedProspectData || {}
+  const contact = record?.contactName || preserved.contactPerson || [record?.firstName, record?.lastName].filter(Boolean).join(' ')
+  const company = record?.companyName || preserved.companyName || record?.displayName || ''
+  const notes = extractNoteValue(record?.notes, 'Notes') || record?.notes || preserved.notes || ''
   return {
     prospectRole: role,
     dealType: getDealTypeFromRole(role),
-    propertyCategory: normalizeLower(record?.propertyCategory || record?.propertyType) || 'commercial',
+    propertyCategory: normalizeLower(record?.propertyCategory || preserved.assetClass || record?.propertyType) || 'commercial',
     companyName: company,
     contactPerson: contact,
-    phone: record?.phone || '',
-    email: record?.email || '',
-    propertyAddress: extractNoteValue(record?.notes, 'Property / Asset Address or Area') || record?.area || '',
-    propertyName: extractNoteValue(record?.notes, 'Property / Portfolio Name') || '',
-    lookingFor: extractNoteValue(record?.notes, 'Looking For') || '',
-    preferredArea: extractNoteValue(record?.notes, 'Preferred Area') || record?.area || '',
-    spaceRequirement: extractNoteValue(record?.notes, 'Space Requirement') || '',
-    sizeRange: extractNoteValue(record?.notes, 'Size Range') || '',
-    budgetRange: extractNoteValue(record?.notes, 'Budget Range') || '',
-    vacancyDetails: extractNoteValue(record?.notes, 'Vacancy Details') || '',
-    reasonForSelling: extractNoteValue(record?.notes, 'Reason for Selling') || '',
+    phone: record?.phone || preserved.contactNumber || '',
+    email: record?.email || preserved.email || '',
+    propertyAddress: extractNoteValue(record?.notes, 'Property / Asset Address or Area') || preserved.address || record?.area || '',
+    propertyName: extractNoteValue(record?.notes, 'Property / Portfolio Name') || roleSpecific.propertyDetails || '',
+    lookingFor: extractNoteValue(record?.notes, 'Looking For') || roleSpecific.requirementType || '',
+    preferredArea: extractNoteValue(record?.notes, 'Preferred Area') || preserved.area || record?.area || '',
+    spaceRequirement: extractNoteValue(record?.notes, 'Space Requirement') || roleSpecific.requirementType || '',
+    sizeRange: extractNoteValue(record?.notes, 'Size Range') || roleSpecific.minSize || roleSpecific.maxSize || '',
+    budgetRange: extractNoteValue(record?.notes, 'Budget Range') || roleSpecific.budget || '',
+    vacancyDetails: extractNoteValue(record?.notes, 'Vacancy Details') || roleSpecific.vacancyPotential || '',
+    reasonForSelling: extractNoteValue(record?.notes, 'Reason for Selling') || roleSpecific.mandateType || '',
     targetPurchaseTimeline: extractNoteValue(record?.notes, 'Target Purchase Timeline') || '',
-    leaseTimeline: extractNoteValue(record?.notes, 'Lease Timeline') || '',
+    leaseTimeline: extractNoteValue(record?.notes, 'Lease Timeline') || roleSpecific.timing || roleSpecific.availability || '',
     estimatedSaleValue: String(record?.estimatedValue || ''),
-    estimatedMonthlyRental: '',
+    estimatedMonthlyRental: roleSpecific.askingRental || '',
     estimatedAnnualRental: '',
-    canvassingMethod: record?.canvassingMethod || 'Cold Call',
+    canvassingMethod: record?.canvassingMethod || preserved.source || 'Cold Call',
     status: normalizeText(record?.status) || 'New',
-    followUpDate: record?.nextFollowUpDate || '',
+    followUpDate: record?.nextFollowUpDate || roleSpecific.followUpDate || '',
     priority: record?.followUpPriority || 'Medium',
-    assignedBrokerId: record?.assignedBrokerId || defaultBroker?.value || '',
-    assignedBrokerName: record?.assignedBrokerName || defaultBroker?.label || '',
+    assignedBrokerId: record?.assignedBrokerId || preserved.brokerId || defaultBroker?.value || '',
+    assignedBrokerName: record?.assignedBrokerName || preserved.brokerName || defaultBroker?.label || '',
     branchId: record?.branchId || defaultBroker?.branchId || '',
     notes,
   }
@@ -346,8 +368,9 @@ function normalizeLeadStatus(status = '') {
   if (value.includes('qualified')) return 'qualified'
   if (value.includes('proposal')) return 'proposal'
   if (value.includes('negotiat')) return 'negotiation'
+  if (value.includes('active')) return 'active'
   if (value.includes('contact')) return 'contacted'
-  if (value.includes('lost')) return 'lost'
+  if (value.includes('lost') || value.includes('not_interested') || value.includes('not interested')) return 'lost'
   return 'new'
 }
 
@@ -377,34 +400,9 @@ function getLeadStageLabel(lead = {}) {
   return 'Discovery'
 }
 
-function getClientTypeLabel(lead = {}) {
-  const name = normalizeLower(lead.companyName || lead.displayName || '')
-  if (name.includes('trust')) return 'Trust'
-  if (name.includes('fund')) return 'Fund'
-  if (name.includes('invest')) return 'Investor'
-  if (normalizeLeadRole(lead) === 'seller' || normalizeLeadRole(lead) === 'landlord') return 'Owner'
-  return 'Business'
-}
-
-function getLeadAssetLabel(lead = {}) {
-  const role = normalizeLeadRole(lead)
-  const asset = [
-    lead.propertyName,
-    lead.propertyAddress,
-    lead.lookingFor,
-    lead.spaceRequirement,
-    lead.vacancyDetails,
-    lead.sizeRange,
-  ].map((value) => normalizeText(value)).filter(Boolean)
-  if (role === 'seller') return asset[1] || asset[0] || 'Asset pending'
-  if (role === 'buyer') return [asset[2] || 'Requirement pending', asset[5]].filter(Boolean).join(' · ') || 'Requirement pending'
-  if (role === 'landlord') return [asset[0] || 'Portfolio pending', asset[4]].filter(Boolean).join(' · ') || 'Portfolio pending'
-  if (role === 'tenant') return [asset[3] || 'Space requirement pending', lead.preferredArea || 'Area pending'].filter(Boolean).join(' · ')
-  return asset[0] || 'Asset pending'
-}
-
 function getLeadAreaLabel(lead = {}) {
-  const bits = [lead.preferredArea, lead.propertyAddress, lead.branchName].map((value) => normalizeText(value)).filter(Boolean)
+  const preserved = getLeadRoleSpecific(lead).preservedProspectData || {}
+  const bits = [lead.preferredArea, preserved.area, lead.propertyAddress, preserved.address, lead.area, lead.branchName].map((value) => normalizeText(value)).filter(Boolean)
   return bits.slice(0, 2).join(' · ') || 'Area pending'
 }
 
@@ -441,10 +439,115 @@ function getLeadBudgetLabel(lead = {}) {
   return dealType === 'lease' ? `${formatCurrencyZAR(amount)} est. rental` : formatCurrencyZAR(amount)
 }
 
-function getLeadBudgetSubLabel(lead = {}) {
-  const dealType = normalizeLower(lead.dealType || getDealTypeFromRole(normalizeLeadRole(lead)))
-  if (dealType === 'lease') return 'Rental budget'
-  return 'Purchase value'
+function getLeadTitle(lead = {}) {
+  const preserved = getLeadRoleSpecific(lead).preservedProspectData || {}
+  return normalizeText(lead.companyName || preserved.companyName || lead.displayName || lead.contactName || preserved.contactPerson || [lead.firstName, lead.lastName].filter(Boolean).join(' ')) || 'Unknown lead'
+}
+
+function getLeadContactName(lead = {}) {
+  const preserved = getLeadRoleSpecific(lead).preservedProspectData || {}
+  return normalizeText(lead.contactName || preserved.contactPerson || [lead.firstName, lead.lastName].filter(Boolean).join(' ')) || 'No contact captured'
+}
+
+function getLeadContactPhone(lead = {}) {
+  const preserved = getLeadRoleSpecific(lead).preservedProspectData || {}
+  return normalizeText(lead.phone || preserved.contactNumber) || 'No contact number'
+}
+
+function getLeadTypeLabel(lead = {}) {
+  const role = normalizeLeadRole(lead)
+  if (role === 'landlord') return 'Landlord'
+  if (role === 'tenant') return 'Tenant'
+  if (role === 'seller') return 'Seller'
+  if (role === 'buyer') return 'Buyer'
+  return getRoleLabel(role)
+}
+
+function getLeadClientRole(lead = {}) {
+  const role = normalizeLeadRole(lead)
+  if (role === 'landlord') return 'Owner'
+  if (role === 'tenant') return 'Occupier'
+  if (role === 'seller') return 'Owner'
+  if (role === 'buyer') return 'Buyer'
+  return 'Client'
+}
+
+function getLeadClientSecondary(lead = {}) {
+  const role = normalizeLeadRole(lead)
+  if (role === 'landlord') return 'Asset Manager / Property Manager'
+  if (role === 'tenant') return 'Tenant Rep / Decision Maker'
+  if (role === 'buyer') return 'Decision Maker'
+  if (role === 'seller') return 'Asset Owner'
+  return lead.companyName || 'Company pending'
+}
+
+function getLeadRequirementLabel(lead = {}) {
+  const role = normalizeLeadRole(lead)
+  const roleSpecific = getLeadRoleSpecific(lead)
+  if (role === 'landlord') return normalizeText(lead.vacancyDetails || roleSpecific.vacancyPotential || lead.propertyName || roleSpecific.propertyDetails || lead.propertyAddress) || 'Vacancy potential'
+  if (role === 'tenant') return normalizeText(lead.spaceRequirement || roleSpecific.requirementType || lead.lookingFor || lead.sizeRange) || 'Requirement pending'
+  if (role === 'buyer') return normalizeText(lead.lookingFor || lead.sizeRange) || 'Requirement pending'
+  return normalizeText(lead.propertyName || lead.propertyAddress) || 'Asset pending'
+}
+
+function getLeadBudgetDetails(lead = {}) {
+  const amount = getLeadValue(lead)
+  const role = normalizeLeadRole(lead)
+  if (role === 'landlord') {
+    return amount
+      ? { value: formatCurrencyZAR(amount), label: 'Asking rental' }
+      : { value: 'No value', label: 'Rental not set' }
+  }
+  if (role === 'tenant') {
+    return amount
+      ? { value: formatCurrencyZAR(amount), label: 'Target budget' }
+      : { value: 'No value', label: 'Budget not set' }
+  }
+  return amount
+    ? { value: formatCurrencyZAR(amount), label: role === 'buyer' ? 'Target budget' : 'Expected value' }
+    : { value: 'No value', label: 'Value not set' }
+}
+
+function getControlledLeadStatusLabel(lead = {}) {
+  const status = normalizeLeadStatus(lead.status)
+  if (status === 'converted') return 'Converted'
+  if (['archived', 'lost'].includes(status)) return 'Not Interested'
+  if (['negotiation', 'proposal'].includes(status)) return 'Negotiation'
+  if (status === 'qualified') return 'Qualified'
+  if (status === 'active') return 'Active'
+  if (['contacted', 'follow_up'].includes(status)) return 'Qualification'
+  return 'New'
+}
+
+function getLeadStageSecondary(lead = {}) {
+  return normalizeText(lead.lastActivityNote) || getLeadStageLabel(lead) || 'Call logged'
+}
+
+function isLeadQualifiedEnough(lead = {}) {
+  const status = normalizeLeadStatus(lead.status)
+  const stage = normalizeLower(lead.leadStage || lead.stage || lead.stageLabel)
+  return ['qualified', 'proposal', 'negotiation', 'converted'].includes(status) || ['proposal', 'negotiation', 'converted'].includes(stage)
+}
+
+function getLeadStatusTone(lead = {}) {
+  const status = getControlledLeadStatusLabel(lead)
+  if (status === 'Converted') return 'green'
+  if (status === 'Negotiation') return 'amber'
+  if (status === 'Qualified') return 'blue'
+  if (status === 'Active') return 'purple'
+  if (status === 'Not Interested') return 'rose'
+  return 'slate'
+}
+
+function isWithinDateFilter(value = '', filter = 'all') {
+  if (filter === 'all') return true
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return false
+  const days = filter === '7d' ? 7 : filter === '30d' ? 30 : filter === '90d' ? 90 : 0
+  if (!days) return true
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - days)
+  return date >= cutoff
 }
 
 function buildLeadSearchText(lead = {}, lookupLabel = '') {
@@ -523,42 +626,6 @@ function buildLookupMaps(lookups = {}) {
   }
 }
 
-function buildTrendSeries(leads = []) {
-  const months = []
-  const now = new Date()
-  for (let offset = 5; offset >= 0; offset -= 1) {
-    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1)
-    months.push({
-      key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-      label: date.toLocaleDateString('en-ZA', { month: 'short' }),
-      value: 0,
-    })
-  }
-  leads.forEach((lead) => {
-    const created = new Date(lead.createdAt || lead.created_at || lead.created_at || '')
-    if (Number.isNaN(created.getTime())) return
-    const key = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}`
-    const bucket = months.find((item) => item.key === key)
-    if (bucket) bucket.value += getLeadValue(lead)
-  })
-  return months
-}
-
-function buildStageBreakdown(leads = []) {
-  const stages = [
-    { key: 'discovery', label: 'Discovery', color: '#3b82f6' },
-    { key: 'qualification', label: 'Qualification', color: '#8b5cf6' },
-    { key: 'follow_up', label: 'Follow Up', color: '#f59e0b' },
-    { key: 'converted', label: 'Converted', color: '#22c55e' },
-  ]
-  const rows = stages.map((stage) => ({
-    ...stage,
-    count: leads.filter((lead) => (lead.leadStage || 'discovery') === stage.key).length,
-    value: leads.filter((lead) => (lead.leadStage || 'discovery') === stage.key).reduce((sum, lead) => sum + getLeadValue(lead), 0),
-  }))
-  return rows
-}
-
 function LeadBadge({ children, tone = 'slate', className = '' }) {
   return (
     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(tone)} ${className}`.trim()}>
@@ -586,7 +653,7 @@ function RegisterTab({ active = false, onClick, children }) {
     <button
       type="button"
       onClick={onClick}
-      className={`relative -mb-px inline-flex min-h-12 items-center gap-1 whitespace-nowrap border-b-2 px-2 text-sm font-semibold transition ${
+      className={`relative -mb-px inline-flex min-h-10 items-center gap-1 whitespace-nowrap border-b-2 px-1 text-sm font-semibold transition ${
         active
           ? 'border-[#1f6dd5] text-[#0d5ed0]'
           : 'border-transparent text-[#405671] hover:text-[#102236]'
@@ -610,7 +677,7 @@ function FilterSelect({ value, onChange, options = [], placeholder, className = 
   )
 }
 
-function InlineTableEmptyState({ icon = CalendarDays, title, description, actionLabel, onAction }) {
+function InlineTableEmptyState({ icon = CalendarDays, title, description, actionLabel, onAction, actions = null }) {
   return (
     <div className="flex min-h-[300px] flex-col items-center justify-center border border-[#dce6f0] bg-white px-6 py-10 text-center">
       <span className="inline-flex h-14 w-14 items-center justify-center rounded-[18px] bg-[#eef5ff] text-[#1f6dd5]">
@@ -618,7 +685,11 @@ function InlineTableEmptyState({ icon = CalendarDays, title, description, action
       </span>
       <h3 className="mt-5 text-[1.25rem] font-semibold tracking-[-0.02em] text-[#102236]">{title}</h3>
       <p className="mt-3 max-w-[520px] text-sm leading-6 text-[#526985]">{description}</p>
-      {actionLabel ? (
+      {actions ? (
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          {actions}
+        </div>
+      ) : actionLabel ? (
         <button
           type="button"
           onClick={onAction}
@@ -631,48 +702,20 @@ function InlineTableEmptyState({ icon = CalendarDays, title, description, action
   )
 }
 
-function CommercialMetricCard({ label, value, sublabel, deltaLabel, icon, chart, emptyLabel }) {
+function CompactKpiItem({ label, value, trend, icon, tone = 'blue' }) {
   return (
-    <article className={`${CARD_CLASS} flex min-h-[126px] flex-col justify-between p-4`}>
-      <div className="flex items-start justify-between gap-3">
-        {icon ? (
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[16px] bg-[#eef5ff] text-[#1f6dd5]">
-            {createElement(icon, { size: 18 })}
-          </span>
-        ) : null}
-        {deltaLabel ? <p className="text-sm font-semibold text-emerald-600">↑ {deltaLabel.replace(/^\+/, '')}</p> : null}
-      </div>
-      <div className="mt-2">
-        <p className="text-sm font-semibold text-[#102236]">{label}</p>
-        <p className="mt-1 text-[1.55rem] font-semibold leading-none tracking-[-0.04em] text-[#061b3a]">{value}</p>
-      </div>
-      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-        <div className="min-h-[34px]">{chart || <p className="text-xs text-slate-400">{emptyLabel || 'No movement yet'}</p>}</div>
-        <p className="whitespace-nowrap text-xs text-[#526985]">{sublabel}</p>
+    <article className="flex h-[76px] min-w-0 items-center gap-3 rounded-[16px] border border-[#e6edf4] bg-[#fbfdff] px-3.5 py-3">
+      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px] ${toneClass(tone)}`}>
+        {createElement(icon, { size: 16 })}
+      </span>
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-2">
+          <p className="text-[1.35rem] font-semibold leading-none tracking-[-0.03em] text-[#061b3a]">{value}</p>
+          <p className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-[#60758d]">{label}</p>
+        </div>
+        <p className="mt-1 truncate text-xs font-medium text-[#7a8da3]">{trend}</p>
       </div>
     </article>
-  )
-}
-
-function MiniBars({ series = [], color = '#2d6ecf' }) {
-  if (!series.length) {
-    return <div className="h-10 rounded-2xl bg-slate-50" />
-  }
-  const max = Math.max(...series.map((item) => item.value), 1)
-  return (
-    <div className="flex h-12 items-end gap-1">
-      {series.map((item) => (
-        <span
-          key={item.label}
-          className="flex-1 rounded-t-lg"
-          style={{
-            height: `${Math.max(14, Math.round(((item.value || 0) / max) * 100))}%`,
-            background: `linear-gradient(to top, ${color}, rgba(255,255,255,0.2))`,
-            minWidth: '6px',
-          }}
-        />
-      ))}
-    </div>
   )
 }
 
@@ -887,7 +930,29 @@ function CommercialLeadDrawer({
   )
 }
 
-function LeadActionsMenu({ lead, open, onToggle, onView, onEdit, onAddNote, onLogCall, onSchedule, onArchive, onDelete }) {
+function LeadActionsMenu({
+  lead,
+  open,
+  onToggle,
+  onEdit,
+  onLogActivity,
+  onSendOnboarding,
+  onCreateVacancy,
+  onCreateRequirement,
+  onConvertToDeal,
+  onArchive,
+}) {
+  const role = normalizeLeadRole(lead)
+  const items = [
+    { label: 'Edit Lead', icon: Pencil, onClick: onEdit },
+    { label: 'Log Activity', icon: MessageSquare, onClick: onLogActivity },
+    { label: 'Send Onboarding', icon: CalendarDays, onClick: onSendOnboarding },
+    role === 'landlord' ? { label: 'Create Vacancy', icon: Building2, onClick: onCreateVacancy } : null,
+    role === 'tenant' ? { label: 'Create Requirement', icon: Users, onClick: onCreateRequirement } : null,
+    isLeadQualifiedEnough(lead) ? { label: 'Convert to Deal', icon: ArrowRight, onClick: onConvertToDeal } : null,
+    { label: 'Archive', icon: Archive, onClick: onArchive },
+  ].filter(Boolean)
+
   return (
     <div className="relative flex justify-end">
       <button
@@ -903,15 +968,7 @@ function LeadActionsMenu({ lead, open, onToggle, onView, onEdit, onAddNote, onLo
       </button>
       {open ? (
         <div className="absolute right-0 top-11 z-20 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
-          {[
-            { label: 'Open Lead', icon: Eye, onClick: onView },
-            { label: 'Edit Lead', icon: Pencil, onClick: onEdit },
-            { label: 'Add Note', icon: MessageSquare, onClick: onAddNote },
-            { label: 'Log Call', icon: Phone, onClick: onLogCall },
-            { label: 'Schedule Follow Up', icon: CalendarDays, onClick: onSchedule },
-            { label: 'Archive', icon: Archive, onClick: onArchive },
-            { label: 'Delete', icon: Trash2, onClick: onDelete, destructive: true },
-          ].map((item) => (
+          {items.map((item) => (
             <button
               key={item.label}
               type="button"
@@ -921,7 +978,7 @@ function LeadActionsMenu({ lead, open, onToggle, onView, onEdit, onAddNote, onLo
                 event.stopPropagation()
                 item.onClick?.(lead)
               }}
-              className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300 ${item.destructive ? 'text-rose-600 hover:bg-rose-50' : 'text-[#102236]'}`}
+              className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-[#102236] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
             >
               <item.icon size={14} />
               {item.label}
@@ -933,7 +990,21 @@ function LeadActionsMenu({ lead, open, onToggle, onView, onEdit, onAddNote, onLo
   )
 }
 
-function LeadRow({ lead, onOpen, onEdit, onAddNote, onLogCall, onSchedule, onArchive, onDelete, menuOpen, onMenuToggle }) {
+function LeadRow({
+  lead,
+  onOpen,
+  onEdit,
+  onLogActivity,
+  onSendOnboarding,
+  onCreateVacancy,
+  onCreateRequirement,
+  onConvertToDeal,
+  onArchive,
+  menuOpen,
+  onMenuToggle,
+}) {
+  const budget = getLeadBudgetDetails(lead)
+  const statusLabel = getControlledLeadStatusLabel(lead)
   return (
     <tr className="cursor-pointer border-b border-slate-200 bg-white transition hover:bg-slate-50/60" onClick={() => onOpen?.(lead)}>
       <td className="px-4 py-4 align-top">
@@ -942,33 +1013,34 @@ function LeadRow({ lead, onOpen, onEdit, onAddNote, onLogCall, onSchedule, onArc
             {lead.initials || 'CL'}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#102236]">{lead.displayName || 'Unknown lead'}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{lead.companyName || 'No company captured'}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{lead.phone || 'No phone captured'}</p>
+            <p className="truncate text-sm font-semibold text-[#102236]">{getLeadTitle(lead)}</p>
+            <p className="mt-1 truncate text-xs text-slate-500">{getLeadContactName(lead)}</p>
+            <p className="mt-1 truncate text-xs text-slate-500">{getLeadContactPhone(lead)}</p>
           </div>
         </div>
       </td>
       <td className="px-4 py-4 align-top">
+        <LeadBadge tone={getProspectBadgeVariant(lead.prospectRole)}>{getLeadTypeLabel(lead)}</LeadBadge>
+      </td>
+      <td className="px-4 py-4 align-top">
         <div className="grid gap-1">
-          <LeadBadge tone={getProspectBadgeVariant(lead.prospectRole)}>{getRoleLabel(lead.prospectRole)}</LeadBadge>
-          <span className="text-xs text-slate-500">{getDealTypeLabel(lead.dealType)}</span>
+          <LeadBadge tone={getCategoryBadgeVariant(lead.propertyCategory)}>
+            <Building2 size={12} className="mr-1" />
+            {getPropertyCategoryLabel(lead.propertyCategory)}
+          </LeadBadge>
+          <span className="max-w-[180px] text-xs text-slate-500">{getLeadRequirementLabel(lead)}</span>
         </div>
       </td>
       <td className="px-4 py-4 align-top">
-        <LeadBadge tone={getCategoryBadgeVariant(lead.propertyCategory)}>{getPropertyCategoryLabel(lead.propertyCategory)}</LeadBadge>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-medium text-[#102236]">{getClientTypeLabel(lead)}</p>
-      </td>
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-medium text-[#102236]">{getLeadAssetLabel(lead)}</p>
+        <p className="text-sm font-semibold text-[#102236]">{getLeadClientRole(lead)}</p>
+        <p className="mt-1 text-xs text-slate-500">{getLeadClientSecondary(lead)}</p>
       </td>
       <td className="px-4 py-4 align-top">
         <p className="text-sm font-medium text-[#102236]">{getLeadAreaLabel(lead)}</p>
       </td>
       <td className="px-4 py-4 align-top">
-        <p className="text-sm font-semibold text-[#102236]">{getLeadBudgetLabel(lead)}</p>
-        <p className="mt-1 text-xs text-slate-500">{getLeadBudgetSubLabel(lead)}</p>
+        <p className="text-sm font-semibold text-[#102236]">{budget.value}</p>
+        <p className="mt-1 text-xs text-slate-500">{budget.label}</p>
       </td>
       <td className="px-4 py-4 align-top">
         <div className="flex items-center gap-2">
@@ -980,8 +1052,8 @@ function LeadRow({ lead, onOpen, onEdit, onAddNote, onLogCall, onSchedule, onArc
       </td>
       <td className="px-4 py-4 align-top">
         <div className="grid gap-1">
-          <CommercialStatusPill value={lead.status} label={normalizeText(lead.status) || 'New'} />
-          <span className="text-xs text-slate-500">{getLeadStageLabel(lead)}</span>
+          <LeadBadge tone={getLeadStatusTone(lead)}>{statusLabel}</LeadBadge>
+          <span className="text-xs text-slate-500">{getLeadStageSecondary(lead)}</span>
         </div>
       </td>
       <td className="px-4 py-4 align-top">
@@ -993,20 +1065,33 @@ function LeadRow({ lead, onOpen, onEdit, onAddNote, onLogCall, onSchedule, onArc
           lead={lead}
           open={menuOpen}
           onToggle={onMenuToggle}
-          onView={onOpen}
           onEdit={onEdit}
-          onAddNote={onAddNote}
-          onLogCall={onLogCall}
-          onSchedule={onSchedule}
+          onLogActivity={onLogActivity}
+          onSendOnboarding={onSendOnboarding}
+          onCreateVacancy={onCreateVacancy}
+          onCreateRequirement={onCreateRequirement}
+          onConvertToDeal={onConvertToDeal}
           onArchive={onArchive}
-          onDelete={onDelete}
         />
       </td>
     </tr>
   )
 }
 
-function LeadCard({ lead, onOpen, onEdit, onAddNote, onLogCall, onArchive, onDelete, menuOpen, onMenuToggle, onSchedule }) {
+function LeadCard({
+  lead,
+  onOpen,
+  onEdit,
+  onLogActivity,
+  onSendOnboarding,
+  onCreateVacancy,
+  onCreateRequirement,
+  onConvertToDeal,
+  onArchive,
+  menuOpen,
+  onMenuToggle,
+}) {
+  const budget = getLeadBudgetDetails(lead)
   return (
     <article className="rounded-[24px] border border-[#e6edf4] bg-white p-4 shadow-[0_8px_26px_rgba(0,0,0,0.04)]" onClick={() => onOpen?.(lead)}>
       <div className="flex items-start justify-between gap-3">
@@ -1015,39 +1100,47 @@ function LeadCard({ lead, onOpen, onEdit, onAddNote, onLogCall, onArchive, onDel
             {lead.initials || 'CL'}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#102236]">{lead.displayName || 'Unknown lead'}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{lead.companyName || 'No company captured'}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{lead.phone || 'No phone captured'}</p>
+            <p className="truncate text-sm font-semibold text-[#102236]">{getLeadTitle(lead)}</p>
+            <p className="mt-1 truncate text-xs text-slate-500">{getLeadContactName(lead)}</p>
+            <p className="mt-1 truncate text-xs text-slate-500">{getLeadContactPhone(lead)}</p>
           </div>
         </div>
         <LeadActionsMenu
           lead={lead}
           open={menuOpen}
           onToggle={onMenuToggle}
-          onView={onOpen}
           onEdit={onEdit}
-          onAddNote={onAddNote}
-          onLogCall={onLogCall}
-          onSchedule={onSchedule}
+          onLogActivity={onLogActivity}
+          onSendOnboarding={onSendOnboarding}
+          onCreateVacancy={onCreateVacancy}
+          onCreateRequirement={onCreateRequirement}
+          onConvertToDeal={onConvertToDeal}
           onArchive={onArchive}
-          onDelete={onDelete}
         />
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <LeadBadge tone={getProspectBadgeVariant(lead.prospectRole)}>{getRoleLabel(lead.prospectRole)}</LeadBadge>
+        <LeadBadge tone={getProspectBadgeVariant(lead.prospectRole)}>{getLeadTypeLabel(lead)}</LeadBadge>
         <LeadBadge tone={getCategoryBadgeVariant(lead.propertyCategory)}>{getPropertyCategoryLabel(lead.propertyCategory)}</LeadBadge>
       </div>
       <div className="mt-4 grid gap-2 text-sm text-[#102236]">
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Budget</span>
-          <span className="font-semibold">{getLeadBudgetLabel(lead)}</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Area</span>
+          <span className="min-w-0 truncate text-right font-semibold">{getLeadAreaLabel(lead)}</span>
         </div>
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Stage</span>
-          <span className="font-semibold">{getLeadStageLabel(lead)}</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Budget / Rental</span>
+          <span className="font-semibold">{budget.value}</span>
         </div>
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Activity</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Broker</span>
+          <span className="font-semibold">{lead.assignedBrokerName || 'Unassigned'}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Status</span>
+          <span className="font-semibold">{getControlledLeadStatusLabel(lead)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Last Activity</span>
           <span className="font-semibold">{lead.lastActivityAt ? formatRelativeTime(lead.lastActivityAt) : 'No activity yet'}</span>
         </div>
       </div>
@@ -1268,7 +1361,7 @@ function NewCommercialLeadModal({
       open={open}
       onClose={onClose}
       title={mode === 'edit' ? 'Edit lead' : 'New lead'}
-      subtitle="Capture the company, contact, or asset you want to work with through the commercial pipeline."
+      subtitle="Capture a qualified landlord or tenant opportunity for the commercial pipeline."
       className="max-w-[1120px] max-h-[calc(100vh-80px)] overflow-hidden"
       footer={(
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1299,7 +1392,7 @@ function NewCommercialLeadModal({
               </Button>
             ) : (
               <Button variant="primary" size="sm" className="rounded-xl" type="submit" form="commercial-lead-form" disabled={saving}>
-                {saving ? 'Saving…' : 'Save Prospect'}
+                {saving ? 'Saving…' : 'Save Lead'}
               </Button>
             )}
           </div>
@@ -1309,7 +1402,7 @@ function NewCommercialLeadModal({
       <form id="commercial-lead-form" onSubmit={handleSubmit} className="grid min-h-0 grid-cols-1 lg:grid-cols-[330px_minmax(0,1fr)]">
         <aside className="border-b border-slate-200 bg-[#fbfcfe] p-5 lg:border-b-0 lg:border-r">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Step 1 of 3</p>
-          <h3 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[#102236]">What type of prospect is this?</h3>
+          <h3 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-[#102236]">What type of lead is this?</h3>
           <p className="mt-1 text-sm text-slate-500">Choose the best fit so we can show you the right fields.</p>
           <div className="mt-5 grid gap-3">
             {roleOptions.map((option) => (
@@ -1377,11 +1470,11 @@ function NewCommercialLeadModal({
               <div className="grid gap-4">
                 <div className="rounded-[24px] border border-slate-200 bg-[#fbfcfe] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Review prospect</p>
-                  <p className="mt-2 text-base font-semibold text-[#102236]">Confirm the details before adding this prospect to commercial canvassing.</p>
+                  <p className="mt-2 text-base font-semibold text-[#102236]">Confirm the details before adding this lead to the commercial pipeline.</p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   {[
-                    ['Prospect type', getRoleLabel(selectedRole)],
+                    ['Lead type', getRoleLabel(selectedRole)],
                     ['Deal type', getDealTypeLabel(getDealTypeFromRole(selectedRole))],
                     ['Company / Contact', [draft.companyName, draft.contactPerson].filter(Boolean).join(' · ') || 'Pending'],
                     ['Commercial details', [draft.propertyAddress, draft.propertyName, draft.lookingFor, draft.spaceRequirement].filter(Boolean).join(' · ') || 'Pending'],
@@ -1418,11 +1511,51 @@ function buildLeadPayload(draft, selectedRole, selectedBroker, organisationId) {
   const estimatedValue = dealType === 'lease'
     ? (estimatedFromAnnual || estimatedFromMonthly || Number(draft.estimatedSaleValue || 0) || 0)
     : (estimatedFromSale || Number(draft.estimatedAnnualRental || 0) || 0)
+  const addressOrArea = normalizeText(draft.propertyAddress || draft.preferredArea || draft.propertyName || draft.spaceRequirement)
+  const preservedProspectData = {
+    type: selectedRole,
+    companyName: companyName || null,
+    contactPerson: contactName || null,
+    contactNumber: normalizeText(draft.phone) || null,
+    email: normalizeText(draft.email) || null,
+    address: addressOrArea || null,
+    area: normalizeText(draft.preferredArea || draft.propertyAddress) || addressOrArea || null,
+    assetClass: draft.propertyCategory || null,
+    brokerId: draft.assignedBrokerId || selectedBroker?.value || null,
+    brokerName: draft.assignedBrokerName || selectedBroker?.label || null,
+    source: draft.canvassingMethod || 'Cold Call',
+    notes: normalizeText(draft.notes) || null,
+  }
+  const leadQualificationFields = selectedRole === 'landlord'
+    ? {
+      relationshipType: 'Owner',
+      propertyDetails: normalizeText(draft.propertyName || draft.propertyAddress) || null,
+      vacancyPotential: normalizeText(draft.vacancyDetails) || null,
+      mandateType: normalizeText(draft.reasonForSelling) || null,
+      askingRental: normalizeText(draft.estimatedMonthlyRental || draft.estimatedAnnualRental) || null,
+      availability: normalizeText(draft.leaseTimeline || draft.targetPurchaseTimeline) || null,
+      followUpDate: draft.followUpDate || null,
+      qualificationNotes: normalizeText(draft.notes) || null,
+    }
+    : selectedRole === 'tenant'
+      ? {
+        requirementType: normalizeText(draft.spaceRequirement || draft.lookingFor) || null,
+        preferredAreas: normalizeText(draft.preferredArea) ? [normalizeText(draft.preferredArea)] : [],
+        minSize: normalizeText(draft.sizeRange) || null,
+        maxSize: normalizeText(draft.sizeRange) || null,
+        budget: normalizeText(draft.budgetRange || draft.estimatedMonthlyRental || draft.estimatedAnnualRental) || null,
+        timing: normalizeText(draft.leaseTimeline || draft.targetPurchaseTimeline) || null,
+        decisionMaker: contactName || null,
+        qualificationNotes: normalizeText(draft.notes) || null,
+      }
+      : {}
 
   return {
     organisationId: normalizeText(organisationId),
     body: {
       prospectType: `${getRoleLabel(selectedRole)} Prospect`,
+      prospectRole: selectedRole,
+      dealType,
       canvassingMethod: draft.canvassingMethod || 'Cold Call',
       propertyType: draft.propertyCategory || 'commercial',
       status: draft.status || 'New',
@@ -1440,8 +1573,12 @@ function buildLeadPayload(draft, selectedRole, selectedBroker, organisationId) {
       lastName: split.lastName || null,
       phone: draft.phone || null,
       email: draft.email || null,
-      area: normalizeText(draft.propertyAddress || draft.preferredArea || draft.propertyName || draft.spaceRequirement) || null,
+      area: addressOrArea || null,
       propertyCategory: draft.propertyCategory || null,
+      roleSpecific: {
+        preservedProspectData,
+        ...leadQualificationFields,
+      },
     },
   }
 }
@@ -1459,6 +1596,8 @@ function deriveSummaryStats(leads = [], activities = []) {
 
 function CommercialLeadsPage({ dealType = '' }) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const location = useLocation()
   const pageView = useMemo(() => getLeadPageViewConfig(dealType), [dealType])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1475,6 +1614,7 @@ function CommercialLeadsPage({ dealType = '' }) {
   const [sortKey, setSortKey] = useState('updatedAt')
   const [sortDirection, setSortDirection] = useState('desc')
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [advancedFilters, setAdvancedFilters] = useState({
     branch: 'all',
     team: 'all',
@@ -1483,6 +1623,10 @@ function CommercialLeadsPage({ dealType = '' }) {
     stage: 'all',
     propertyType: 'all',
     budget: 'all',
+    source: 'all',
+    area: '',
+    dateAdded: 'all',
+    lastActivity: 'all',
   })
   const [drawerLead, setDrawerLead] = useState(null)
   const [modalState, setModalState] = useState({ open: false, mode: 'create', record: null, role: pageView.defaultCreateRole })
@@ -1592,12 +1736,12 @@ function CommercialLeadsPage({ dealType = '' }) {
     const coreFilters = {
       search: searchTerm,
       dealType: pageView.baseDealType,
-      role: pageView.showRoleFilters ? roleFilter : 'all',
+      role: roleFilter,
       category: categoryFilter,
       branch: advancedFilters.branch,
       team: advancedFilters.team,
       assigned: advancedFilters.assigned,
-      status: advancedFilters.status,
+      status: 'all',
       stage: advancedFilters.stage,
     }
     let rows = filterCommercialProspects(normalizedLeads, coreFilters)
@@ -1605,6 +1749,11 @@ function CommercialLeadsPage({ dealType = '' }) {
       if (!activeTabConfig.matches(lead)) return false
       if (advancedFilters.propertyType !== 'all' && normalizeLower(lead.propertyCategory) !== normalizeLower(advancedFilters.propertyType)) return false
       if (advancedFilters.budget !== 'all' && !matchesBudgetBand(getLeadValue(lead), advancedFilters.budget)) return false
+      if (advancedFilters.status !== 'all' && normalizeLower(getControlledLeadStatusLabel(lead)) !== normalizeLower(advancedFilters.status)) return false
+      if (advancedFilters.source !== 'all' && normalizeLower(lead.sourceLabel || lead.canvassingMethod) !== normalizeLower(advancedFilters.source)) return false
+      if (normalizeText(advancedFilters.area) && !getLeadAreaLabel(lead).toLowerCase().includes(normalizeText(advancedFilters.area).toLowerCase())) return false
+      if (!isWithinDateFilter(lead.createdAt || lead.created_at, advancedFilters.dateAdded)) return false
+      if (!isWithinDateFilter(lead.lastActivityAt, advancedFilters.lastActivity)) return false
       return true
     })
     rows = [...rows].sort((left, right) => {
@@ -1625,31 +1774,19 @@ function CommercialLeadsPage({ dealType = '' }) {
       return sortDirection === 'desc' ? -comparison : comparison
     })
     return rows
-  }, [activeTabConfig, advancedFilters.assigned, advancedFilters.budget, advancedFilters.branch, advancedFilters.propertyType, advancedFilters.stage, advancedFilters.status, advancedFilters.team, categoryFilter, normalizedLeads, pageView.baseDealType, pageView.showRoleFilters, roleFilter, searchTerm, sortDirection, sortKey])
+  }, [activeTabConfig, advancedFilters.area, advancedFilters.assigned, advancedFilters.budget, advancedFilters.branch, advancedFilters.dateAdded, advancedFilters.lastActivity, advancedFilters.propertyType, advancedFilters.source, advancedFilters.stage, advancedFilters.status, advancedFilters.team, categoryFilter, normalizedLeads, pageView.baseDealType, roleFilter, searchTerm, sortDirection, sortKey])
 
   const metrics = useMemo(() => deriveSummaryStats(pageScopedLeads, workspace.activities || []), [pageScopedLeads, workspace.activities])
-  const trendSeries = useMemo(() => buildTrendSeries(pageScopedLeads), [pageScopedLeads])
-  const stageBreakdown = useMemo(() => buildStageBreakdown(pageScopedLeads), [pageScopedLeads])
-  const pipelineDelta = calculateMonthDelta(trendSeries[trendSeries.length - 1]?.value || 0, trendSeries[trendSeries.length - 2]?.value || 0)
-  const roleMetricCards = useMemo(() => {
+  const roleMetrics = useMemo(() => {
     const activeRows = pageScopedLeads.filter((lead) => !['archived', 'lost'].includes(normalizeLeadStatus(lead.status)))
     if (pageView.key === 'sale') {
-      return [
-        { label: 'Sellers', value: activeRows.filter((lead) => normalizeLeadRole(lead) === 'seller').length, icon: Building2, chart: <MiniBars series={stageBreakdown} color="#16a34a" /> },
-        { label: 'Buyers', value: activeRows.filter((lead) => normalizeLeadRole(lead) === 'buyer').length, icon: Users, chart: <MiniBars series={stageBreakdown} color="#8b5cf6" /> },
-      ]
+      return { primaryLabel: 'Sellers', primaryValue: activeRows.filter((lead) => normalizeLeadRole(lead) === 'seller').length, secondaryLabel: 'Buyers', secondaryValue: activeRows.filter((lead) => normalizeLeadRole(lead) === 'buyer').length }
     }
     if (pageView.key === 'lease') {
-      return [
-        { label: 'Landlords', value: activeRows.filter((lead) => normalizeLeadRole(lead) === 'landlord').length, icon: Building2, chart: <MiniBars series={stageBreakdown} color="#16a34a" /> },
-        { label: 'Tenants', value: activeRows.filter((lead) => normalizeLeadRole(lead) === 'tenant').length, icon: Users, chart: <MiniBars series={stageBreakdown} color="#8b5cf6" /> },
-      ]
+      return { primaryLabel: 'Landlords', primaryValue: activeRows.filter((lead) => normalizeLeadRole(lead) === 'landlord').length, secondaryLabel: 'Tenants', secondaryValue: activeRows.filter((lead) => normalizeLeadRole(lead) === 'tenant').length }
     }
-    return [
-      { label: 'Sales Leads', value: activeRows.filter((lead) => normalizeLower(lead.dealType || getDealTypeFromRole(normalizeLeadRole(lead))) === 'sale').length, icon: Building2, chart: <MiniBars series={stageBreakdown} color="#16a34a" /> },
-      { label: 'Lease Leads', value: activeRows.filter((lead) => normalizeLower(lead.dealType || getDealTypeFromRole(normalizeLeadRole(lead))) === 'lease').length, icon: Users, chart: <MiniBars series={stageBreakdown} color="#8b5cf6" /> },
-    ]
-  }, [pageScopedLeads, pageView.key, stageBreakdown])
+    return { primaryLabel: 'Sales Leads', primaryValue: activeRows.filter((lead) => normalizeLower(lead.dealType || getDealTypeFromRole(normalizeLeadRole(lead))) === 'sale').length, secondaryLabel: 'Lease Leads', secondaryValue: activeRows.filter((lead) => normalizeLower(lead.dealType || getDealTypeFromRole(normalizeLeadRole(lead))) === 'lease').length }
+  }, [pageScopedLeads, pageView.key])
 
   useEffect(() => {
     if (!visibleLeads.length) setDrawerLead(null)
@@ -1657,6 +1794,7 @@ function CommercialLeadsPage({ dealType = '' }) {
 
   function openCreateLead(nextRole = pageView.defaultCreateRole) {
     setModalState({ open: true, mode: 'create', record: null, role: nextRole })
+    setShowCreateMenu(false)
   }
 
   function openEditLead(lead) {
@@ -1665,7 +1803,16 @@ function CommercialLeadsPage({ dealType = '' }) {
   }
 
   function openDrawer(lead) {
-    setDrawerLead(lead)
+    const leadId = normalizeText(lead?.id)
+    if (!leadId) return
+    const role = normalizeLeadRole(lead)
+    const routeDealType = pageView.baseDealType === 'sale' || pageView.baseDealType === 'lease'
+      ? pageView.baseDealType
+      : normalizeLower(lead?.dealType || getDealTypeFromRole(role)) === 'sale'
+        ? 'sale'
+        : 'lease'
+    const basePath = routeDealType === 'sale' ? '/commercial/sales/leads' : '/commercial/leasing/leads'
+    navigate(`${basePath}/${encodeURIComponent(leadId)}${location.search || ''}`)
     setOpenMenuId('')
   }
 
@@ -1697,13 +1844,25 @@ function CommercialLeadsPage({ dealType = '' }) {
     }).then(() => loadData())
   }
 
-  function handleDelete(lead) {
-    if (!window.confirm('Delete this lead? This cannot be undone.')) return
-    void deleteCommercialCanvassingProspect(organisationId, lead.id).then(() => loadData())
+  function handleSendOnboarding(lead) {
+    setOpenMenuId('')
+    window.alert(`Send onboarding for ${getLeadTitle(lead)} is ready to connect to the onboarding workflow.`)
   }
 
-  function handleSchedule() {
-    window.alert('Scheduling workflow coming soon.')
+  function handleCreateVacancy(lead) {
+    setOpenMenuId('')
+    window.alert(`Create Vacancy from ${getLeadTitle(lead)} is ready to connect to the vacancy creation workflow.`)
+  }
+
+  function handleCreateRequirement(lead) {
+    setOpenMenuId('')
+    window.alert(`Create Requirement from ${getLeadTitle(lead)} is ready to connect to the requirement workflow.`)
+  }
+
+  function handleConvertToDeal(lead) {
+    setOpenMenuId('')
+    if (!isLeadQualifiedEnough(lead)) return
+    window.alert(`Convert ${getLeadTitle(lead)} to Deal is ready to connect to the deal workflow.`)
   }
 
   async function handleSaveLead(savedLead) {
@@ -1717,12 +1876,33 @@ function CommercialLeadsPage({ dealType = '' }) {
 
   function renderEmptyState() {
     const copy = pageView.emptyCopy[activeTab] || pageView.emptyCopy.all || EMPTY_LEAD_COPY.all
+    const leasingActions = pageView.key === 'lease' && activeTab === 'all'
+      ? (
+        <>
+          <button
+            type="button"
+            onClick={() => openCreateLead('landlord')}
+            className="inline-flex h-11 items-center justify-center rounded-[12px] border border-[#b9d2ff] bg-white px-5 text-sm font-semibold text-[#0d5ed0] transition hover:bg-[#f5f9ff]"
+          >
+            Add Landlord Lead
+          </button>
+          <button
+            type="button"
+            onClick={() => openCreateLead('tenant')}
+            className="inline-flex h-11 items-center justify-center rounded-[12px] bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#143858]"
+          >
+            Add Tenant Lead
+          </button>
+        </>
+      )
+      : null
     return (
       <InlineTableEmptyState
         icon={CalendarDays}
         title={copy.title}
         description={copy.description}
-        actionLabel={pageView.createLabel.replace(/^\+\s*/, '')}
+        actions={leasingActions}
+        actionLabel={leasingActions ? '' : pageView.createLabel.replace(/^\+\s*/, '')}
         onAction={() => openCreateLead(pageView.defaultCreateRole)}
       />
     )
@@ -1744,6 +1924,10 @@ function CommercialLeadsPage({ dealType = '' }) {
     advancedFilters.stage,
     advancedFilters.propertyType,
     advancedFilters.budget,
+    advancedFilters.source,
+    advancedFilters.area,
+    advancedFilters.dateAdded,
+    advancedFilters.lastActivity,
   ].filter((value) => normalizeText(value) && value !== 'all').length
   const shouldShowAdvancedFilters = showAdvancedFilters || advancedFilterCount > 0
   const resetLeadFilters = () => {
@@ -1759,30 +1943,55 @@ function CommercialLeadsPage({ dealType = '' }) {
       stage: 'all',
       propertyType: 'all',
       budget: 'all',
+      source: 'all',
+      area: '',
+      dateAdded: 'all',
+      lastActivity: 'all',
     })
     setShowAdvancedFilters(false)
   }
 
   return (
     <div className="pb-10">
-      <article className={`${CARD_CLASS} overflow-hidden p-5 sm:p-6`}>
+      <article className={`${CARD_CLASS} overflow-hidden p-4 sm:p-5`}>
         <section className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <h1 className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#102236]">{pageView.title}</h1>
-            <p className="mt-2 text-sm leading-6 text-[#4f6680]">{pageView.description}</p>
+            <p className="mt-1.5 text-sm leading-6 text-[#4f6680]">{pageView.description}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" onClick={() => openCreateLead(pageView.defaultCreateRole)} className="h-12 rounded-[14px] bg-[#102b46] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#143858]">
-              <Plus size={16} />
-              {pageView.createLabel.replace(/^\+\s*/, '')}
-            </Button>
-            <Button type="button" variant="secondary" className="h-12 rounded-[14px] px-5" disabled title="Import is coming soon">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Button
+                type="button"
+                onClick={() => setShowCreateMenu((current) => !current)}
+                className="h-11 rounded-[14px] bg-[#102b46] px-4 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#143858]"
+              >
+                <Plus size={16} />
+                {pageView.createLabel.replace(/^\+\s*/, '')}
+              </Button>
+              {showCreateMenu ? (
+                <div className="absolute right-0 top-12 z-30 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+                  {(pageView.key === 'lease' ? LEASE_TYPE_OPTIONS : pageView.roleOptions).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => openCreateLead(option.value)}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-semibold text-[#102236] transition hover:bg-slate-50"
+                    >
+                      <Users size={14} />
+                      Add {option.label} Lead
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <Button type="button" variant="secondary" className="h-11 rounded-[14px] px-4" disabled title="Import is coming soon">
               <Download size={16} />
               Import
             </Button>
             <button
               type="button"
-              className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white text-[#62758b] shadow-sm transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-[#dce6f0] bg-white text-[#62758b] shadow-sm transition hover:border-[#bfd2e6] hover:bg-[#f8fbff] hover:text-[#0f2748]"
               aria-label="More page actions"
             >
               <MoreHorizontal size={17} />
@@ -1790,46 +1999,46 @@ function CommercialLeadsPage({ dealType = '' }) {
           </div>
         </section>
 
-        <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <CommercialMetricCard
+        <section className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <CompactKpiItem
             label="Total Leads"
             value={loading ? '...' : metrics.prospects}
-            sublabel="vs last 30 days"
-            deltaLabel={pipelineDelta ? `${pipelineDelta}%` : '0%'}
+            trend={`${metrics.activeLeads || 0} active`}
             icon={Users}
-            chart={<MiniBars series={trendSeries} color="#2d6ecf" />}
+            tone="blue"
           />
-          {roleMetricCards.map((card) => (
-            <CommercialMetricCard
-              key={card.label}
-              label={card.label}
-              value={loading ? '...' : card.value}
-              sublabel="vs last 30 days"
-              deltaLabel="8%"
-              icon={card.icon}
-              chart={card.chart}
-            />
-          ))}
-          <CommercialMetricCard
+          <CompactKpiItem
+            label={roleMetrics.primaryLabel}
+            value={loading ? '...' : roleMetrics.primaryValue}
+            trend={pageView.key === 'lease' ? 'Owner-side' : 'Vendor-side'}
+            icon={Building2}
+            tone="green"
+          />
+          <CompactKpiItem
+            label={roleMetrics.secondaryLabel}
+            value={loading ? '...' : roleMetrics.secondaryValue}
+            trend={pageView.key === 'lease' ? 'Occupier-side' : 'Acquirer-side'}
+            icon={Users}
+            tone="purple"
+          />
+          <CompactKpiItem
             label="Follow Ups Due"
             value={loading ? '...' : metrics.followUpsDue}
-            sublabel="vs last 30 days"
-            deltaLabel={metrics.overdueFollowUps ? `${metrics.overdueFollowUps} overdue` : '6%'}
+            trend={metrics.overdueFollowUps ? `${metrics.overdueFollowUps} overdue` : 'No overdue follow-ups'}
             icon={CalendarDays}
-            chart={<MiniBars series={trendSeries.slice(-4)} color="#f59e0b" />}
+            tone="amber"
           />
-          <CommercialMetricCard
+          <CompactKpiItem
             label="Converted"
             value={loading ? '...' : metrics.converted}
-            sublabel="vs last 30 days"
-            deltaLabel="15%"
+            trend="Moved into workflow"
             icon={CheckCircle2}
-            chart={<MiniBars series={stageBreakdown.map((stage) => ({ ...stage, value: stage.key === 'converted' ? stage.count : 0 }))} color="#0f766e" />}
+            tone="emerald"
           />
         </section>
 
-        <div className="mt-7 border-b border-[#e8eef5]">
-          <div className="flex gap-9 overflow-x-auto">
+        <div className="mt-4 border-b border-[#e8eef5]">
+          <div className="flex gap-5 overflow-x-auto">
             {pageView.tabs.map((tab) => {
               const count = pageScopedLeads.filter((lead) => tab.matches(lead)).length
               return (
@@ -1858,28 +2067,16 @@ function CommercialLeadsPage({ dealType = '' }) {
             <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
               <SearchField value={searchTerm} onChange={setSearchTerm} placeholder={pageView.searchPlaceholder} className="w-full 2xl:max-w-[34%] 2xl:flex-1" />
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:flex 2xl:flex-wrap 2xl:items-center">
-                <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Category" className="!w-full 2xl:!w-[148px]" />
+                <FilterSelect
+                  value={roleFilter}
+                  onChange={setRoleFilter}
+                  options={pageView.key === 'lease' ? LEASE_TYPE_OPTIONS : pageView.roleFilters.filter((option) => option.value !== 'all')}
+                  placeholder="Type"
+                  className="!w-full 2xl:!w-[128px]"
+                />
                 <FilterSelect value={advancedFilters.assigned} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, assigned: value }))} options={lookupMaps.brokers || []} placeholder="Broker" className="!w-full 2xl:!w-[138px]" />
-                <FilterSelect value={advancedFilters.status} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, status: value }))} options={COMMERCIAL_PROSPECT_STATUSES.map((value) => ({ value, label: value }))} placeholder="Status" className="!w-full 2xl:!w-[138px]" />
+                <FilterSelect value={advancedFilters.status} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, status: value }))} options={LEAD_STATUS_FILTER_OPTIONS} placeholder="Status" className="!w-full 2xl:!w-[138px]" />
                 <FilterSelect value={advancedFilters.stage} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, stage: value }))} options={LEAD_STAGE_OPTIONS.filter((option) => option.value !== 'all')} placeholder="Stage" className="!w-full 2xl:!w-[138px]" />
-                <label className="relative block">
-                  <ArrowUpDown size={15} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#1f6dd5]" />
-                  <Field
-                    as="select"
-                    value={`${sortKey}:${sortDirection}`}
-                    onChange={(event) => {
-                      const [nextKey, nextDirection] = String(event.target.value || '').split(':')
-                      setSortKey(nextKey)
-                      setSortDirection(nextDirection || 'desc')
-                    }}
-                    aria-label={`Sort: ${currentSortLabel}`}
-                    className="h-11 !w-full rounded-[14px] bg-white pl-9 text-sm 2xl:!w-[198px]"
-                  >
-                    {LEAD_SORT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>Sort: {option.label}</option>
-                    ))}
-                  </Field>
-                </label>
                 <button
                   type="button"
                   onClick={() => setShowAdvancedFilters((current) => !current)}
@@ -1890,7 +2087,7 @@ function CommercialLeadsPage({ dealType = '' }) {
                   }`}
                 >
                   <SlidersHorizontal size={15} />
-                  Filters
+                  More Filters
                   {advancedFilterCount ? (
                     <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#e7efff] px-1.5 text-[11px] font-semibold text-[#1952c6]">
                       {advancedFilterCount}
@@ -1909,13 +2106,35 @@ function CommercialLeadsPage({ dealType = '' }) {
                   </button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {pageView.showRoleFilters ? (
-                    <FilterSelect value={roleFilter} onChange={setRoleFilter} options={pageView.roleFilters.filter((option) => option.value !== 'all')} placeholder="Role" className="!w-full" />
-                  ) : null}
-                  <FilterSelect value={advancedFilters.branch} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, branch: value }))} options={(lookups.branches || []).map((row) => ({ value: row.id, label: row.name || row.branch_name || 'Branch' }))} placeholder="Branch" className="!w-full" />
-                  <FilterSelect value={advancedFilters.team} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, team: value }))} options={(lookups.teams || []).map((row) => ({ value: row.id, label: row.name || row.team_name || 'Team' }))} placeholder="Team" className="!w-full" />
-                  <FilterSelect value={advancedFilters.propertyType} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, propertyType: value }))} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Property Type" className="!w-full" />
+                  <FilterSelect value={categoryFilter} onChange={setCategoryFilter} options={COMMERCIAL_CATEGORY_OPTIONS} placeholder="Asset Class" className="!w-full" />
+                  <FilterSelect value={advancedFilters.source} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, source: value }))} options={COMMERCIAL_CANVASSING_METHODS.map((value) => ({ value, label: value }))} placeholder="Source" className="!w-full" />
                   <FilterSelect value={advancedFilters.budget} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, budget: value }))} options={BUDGET_BANDS.filter((option) => option.value !== 'all')} placeholder="Budget / Rental" className="!w-full" />
+                  <Field
+                    value={advancedFilters.area}
+                    onChange={(event) => setAdvancedFilters((previous) => ({ ...previous, area: event.target.value }))}
+                    placeholder="Area / Node"
+                    className="h-11 rounded-[14px] bg-white text-sm"
+                  />
+                  <FilterSelect value={advancedFilters.dateAdded} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, dateAdded: value }))} options={DATE_FILTER_OPTIONS.filter((option) => option.value !== 'all')} placeholder="Date Added" className="!w-full" />
+                  <FilterSelect value={advancedFilters.lastActivity} onChange={(value) => setAdvancedFilters((previous) => ({ ...previous, lastActivity: value }))} options={DATE_FILTER_OPTIONS.filter((option) => option.value !== 'all')} placeholder="Last Activity" className="!w-full" />
+                  <label className="relative block">
+                    <ArrowUpDown size={15} className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-[#1f6dd5]" />
+                    <Field
+                      as="select"
+                      value={`${sortKey}:${sortDirection}`}
+                      onChange={(event) => {
+                        const [nextKey, nextDirection] = String(event.target.value || '').split(':')
+                        setSortKey(nextKey)
+                        setSortDirection(nextDirection || 'desc')
+                      }}
+                      aria-label={`Sort: ${currentSortLabel}`}
+                      className="h-11 !w-full rounded-[14px] bg-white pl-9 text-sm"
+                    >
+                      {LEAD_SORT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>Sort: {option.label}</option>
+                      ))}
+                    </Field>
+                  </label>
                 </div>
               </div>
             ) : null}
@@ -1924,10 +2143,10 @@ function CommercialLeadsPage({ dealType = '' }) {
           <div className="overflow-hidden">
             <div className="hidden lg:block">
               <div className="max-h-[560px] overflow-auto">
-                <table className="min-w-[1400px] w-full border-separate border-spacing-0">
+                <table className="min-w-[1280px] w-full border-separate border-spacing-0">
                   <thead className="sticky top-0 z-10 bg-[#f7fafc] text-left text-[12px] font-semibold uppercase tracking-[0.12em] text-[#61758b]">
                     <tr>
-                      {['Lead', 'Type', 'Category', 'Client / Company', 'Requirement / Asset', 'Area', 'Budget / Rental', 'Broker', 'Status / Stage', 'Last Activity', 'Actions'].map((label) => (
+                      {['Lead', 'Type', 'Category / Requirement', 'Client / Company', 'Area', 'Budget / Rental', 'Broker', 'Status / Stage', 'Last Activity', 'Actions'].map((label) => (
                         <th key={label} className="border-b border-[#e7edf4] px-4 py-3">{label}</th>
                       ))}
                     </tr>
@@ -1935,13 +2154,13 @@ function CommercialLeadsPage({ dealType = '' }) {
                   <tbody>
                     {loading ? Array.from({ length: 6 }).map((_, index) => (
                       <tr key={`lead-loading-${index}`}>
-                        <td colSpan={11} className="border-b border-[#eef3f7] px-5 py-4">
+                        <td colSpan={10} className="border-b border-[#eef3f7] px-5 py-4">
                           <div className="h-16 animate-pulse rounded-[16px] bg-slate-100" />
                         </td>
                       </tr>
                     )) : error ? (
                       <tr>
-                        <td colSpan={11} className="px-0 py-0">
+                        <td colSpan={10} className="px-0 py-0">
                           <InlineTableEmptyState icon={CalendarDays} title="Commercial leads could not be loaded" description={error} />
                         </td>
                       </tr>
@@ -1951,17 +2170,18 @@ function CommercialLeadsPage({ dealType = '' }) {
                         lead={lead}
                         onOpen={openDrawer}
                         onEdit={openEditLead}
-                        onAddNote={handleAddNote}
-                        onLogCall={handleLogCall}
-                        onSchedule={handleSchedule}
+                        onLogActivity={handleLogCall}
+                        onSendOnboarding={handleSendOnboarding}
+                        onCreateVacancy={handleCreateVacancy}
+                        onCreateRequirement={handleCreateRequirement}
+                        onConvertToDeal={handleConvertToDeal}
                         onArchive={handleArchive}
-                        onDelete={handleDelete}
                         menuOpen={openMenuId === lead.id}
                         onMenuToggle={() => setOpenMenuId((previous) => (previous === lead.id ? '' : lead.id))}
                       />
                     )) : (
                       <tr>
-                        <td colSpan={11} className="px-0 py-0">
+                        <td colSpan={10} className="px-0 py-0">
                           {renderEmptyState()}
                         </td>
                       </tr>
@@ -1984,11 +2204,12 @@ function CommercialLeadsPage({ dealType = '' }) {
                   lead={lead}
                   onOpen={openDrawer}
                   onEdit={openEditLead}
-                  onAddNote={handleAddNote}
-                  onLogCall={handleLogCall}
-                  onSchedule={handleSchedule}
+                  onLogActivity={handleLogCall}
+                  onSendOnboarding={handleSendOnboarding}
+                  onCreateVacancy={handleCreateVacancy}
+                  onCreateRequirement={handleCreateRequirement}
+                  onConvertToDeal={handleConvertToDeal}
                   onArchive={handleArchive}
-                  onDelete={handleDelete}
                   menuOpen={openMenuId === lead.id}
                   onMenuToggle={() => setOpenMenuId((previous) => (previous === lead.id ? '' : lead.id))}
                 />

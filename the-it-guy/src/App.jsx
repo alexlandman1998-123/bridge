@@ -249,6 +249,7 @@ const CommercialOnboardingPortalPage = lazy(() => import('./modules/commercial/p
 const CommercialLandlordsPage = lazy(() => import('./modules/commercial/pages/CommercialLandlordsPage'))
 const CommercialLandlordOnboardingPage = lazy(() => import('./modules/commercial/pages/CommercialLandlordOnboardingPage'))
 const CommercialLandlordWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialLandlordWorkspacePage'))
+const CommercialLeadDetailPage = lazy(() => import('./modules/commercial/pages/CommercialLeadDetailPage'))
 const CommercialLeadsPage = lazy(() => import('./modules/commercial/pages/CommercialLeadsPage'))
 const CommercialLeaseExpiryWatchPage = lazy(() => import('./modules/commercial/pages/CommercialLeaseExpiryWatchPage'))
 const CommercialLeasingPage = lazy(() => import('./modules/commercial/pages/CommercialLeasingPage'))
@@ -1387,6 +1388,7 @@ function AppRoutes() {
               <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout onLogout={logout} user={session?.user || null} /></AppErrorBoundary></RoleRoute>}>
                 <Route index element={<CommercialDashboard />} />
                 <Route path="dashboard" element={<CommercialDashboard />} />
+                <Route path="command-centre" element={<CommercialDashboard />} />
                 <Route path="principal" element={<Navigate to="/commercial/agency" replace />} />
                 <Route path="companies" element={<Navigate to="/commercial/clients?tab=companies" replace />} />
                 <Route path="companies/:companyId" element={<CommercialCompanyWorkspacePage />} />
@@ -1408,8 +1410,10 @@ function AppRoutes() {
                 <Route path="leads" element={<CommercialLeadsPage />} />
                 <Route path="canvassing" element={<CommercialCanvassingPage />} />
                 <Route path="leasing/leads" element={<CommercialLeadsPage dealType="lease" />} />
+                <Route path="leasing/leads/:leadId" element={<CommercialLeadDetailPage dealType="lease" />} />
                 <Route path="leasing/canvassing" element={<CommercialCanvassingPage dealType="lease" />} />
                 <Route path="sales/leads" element={<CommercialLeadsPage dealType="sale" />} />
+                <Route path="sales/leads/:leadId" element={<CommercialLeadDetailPage dealType="sale" />} />
                 <Route path="sales/canvassing" element={<CommercialCanvassingPage dealType="sale" />} />
                 <Route path="calendar" element={<CommercialCalendarPage />} />
                 <Route path="requirements" element={<Navigate to="/commercial/pipeline" replace />} />

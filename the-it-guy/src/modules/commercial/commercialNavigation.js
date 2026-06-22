@@ -24,13 +24,23 @@ export const COMMERCIAL_DASHBOARD_NAV_ITEM = {
   activePaths: ['/commercial', '/commercial/dashboard'],
 }
 
+export const COMMERCIAL_COMMAND_CENTRE_NAV_ITEM = {
+  label: 'Command Centre',
+  to: '/commercial/command-centre',
+  exact: true,
+  icon: BarChart3,
+  activePaths: ['/commercial/command-centre'],
+}
+
 export const COMMERCIAL_NAV_SECTIONS = [
+  // Transactions visibility is covered by leasing and sales Deals routes plus transaction workspace deep links.
   {
     id: 'pipeline',
     label: 'Pipeline',
     icon: Workflow,
     items: [
       { label: 'Overview', to: '/commercial/pipeline', icon: LayoutDashboard, activePaths: ['/commercial/pipeline', '/commercial/leads', '/commercial/canvassing', '/commercial/requirements'] },
+      { label: 'Calendar', to: '/commercial/calendar', icon: CalendarDays, activePaths: ['/commercial/calendar'] },
     ],
   },
   {
@@ -89,6 +99,7 @@ export const COMMERCIAL_BOTTOM_NAV_ITEMS = [
 
 export const COMMERCIAL_NAV_ITEMS = [
   COMMERCIAL_DASHBOARD_NAV_ITEM,
+  COMMERCIAL_COMMAND_CENTRE_NAV_ITEM,
   ...COMMERCIAL_NAV_SECTIONS.flatMap((section) => section.items),
   ...COMMERCIAL_BOTTOM_NAV_ITEMS,
 ]
@@ -101,6 +112,7 @@ export const COMMERCIAL_MOBILE_PRIMARY_NAV_ITEMS = [
 ]
 
 export const COMMERCIAL_MOBILE_MORE_NAV_ITEMS = [
+  COMMERCIAL_COMMAND_CENTRE_NAV_ITEM,
   COMMERCIAL_NAV_SECTIONS[1].items[0],
   COMMERCIAL_NAV_SECTIONS[1].items[2],
   COMMERCIAL_NAV_SECTIONS[1].items[3],

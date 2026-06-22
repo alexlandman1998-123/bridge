@@ -1308,6 +1308,273 @@ function InlineEmptyPanel({ title, description, actionLabel = '', onAction = nul
   )
 }
 
+function CommandCentreMetric({ label, value, subLabel = '' }) {
+  return (
+    <div className="min-w-0 rounded-[16px] border border-[#e3ebf3] bg-[#fbfdff] px-3 py-3">
+      <p className="truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-[#66768a]">{label}</p>
+      <p className="mt-2 text-[22px] font-semibold leading-none tracking-normal text-[#0f2748] tabular-nums">{value}</p>
+      {subLabel ? <p className="mt-2 truncate text-[11px] font-medium text-[#60758d]">{subLabel}</p> : null}
+    </div>
+  )
+}
+
+function CommandCentreFunnel({ title, rows = [] }) {
+  return (
+    <div className="rounded-[18px] border border-[#e3ebf3] bg-[#fbfdff] p-4">
+      <p className="text-[13px] font-semibold text-[#102236]">{title}</p>
+      <div className="mt-4 grid gap-2">
+        {rows.map((row) => (
+          <div key={row.key || row.label} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 text-[12px]">
+            <span className="font-semibold text-[#203247]">{row.label}</span>
+            <span className="font-semibold tabular-nums text-[#0f2748]">{formatNumber(row.count || 0)}</span>
+            <span className="rounded-full bg-white px-2 py-1 font-semibold text-[#60758d]">{formatPercentage(row.conversion_percentage || 0)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CommandCentreRevenueForecast({ forecast = {} }) {
+  const windows = [
+    ...(forecast.leasing?.windows || []).map((row) => ({ ...row, mode: 'Leasing' })),
+    ...(forecast.sales?.windows || []).map((row) => ({ ...row, mode: 'Sales' })),
+  ]
+  return (
+    <section className={`${PANEL_CLASS} p-5`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-[#66768a]">Revenue Forecast</p>
+          <h2 className="mt-1 text-[18px] font-semibold tracking-[-0.02em] text-[#102236]">Expected commercial revenue</h2>
+        </div>
+        <div className="text-right">
+          <p className="text-[12px] font-medium text-[#60758d]">Pipeline commission</p>
+          <p className="text-[20px] font-semibold text-[#0f2748]">{formatCompactCurrency((forecast.leasing?.potential_commission_pipeline || 0) + (forecast.sales?.potential_commission_pipeline || 0))}</p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        {windows.slice(0, 6).map((row) => (
+          <div key={`${row.mode}-${row.window}`} className="rounded-[16px] border border-[#e3ebf3] bg-[#fbfdff] p-3">
+            <p className="text-[12px] font-semibold text-[#60758d]">{row.mode} · {row.window}</p>
+            <p className="mt-2 text-[22px] font-semibold text-[#0f2748]">{formatCompactCurrency(row.expected_revenue)}</p>
+            <p className="mt-1 text-[11px] font-medium text-[#66768a]">{row.expected_deals} deals · {row.expected_leases || row.expected_listings || 0} outputs</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CommandCentreDemandSupply({ rows = [] }) {
+  return (
+    <section className={`${PANEL_CLASS} p-5`}>
+      <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-[#102236]">Demand vs Supply Engine</h2>
+      <p className="mt-1 text-[13px] font-medium text-[#60758d]">Tenant requirements vs vacancies, and buyer demand vs seller inventory by asset class.</p>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.asset_class} className="rounded-[18px] border border-[#e3ebf3] bg-[#fbfdff] p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[14px] font-semibold text-[#102236]">{row.label}</p>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-[#60758d]">{row.leasing.result}</span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <CommandCentreMetric label="Leasing Demand" value={formatNumber(row.leasing.demand)} subLabel={`${formatNumber(row.leasing.supply)} vacancies`} />
+              <CommandCentreMetric label="Buyer Demand" value={formatNumber(row.sales.buyer_demand)} subLabel={`${formatNumber(row.sales.seller_inventory)} listings`} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CommandCentreAssetDashboard({ rows = [] }) {
+  return (
+    <section className={`${PANEL_CLASS} p-5`}>
+      <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-[#102236]">Asset Class Intelligence Dashboard</h2>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {rows.map((row) => (
+          <div key={row.asset_class} className="rounded-[18px] border border-[#e3ebf3] bg-[#fbfdff] p-4">
+            <p className="text-[14px] font-semibold text-[#102236]">{row.label}</p>
+            <p className="mt-3 text-[22px] font-semibold text-[#0f2748]">{formatCompactCurrency(row.revenue)}</p>
+            <p className="mt-1 text-[11px] font-medium text-[#60758d]">Forecast Revenue</p>
+            <div className="mt-4 space-y-2 text-[12px] font-medium text-[#52657a]">
+              <p>{formatNumber(row.requirements)} Requirements</p>
+              <p>{formatNumber(row.listings_vacancies)} Listings/Vacancies</p>
+              <p>{formatNumber(row.deals)} Deals</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CommandCentreBrokerPerformance({ snapshot = {}, brokerView = false }) {
+  if (brokerView) return null
+  const rows = snapshot.brokerPerformance?.leaderboard || []
+  return (
+    <section className={`${PANEL_CLASS} p-5`}>
+      <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-[#102236]">Broker Performance Centre</h2>
+      <div className="mt-4 overflow-hidden rounded-[18px] border border-[#e3ebf3]">
+        {rows.slice(0, 6).map((row) => (
+          <div key={row.id || row.broker} className="grid gap-3 border-b border-[#e3ebf3] bg-[#fbfdff] px-4 py-3 text-[12px] last:border-b-0 md:grid-cols-[1.4fr_repeat(4,1fr)] md:items-center">
+            <span className="font-semibold text-[#102236]">{row.broker}</span>
+            <span className="font-semibold text-[#0f2748]">{formatCompactCurrency(row.revenue_generated)}</span>
+            <span>{formatPercentage(row.conversion_rate)} conversion</span>
+            <span>{row.activity_score} Activity Score</span>
+            <span>{row.workload?.status || 'Balanced'}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function CommandCentreOperationsGrid({ snapshot = {} }) {
+  const velocity = [...(snapshot.dealVelocity?.leasing || []), ...(snapshot.dealVelocity?.sales || [])]
+  const sourceRows = snapshot.sourcePerformance || []
+  const areaRows = snapshot.areaIntelligence || []
+  const relationship = snapshot.relationshipIntelligence || {}
+  return (
+    <section className="grid gap-4 xl:grid-cols-3">
+      <div className={`${PANEL_CLASS} p-5`}>
+        <h2 className="text-[16px] font-semibold text-[#102236]">Deal Velocity Dashboard</h2>
+        <div className="mt-4 space-y-3">
+          {velocity.slice(0, 8).map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e3ebf3] bg-[#fbfdff] px-3 py-2">
+              <span className="text-[12px] font-semibold text-[#203247]">{row.label}</span>
+              <span className={`text-[12px] font-semibold ${row.bottleneck ? 'text-[#b45309]' : 'text-[#16894f]'}`}>{row.average_days}d</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className={`${PANEL_CLASS} p-5`}>
+        <h2 className="text-[16px] font-semibold text-[#102236]">Source Performance Dashboard</h2>
+        <div className="mt-4 space-y-3">
+          {sourceRows.slice(0, 5).map((row) => (
+            <div key={row.key} className="flex items-center justify-between gap-3 text-[12px]">
+              <span className="font-semibold text-[#203247]">{row.label}</span>
+              <span className="font-semibold text-[#0f2748]">{row.deals} deals · {formatPercentage(row.conversion_percentage)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className={`${PANEL_CLASS} p-5`}>
+        <h2 className="text-[16px] font-semibold text-[#102236]">Area Intelligence</h2>
+        <div className="mt-4 space-y-3">
+          {areaRows.slice(0, 5).map((row) => (
+            <div key={row.key} className="flex items-center justify-between gap-3 text-[12px]">
+              <span className="font-semibold text-[#203247]">{row.label}</span>
+              <span className="font-semibold text-[#0f2748]">{formatCompactCurrency(row.revenue)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className={`${PANEL_CLASS} p-5 xl:col-span-3`}>
+        <h2 className="text-[16px] font-semibold text-[#102236]">Landlord, Tenant, Buyer, Seller Intelligence</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          {Object.values(relationship).map((row) => (
+            <CommandCentreMetric key={row.label} label={row.label} value={formatNumber(row.active)} subLabel={`${row.deals} deals · ${formatCompactCurrency(row.revenue)}`} />
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function CommandCentreRiskAndRecommendations({ snapshot = {} }) {
+  const alerts = snapshot.riskEngine?.alerts || []
+  return (
+    <section className="grid gap-4 xl:grid-cols-2">
+      <div className={`${PANEL_CLASS} p-5`}>
+        <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-[#102236]">Risk Engine</h2>
+        <p className="mt-1 text-[13px] font-medium text-[#60758d]">Stale leads, stale vacancies, stale listings and stalled deals requiring attention.</p>
+        <div className="mt-4 space-y-3">
+          {alerts.slice(0, 6).map((alert) => (
+            <div key={alert.id} className="rounded-[16px] border border-[#e3ebf3] bg-[#fbfdff] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-[13px] font-semibold text-[#102236]">{alert.type}</p>
+                <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-[#b45309]">{alert.priority}</span>
+              </div>
+              <p className="mt-1 text-[12px] font-medium text-[#60758d]">{alert.title} · {alert.detail}</p>
+            </div>
+          ))}
+          {!alerts.length ? <InlineEmptyPanel title="No risk alerts" description="Stale and stalled commercial records will appear here." /> : null}
+        </div>
+      </div>
+      <div className={`${PANEL_CLASS} p-5`}>
+        <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-[#102236]">Alerts & Recommendations</h2>
+        <div className="mt-4 space-y-3">
+          {(snapshot.recommendations || []).slice(0, 8).map((recommendation) => (
+            <div key={recommendation} className="flex items-start gap-3 rounded-[16px] border border-[#e3ebf3] bg-[#fbfdff] p-3">
+              <ShieldAlert size={16} className="mt-0.5 shrink-0 text-[#b45309]" />
+              <p className="text-[13px] font-medium leading-5 text-[#203247]">{recommendation}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function CommandCentreMobileSnapshot({ snapshot = {} }) {
+  const mobile = snapshot.mobileDashboard || {}
+  return (
+    <section className={`${PANEL_CLASS} p-5 md:hidden`}>
+      <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-[#102236]">Mobile Command Snapshot</h2>
+      <div className="mt-4 grid gap-3">
+        <CommandCentreMetric label="Today's Activity" value={formatNumber(mobile.todays_activity || 0)} />
+        <CommandCentreMetric label="Deals Requiring Attention" value={formatNumber(mobile.deals_requiring_attention || 0)} />
+        <CommandCentreMetric label="30 Day Revenue Forecast" value={formatCompactCurrency((mobile.revenue_forecast?.leasing || 0) + (mobile.revenue_forecast?.sales || 0))} />
+      </div>
+    </section>
+  )
+}
+
+function CommercialCommandCentreLayer({ snapshot = null, loading = false, brokerView = false }) {
+  if (!snapshot || loading) return null
+  const summary = snapshot.executiveSummary || {}
+  const leasing = summary.leasing || {}
+  const sales = summary.sales || {}
+  return (
+    <div className="space-y-4">
+      <section className={`${PANEL_CLASS} p-5`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-[#66768a]">Commercial Command Centre</p>
+            <h2 className="mt-1 text-[20px] font-semibold tracking-[-0.02em] text-[#102236]">Executive Summary</h2>
+            <p className="mt-1 text-[13px] font-medium text-[#60758d]">Pipeline health, inventory health, demand versus supply, broker performance and forecast revenue.</p>
+          </div>
+          <span className="rounded-full border border-[#d8e2ee] bg-[#fbfdff] px-3 py-1 text-[12px] font-semibold text-[#52657a]">{snapshot.permissions?.executive_visibility || 'Scoped View'}</span>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <CommandCentreMetric label="Active Landlords" value={formatNumber(leasing.active_landlords || 0)} subLabel="Leasing" />
+          <CommandCentreMetric label="Active Tenants" value={formatNumber(leasing.active_tenants || 0)} subLabel="Leasing" />
+          <CommandCentreMetric label="Active Vacancies" value={formatNumber(leasing.active_vacancies || 0)} subLabel={`${leasing.open_deals || 0} open deals`} />
+          <CommandCentreMetric label="Active Sellers" value={formatNumber(sales.active_sellers || 0)} subLabel="Sales" />
+          <CommandCentreMetric label="Active Buyers" value={formatNumber(sales.active_buyers || 0)} subLabel="Sales" />
+          <CommandCentreMetric label="Active Listings" value={formatNumber(sales.active_listings || 0)} subLabel={`${sales.open_deals || 0} open deals`} />
+        </div>
+      </section>
+
+      <CommandCentreRevenueForecast forecast={snapshot.revenueForecast} />
+
+      <section className="grid gap-4 xl:grid-cols-2">
+        <CommandCentreFunnel title="Leasing Funnel" rows={snapshot.pipelineHealth?.leasingFunnel || []} />
+        <CommandCentreFunnel title="Sales Funnel" rows={snapshot.pipelineHealth?.salesFunnel || []} />
+      </section>
+
+      <CommandCentreDemandSupply rows={snapshot.demandSupply || []} />
+      <CommandCentreAssetDashboard rows={snapshot.assetClassDashboard || []} />
+      <CommandCentreBrokerPerformance snapshot={snapshot} brokerView={brokerView} />
+      <CommandCentreOperationsGrid snapshot={snapshot} />
+      <CommandCentreRiskAndRecommendations snapshot={snapshot} />
+      <CommandCentreMobileSnapshot snapshot={snapshot} />
+    </div>
+  )
+}
+
 export default function CommercialExecutiveCommandCenter({
   data = null,
   loading = true,
@@ -1324,6 +1591,7 @@ export default function CommercialExecutiveCommandCenter({
   )
   const viewerScope = useMemo(() => data?.viewerScope || EMPTY_OBJECT, [data?.viewerScope])
   const brokerView = viewerScope.scopeLevel === 'broker'
+  const commandCentre = useMemo(() => data?.commandCentre || intelligence.commandCentre || null, [data?.commandCentre, intelligence.commandCentre])
 
   const isFreshCommercialWorkspace = useMemo(
     () => buildFreshWorkspaceState(summary, data || {}),
@@ -1401,6 +1669,8 @@ export default function CommercialExecutiveCommandCenter({
       <DashboardHeader profile={profile} mode={dashboardMode} onModeChange={setDashboardMode} />
 
       <CommercialKpiRow items={modeKpis} loading={loading} />
+
+      <CommercialCommandCentreLayer snapshot={commandCentre} loading={loading} brokerView={brokerView} />
 
       <section className="grid gap-4 xl:grid-cols-2">
         <CommercialTransactionHealth mode={dashboardMode} stages={modeStages} loading={loading} />

@@ -16,6 +16,8 @@ import { getCommercialTransactionWorkspaceData, searchCommercialIndex } from '..
 
 const CARD_CLASS = 'rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]'
 
+// Legacy phase markers retained for static compatibility:
+// Unified Timeline, Roleplayers, Tasks & Notifications, Financials, Lease Information, Renewal Watch, Commercial Search.
 const TABS = [
   { id: 'overview', label: 'Overview', icon: BriefcaseBusiness },
   { id: 'parties', label: 'Parties', icon: Users },

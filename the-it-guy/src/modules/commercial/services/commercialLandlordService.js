@@ -30,6 +30,27 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function commercialAddressFields(value = null) {
+  if (!value || typeof value !== 'object') return {}
+  const placeId = normalizeText(value.googlePlaceId || value.placeId)
+  return {
+    formatted_address: normalizeText(value.formattedAddress) || null,
+    street_number: normalizeText(value.streetNumber) || null,
+    route: normalizeText(value.route) || null,
+    street_name: normalizeText(value.streetName || value.route) || null,
+    street_address: normalizeText(value.streetAddress || value.formattedAddress) || null,
+    postal_code: normalizeText(value.postalCode) || null,
+    country: normalizeText(value.country) || null,
+    latitude: Number.isFinite(Number(value.latitude)) ? Number(value.latitude) : null,
+    longitude: Number.isFinite(Number(value.longitude)) ? Number(value.longitude) : null,
+    place_id: placeId || null,
+    google_place_id: placeId || null,
+    address_components: value.addressComponents || null,
+    raw_google_response: value.rawGoogleResponse || null,
+    geocoding_status: normalizeText(value.geocodingStatus) || (placeId ? 'google_place' : 'manual'),
+  }
+}
+
 function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -462,10 +483,11 @@ async function upsertPropertyRows(client, { landlord = {}, properties = [], cont
       property_name: normalizeText(property.property_name),
       property_type: normalizeText(property.property_type) || null,
       address: normalizeText(property.address) || null,
+      ...commercialAddressFields(property.addressValue || property.address_value),
       suburb: normalizeText(property.suburb) || null,
       city: normalizeText(property.city) || null,
       province: normalizeText(property.province) || null,
-      country: 'South Africa',
+      country: normalizeText(property.addressValue?.country || property.address_value?.country) || 'South Africa',
       gla_m2: normalizeText(property.gla_m2) || null,
       status: 'active',
       notes: normalizeText(property.notes) || null,

@@ -37,6 +37,8 @@ import {
   updateCommercialOnboardingProgress,
   uploadCommercialOnboardingDocument,
 } from '../services/commercialOnboardingApi'
+import CommercialAddressField from '../components/CommercialAddressField'
+import { buildManualCommercialAddressValue } from '../components/commercialAddressFieldUtils'
 
 const PAGE_CLASS = 'mx-auto w-full max-w-6xl px-4 py-5 text-[#1f2b24] sm:px-6 lg:px-8'
 const CARD_CLASS = 'rounded-[28px] border border-[#e4dccd] bg-white p-5 shadow-[0_18px_45px_rgba(37,48,39,0.07)] sm:p-6'
@@ -123,8 +125,29 @@ function fieldWrapperClass(field = {}) {
     : ''
 }
 
-function FieldControl({ field, value, onChange }) {
+function isAddressField(field = {}) {
+  return ['propertyAddress', 'currentPremises', 'preferredArea'].includes(field.name)
+}
+
+function FieldControl({ field, value, structuredValue, onChange }) {
   if (!field) return null
+  if (isAddressField(field)) {
+    const mode = field.name === 'preferredArea' ? 'area' : 'full_address'
+    return (
+      <div className={`grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2`}>
+        <CommercialAddressField
+          mode={mode}
+          value={structuredValue || buildManualCommercialAddressValue(value)}
+          placeholder={field.name === 'preferredArea' ? 'Search suburb, city or node...' : 'Start typing the property address...'}
+          description={field.name === 'preferredArea'
+            ? 'Select an area-level result, or type manually if the preferred node is not listed.'
+            : 'Select a Google Places result to store suburb, city, province, postal code, and map data. Manual entries are allowed.'}
+          onChange={(nextValue) => onChange(nextValue?.formattedAddress || '', nextValue)}
+          onManualInput={(nextValue) => onChange(nextValue?.formattedAddress || '', nextValue)}
+        />
+      </div>
+    )
+  }
   if (field.type === COMMERCIAL_ONBOARDING_FIELD_TYPES.checkbox) {
     return (
       <label className={`flex min-h-11 items-center gap-3 rounded-2xl border border-[#ded6c8] bg-white px-4 py-3 text-sm font-semibold text-[#1f2b24] ${fieldWrapperClass(field)}`}>
@@ -198,7 +221,16 @@ function SectionCard({ section, responses, onChange }) {
       {fields.length ? (
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           {fields.map((field) => (
-            <FieldControl key={field.name} field={field} value={responses[field.name]} onChange={(value) => onChange(field.name, value)} />
+            <FieldControl
+              key={field.name}
+              field={field}
+              value={responses[field.name]}
+              structuredValue={responses[`${field.name}AddressDetails`]}
+              onChange={(value, structuredValue) => {
+                onChange(field.name, value)
+                if (structuredValue !== undefined) onChange(`${field.name}AddressDetails`, structuredValue)
+              }}
+            />
           ))}
         </div>
       ) : null}

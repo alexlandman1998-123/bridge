@@ -100,6 +100,7 @@ export function createInitialValues(lookups = {}) {
     new_landlord_contact: '',
     new_property_name: '',
     new_property_address: '',
+    new_property_address_value: null,
     new_property_suburb: '',
     new_property_city: '',
     new_property_province: '',
@@ -423,6 +424,30 @@ function compactObject(value) {
   }, {})
 }
 
+function addressValuePayload(value = null) {
+  if (!value || typeof value !== 'object') return {}
+  const placeId = normalizeText(value.googlePlaceId || value.placeId)
+  return compactObject({
+    formatted_address: normalizeText(value.formattedAddress),
+    street_number: normalizeText(value.streetNumber),
+    route: normalizeText(value.route),
+    street_name: normalizeText(value.streetName || value.route),
+    street_address: normalizeText(value.streetAddress || value.formattedAddress),
+    suburb: normalizeText(value.suburb),
+    city: normalizeText(value.city),
+    province: normalizeText(value.province),
+    postal_code: normalizeText(value.postalCode),
+    country: normalizeText(value.country),
+    latitude: toNumber(value.latitude),
+    longitude: toNumber(value.longitude),
+    place_id: placeId,
+    google_place_id: placeId,
+    address_components: value.addressComponents || null,
+    raw_google_response: value.rawGoogleResponse || null,
+    geocoding_status: normalizeText(value.geocodingStatus) || (placeId ? 'google_place' : 'manual'),
+  })
+}
+
 function resolveOptionLabel(options = [], value = '') {
   return options.find((option) => option.value === value)?.label || value || '-'
 }
@@ -448,6 +473,7 @@ export function buildListingPayload(values = {}, lookups = {}) {
   const availableFrom = intent === 'sale'
     ? ''
     : firstPresent(values.availability_date, values.occupation_date, '')
+  const newPropertyAddressPayload = propertyMode === 'new' ? addressValuePayload(values.new_property_address_value) : {}
 
   return {
     listing_type: intent,
@@ -477,6 +503,19 @@ export function buildListingPayload(values = {}, lookups = {}) {
     new_property_city: propertyMode === 'new' ? normalizeText(values.new_property_city) || null : null,
     new_property_province: propertyMode === 'new' ? normalizeText(values.new_property_province) || null : null,
     new_property_country: propertyMode === 'new' ? normalizeText(values.new_property_country) || 'South Africa' : null,
+    new_property_formatted_address: newPropertyAddressPayload.formatted_address || null,
+    new_property_street_number: newPropertyAddressPayload.street_number || null,
+    new_property_route: newPropertyAddressPayload.route || null,
+    new_property_street_name: newPropertyAddressPayload.street_name || null,
+    new_property_street_address: newPropertyAddressPayload.street_address || null,
+    new_property_postal_code: newPropertyAddressPayload.postal_code || null,
+    new_property_latitude: newPropertyAddressPayload.latitude ?? null,
+    new_property_longitude: newPropertyAddressPayload.longitude ?? null,
+    new_property_place_id: newPropertyAddressPayload.place_id || null,
+    new_property_google_place_id: newPropertyAddressPayload.google_place_id || null,
+    new_property_address_components: newPropertyAddressPayload.address_components || null,
+    new_property_raw_google_response: newPropertyAddressPayload.raw_google_response || null,
+    new_property_geocoding_status: newPropertyAddressPayload.geocoding_status || null,
     new_property_type: propertyMode === 'new' ? normalizeText(values.property_category) || null : null,
     new_vacancy_name: intent === 'lease' && !normalizeText(values.existing_vacancy_id) ? vacancyName : null,
     new_vacancy_unit: intent === 'lease' && !normalizeText(values.existing_vacancy_id) ? normalizeText(values.unit_or_floor_suite) || null : null,
@@ -495,6 +534,10 @@ export function buildListingPayload(values = {}, lookups = {}) {
         city: normalizeText(values.new_property_city),
         province: normalizeText(values.new_property_province),
         country: normalizeText(values.new_property_country),
+        google_place_id: newPropertyAddressPayload.google_place_id,
+        latitude: newPropertyAddressPayload.latitude,
+        longitude: newPropertyAddressPayload.longitude,
+        geocoding_status: newPropertyAddressPayload.geocoding_status,
       },
       contact_context: {
         landlord_id: normalizeText(values.landlord_id),

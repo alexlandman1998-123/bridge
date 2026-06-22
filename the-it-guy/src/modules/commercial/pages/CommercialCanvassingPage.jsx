@@ -51,6 +51,8 @@ import { validateCommercialProspectDraft } from '../commercialProspectValidation
 import Button from '../../../components/ui/Button'
 import Field from '../../../components/ui/Field'
 import Modal from '../../../components/ui/Modal'
+import CommercialAddressField from '../components/CommercialAddressField'
+import { buildManualCommercialAddressValue } from '../components/commercialAddressFieldUtils'
 import {
   createCommercialCompany,
   createCommercialContact,
@@ -262,6 +264,39 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function commercialAddressPayload(value = null) {
+  if (!value || typeof value !== 'object') return {}
+  const placeId = normalizeText(value.googlePlaceId || value.placeId)
+  return {
+    formatted_address: normalizeText(value.formattedAddress) || null,
+    street_number: normalizeText(value.streetNumber) || null,
+    route: normalizeText(value.route) || null,
+    street_name: normalizeText(value.streetName || value.route) || null,
+    street_address: normalizeText(value.streetAddress || value.formattedAddress) || null,
+    suburb: normalizeText(value.suburb) || null,
+    city: normalizeText(value.city) || null,
+    province: normalizeText(value.province) || null,
+    postal_code: normalizeText(value.postalCode) || null,
+    country: normalizeText(value.country) || null,
+    latitude: Number.isFinite(Number(value.latitude)) ? Number(value.latitude) : null,
+    longitude: Number.isFinite(Number(value.longitude)) ? Number(value.longitude) : null,
+    place_id: placeId || null,
+    google_place_id: placeId || null,
+    address_components: value.addressComponents || null,
+    raw_google_response: value.rawGoogleResponse || null,
+    geocoding_status: normalizeText(value.geocodingStatus) || (placeId ? 'google_place' : 'manual'),
+  }
+}
+
+function compactCommercialAddressPayload(value = null) {
+  return Object.fromEntries(Object.entries(commercialAddressPayload(value)).filter(([, entry]) => entry !== null && entry !== ''))
+}
+
+function getProspectAreaAddress(prospect = {}) {
+  const roleSpecific = prospect.roleSpecific || prospect.metadata?.roleSpecific || {}
+  return roleSpecific.preferredAreaAddress || roleSpecific.propertyAddressDetails || null
+}
+
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
 }
@@ -341,10 +376,12 @@ function buildInitialDraft(defaultBrokerId = '', defaults = {}) {
     phone: '',
     email: '',
     propertyAddress: '',
+    propertyAddressValue: null,
     propertyName: '',
     portfolioName: '',
     lookingFor: '',
     preferredArea: '',
+    preferredAreaValue: null,
     spaceRequirement: '',
     sizeRange: '',
     budgetRange: '',
@@ -820,7 +857,31 @@ function LeaseAssetPill({ option, active = false, onClick }) {
   )
 }
 
-function renderSellerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+function ProspectAddressField({
+  createDraft,
+  createErrors,
+  updateCreateAddressField,
+  field,
+  valueField,
+  mode = 'full_address',
+  placeholder,
+  description,
+}) {
+  const currentValue = createDraft[valueField] || buildManualCommercialAddressValue(createDraft[field])
+  return (
+    <CommercialAddressField
+      mode={mode}
+      value={currentValue}
+      placeholder={placeholder}
+      description={description}
+      error={createErrors[field]}
+      onChange={(value) => updateCreateAddressField(field, valueField, value)}
+      onManualInput={(value) => updateCreateAddressField(field, valueField, value)}
+    />
+  )
+}
+
+function renderSellerFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) {
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2">
@@ -839,7 +900,16 @@ function renderSellerFields({ createDraft, createErrors, updateCreateDraftField,
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <CreateLabel label="Property / Asset Address or Area *" error={createErrors.propertyAddress}>
-          <Field value={createDraft.propertyAddress} onChange={(event) => updateCreateDraftField('propertyAddress', event.target.value)} placeholder="Suburb, node, street address or area" />
+          <ProspectAddressField
+            createDraft={createDraft}
+            createErrors={createErrors}
+            updateCreateAddressField={updateCreateAddressField}
+            field="propertyAddress"
+            valueField="propertyAddressValue"
+            mode="full_address"
+            placeholder="Start typing the property address..."
+            description="Select a property address, suburb, or node. Manual entries are allowed."
+          />
         </CreateLabel>
         <CreateLabel label="Property Category *" error={createErrors.propertyCategory}>
           <Field as="select" value={createDraft.propertyCategory} onChange={(event) => updateCreateDraftField('propertyCategory', event.target.value)}>
@@ -888,7 +958,7 @@ function renderSellerFields({ createDraft, createErrors, updateCreateDraftField,
   )
 }
 
-function renderBuyerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+function renderBuyerFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) {
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2">
@@ -918,7 +988,16 @@ function renderBuyerFields({ createDraft, createErrors, updateCreateDraftField, 
           </Field>
         </CreateLabel>
         <CreateLabel label="Preferred Area *" error={createErrors.preferredArea}>
-          <Field value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} placeholder="Preferred area or node" />
+          <ProspectAddressField
+            createDraft={createDraft}
+            createErrors={createErrors}
+            updateCreateAddressField={updateCreateAddressField}
+            field="preferredArea"
+            valueField="preferredAreaValue"
+            mode="area"
+            placeholder="Search suburb, city or node..."
+            description="Area-level Places results are supported, and manual entries still save."
+          />
         </CreateLabel>
         <CreateLabel label="Budget Range">
           <Field value={createDraft.budgetRange} onChange={(event) => updateCreateDraftField('budgetRange', event.target.value)} placeholder="e.g. R100 000 - R150 000" />
@@ -1163,7 +1242,7 @@ function renderLeaseProspectingFields({ createDraft, createErrors, updateCreateD
   )
 }
 
-function renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+function renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) {
   return (
     <div className="space-y-6">
       <LeaseCreateSection number="1" title="Contact / Company Details" icon={Users}>
@@ -1186,10 +1265,16 @@ function renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraf
       <LeaseCreateSection number="2" title="Property Details" icon={Building2}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,1.15fr)]">
           <CreateLabel label="Property Address *" error={createErrors.propertyAddress}>
-            <div className="relative">
-              <Field value={createDraft.propertyAddress} onChange={(event) => updateCreateDraftField('propertyAddress', event.target.value)} placeholder="Start typing an address..." className="h-12 rounded-[8px] pr-10 text-sm" />
-              <MapPin size={17} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#183153]" />
-            </div>
+            <ProspectAddressField
+              createDraft={createDraft}
+              createErrors={createErrors}
+              updateCreateAddressField={updateCreateAddressField}
+              field="propertyAddress"
+              valueField="propertyAddressValue"
+              mode="full_address"
+              placeholder="Start typing the property address..."
+              description="We'll capture the area and suburb automatically when available."
+            />
             <p className="text-xs font-medium text-[#5d718b]">We'll capture the area and suburb automatically.</p>
           </CreateLabel>
           <CreateLabel label="Area / Node">
@@ -1207,7 +1292,7 @@ function renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraf
   )
 }
 
-function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) {
   return (
     <div className="space-y-6">
       <LeaseCreateSection number="1" title="Contact / Company Details" icon={Users}>
@@ -1230,7 +1315,16 @@ function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftF
       <LeaseCreateSection number="2" title="Business Details" icon={Building2}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.15fr)]">
           <CreateLabel label="Current Address / Area">
-            <Field value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} placeholder="Current address or operating node" className="h-12 rounded-[8px] text-sm" />
+            <ProspectAddressField
+              createDraft={createDraft}
+              createErrors={createErrors}
+              updateCreateAddressField={updateCreateAddressField}
+              field="preferredArea"
+              valueField="preferredAreaValue"
+              mode="area"
+              placeholder="Search current premises..."
+              description="Use a premises address, suburb, or operating node."
+            />
           </CreateLabel>
           <CreateLabel label="Industry">
             <Field value={createDraft.industry} onChange={(event) => updateCreateDraftField('industry', event.target.value)} placeholder="e.g. Logistics" className="h-12 rounded-[8px] text-sm" />
@@ -1244,7 +1338,7 @@ function renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftF
   )
 }
 
-function renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+function renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) {
   return (
     <div className="space-y-6">
       <LeaseCreateSection number="1" title="Owner / Company Details" icon={Users}>
@@ -1267,10 +1361,16 @@ function renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftF
       <LeaseCreateSection number="2" title="Sale Property Details" icon={Building2}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)_minmax(0,1.15fr)]">
           <CreateLabel label="Property Address / Area *" error={createErrors.propertyAddress}>
-            <div className="relative">
-              <Field value={createDraft.propertyAddress} onChange={(event) => updateCreateDraftField('propertyAddress', event.target.value)} placeholder="Start typing an address or area..." className="h-12 rounded-[8px] pr-10 text-sm" />
-              <MapPin size={17} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#183153]" />
-            </div>
+            <ProspectAddressField
+              createDraft={createDraft}
+              createErrors={createErrors}
+              updateCreateAddressField={updateCreateAddressField}
+              field="propertyAddress"
+              valueField="propertyAddressValue"
+              mode="full_address"
+              placeholder="Start typing an address or area..."
+              description="Use the suburb, node, street address, or asset name if the exact address is not confirmed."
+            />
             <p className="text-xs font-medium text-[#5d718b]">Use the suburb, node, street address, or asset name if the exact address is not confirmed.</p>
           </CreateLabel>
           <CreateLabel label="Area / Node">
@@ -1302,7 +1402,7 @@ function renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftF
   )
 }
 
-function renderSalesBuyerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) {
+function renderSalesBuyerFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) {
   return (
     <div className="space-y-6">
       <LeaseCreateSection number="1" title="Buyer / Company Details" icon={Users}>
@@ -1325,7 +1425,16 @@ function renderSalesBuyerFields({ createDraft, createErrors, updateCreateDraftFi
       <LeaseCreateSection number="2" title="Purchase Requirement" icon={Building2}>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.75fr)_minmax(0,1.15fr)]">
           <CreateLabel label="Preferred Area *" error={createErrors.preferredArea}>
-            <Field value={createDraft.preferredArea} onChange={(event) => updateCreateDraftField('preferredArea', event.target.value)} placeholder="Preferred suburb, node, or region" className="h-12 rounded-[8px] text-sm" />
+            <ProspectAddressField
+              createDraft={createDraft}
+              createErrors={createErrors}
+              updateCreateAddressField={updateCreateAddressField}
+              field="preferredArea"
+              valueField="preferredAreaValue"
+              mode="area"
+              placeholder="Preferred suburb, node, or region"
+              description="Area-level Places results are supported, and manual entries still save."
+            />
           </CreateLabel>
           <CreateLabel label="Looking For *" error={createErrors.lookingFor}>
             <Field as="select" value={createDraft.lookingFor} onChange={(event) => updateCreateDraftField('lookingFor', event.target.value)} className="h-12 rounded-[8px] bg-white text-sm">
@@ -1709,6 +1818,32 @@ function CommercialCanvassingPage({ dealType = '' }) {
     setCreateErrors((current) => ({ ...current, [field]: '' }))
   }
 
+  function updateCreateAddressField(textField, valueField, value) {
+    setCreateDraft((current) => {
+      const nextValue = value || null
+      const next = {
+        ...current,
+        [valueField]: nextValue,
+        [textField]: nextValue?.formattedAddress || '',
+      }
+      if (textField === 'propertyAddress' && nextValue?.suburb && !current.preferredArea) {
+        next.preferredArea = nextValue.suburb
+        next.preferredAreaValue = {
+          formattedAddress: nextValue.suburb,
+          suburb: nextValue.suburb,
+          city: nextValue.city,
+          province: nextValue.province,
+          country: nextValue.country,
+          placeId: nextValue.placeId,
+          googlePlaceId: nextValue.googlePlaceId || nextValue.placeId,
+          geocodingStatus: nextValue.geocodingStatus,
+        }
+      }
+      return next
+    })
+    setCreateErrors((current) => ({ ...current, [textField]: '' }))
+  }
+
   function updateCreateRole(nextRole) {
     setCreateDraft((current) => {
       const cleared = {
@@ -1721,6 +1856,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
           ...cleared,
           lookingFor: '',
           preferredArea: '',
+          preferredAreaValue: null,
           spaceRequirement: '',
           sizeRange: '',
           budgetRange: '',
@@ -1736,6 +1872,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
         return {
           ...cleared,
           propertyAddress: '',
+          propertyAddressValue: null,
           propertyName: '',
           portfolioName: '',
           spaceRequirement: '',
@@ -1751,6 +1888,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
         return {
           ...cleared,
           propertyAddress: '',
+          propertyAddressValue: null,
           lookingFor: '',
           targetPurchaseTimeline: '',
           reasonForSelling: '',
@@ -1761,6 +1899,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
       return {
         ...cleared,
         propertyAddress: '',
+        propertyAddressValue: null,
         propertyName: '',
         portfolioName: '',
         lookingFor: '',
@@ -1843,6 +1982,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
         estimatedSaleValue: normalizeText(createDraft.estimatedSaleValue),
         estimatedMonthlyRental: normalizeText(createDraft.estimatedMonthlyRental),
         estimatedAnnualRental: normalizeText(createDraft.estimatedAnnualRental),
+        propertyAddressDetails: compactCommercialAddressPayload(createDraft.propertyAddressValue),
+        preferredAreaAddress: compactCommercialAddressPayload(createDraft.preferredAreaValue),
       },
     }
   }
@@ -2039,6 +2180,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
       }
 
       if (type === 'requirement') {
+        const requirementAddressPayload = commercialAddressPayload(getProspectAreaAddress(targetProspect))
         const createdRequirement = await createCommercialRequirement({
           organisation_id: organisationId,
           company_id: resolvedCompanyId || null,
@@ -2048,6 +2190,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
           client_type: inferClientType(targetProspect),
           property_type: normalizeText(targetProspect.propertyType) || null,
           preferred_locations: normalizeText(targetProspect.area) ? [normalizeText(targetProspect.area)] : [],
+          ...requirementAddressPayload,
           budget_min: 0,
           budget_max: Number(targetProspect.estimatedValue || 0) || null,
           target_occupation_date: normalizeText(targetProspect.nextFollowUpDate) || null,
@@ -2071,6 +2214,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
         setProspects((current) => current.map((row) => normalizeText(row.id) === normalizeText(targetProspect.id) ? (updated || targetProspect) : row))
         setMessage('Prospect converted to a lead.')
       } else if (type === 'deal') {
+        const dealAddressPayload = commercialAddressPayload(getProspectAreaAddress(targetProspect))
         const createdDeal = await createCommercialDeal({
           organisation_id: organisationId,
           company_id: resolvedCompanyId || null,
@@ -2081,6 +2225,7 @@ function CommercialCanvassingPage({ dealType = '' }) {
           property_id: normalizeText(targetProspect.propertyId) || null,
           vacancy_id: normalizeText(targetProspect.vacancyId) || null,
           listing_id: normalizeText(targetProspect.listingId) || null,
+          ...dealAddressPayload,
           assigned_broker: brokerId,
           broker_id: brokerId,
           stage: 'new',
@@ -2261,10 +2406,10 @@ function CommercialCanvassingPage({ dealType = '' }) {
             )}
           </div>
 
-          {createRole === 'seller' ? renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
-          {createRole === 'buyer' ? renderSalesBuyerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
-          {createRole === 'landlord' ? renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
-          {createRole === 'tenant' ? renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
+          {createRole === 'seller' ? renderSalesSellerFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) : null}
+          {createRole === 'buyer' ? renderSalesBuyerFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) : null}
+          {createRole === 'landlord' ? renderLeaseLandlordFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) : null}
+          {createRole === 'tenant' ? renderLeaseTenantFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) : null}
         </div>
       </form>
     </Modal>
@@ -2417,8 +2562,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
                 </div>
 
                 <div className="mt-5 grid gap-4">
-                  {createRole === 'seller' ? renderSellerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
-                  {createRole === 'buyer' ? renderBuyerFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
+                  {createRole === 'seller' ? renderSellerFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) : null}
+                  {createRole === 'buyer' ? renderBuyerFields({ createDraft, createErrors, updateCreateDraftField, updateCreateAddressField, brokerOptions }) : null}
                   {createRole === 'landlord' ? renderLandlordFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
                   {createRole === 'tenant' ? renderTenantFields({ createDraft, createErrors, updateCreateDraftField, brokerOptions }) : null}
                 </div>

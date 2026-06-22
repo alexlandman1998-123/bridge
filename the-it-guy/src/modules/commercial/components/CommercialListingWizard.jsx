@@ -26,6 +26,8 @@ import {
   validateWizardStep,
   VISIBILITY_OPTIONS,
 } from './commercialListingWizardModel'
+import CommercialAddressField from './CommercialAddressField'
+import { buildManualCommercialAddressValue } from './commercialAddressFieldUtils'
 
 const CATEGORY_ICONS = {
   commercial: Building2,
@@ -135,6 +137,25 @@ function CommercialListingWizard({ open, lookups = {}, rawLookups = {}, onClose,
       if (!current[name]) return current
       const next = { ...current }
       delete next[name]
+      return next
+    })
+  }
+
+  function setNewPropertyAddress(value) {
+    const addressValue = value || null
+    setValues((current) => ({
+      ...current,
+      new_property_address_value: addressValue,
+      new_property_address: addressValue?.formattedAddress || '',
+      new_property_suburb: addressValue?.suburb || current.new_property_suburb || '',
+      new_property_city: addressValue?.city || current.new_property_city || '',
+      new_property_province: addressValue?.province || current.new_property_province || '',
+      new_property_country: addressValue?.country || current.new_property_country || 'South Africa',
+    }))
+    setFieldErrors((current) => {
+      if (!current.new_property_address) return current
+      const next = { ...current }
+      delete next.new_property_address
       return next
     })
   }
@@ -362,7 +383,17 @@ function CommercialListingWizard({ open, lookups = {}, rawLookups = {}, onClose,
               <div className="grid gap-4 lg:grid-cols-2">
                 {renderInput({ name: 'new_property_name', label: 'Property name' })}
                 {renderSelect('landlord_id', 'Landlord / owner', lookups.landlords || [], 'Select landlord...')}
-                {renderInput({ name: 'new_property_address', label: 'Address', span: 'full' }, { span: 'full' })}
+                <div className="lg:col-span-2">
+                  <CommercialAddressField
+                    mode="full_address"
+                    value={values.new_property_address_value || buildManualCommercialAddressValue(values.new_property_address)}
+                    placeholder="Start typing the property address..."
+                    description="Select a Google Places result to fill suburb, city, province, postal code, and map data. Manual entries are allowed."
+                    error={fieldErrors.new_property_address}
+                    onChange={setNewPropertyAddress}
+                    onManualInput={setNewPropertyAddress}
+                  />
+                </div>
                 {renderInput({ name: 'new_property_suburb', label: 'Suburb' })}
                 {renderInput({ name: 'new_property_city', label: 'City' })}
                 {renderInput({ name: 'new_property_province', label: 'Province' })}

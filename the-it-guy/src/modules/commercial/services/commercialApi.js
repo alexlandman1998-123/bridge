@@ -13,7 +13,6 @@ import {
   COMMERCIAL_TEAM_SCOPE_ROLES,
   buildCommercialRolePatch,
   canManageCommercialBrokerage,
-  getCommercialMetadata,
   getCommercialScopeLevel,
   hasCommercialAccessMarker,
   isCommercialAccessReviewer,
@@ -42,25 +41,25 @@ const TABLES = {
 
 const SELECTS = {
   companies:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, company_name, company_type, industry, website, registration_number, vat_number, phone, email, address, city, province, country, primary_contact_id, legacy_source_type, legacy_source_id',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, company_name, company_type, industry, website, registration_number, vat_number, phone, email, address, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, primary_contact_id, legacy_source_type, legacy_source_id',
   contacts:
     'id, organisation_id, branch_id, team_id, broker_id, company_id, first_name, last_name, job_title, email, phone, mobile, preferred_contact_method, decision_maker, is_primary, notes, status, legacy_source_type, legacy_source_id, created_at, updated_at, created_by, updated_by',
   landlords:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, legal_name, trading_name, entity_type, registration_number, vat_number, vat_registered, registered_address, postal_address, main_email, main_phone, website, landlord_type, portfolio_type, total_gla_estimate, number_of_properties_estimate, onboarding_status, portfolio_notes, preferred_contact_method, contact_person, property_manager_name, property_manager_email, asset_manager_name, asset_manager_email, email, phone, metadata_json',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, legal_name, trading_name, entity_type, registration_number, vat_number, vat_registered, registered_address, postal_address, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, main_email, main_phone, website, landlord_type, portfolio_type, total_gla_estimate, number_of_properties_estimate, onboarding_status, portfolio_notes, preferred_contact_method, contact_person, property_manager_name, property_manager_email, asset_manager_name, asset_manager_email, email, phone, metadata_json',
   tenants:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, email, phone, industry, company_size, current_location, current_lease_expiry, preferred_contact_method',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, name, contact_person, email, phone, industry, company_size, current_location, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, current_lease_expiry, preferred_contact_method',
   properties:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, asset_manager_id, property_manager_id, property_name, property_type, address, suburb, city, province, country, gla_m2, available_space_m2, vacancy_percentage, zoning, parking_ratio, loading_bays, power_supply, height_m, asking_rental_per_m2, asking_sale_price, number_of_units, building_grade, backup_power, generator, solar, fibre, number_of_lifts, amenities, yard_size_m2, eaves_height_m, roller_doors, truck_access, sprinklers, warehouse_area_m2, office_area_m2, frontage_m, anchor_tenants, foot_traffic, trading_hours, mall_type, visibility_rating, noi, cap_rate, wale_months, gross_yield, net_yield, annual_income, land_size_m2, bulk, coverage, services_available, environmental_status, farm_size_ha, water_rights, irrigation, crop_type, livestock_capacity, metadata_json',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, asset_manager_id, property_manager_id, property_name, property_type, address, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, gla_m2, available_space_m2, vacancy_percentage, zoning, parking_ratio, loading_bays, power_supply, height_m, asking_rental_per_m2, asking_sale_price, number_of_units, building_grade, backup_power, generator, solar, fibre, number_of_lifts, amenities, yard_size_m2, eaves_height_m, roller_doors, truck_access, sprinklers, warehouse_area_m2, office_area_m2, frontage_m, anchor_tenants, foot_traffic, trading_hours, mall_type, visibility_rating, noi, cap_rate, wale_months, gross_yield, net_yield, annual_income, land_size_m2, bulk, coverage, services_available, environmental_status, farm_size_ha, water_rights, irrigation, crop_type, livestock_capacity, metadata_json',
   requirements:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, requirement_type, client_type, tenant_id, company_id, contact_id, requirement_name, property_type, preferred_locations, min_size_m2, max_size_m2, budget_min, budget_max, target_occupation_date, lease_term_months, special_requirements, assigned_broker, stage',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, requirement_type, client_type, tenant_id, company_id, contact_id, requirement_name, property_type, preferred_locations, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, min_size_m2, max_size_m2, budget_min, budget_max, target_occupation_date, lease_term_months, special_requirements, assigned_broker, stage',
   deals:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, deal_name, deal_type, requirement_id, tenant_id, landlord_id, company_id, contact_id, property_id, vacancy_id, listing_id, assigned_broker, stage, deal_value, estimated_commission, expected_close_date, probability_percentage',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, deal_name, deal_type, requirement_id, tenant_id, landlord_id, company_id, contact_id, property_id, vacancy_id, listing_id, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, assigned_broker, stage, deal_value, estimated_commission, expected_close_date, probability_percentage',
   leases:
     'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, deal_id, heads_of_terms_id, tenant_id, landlord_id, property_id, vacancy_id, lease_start_date, lease_end_date, occupation_date, lease_term_months, monthly_rental, rental_per_m2, escalation_percentage, deposit_amount, tenant_installation_allowance, rent_free_period_months, renewal_option, renewal_notice_date',
   vacancies:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, property_id, landlord_id, property_manager_id, vacancy_name, unit_or_floor, available_area_m2, asking_rental, availability_date, broker_assignment, incentives, fit_out_allowance, marketed_at, occupied_at, withdrawn_at, suspended_at, archived_at, metadata_json',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, property_id, landlord_id, property_manager_id, vacancy_name, unit_or_floor, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, available_area_m2, asking_rental, availability_date, broker_assignment, incentives, fit_out_allowance, marketed_at, occupied_at, withdrawn_at, suspended_at, archived_at, metadata_json',
   listings:
-    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_id, vacancy_id, listing_type, listing_category, listing_status, title, description, pricing, pricing_notes, featured, available_from, metadata_json, marketing_json, media_json, performance_json, internal_reviewed_at, approved_at, published_at, closed_at, expired_at, withdrawn_at',
+    'id, organisation_id, branch_id, team_id, broker_id, created_at, updated_at, created_by, updated_by, status, notes, landlord_id, property_id, vacancy_id, listing_type, listing_category, listing_status, title, description, formatted_address, street_number, route, street_name, street_address, suburb, city, province, postal_code, country, latitude, longitude, place_id, google_place_id, address_components, raw_google_response, geocoding_status, pricing, pricing_notes, featured, available_from, metadata_json, marketing_json, media_json, performance_json, internal_reviewed_at, approved_at, published_at, closed_at, expired_at, withdrawn_at',
   viewings:
     'id, organisation_id, branch_id, team_id, broker_id, requirement_id, property_id, vacancy_id, listing_id, company_id, contact_id, viewing_date, viewing_time, status, notes, feedback, created_at, updated_at, created_by, updated_by',
   transactions:
@@ -84,6 +83,9 @@ const COMMERCIAL_PORTAL_NOTIFICATIONS_TABLE = 'commercial_portal_notifications'
 const COMMERCIAL_HIERARCHY_COLUMNS = ['branch_id', 'team_id', 'broker_id']
 const COMMERCIAL_DOCUMENT_WORKFLOW_COLUMNS = ['version_number', 'supersedes_document_id', 'expires_at', 'reviewed_by', 'reviewed_at', 'priority', 'requested_by', 'completed_document_id']
 const COMMERCIAL_LEASING_WORKFLOW_COLUMNS = ['vacancy_id', 'heads_of_terms_id', 'sent_at', 'accepted_at', 'rejected_at', 'signed_at', 'converted_at']
+const COMMERCIAL_ADDRESS_COLUMNS = ['formatted_address', 'street_number', 'route', 'street_name', 'street_address', 'suburb', 'city', 'province', 'postal_code', 'country', 'latitude', 'longitude', 'place_id', 'google_place_id', 'address_components', 'raw_google_response', 'geocoding_status']
+const COMMERCIAL_EXTENDED_PROFILE_COLUMNS = ['legal_name', 'trading_name', 'entity_type', 'registration_number', 'vat_number', 'vat_registered', 'registered_address', 'postal_address', 'main_email', 'main_phone', 'portfolio_type', 'total_gla_estimate', 'number_of_properties_estimate', 'onboarding_status', 'property_manager_name', 'property_manager_email', 'asset_manager_name', 'asset_manager_email', 'asset_manager_id', 'property_manager_id', 'metadata_json']
+const COMMERCIAL_SCHEMA_RETRY_LIMIT = 32
 const COMMERCIAL_SCOPE_CACHE_TTL_MS = 60 * 1000
 const COMMERCIAL_PLATFORM_INSTALL_CACHE_TTL_MS = 5 * 60 * 1000
 const COMMERCIAL_MODULE_KEY = 'commercial'
@@ -134,10 +136,6 @@ let commercialPlatformInstallCache = null
 let commercialPlatformInstallInflight = null
 
 export const COMMERCIAL_TABLES = TABLES
-
-function getCommercialMembershipMetadata(member = {}) {
-  return getCommercialMetadata(member)
-}
 
 function resolveCommercialMembershipRole(member = {}, fallback = 'viewer') {
   const resolvedRole = resolveCommercialRole(member)
@@ -2424,7 +2422,46 @@ function removeCommercialLeasingWorkflowPayload(payload = {}) {
 }
 
 function removeOptionalCommercialPayload(payload = {}) {
-  return removeCommercialLeasingWorkflowPayload(removeCommercialDocumentWorkflowPayload(removeCommercialHierarchyPayload(payload)))
+  const next = removeCommercialLeasingWorkflowPayload(removeCommercialDocumentWorkflowPayload(removeCommercialHierarchyPayload(payload)))
+  ;[...COMMERCIAL_ADDRESS_COLUMNS, ...COMMERCIAL_EXTENDED_PROFILE_COLUMNS].forEach((key) => {
+    delete next[key]
+  })
+  return next
+}
+
+function getCommercialSelectColumns(kind) {
+  const fields = SELECTS[kind]
+  if (!fields) return new Set()
+  return new Set(fields.split(',').map((field) => field.trim()).filter(Boolean))
+}
+
+function filterCommercialPayloadColumns(kind, payload = {}) {
+  const allowedColumns = getCommercialSelectColumns(kind)
+  if (!allowedColumns.size) return { ...payload }
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => allowedColumns.has(key)),
+  )
+}
+
+function removeCommercialPayloadColumns(payload = {}, columns = []) {
+  const blocked = new Set(columns.filter(Boolean))
+  if (!blocked.size) return { ...payload }
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !blocked.has(key)),
+  )
+}
+
+function buildSchemaRetryCommercialPayload(payload = {}, error) {
+  const missingColumn = getMissingCommercialColumn(error)
+  const optionalColumns = [
+    ...COMMERCIAL_HIERARCHY_COLUMNS,
+    ...COMMERCIAL_DOCUMENT_WORKFLOW_COLUMNS,
+    ...COMMERCIAL_LEASING_WORKFLOW_COLUMNS,
+    ...COMMERCIAL_ADDRESS_COLUMNS,
+    ...COMMERCIAL_EXTENDED_PROFILE_COLUMNS,
+  ]
+  const blockedColumns = missingColumn ? [missingColumn] : optionalColumns
+  return removeCommercialPayloadColumns(removeOptionalCommercialPayload(payload), blockedColumns)
 }
 
 async function resolveOrganisationId(organisationId) {
@@ -2447,7 +2484,7 @@ async function listCommercialRecords(kind, organisationId, { order = 'updated_at
   let scoped = true
   let query = null
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+  for (let attempt = 0; attempt < COMMERCIAL_SCHEMA_RETRY_LIMIT; attempt += 1) {
     let nextQuery = supabase
       .from(table)
       .select(selectFields)
@@ -2478,6 +2515,14 @@ async function listCommercialRecords(kind, organisationId, { order = 'updated_at
       selectFields = withoutSelectColumns(selectFields, [missingColumn, ...COMMERCIAL_LEASING_WORKFLOW_COLUMNS])
       continue
     }
+    if (COMMERCIAL_ADDRESS_COLUMNS.includes(missingColumn)) {
+      selectFields = withoutSelectColumns(selectFields, [missingColumn, ...COMMERCIAL_ADDRESS_COLUMNS])
+      continue
+    }
+    if (COMMERCIAL_EXTENDED_PROFILE_COLUMNS.includes(missingColumn)) {
+      selectFields = withoutSelectColumns(selectFields, [missingColumn, ...COMMERCIAL_EXTENDED_PROFILE_COLUMNS])
+      continue
+    }
     const nextFields = withoutSelectColumns(selectFields, missingColumn ? [missingColumn] : COMMERCIAL_HIERARCHY_COLUMNS)
     if (nextFields === selectFields) throw query.error
     selectFields = nextFields
@@ -2503,24 +2548,26 @@ async function createCommercialRecord(kind, payload = {}, options = {}) {
   const userId = await getCurrentUserId()
   const scope = await resolveCommercialAccessContext()
   if (!scope.hasCommercialAccess) throw new Error('Commercial workspace access is required.')
-  const insertPayload = {
+  let insertPayload = filterCommercialPayloadColumns(kind, {
     ...applyDefaultCommercialHierarchy(payload, scope),
     organisation_id: organisationId,
     created_by: payload.created_by || payload.createdBy || userId,
     updated_by: payload.updated_by || payload.updatedBy || userId,
-  }
+  })
 
   delete insertPayload.organisationId
   delete insertPayload.createdBy
   delete insertPayload.updatedBy
 
-  let query = await supabase.from(table).insert(insertPayload).select(fields).single()
-  if (query.error && isCommercialSchemaMismatchError(query.error)) {
-    query = await supabase
-      .from(table)
-      .insert(removeOptionalCommercialPayload(insertPayload))
-      .select(withoutSelectColumns(fields, [...COMMERCIAL_HIERARCHY_COLUMNS, ...COMMERCIAL_DOCUMENT_WORKFLOW_COLUMNS, ...COMMERCIAL_LEASING_WORKFLOW_COLUMNS]))
-      .single()
+  let query = null
+  for (let attempt = 0; attempt < COMMERCIAL_SCHEMA_RETRY_LIMIT; attempt += 1) {
+    query = await supabase.from(table).insert(insertPayload).select('*').single()
+    if (!query.error) break
+    if (!isCommercialSchemaMismatchError(query.error)) break
+
+    const retryPayload = buildSchemaRetryCommercialPayload(insertPayload, query.error)
+    if (JSON.stringify(retryPayload) === JSON.stringify(insertPayload)) break
+    insertPayload = retryPayload
   }
   if (query.error) throw query.error
   if (options.logActivity !== false) {
@@ -2546,10 +2593,10 @@ async function updateCommercialRecord(kind, id, payload = {}, options = {}) {
   const userId = await getCurrentUserId()
   const scope = await resolveCommercialAccessContext()
   if (!scope.hasCommercialAccess) throw new Error('Commercial workspace access is required.')
-  const updatePayload = {
+  let updatePayload = filterCommercialPayloadColumns(kind, {
     ...applyDefaultCommercialHierarchy(payload, scope),
     updated_by: payload.updated_by || payload.updatedBy || userId,
-  }
+  })
 
   delete updatePayload.id
   delete updatePayload.organisationId
@@ -2558,18 +2605,19 @@ async function updateCommercialRecord(kind, id, payload = {}, options = {}) {
   delete updatePayload.created_by
   delete updatePayload.updatedBy
 
-  let query = await applyCommercialScope(
-    supabase.from(table).update(updatePayload).eq('id', recordId),
-    kind,
-    scope,
-  ).select(fields).single()
-  if (query.error && isCommercialSchemaMismatchError(query.error)) {
-    query = await supabase
-      .from(table)
-      .update(removeOptionalCommercialPayload(updatePayload))
-      .eq('id', recordId)
-      .select(withoutSelectColumns(fields, [...COMMERCIAL_HIERARCHY_COLUMNS, ...COMMERCIAL_DOCUMENT_WORKFLOW_COLUMNS, ...COMMERCIAL_LEASING_WORKFLOW_COLUMNS]))
-      .single()
+  let query = null
+  for (let attempt = 0; attempt < COMMERCIAL_SCHEMA_RETRY_LIMIT; attempt += 1) {
+    query = await applyCommercialScope(
+      supabase.from(table).update(updatePayload).eq('id', recordId),
+      kind,
+      scope,
+    ).select('*').single()
+    if (!query.error) break
+    if (!isCommercialSchemaMismatchError(query.error)) break
+
+    const retryPayload = buildSchemaRetryCommercialPayload(updatePayload, query.error)
+    if (JSON.stringify(retryPayload) === JSON.stringify(updatePayload)) break
+    updatePayload = retryPayload
   }
   if (query.error) throw query.error
   if (options.logActivity !== false) {
@@ -2644,6 +2692,19 @@ function stripListingCreationOnlyFields(payload = {}) {
   delete next.new_property_city
   delete next.new_property_province
   delete next.new_property_country
+  delete next.new_property_formatted_address
+  delete next.new_property_street_number
+  delete next.new_property_route
+  delete next.new_property_street_name
+  delete next.new_property_street_address
+  delete next.new_property_postal_code
+  delete next.new_property_latitude
+  delete next.new_property_longitude
+  delete next.new_property_place_id
+  delete next.new_property_google_place_id
+  delete next.new_property_address_components
+  delete next.new_property_raw_google_response
+  delete next.new_property_geocoding_status
   delete next.new_property_type
   delete next.new_vacancy_name
   delete next.new_vacancy_unit
@@ -2683,10 +2744,23 @@ export async function createCommercialListing(payload = {}) {
       property_name: normalizeText(payload.new_property_name),
       property_type: categoryToPropertyType(payload.new_property_type || payload.listing_category),
       address: normalizeText(payload.new_property_address) || null,
+      formatted_address: normalizeText(payload.new_property_formatted_address || payload.new_property_address) || null,
+      street_number: normalizeText(payload.new_property_street_number) || null,
+      route: normalizeText(payload.new_property_route) || null,
+      street_name: normalizeText(payload.new_property_street_name || payload.new_property_route) || null,
+      street_address: normalizeText(payload.new_property_street_address || payload.new_property_address) || null,
       suburb: normalizeText(payload.new_property_suburb || payload.new_property_area) || null,
       city: normalizeText(payload.new_property_city) || null,
       province: normalizeText(payload.new_property_province) || null,
+      postal_code: normalizeText(payload.new_property_postal_code) || null,
       country: normalizeText(payload.new_property_country) || null,
+      latitude: Number.isFinite(Number(payload.new_property_latitude)) ? Number(payload.new_property_latitude) : null,
+      longitude: Number.isFinite(Number(payload.new_property_longitude)) ? Number(payload.new_property_longitude) : null,
+      place_id: normalizeText(payload.new_property_place_id || payload.new_property_google_place_id) || null,
+      google_place_id: normalizeText(payload.new_property_google_place_id || payload.new_property_place_id) || null,
+      address_components: payload.new_property_address_components || null,
+      raw_google_response: payload.new_property_raw_google_response || null,
+      geocoding_status: normalizeText(payload.new_property_geocoding_status) || null,
       available_space_m2: getListingArea(payload) || null,
       broker_id: hierarchyPayload.broker_id || null,
       status: 'active',
@@ -2928,18 +3002,28 @@ async function resolveCommercialRelationshipContext(payload = {}, organisationId
   }
 }
 
-function withCommercialRelationshipPayload(payload = {}, context = {}, fallback = {}) {
+function withCommercialRelationshipPayload(payload = {}, context = {}, fallback = {}, options = {}) {
+  const includeLandlord = options.includeLandlord !== false
   const companyId = normalizeText(payload.company_id || payload.companyId || context.company?.id || context.contact?.company_id || fallback.company_id)
   const contactId = normalizeText(payload.contact_id || payload.contactId || context.contact?.id || fallback.contact_id)
   const tenantId = normalizeText(payload.tenant_id || payload.tenantId || context.tenant?.id || fallback.tenant_id)
   const landlordId = normalizeText(payload.landlord_id || payload.landlordId || context.landlord?.id || fallback.landlord_id)
-  return {
+  const next = {
     ...payload,
     company_id: companyId || null,
     contact_id: contactId || null,
     tenant_id: tenantId || null,
-    landlord_id: landlordId || null,
   }
+  delete next.companyId
+  delete next.contactId
+  delete next.tenantId
+  delete next.landlordId
+  if (includeLandlord) {
+    next.landlord_id = landlordId || null
+  } else {
+    delete next.landlord_id
+  }
+  return next
 }
 
 export const getCommercialLandlords = (organisationId) => listCommercialRecords('landlords', organisationId, { order: 'name', ascending: true })
@@ -3076,7 +3160,7 @@ export async function createCommercialRequirement(payload = {}) {
     ...payload,
     broker_id: brokerId,
     assigned_broker: payload.assigned_broker || brokerId,
-  }, relationshipContext))
+  }, relationshipContext, {}, { includeLandlord: false }))
 }
 export async function createCommercialDeal(payload = {}) {
   const relationshipContext = await resolveCommercialRelationshipContext(payload)
@@ -3088,12 +3172,44 @@ export async function createCommercialDeal(payload = {}) {
   }, relationshipContext))
 }
 export async function createCommercialVacancy(payload = {}) {
-  const property = await findCommercialRecordById('properties', payload.property_id, payload.organisation_id || payload.organisationId)
+  let property = await findCommercialRecordById('properties', payload.property_id, payload.organisation_id || payload.organisationId)
   const brokerId = normalizeText(payload.broker_id || payload.broker_assignment || payload.brokerId || property?.broker_id)
-  if (!normalizeText(payload.property_id)) throw new Error('A property is required before a vacancy can be created.')
   if (!brokerId) throw new Error('An assigned broker is required before a vacancy can be created.')
+  if (!property?.id && normalizeText(payload.formatted_address || payload.street_address || payload.address)) {
+    const fallbackName = normalizeText(payload.vacancy_name || payload.formatted_address || payload.street_address || payload.address)
+    property = await createCommercialRecord('properties', {
+      organisation_id: payload.organisation_id || payload.organisationId,
+      branch_id: payload.branch_id || null,
+      team_id: payload.team_id || null,
+      broker_id: brokerId,
+      landlord_id: payload.landlord_id || null,
+      property_name: fallbackName || 'Commercial property',
+      property_type: payload.property_type || payload.metadata_json?.vacancy_type || 'commercial',
+      address: normalizeText(payload.address || payload.street_address || payload.formatted_address) || null,
+      formatted_address: normalizeText(payload.formatted_address || payload.address || payload.street_address) || null,
+      street_number: normalizeText(payload.street_number) || null,
+      route: normalizeText(payload.route) || null,
+      street_name: normalizeText(payload.street_name || payload.route) || null,
+      street_address: normalizeText(payload.street_address || payload.address || payload.formatted_address) || null,
+      suburb: normalizeText(payload.suburb) || null,
+      city: normalizeText(payload.city) || null,
+      province: normalizeText(payload.province) || null,
+      postal_code: normalizeText(payload.postal_code) || null,
+      country: normalizeText(payload.country) || null,
+      latitude: Number.isFinite(Number(payload.latitude)) ? Number(payload.latitude) : null,
+      longitude: Number.isFinite(Number(payload.longitude)) ? Number(payload.longitude) : null,
+      place_id: normalizeText(payload.place_id || payload.google_place_id) || null,
+      google_place_id: normalizeText(payload.google_place_id || payload.place_id) || null,
+      address_components: payload.address_components || null,
+      raw_google_response: payload.raw_google_response || null,
+      geocoding_status: normalizeText(payload.geocoding_status) || 'manual',
+      status: 'active',
+    }, { logActivity: false })
+  }
+  if (!property?.id) throw new Error('A property or vacancy address is required before a vacancy can be created.')
   const vacancy = await createCommercialRecord('vacancies', {
     ...payload,
+    property_id: property.id,
     landlord_id: payload.landlord_id || property?.landlord_id || null,
     branch_id: payload.branch_id || property?.branch_id || null,
     team_id: payload.team_id || property?.team_id || null,
@@ -3166,7 +3282,7 @@ export async function updateCommercialRequirement(id, payload = {}, options = {}
     ...payload,
     broker_id: brokerId || null,
     assigned_broker: payload.assigned_broker || existing?.assigned_broker || brokerId || null,
-  }, relationshipContext, existing), options)
+  }, relationshipContext, existing, { includeLandlord: false }), options)
 }
 export async function updateCommercialVacancy(id, payload = {}, options = {}) {
   const existing = await findCommercialRecordById('vacancies', id, payload.organisation_id || payload.organisationId)

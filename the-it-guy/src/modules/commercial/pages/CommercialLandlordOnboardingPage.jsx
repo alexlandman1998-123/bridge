@@ -38,6 +38,8 @@ import {
   submitCommercialLandlordOnboarding,
   uploadCommercialLandlordOnboardingDocument,
 } from '../services/commercialLandlordService'
+import CommercialAddressField from '../components/CommercialAddressField'
+import { buildManualCommercialAddressValue } from '../components/commercialAddressFieldUtils'
 
 const PAGE_SHELL = 'min-h-screen bg-[#f7f1e8] px-4 py-5 text-[#1f2b24] sm:px-6 lg:px-8'
 const PAGE_WIDTH = 'mx-auto w-full max-w-[1180px]'
@@ -108,6 +110,7 @@ function createPropertyDraft(assetManagers = [], propertyManagers = []) {
     property_name: '',
     property_type: 'commercial',
     address: '',
+    addressValue: null,
     suburb: '',
     city: '',
     province: '',
@@ -812,7 +815,25 @@ function CommercialLandlordOnboardingPage() {
                                 ))}
                               </select>
                             </label>
-                            <label className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">Address<textarea value={property.address} onChange={(event) => updatePropertyRow(property.clientKey, { address: event.target.value })} rows={2} className={TEXTAREA_CLASS} /></label>
+                            <div className="grid gap-1 text-sm font-semibold text-[#1f2b24] md:col-span-2">
+                              <CommercialAddressField
+                                mode="full_address"
+                                value={property.addressValue || buildManualCommercialAddressValue(property.address)}
+                                placeholder="Start typing the property address..."
+                                description="Select a Google Places result to fill suburb, city, province, postal code, and map data. Manual entries are allowed."
+                                onChange={(value) => updatePropertyRow(property.clientKey, {
+                                  addressValue: value,
+                                  address: value?.formattedAddress || '',
+                                  suburb: value?.suburb || property.suburb || '',
+                                  city: value?.city || property.city || '',
+                                  province: value?.province || property.province || '',
+                                })}
+                                onManualInput={(value) => updatePropertyRow(property.clientKey, {
+                                  addressValue: value,
+                                  address: value?.formattedAddress || '',
+                                })}
+                              />
+                            </div>
                             <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Suburb<input value={property.suburb} onChange={(event) => updatePropertyRow(property.clientKey, { suburb: event.target.value })} className={INPUT_CLASS} /></label>
                             <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">City<input value={property.city} onChange={(event) => updatePropertyRow(property.clientKey, { city: event.target.value })} className={INPUT_CLASS} /></label>
                             <label className="grid gap-1 text-sm font-semibold text-[#1f2b24]">Province<input value={property.province} onChange={(event) => updatePropertyRow(property.clientKey, { province: event.target.value })} className={INPUT_CLASS} /></label>

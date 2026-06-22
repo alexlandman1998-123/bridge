@@ -6,6 +6,9 @@ import { Input } from '../ui/input'
 
 export type AddressAutocompleteValue = {
   formattedAddress: string
+  streetNumber?: string
+  route?: string
+  streetName?: string
   streetAddress?: string
   suburb?: string
   city?: string
@@ -15,6 +18,9 @@ export type AddressAutocompleteValue = {
   latitude?: number
   longitude?: number
   placeId?: string
+  googlePlaceId?: string
+  addressComponents?: any[]
+  rawGoogleResponse?: any
 }
 
 export type AddressAutocompleteProps = {
@@ -68,6 +74,9 @@ function mapPlaceToAddress(place: any): AddressAutocompleteValue {
 
   return {
     formattedAddress,
+    streetNumber,
+    route,
+    streetName: route,
     streetAddress: streetAddress || formattedAddress,
     suburb: sublocality || neighborhood,
     city,
@@ -91,6 +100,9 @@ function mapPlaceToAddress(place: any): AddressAutocompleteValue {
             ? modernLocation.lng
             : undefined,
     placeId: String(place?.place_id || place?.id || '').trim(),
+    googlePlaceId: String(place?.place_id || place?.id || '').trim(),
+    addressComponents: components,
+    rawGoogleResponse: place,
   }
 }
 

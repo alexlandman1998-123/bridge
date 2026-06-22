@@ -1,9 +1,18 @@
 import { X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import CommercialAddressField from './CommercialAddressField'
+import {
+  buildCommercialAddressValue,
+  commercialAddressDisplay,
+  serializeCommercialAddressValue,
+} from './commercialAddressFieldUtils'
 
 function normalizeInitialValue(field, record) {
   if (typeof field.getInitialValue === 'function') {
     return field.getInitialValue(record)
+  }
+  if (field.type === 'address') {
+    return buildCommercialAddressValue(record || {}, field.addressMapping, field.name)
   }
   if (record && record[field.name] !== undefined && record[field.name] !== null) {
     if (field.type === 'multiText' && Array.isArray(record[field.name])) return record[field.name].join(', ')
@@ -58,7 +67,7 @@ function validateForm(fields, values, crossValidate) {
 
   for (const field of fields) {
     const value = values[field.name]
-    const textValue = String(value ?? '').trim()
+    const textValue = field.type === 'address' ? commercialAddressDisplay(value) : String(value ?? '').trim()
     if (field.required && !textValue) {
       errors[field.name] = `${field.label} is required.`
       continue
@@ -85,7 +94,9 @@ function serializeValues(fields, values) {
     if (field.persist === false) continue
     const value = values[field.name]
     if (field.readOnly) continue
-    if (field.type === 'number' || field.type === 'percentage') {
+    if (field.type === 'address') {
+      Object.assign(payload, serializeCommercialAddressValue(value, field.addressMapping))
+    } else if (field.type === 'number' || field.type === 'percentage') {
       payload[field.name] = String(value ?? '').trim() ? Number(value) : null
     } else if (field.type === 'checkbox') {
       payload[field.name] = Boolean(value)
@@ -165,6 +176,36 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
             })
           }}
           className={`${commonClass} py-3`}
+        />
+      )
+    }
+
+    if (field.type === 'address') {
+      return (
+        <CommercialAddressField
+          mode={field.mode || 'full_address'}
+          value={value}
+          required={field.required}
+          disabled={field.disabled}
+          placeholder={field.placeholder}
+          description={field.description || field.help}
+          error={errors[field.name]}
+          onChange={(nextValue) => {
+            setValues((previous) => {
+              const mappedPayload = serializeCommercialAddressValue(nextValue, field.addressMapping)
+              const next = { ...previous, [field.name]: nextValue, ...mappedPayload }
+              field.onChange?.(nextValue, previous, next)
+              return next
+            })
+          }}
+          onManualInput={(nextValue) => {
+            setValues((previous) => {
+              const mappedPayload = serializeCommercialAddressValue(nextValue, field.addressMapping)
+              const next = { ...previous, [field.name]: nextValue, ...mappedPayload }
+              field.onChange?.(nextValue, previous, next)
+              return next
+            })
+          }}
         />
       )
     }
@@ -250,17 +291,22 @@ function CommercialFormModal({ open, mode = 'create', title, fields = [], record
             <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{saveError}</div>
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
-            {visibleFields.map((field) => (
-              <label key={field.name} className={field.span === 'full' ? 'grid gap-1.5 md:col-span-2' : 'grid gap-1.5'}>
-                <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-                  {field.label}
-                  {field.required ? <span className="text-rose-500"> *</span> : null}
-                </span>
-                {renderField(field)}
-                {field.help ? <span className="text-xs text-slate-400">{field.help}</span> : null}
-                {errors[field.name] ? <span className="text-xs font-semibold text-rose-600">{errors[field.name]}</span> : null}
-              </label>
-            ))}
+            {visibleFields.map((field) => {
+              const Wrapper = field.type === 'address' ? 'div' : 'label'
+              return (
+                <Wrapper key={field.name} className={field.span === 'full' ? 'grid gap-1.5 md:col-span-2' : 'grid gap-1.5'}>
+                  {field.type === 'address' ? null : (
+                    <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+                      {field.label}
+                      {field.required ? <span className="text-rose-500"> *</span> : null}
+                    </span>
+                  )}
+                  {renderField(field)}
+                  {field.type !== 'address' && field.help ? <span className="text-xs text-slate-400">{field.help}</span> : null}
+                  {field.type !== 'address' && errors[field.name] ? <span className="text-xs font-semibold text-rose-600">{errors[field.name]}</span> : null}
+                </Wrapper>
+              )
+            })}
           </div>
         </div>
 

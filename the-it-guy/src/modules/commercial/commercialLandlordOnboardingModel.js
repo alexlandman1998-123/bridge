@@ -219,6 +219,7 @@ function createPropertyDraft(defaults = {}) {
     property_name: defaults.property_name || '',
     property_type: defaults.property_type || '',
     address: defaults.address || '',
+    addressValue: defaults.addressValue || defaults.address_value || null,
     suburb: defaults.suburb || '',
     city: defaults.city || '',
     province: defaults.province || '',

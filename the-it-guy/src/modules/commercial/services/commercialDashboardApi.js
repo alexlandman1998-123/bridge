@@ -22,6 +22,7 @@ import { buildCommercialIntelligence } from './commercialIntelligenceApi'
 import { listOrganisationUsers } from '../../../lib/settingsApi'
 import { buildCommercialDocumentCompliance } from '../commercialDocumentConstants'
 import { buildCommercialConversionMetrics, normalizeCommercialLifecycleStage } from '../commercialWorkflow'
+import { buildCommercialCommandCentreSnapshot } from '../commercialCommandCentre'
 import {
   buildCommercialFinancialSummary,
   buildCommercialRenewalRisk,
@@ -1137,6 +1138,24 @@ export function buildCommercialPrincipalDashboardData({
     requirementMatches: commercialIntelligence.matches || [],
   })
   const portalAdoption = buildCommercialPortalAdoption(portalAccess, portalAudit)
+  const commandCentre = buildCommercialCommandCentreSnapshot({
+    prospects: [],
+    landlords,
+    tenants,
+    companies,
+    contacts,
+    properties,
+    requirements,
+    deals,
+    leases,
+    vacancies,
+    listings,
+    viewings,
+    commissions,
+    activity,
+    brokers,
+    commercialTransactions,
+  }, viewerScope)
 
   return {
     organisationId,
@@ -1254,6 +1273,7 @@ export function buildCommercialPrincipalDashboardData({
       recentTransactions: commercialTransactions.slice(0, 5),
       renewalRisk,
       brokerScorecards,
+      commandCentre,
     },
     watchlists: {
       leaseExpiries: buildExpiryWatchlist({ leases: activeLeases, tenantsById, propertiesById, landlordsById, dealsById }),
@@ -1269,5 +1289,6 @@ export function buildCommercialPrincipalDashboardData({
     portalAccess,
     portalAudit,
     portalAdoption,
+    commandCentre,
   }
 }
