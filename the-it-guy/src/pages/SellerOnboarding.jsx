@@ -328,6 +328,32 @@ function getSellerDisplayName(listing = {}, form = {}) {
     String(listing?.seller?.name || listing?.sellerName || 'Seller').trim()
 }
 
+function todayInputValue() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function getPropertyDisclosureMissingItems(disclosure = {}) {
+  const normalized = normalizePropertyDisclosure(disclosure, { kind: disclosure.kind || 'residential' })
+  const missing = []
+  if (!normalized.decision) missing.push('choose a disclosure answer')
+  if (normalized.decision === PROPERTY_DISCLOSURE_DECISION.disclose) {
+    const hasCompleteIssue = normalized.issues.some((issue) =>
+      String(issue.categoryKey || '').trim() &&
+      String(issue.issueType || '').trim() &&
+      String(issue.description || '').trim() &&
+      String(issue.dateFirstIdentified || '').trim() &&
+      String(issue.currentStatus || '').trim(),
+    )
+    if (!hasCompleteIssue && !String(normalized.otherDisclosure || '').trim()) {
+      missing.push('add at least one known issue or use Other known issues')
+    }
+  }
+  if (!normalized.declarationAccepted) missing.push('accept the seller declaration')
+  if (!normalized.signature) missing.push('enter a signature')
+  if (!normalized.signedAt) missing.push('select a signature date')
+  return missing
+}
+
 function getPropertyAddressDetails(listing = {}, form = {}) {
   return normalizePropertyAddress(
     {
@@ -1829,6 +1855,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
       })
       const patch = typeof patchOrKey === 'string' ? { [patchOrKey]: value } : patchOrKey
+      if (patch.declarationAccepted === true) {
+        if (!patch.signature && !current.signature) patch.signature = getSellerDisplayName(listing, previous || {})
+        if (!patch.signedAt && !current.signedAt) patch.signedAt = todayInputValue()
+      }
       const next = normalizePropertyDisclosure({ ...current, ...patch }, { kind: current.kind })
       return {
         ...(previous || {}),
@@ -2126,8 +2156,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     }
 
     if (currentStep === 2) {
-      if (!isPropertyDisclosureDigitallyComplete(form.propertyDisclosure || {})) {
-        return 'Please complete the Property Disclosure declaration before continuing.'
+      const missingDisclosureItems = getPropertyDisclosureMissingItems(form.propertyDisclosure || {})
+      if (missingDisclosureItems.length) {
+        return `Please complete the Property Disclosure declaration before continuing: ${missingDisclosureItems.join(', ')}.`
       }
     }
 
