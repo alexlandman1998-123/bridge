@@ -321,8 +321,8 @@ function CommercialTenantOnboardingModal({ open, mode = 'create', lookups = {}, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/35 px-3 py-4 backdrop-blur-sm sm:px-4">
-      <form onSubmit={handleSubmit} className="my-auto grid max-h-[calc(100dvh-32px)] w-full max-w-6xl overflow-hidden rounded-3xl bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)]">
-        <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+      <form onSubmit={handleSubmit} className="my-auto flex max-h-[calc(100dvh-32px)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)]">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
           <div>
             <h2 className="text-xl font-semibold tracking-[-0.035em] text-[#102236]">Create Tenant</h2>
             <p className="mt-1 text-sm text-slate-500">Capture tenant information and link them to a property, vacancy and lease.</p>
@@ -332,8 +332,8 @@ function CommercialTenantOnboardingModal({ open, mode = 'create', lookups = {}, 
           </button>
         </header>
 
-        <div className="grid min-h-0 md:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="hidden border-r border-slate-200 bg-[#f8fbff] p-5 md:flex md:flex-col md:justify-between">
+        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-[240px_minmax(0,1fr)]">
+          <aside className="hidden min-h-0 overflow-y-auto border-r border-slate-200 bg-[#f8fbff] p-5 md:flex md:flex-col md:justify-between">
             <div className="relative grid gap-4">
               <div className="absolute left-[17px] top-7 h-[calc(100%-56px)] w-px bg-slate-200" />
               {SECTIONS.map((section, index) => {
@@ -361,7 +361,7 @@ function CommercialTenantOnboardingModal({ open, mode = 'create', lookups = {}, 
             </div>
           </aside>
 
-          <main className="min-h-0 overflow-y-auto p-5">
+          <main className="min-h-0 overflow-y-auto overscroll-contain p-5">
             {saveError ? <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{saveError}</div> : null}
 
             <div className="grid gap-5">

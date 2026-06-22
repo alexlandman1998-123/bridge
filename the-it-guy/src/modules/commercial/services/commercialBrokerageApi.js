@@ -203,6 +203,7 @@ async function listCommercialMembers(organisationId) {
     userId: row.user_id,
     branchId: row.primary_branch_id || row.branch_id,
     teamId: row.team_id,
+    metadata: parseObject(row.module_metadata || row.moduleMetadata),
     firstName: row.first_name,
     lastName: row.last_name,
     fullName: [row.first_name, row.last_name].filter(Boolean).join(' '),
@@ -215,8 +216,34 @@ async function listCommercialMembers(organisationId) {
   }))
 }
 
-function buildBrokerRows({ members = [], branches = [], requirements = [], deals = [], vacancies = [], listings = [], properties = [], headsOfTerms = [], leases = [], transactions = [], viewings = [], commissions = [], activity = [] }) {
+function inferBrokerDepartment({ member = {}, activeListings = [], activeVacancies = [], assignedDeals = [] } = {}) {
+  const metadata = parseObject(member.metadata || member.module_metadata || member.moduleMetadata)
+  const configured = normalizeLower(metadata.department || metadata.commercial_department || metadata.specialisation_department)
+  if (configured === 'both' || configured === 'sales' || configured === 'leasing') return configured
+  const saleDeals = assignedDeals.filter((deal) => normalizeLower(deal.deal_type).includes('sale')).length
+  const leaseDeals = assignedDeals.filter((deal) => !normalizeLower(deal.deal_type).includes('sale')).length
+  const salesScore = activeListings.length + saleDeals
+  const leasingScore = activeVacancies.length + leaseDeals
+  if (salesScore && leasingScore) return 'both'
+  if (salesScore) return 'sales'
+  if (leasingScore) return 'leasing'
+  return 'both'
+}
+
+function brokerSpecialityLabel(member = {}, fallbackDepartment = 'both') {
+  const metadata = parseObject(member.metadata || member.module_metadata || member.moduleMetadata)
+  const rawAssetClasses = metadata.asset_classes || metadata.assetClasses || metadata.specialities || metadata.specialties || []
+  const assetClasses = Array.isArray(rawAssetClasses) ? rawAssetClasses : String(rawAssetClasses || '').split(',')
+  const labels = assetClasses.map((value) => normalizeText(value).replace(/[_-]+/g, ' ')).filter(Boolean)
+  if (labels.length) return labels.map((label) => label.replace(/\b\w/g, (letter) => letter.toUpperCase())).join(', ')
+  if (fallbackDepartment === 'sales') return 'Sales'
+  if (fallbackDepartment === 'leasing') return 'Leasing'
+  return 'Sales & Leasing'
+}
+
+function buildBrokerRows({ members = [], branches = [], teams = [], requirements = [], deals = [], vacancies = [], listings = [], properties = [], headsOfTerms = [], leases = [], transactions = [], viewings = [], commissions = [], activity = [] }) {
   const branchNames = new Map(branches.map((branch) => [normalizeText(branch.id), normalizeText(branch.name) || 'Branch']))
+  const teamNames = new Map(teams.map((team) => [normalizeText(team.id), normalizeText(team.name) || 'Commercial team']))
   const linkedDealById = new Map(deals.map((deal) => [deal.id, deal]))
   const brokerMembers = members.filter((member) => isBrokerMember(member) || brokerIdFor(member))
 
@@ -244,6 +271,7 @@ function buildBrokerRows({ members = [], branches = [], requirements = [], deals
     const closedTransactions = assignedTransactions.filter((row) => normalizeLower(row.status) === 'completed')
     const activeListings = assignedListings.filter(isActive)
     const activeVacancies = assignedVacancies.filter(isOpenVacancy)
+    const department = inferBrokerDepartment({ member, activeListings, activeVacancies, assignedDeals })
     const projectedCommission = assignedCommissions.filter((row) => normalizeLower(row.status) === 'projected').reduce((sum, row) => sum + toNumber(row.commission_amount), 0)
     const approvedRevenue = assignedCommissions.filter((row) => normalizeLower(row.status) === 'approved').reduce((sum, row) => sum + toNumber(row.commission_amount), 0)
     const paidRevenue = assignedCommissions.filter((row) => normalizeLower(row.status) === 'paid').reduce((sum, row) => sum + toNumber(row.commission_amount), 0)
@@ -279,7 +307,11 @@ function buildBrokerRows({ members = [], branches = [], requirements = [], deals
       branchId: normalizeText(member.branchId),
       branchName: branchNames.get(normalizeText(member.branchId)) || (member.branchId ? 'Assigned branch' : 'HQ / Unassigned'),
       teamId: normalizeText(member.teamId),
+      teamName: teamNames.get(normalizeText(member.teamId)) || (member.teamId ? 'Assigned team' : 'No team'),
+      department,
+      speciality: brokerSpecialityLabel(member, department),
       activeRequirements: activeRequirements.length,
+      leadsAssigned: activeRequirements.length,
       activeDeals: activeDeals.length,
       activeTransactions: activeTransactions.length,
       transactionsCreated: assignedTransactions.length,
@@ -483,7 +515,7 @@ export async function getCommercialBrokerageData(organisationId) {
   const visibleCommercialTeams = context.scopeLevel === 'organisation'
     ? commercialTeams
     : commercialTeams.filter((team) => visibleBranchIds.has(normalizeText(team.branch_id)) || normalizeText(team.id) === normalizeText(context.teamId))
-  const brokers = buildBrokerRows({ members: visibleMembers, branches: visibleBranches, requirements, deals, vacancies, listings, properties, headsOfTerms, leases, transactions, viewings, commissions, activity })
+  const brokers = buildBrokerRows({ members: visibleMembers, branches: visibleBranches, teams: visibleCommercialTeams, requirements, deals, vacancies, listings, properties, headsOfTerms, leases, transactions, viewings, commissions, activity })
   const managers = visibleMembers.filter(isManagerMember)
   const unassigned = buildUnassignedWork({ requirements, deals, vacancies, listings, headsOfTerms, leases })
   const unassignedCount = Object.values(unassigned).reduce((sum, rows) => sum + rows.length, 0)
@@ -576,6 +608,8 @@ export async function getCommercialBrokerageData(organisationId) {
       totalBrokers: brokers.length,
       activeBrokers: activeBrokerCount,
       inactiveBrokers: Math.max(0, brokers.length - activeBrokerCount),
+      leasingBrokers: brokers.filter((broker) => ['leasing', 'both'].includes(broker.department)).length,
+      salesBrokers: brokers.filter((broker) => ['sales', 'both'].includes(broker.department)).length,
       unassignedWork: unassignedCount,
       activePipeline,
       brokerActivity: brokers.filter((broker) => broker.lastActivityAt).length,

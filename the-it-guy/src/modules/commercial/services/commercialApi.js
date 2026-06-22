@@ -3165,11 +3165,15 @@ export async function createCommercialRequirement(payload = {}) {
 export async function createCommercialDeal(payload = {}) {
   const relationshipContext = await resolveCommercialRelationshipContext(payload)
   const brokerId = normalizeText(payload.broker_id || payload.assigned_broker || payload.brokerId || relationshipContext.company?.broker_id)
-  return createCommercialRecord('deals', withCommercialRelationshipPayload({
+  const deal = await createCommercialRecord('deals', withCommercialRelationshipPayload({
     ...payload,
     broker_id: brokerId || null,
     assigned_broker: payload.assigned_broker || brokerId || null,
   }, relationshipContext))
+  if (isClosedCommercialLeaseDeal(deal)) {
+    await ensureCommercialLeaseForClosedDeal(deal)
+  }
+  return deal
 }
 export async function createCommercialVacancy(payload = {}) {
   let property = await findCommercialRecordById('properties', payload.property_id, payload.organisation_id || payload.organisationId)
@@ -4480,7 +4484,8 @@ function isClosedCommercialLeaseDeal(deal = {}) {
   const transactionType = transactionTypeFromRecord(deal)
   if (transactionType !== 'lease') return false
   const stage = normalizeCommercialLifecycleStage('deals', deal.stage, '')
-  return ['converted'].includes(stage)
+  const rawStage = normalizeLower(deal.stage)
+  return ['converted', 'occupied'].includes(stage) || ['lease_signed', 'signed', 'occupied'].includes(rawStage)
 }
 
 function buildCommercialLeasePayloadFromDeal(deal = {}, existing = null) {

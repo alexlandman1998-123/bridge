@@ -82,7 +82,6 @@ export const COMMERCIAL_NAV_SECTIONS = [
     icon: Building2,
     items: [
       { label: 'Branches', to: '/commercial/agency/branches', icon: Building2, activePaths: ['/commercial/agency', '/commercial/agency/branches', '/commercial/brokers/branches', '/commercial/performance/branches'] },
-      { label: 'Brokers', to: '/commercial/agency/brokers', icon: UserRoundCheck, activePaths: ['/commercial/agency/brokers', '/commercial/agency/brokers/overview', '/commercial/agency/brokers/assignments', '/commercial/agency/brokers/teams', '/commercial/brokers', '/commercial/brokers/overview', '/commercial/brokers/assignments', '/commercial/brokers/teams', '/commercial/performance/brokers'] },
     ],
   },
   {
@@ -96,6 +95,7 @@ export const COMMERCIAL_NAV_SECTIONS = [
 ]
 
 export const COMMERCIAL_BOTTOM_NAV_ITEMS = [
+  { label: 'Brokers', to: '/commercial/brokers', icon: UserRoundCheck, activePaths: ['/commercial/brokers', '/commercial/brokers/overview', '/commercial/brokers/assignments', '/commercial/brokers/teams', '/commercial/performance/brokers', '/commercial/agency/brokers'] },
   { label: 'Settings', to: '/commercial/settings', icon: Settings2 },
 ]
 
@@ -156,7 +156,7 @@ export function isCommercialNavItemAvailable(item = {}, scope = null) {
     : scope
       ? canManageCommercialBrokerage(scope)
       : true
-  if ((path.startsWith('/commercial/agency') || path === '/commercial/reports') && canManageBrokerage === false) {
+  if ((path.startsWith('/commercial/agency') || path.startsWith('/commercial/brokers') || path === '/commercial/reports') && canManageBrokerage === false) {
     return false
   }
   return true

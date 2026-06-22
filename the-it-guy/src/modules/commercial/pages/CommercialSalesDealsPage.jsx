@@ -1,11 +1,13 @@
 import { commercialCrudConfigs } from '../commercialCrudConfig'
 import CommercialCrudPage from '../components/CommercialCrudPage'
+import CommercialSalesDealCreateModal from '../components/CommercialSalesDealCreateModal'
 
 const SALES_DEALS_CONFIG = {
   ...commercialCrudConfigs.deals,
   title: 'Sales Deals',
   description: 'Track commercial sales deals from buyer or investor demand through property match, offer, due diligence, legal, transfer, and close.',
-  createLabel: 'New sales deal',
+  createLabel: 'Create Sales Deal',
+  createModal: CommercialSalesDealCreateModal,
   secondaryActions: [],
   emptyTitle: 'No sales deals yet',
   emptyDescription: 'Create a sales deal when a buyer, investor, seller, or commercial property sale opportunity becomes active.',

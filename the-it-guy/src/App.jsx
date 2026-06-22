@@ -1447,18 +1447,18 @@ function AppRoutes() {
                 <Route path="teams" element={<CommercialBrokerTeamsPage />} />
                 <Route path="agency" element={<CommercialManagerRouteGate><CommercialBrokerBranchesPage /></CommercialManagerRouteGate>} />
                 <Route path="agency/branches" element={<CommercialManagerRouteGate><CommercialBrokerBranchesPage /></CommercialManagerRouteGate>} />
-                <Route path="agency/brokers" element={<CommercialManagerRouteGate><CommercialBrokersPage /></CommercialManagerRouteGate>} />
-                <Route path="agency/brokers/:brokerId" element={<CommercialManagerRouteGate><CommercialBrokersPage /></CommercialManagerRouteGate>} />
+                <Route path="agency/brokers" element={<Navigate to="/commercial/brokers" replace />} />
+                <Route path="agency/brokers/:brokerId" element={<LegacyCommercialBrokerRedirect />} />
                 <Route path="performance" element={<Navigate to="/commercial/agency" replace />} />
                 <Route path="performance/branches" element={<Navigate to="/commercial/agency/branches" replace />} />
-                <Route path="performance/brokers" element={<Navigate to="/commercial/agency/brokers" replace />} />
+                <Route path="performance/brokers" element={<Navigate to="/commercial/brokers" replace />} />
                 <Route path="brokers/overview" element={<CommercialManagerRouteGate><CommercialBrokerOverviewPage /></CommercialManagerRouteGate>} />
-                <Route path="brokers" element={<Navigate to="/commercial/agency/brokers" replace />} />
+                <Route path="brokers" element={<CommercialManagerRouteGate><CommercialBrokersPage /></CommercialManagerRouteGate>} />
                 <Route path="brokers/teams" element={<CommercialManagerRouteGate><CommercialBrokerTeamsPage /></CommercialManagerRouteGate>} />
                 <Route path="brokers/branches" element={<Navigate to="/commercial/agency/branches" replace />} />
                 <Route path="brokers/performance" element={<Navigate to="/commercial/reports" replace />} />
                 <Route path="brokers/assignments" element={<CommercialManagerRouteGate><CommercialBrokerAssignmentsPage /></CommercialManagerRouteGate>} />
-                <Route path="brokers/:brokerId" element={<LegacyCommercialBrokerRedirect />} />
+                <Route path="brokers/:brokerId" element={<CommercialManagerRouteGate><CommercialBrokersPage /></CommercialManagerRouteGate>} />
                 <Route path="docs" element={<CommercialDocumentsPage />} />
                 <Route path="documents" element={<CommercialDocumentsPage />} />
                 <Route path="documents/new" element={<CommercialDocumentGeneratorPage />} />
@@ -2836,7 +2836,7 @@ function LegacyAgentWorkspaceRedirect() {
 function LegacyCommercialBrokerRedirect() {
   const { brokerId = '' } = useParams()
   const safeBrokerId = String(brokerId || '').trim()
-  return <Navigate to={safeBrokerId ? `/commercial/agency/brokers/${encodeURIComponent(safeBrokerId)}` : '/commercial/agency/brokers'} replace />
+  return <Navigate to={safeBrokerId ? `/commercial/brokers/${encodeURIComponent(safeBrokerId)}` : '/commercial/brokers'} replace />
 }
 
 function SellerLegacyRedirect() {
