@@ -69,6 +69,18 @@ const LANDLORD_RELATIONSHIP_TYPES = [
 const LANDLORD_MANDATE_TYPES = ['Open', 'Sole', 'Dual', 'Exclusive', 'None']
 const LANDLORD_MANDATE_STATUSES = ['Not Started', 'Requested', 'Sent', 'Signed', 'Not Required']
 
+const LANDLORD_JOURNEY_STAGES = [
+  { key: 'LEAD_CAPTURED', label: 'Lead Captured', subtext: 'Landlord lead created' },
+  { key: 'CONTACTED', label: 'Contacted', subtext: 'Broker contact logged' },
+  { key: 'ONBOARDING_SENT', label: 'Landlord Onboarding Sent', subtext: 'Ownership and portfolio request sent' },
+  { key: 'ONBOARDING_COMPLETE', label: 'Landlord Onboarding Complete', subtext: 'Client information received' },
+  { key: 'MANDATE_SENT', label: 'Mandate Sent', subtext: 'Mandate issued for signature' },
+  { key: 'MANDATE_COMPLETE', label: 'Mandate Complete', subtext: 'Authority confirmed' },
+  { key: 'LANDLORD_ONBOARDED', label: 'Landlord Onboarded', subtext: 'Active client established' },
+]
+
+const LANDLORD_JOURNEY_STAGE_KEYS = LANDLORD_JOURNEY_STAGES.map((stage) => stage.key)
+
 const LANDLORD_DOCUMENT_CHECKLIST = [
   'Company Registration Document',
   'Owner / Director ID',
@@ -439,49 +451,123 @@ function landlordHasOnboardingSent(record = {}) {
   )
 }
 
-function landlordHasDocumentsRequested(record = {}) {
+function landlordHasContactLogged(record = {}, activities = []) {
+  const status = normalizeLeadStatus(record.status)
+  if (['contacted', 'qualified', 'active', 'negotiation', 'converted'].includes(status)) return true
+  return activities.some((activity) => ['call', 'email', 'meeting', 'whatsapp'].includes(normalizeKey(activity.activityType || activity.activity_type)))
+}
+
+function landlordOnboardingComplete(record = {}) {
   const roleSpecific = getLeadRoleSpecific(record)
-  return Boolean(firstText(record.documentsRequestedAt, record.documents_requested_at, roleSpecific.documentsRequestedAt, roleSpecific.documents_requested_at)) ||
-    ['requested', 'uploaded', 'verified'].includes(normalizeKey(roleSpecific.documentStatus || roleSpecific.document_status || record.documentStatus || record.document_status))
+  const metadata = record.metadata || record.metadata_json || {}
+  const explicitStatus = normalizeKey(firstText(
+    record.onboardingStatus,
+    record.onboarding_status,
+    roleSpecific.onboardingStatus,
+    roleSpecific.onboarding_status,
+    metadata.onboarding_status,
+  ))
+  if (['submitted', 'complete', 'completed', 'onboarded'].includes(explicitStatus)) return true
+
+  const contactComplete = getPhone(record) !== 'Phone pending' && getEmail(record) !== 'Email pending'
+  const entityType = normalizeKey(firstText(record.entityType, record.entity_type, roleSpecific.entityType, roleSpecific.entity_type))
+  const companyDetails = firstText(record.legalName, record.legal_name, record.companyName, record.company_name, roleSpecific.legalName, roleSpecific.legal_name)
+  const registrationNumber = firstText(record.registrationNumber, record.registration_number, record.companyRegistrationNumber, record.company_registration_number, roleSpecific.registrationNumber, roleSpecific.registration_number)
+  const representative = firstText(record.representativeName, record.representative_name, record.contactName, record.contact_name, roleSpecific.representativeName, roleSpecific.representative_name)
+  const fullName = firstText(record.fullName, record.full_name, record.contactName, record.contact_name, [record.firstName, record.lastName].filter(Boolean).join(' '))
+  const identityNumber = firstText(record.idNumber, record.id_number, record.identityNumber, record.identity_number, roleSpecific.idNumber, roleSpecific.id_number, registrationNumber)
+  const companyLike = entityType.includes('company') || entityType.includes('trust') || Boolean(companyDetails && registrationNumber)
+
+  if (companyLike) return Boolean(companyDetails && registrationNumber && representative && contactComplete)
+  return Boolean(fullName && identityNumber && contactComplete)
+}
+
+function landlordMandateSent(record = {}) {
+  const roleSpecific = getLeadRoleSpecific(record)
+  const mandate = getLandlordMandate(record)
+  return ['sent', 'signed'].includes(mandate.mandateStatus) ||
+    Boolean(firstText(record.mandateSentAt, record.mandate_sent_at, roleSpecific.mandateSentAt, roleSpecific.mandate_sent_at))
+}
+
+function landlordMandateComplete(record = {}) {
+  return getLandlordMandate(record).mandateStatus === 'signed'
+}
+
+function normalizeLandlordJourneyStage(value = '') {
+  const normalized = normalizeKey(value).toUpperCase()
+  if (LANDLORD_JOURNEY_STAGE_KEYS.includes(normalized)) return normalized
+  const compact = normalizeKey(value)
+  if (compact.includes('onboard') && compact.includes('complete')) return 'ONBOARDING_COMPLETE'
+  if (compact.includes('onboard') && compact.includes('sent')) return 'ONBOARDING_SENT'
+  if (compact.includes('mandate') && (compact.includes('complete') || compact.includes('signed'))) return 'MANDATE_COMPLETE'
+  if (compact.includes('mandate') && compact.includes('sent')) return 'MANDATE_SENT'
+  if (compact.includes('contact')) return 'CONTACTED'
+  if (compact.includes('landlord') && compact.includes('onboard')) return 'LANDLORD_ONBOARDED'
+  if (compact.includes('client') || compact.includes('converted')) return 'LANDLORD_ONBOARDED'
+  if (compact.includes('lead')) return 'LEAD_CAPTURED'
+  return ''
+}
+
+function getLandlordJourneyAudit(record = {}) {
+  const metadata = record.metadata || record.metadata_json || {}
+  return {
+    stageCompletedAt: record.stageCompletedAt || record.stage_completed_at || metadata.stageCompletedAt || metadata.stage_completed_at || {},
+    stageCompletedBy: record.stageCompletedBy || record.stage_completed_by || metadata.stageCompletedBy || metadata.stage_completed_by || {},
+  }
+}
+
+function getLandlordJourneyStage(record = {}, activities = []) {
+  const explicitStage = normalizeLandlordJourneyStage(firstText(
+    record.landlordJourneyStage,
+    record.landlord_journey_stage,
+    record.metadata?.landlordJourneyStage,
+    record.metadata_json?.landlordJourneyStage,
+    record.metadata?.landlord_journey_stage,
+    record.metadata_json?.landlord_journey_stage,
+  ))
+  const inferredStages = ['LEAD_CAPTURED']
+  if (landlordHasContactLogged(record, activities)) inferredStages.push('CONTACTED')
+  if (landlordHasOnboardingSent(record)) inferredStages.push('ONBOARDING_SENT')
+  if (landlordOnboardingComplete(record)) inferredStages.push('ONBOARDING_COMPLETE')
+  if (landlordMandateSent(record)) inferredStages.push('MANDATE_SENT')
+  if (landlordMandateComplete(record)) inferredStages.push('MANDATE_COMPLETE')
+  if (landlordOnboardingComplete(record) && landlordMandateComplete(record)) inferredStages.push('LANDLORD_ONBOARDED')
+
+  const explicitIndex = LANDLORD_JOURNEY_STAGE_KEYS.indexOf(explicitStage)
+  const inferredStage = inferredStages[inferredStages.length - 1]
+  const inferredIndex = LANDLORD_JOURNEY_STAGE_KEYS.indexOf(inferredStage)
+  const index = Math.max(explicitIndex, inferredIndex, 0)
+  return LANDLORD_JOURNEY_STAGE_KEYS[index]
 }
 
 function getLandlordReadiness(record = {}) {
-  const property = getLandlordProperty(record)
-  const vacancy = getLandlordVacancy(record)
-  const mandate = getLandlordMandate(record)
   const checks = [
-    { key: 'contact', label: 'Contact details complete', complete: !['Phone pending', 'Email pending'].includes(getPhone(record)) && !['Phone pending', 'Email pending'].includes(getEmail(record)) },
-    { key: 'property', label: 'Property details captured', complete: property.propertyName !== 'Property details pending' && property.propertyAddress !== 'Property details pending' },
-    { key: 'authority', label: 'Ownership / authority confirmed', complete: property.authorityConfirmed || mandate.authorityConfirmed },
-    { key: 'vacancy', label: 'Vacancy created', complete: vacancy.vacancyCreated },
-    { key: 'mandate', label: 'Mandate / terms confirmed', complete: ['signed', 'not_required'].includes(mandate.mandateStatus) },
-    { key: 'documents', label: 'Documents requested', complete: landlordHasDocumentsRequested(record) },
-    ...buildAssetReadinessChecks(record, 'property'),
+    { key: 'contact', label: 'Contact details complete', complete: getPhone(record) !== 'Phone pending' && getEmail(record) !== 'Email pending' },
+    { key: 'onboarding_sent', label: 'Onboarding request sent', complete: landlordHasOnboardingSent(record) },
+    { key: 'onboarding_complete', label: 'Client information received', complete: landlordOnboardingComplete(record) },
+    { key: 'mandate_sent', label: 'Mandate issued for signature', complete: landlordMandateSent(record) },
+    { key: 'mandate_complete', label: 'Authority signed and confirmed', complete: landlordMandateComplete(record) },
   ]
   const completeCount = checks.filter((check) => check.complete).length
   return { percentage: Math.round((completeCount / checks.length) * 100), checks }
 }
 
 function getLandlordNextBestAction(record = {}) {
-  const property = getLandlordProperty(record)
-  const vacancy = getLandlordVacancy(record)
-  const mandate = getLandlordMandate(record)
-  if (!landlordHasOnboardingSent(record)) return { label: 'Send landlord onboarding', description: 'Request the landlord onboarding pack and supporting property documents.', action: 'send_onboarding' }
-  if (property.propertyName === 'Property details pending' || property.propertyAddress === 'Property details pending') return { label: 'Confirm property details', description: 'Capture the property name, address, node and physical details.', action: 'confirm_property' }
-  if (!vacancy.vacancyCreated) return { label: 'Create vacancy', description: 'Use the lead details to open a draft commercial vacancy.', action: 'create_vacancy' }
-  if (!['signed', 'not_required'].includes(mandate.mandateStatus)) return { label: 'Confirm mandate / terms', description: 'Confirm authority, mandate type, commission and commercial terms.', action: 'confirm_mandate' }
-  return { label: 'Match tenant requirement', description: 'Vacancy is ready for demand matching and tenant shortlisting.', action: 'match_tenant' }
+  if (!landlordHasOnboardingSent(record)) return { label: 'Send landlord onboarding', description: 'Request company, ownership and portfolio information from the landlord.', action: 'send_onboarding' }
+  if (!landlordOnboardingComplete(record)) return { label: 'Track landlord onboarding', description: 'Review whether the landlord has submitted the required client information.', action: 'track_onboarding' }
+  if (!landlordMandateSent(record)) return { label: 'Send mandate', description: 'Issue the leasing, sales or management mandate for signature.', action: 'send_mandate' }
+  if (!landlordMandateComplete(record)) return { label: 'Track mandate signature', description: 'Follow up until authority is signed and confirmed.', action: 'track_mandate' }
+  return { label: 'Landlord onboarded', description: 'This landlord is now an active client. Manage properties and vacancies separately.', action: 'client_onboarded' }
 }
 
 function buildLandlordSummaryCards(lead = {}, activities = []) {
-  const vacancy = getLandlordVacancy(lead)
-  const mandate = getLandlordMandate(lead)
+  const currentStage = LANDLORD_JOURNEY_STAGES.find((stage) => stage.key === getLandlordJourneyStage(lead, activities)) || LANDLORD_JOURNEY_STAGES[0]
   const lastActivity = activities[0]
   return [
     { key: 'broker', label: 'Assigned Broker', value: getBroker(lead), icon: UserRound, tone: 'blue' },
-    { key: 'stage', label: 'Current Stage', value: lead.stageLabel || titleCase(normalizeLeadStatus(lead.status)) || 'Discovery', icon: Clock3, tone: 'purple' },
-    { key: 'vacancy', label: 'Vacancy Status', value: vacancy.vacancyStatusLabel || 'No vacancy created', icon: Building2, tone: vacancy.vacancyCreated ? 'green' : 'slate' },
-    { key: 'mandate', label: 'Mandate Status', value: mandate.mandateStatusLabel || 'Mandate not confirmed', icon: FileText, tone: ['signed', 'not_required'].includes(mandate.mandateStatus) ? 'green' : 'amber' },
+    { key: 'stage', label: 'Current Stage', value: currentStage.label, icon: Clock3, tone: currentStage.key === 'LANDLORD_ONBOARDED' ? 'green' : 'purple' },
+    { key: 'onboarding', label: 'Onboarding Status', value: landlordOnboardingComplete(lead) ? 'Complete' : landlordHasOnboardingSent(lead) ? 'Sent' : 'Not sent', icon: ClipboardList, tone: landlordOnboardingComplete(lead) ? 'green' : landlordHasOnboardingSent(lead) ? 'amber' : 'slate' },
+    { key: 'mandate', label: 'Mandate Status', value: landlordMandateComplete(lead) ? 'Complete' : landlordMandateSent(lead) ? 'Sent' : 'Not sent', icon: FileText, tone: landlordMandateComplete(lead) ? 'green' : landlordMandateSent(lead) ? 'amber' : 'slate' },
     {
       key: 'activity',
       label: 'Last Activity',
@@ -492,31 +578,27 @@ function buildLandlordSummaryCards(lead = {}, activities = []) {
   ]
 }
 
-function buildLandlordJourney(lead = {}) {
-  const status = normalizeLeadStatus(lead.status)
-  const property = getLandlordProperty(lead)
-  const vacancy = getLandlordVacancy(lead)
-  const mandate = getLandlordMandate(lead)
-  const onboardingSent = landlordHasOnboardingSent(lead)
-  const propertyConfirmed = property.propertyName !== 'Property details pending' && property.propertyAddress !== 'Property details pending'
-  const mandateConfirmed = ['signed', 'not_required'].includes(mandate.mandateStatus)
-  const tenantMatched = Boolean(firstText(lead.matchedTenantId, lead.matched_tenant_id, getLeadRoleSpecific(lead).matchedTenantId, getLeadRoleSpecific(lead).matched_tenant_id))
-  const dealCreated = Boolean(firstText(lead.dealId, lead.deal_id, getLeadRoleSpecific(lead).dealId, getLeadRoleSpecific(lead).deal_id))
-  const steps = [
-    { key: 'captured', label: 'Lead Captured', done: true, date: lead.createdAt ? formatShortDate(lead.createdAt) : '', subtext: 'Landlord lead created' },
-    { key: 'contacted', label: 'Contacted', done: ['contacted', 'qualified', 'active', 'negotiation', 'converted'].includes(status), subtext: 'Broker contact logged' },
-    { key: 'onboarding', label: 'Landlord Onboarding Sent', done: onboardingSent, subtext: 'Document and ownership request sent' },
-    { key: 'property', label: 'Property Confirmed', done: propertyConfirmed, subtext: 'Property identity and location confirmed' },
-    { key: 'vacancy', label: 'Vacancy Created', done: vacancy.vacancyCreated, subtext: 'Draft or live vacancy exists' },
-    { key: 'mandate', label: 'Mandate Confirmed', done: mandateConfirmed, subtext: 'Authority and terms confirmed' },
-    { key: 'match', label: 'Matched to Tenant', done: tenantMatched, subtext: 'Tenant requirement linked' },
-    { key: 'deal', label: 'Deal Created', done: dealCreated, subtext: 'Lease deal opened' },
-  ]
-  const firstIncomplete = steps.findIndex((step) => !step.done)
-  return steps.map((step, index) => ({
-    ...step,
-    state: step.done ? 'complete' : index === firstIncomplete ? 'current' : 'upcoming',
-  }))
+function buildLandlordJourney(lead = {}, activities = []) {
+  const currentStage = getLandlordJourneyStage(lead, activities)
+  const currentIndex = LANDLORD_JOURNEY_STAGE_KEYS.indexOf(currentStage)
+  const finalComplete = currentStage === 'LANDLORD_ONBOARDED'
+  const audit = getLandlordJourneyAudit(lead)
+  const firstContactActivity = activities.find((activity) => ['call', 'email', 'meeting', 'whatsapp'].includes(normalizeKey(activity.activityType || activity.activity_type)))
+  return LANDLORD_JOURNEY_STAGES.map((step, index) => {
+    const completedAt = audit.stageCompletedAt?.[step.key] || audit.stageCompletedAt?.[normalizeKey(step.key)] || ''
+    const fallbackDate = step.key === 'LEAD_CAPTURED'
+      ? lead.createdAt || lead.created_at
+      : step.key === 'CONTACTED'
+        ? firstContactActivity?.createdAt || firstContactActivity?.created_at || firstContactActivity?.activityDate || firstContactActivity?.activity_date
+        : ''
+    return {
+      ...step,
+      done: finalComplete || index < currentIndex,
+      completedBy: audit.stageCompletedBy?.[step.key] || audit.stageCompletedBy?.[normalizeKey(step.key)] || '',
+      date: completedAt ? formatShortDate(completedAt) : fallbackDate && (finalComplete || index < currentIndex) ? formatShortDate(fallbackDate) : '',
+      state: finalComplete || index < currentIndex ? 'complete' : index === currentIndex ? 'current' : 'upcoming',
+    }
+  })
 }
 
 function buildLandlordVacancyPrefill(lead = {}) {
@@ -1240,16 +1322,30 @@ function SummaryCard({ card }) {
   )
 }
 
-export function CommercialLeadJourney({ items = [] }) {
+export function CommercialLeadJourney({
+  items = [],
+  title = 'Lead Journey',
+  subtitle = 'Qualification and conversion path for this commercial lead.',
+  completionBanner = null,
+}) {
   return (
     <section className={`${CARD_CLASS} p-4`}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Lead Journey</h2>
-          <p className="mt-1 text-sm text-slate-500">Qualification and conversion path for this commercial lead.</p>
+          <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">{title}</h2>
+          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
         </div>
       </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+      {completionBanner ? (
+        <div className="mt-4 flex items-start gap-3 rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800">
+          <CheckCircle2 className="mt-0.5 shrink-0" size={18} />
+          <div>
+            <p className="text-sm font-semibold">{completionBanner.title}</p>
+            <p className="mt-1 text-sm leading-6 text-emerald-700">{completionBanner.description}</p>
+          </div>
+        </div>
+      ) : null}
+      <div className={`mt-5 grid gap-3 md:grid-cols-4 ${items.length === 7 ? 'xl:grid-cols-7' : 'xl:grid-cols-8'}`}>
         {items.map((item, index) => {
           const complete = item.state === 'complete'
           const current = item.state === 'current'
@@ -1261,7 +1357,7 @@ export function CommercialLeadJourney({ items = [] }) {
                 complete
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                   : current
-                    ? 'border-blue-200 bg-blue-50 text-blue-700'
+                    ? 'border-emerald-300 bg-emerald-100 text-emerald-800 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]'
                     : blocked
                       ? 'border-rose-200 bg-rose-50 text-rose-700'
                       : 'border-slate-200 bg-white text-slate-500'
@@ -1424,13 +1520,11 @@ function ActionCentre({ onAddNote, onLogCall, onSendOnboarding, onEdit }) {
   )
 }
 
-function LandlordOverview({ lead, onSendOnboarding, onCreateVacancy, onMatchTenant, onConvertToDeal }) {
+function LandlordOverview({ lead, onSendOnboarding }) {
   const nextAction = getLandlordNextBestAction(lead)
   const readiness = getLandlordReadiness(lead)
-  const property = getLandlordProperty(lead)
-  const vacancy = getLandlordVacancy(lead)
-  const canMatchTenant = vacancy.vacancyCreated
-  const canConvertToDeal = vacancy.vacancyCreated && Boolean(firstText(lead.matchedTenantId, lead.matched_tenant_id, getLeadRoleSpecific(lead).matchedTenantId, getLeadRoleSpecific(lead).matched_tenant_id)) && ['signed', 'not_required'].includes(getLandlordMandate(lead).mandateStatus)
+  const profile = getLandlordProfile(lead)
+  const mandate = getLandlordMandate(lead)
   return (
     <div className="grid gap-4">
       <div className="grid gap-4 xl:grid-cols-3">
@@ -1445,16 +1539,10 @@ function LandlordOverview({ lead, onSendOnboarding, onCreateVacancy, onMatchTena
             <Button
               type="button"
               className="justify-center rounded-[14px] bg-[#102b46] hover:bg-[#143858]"
-              onClick={nextAction.action === 'send_onboarding' ? onSendOnboarding : nextAction.action === 'create_vacancy' ? onCreateVacancy : undefined}
-              disabled={!['send_onboarding', 'create_vacancy'].includes(nextAction.action)}
+              onClick={nextAction.action === 'send_onboarding' ? onSendOnboarding : undefined}
+              disabled={nextAction.action !== 'send_onboarding'}
             >
               {nextAction.label}
-            </Button>
-            <Button type="button" variant="secondary" className="justify-center rounded-[14px]" onClick={onMatchTenant} disabled={!canMatchTenant}>
-              Match Tenant Requirement
-            </Button>
-            <Button type="button" variant="secondary" className="justify-center rounded-[14px]" onClick={onConvertToDeal} disabled={!canConvertToDeal}>
-              Convert to Deal
             </Button>
           </div>
         </section>
@@ -1463,7 +1551,7 @@ function LandlordOverview({ lead, onSendOnboarding, onCreateVacancy, onMatchTena
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Landlord Readiness Score</h2>
-            <p className="mt-1 text-sm text-slate-500">Based on core landlord leasing readiness signals.</p>
+            <p className="mt-1 text-sm text-slate-500">Based on relationship conversion signals.</p>
           </div>
           <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-lg font-semibold text-emerald-700">
             {readiness.percentage}%
@@ -1483,20 +1571,19 @@ function LandlordOverview({ lead, onSendOnboarding, onCreateVacancy, onMatchTena
 
         <section className={`${CARD_CLASS} p-5`}>
           <div className="flex h-11 w-11 items-center justify-center rounded-[15px] bg-slate-50 text-slate-700">
-            <Building2 size={18} />
+            <UserRound size={18} />
           </div>
-          <h2 className="mt-4 text-base font-semibold tracking-[-0.03em] text-[#102236]">Property Preview</h2>
+          <h2 className="mt-4 text-base font-semibold tracking-[-0.03em] text-[#102236]">Client Conversion Snapshot</h2>
           <div className="mt-4 grid gap-2">
-            <SnapshotRow label="Property name" value={property.propertyName} />
-            <SnapshotRow label="Address" value={property.propertyAddress} />
-            <SnapshotRow label="Area / Node" value={property.areaNode} />
-            <SnapshotRow label="Asset Class" value={property.assetClassLabel} />
-            <SnapshotRow label="GLA / Size" value={property.glaSqm ? `${property.glaSqm} m²` : 'Not captured'} />
-            <SnapshotRow label="Vacancy Status" value={vacancy.vacancyStatusLabel} />
+            <SnapshotRow label="Landlord" value={profile.companyName} />
+            <SnapshotRow label="Representative" value={profile.contactPerson} />
+            <SnapshotRow label="Relationship" value={profile.relationshipType} />
+            <SnapshotRow label="Onboarding" value={landlordOnboardingComplete(lead) ? 'Complete' : landlordHasOnboardingSent(lead) ? 'Sent' : 'Not sent'} />
+            <SnapshotRow label="Mandate" value={mandate.mandateStatusLabel} />
+            <SnapshotRow label="Client Status" value={landlordOnboardingComplete(lead) && landlordMandateComplete(lead) ? 'Active client' : 'Prospective landlord'} />
           </div>
         </section>
       </div>
-      <AssetIntelligenceCards lead={lead} scope="property" />
     </div>
   )
 }
@@ -1636,7 +1723,7 @@ function LandlordDocumentsPanel({ lead }) {
   return (
     <section className={`${CARD_CLASS} p-5`}>
       <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Landlord Documents</h2>
-      <p className="mt-1 text-sm text-slate-500">Initial checklist for landlord onboarding and vacancy readiness.</p>
+      <p className="mt-1 text-sm text-slate-500">Initial checklist for landlord onboarding, ownership and portfolio verification.</p>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {documents.map((documentName) => {
           const key = normalizeKey(documentName)
@@ -1654,26 +1741,25 @@ function LandlordDocumentsPanel({ lead }) {
 }
 
 function LandlordConversionPanel({ lead }) {
-  const vacancy = getLandlordVacancy(lead)
   const mandate = getLandlordMandate(lead)
   const readiness = getLandlordReadiness(lead)
-  const tenantMatched = Boolean(firstText(lead.matchedTenantId, lead.matched_tenant_id, getLeadRoleSpecific(lead).matchedTenantId, getLeadRoleSpecific(lead).matched_tenant_id))
-  const dealCreated = Boolean(firstText(lead.dealId, lead.deal_id, getLeadRoleSpecific(lead).dealId, getLeadRoleSpecific(lead).deal_id))
   const events = [
-    { label: 'Prospect converted to lead', complete: true },
-    { label: 'Lead qualified', complete: ['qualified', 'active', 'negotiation', 'converted'].includes(normalizeLeadStatus(lead.status)) },
-    { label: 'Vacancy created', complete: vacancy.vacancyCreated },
-    { label: 'Matched to tenant', complete: tenantMatched },
-    { label: 'Deal created', complete: dealCreated },
+    { label: 'Lead captured', complete: true },
+    { label: 'Broker contact logged', complete: landlordHasContactLogged(lead) },
+    { label: 'Ownership and portfolio request sent', complete: landlordHasOnboardingSent(lead) },
+    { label: 'Client information received', complete: landlordOnboardingComplete(lead) },
+    { label: 'Mandate issued for signature', complete: landlordMandateSent(lead) },
+    { label: 'Authority confirmed', complete: landlordMandateComplete(lead) },
+    { label: 'Active client established', complete: landlordOnboardingComplete(lead) && landlordMandateComplete(lead) },
   ]
   return (
     <section className={`${CARD_CLASS} p-5`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Conversion History</h2>
-          <p className="mt-1 text-sm text-slate-500">Lifecycle events from prospect through vacancy and lease deal.</p>
+          <p className="mt-1 text-sm text-slate-500">Relationship conversion events from lead to active landlord client.</p>
         </div>
-        <DetailBadge tone={['signed', 'not_required'].includes(mandate.mandateStatus) ? 'green' : 'slate'}>{mandate.mandateStatusLabel}</DetailBadge>
+        <DetailBadge tone={mandate.mandateStatus === 'signed' ? 'green' : 'slate'}>{mandate.mandateStatusLabel}</DetailBadge>
       </div>
       <CommercialConversionLineagePanel lead={lead} readinessPercentage={readiness.percentage} />
       <div className="mt-4 grid gap-3">
@@ -2781,12 +2867,13 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
     return buildSummaryCards(lead || {}, activities)
   }, [activities, isLeasingLandlord, isLeasingTenant, isSalesBuyer, isSalesSeller, lead])
   const journey = useMemo(() => {
-    if (isLeasingLandlord) return buildLandlordJourney(lead || {})
+    if (isLeasingLandlord) return buildLandlordJourney(lead || {}, activities)
     if (isLeasingTenant) return buildTenantJourney(lead || {})
     if (isSalesSeller) return buildSellerJourney(lead || {})
     if (isSalesBuyer) return buildBuyerJourney(lead || {})
     return buildJourney(lead || {})
-  }, [isLeasingLandlord, isLeasingTenant, isSalesBuyer, isSalesSeller, lead])
+  }, [activities, isLeasingLandlord, isLeasingTenant, isSalesBuyer, isSalesSeller, lead])
+  const landlordOnboarded = isLeasingLandlord && getLandlordJourneyStage(lead || {}, activities) === 'LANDLORD_ONBOARDED'
   const leadName = getLeadName(lead || {})
   const assetClass = getAssetClass(lead || {})
   const statusLabel = titleCase(normalizeLeadStatus(lead?.status))
@@ -2998,9 +3085,6 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
           <LandlordOverview
             lead={lead}
             onSendOnboarding={handleSendOnboarding}
-            onCreateVacancy={handleCreateVacancy}
-            onMatchTenant={handleMatchTenant}
-            onConvertToDeal={handleConvertToDeal}
           />
         )
       }
@@ -3302,7 +3386,15 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
         {summaryCards.map((card) => <SummaryCard key={card.key} card={card} />)}
       </section>
 
-      <CommercialLeadJourney items={journey} />
+      <CommercialLeadJourney
+        items={journey}
+        title={isLeasingLandlord ? 'Landlord Journey' : 'Lead Journey'}
+        subtitle={isLeasingLandlord ? 'Progress from lead to active landlord client.' : 'Qualification and conversion path for this commercial lead.'}
+        completionBanner={landlordOnboarded ? {
+          title: 'Landlord Successfully Onboarded',
+          description: 'This landlord is now an active client. Properties, vacancies and leasing activity are managed separately.',
+        } : null}
+      />
 
       <section className={`${CARD_CLASS} overflow-hidden`}>
         <div className="border-b border-[#e8eef5] px-4">

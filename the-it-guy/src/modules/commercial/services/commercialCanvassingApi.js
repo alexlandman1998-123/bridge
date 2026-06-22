@@ -93,6 +93,9 @@ function mapProspectRow(row = {}) {
     dealType: normalizeText(row.deal_type || row.dealType || metadata.dealType || metadata.deal_type),
     prospectRole: normalizeText(row.prospect_role || row.prospectRole || metadata.prospectRole || metadata.prospect_role),
     propertyCategory: normalizeText(row.property_category || row.propertyCategory || metadata.propertyCategory || metadata.property_category),
+    landlordJourneyStage: normalizeText(row.landlord_journey_stage || row.landlordJourneyStage || metadata.landlordJourneyStage || metadata.landlord_journey_stage),
+    stageCompletedAt: row.stage_completed_at || row.stageCompletedAt || metadata.stageCompletedAt || metadata.stage_completed_at || {},
+    stageCompletedBy: row.stage_completed_by || row.stageCompletedBy || metadata.stageCompletedBy || metadata.stage_completed_by || {},
     roleSpecific,
     metadata,
     canvassingMethod: normalizeText(row.canvassing_method || row.canvassingMethod) || 'Cold Call',
@@ -147,6 +150,9 @@ function prospectPayloadToRow(organisationId, payload = {}) {
     ...(payload.metadata || payload.metadata_json || {}),
     roleSpecific: payload.roleSpecific || payload.role_specific || payload.metadata?.roleSpecific || payload.metadata_json?.roleSpecific || {},
   }
+  const landlordJourneyStage = normalizeText(payload.landlordJourneyStage || payload.landlord_journey_stage || payload.metadata?.landlordJourneyStage || payload.metadata_json?.landlordJourneyStage)
+  const stageCompletedAt = payload.stageCompletedAt || payload.stage_completed_at || payload.metadata?.stageCompletedAt || payload.metadata_json?.stageCompletedAt
+  const stageCompletedBy = payload.stageCompletedBy || payload.stage_completed_by || payload.metadata?.stageCompletedBy || payload.metadata_json?.stageCompletedBy
   const row = {
     organisation_id: normalizeText(organisationId),
     branch_id: toNullableUuid(payload.branchId || payload.branch_id),
@@ -189,6 +195,9 @@ function prospectPayloadToRow(organisationId, payload = {}) {
     lost_reason: normalizeText(payload.lostReason || payload.lost_reason) || null,
     archived_at: normalizeText(payload.archivedAt || payload.archived_at) || null,
   }
+  if (landlordJourneyStage) row.landlord_journey_stage = landlordJourneyStage
+  if (stageCompletedAt) row.stage_completed_at = stageCompletedAt
+  if (stageCompletedBy) row.stage_completed_by = stageCompletedBy
   if (createdBy) row.created_by = createdBy
   return row
 }
