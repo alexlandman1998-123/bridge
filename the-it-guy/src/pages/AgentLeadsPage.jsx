@@ -1065,7 +1065,11 @@ function getSellerCommissionWorkspace(row = {}, listing = {}) {
     row.estimated_value,
     row.budget,
   ))
-  const estimatedExVat = amount || (price && percentage ? (price * percentage) / 100 : 0)
+  const estimatedExVat = commissionType === 'fixed'
+    ? amount
+    : price && percentage
+      ? (price * percentage) / 100
+      : amount || 0
   const vatHandling = normalizeText(firstFilledValue(
     commission.vat,
     commission.vat_handling,
@@ -1196,8 +1200,10 @@ function buildSellerCommissionFormPatch(draft = {}, actor = {}) {
   const mandateEndDate = toIsoInputDate(draft.mandateEndDate)
   const mandateDurationDays = getMandateDurationDays(mandateStartDate, mandateEndDate)
   const commissionType = normalizeCommissionTermType(draft.commissionType)
-  const percentage = commissionType === 'percentage' ? toFiniteNumber(draft.percentage) : 0
-  const amount = commissionType === 'fixed' ? toFiniteNumber(draft.amount) : 0
+  const percentage = toFiniteNumber(draft.percentage)
+  const amount = toFiniteNumber(draft.amount)
+  const hasPercentage = normalizeText(draft.percentage) !== ''
+  const hasAmount = normalizeText(draft.amount) !== ''
   const vatHandling = normalizeVatHandling(draft.vatHandling)
   const agencyStructureId = normalizeText(draft.agencyStructureId)
   const agencyStructureName = normalizeText(draft.agencyStructureName)
@@ -1211,7 +1217,7 @@ function buildSellerCommissionFormPatch(draft = {}, actor = {}) {
   const specialConditions = buildSpecialConditionsText(specialMandateConditions, additionalConditions)
   const updatedAt = new Date().toISOString()
   const updatedBy = normalizeText(actor?.id || actor?.userId || actor?.email || actor?.name || 'agent')
-  return {
+  const patch = {
     mandateType,
     mandate_type: mandateType,
     mandateStartDate,
@@ -1225,15 +1231,15 @@ function buildSellerCommissionFormPatch(draft = {}, actor = {}) {
     commissionStructure: commissionType,
     commissionType,
     commission_type: commissionType,
-    commissionPercentage: commissionType === 'percentage' ? String(percentage) : null,
-    commission_percentage: commissionType === 'percentage' ? String(percentage) : null,
-    commissionPercent: commissionType === 'percentage' ? String(percentage) : null,
-    commission_percent: commissionType === 'percentage' ? String(percentage) : null,
-    mandateCommissionPercentage: commissionType === 'percentage' ? String(percentage) : null,
-    mandateCommissionPercent: commissionType === 'percentage' ? String(percentage) : null,
-    commissionAmount: commissionType === 'fixed' ? String(amount) : null,
-    commission_amount: commissionType === 'fixed' ? String(amount) : null,
-    mandateCommissionAmount: commissionType === 'fixed' ? String(amount) : null,
+    commissionPercentage: commissionType === 'percentage' ? String(percentage) : undefined,
+    commission_percentage: commissionType === 'percentage' ? String(percentage) : undefined,
+    commissionPercent: commissionType === 'percentage' ? String(percentage) : undefined,
+    commission_percent: commissionType === 'percentage' ? String(percentage) : undefined,
+    mandateCommissionPercentage: commissionType === 'percentage' ? String(percentage) : undefined,
+    mandateCommissionPercent: commissionType === 'percentage' ? String(percentage) : undefined,
+    commissionAmount: commissionType === 'fixed' ? String(amount) : undefined,
+    commission_amount: commissionType === 'fixed' ? String(amount) : undefined,
+    mandateCommissionAmount: commissionType === 'fixed' ? String(amount) : undefined,
     vatHandling,
     vat_handling: vatHandling,
     agencyCommissionStructureId: agencyStructureId,
@@ -1266,6 +1272,18 @@ function buildSellerCommissionFormPatch(draft = {}, actor = {}) {
     commissionUpdatedBy: updatedBy,
     commissionSource: 'seller_lead_workspace',
   }
+  if (commissionType !== 'percentage' && hasPercentage) {
+    patch.previousCommissionPercentage = String(percentage)
+    patch.previous_commission_percentage = String(percentage)
+  }
+  if (commissionType !== 'fixed' && hasAmount) {
+    patch.previousCommissionAmount = String(amount)
+    patch.previous_commission_amount = String(amount)
+  }
+  Object.keys(patch).forEach((key) => {
+    if (patch[key] === undefined) delete patch[key]
+  })
+  return patch
 }
 
 function validateSellerMandateDraft(draft = {}) {
@@ -14305,21 +14323,15 @@ function SellerCommissionCard({
 }) {
   const percentage = toFiniteNumber(commissionDraft?.percentage)
   const amount = toFiniteNumber(commissionDraft?.amount)
-  const estimatedExVat = amount || commissionSummary?.estimatedExVat || 0
   const vatHandling = normalizeVatHandling(commissionDraft?.vatHandling)
   const vatIncluded = ['yes', 'inclusive'].includes(vatHandling) || vatHandling.includes('incl')
-  const estimatedInclVat = vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0
   const commissionType = normalizeCommissionTermType(commissionDraft?.commissionType)
+  const estimatedExVat = commissionType === 'fixed' ? amount : commissionSummary?.estimatedExVat || 0
+  const estimatedInclVat = vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0
   const durationLabel = getMandateDurationLabel(commissionDraft?.mandateStartDate, commissionDraft?.mandateEndDate)
   const marketingAuthorisations = normalizeBooleanObject(commissionDraft?.marketingAuthorisations, SELLER_MANDATE_MARKETING_OPTIONS)
   const specialMandateConditions = normalizeBooleanObject(commissionDraft?.specialMandateConditions, SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS)
   const update = (key, value) => {
-    if (key === 'commissionType') {
-      onCommissionDraftChange?.('commissionType', value)
-      if (value === 'percentage') onCommissionDraftChange?.('amount', '')
-      if (value === 'fixed') onCommissionDraftChange?.('percentage', '')
-      return
-    }
     onCommissionDraftChange?.(key, value)
   }
   const updateMarketing = (key, value) => update('marketingAuthorisations', { ...marketingAuthorisations, [key]: value })
@@ -15909,7 +15921,6 @@ function AgentLeadWorkspace() {
       if (!listingId) throw new Error('Create or link a seller listing before saving commission terms.')
 
       const formPatch = buildSellerCommissionFormPatch(draft, actor)
-      const existingFormData = readSellerOnboardingFormData(linkedSellerListing, row)
       const currentStatus = getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney)
       await updatePrivateListing(listingId, {
         mandateType: formPatch.mandateType,
@@ -15917,10 +15928,7 @@ function AgentLeadWorkspace() {
         includeRequirementsAndDocuments: false,
         syncRequirements: false,
       }).catch(() => null)
-      await updatePrivateListingOnboardingFormData(listingId, {
-        ...existingFormData,
-        ...formPatch,
-      }, {
+      await updatePrivateListingOnboardingFormData(listingId, formPatch, {
         status: sellerOnboardingIsSubmitted(currentStatus) ? currentStatus : 'in_progress',
       })
       await createAgencyCrmLeadActivity(organisationId, row.leadId, {

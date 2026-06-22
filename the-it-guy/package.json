@@ -132,6 +132,7 @@
     "test:transaction-routing-rollout-console": "node scripts/transaction-routing-rollout-console.test.mjs",
     "test:seller-journey": "node scripts/seller-journey.test.mjs",
     "test:seller-analytics": "node scripts/seller-analytics.test.mjs",
+    "test:seller-mandate-save-preserves-data": "node scripts/seller-mandate-save-preserves-data.test.mjs",
     "test:seller-portal-alignment": "node scripts/seller-portal-alignment.test.mjs",
     "test:seller-onboarding-phase5": "node scripts/seller-onboarding-phase5.test.mjs",
     "test:seller-onboarding-phase6": "node scripts/seller-onboarding-phase6.test.mjs",
