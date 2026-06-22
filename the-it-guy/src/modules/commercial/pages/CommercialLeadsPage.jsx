@@ -19,7 +19,8 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import Button from '../../../components/ui/Button'
 import Field from '../../../components/ui/Field'
@@ -1020,6 +1021,9 @@ function LeadActionsMenu({
   onConvertToDeal,
   onArchive,
 }) {
+  const buttonRef = useRef(null)
+  const menuRef = useRef(null)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
   const role = normalizeLeadRole(lead)
   const items = [
     { label: 'Edit Lead', icon: Pencil, onClick: onEdit },
@@ -1031,21 +1035,59 @@ function LeadActionsMenu({
     { label: 'Archive', icon: Archive, onClick: onArchive },
   ].filter(Boolean)
 
-  return (
-    <div className="relative flex justify-end">
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          onToggle?.()
-        }}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
-        aria-label="Lead actions"
-      >
-        <MoreHorizontal size={15} />
-      </button>
-      {open ? (
-        <div className="absolute right-0 top-11 z-20 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.12)]">
+  const updateMenuPosition = useCallback(() => {
+    if (!buttonRef.current || typeof window === 'undefined') return
+    const rect = buttonRef.current.getBoundingClientRect()
+    const menuWidth = 224
+    const viewportPadding = 12
+    const left = Math.min(
+      Math.max(viewportPadding, rect.right - menuWidth),
+      Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding),
+    )
+    const opensUp = rect.bottom + 12 + 260 > window.innerHeight && rect.top > 300
+    const top = opensUp ? Math.max(viewportPadding, rect.top - 12 - 260) : rect.bottom + 8
+    setMenuPosition({ top, left })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open) return undefined
+    updateMenuPosition()
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+    }
+  }, [open, updateMenuPosition])
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    function handlePointerDown(event) {
+      if (buttonRef.current?.contains(event.target) || menuRef.current?.contains(event.target)) return
+      onToggle?.()
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') onToggle?.()
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onToggle, open])
+
+  const menu = open && typeof document !== 'undefined'
+    ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[80] w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.16)]"
+          style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
           {items.map((item) => (
             <button
               key={item.label}
@@ -1055,6 +1097,7 @@ function LeadActionsMenu({
               onClick={(event) => {
                 event.stopPropagation()
                 item.onClick?.(lead)
+                onToggle?.()
               }}
               className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-[#102236] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
             >
@@ -1062,8 +1105,27 @@ function LeadActionsMenu({
               {item.label}
             </button>
           ))}
-        </div>
-      ) : null}
+        </div>,
+        document.body,
+      )
+    : null
+
+  return (
+    <div className="relative flex justify-end">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation()
+          if (!open) window.requestAnimationFrame(updateMenuPosition)
+          onToggle?.()
+        }}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+        aria-label="Lead actions"
+      >
+        <MoreHorizontal size={15} />
+      </button>
+      {menu}
     </div>
   )
 }

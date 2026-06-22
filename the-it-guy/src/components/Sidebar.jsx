@@ -111,6 +111,8 @@ const ICON_BY_KEY = {
   attorney_matters_cancellation: AlertTriangle,
   attorney_matters_registered: FileCheck2,
   attorney_matters_archived: Files,
+  attorney_pipeline: KanbanSquare,
+  attorney_incoming_matters: ClipboardList,
   attorney_workflow_board: KanbanSquare,
   scheduling: CalendarDays,
   team_departments: ShieldUser,

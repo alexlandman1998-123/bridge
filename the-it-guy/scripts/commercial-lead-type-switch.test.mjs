@@ -6,6 +6,10 @@ const source = await fs.readFile(new URL('../src/modules/commercial/pages/Commer
 assert.match(source, /LEAD_MODAL_ROLE_SPECIFIC_KEYS/, 'lead modal should define role-specific switch guard keys')
 assert.match(source, /hasMeaningfulRoleSpecificDraftValues/, 'lead modal should use a meaningful-value guard before warning on role switch')
 assert.match(source, /mode === 'edit' \? \{\} : buildInitialDraft\(null, selectedBroker\)/, 'new lead role switch should compare against a clean baseline')
+assert.match(source, /createPortal\(/, 'lead row actions menu should render through a portal')
+assert.match(source, /document\.body/, 'lead row actions portal should mount on document.body')
+assert.match(source, /className="fixed z-\[80\] w-56/, 'lead row actions menu should use fixed viewport positioning')
+assert.doesNotMatch(source, /absolute right-0 top-11 z-20 w-56/, 'lead row actions menu should not be clipped by table overflow')
 
 const landlordKeys = source.match(/landlord: \[([\s\S]*?)\],\n  tenant:/)?.[1] || ''
 assert.ok(landlordKeys, 'landlord role-specific switch keys should be defined')

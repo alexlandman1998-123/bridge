@@ -22,10 +22,10 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname.startsWith('/units/')) {
     if (role === 'developer') return 'Units'
     if (role === 'bond_originator') return 'Applications'
-    if (role === 'attorney') return 'Transactions'
+    if (role === 'attorney') return 'Matters'
     return 'Transactions'
   }
-  if (pathname.startsWith('/transactions/')) return isAgentWorkspaceRole ? '' : 'Transactions'
+  if (pathname.startsWith('/transactions/')) return role === 'attorney' ? 'Matters' : isAgentWorkspaceRole ? '' : 'Transactions'
   if (pathname.startsWith('/developments/')) return 'Developments'
   if (pathname === '/bond/files' || pathname.startsWith('/bond/files/')) return ''
   if (role === 'bond_originator' && pathname === '/documents') return ''
@@ -60,10 +60,10 @@ function getPageTitle(pathname, stateTitle, role) {
   if (pathname === '/teams') return 'Teams'
   if (pathname === '/banks') return 'Banks'
   if (pathname === '/performance') return 'Performance'
-  if (pathname === '/transfers') return role === 'attorney' ? 'Transactions' : 'Transfers'
+  if (pathname === '/transfers') return role === 'attorney' ? 'Matters' : 'Transfers'
   if (pathname === '/clients' || pathname.startsWith('/clients/')) return isAgentWorkspaceRole ? '' : 'Clients'
   if (pathname === '/financials') return 'Financials'
-  if (pathname.startsWith('/attorney/transactions') || pathname.startsWith('/attorney/matters')) return 'Transactions'
+  if (pathname.startsWith('/attorney/transactions') || pathname.startsWith('/attorney/matters')) return 'Matters'
   if (pathname === '/pipeline' || pathname.startsWith('/pipeline/')) return isAgentWorkspaceRole ? '' : 'Pipeline'
   if (pathname === '/calendar') return isAgentWorkspaceRole ? '' : 'Calendar'
   if (pathname === '/documents') return isAgentWorkspaceRole ? '' : 'Documents'
@@ -375,15 +375,16 @@ function NotificationSection({ label, items, onSelect }) {
 }
 
 const ATTORNEY_DASHBOARD_ROLE_VIEWS = [
-  { value: 'active', label: 'Active Transactions' },
-  { value: 'registered', label: 'Registered Transactions' },
-  { value: 'archived', label: 'Archived Transactions' },
-  { value: 'transfer', label: 'Transfer Transactions' },
-  { value: 'bond', label: 'Bond Transactions' },
-  { value: 'cancellation', label: 'Cancellation Transactions' },
-  { value: 'shared', label: 'Shared Transactions' },
-  { value: 'delayed', label: 'Delayed Transactions' },
-  { value: 'full-service', label: 'Full-Service Transactions' },
+  { value: 'active', label: 'Incoming Matters' },
+  { value: 'all', label: 'All Matters' },
+  { value: 'registered', label: 'Registered Matters' },
+  { value: 'archived', label: 'Archived Matters' },
+  { value: 'transfer', label: 'Transfer Matters' },
+  { value: 'bond', label: 'Bond Matters' },
+  { value: 'cancellation', label: 'Cancellation Matters' },
+  { value: 'shared', label: 'Shared Matters' },
+  { value: 'delayed', label: 'Delayed Matters' },
+  { value: 'full-service', label: 'Full-Service Matters' },
 ]
 
 function HeaderBar({ onLogout, user }) {
@@ -741,19 +742,19 @@ function HeaderBar({ onLogout, user }) {
         <div className="flex min-w-0 shrink-0 items-center gap-3">
           <QuickCreateDropdown />
           <label className="relative min-w-[220px] max-w-[280px] flex-1 sm:flex-none">
-            <span className="sr-only">Transaction view</span>
+            <span className="sr-only">Matter view</span>
             <select
               className="h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white py-0 pl-10 pr-9 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
               value=""
               onChange={(event) => {
                 const nextValue = event.target.value
                 if (nextValue) {
-                  navigate(`/attorney/transactions/${encodeURIComponent(nextValue)}`)
+                  navigate(`/attorney/matters/${encodeURIComponent(nextValue)}`)
                 }
               }}
             >
               <option value="" disabled>
-                Transactions
+                Matters
               </option>
               {ATTORNEY_DASHBOARD_ROLE_VIEWS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -772,7 +773,7 @@ function HeaderBar({ onLogout, user }) {
             <input
               className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
               type="search"
-              placeholder="Search transactions, clients, documents..."
+              placeholder="Search matters, clients, documents..."
             />
           </div>
           {notificationsControl}
@@ -878,7 +879,13 @@ function HeaderBar({ onLogout, user }) {
             <input
               className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
               type="search"
-              placeholder={role === 'bond_originator' ? 'Search applications, clients, partners...' : 'Search transactions, clients, listings...'}
+              placeholder={
+                role === 'bond_originator'
+                  ? 'Search applications, clients, partners...'
+                  : role === 'attorney'
+                    ? 'Search matters, clients, documents...'
+                    : 'Search transactions, clients, listings...'
+              }
             />
             <kbd>⌘K</kbd>
           </div>

@@ -20,44 +20,44 @@ import { getAttorneyOperationalWorkspaceData } from '../services/attorneyOperati
 
 const MATTER_VIEW_COPY = {
   active: {
-    title: 'Transactions',
-    description: 'Current working files across transfer, bond registration, and cancellation workflows.',
+    title: 'Incoming Matters',
+    description: 'New and active matter instructions flowing into the firm pipeline.',
   },
   all: {
-    title: 'Transactions',
-    description: 'A unified operational queue for every transaction assigned to this attorney firm.',
+    title: 'All Matters',
+    description: 'A unified operational queue for every matter assigned to this attorney firm.',
   },
   transfer: {
-    title: 'Transfer Transactions',
-    description: 'Filtered view of transactions where transfer work is required or assigned to the firm.',
+    title: 'Transfer Matters',
+    description: 'Filtered view of matters where transfer work is required or assigned to the firm.',
   },
   bond: {
-    title: 'Bond Transactions',
-    description: 'Filtered view of bond and hybrid-finance transactions requiring bond attorney workflow.',
+    title: 'Bond Matters',
+    description: 'Filtered view of bond and hybrid-finance matters requiring bond attorney workflow.',
   },
   cancellation: {
-    title: 'Cancellation Transactions',
-    description: 'Filtered view of transactions with existing seller bond cancellation requirements.',
+    title: 'Cancellation Matters',
+    description: 'Filtered view of matters with existing seller bond cancellation requirements.',
   },
   shared: {
-    title: 'Shared Transactions',
-    description: 'Transactions where multiple legal roles or firms are involved in the same file.',
+    title: 'Shared Matters',
+    description: 'Matters where multiple legal roles or firms are involved in the same file.',
   },
   delayed: {
-    title: 'Delayed Transactions',
-    description: 'Transactions with blockers, overdue workflow signals, or SLA risk.',
+    title: 'Delayed Matters',
+    description: 'Matters with blockers, overdue workflow signals, or SLA risk.',
   },
   registered: {
-    title: 'Registered Transactions',
+    title: 'Registered Matters',
     description: 'Completed registrations retained for close-out, reporting, and historical search.',
   },
   archived: {
-    title: 'Archived Transactions',
-    description: 'Closed, cancelled, or dead transactions retained for firm records and audit.',
+    title: 'Archived Matters',
+    description: 'Closed, cancelled, or dead matters retained for firm records and audit.',
   },
   'full-service': {
-    title: 'Full-Service Transactions',
-    description: 'Transactions where transfer, bond, and cancellation work all apply to the same file.',
+    title: 'Full-Service Matters',
+    description: 'Matters where transfer, bond, and cancellation work all apply to the same file.',
   },
 }
 
@@ -198,7 +198,7 @@ function StatusPill({ children, tone = 'neutral' }) {
   )
 }
 
-function LoadingState({ copy = 'Loading attorney transactions…' }) {
+function LoadingState({ copy = 'Loading attorney matters…' }) {
   return (
     <section className="w-full px-3 py-4 sm:px-4 lg:px-5">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -215,15 +215,15 @@ function EmptyState({ view, filter = 'all' }) {
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
         <BriefcaseBusiness size={20} />
       </div>
-      <h2 className="mt-4 text-base font-semibold text-slate-950">No {filterLabel}{MATTER_VIEW_COPY[view]?.title?.toLowerCase() || 'transactions'} visible</h2>
+      <h2 className="mt-4 text-base font-semibold text-slate-950">No {filterLabel}{MATTER_VIEW_COPY[view]?.title?.toLowerCase() || 'matters'} visible</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-        Transactions appear here when they are assigned to this firm and match the current operational filter.
+        Matters appear here when they are assigned to this firm and match the current operational filter.
       </p>
       <Link
         to="/new-transaction"
         className="mt-5 inline-flex items-center justify-center rounded-xl border border-[#12314f] bg-[#12314f] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b4264]"
       >
-        Create Transaction
+        Create Matter
       </Link>
     </section>
   )
@@ -235,7 +235,7 @@ function SummaryStrip({ matters = [] }) {
   const cancellation = matters.filter((matter) => getWorkflowLanes(matter).includes('Cancellation')).length
   const delayed = matters.filter((matter) => getRiskTone(matter) === 'danger').length
   const items = [
-    { label: 'Visible Transactions', value: matters.length, icon: BriefcaseBusiness, tone: 'bg-blue-50 text-blue-700' },
+    { label: 'Visible Matters', value: matters.length, icon: BriefcaseBusiness, tone: 'bg-blue-50 text-blue-700' },
     { label: 'Transfer Lanes', value: transfer, icon: Columns3, tone: 'bg-sky-50 text-sky-700' },
     { label: 'Bond Lanes', value: bond, icon: Banknote, tone: 'bg-violet-50 text-violet-700' },
     { label: 'Cancellation Lanes', value: cancellation, icon: ShieldAlert, tone: 'bg-amber-50 text-amber-700' },
@@ -275,7 +275,7 @@ function MatterCard({ matter }) {
         <div className="min-w-0">
           <p className="truncate text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-slate-500">{matter.matterReference}</p>
           <h3 className="mt-1 truncate text-base font-semibold text-slate-950">{matter.propertyLabel || 'Property pending'}</h3>
-          <p className="mt-1 truncate text-sm text-slate-500">{matter.developmentName || 'Standalone transaction'}</p>
+          <p className="mt-1 truncate text-sm text-slate-500">{matter.developmentName || 'Standalone matter'}</p>
         </div>
         <StatusPill tone={riskTone}>{matter.status || 'On track'}</StatusPill>
       </div>
@@ -331,7 +331,7 @@ function MatterCard({ matter }) {
         state={matterNavigationState}
         className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#12314f] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0d253d]"
       >
-        Open Transaction
+        Open Matter
         <ArrowRight size={15} />
       </Link>
     </article>
@@ -374,7 +374,7 @@ function MattersTable({ matters = [] }) {
                   <td className="px-4 py-4 font-semibold text-slate-950">{matter.matterReference}</td>
                   <td className="max-w-[240px] px-4 py-4">
                     <p className="truncate font-medium text-slate-900">{matter.propertyLabel || 'Property pending'}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">{matter.developmentName || 'Standalone transaction'}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{matter.developmentName || 'Standalone matter'}</p>
                   </td>
                   <td className="max-w-[180px] px-4 py-4 text-slate-700"><span className="block truncate">{matter.buyerName || matter.clientName || 'Buyer pending'}</span></td>
                   <td className="max-w-[180px] px-4 py-4 text-slate-700"><span className="block truncate">{matter.sellerName || 'Seller pending'}</span></td>
@@ -432,7 +432,7 @@ function AttorneyMattersPage() {
         setData(next)
       } catch (loadError) {
         if (!active) return
-        setError(loadError?.message || 'Unable to load attorney transactions.')
+        setError(loadError?.message || 'Unable to load attorney matters.')
       } finally {
         if (active) setLoading(false)
       }
@@ -481,7 +481,7 @@ function AttorneyMattersPage() {
         <div className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
           <h1 className="text-lg font-semibold text-slate-950">Firm workspace unavailable</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            We could not load an active firm transaction queue just now. Please refresh or open Firm Settings to repair the attorney firm context.
+            We could not load an active firm matter queue just now. Please refresh or open Firm Settings to repair the attorney firm context.
           </p>
         </div>
       </section>
@@ -493,7 +493,7 @@ function AttorneyMattersPage() {
       <div className="mx-auto w-full max-w-[1800px] space-y-5">
         <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Attorney Transaction OS</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Attorney Matter OS</p>
             <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-slate-950">{viewCopy.title}</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{viewCopy.description}</p>
           </div>
@@ -523,7 +523,7 @@ function AttorneyMattersPage() {
             return (
               <Link
                 key={tab.key}
-                to={`/attorney/transactions/${tab.key}`}
+                to={`/attorney/matters/${tab.key}`}
                 className={`inline-flex h-10 shrink-0 items-center rounded-xl border px-4 text-sm font-semibold transition ${
                   active
                     ? 'border-[#12314f] bg-[#12314f] text-white shadow-sm'
@@ -599,12 +599,12 @@ function AttorneyMattersPage() {
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-3">
             {[
-              { label: 'Permissions', value: data?.permissions?.can_view_all_firm_matters ? 'Firm-wide visibility' : 'Assigned transactions only', icon: UserRoundCheck },
+              { label: 'Permissions', value: data?.permissions?.can_view_all_firm_matters ? 'Firm-wide visibility' : 'Assigned matters only', icon: UserRoundCheck },
               { label: 'Document Operations', value: data?.documentQueue?.length || 0, icon: FileWarning },
               { label: 'Priority Queue', value: data?.priorityQueue?.length || 0, icon: AlertTriangle },
               { label: 'Last Sync', value: formatDate(new Date().toISOString()), icon: CheckCircle2 },
               { label: 'Outstanding Fees', value: formatCurrency(0), icon: Banknote },
-              { label: 'SLA Watch', value: `${visibleMatters.filter((matter) => getRiskTone(matter) !== 'success').length} transaction(s)`, icon: Clock3 },
+              { label: 'SLA Watch', value: `${visibleMatters.filter((matter) => getRiskTone(matter) !== 'success').length} matter(s)`, icon: Clock3 },
             ].map((item) => {
               const Icon = item.icon
               return (

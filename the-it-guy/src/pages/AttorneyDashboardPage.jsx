@@ -20,14 +20,15 @@ import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getAttorneyManagementDashboardData } from '../services/attorneyDashboard'
 
 const ROLE_VIEW_OPTIONS = [
-  { value: 'active', label: 'Active Transactions' },
-  { value: 'registered', label: 'Registered Transactions' },
-  { value: 'archived', label: 'Archived Transactions' },
-  { value: 'transfer', label: 'Transfer Transactions' },
-  { value: 'bond', label: 'Bond Transactions' },
-  { value: 'cancellation', label: 'Cancellation Transactions' },
-  { value: 'shared', label: 'Shared Transactions' },
-  { value: 'full-service', label: 'Full-Service Transactions' },
+  { value: 'active', label: 'Incoming Matters' },
+  { value: 'all', label: 'All Matters' },
+  { value: 'registered', label: 'Registered Matters' },
+  { value: 'archived', label: 'Archived Matters' },
+  { value: 'transfer', label: 'Transfer Matters' },
+  { value: 'bond', label: 'Bond Matters' },
+  { value: 'cancellation', label: 'Cancellation Matters' },
+  { value: 'shared', label: 'Shared Matters' },
+  { value: 'full-service', label: 'Full-Service Matters' },
 ]
 
 const EMPTY_DASHBOARD = {
@@ -96,7 +97,7 @@ function DashboardHeader() {
     <div className="flex flex-wrap items-center justify-end gap-2">
       <Link to="/new-transaction" className={primaryButtonClass}>
         <Plus size={15} />
-        Create Transaction
+        Create Matter
       </Link>
       <Link to="/documents" className={softButtonClass}>
         <FileCheck2 size={15} />
@@ -126,7 +127,7 @@ function SectionHeading({ title, actionHref, actionLabel }) {
 function DailyStatusCards({ stats = {}, alerts = [] }) {
   const requiringAttention = Number(stats.delayedMatters || 0) + Number(alerts.find((item) => item.key === 'guarantees')?.count || 0)
   const cards = [
-    { key: 'active', label: 'Active Transactions', value: stats.activeMatters, helper: 'In progress', icon: UsersRound },
+    { key: 'active', label: 'Active Matters', value: stats.activeMatters, helper: 'In progress', icon: UsersRound },
     { key: 'attention', label: 'Awaiting Client Action', value: requiringAttention, helper: 'Needs your action', icon: AlertTriangle },
     { key: 'lodgements', label: 'Lodgements Today', value: stats.lodgementsToday || stats.lodgementsPending || 0, helper: 'Scheduled or due', icon: CalendarClock },
     { key: 'registration', label: 'Registration Expected', value: stats.registeredThisMonth || 0, helper: 'This month', icon: CheckCircle2 },
@@ -165,12 +166,12 @@ function NeedsAttentionPanel({ alerts = [], matters = [] }) {
 
   return (
     <section className="grid gap-3">
-      <SectionHeading title="Needs Attention" actionHref="/attorney/transactions/delayed" actionLabel="Open queue" />
+      <SectionHeading title="Needs Attention" actionHref="/attorney/matters/delayed" actionLabel="Open queue" />
       <div className={`${surfaceClass} grid gap-0 divide-y divide-slate-100 overflow-hidden md:grid-cols-5 md:divide-x md:divide-y-0`}>
         {normalizedAlerts.map((alert) => {
           const Icon = alert.icon
           return (
-            <Link key={alert.key} to="/attorney/transactions/delayed" className="group flex min-h-[96px] items-center gap-3 p-4 transition hover:bg-slate-50">
+            <Link key={alert.key} to="/attorney/matters/delayed" className="group flex min-h-[96px] items-center gap-3 p-4 transition hover:bg-slate-50">
               <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#eef4f8] text-[#315b74]">
                 <Icon size={16} />
               </span>
@@ -202,7 +203,7 @@ function PipelinePanel({ title, icon, matters = [], href }) {
           </span>
           <div className="min-w-0">
             <h3 className="truncate text-sm font-semibold text-slate-950">{title}</h3>
-            <p className="text-xs text-slate-500">{formatNumber(total)} active transactions</p>
+            <p className="text-xs text-slate-500">{formatNumber(total)} active matters</p>
           </div>
         </div>
         <Link to={href} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-950">View <ArrowRight size={13} /></Link>
@@ -241,11 +242,11 @@ function PipelinePanel({ title, icon, matters = [], href }) {
 function MatterPipelines({ lanes = {} }) {
   return (
     <section className="grid gap-3">
-      <SectionHeading title="Transaction Pipelines" />
+      <SectionHeading title="Matter Pipelines" />
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <PipelinePanel title="Transfer Transactions" icon={Scale} matters={lanes.transfer || []} href="/attorney/transactions/transfer" />
-        <PipelinePanel title="Bond Transactions" icon={Landmark} matters={lanes.bond || []} href="/attorney/transactions/bond" />
-        <PipelinePanel title="Cancellation Transactions" icon={ShieldAlert} matters={lanes.cancellation || []} href="/attorney/transactions/cancellation" />
+        <PipelinePanel title="Transfer Matters" icon={Scale} matters={lanes.transfer || []} href="/attorney/matters/transfer" />
+        <PipelinePanel title="Bond Matters" icon={Landmark} matters={lanes.bond || []} href="/attorney/matters/bond" />
+        <PipelinePanel title="Cancellation Matters" icon={ShieldAlert} matters={lanes.cancellation || []} href="/attorney/matters/cancellation" />
       </div>
     </section>
   )

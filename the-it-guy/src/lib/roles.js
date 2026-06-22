@@ -142,9 +142,23 @@ export const APP_NAV_BY_ROLE = {
     { key: 'dashboard', label: 'Dashboard', to: '/attorney/dashboard' },
     {
       key: 'attorney_matters',
-      label: 'Transactions',
-      to: '/attorney/transactions/active',
+      label: 'Matters',
+      to: '/attorney/matters/all',
       activeMatch: ['/transactions', '/attorney/matters', '/attorney/transactions'],
+      children: [
+        { key: 'attorney_matters_all', label: 'All Matters', to: '/attorney/matters/all' },
+        { key: 'attorney_matters_bond', label: 'Bond Matters', to: '/attorney/matters/bond' },
+        { key: 'attorney_matters_cancellation', label: 'Cancellation Matters', to: '/attorney/matters/cancellation' },
+      ],
+    },
+    {
+      key: 'attorney_pipeline',
+      label: 'Pipeline',
+      to: '/attorney/matters/active',
+      activeMatch: ['/attorney/pipeline', '/attorney/matters/active', '/attorney/transactions/active'],
+      children: [
+        { key: 'attorney_incoming_matters', label: 'Incoming Matters', to: '/attorney/matters/active' },
+      ],
     },
     { key: 'attorney_workflow_board', label: 'Workflow', to: '/attorney/operations' },
     { key: 'scheduling', label: 'Calendar', to: '/attorney/scheduling' },
