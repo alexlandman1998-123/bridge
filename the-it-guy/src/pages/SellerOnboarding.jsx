@@ -196,6 +196,13 @@ function areCanonicalSellerFactsEnabled() {
 }
 
 async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
+  const assignedAgentId = String(
+    updated?.assignedAgentId ||
+      updated?.assigned_agent_id ||
+      updated?.agentId ||
+      updated?.agent_id ||
+      ''
+  ).trim()
   const assignedAgentEmail = String(
     updated?.assignedAgentEmail ||
       updated?.assigned_agent_email ||
@@ -203,10 +210,9 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
       updated?.agent_email ||
       updated?.assignedAgent?.email ||
       updated?.assigned_agent?.email ||
-      updated?.agentId ||
       ''
   ).trim()
-  if (!assignedAgentEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedAgentEmail)) return
+  const hasValidAssignedAgentEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedAgentEmail)
 
   const assignedAgentName = String(updated?.assignedAgentName || updated?.assignedAgent || 'Agent').trim()
   const sellerName = [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || 'Seller'
@@ -214,6 +220,7 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
   const leadId = String(updated?.sellerLeadId || updated?.seller_lead_id || updated?.leadId || updated?.lead_id || '').trim()
   const listingId = String(updated?.id || updated?.listingId || updated?.listing_id || '').trim()
   const transactionReference = String(updated?.transactionReference || updated?.transaction_reference || updated?.reference || '').trim()
+  if (!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId) return
   const actionLink = typeof window !== 'undefined' && leadId
     ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(leadId)}/legal/mandate`
     : ''
@@ -224,7 +231,7 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
       invokeEdgeFunction('send-email', {
         body: {
           type: 'seller_onboarding_submitted',
-          to: assignedAgentEmail,
+          to: hasValidAssignedAgentEmail ? assignedAgentEmail : '',
           agentName: assignedAgentName,
           sellerName,
           propertyTitle,
@@ -232,6 +239,7 @@ async function notifyAssignedAgentOfSellerOnboarding(updated = {}, form = {}) {
           organisationId: String(updated?.organisationId || updated?.organisation_id || '').trim(),
           leadId,
           listingId,
+          assignedAgentId,
           actionLink,
         },
       }),

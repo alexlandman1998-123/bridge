@@ -9,14 +9,16 @@ async function read(path) {
 const agencySection = COMMERCIAL_NAV_SECTIONS.find((section) => section.id === 'agency')
 assert.ok(agencySection, 'Commercial navigation should expose an Agency section.')
 assert.equal(agencySection.label, 'Agency')
-assert.deepEqual(agencySection.items.map((item) => item.label), ['Branches', 'Brokers'])
+assert.deepEqual(agencySection.items.map((item) => item.label), ['Branches'])
+const brokersNavItem = COMMERCIAL_NAV_ITEMS.find((item) => item.label === 'Brokers')
+assert.ok(brokersNavItem, 'Commercial navigation should expose Brokers as a bottom navigation item.')
 assert.ok(COMMERCIAL_NAV_ITEMS.some((item) => item.to === '/commercial/agency/branches'), 'Branches should route through Commercial Agency.')
-assert.ok(COMMERCIAL_NAV_ITEMS.some((item) => item.to === '/commercial/agency/brokers'), 'Brokers should route through Commercial Agency.')
+assert.ok(COMMERCIAL_NAV_ITEMS.some((item) => item.to === '/commercial/brokers'), 'Brokers should route through Commercial Brokers.')
 assert.equal(isCommercialNavItemActive('/commercial/performance/branches', agencySection.items[0]), true, 'Legacy performance branch route should still activate Branches.')
-assert.equal(isCommercialNavItemActive('/commercial/brokers', agencySection.items[1]), true, 'Legacy brokers route should still activate Brokers.')
+assert.equal(isCommercialNavItemActive('/commercial/brokers', brokersNavItem), true, 'Legacy brokers route should still activate Brokers.')
 assert.equal(isCommercialNavItemAvailable(agencySection.items[0], { canManageBrokerage: false }), false, 'Broker scope should not see Commercial Agency Branches.')
-assert.equal(isCommercialNavItemAvailable(agencySection.items[1], { canManageBrokerage: false }), false, 'Broker scope should not see Commercial Agency Brokers.')
-assert.equal(isCommercialNavItemAvailable(agencySection.items[1], { canManageBrokerage: true }), true, 'Commercial managers should still see Commercial Agency Brokers.')
+assert.equal(isCommercialNavItemAvailable(brokersNavItem, { canManageBrokerage: false }), false, 'Broker scope should not see Commercial Brokers.')
+assert.equal(isCommercialNavItemAvailable(brokersNavItem, { canManageBrokerage: true }), true, 'Commercial managers should still see Commercial Brokers.')
 
 const appSource = await read('../src/App.jsx')
 for (const marker of [
@@ -24,15 +26,16 @@ for (const marker of [
   'commercial_admin',
   'commercial_principal',
   'WORKSPACE_SWITCHER_STORAGE_KEY',
-  "preferredWorkspaceMode !== 'residential'",
+  "preferredWorkspaceMode === 'commercial'",
+  '!preferredWorkspaceMode && hasCommercialBrokerAccess',
   'hasCommercialMembershipMarker',
   'CommercialManagerRouteGate',
   'path="agency" element={<CommercialManagerRouteGate><CommercialBrokerBranchesPage /></CommercialManagerRouteGate>}',
   'path="agency/branches" element={<CommercialManagerRouteGate><CommercialBrokerBranchesPage /></CommercialManagerRouteGate>}',
-  'path="agency/brokers" element={<CommercialManagerRouteGate><CommercialBrokersPage /></CommercialManagerRouteGate>}',
+  'path="agency/brokers" element={<Navigate to="/commercial/brokers" replace />}',
   'path="performance" element={<Navigate to="/commercial/agency" replace />}',
-  'path="performance/brokers" element={<Navigate to="/commercial/agency/brokers" replace />}',
-  'path="brokers" element={<Navigate to="/commercial/agency/brokers" replace />}',
+  'path="performance/brokers" element={<Navigate to="/commercial/brokers" replace />}',
+  'path="brokers" element={<CommercialManagerRouteGate><CommercialBrokersPage /></CommercialManagerRouteGate>}',
   'function LegacyCommercialBrokerRedirect()',
 ]) {
   assert.match(appSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `App routing should include ${marker}`)
@@ -102,13 +105,11 @@ for (const marker of [
 
 const brokersPage = await read('../src/modules/commercial/pages/CommercialBrokersPage.jsx')
 for (const marker of [
-  'Invite Broker',
   'Add Broker',
   'createWorkspaceUserInvite',
   'listWorkspaceUserInvites',
   'revokeWorkspaceUserInvite',
   'Broker Directory',
-  'Card view',
   'Delete invite',
   'Broker invite deleted. The invite link is no longer valid.',
   'repeat(auto-fit,minmax(min(100%,300px),1fr))',

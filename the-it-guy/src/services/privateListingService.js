@@ -1462,8 +1462,8 @@ async function fetchOrganisationBrandingSnapshot(client, organisationId) {
       organisation?.display_name,
       organisation?.name,
     )
-    const logoLightUrl = pickFirstText(branding.logoLight, organisation?.logo_url)
-    const logoDarkUrl = pickFirstText(branding.logoDark, branding.logoLight, organisation?.logo_url)
+    const logoLightUrl = pickFirstText(branding.logoLight, branding.logoLightUrl, branding.logoUrl, organisation?.logo_url)
+    const logoDarkUrl = pickFirstText(branding.logoDark, branding.logoDarkUrl, branding.logoHighContrastUrl, branding.logoLight, branding.logoLightUrl, organisation?.logo_url)
     const logoUrl = pickFirstText(logoDarkUrl, logoLightUrl)
 
     if (!organisationName && !logoUrl) return null
@@ -3242,9 +3242,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
 
   const portalPayload = await fetchSellerClientPortalPayloadByToken(client, normalizedToken)
   if (portalPayload?.listing) {
-    const branding = portalPayload.listing?.branding?.logoUrl || portalPayload.listing?.branding?.organisationName
-      ? null
-      : await fetchOrganisationBrandingSnapshot(client, portalPayload.listing.organisationId)
+    const branding = await fetchOrganisationBrandingSnapshot(client, portalPayload.listing.organisationId)
     return {
       ...portalPayload,
       listing: attachBrandingToListing(portalPayload.listing, branding),
@@ -3264,9 +3262,7 @@ export async function getSellerOnboardingByToken(token, options = {}) {
   const listing = await getPrivateListingById(query.data.private_listing_id, {
     includeRequirementsAndDocuments,
   })
-  const branding = listing?.branding?.logoUrl || listing?.branding?.organisationName
-    ? null
-    : await fetchOrganisationBrandingSnapshot(client, listing?.organisationId)
+  const branding = await fetchOrganisationBrandingSnapshot(client, listing?.organisationId)
   return {
     onboarding: query.data,
     listing: attachBrandingToListing(listing, branding),

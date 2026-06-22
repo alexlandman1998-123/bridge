@@ -126,6 +126,88 @@ async function resolveSenderOrganisationBranding(
   };
 }
 
+function normalizeEmail(value: unknown) {
+  const email = normalizeText(value).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+function collectUnique(values: unknown[]) {
+  return [...new Set(values.map((value) => normalizeText(value)).filter(Boolean))];
+}
+
+async function resolveAssignedAgentRecipient(
+  supabase: any,
+  payload: SendSellerOnboardingSubmittedPayload,
+) {
+  const explicitEmail = normalizeEmail(payload.to);
+  if (explicitEmail) {
+    return {
+      email: explicitEmail,
+      agentName: normalizeText(payload.agentName),
+    };
+  }
+  if (!supabase) return { email: "", agentName: normalizeText(payload.agentName) };
+
+  const listingId = normalizeText(payload.listingId);
+  const leadIds = collectUnique([payload.leadId]);
+  const agentIds = collectUnique([payload.assignedAgentId]);
+  let resolvedAgentName = normalizeText(payload.agentName);
+
+  if (listingId) {
+    const listingQuery = await supabase
+      .from("private_listings")
+      .select("id, assigned_agent_email, assigned_agent_id, seller_lead_id, originating_crm_lead_id")
+      .eq("id", listingId)
+      .maybeSingle();
+
+    if (!listingQuery.error || isMissingColumnError(listingQuery.error) || isMissingTableError(listingQuery.error, "private_listings")) {
+      const listing = listingQuery.data || {};
+      const listingEmail = normalizeEmail(listing.assigned_agent_email);
+      if (listingEmail) return { email: listingEmail, agentName: resolvedAgentName };
+      leadIds.push(...collectUnique([listing.seller_lead_id, listing.originating_crm_lead_id]));
+      agentIds.push(...collectUnique([listing.assigned_agent_id]));
+    } else if (listingQuery.error) {
+      console.error("[seller_onboarding_submitted] listing recipient lookup failed", listingQuery.error);
+    }
+  }
+
+  for (const leadId of collectUnique(leadIds)) {
+    const leadQuery = await supabase
+      .from("leads")
+      .select("lead_id, assigned_agent_email, assigned_agent_id")
+      .eq("lead_id", leadId)
+      .maybeSingle();
+
+    if (!leadQuery.error || isMissingColumnError(leadQuery.error) || isMissingTableError(leadQuery.error, "leads")) {
+      const lead = leadQuery.data || {};
+      const leadEmail = normalizeEmail(lead.assigned_agent_email);
+      if (leadEmail) return { email: leadEmail, agentName: resolvedAgentName };
+      agentIds.push(...collectUnique([lead.assigned_agent_id]));
+    } else if (leadQuery.error) {
+      console.error("[seller_onboarding_submitted] lead recipient lookup failed", leadQuery.error);
+    }
+  }
+
+  for (const agentId of collectUnique(agentIds)) {
+    const profileQuery = await supabase
+      .from("profiles")
+      .select("id, email, full_name")
+      .eq("id", agentId)
+      .maybeSingle();
+
+    if (!profileQuery.error || isMissingColumnError(profileQuery.error) || isMissingTableError(profileQuery.error, "profiles")) {
+      const profile = profileQuery.data || {};
+      const profileEmail = normalizeEmail(profile.email);
+      if (!resolvedAgentName) resolvedAgentName = normalizeText(profile.full_name);
+      if (profileEmail) return { email: profileEmail, agentName: resolvedAgentName };
+    } else if (profileQuery.error) {
+      console.error("[seller_onboarding_submitted] profile recipient lookup failed", profileQuery.error);
+    }
+  }
+
+  return { email: "", agentName: resolvedAgentName };
+}
+
 export async function handleSellerOnboardingSubmittedEmail(
   req: Request,
   payload: SendSellerOnboardingSubmittedPayload,
@@ -137,14 +219,20 @@ export async function handleSellerOnboardingSubmittedEmail(
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
 
-  const to = normalizeText(payload.to);
+  const supabase = supabaseUrl && serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    : null;
+  const recipient = await resolveAssignedAgentRecipient(supabase, payload);
+  const to = recipient.email;
   if (!to) {
-    return jsonResponse(400, { error: "Missing required field: to" });
+    return jsonResponse(400, { error: "Unable to resolve assigned agent email for seller onboarding submission." });
   }
 
   const sellerName = normalizeText(payload.sellerName) || "Seller";
   const propertyTitle = normalizeText(payload.propertyTitle) || "property";
-  const agentName = normalizeText(payload.agentName) || "Agent";
+  const agentName = normalizeText(recipient.agentName || payload.agentName) || "Agent";
   const transactionReference = normalizeText(payload.transactionReference);
   const organisationId = normalizeText(payload.organisationId);
   const leadId = normalizeText(payload.leadId);
@@ -172,11 +260,8 @@ export async function handleSellerOnboardingSubmittedEmail(
   let senderOrganisationLogoUrl = "";
   let templateOverrides = null;
 
-  if (organisationId && supabaseUrl && serviceRoleKey) {
+  if (organisationId && supabase) {
     try {
-      const supabase = createClient(supabaseUrl, serviceRoleKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
       const resolvedOrganisation = await resolveSenderOrganisationBranding(
         supabase,
         organisationId,

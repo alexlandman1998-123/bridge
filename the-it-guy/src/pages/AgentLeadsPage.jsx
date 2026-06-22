@@ -83,6 +83,7 @@ import {
   createPrivateListing,
   createPrivateListingActivity,
   sendSellerOnboarding,
+  updatePrivateListing,
   updatePrivateListingOnboardingFormData,
 } from '../services/privateListingService'
 import {
@@ -780,6 +781,109 @@ function normalizeCommissionTermType(value) {
   return 'percentage'
 }
 
+const SELLER_MANDATE_TYPE_OPTIONS = [
+  { value: 'sole', label: 'Sole Mandate' },
+  { value: 'open', label: 'Open Mandate' },
+  { value: 'dual', label: 'Dual Mandate' },
+  { value: 'joint', label: 'Joint Mandate' },
+  { value: 'exclusive', label: 'Exclusive Sole Mandate' },
+]
+
+const SELLER_MANDATE_VAT_OPTIONS = [
+  { value: 'inclusive', label: 'VAT Included' },
+  { value: 'exclusive', label: 'VAT Excluded' },
+  { value: 'not_applicable', label: 'Not Applicable' },
+]
+
+const SELLER_MANDATE_MARKETING_OPTIONS = [
+  { key: 'allowOnlineMarketing', dbKey: 'allow_online_marketing', label: 'Property may be advertised online', documentLabel: 'Agency Website' },
+  { key: 'allowPropertyPortals', dbKey: 'allow_property_portals', label: 'Property may be advertised on property portals', documentLabel: 'Property portals' },
+  { key: 'allowSocialMedia', dbKey: 'allow_social_media', label: 'Property may be advertised on social media', documentLabel: 'Social Media' },
+  { key: 'allowShowBoards', dbKey: 'allow_show_boards', label: 'Show boards authorised', documentLabel: 'Show boards' },
+]
+
+const SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS = [
+  { key: 'sellerApprovalRequired', label: 'Subject to seller approval of all offers', clause: 'All offers remain subject to seller approval.' },
+  { key: 'replacementPropertyRequired', label: 'Subject to seller securing replacement property', clause: 'The mandate is subject to the seller securing a replacement property.' },
+  { key: 'existingLease', label: 'Existing lease in place', clause: 'The property is subject to an existing lease.' },
+  { key: 'tenantRightsApply', label: 'Tenant rights apply', clause: 'Tenant rights apply and must be observed.' },
+  { key: 'occupationBeforeRegistration', label: 'Occupation before registration permitted', clause: 'Occupation before registration is permitted by agreement.' },
+  { key: 'occupationAfterRegistration', label: 'Occupation after registration only', clause: 'Occupation is permitted after registration only.' },
+]
+
+function normalizeMandateType(value) {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (normalized.includes('exclusive')) return 'exclusive'
+  if (normalized.includes('open')) return 'open'
+  if (normalized.includes('dual')) return 'dual'
+  if (normalized.includes('joint')) return 'joint'
+  if (normalized.includes('sole')) return 'sole'
+  return SELLER_MANDATE_TYPE_OPTIONS.some((option) => option.value === normalized) ? normalized : 'sole'
+}
+
+function normalizeVatHandling(value) {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (['not_applicable', 'not_applicable_', 'na', 'n_a', 'none', 'no', 'no_vat'].includes(normalized)) return 'not_applicable'
+  if (normalized.includes('incl')) return 'inclusive'
+  if (normalized.includes('excl')) return 'exclusive'
+  return normalized || 'inclusive'
+}
+
+function toIsoInputDate(value) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toISOString().slice(0, 10)
+}
+
+function addMonthsToIsoDate(months = 6, baseDate = new Date()) {
+  const source = baseDate instanceof Date ? new Date(baseDate.getTime()) : new Date(baseDate)
+  if (Number.isNaN(source.getTime())) return ''
+  source.setHours(0, 0, 0, 0)
+  source.setMonth(source.getMonth() + Number(months || 0))
+  return source.toISOString().slice(0, 10)
+}
+
+function getMandateDurationDays(startDate = '', endDate = '') {
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000))
+}
+
+function getMandateDurationLabel(startDate = '', endDate = '') {
+  const days = getMandateDurationDays(startDate, endDate)
+  if (!days) return 'Duration: not calculated'
+  const months = Math.round(days / 30.4375)
+  if (months >= 1 && Math.abs(days - months * 30.4375) <= 8) {
+    return `Duration: ${months} month${months === 1 ? '' : 's'}`
+  }
+  return `Duration: ${days} day${days === 1 ? '' : 's'}`
+}
+
+function normalizeBooleanObject(source = {}, options = []) {
+  const record = source && typeof source === 'object' ? source : {}
+  return options.reduce((acc, option) => {
+    acc[option.key] = Boolean(record[option.key] ?? record[option.dbKey])
+    return acc
+  }, {})
+}
+
+function buildMarketingPermissionsText(authorisations = {}) {
+  const selected = SELLER_MANDATE_MARKETING_OPTIONS
+    .filter((option) => Boolean(authorisations?.[option.key] ?? authorisations?.[option.dbKey]))
+    .map((option) => option.documentLabel)
+  return selected.length ? `Seller authorises marketing via: ${selected.join(', ')}.` : 'No marketing channels authorised.'
+}
+
+function buildSpecialConditionsText(conditions = {}, additionalConditions = '') {
+  const selectedClauses = SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS
+    .filter((option) => Boolean(conditions?.[option.key]))
+    .map((option) => option.clause)
+  const additional = normalizeText(additionalConditions)
+  return [...selectedClauses, additional].filter(Boolean).join('\n')
+}
+
 function readSellerOnboardingFormData(listing = {}, row = {}) {
   const records = [row, listing]
   const merged = {}
@@ -885,6 +989,38 @@ function readSellerOnboardingFormData(listing = {}, row = {}) {
 function getSellerCommissionWorkspace(row = {}, listing = {}) {
   const formData = readSellerOnboardingFormData(listing || row)
   const commission = listing?.commission && typeof listing.commission === 'object' ? listing.commission : {}
+  const mandateType = normalizeMandateType(firstFilledValue(
+    commission.mandate_type,
+    commission.mandateType,
+    formData.mandateType,
+    formData.mandate_type,
+    row.mandateType,
+    row.mandate_type,
+    listing?.mandateType,
+    listing?.mandate_type,
+    'sole',
+  ))
+  const today = toIsoInputDate(new Date())
+  const mandateStartDate = toIsoInputDate(firstFilledValue(
+    commission.mandate_start_date,
+    commission.mandateStartDate,
+    formData.mandateStartDate,
+    formData.mandate_start_date,
+    formData.startDate,
+    row.mandateStartDate,
+    listing?.mandateStartDate,
+  )) || today
+  const mandateEndDate = toIsoInputDate(firstFilledValue(
+    commission.mandate_end_date,
+    commission.mandateEndDate,
+    commission.mandate_expiry_date,
+    formData.mandateEndDate,
+    formData.mandate_end_date,
+    formData.mandateExpiryDate,
+    formData.expiryDate,
+    row.mandateEndDate,
+    listing?.mandateEndDate,
+  )) || addMonthsToIsoDate(6, mandateStartDate || new Date())
   const commissionType = normalizeCommissionTermType(firstFilledValue(
     commission.commission_structure,
     commission.commissionStructure,
@@ -933,6 +1069,7 @@ function getSellerCommissionWorkspace(row = {}, listing = {}) {
     commission.vat_handling,
     commission.vatHandling,
     formData.vatHandling,
+    formData.vat_handling,
     formData.vatApplicable,
     row.vatHandling,
   ))
@@ -976,6 +1113,30 @@ function getSellerCommissionWorkspace(row = {}, listing = {}) {
     formData.commissionNotes,
     row.commissionNotes,
   ))
+  const marketingAuthorisations = normalizeBooleanObject({
+    ...(isPlainObject(formData.marketingAuthorisations) ? formData.marketingAuthorisations : {}),
+    ...(isPlainObject(formData.marketing_authorisations) ? formData.marketing_authorisations : {}),
+    allowOnlineMarketing: formData.allowOnlineMarketing,
+    allow_online_marketing: formData.allow_online_marketing,
+    allowPropertyPortals: formData.allowPropertyPortals,
+    allow_property_portals: formData.allow_property_portals,
+    allowSocialMedia: formData.allowSocialMedia,
+    allow_social_media: formData.allow_social_media,
+    allowShowBoards: formData.allowShowBoards,
+    allow_show_boards: formData.allow_show_boards,
+  }, SELLER_MANDATE_MARKETING_OPTIONS)
+  const specialMandateConditions = normalizeBooleanObject({
+    ...(isPlainObject(formData.specialMandateConditions) ? formData.specialMandateConditions : {}),
+    ...(isPlainObject(formData.special_mandate_conditions) ? formData.special_mandate_conditions : {}),
+  }, SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS)
+  const additionalConditions = normalizeText(firstFilledValue(
+    formData.additionalConditions,
+    formData.additional_conditions,
+    formData.additionalMandateConditions,
+    formData.additional_mandate_conditions,
+    mandateTerms,
+    notes,
+  ))
   const lastUpdated = firstFilledValue(
     commission.updated_at,
     commission.updatedAt,
@@ -983,6 +1144,10 @@ function getSellerCommissionWorkspace(row = {}, listing = {}) {
     row.commissionUpdatedAt,
   )
   return {
+    mandateType,
+    mandateStartDate,
+    mandateEndDate,
+    mandateDurationDays: Number(formData.mandateDurationDays || formData.mandate_duration_days || getMandateDurationDays(mandateStartDate, mandateEndDate)) || 0,
     commissionType,
     percentage,
     amount,
@@ -995,49 +1160,79 @@ function getSellerCommissionWorkspace(row = {}, listing = {}) {
     mandateTerms,
     paymentResponsibility,
     notes,
+    marketingAuthorisations,
+    specialMandateConditions,
+    additionalConditions,
     lastUpdated,
-    hasData: Boolean(percentage || amount || vatHandling || agencyStructureId || agencyStructureName || mandateTerms || paymentResponsibility || notes),
+    hasData: Boolean(mandateType || mandateStartDate || mandateEndDate || percentage || amount || vatHandling || agencyStructureId || agencyStructureName || mandateTerms || paymentResponsibility || notes || additionalConditions),
   }
 }
 
 function buildSellerCommissionDraft(summary = {}) {
   return {
+    mandateType: summary.mandateType || 'sole',
+    mandateStartDate: summary.mandateStartDate || toIsoInputDate(new Date()),
+    mandateEndDate: summary.mandateEndDate || addMonthsToIsoDate(6, summary.mandateStartDate || new Date()),
     commissionType: summary.commissionType || 'percentage',
     percentage: summary.percentage ? String(summary.percentage) : '',
     amount: summary.amount ? String(summary.amount) : '',
-    vatHandling: summary.vatHandling || '',
+    vatHandling: normalizeVatHandling(summary.vatHandling || 'inclusive'),
     agencyStructureId: summary.agencyStructureId || '',
     agencyStructureName: summary.agencyStructureName || '',
     mandateTerms: summary.mandateTerms || '',
     paymentResponsibility: summary.paymentResponsibility || '',
     notes: summary.notes || '',
+    marketingAuthorisations: normalizeBooleanObject(summary.marketingAuthorisations, SELLER_MANDATE_MARKETING_OPTIONS),
+    specialMandateConditions: normalizeBooleanObject(summary.specialMandateConditions, SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS),
+    additionalConditions: summary.additionalConditions || '',
   }
 }
 
 function buildSellerCommissionFormPatch(draft = {}, actor = {}) {
+  const mandateType = normalizeMandateType(draft.mandateType)
+  const mandateStartDate = toIsoInputDate(draft.mandateStartDate)
+  const mandateEndDate = toIsoInputDate(draft.mandateEndDate)
+  const mandateDurationDays = getMandateDurationDays(mandateStartDate, mandateEndDate)
   const commissionType = normalizeCommissionTermType(draft.commissionType)
-  const percentage = toFiniteNumber(draft.percentage)
-  const amount = toFiniteNumber(draft.amount)
-  const vatHandling = normalizeText(draft.vatHandling)
+  const percentage = commissionType === 'percentage' ? toFiniteNumber(draft.percentage) : 0
+  const amount = commissionType === 'fixed' ? toFiniteNumber(draft.amount) : 0
+  const vatHandling = normalizeVatHandling(draft.vatHandling)
   const agencyStructureId = normalizeText(draft.agencyStructureId)
   const agencyStructureName = normalizeText(draft.agencyStructureName)
   const mandateTerms = normalizeText(draft.mandateTerms)
   const paymentResponsibility = normalizeText(draft.paymentResponsibility)
   const notes = normalizeText(draft.notes)
+  const marketingAuthorisations = normalizeBooleanObject(draft.marketingAuthorisations, SELLER_MANDATE_MARKETING_OPTIONS)
+  const specialMandateConditions = normalizeBooleanObject(draft.specialMandateConditions, SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS)
+  const additionalConditions = normalizeText(draft.additionalConditions)
+  const marketingPermissions = buildMarketingPermissionsText(marketingAuthorisations)
+  const specialConditions = buildSpecialConditionsText(specialMandateConditions, additionalConditions)
   const updatedAt = new Date().toISOString()
   const updatedBy = normalizeText(actor?.id || actor?.userId || actor?.email || actor?.name || 'agent')
   return {
+    mandateType,
+    mandate_type: mandateType,
+    mandateStartDate,
+    mandate_start_date: mandateStartDate,
+    mandateEndDate,
+    mandate_end_date: mandateEndDate,
+    mandateExpiryDate: mandateEndDate,
+    mandate_expiry_date: mandateEndDate,
+    mandateDurationDays,
+    mandate_duration_days: mandateDurationDays,
     commissionStructure: commissionType,
     commissionType,
-    commissionPercentage: percentage ? String(percentage) : '',
-    commissionPercent: percentage ? String(percentage) : '',
-    commission_percent: percentage ? String(percentage) : '',
-    mandateCommissionPercentage: percentage ? String(percentage) : '',
-    mandateCommissionPercent: percentage ? String(percentage) : '',
-    commissionAmount: amount ? String(amount) : '',
-    commission_amount: amount ? String(amount) : '',
-    mandateCommissionAmount: amount ? String(amount) : '',
+    commission_type: commissionType,
+    commissionPercentage: commissionType === 'percentage' ? String(percentage) : null,
+    commissionPercent: commissionType === 'percentage' ? String(percentage) : null,
+    commission_percent: commissionType === 'percentage' ? String(percentage) : null,
+    mandateCommissionPercentage: commissionType === 'percentage' ? String(percentage) : null,
+    mandateCommissionPercent: commissionType === 'percentage' ? String(percentage) : null,
+    commissionAmount: commissionType === 'fixed' ? String(amount) : null,
+    commission_amount: commissionType === 'fixed' ? String(amount) : null,
+    mandateCommissionAmount: commissionType === 'fixed' ? String(amount) : null,
     vatHandling,
+    vat_handling: vatHandling,
     agencyCommissionStructureId: agencyStructureId,
     agency_commission_structure_id: agencyStructureId,
     agencyCommissionStructureName: agencyStructureName,
@@ -1045,12 +1240,52 @@ function buildSellerCommissionFormPatch(draft = {}, actor = {}) {
     commissionStructureId: agencyStructureId,
     commissionStructureName: agencyStructureName,
     mandateTerms,
+    marketingAuthorisations,
+    marketing_authorisations: marketingAuthorisations,
+    allowOnlineMarketing: marketingAuthorisations.allowOnlineMarketing,
+    allow_online_marketing: marketingAuthorisations.allowOnlineMarketing,
+    allowPropertyPortals: marketingAuthorisations.allowPropertyPortals,
+    allow_property_portals: marketingAuthorisations.allowPropertyPortals,
+    allowSocialMedia: marketingAuthorisations.allowSocialMedia,
+    allow_social_media: marketingAuthorisations.allowSocialMedia,
+    allowShowBoards: marketingAuthorisations.allowShowBoards,
+    allow_show_boards: marketingAuthorisations.allowShowBoards,
+    marketingPermissions,
+    mandateMarketingPermissions: marketingPermissions,
+    specialMandateConditions,
+    special_mandate_conditions: specialMandateConditions,
+    additionalConditions,
+    additional_conditions: additionalConditions,
+    specialConditions,
     paymentResponsibility,
     commissionNotes: notes,
     commissionUpdatedAt: updatedAt,
     commissionUpdatedBy: updatedBy,
     commissionSource: 'seller_lead_workspace',
   }
+}
+
+function validateSellerMandateDraft(draft = {}) {
+  const mandateType = normalizeMandateType(draft.mandateType)
+  if (!mandateType) return 'Select a mandate type before saving.'
+  const mandateStartDate = toIsoInputDate(draft.mandateStartDate)
+  const mandateEndDate = toIsoInputDate(draft.mandateEndDate)
+  if (!mandateStartDate) return 'Select a mandate start date before saving.'
+  if (!mandateEndDate) return 'Select a mandate end date before saving.'
+  if (getMandateDurationDays(mandateStartDate, mandateEndDate) <= 0) return 'Mandate end date must be after the start date.'
+  const commissionType = normalizeCommissionTermType(draft.commissionType)
+  if (commissionType === 'percentage') {
+    if (normalizeText(draft.percentage) === '') return 'Capture a commission percentage before saving.'
+    const percentage = Number(draft.percentage)
+    if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) return 'Commission percentage must be between 0 and 100.'
+  }
+  if (commissionType === 'fixed') {
+    if (normalizeText(draft.amount) === '') return 'Capture a commission amount before saving.'
+    const amount = Number(draft.amount)
+    if (!Number.isFinite(amount) || amount < 0) return 'Commission amount must be zero or more.'
+  }
+  if (!normalizeVatHandling(draft.vatHandling)) return 'Select VAT handling before saving.'
+  return ''
 }
 
 function getBuyerPrimaryRequirement(row = {}) {
@@ -14061,131 +14296,211 @@ function SellerPropertyTab({ row, listing }) {
 function SellerCommissionCard({
   commissionDraft,
   commissionSummary,
-  commissionStructures = [],
-  commissionStructuresLoading = false,
   savingCommission = false,
   onCommissionDraftChange,
   onSaveCommission,
 }) {
-  const structures = Array.isArray(commissionStructures) ? commissionStructures.filter((item) => item?.isActive !== false) : []
   const percentage = toFiniteNumber(commissionDraft?.percentage)
   const amount = toFiniteNumber(commissionDraft?.amount)
   const estimatedExVat = amount || commissionSummary?.estimatedExVat || 0
-  const vatHandling = normalizeText(commissionDraft?.vatHandling).toLowerCase()
+  const vatHandling = normalizeVatHandling(commissionDraft?.vatHandling)
   const vatIncluded = ['yes', 'inclusive'].includes(vatHandling) || vatHandling.includes('incl')
   const estimatedInclVat = vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0
-  const selectedStructure = structures.find((item) => normalizeText(item.id || item.name) === normalizeText(commissionDraft?.agencyStructureId))
-  const update = (key, value) => onCommissionDraftChange?.(key, value)
+  const commissionType = normalizeCommissionTermType(commissionDraft?.commissionType)
+  const durationLabel = getMandateDurationLabel(commissionDraft?.mandateStartDate, commissionDraft?.mandateEndDate)
+  const marketingAuthorisations = normalizeBooleanObject(commissionDraft?.marketingAuthorisations, SELLER_MANDATE_MARKETING_OPTIONS)
+  const specialMandateConditions = normalizeBooleanObject(commissionDraft?.specialMandateConditions, SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS)
+  const update = (key, value) => {
+    if (key === 'commissionType') {
+      onCommissionDraftChange?.('commissionType', value)
+      if (value === 'percentage') onCommissionDraftChange?.('amount', '')
+      if (value === 'fixed') onCommissionDraftChange?.('percentage', '')
+      return
+    }
+    onCommissionDraftChange?.(key, value)
+  }
+  const updateMarketing = (key, value) => update('marketingAuthorisations', { ...marketingAuthorisations, [key]: value })
+  const updateCondition = (key, value) => update('specialMandateConditions', { ...specialMandateConditions, [key]: value })
+
   return (
     <SellerWorkspaceCard
-      title="Commission Structure"
+      title="Mandate Builder"
       action={<StatusPill tone={commissionSummary?.hasData ? 'green' : 'slate'}>{commissionSummary?.hasData ? 'Captured' : 'Pending'}</StatusPill>}
-      className="min-h-[420px]"
+      className="min-h-[560px]"
     >
-      <div className="grid gap-4 lg:grid-cols-2">
-        <label className="grid gap-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Agency Split</span>
-          <select
-            value={commissionDraft?.agencyStructureId || ''}
-            onChange={(event) => {
-              const next = structures.find((item) => normalizeText(item.id || item.name) === normalizeText(event.target.value))
-              update('agencyStructureId', event.target.value)
-              update('agencyStructureName', next?.name || '')
-            }}
-            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
-          >
-            <option value="">{commissionStructuresLoading ? 'Loading structures...' : 'No split selected'}</option>
-            {structures.map((structure) => (
-              <option key={structure.id || structure.name} value={structure.id || structure.name}>
-                {structure.name}{structure.isDefault ? ' (Default)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Mandate Commission</span>
-          <select
-            value={commissionDraft?.commissionType || 'percentage'}
-            onChange={(event) => update('commissionType', event.target.value)}
-            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
-          >
-            <option value="percentage">Percentage</option>
-            <option value="fixed">Fixed Amount</option>
-          </select>
-        </label>
-        <label className="grid gap-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Commission %</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={commissionDraft?.percentage || ''}
-            onChange={(event) => update('percentage', event.target.value)}
-            placeholder="5"
-            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
-          />
-        </label>
-        <label className="grid gap-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Fixed Amount</span>
-          <input
-            type="number"
-            min="0"
-            step="1000"
-            value={commissionDraft?.amount || ''}
-            onChange={(event) => update('amount', event.target.value)}
-            placeholder={estimatedExVat ? String(Math.round(estimatedExVat)) : '0'}
-            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
-          />
-        </label>
-        <label className="grid gap-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">VAT Handling</span>
-          <select
-            value={commissionDraft?.vatHandling || ''}
-            onChange={(event) => update('vatHandling', event.target.value)}
-            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
-          >
-            <option value="">Not captured</option>
-            <option value="no">No VAT</option>
-            <option value="exclusive">VAT Exclusive</option>
-            <option value="inclusive">VAT Inclusive</option>
-          </select>
-        </label>
-        <label className="grid gap-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Paid By</span>
-          <select
-            value={commissionDraft?.paymentResponsibility || ''}
-            onChange={(event) => update('paymentResponsibility', event.target.value)}
-            className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
-          >
-            <option value="">Not captured</option>
-            <option value="seller">Seller</option>
-            <option value="buyer">Buyer</option>
-            <option value="split">Split</option>
-            <option value="agency">Agency</option>
-          </select>
-        </label>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <div className="grid content-start gap-5">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Mandate Type</h3>
+            <label className="mt-4 grid gap-2">
+              <span className="text-xs font-semibold text-slate-600">Mandate Type *</span>
+              <select
+                value={commissionDraft?.mandateType || 'sole'}
+                onChange={(event) => update('mandateType', event.target.value)}
+                className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+              >
+                {SELLER_MANDATE_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-3 text-xs font-medium text-slate-500">The selected type determines the legal terms used in the mandate template.</p>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Mandate Period</h3>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold text-slate-600">Start Date *</span>
+                <input
+                  type="date"
+                  value={commissionDraft?.mandateStartDate || ''}
+                  onChange={(event) => update('mandateStartDate', event.target.value)}
+                  className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+                />
+              </label>
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold text-slate-600">End Date *</span>
+                <input
+                  type="date"
+                  value={commissionDraft?.mandateEndDate || ''}
+                  onChange={(event) => update('mandateEndDate', event.target.value)}
+                  className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+                />
+              </label>
+            </div>
+            <p className="mt-3 text-xs font-semibold text-slate-500">{durationLabel}</p>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Commission Structure</h3>
+            <div className="mt-4 flex flex-wrap gap-5">
+              {[
+                ['percentage', 'Percentage'],
+                ['fixed', 'Fixed Amount'],
+              ].map(([value, label]) => (
+                <label key={value} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input
+                    type="radio"
+                    name="seller-mandate-commission-type"
+                    value={value}
+                    checked={commissionType === value}
+                    onChange={(event) => update('commissionType', event.target.value)}
+                    className="h-4 w-4 accent-blue-900"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {commissionType === 'percentage' ? (
+              <label className="mt-4 grid gap-2">
+                <span className="text-xs font-semibold text-slate-600">Commission % *</span>
+                <div className="flex min-h-11 items-center rounded-xl border border-slate-200 bg-white focus-within:border-blue-300">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={commissionDraft?.percentage || ''}
+                    onChange={(event) => update('percentage', event.target.value)}
+                    placeholder="5"
+                    className="min-h-10 flex-1 rounded-xl border-0 bg-transparent px-3 text-sm font-semibold text-slate-900 outline-none"
+                  />
+                  <span className="px-3 text-sm font-semibold text-slate-500">%</span>
+                </div>
+                <span className="text-xs font-medium text-slate-500">Commission will be calculated as a percentage of the sale price.</span>
+              </label>
+            ) : (
+              <label className="mt-4 grid gap-2">
+                <span className="text-xs font-semibold text-slate-600">Commission Amount *</span>
+                <div className="flex min-h-11 items-center rounded-xl border border-slate-200 bg-white focus-within:border-blue-300">
+                  <span className="px-3 text-sm font-semibold text-slate-500">R</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    value={commissionDraft?.amount || ''}
+                    onChange={(event) => update('amount', event.target.value)}
+                    placeholder={estimatedExVat ? String(Math.round(estimatedExVat)) : '150000'}
+                    className="min-h-10 flex-1 rounded-xl border-0 bg-transparent px-3 text-sm font-semibold text-slate-900 outline-none"
+                  />
+                </div>
+              </label>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">VAT Treatment</h3>
+            <label className="mt-4 grid gap-2">
+              <span className="text-xs font-semibold text-slate-600">VAT Handling *</span>
+              <select
+                value={vatHandling}
+                onChange={(event) => update('vatHandling', event.target.value)}
+                className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
+              >
+                {SELLER_MANDATE_VAT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-3 text-xs font-medium text-slate-500">How VAT is applied to the commission clause.</p>
+          </section>
+        </div>
+
+        <div className="grid content-start gap-5">
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Marketing Authorisation</h3>
+            <p className="mt-1 text-sm font-medium text-slate-500">Authorise the agent to market the property through the following channels.</p>
+            <div className="mt-4 grid gap-3">
+              {SELLER_MANDATE_MARKETING_OPTIONS.map((option) => (
+                <label key={option.key} className="inline-flex items-start gap-3 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(marketingAuthorisations[option.key])}
+                    onChange={(event) => updateMarketing(option.key, event.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-blue-900"
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Special Mandate Conditions</h3>
+            <p className="mt-1 text-sm font-medium text-slate-500">Select any conditions that apply to this mandate.</p>
+            <div className="mt-4 grid gap-3">
+              {SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS.map((option) => (
+                <label key={option.key} className="inline-flex items-start gap-3 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(specialMandateConditions[option.key])}
+                    onChange={(event) => updateCondition(option.key, event.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-blue-900"
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-blue-900">Additional Conditions</h3>
+            <p className="mt-1 text-sm font-medium text-slate-500">Add exceptions or agreements that do not fit the structured options.</p>
+            <textarea
+              rows={5}
+              value={commissionDraft?.additionalConditions || ''}
+              onChange={(event) => update('additionalConditions', event.target.value)}
+              placeholder="Enter additional conditions..."
+              className="mt-4 min-h-[124px] w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-300"
+            />
+          </section>
+        </div>
       </div>
-      <label className="mt-4 grid gap-2">
-        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Mandate Terms</span>
-        <input
-          value={commissionDraft?.mandateTerms || ''}
-          onChange={(event) => update('mandateTerms', event.target.value)}
-          placeholder="Sole mandate, payable on registration"
-          className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
-        />
-      </label>
-      <label className="mt-4 grid gap-2">
-        <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">Notes / Special Conditions</span>
-        <textarea
-          rows={3}
-          value={commissionDraft?.notes || ''}
-          onChange={(event) => update('notes', event.target.value)}
-          placeholder="Capture exclusions, overrides, or seller-specific commission notes."
-          className="min-h-[96px] rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-300"
-        />
-      </label>
-      <div className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
-        <SellerInfoRow label="Split Profile" value={selectedStructure?.name || commissionDraft?.agencyStructureName || 'Not selected'} />
+
+      <div className="mt-5 grid gap-3 rounded-xl border border-blue-100 bg-blue-50/70 p-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SellerInfoRow label="Mandate" value={SELLER_MANDATE_TYPE_OPTIONS.find((option) => option.value === normalizeMandateType(commissionDraft?.mandateType))?.label || 'Sole Mandate'} />
+        <SellerInfoRow label="Period" value={durationLabel.replace(/^Duration:\s*/, '')} />
         <SellerInfoRow label="Ex VAT" value={estimatedExVat ? formatCurrency(estimatedExVat) : 'Not captured'} />
         <SellerInfoRow label="Incl VAT" value={estimatedInclVat ? formatCurrency(estimatedInclVat) : 'Not captured'} />
       </div>
@@ -14195,10 +14510,10 @@ function SellerCommissionCard({
         disabled={savingCommission}
         className="mt-5 inline-flex min-h-11 w-fit items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
-        <CreditCard size={16} />
-        {savingCommission ? 'Saving...' : 'Save Commission'}
+        <FileText size={16} />
+        {savingCommission ? 'Saving...' : 'Save Mandate'}
       </button>
-      {percentage || amount ? <p className="mt-2 text-xs font-semibold text-slate-500">Saved terms sync to seller onboarding data for mandate merge fields.</p> : null}
+      {percentage || amount ? <p className="mt-2 text-xs font-semibold text-slate-500">Saved mandate variables sync to seller onboarding data and document merge fields.</p> : null}
     </SellerWorkspaceCard>
   )
 }
@@ -15630,6 +15945,12 @@ function AgentLeadWorkspace() {
       setSellerActionError('Select an agency workspace before saving commission terms.')
       return
     }
+    const validationError = validateSellerMandateDraft(draft)
+    if (validationError) {
+      setSellerActionError(validationError)
+      setSellerActionMessage('')
+      return
+    }
     try {
       setSavingSellerCommission(true)
       setSellerActionError('')
@@ -15668,6 +15989,12 @@ function AgentLeadWorkspace() {
       const formPatch = buildSellerCommissionFormPatch(draft, actor)
       const existingFormData = readSellerOnboardingFormData(linkedSellerListing, row)
       const currentStatus = getSellerOnboardingStatus(row, linkedSellerListing, sellerJourney)
+      await updatePrivateListing(listingId, {
+        mandateType: formPatch.mandateType,
+      }, {
+        includeRequirementsAndDocuments: false,
+        syncRequirements: false,
+      }).catch(() => null)
       await updatePrivateListingOnboardingFormData(listingId, {
         ...existingFormData,
         ...formPatch,
@@ -15676,15 +16003,15 @@ function AgentLeadWorkspace() {
       })
       await createAgencyCrmLeadActivity(organisationId, row.leadId, {
         agent: { id: actor.id, name: actor.fullName || actor.name, email: actor.email },
-        activityType: 'Commission Updated',
-        activityNote: 'Seller lead commission structure and mandate commission terms were updated.',
-        outcome: formPatch.agencyCommissionStructureName || formPatch.commissionStructure,
+        activityType: 'Mandate Saved',
+        activityNote: 'Seller lead mandate variables were updated for document generation.',
+        outcome: formPatch.mandateType,
         activityDate: new Date().toISOString(),
       }, { actor }).catch(() => {})
-      setSellerActionMessage('Commission structure saved for mandate generation.')
+      setSellerActionMessage('Mandate saved.')
       await loadWorkspace()
     } catch (actionError) {
-      setSellerActionError(actionError?.message || 'Unable to save commission terms right now.')
+      setSellerActionError(actionError?.message || 'Unable to save mandate right now.')
     } finally {
       setSavingSellerCommission(false)
     }

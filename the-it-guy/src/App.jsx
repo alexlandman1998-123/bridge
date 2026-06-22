@@ -2822,7 +2822,7 @@ function ClientAwareDashboard() {
     isCommercialBrokerMembership(currentMembership) ||
     activeMemberships.some((membership) => isCommercialBrokerMembership(membership))
   if (
-    (hasCommercialBrokerAccess || preferredWorkspaceMode !== 'residential') &&
+    (preferredWorkspaceMode === 'commercial' || (!preferredWorkspaceMode && hasCommercialBrokerAccess)) &&
     hasCommercialAccess &&
     ['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal'].includes(role)
   ) {

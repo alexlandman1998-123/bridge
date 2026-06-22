@@ -240,7 +240,7 @@ try {
   assert.ok(workspaceSource.includes('commissionStructure: commissionType'), 'commission save should preserve mandate percentage/fixed merge field')
   assert.ok(workspaceSource.includes('mandateCommissionPercent'), 'commission save should provide mandate commission percent aliases')
   assert.ok(workspaceSource.includes('agencyCommissionStructureId'), 'commission save should keep agency split structure metadata separate')
-  assert.ok(workspaceSource.includes('Commission structure saved for mandate generation.'), 'commission save should confirm mandate sync target')
+  assert.ok(workspaceSource.includes('Mandate saved.'), 'commission save should confirm mandate sync target')
   assert.ok(workspaceSource.includes("['add_commission', 'review_commission', 'open_commission']"), 'seller workflow actions should be able to open commission capture')
   assert.match(workspaceSource, /function SellerMandateTab\(\{[\s\S]*commissionDraft[\s\S]*onSaveCommission[\s\S]*onGenerateMandate/, 'mandate tab should receive onboarding status and commission capture props')
   assert.match(workspaceSource, /const mandateRequiresOnboarding = !mandateMeta\.hasRecord && !sellerOnboardingIsSubmitted\(onboardingStatus\)/, 'mandate tab should use the same onboarding submission gate as the header')

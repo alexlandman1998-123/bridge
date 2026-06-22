@@ -76,6 +76,22 @@ function toTitleCase(value) {
     .replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
+const MARKETING_AUTHORISATION_LABELS = [
+  ['allowOnlineMarketing', 'allow_online_marketing', 'Agency Website'],
+  ['allowPropertyPortals', 'allow_property_portals', 'Property portals'],
+  ['allowSocialMedia', 'allow_social_media', 'Social Media'],
+  ['allowShowBoards', 'allow_show_boards', 'Show boards'],
+]
+
+const SPECIAL_MANDATE_CONDITION_LABELS = [
+  ['sellerApprovalRequired', 'All offers remain subject to seller approval.'],
+  ['replacementPropertyRequired', 'The mandate is subject to the seller securing a replacement property.'],
+  ['existingLease', 'The property is subject to an existing lease.'],
+  ['tenantRightsApply', 'Tenant rights apply and must be observed.'],
+  ['occupationBeforeRegistration', 'Occupation before registration is permitted by agreement.'],
+  ['occupationAfterRegistration', 'Occupation is permitted after registration only.'],
+]
+
 function formatCurrency(value) {
   const amount = firstNumber(value)
   if (!Number.isFinite(amount)) return null
@@ -84,8 +100,47 @@ function formatCurrency(value) {
 
 function formatPercent(value) {
   const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  if (!Number.isFinite(parsed) || parsed < 0) return null
   return `${parsed.toFixed(2)}%`
+}
+
+function normalizeObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function buildMarketingPermissionsText(onboarding = {}, lead = {}) {
+  const source = {
+    ...normalizeObject(lead.marketingAuthorisations),
+    ...normalizeObject(lead.marketing_authorisations),
+    ...normalizeObject(onboarding.marketingAuthorisations),
+    ...normalizeObject(onboarding.marketing_authorisations),
+  }
+  const flatValues = {
+    allowOnlineMarketing: onboarding.allowOnlineMarketing ?? onboarding.allow_online_marketing ?? lead.allowOnlineMarketing ?? lead.allow_online_marketing,
+    allowPropertyPortals: onboarding.allowPropertyPortals ?? onboarding.allow_property_portals ?? lead.allowPropertyPortals ?? lead.allow_property_portals,
+    allowSocialMedia: onboarding.allowSocialMedia ?? onboarding.allow_social_media ?? lead.allowSocialMedia ?? lead.allow_social_media,
+    allowShowBoards: onboarding.allowShowBoards ?? onboarding.allow_show_boards ?? lead.allowShowBoards ?? lead.allow_show_boards,
+  }
+  for (const [key, value] of Object.entries(flatValues)) {
+    if (value !== undefined && value !== null) source[key] = value
+  }
+  const selected = MARKETING_AUTHORISATION_LABELS
+    .filter(([camelKey, snakeKey]) => Boolean(source[camelKey] ?? source[snakeKey]))
+    .map(([, , label]) => label)
+  return selected.length ? `Seller authorises marketing via: ${selected.join(', ')}.` : ''
+}
+
+function buildSpecialMandateConditionsText(onboarding = {}, lead = {}) {
+  const source = {
+    ...normalizeObject(lead.specialMandateConditions),
+    ...normalizeObject(lead.special_mandate_conditions),
+    ...normalizeObject(onboarding.specialMandateConditions),
+    ...normalizeObject(onboarding.special_mandate_conditions),
+  }
+  const selected = SPECIAL_MANDATE_CONDITION_LABELS
+    .filter(([key]) => Boolean(source[key]))
+    .map(([, clause]) => clause)
+  return selected.join('\n')
 }
 
 export function normalizeSellerOnboardingStatus(value = '', { hasToken = false, hasFormData = false } = {}) {
@@ -277,6 +332,7 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
   const commissionStructure = normalizeKey(firstText(
     onboarding.commissionStructure,
     onboarding.commissionType,
+    onboarding.commission_type,
     mandateDraft.commissionStructure,
     lead.commissionStructure,
     agency.defaultCommissionStructure,
@@ -286,6 +342,7 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
   const commissionPercentResolved = firstNumberWithSource([
     { value: onboarding.commissionPercentage, source: 'private_listing_seller_onboarding' },
     { value: onboarding.commissionPercent, source: 'private_listing_seller_onboarding' },
+    { value: onboarding.commission_percentage, source: 'private_listing_seller_onboarding' },
     { value: onboarding.mandateCommissionPercent, source: 'private_listing_seller_onboarding' },
     { value: mandateDraft.commissionPercent, source: 'document_packet_context' },
     { value: lead.commissionPercent, source: 'lead' },
@@ -297,6 +354,7 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
   ].filter(Boolean))
   const commissionAmountResolved = firstNumberWithSource([
     { value: onboarding.commissionAmount, source: 'private_listing_seller_onboarding' },
+    { value: onboarding.commission_amount, source: 'private_listing_seller_onboarding' },
     { value: onboarding.mandateCommissionAmount, source: 'private_listing_seller_onboarding' },
     { value: mandateDraft.commissionAmount, source: 'document_packet_context' },
     { value: lead.commissionAmount, source: 'lead' },
@@ -304,14 +362,33 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
     { value: organisation.defaultCommissionAmount, source: 'agency_default' },
   ])
   const askingPrice = firstNumber(onboarding.marketingPrice, onboarding.askingPrice, privateListing.askingPrice, privateListing.asking_price, lead.askingPrice, lead.estimatedPrice, lead.estimatedValue, lead.budget, transaction.asking_price, transaction.purchase_price)
-  const explicitStartDate = firstText(onboarding.mandateStartDate, onboarding.startDate, mandateDraft.mandateStartDate, mandateDraft.startDate, lead.mandateStartDate, privateListing.mandateStartDate)
-  const explicitEndDate = firstText(onboarding.mandateExpiryDate, onboarding.mandateEndDate, onboarding.expiryDate, mandateDraft.mandateEndDate, mandateDraft.expiryDate, mandateDraft.endDate, lead.mandateEndDate, privateListing.mandateEndDate)
+  const explicitStartDate = firstText(onboarding.mandateStartDate, onboarding.mandate_start_date, onboarding.startDate, mandateDraft.mandateStartDate, mandateDraft.startDate, lead.mandateStartDate, privateListing.mandateStartDate)
+  const explicitEndDate = firstText(onboarding.mandateExpiryDate, onboarding.mandate_expiry_date, onboarding.mandateEndDate, onboarding.mandate_end_date, onboarding.expiryDate, mandateDraft.mandateEndDate, mandateDraft.expiryDate, mandateDraft.endDate, lead.mandateEndDate, privateListing.mandateEndDate)
   const startDate = toIsoDate(explicitStartDate) || addDaysToIsoDate(0)
   const expiryDate = toIsoDate(explicitEndDate) || addDaysToIsoDate(90)
   const resolvedCommissionPercentage = commissionPercentResolved.value ?? (commissionStructure === 'fixed' ? null : 7.5)
+  const marketingPermissions = firstText(
+    onboarding.marketingPermissions,
+    onboarding.mandateMarketingPermissions,
+    lead.marketingPermissions,
+    buildMarketingPermissionsText(onboarding, lead),
+  )
+  const selectedSpecialConditions = buildSpecialMandateConditionsText(onboarding, lead)
+  const additionalConditions = firstText(
+    onboarding.additionalConditions,
+    onboarding.additional_conditions,
+    onboarding.additionalMandateConditions,
+    onboarding.additional_mandate_conditions,
+    lead.additionalConditions,
+  )
+  const specialConditions = firstText(
+    onboarding.specialConditions,
+    lead.specialConditions,
+    [selectedSpecialConditions, additionalConditions].filter(Boolean).join('\n'),
+  )
 
   return {
-    type: firstText(onboarding.mandateType, mandateDraft.mandateType, mandateDraft.type, lead.mandateType, privateListing.mandateType, agency.defaultMandateType, organisation.defaultMandateType, 'sole'),
+    type: firstText(onboarding.mandateType, onboarding.mandate_type, mandateDraft.mandateType, mandateDraft.type, lead.mandateType, privateListing.mandateType, agency.defaultMandateType, organisation.defaultMandateType, 'sole'),
     startDate,
     expiryDate,
     endDate: expiryDate,
@@ -324,11 +401,11 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
     commissionPercentageSource: commissionPercentResolved.source || (resolvedCommissionPercentage !== null ? 'draft_default' : ''),
     commissionAmount: commissionAmountResolved.value,
     commissionAmountSource: commissionAmountResolved.source,
-    vatHandling: firstText(onboarding.vatHandling, lead.vatHandling, agency.vatHandling, organisation.vatHandling, 'exclusive'),
+    vatHandling: firstText(onboarding.vatHandling, onboarding.vat_handling, lead.vatHandling, agency.vatHandling, organisation.vatHandling, 'exclusive'),
     askingPrice,
-    marketingPermissions: firstText(onboarding.marketingPermissions, lead.marketingPermissions),
+    marketingPermissions,
     accessInstructions: firstText(onboarding.accessInstructions, lead.accessInstructions),
-    specialConditions: firstText(onboarding.specialConditions, lead.specialConditions),
+    specialConditions,
     annexuresList: firstText(onboarding.annexuresList, lead.annexuresList),
   }
 }

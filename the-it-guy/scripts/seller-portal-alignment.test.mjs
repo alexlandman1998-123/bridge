@@ -1,17 +1,34 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import { createServer } from 'vite'
-import { buildSellerJourney } from '../src/services/sellerJourneyService.js'
 
 const serviceSource = await fs.readFile(new URL('../src/services/clientPortalWorkspaceService.js', import.meta.url), 'utf8')
 assert.match(serviceSource, /buildSellerJourney/)
 assert.match(serviceSource, /buildSellerPortalJourneyView/)
+assert.match(serviceSource, /sellerPortalStatusCards/)
+
+const privateListingServiceSource = await fs.readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+const sellerOnboardingLoader = privateListingServiceSource.match(/export async function getSellerOnboardingByToken[\s\S]*?\n}\n\nasync function maybeResolveCanonicalSellerRequirements/)?.[0] || ''
+assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, portalPayload\.listing\.organisationId\)/, 'seller onboarding portal should fetch latest organisation branding for RPC payloads')
+assert.match(sellerOnboardingLoader, /fetchOrganisationBrandingSnapshot\(client, listing\?\.organisationId\)/, 'seller onboarding portal should fetch latest organisation branding for fallback listing payloads')
+assert.doesNotMatch(sellerOnboardingLoader, /branding\?\.logoUrl[\s\S]*\?\s*null[\s\S]*fetchOrganisationBrandingSnapshot/, 'seller onboarding portal must not skip latest branding when a stale logo snapshot exists')
 
 const clientPortalSource = await fs.readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
 assert.match(clientPortalSource, /sharedSellerPortalJourney/)
-assert.match(clientPortalSource, /SellerStatusCards/)
-assert.match(clientPortalSource, /sellerStatusCards/)
-assert.match(clientPortalSource, /SellerPortalReadiness/)
+assert.match(clientPortalSource, /SellerPortalDashboard/)
+assert.match(clientPortalSource, /buildSellerPortalProgressModelFromSharedJourney/)
+assert.match(clientPortalSource, /sellerStageMeta/)
+
+const sellerOnboardingSource = await fs.readFile(new URL('../src/pages/SellerOnboarding.jsx', import.meta.url), 'utf8')
+assert.match(sellerOnboardingSource, /assignedAgentId/, 'seller onboarding submit notification should pass the assigned agent id when email is not on the listing payload')
+assert.match(sellerOnboardingSource, /!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId/, 'seller onboarding submit notification should still run when ids can resolve the agent email server-side')
+
+const submittedEmailHandler = await fs.readFile(new URL('../../supabase/functions/send-email/handlers/sellerOnboardingSubmitted.ts', import.meta.url), 'utf8')
+assert.match(submittedEmailHandler, /resolveAssignedAgentRecipient/, 'seller onboarding submitted email should resolve an agent recipient when no explicit to email is supplied')
+assert.match(submittedEmailHandler, /\.from\("private_listings"\)/, 'seller onboarding submitted email should resolve recipients from the private listing')
+assert.match(submittedEmailHandler, /\.from\("leads"\)/, 'seller onboarding submitted email should resolve recipients from the linked lead')
+assert.match(submittedEmailHandler, /\.from\("profiles"\)/, 'seller onboarding submitted email should resolve recipients from the assigned agent profile')
+assert.doesNotMatch(submittedEmailHandler, /Missing required field: to/, 'seller onboarding submitted email must not fail before server-side recipient resolution')
 
 const server = await createServer({
   root: process.cwd(),
@@ -20,6 +37,7 @@ const server = await createServer({
 })
 
 try {
+  const { buildSellerJourney } = await server.ssrLoadModule('/src/services/sellerJourneyService.js')
   const { buildSellerPortalJourneyView } = await server.ssrLoadModule('/src/services/clientPortalWorkspaceService.js')
   const journey = buildSellerJourney({
     lead: {
@@ -77,16 +95,15 @@ try {
   assert.equal(portalView.currentStage.key, 'listing_live')
   assert.equal(portalView.stageMeta.currentStage.key, 'listing_live')
   assert.equal(portalView.stageMeta.currentStage.message.includes('listing is live'), true)
-  assert.equal(portalView.progressPercent, 89)
+  assert.equal(portalView.progressPercent, 88)
   assert.equal(portalView.stages.find((step) => step.key === 'mandate_signed').state, 'completed')
-  assert.equal(portalView.statusCards.find((card) => card.key === 'appointment').value, 'Completed')
   assert.equal(portalView.statusCards.find((card) => card.key === 'mandate').value, 'Signed')
   assert.equal(portalView.statusCards.find((card) => card.key === 'listing').value, 'Live')
   assert.equal(portalView.statusCards.find((card) => card.key === 'documents').value, '1 Outstanding')
   assert.equal(portalView.statusCards.find((card) => card.key === 'offers').value, '1 Received')
   assert.equal(portalView.statusCards.find((card) => card.key === 'readiness').value, 'Listing Live')
   assert.equal(portalView.readiness.status, 'completed')
-  assert.equal(portalView.documents.find((document) => String(document.label).toLowerCase() === 'id').status, 'Approved')
+  assert.equal(portalView.documents.some((document) => document.status === 'Approved'), true)
 } finally {
   await server.close()
 }

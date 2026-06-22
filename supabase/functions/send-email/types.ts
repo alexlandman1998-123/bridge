@@ -202,7 +202,7 @@ export type SendCommercialLandlordOnboardingPayload = {
 
 export type SendSellerOnboardingSubmittedPayload = {
   type: "seller_onboarding_submitted";
-  to: string;
+  to?: string;
   agentName?: string;
   sellerName?: string;
   propertyTitle?: string;
@@ -210,6 +210,7 @@ export type SendSellerOnboardingSubmittedPayload = {
   organisationId?: string;
   leadId?: string;
   listingId?: string;
+  assignedAgentId?: string;
   actionLink?: string;
 };
 
