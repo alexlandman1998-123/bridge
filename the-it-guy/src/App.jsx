@@ -189,14 +189,19 @@ const AttorneyTransactionDetail = lazy(() => import('./pages/AttorneyTransaction
 const Auth = lazy(() => import('./pages/Auth'))
 const AuthCallback = lazy(() => import('./pages/AuthCallback'))
 const BridgeAgentsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAgentsPage')
+const BridgeAboutPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAboutPage')
+const BridgeBuyPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeBuyPage')
 const BridgeBuyersPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeBuyersPage')
 const BridgeContactPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeContactPage')
 const BridgeConveyancersPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeConveyancersPage')
 const BridgeDevelopersPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeDevelopersPage')
 const BridgeHowItWorksPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeHowItWorksPage')
 const BridgeLanding = lazy(() => import('./pages/BridgeLanding'))
+const BridgePricingPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgePricingPage')
 const BridgeProductPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeProductPage')
+const BridgeResourcesPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeResourcesPage')
 const BridgeSolutionsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeSolutionsPage')
+const BridgeToolsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeToolsPage')
 const BuyerOfferSubmission = lazy(() => import('./pages/BuyerOfferSubmission'))
 const PostViewingOfferPortal = lazy(() => import('./pages/PostViewingOfferPortal'))
 const SellerOfferReviewPage = lazy(() => import('./pages/SellerOfferReviewPage'))
@@ -1349,8 +1354,13 @@ function AppRoutes() {
         <Suspense fallback={<PageSkeleton label="Loading Bridge" />}>
           <Routes>
           <Route path="/bridge" element={<BridgeLanding />} />
+          <Route path="/bridge/buy" element={<BridgeBuyPage />} />
           <Route path="/bridge/product" element={<BridgeProductPage />} />
           <Route path="/bridge/solutions" element={<BridgeSolutionsPage />} />
+          <Route path="/bridge/tools" element={<BridgeToolsPage />} />
+          <Route path="/bridge/resources" element={<BridgeResourcesPage />} />
+          <Route path="/bridge/pricing" element={<BridgePricingPage />} />
+          <Route path="/bridge/about" element={<BridgeAboutPage />} />
           <Route path="/bridge/how-it-works" element={<BridgeHowItWorksPage />} />
           <Route path="/bridge/contact" element={<BridgeContactPage />} />
           <Route path="/bridge/for-developers" element={<BridgeDevelopersPage />} />

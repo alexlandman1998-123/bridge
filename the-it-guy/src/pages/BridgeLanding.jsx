@@ -5,7 +5,6 @@ import {
   Building2,
   CheckCircle2,
   ClipboardList,
-  Command,
   FileCheck2,
   Gauge,
   HandCoins,
@@ -43,79 +42,71 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { cn } from '../lib/utils'
 
 const navItems = [
-  { label: 'Product', to: '/bridge/product' },
+  { label: 'Buy', to: '/bridge/buy', dropdown: true },
   { label: 'Solutions', to: '/bridge/solutions' },
-  { label: 'How It Works', to: '/bridge/how-it-works' },
-  { label: 'Contact', to: '/bridge/contact' },
+  { label: 'Tools', to: '/bridge/tools' },
+  { label: 'Resources', to: '/bridge/resources' },
+  { label: 'Pricing', to: '/bridge/pricing' },
+  { label: 'About', to: '/bridge/about' },
 ]
 
-const roleNavItems = [
-  {
-    label: 'For Developers',
-    to: '/bridge/for-developers',
-    copy: 'Portfolio visibility, stock flow, and cross-team transaction control.',
-  },
-  {
-    label: 'For Conveyancers',
-    to: '/bridge/for-conveyancers',
-    copy: 'Structured legal workflow, document readiness, and cleaner progress reporting.',
-  },
-  {
-    label: 'For Agents',
-    to: '/bridge/for-agents',
-    copy: 'Post-sale visibility without chasing fragmented updates.',
-  },
-  {
-    label: 'For Buyers',
-    to: '/bridge/for-buyers',
-    copy: 'A clearer, more professional transaction journey with guided next steps.',
-  },
+const buyNavItems = [
+  { label: 'Residential Properties', to: '/listings', copy: 'Browse homes and residential opportunities.' },
+  { label: 'Commercial Properties', to: '/commercial/listings', copy: 'Explore commercial stock and leasing opportunities.' },
+  { label: 'New Developments', to: '/developments', copy: 'Discover new estates, units and launches.' },
+  { label: 'Affordability Calculator', to: '/bridge/tools#affordability', copy: 'Estimate affordability before you enquire.' },
+  { label: 'Bond Calculator', to: '/bridge/tools#bond-calculator', copy: 'Understand monthly repayment ranges.' },
+  { label: 'Transfer Cost Calculator', to: '/bridge/tools#transfer-costs', copy: 'Plan once-off purchase costs.' },
+  { label: 'Rental Yield Calculator', to: '/bridge/tools#rental-yield', copy: 'Model income and yield quickly.' },
+  { label: 'Buyer Guides', to: '/bridge/resources#buyer-guides', copy: 'Learn the journey from search to registration.' },
 ]
 
-const heroBenefitStripCards = [
+const heroBenefits = [
+  { title: 'End-to-end visibility', icon: LayoutPanelTop },
+  { title: 'Stronger relationships', icon: Users },
+  { title: 'More efficiency', icon: Gauge },
+  { title: 'Better outcomes', icon: CheckCircle2 },
+]
+
+const journeyPathCards = [
   {
-    title: 'Workflow & ownership',
-    copy: 'Stay attached to every transaction.',
+    title: 'Buy Property',
+    copy: 'Browse properties, developments, calculators and buyer resources.',
+    cta: 'Explore Property',
+    to: '/bridge/buy',
+    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
   },
   {
-    title: 'Clients stay informed',
-    copy: 'Automatic updates, fewer follow-ups.',
-  },
-  {
-    title: 'Clear steps',
-    copy: 'Structured process, no loops.',
-  },
-  {
-    title: 'Reporting stays live',
-    copy: 'Leadership sees movement.',
+    title: 'Grow Your Property Business',
+    copy: 'Deliver a world-class transaction experience from offer to registration.',
+    cta: 'Explore Platform',
+    to: '/bridge/product',
+    image: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80',
   },
 ]
 
-const heroProgressCards = [
-  { label: 'Buyer onboarding', status: 'Complete', progress: '100%' },
-  { label: 'Finance and supporting docs', status: 'In progress', progress: '68%' },
-  { label: 'Transfer readiness', status: 'Prepared next', progress: '48%' },
+const buyerDiscoveryCards = [
+  { title: 'Smart Search', copy: 'Find residential, commercial and development opportunities in the right place.', icon: Building2 },
+  { title: 'Calculators', copy: 'Estimate affordability, bond repayments, transfer costs and rental yield.', icon: Gauge },
+  { title: 'Buying Guides', copy: 'Understand each decision before the transaction begins.', icon: ClipboardList },
+  { title: 'Market Insights', copy: 'Read the market with clearer context before you commit.', icon: LineChart },
+  { title: 'Saved Alerts', copy: 'Keep track of the opportunities that match your journey.', icon: CheckCircle2 },
 ]
 
-const heroOperationalKpis = [
-  { label: 'Active', value: '47' },
-  { label: 'At Risk', value: '6' },
-  { label: 'Ready', value: '18' },
+const professionalProductCards = [
+  { title: 'Agent Dashboard', copy: 'Manage and track all transactions.', icon: LayoutPanelTop },
+  { title: 'Buyer Portal', copy: 'Keep buyers informed every step of the way.', icon: UserRound },
+  { title: 'Seller Portal', copy: 'Real-time updates and transparent communication.', icon: MessageSquareMore },
+  { title: 'Transaction Tracking', copy: 'End-to-end visibility for every stakeholder.', icon: Workflow },
 ]
 
-const heroPipelineFlow = [
-  { stage: 'Offer', count: 12, width: '100%' },
-  { stage: 'Signed', count: 9, width: '75%' },
-  { stage: 'Bond', count: 6, width: '50%' },
-  { stage: 'Transfer', count: 4, width: '34%' },
-  { stage: 'Registration', count: 2, width: '18%' },
-]
+const stakeholderParticipants = ['Buyer', 'Seller', 'Agent', 'Attorney', 'Bond Originator', 'Bank', 'Deeds Office']
 
-const workflowLegend = [
-  { label: 'Complete', tone: 'bg-white text-marketing-contrast border-white' },
-  { label: 'Active', tone: 'bg-[#eadcc7]/14 text-[#eadcc7] border-[#eadcc7]/25' },
-  { label: 'Ready next', tone: 'bg-white/[0.06] text-white/80 border-white/10' },
-  { label: 'Pending', tone: 'bg-white/[0.04] text-white/55 border-white/8' },
+const enterpriseCards = [
+  { title: 'Branded Portals', copy: 'Your brand. Your client experience.', icon: ShieldCheck },
+  { title: 'Automated Updates', copy: 'Keep clients informed automatically.', icon: MessageSquareMore },
+  { title: 'Real-Time Tracking', copy: 'Complete visibility at every step.', icon: LineChart },
+  { title: 'Stronger Relationships', copy: 'Build trust and increase referrals.', icon: HandCoins },
 ]
 
 const signatureStages = [
@@ -158,59 +149,6 @@ const signatureStages = [
     chip: 'Pending',
     summary: 'Close the loop with client communication, practical handover steps, and a cleaner finish.',
     bullets: ['Handover checklist templated', 'Buyer comms staged', 'Final delivery notes tracked'],
-  },
-]
-
-const problemCards = [
-  {
-    title: 'Information is scattered',
-    copy: 'Progress lives in inboxes, spreadsheets, and disconnected chats, so teams lose confidence in what is current.',
-    impact: 'The latest answer is never obvious',
-    icon: MessageSquareMore,
-  },
-  {
-    title: 'Responsibility moves, visibility doesn’t',
-    copy: 'Work shifts between teams, but ownership and status updates do not move with the transaction moment.',
-    impact: 'Handoffs lose speed and context',
-    icon: Users,
-  },
-  {
-    title: 'Clients are left waiting',
-    copy: 'When communication is fragmented, buyers and sellers wait for updates that should already be visible.',
-    impact: 'Manual follow-up replaces trust',
-    icon: UserRound,
-  },
-]
-
-const benefitCards = [
-  {
-    title: 'Shared visibility',
-    label: 'Visibility',
-    copy: 'Everyone works from the same transaction record, so the current state is visible without manual chasing.',
-    support: ['Latest stage stays legible', 'Shared record across roles'],
-    icon: LayoutPanelTop,
-    featured: true,
-  },
-  {
-    title: 'Structured workflow',
-    label: 'Workflow',
-    copy: 'Stages, tasks, and dependencies follow the real transaction lifecycle instead of generic pipeline logic.',
-    support: ['Milestones map to real stages', 'Dependencies stay attached'],
-    icon: Workflow,
-  },
-  {
-    title: 'Clear responsibilities',
-    label: 'Accountability',
-    copy: 'Ownership stays obvious, outstanding actions remain visible, and handoffs stop losing momentum.',
-    support: ['Current owner stays obvious', 'Blocked work surfaces earlier'],
-    icon: ClipboardList,
-  },
-  {
-    title: 'Better client experience',
-    label: 'Client experience',
-    copy: 'Buyers see what is happening, what is required, and what comes next through a clearer journey.',
-    support: ['Updates feel clearer', 'Next steps stay visible'],
-    icon: ShieldCheck,
   },
 ]
 
@@ -437,39 +375,43 @@ function BridgeHeader({ currentPath }) {
     <header className="sticky top-3 z-40 rounded-[28px] border border-white/70 bg-white/62 px-4 py-4 shadow-marketing-soft backdrop-blur-2xl md:px-5">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-8">
-          <Link to="/bridge" className="text-[1.05rem] font-semibold tracking-[0.18em] text-marketing-ink">
-            BRIDGE
+          <Link to="/bridge" className="flex items-center gap-3 text-[1.05rem] font-semibold tracking-[0.16em] text-marketing-ink">
+            <img src="/brand/bridge_9_white_background.png" alt="" className="h-7 w-auto rounded-md" />
+            ARCH9
           </Link>
 
           <div className="hidden items-center gap-1 lg:flex">
-            {navItems.map((item) => (
-              <Link key={item.label} to={item.to} className={siteLinkClass(currentPath === item.to)}>
-                {item.label}
-              </Link>
-            ))}
-
             <NavigationMenu className="relative">
               <NavigationMenuList>
-                <NavigationMenuItem>
-                  <NavigationMenuTrigger className={currentPath.startsWith('/bridge/for-') ? 'bg-black/[0.05] text-marketing-ink' : ''}>
-                    Solutions by role
-                  </NavigationMenuTrigger>
-                  <NavigationMenuContent>
-                    <div className="grid gap-2">
-                      {roleNavItems.map((item) => (
-                        <NavigationMenuLink asChild key={item.label}>
-                          <Link
-                            to={item.to}
-                            className="rounded-[18px] px-4 py-3 transition hover:bg-black/[0.035]"
-                          >
-                            <div className="text-sm font-semibold text-marketing-ink">{item.label}</div>
-                            <div className="mt-1 text-sm leading-6 text-marketing-muted">{item.copy}</div>
-                          </Link>
-                        </NavigationMenuLink>
-                      ))}
-                    </div>
-                  </NavigationMenuContent>
-                </NavigationMenuItem>
+                {navItems.map((item) => (
+                  <NavigationMenuItem key={item.label}>
+                    {item.dropdown ? (
+                      <>
+                        <NavigationMenuTrigger className={currentPath.startsWith('/bridge/buy') ? 'bg-black/[0.05] text-marketing-ink' : ''}>
+                          {item.label}
+                        </NavigationMenuTrigger>
+                        <NavigationMenuContent className="w-[min(92vw,560px)]">
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {buyNavItems.map((buyItem) => (
+                              <NavigationMenuLink asChild key={buyItem.label}>
+                                <Link to={buyItem.to} className="rounded-[18px] px-4 py-3 transition hover:bg-black/[0.035]">
+                                  <div className="text-sm font-semibold text-marketing-ink">{buyItem.label}</div>
+                                  <div className="mt-1 text-sm leading-6 text-marketing-muted">{buyItem.copy}</div>
+                                </Link>
+                              </NavigationMenuLink>
+                            ))}
+                          </div>
+                        </NavigationMenuContent>
+                      </>
+                    ) : (
+                      <NavigationMenuLink asChild>
+                        <Link to={item.to} className={siteLinkClass(currentPath === item.to)}>
+                          {item.label}
+                        </Link>
+                      </NavigationMenuLink>
+                    )}
+                  </NavigationMenuItem>
+                ))}
               </NavigationMenuList>
               <NavigationMenuViewport />
             </NavigationMenu>
@@ -477,17 +419,6 @@ function BridgeHeader({ currentPath }) {
         </div>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new Event('bridge:open-command-palette'))}
-            className="inline-flex h-11 items-center gap-2 rounded-full border border-marketing-borderStrong bg-white/80 px-4 text-sm font-semibold text-marketing-muted shadow-marketing-soft transition hover:border-marketing-accent/35 hover:text-marketing-ink"
-          >
-            <Command className="h-4 w-4" />
-            Command
-            <span className="rounded-full border border-marketing-border bg-marketing-panelStrong px-2 py-0.5 text-[11px] uppercase tracking-[0.16em] text-marketing-subtle">
-              Cmd K
-            </span>
-          </button>
           <Button asChild variant="secondary">
             <Link to="/bridge/product">Explore the Platform</Link>
           </Button>
@@ -510,8 +441,8 @@ function BridgeHeader({ currentPath }) {
           </SheetTrigger>
           <SheetContent side="right" className="w-[min(92vw,380px)]">
             <SheetHeader>
-              <SheetTitle>Bridge navigation</SheetTitle>
-              <SheetDescription>Use the public site like product software, not a brochure.</SheetDescription>
+              <SheetTitle>Arch9 navigation</SheetTitle>
+              <SheetDescription>Find property journeys, platform solutions and resources.</SheetDescription>
             </SheetHeader>
             <div className="grid gap-2">
               {navItems.map((item) => (
@@ -527,7 +458,7 @@ function BridgeHeader({ currentPath }) {
             </div>
             <Separator />
             <div className="grid gap-2">
-              {roleNavItems.map((item) => (
+              {buyNavItems.map((item) => (
                 <Link
                   key={item.label}
                   to={item.to}
@@ -838,83 +769,80 @@ function ProgressStatusCard({ label, status, progress, prefersReducedMotion }) {
 }
 
 function HeroProductProofBlock() {
-  const motionConfig = useBridgeMotion()
-
   return (
-    <DarkFeaturePanel className="h-full overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.06),transparent_24%),linear-gradient(180deg,#111214_0%,#0f0f10_100%)] p-6 md:p-8 xl:p-10">
-      <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.055)_0%,rgba(255,255,255,0.025)_100%)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] md:p-7 xl:p-8">
-        <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="text-[12px] uppercase tracking-[0.24em] text-white/55">Transaction workspace</div>
-            <div className="mt-3 text-[24px] font-semibold leading-[0.96] tracking-[-0.045em] text-white sm:text-[27px] md:text-[29px] lg:whitespace-nowrap xl:text-[34px]">
-              Junoah Estate
-            </div>
+    <div className="relative min-h-[620px] overflow-hidden rounded-[34px] border border-white/90 bg-[linear-gradient(145deg,#fffdf8_0%,#f4efe7_62%,#e9dfd0_100%)] p-5 shadow-marketing-float md:p-7">
+      <div className="absolute inset-x-8 top-8 h-48 rounded-full bg-white/55 blur-3xl" />
+      <div className="relative rounded-[28px] border border-white/85 bg-white/80 p-4 shadow-[0_28px_80px_rgba(57,49,39,0.14)] backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-4 border-b border-marketing-border px-2 pb-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-marketing-subtle">Agency command centre</div>
+            <div className="mt-2 text-[1.1rem] font-semibold tracking-[-0.04em] text-marketing-ink">Transaction OS</div>
           </div>
-          <div className="inline-flex w-fit shrink-0 items-center rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-[12px] uppercase tracking-[0.22em] text-[#d8c7ae] whitespace-nowrap">
-            Bond active
+          <div className="rounded-full border border-[#d7c7b4] bg-[#f8f1e8] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7b664f]">
+            Live
           </div>
         </div>
-
-        <div className="grid gap-6 2xl:grid-cols-[1.06fr_0.94fr]">
-          <div className="flex flex-col gap-5">
-            {heroProgressCards.map((card) => (
-              <ProgressStatusCard
-                key={card.label}
-                label={card.label}
-                status={card.status}
-                progress={card.progress}
-                prefersReducedMotion={motionConfig.prefersReducedMotion}
-              />
-            ))}
+        <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          {[
+            ['Active deals', '47', 'Across branches'],
+            ['At risk', '6', 'Needs attention'],
+            ['Ready next', '18', 'Moving forward'],
+          ].map(([label, value, detail]) => (
+            <div key={label} className="rounded-[22px] border border-marketing-border bg-marketing-panelStrong p-4">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-marketing-subtle">{label}</div>
+              <div className="mt-3 text-[2rem] font-semibold tracking-[-0.05em] text-marketing-ink">{value}</div>
+              <div className="mt-1 text-xs text-marketing-muted">{detail}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1.15fr,0.85fr]">
+          <div className="rounded-[24px] border border-marketing-border bg-white/86 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.16em] text-marketing-subtle">Transaction pipeline</div>
+                <div className="mt-2 text-sm font-semibold text-marketing-ink">From offer to registration</div>
+              </div>
+              <Badge variant="accent">Connected</Badge>
+            </div>
+            <div className="mt-5 space-y-4">
+              {[
+                ['Offer signed', '100%'],
+                ['Bond process', '72%'],
+                ['Transfer prep', '54%'],
+                ['Registration', '26%'],
+              ].map(([label, width]) => (
+                <div key={label}>
+                  <div className="flex items-center justify-between text-xs text-marketing-muted">
+                    <span>{label}</span>
+                    <span>{width}</span>
+                  </div>
+                  <div className="mt-2 h-2 rounded-full bg-black/[0.05]">
+                    <div className="h-2 rounded-full bg-marketing-accent" style={{ width }} />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-
-          <div className="flex flex-col gap-5">
-            <Motion.div
-              whileHover={motionConfig.prefersReducedMotion ? undefined : { y: -2 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-              className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5"
-            >
-              <div className="text-[11px] uppercase tracking-[0.2em] text-white/56">Progress</div>
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                {heroOperationalKpis.map((item) => (
-                  <div key={item.label} className="min-w-0 rounded-[22px] border border-white/10 bg-white/[0.025] px-4 py-5 text-center">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-white/56">{item.label}</div>
-                    <div className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-white md:text-[34px]">{item.value}</div>
-                  </div>
-                ))}
+          <div className="grid gap-3">
+            {[
+              'Buyer documents requested',
+              'Attorney matter opened',
+              'Bond originator updated',
+            ].map((item) => (
+              <div key={item} className="rounded-[20px] border border-marketing-border bg-white/86 px-4 py-3 text-sm text-marketing-muted">
+                <CheckCircle2 className="mr-2 inline h-4 w-4 text-marketing-accent" />
+                {item}
               </div>
-            </Motion.div>
-
-            <Motion.div
-              whileHover={motionConfig.prefersReducedMotion ? undefined : { y: -2 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-              className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5"
-            >
-              <div className="text-[11px] uppercase tracking-[0.2em] text-white/56">Next steps</div>
-              <div className="mt-4 space-y-4">
-                {heroPipelineFlow.map((item) => (
-                  <div key={item.stage}>
-                    <div className="flex items-center justify-between gap-3 text-[13px] text-white/76">
-                      <span>{item.stage}</span>
-                      <span className="text-white/52">{item.count}</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-white/8">
-                      <Motion.div
-                        initial={motionConfig.prefersReducedMotion ? false : { width: 0 }}
-                        animate={{ width: item.width }}
-                        transition={{ duration: 0.64, delay: 0.06, ease: [0.22, 1, 0.36, 1] }}
-                        className="h-2 rounded-full bg-[#d8c7ae]"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Motion.div>
-
+            ))}
           </div>
         </div>
       </div>
-    </DarkFeaturePanel>
+      <div className="absolute bottom-6 right-5 w-[min(72%,340px)] rounded-[26px] border border-white/80 bg-white/88 p-5 shadow-[0_24px_70px_rgba(57,49,39,0.16)] backdrop-blur-xl">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-marketing-subtle">Client portal</div>
+        <div className="mt-3 text-[1.05rem] font-semibold text-marketing-ink">Next step visible</div>
+        <p className="mt-2 text-sm leading-6 text-marketing-muted">Everyone sees what is complete, what is required, and who owns the next move.</p>
+      </div>
+    </div>
   )
 }
 
@@ -922,321 +850,150 @@ function HeroSection() {
   return (
     <MotionSection className="pt-14 md:pt-16">
       <SectionWrap>
-        <div className="mb-6 grid gap-3 md:grid-cols-2 xl:mb-7 xl:grid-cols-4">
-          {heroBenefitStripCards.map((item) => (
-            <article
-              key={item.title}
-              className="rounded-[18px] border border-[#e6dccf] bg-[linear-gradient(180deg,#fffdf8_0%,#fff9ef_100%)] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
-            >
-              <h3 className="text-[0.9rem] font-semibold tracking-[-0.02em] text-marketing-ink">{item.title}</h3>
-              <p className="mt-1.5 text-[0.82rem] leading-6 text-marketing-muted">{item.copy}</p>
-            </article>
-          ))}
-        </div>
-
         <div className="grid items-center gap-6 xl:grid-cols-[1.02fr,0.98fr]">
-          <Card className="h-full overflow-hidden border-white/90 bg-marketing-panelElevated shadow-marketing-float">
-            <CardHeader className="space-y-5 pb-5 pt-7">
-              <div className="max-w-[14ch] text-[clamp(2.9rem,5.8vw,5rem)] font-semibold leading-[0.9] tracking-[-0.065em] text-marketing-ink">
-                Property transactions.
+          <div className="space-y-8">
+            <div className="space-y-6">
+              <Badge variant="accent">Transaction Operating System for Property</Badge>
+              <h1 className="max-w-[13ch] text-[clamp(3.15rem,6.4vw,6rem)] font-semibold leading-[0.88] tracking-[-0.065em] text-marketing-ink">
+                Power your business.
                 <br />
-                Finally connected.
-              </div>
-              <CardDescription className="max-w-2xl text-[15px] leading-7">
-                Bridge 9 connects developers, agents, conveyancers, bond originators, and clients in one shared workspace.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5 pt-0">
+                Deliver every transaction with confidence.
+              </h1>
+              <p className="max-w-2xl text-[17px] leading-8 text-marketing-muted">
+                One connected platform to manage, communicate and move every deal forward — from offer to registration.
+              </p>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button asChild size="lg">
-                  <Link to="/bridge/contact">
-                    Book a Demo
+                  <Link to="/bridge/product">
+                    Explore the Platform
                     <ArrowRight className="h-4 w-4" />
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="secondary">
-                  <Link to="/bridge/product">Explore the Platform</Link>
+                  <Link to="/bridge/contact">Book a Demo</Link>
                 </Button>
               </div>
-
-              <div className="rounded-[22px] border border-marketing-border bg-marketing-panelStrong p-5">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-[16px] border border-white bg-white/86 px-4 py-3">
-                    <div className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-marketing-subtle">Who is connected</div>
-                    <p className="mt-1.5 text-sm leading-6 text-marketing-muted">Developers, agents, legal teams, finance teams, and clients.</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {heroBenefits.map((item) => {
+                const Icon = item.icon
+                return (
+                  <div key={item.title} className="rounded-[20px] border border-marketing-border bg-white/74 p-4 shadow-marketing-soft">
+                    <Icon className="h-5 w-5 text-marketing-accent" />
+                    <div className="mt-3 text-sm font-semibold text-marketing-ink">{item.title}</div>
                   </div>
-                  <div className="rounded-[16px] border border-white bg-white/86 px-4 py-3">
-                    <div className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-marketing-subtle">Why it matters</div>
-                    <p className="mt-1.5 text-sm leading-6 text-marketing-muted">Progress, responsibility, and next steps stay visible in one place.</p>
-                  </div>
+                )
+              })}
+            </div>
+            <div className="grid gap-3 rounded-[26px] border border-marketing-border bg-marketing-panelStrong p-4 sm:grid-cols-3">
+              {['Agency Principals', 'Estate Agents', 'Attorneys & Originators'].map((item) => (
+                <div key={item} className="rounded-[18px] border border-white/70 bg-white/84 px-4 py-3 text-sm font-semibold text-marketing-muted">
+                  {item}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              ))}
+            </div>
+          </div>
 
-          <HeroProductProofBlock />
+          <div>
+            <HeroProductProofBlock />
+          </div>
         </div>
       </SectionWrap>
     </MotionSection>
+  )
+}
+
+function PathImage({ src, title }) {
+  return (
+    <div className="relative min-h-[250px] overflow-hidden rounded-[28px]">
+      <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(21,28,22,0.05)_0%,rgba(21,28,22,0.5)_100%)]" />
+      <div className="absolute bottom-4 left-4 right-4 rounded-[20px] border border-white/35 bg-white/18 px-4 py-3 text-sm font-semibold text-white backdrop-blur-md">
+        {title}
+      </div>
+    </div>
+  )
+}
+
+function ProductMockup({ compact = false }) {
+  return (
+    <div className={cn('rounded-[28px] border border-marketing-border bg-white/90 p-4 shadow-marketing-panel', compact ? 'max-w-sm' : '')}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.16em] text-marketing-subtle">Live transaction</div>
+          <div className="mt-2 text-sm font-semibold text-marketing-ink">Offer to registration</div>
+        </div>
+        <Badge variant="accent">Active</Badge>
+      </div>
+      <div className="mt-4 space-y-3">
+        {[
+          ['Offer signed', '100%'],
+          ['Bond process', '72%'],
+          ['Transfer', '48%'],
+        ].map(([label, width]) => (
+          <div key={label} className="rounded-[18px] border border-marketing-border bg-marketing-panelStrong p-3">
+            <div className="flex items-center justify-between text-xs text-marketing-muted">
+              <span>{label}</span>
+              <span>{width}</span>
+            </div>
+            <div className="mt-2 h-2 rounded-full bg-black/[0.05]">
+              <div className="h-2 rounded-full bg-marketing-accent" style={{ width }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function PhoneMockup() {
+  return (
+    <div className="w-[190px] rounded-[32px] border border-[#242424]/10 bg-[#171717] p-2 shadow-[0_24px_70px_rgba(40,34,28,0.18)]">
+      <div className="rounded-[25px] bg-[#fbfaf7] p-4">
+        <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-[#d9d0c3]" />
+        <div className="text-[10px] uppercase tracking-[0.16em] text-marketing-subtle">Buyer portal</div>
+        <div className="mt-2 text-sm font-semibold text-marketing-ink">Next step</div>
+        <div className="mt-4 space-y-2">
+          {['Upload ID', 'Bond update', 'Attorney review'].map((item, index) => (
+            <div key={item} className="rounded-[14px] border border-marketing-border bg-white px-3 py-2">
+              <div className="flex items-center gap-2 text-xs text-marketing-muted">
+                <span className={cn('h-2 w-2 rounded-full', index === 0 ? 'bg-marketing-accent' : 'bg-[#d7c7b4]')} />
+                {item}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
 function SignatureWorkflowSection() {
   return (
-    <MotionSection className="pt-20">
+    <MotionSection className="pt-20" id="stakeholders">
       <SectionWrap>
-        <DarkFeaturePanel className="overflow-visible p-7 md:p-10">
-          <div className="grid gap-8 xl:grid-cols-[0.88fr,1.12fr]">
+        <Card className="overflow-hidden bg-[linear-gradient(145deg,#fffdf8,#f1e9dc)] shadow-marketing-panel">
+          <CardContent className="grid gap-8 p-6 md:p-8 xl:grid-cols-[0.86fr,1.14fr] xl:p-10">
             <div className="space-y-5">
-              <Badge variant="accent" className="bg-white/10 text-[#eadcc7] border-white/10">Bridge signature</Badge>
-              <h2 className="text-[clamp(2.4rem,4vw,4.3rem)] leading-[0.95] tracking-[-0.06em] text-white">
-                The transaction workflow, made visible like live operational software.
+              <Badge variant="accent">One connected transaction</Badge>
+              <h2 className="max-w-[13ch] text-[clamp(2.4rem,4vw,4.2rem)] font-semibold leading-[0.96] tracking-[-0.06em] text-marketing-ink">
+                One transaction. Every stakeholder.
               </h2>
-              <p className="max-w-xl text-[15px] leading-7 text-white/68">
-                This is where Bridge differentiates itself. Every stage is connected, status is legible, and the active moment in the deal becomes obvious instead of buried in messages and spreadsheets.
+              <p className="max-w-xl text-[15px] leading-7 text-marketing-muted">
+                A connected journey for everyone involved in the transaction.
               </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {workflowLegend.map((item) => (
-                  <div key={item.label} className={cn('rounded-[18px] border px-4 py-3 text-sm', item.tone)}>
-                    {item.label}
-                  </div>
-                ))}
-              </div>
-              <div className="grid gap-4 lg:grid-cols-[0.92fr,1.08fr]">
-                <div className="rounded-[24px] border border-white/10 bg-black/[0.16] p-5">
-                  <div className="text-[11px] uppercase tracking-[0.2em] text-white/45">Operational narrative</div>
-                  <div className="mt-3 text-[1.06rem] font-semibold text-white">The current stage becomes the center of gravity.</div>
-                  <p className="mt-2 text-sm leading-7 text-white/66">
-                    Bridge makes the active transaction moment clear to every stakeholder while keeping downstream readiness visible before delays appear.
-                  </p>
-                </div>
-                <div className="grid gap-3">
-                  <MetricPill label="Active stage" value="Bond process" subtle />
-                  <MetricPill label="Next handoff" value="Transfer readiness" subtle />
-                </div>
-              </div>
+              <Button asChild variant="secondary">
+                <Link to="/bridge/how-it-works">
+                  View How It Works
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
             </div>
-
             <div className="relative">
-              <div className="space-y-4 pb-3">
-                {signatureStages.map((stage, index) => (
-                  <MotionCard key={stage.id}>
-                    <div
-                      className={cn(
-                        'relative grid gap-4 rounded-[28px] border p-5 transition',
-                        stage.status === 'active'
-                          ? 'border-[#eadcc7]/35 bg-white/[0.1] shadow-[0_24px_70px_rgba(0,0,0,0.28)]'
-                          : 'border-white/8 bg-white/[0.04]',
-                      )}
-                    >
-                      {stage.status === 'active' ? <div className="absolute inset-y-5 left-0 w-px bg-gradient-to-b from-[#eadcc7]/0 via-[#eadcc7] to-[#eadcc7]/0" /> : null}
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="flex items-center gap-4">
-                          <div
-                            className={cn(
-                              'flex h-11 w-11 items-center justify-center rounded-full border text-sm font-semibold',
-                              stage.status === 'active'
-                                ? 'border-[#eadcc7]/40 bg-[#eadcc7]/18 text-[#f8efe2]'
-                                : 'border-white/10 bg-white/[0.03] text-white/75',
-                            )}
-                          >
-                            {index + 1}
-                          </div>
-                          <div>
-                            <div className="text-[11px] uppercase tracking-[0.2em] text-white/45">Transaction stage</div>
-                            <div className="mt-1 text-[1.12rem] font-semibold tracking-[-0.03em] text-white">{stage.title}</div>
-                          </div>
-                        </div>
-                        <Badge variant={stage.status === 'active' ? 'accent' : stage.status === 'complete' ? 'contrast' : 'default'} className={cn(stage.status === 'active' && 'bg-[#eadcc7]/12 text-[#eadcc7] border-[#eadcc7]/20', stage.status === 'complete' && 'bg-white text-marketing-contrast', stage.status === 'pending' && 'border-white/10 bg-white/[0.05] text-white/58', stage.status === 'ready' && 'border-white/10 bg-white/[0.05] text-white/72')}>
-                          {stage.chip}
-                        </Badge>
-                      </div>
-                      <p className="text-sm leading-7 text-white/70">{stage.summary}</p>
-                      <div className="h-1.5 rounded-full bg-white/[0.08]">
-                        <div
-                          className={cn(
-                            'h-1.5 rounded-full transition-all',
-                            stage.status === 'complete' && 'w-full bg-white',
-                            stage.status === 'active' && 'w-[72%] bg-[#eadcc7]',
-                            stage.status === 'ready' && 'w-[48%] bg-white/60',
-                            stage.status === 'pending' && 'w-[24%] bg-white/30',
-                          )}
-                        />
-                      </div>
-                      <div className="grid gap-2 md:grid-cols-3">
-                        {stage.bullets.map((bullet) => (
-                          <div
-                            key={bullet}
-                            className={cn(
-                              'rounded-[18px] border px-4 py-3 text-sm',
-                              stage.status === 'active'
-                                ? 'border-[#eadcc7]/18 bg-[#eadcc7]/10 text-white/82'
-                                : 'border-white/8 bg-black/[0.12] text-white/74',
-                            )}
-                          >
-                            {bullet}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </MotionCard>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DarkFeaturePanel>
-      </SectionWrap>
-    </MotionSection>
-  )
-}
-
-function ProblemSection() {
-  return (
-    <MotionSection className="pt-10 md:pt-12">
-      <SectionWrap>
-        <div className="rounded-[34px] border border-white/10 bg-[#111318] px-6 py-8 shadow-[0_30px_80px_rgba(4,6,12,0.34)] md:px-10 md:py-11">
-          <div className="max-w-[62rem] space-y-5">
-            <Badge className="border-white/14 bg-white/[0.04] text-white/72">THE PROBLEM</Badge>
-            <h2 className="max-w-[21ch] text-[clamp(2.2rem,4.6vw,4.3rem)] leading-[0.92] tracking-[-0.055em] text-white">
-              Property deals don&apos;t fail because people aren&apos;t working. They fail because everyone is working separately.
-            </h2>
-            <p className="max-w-[44rem] text-[15px] leading-7 text-white/62">
-              Bridge exists because too many deals are still coordinated through email, WhatsApp, manual follow-up, and fragmented progress views.
-            </p>
-          </div>
-          <div className="mt-8 grid auto-rows-fr gap-4 md:mt-10 lg:grid-cols-3">
-            {problemCards.map((card) => {
-              const Icon = card.icon
-              return (
-                <MotionCard key={card.title} className="h-full">
-                  <Card className="flex h-full flex-col border-white/10 bg-[#181d26] shadow-none">
-                    <CardHeader className="space-y-4 pb-4">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-white/14 bg-white/[0.04] text-[#e9ddca]">
-                        <Icon className="h-4.5 w-4.5" />
-                      </div>
-                      <div className="space-y-2">
-                        <CardTitle className="text-[1.32rem] tracking-[-0.03em] text-white">{card.title}</CardTitle>
-                        <CardDescription className="text-[14px] leading-6 text-white/66">{card.copy}</CardDescription>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="mt-auto pt-0">
-                      <div className="border-t border-white/10 pt-3.5">
-                        <div className="text-[11px] uppercase tracking-[0.16em] text-white/42">Commercial impact</div>
-                        <div className="mt-2 text-sm leading-6 text-white/78">{card.impact}</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </MotionCard>
-              )
-            })}
-          </div>
-        </div>
-      </SectionWrap>
-    </MotionSection>
-  )
-}
-
-function BenefitsSection() {
-  return (
-    <MotionSection className="pt-20">
-      <SectionWrap>
-        <div className="max-w-[46rem]">
-          <SectionIntro
-            eyebrow="The platform"
-            title="One shared platform for the people moving the deal forward."
-            copy="Bridge brings developers, conveyancers, agents, and buyers into one structured operational system, so visibility, responsibility, and communication stay aligned."
-          />
-        </div>
-        <div className="mt-12 grid auto-rows-fr gap-5 md:grid-cols-2">
-          {benefitCards.map((card, index) => {
-            const Icon = card.icon
-            const featured = index === 0
-
-            return (
-              <MotionCard key={card.title} className="h-full">
-                <Card
-                  className={cn(
-                    'flex h-full flex-col',
-                    featured
-                      ? 'border-white bg-marketing-panelStrong shadow-[0_22px_44px_rgba(15,15,16,0.06)]'
-                      : 'bg-white/92',
-                  )}
-                >
-                  <CardHeader className="space-y-4 pb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] border border-marketing-border bg-white/84 text-marketing-accent">
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-marketing-subtle">{card.label}</div>
-                    </div>
-                    <div className="space-y-2">
-                      <CardTitle className={cn('tracking-[-0.04em]', featured ? 'text-[1.56rem]' : 'text-[1.42rem]')}>{card.title}</CardTitle>
-                      <CardDescription className="max-w-[31rem] text-[15px] leading-7">{card.copy}</CardDescription>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="mt-auto pt-0">
-                    <div className={cn('grid gap-3 border-t border-marketing-border pt-5', featured ? 'sm:grid-cols-2' : '')}>
-                      {card.support.map((item) => (
-                        <div key={item} className="flex items-start gap-3">
-                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-marketing-accent/70" />
-                          <span className="text-sm leading-6 text-marketing-muted">{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </MotionCard>
-            )
-          })}
-        </div>
-      </SectionWrap>
-    </MotionSection>
-  )
-}
-
-function ProcessSection() {
-  return (
-    <MotionSection className="pt-20">
-      <SectionWrap>
-        <Card className="overflow-hidden bg-marketing-panelElevated">
-          <CardHeader className="pb-0">
-            <SectionIntro
-              eyebrow="How It Works"
-              title="A lifecycle engine, not just five boxes."
-              copy="Bridge is designed around the progression of a real property transaction, so every stage has clearer ownership, momentum, and downstream visibility."
-            />
-          </CardHeader>
-          <CardContent className="pt-10">
-            <div className="grid gap-6 xl:grid-cols-[0.92fr,1.08fr]">
-              <div className="rounded-[28px] border border-marketing-border bg-marketing-panelStrong p-5 md:p-6">
-                <div className="text-[11px] uppercase tracking-[0.2em] text-marketing-subtle">Flow logic</div>
-                <div className="mt-3 text-[1.28rem] font-semibold tracking-[-0.04em] text-marketing-ink">
-                  The process feels sequential because the software treats the lifecycle as connected motion.
-                </div>
-                <div className="mt-5 space-y-3">
-                  {['The live transaction opens the system of record.', 'Responsibilities move with the stage, not outside it.', 'Reporting is generated from the same workflow foundation.'].map((item) => (
-                    <div key={item} className="rounded-[18px] border border-white/74 bg-white/86 px-4 py-3 text-sm text-marketing-muted">
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="relative grid gap-4 md:grid-cols-2">
-                <div className="pointer-events-none absolute left-[calc(25%-1px)] right-[calc(25%-1px)] top-10 hidden h-px bg-gradient-to-r from-transparent via-marketing-borderStrong to-transparent md:block" />
-                {processSteps.map((step, index) => (
-                  <MotionCard key={step.number}>
-                    <Card className={cn('h-full', index === 1 ? 'bg-marketing-panelStrong shadow-marketing-panel' : index === 3 ? 'bg-white/92' : 'bg-marketing-panelElevated')}>
-                      <CardHeader className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div className="text-[2.2rem] font-semibold tracking-[-0.06em] text-marketing-accent">{step.number}</div>
-                          {index === 1 ? <Badge variant="accent">Current momentum</Badge> : <Badge>{`Stage ${index + 1}`}</Badge>}
-                        </div>
-                        <CardTitle>{step.title}</CardTitle>
-                        <CardDescription>{step.copy}</CardDescription>
-                      </CardHeader>
-                    </Card>
-                  </MotionCard>
+              <div className="pointer-events-none absolute left-6 right-6 top-1/2 hidden h-px bg-gradient-to-r from-transparent via-[#cdbcaa] to-transparent lg:block" />
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {stakeholderParticipants.map((participant, index) => (
+                  <StakeholderNode key={participant} label={participant} index={index} />
                 ))}
               </div>
             </div>
@@ -1247,63 +1004,199 @@ function ProcessSection() {
   )
 }
 
+function ProblemSection() {
+  return (
+    <MotionSection className="pt-20" id="journey-path">
+      <SectionWrap>
+        <div className="mb-9 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <SectionIntro
+            eyebrow="Choose your path"
+            title="Where are you on your property journey?"
+            copy="Arch9 keeps buyers close to property discovery while giving professionals the transaction operating layer behind the experience."
+          />
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          {journeyPathCards.map((card) => (
+            <MotionCard key={card.title}>
+              <Card className="group h-full overflow-hidden bg-marketing-panelElevated shadow-marketing-panel">
+                <CardContent className="grid h-full gap-6 p-5 md:grid-cols-[0.95fr,1.05fr] md:p-6">
+                  <div className="flex flex-col justify-between gap-6">
+                    <div>
+                      <Badge variant="accent">{card.title === 'Buy Property' ? 'For buyers & sellers' : 'For professionals'}</Badge>
+                      <h3 className="mt-5 text-[clamp(2rem,3vw,3rem)] font-semibold leading-[0.98] tracking-[-0.055em] text-marketing-ink">{card.title}</h3>
+                      <p className="mt-4 text-[15px] leading-7 text-marketing-muted">{card.copy}</p>
+                    </div>
+                    <Button asChild variant="secondary" className="w-fit">
+                      <Link to={card.to}>
+                        {card.cta}
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </div>
+                  <PathImage src={card.image} title={card.title} />
+                </CardContent>
+              </Card>
+            </MotionCard>
+          ))}
+        </div>
+      </SectionWrap>
+    </MotionSection>
+  )
+}
+
+function BuyerToolCard({ card }) {
+  const Icon = card.icon
+  return (
+    <MotionCard>
+      <Card className="h-full bg-white/88">
+        <CardHeader className="space-y-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-marketing-border bg-marketing-panelStrong text-marketing-accent">
+            <Icon className="h-5 w-5" />
+          </div>
+          <CardTitle>{card.title}</CardTitle>
+          <CardDescription>{card.copy}</CardDescription>
+        </CardHeader>
+      </Card>
+    </MotionCard>
+  )
+}
+
+function BenefitsSection() {
+  return (
+    <MotionSection className="pt-20" id="buyers">
+      <SectionWrap>
+        <div className="grid gap-8 lg:grid-cols-[0.86fr,1.14fr] lg:items-end">
+          <SectionIntro
+            eyebrow="For buyers & sellers"
+            title="Find. Explore. Decide with confidence."
+            copy="Property discovery now lives where it belongs: inside Buy, supported by developments, resources and practical decision tools."
+          />
+          <div className="rounded-[30px] border border-marketing-border bg-marketing-panelStrong p-4 shadow-marketing-panel">
+            <div className="grid gap-4 md:grid-cols-[1.15fr,0.85fr]">
+              <PathImage
+                src="https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1200&q=80"
+                title="Featured developments"
+              />
+              <div className="grid gap-3">
+                {['Residential Listings', 'Commercial Listings', 'New Developments', 'Buyer Resources'].map((item) => (
+                  <Link key={item} to="/bridge/buy" className="rounded-[18px] border border-white/70 bg-white/86 px-4 py-3 text-sm font-semibold text-marketing-muted transition hover:text-marketing-ink">
+                    {item}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="mt-8 grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {buyerDiscoveryCards.map((card) => (
+            <BuyerToolCard key={card.title} card={card} />
+          ))}
+        </div>
+      </SectionWrap>
+    </MotionSection>
+  )
+}
+
+function ProcessSection() {
+  return (
+    <MotionSection className="pt-20" id="professionals">
+      <SectionWrap>
+        <Card className="overflow-hidden bg-marketing-panelElevated shadow-marketing-panel">
+          <CardHeader className="pb-0">
+            <SectionIntro
+              eyebrow="For professionals"
+              title="Everything you need to run better transactions."
+              copy="Powerful tools that help you manage every transaction from offer to registration."
+            />
+          </CardHeader>
+          <CardContent className="pt-10">
+            <div className="grid gap-7 xl:grid-cols-[1.04fr,0.96fr] xl:items-center">
+              <div className="relative min-h-[430px] rounded-[32px] border border-marketing-border bg-[linear-gradient(145deg,#fbfaf7,#eee5d8)] p-6">
+                <ProductMockup />
+                <div className="absolute bottom-7 right-7">
+                  <PhoneMockup />
+                </div>
+                <div className="absolute bottom-8 left-8 max-w-[240px] rounded-[24px] border border-white/75 bg-white/86 p-5 shadow-marketing-soft">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-marketing-subtle">Stakeholder view</div>
+                  <div className="mt-2 text-[1.15rem] font-semibold tracking-[-0.04em] text-marketing-ink">One connected journey</div>
+                  <p className="mt-2 text-sm leading-6 text-marketing-muted">Agent, buyer, seller, attorney and bond teams stay aligned.</p>
+                </div>
+              </div>
+              <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
+                {professionalProductCards.map((card) => {
+                  const Icon = card.icon
+                  return (
+                    <MotionCard key={card.title}>
+                      <Card className="h-full bg-white/88">
+                        <CardHeader className="space-y-4">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-marketing-border bg-marketing-panelStrong text-marketing-accent">
+                            <Icon className="h-5 w-5" />
+                          </div>
+                          <CardTitle>{card.title}</CardTitle>
+                          <CardDescription>{card.copy}</CardDescription>
+                        </CardHeader>
+                      </Card>
+                    </MotionCard>
+                  )
+                })}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </SectionWrap>
+    </MotionSection>
+  )
+}
+
+function StakeholderNode({ label, index }) {
+  return (
+    <div className="rounded-[22px] border border-marketing-border bg-white/88 px-5 py-4 shadow-marketing-soft">
+      <div className="flex items-center gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-marketing-accentSoft text-xs font-semibold text-marketing-accent">
+          {index + 1}
+        </div>
+        <div className="text-sm font-semibold text-marketing-ink">{label}</div>
+      </div>
+    </div>
+  )
+}
+
 function PersonaSection() {
   return (
-    <MotionSection className="pt-20">
+    <MotionSection className="pt-20" id="enterprise">
       <SectionWrap>
-        <SectionIntro
-          eyebrow="Persona-led platform"
-          title="Built for every key role in the transaction."
-          copy="One platform with tailored experiences. Each card below acts like a gateway into what that role sees and why Bridge matters to them."
-        />
-        <div className="mt-10 grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-2">
-          {personaCards.map((card) => {
-            const Icon = card.icon
-            return (
-              <MotionCard key={card.title}>
-                <Card className="group flex h-full flex-col overflow-hidden bg-marketing-panelElevated transition">
-                  <CardHeader className="pb-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-marketing-border bg-white/86 text-marketing-accent transition group-hover:border-marketing-accent/25 group-hover:bg-marketing-accentSoft">
+        <div className="grid gap-8 xl:grid-cols-[0.82fr,1.18fr] xl:items-start">
+          <div className="space-y-5">
+            <SectionIntro
+              eyebrow="Enterprise-level experience"
+              title="Every agency deserves a world-class client experience."
+              copy="Large brands spend millions building technology. Arch9 makes that experience accessible to every agency."
+            />
+            <div className="rounded-[30px] border border-marketing-border bg-marketing-panelStrong p-4">
+              <PathImage
+                src="https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=1200&q=80"
+                title="Premium client experience"
+              />
+            </div>
+          </div>
+          <div className="grid auto-rows-fr gap-4 md:grid-cols-2">
+            {enterpriseCards.map((card) => {
+              const Icon = card.icon
+              return (
+                <MotionCard key={card.title}>
+                  <Card className="h-full bg-white/88">
+                    <CardHeader className="space-y-4">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-marketing-border bg-marketing-panelStrong text-marketing-accent">
                         <Icon className="h-5 w-5" />
                       </div>
-                      <div className="rounded-full border border-marketing-border bg-white/82 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-marketing-subtle">
-                        Role view
-                      </div>
-                    </div>
-                    <CardTitle>{card.title}</CardTitle>
-                    <CardDescription className="min-h-[84px]">{card.copy}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="mt-auto flex flex-1 flex-col">
-                    <div className="rounded-[20px] border border-marketing-border bg-white/84 px-4 py-3 text-sm text-marketing-muted">
-                      {card.detail}
-                    </div>
-                    <div className="mt-3 flex-1 rounded-[20px] border border-marketing-border bg-marketing-panelStrong p-4">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-marketing-subtle">What they see</div>
-                      <div className="mt-3 grid gap-2">
-                        {card.preview.map((item) => (
-                          <div
-                            key={item}
-                            className="rounded-[14px] border border-white/70 bg-white/86 px-3 py-2 text-sm text-marketing-muted transition group-hover:border-marketing-accent/18"
-                          >
-                            {item}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="pt-5">
-                      <Button asChild variant="ghost" className="px-0 text-marketing-accent hover:bg-transparent">
-                        <Link to={card.to}>
-                          Learn More
-                          <ArrowRight className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </MotionCard>
-            )
-          })}
+                      <CardTitle>{card.title}</CardTitle>
+                      <CardDescription>{card.copy}</CardDescription>
+                    </CardHeader>
+                  </Card>
+                </MotionCard>
+              )
+            })}
+          </div>
         </div>
       </SectionWrap>
     </MotionSection>
@@ -1567,53 +1460,42 @@ function FinalCtaSection() {
   return (
     <MotionSection className="py-20">
       <SectionWrap>
-        <DarkFeaturePanel className="overflow-hidden p-8 md:p-10">
-          <div className="grid gap-8 lg:grid-cols-[1fr,0.88fr] lg:items-end">
+        <Card className="overflow-hidden bg-marketing-panelElevated shadow-marketing-float">
+          <CardContent className="grid gap-8 p-6 md:p-8 lg:grid-cols-[1fr,0.88fr] lg:items-center xl:p-10">
             <div className="max-w-3xl space-y-5">
-              <Badge variant="accent" className="bg-white/10 text-[#eadcc7] border-white/10">Final CTA</Badge>
-              <h2 className="text-[clamp(2.3rem,4vw,4rem)] leading-[0.96] tracking-[-0.06em] text-white">
-                Bring more structure to every property transaction.
+              <Badge variant="accent">Ready for better transactions?</Badge>
+              <h2 className="text-[clamp(2.4rem,4vw,4.2rem)] font-semibold leading-[0.96] tracking-[-0.06em] text-marketing-ink">
+                Ready to modernise your property business?
               </h2>
-              <p className="text-[15px] leading-7 text-white/70">
-                See how Bridge helps your team manage the full journey from offer to handover with more clarity, control, confidence, and report-ready operational oversight.
+              <p className="text-[15px] leading-7 text-marketing-muted">
+                Join agencies using Arch9 to connect, collaborate and close transactions with confidence.
               </p>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {['Shared visibility', 'Operational control', 'Report-ready clarity'].map((item) => (
-                  <div key={item} className="rounded-[18px] border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-white/72">
-                    {item}
-                  </div>
-                ))}
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button asChild size="lg">
+                  <Link to="/bridge/contact">
+                    Book a Demo
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="secondary">
+                  <Link to="/bridge/solutions">Explore Solutions</Link>
+                </Button>
               </div>
             </div>
-            <div className="grid gap-4">
-              <div className="rounded-[26px] border border-white/10 bg-white/[0.05] p-5">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <MetricPill label="Demo view" value="Workflow + reporting" subtle />
-                  <MetricPill label="Audience fit" value="Developers to buyers" subtle />
-                </div>
-                <div className="mt-5 flex flex-col gap-3">
-                  <Button asChild size="lg" variant="secondary" className="border-white/12 bg-white text-marketing-contrast hover:border-white/20">
-                    <Link to="/bridge/contact">
-                      Book a Demo
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button asChild size="lg" variant="ghost" className="text-white hover:bg-white/[0.08] hover:text-white">
-                    <Link to="/bridge/solutions">Explore Solutions</Link>
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={() => window.dispatchEvent(new Event('bridge:open-command-palette'))}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-5 text-sm font-semibold text-white/78 transition hover:bg-white/[0.08] hover:text-white"
-                  >
-                    <Command className="h-4 w-4" />
-                    Open Command Palette
-                  </button>
-                </div>
+            <div className="relative min-h-[340px] overflow-hidden rounded-[30px]">
+              <img
+                src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80"
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(39,32,25,0.52)_100%)]" />
+              <div className="absolute bottom-5 left-5 right-5 rounded-[24px] border border-white/40 bg-white/18 p-5 text-white backdrop-blur-md">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-white/72">Arch9 platform</div>
+                <div className="mt-2 text-[1.2rem] font-semibold">Search to registration, connected.</div>
               </div>
             </div>
-          </div>
-        </DarkFeaturePanel>
+          </CardContent>
+        </Card>
       </SectionWrap>
     </MotionSection>
   )
@@ -1624,8 +1506,8 @@ function BridgeFooter() {
     <footer className="mx-auto mt-4 w-full max-w-marketing pb-10">
       <div className="rounded-[28px] border border-white/70 bg-white/62 px-6 py-6 shadow-marketing-soft backdrop-blur-xl md:flex md:items-center md:justify-between">
         <div>
-          <div className="text-[1.1rem] font-semibold tracking-[-0.05em] text-marketing-ink">Bridge</div>
-          <p className="mt-2 text-sm text-marketing-subtle">One shared platform for property transactions.</p>
+          <div className="text-[1.1rem] font-semibold tracking-[-0.05em] text-marketing-ink">Arch9</div>
+          <p className="mt-2 text-sm text-marketing-subtle">The platform that powers property transactions from search to registration.</p>
         </div>
         <div className="mt-4 flex flex-wrap gap-5 text-sm text-marketing-muted md:mt-0">
           {navItems.map((item) => (
@@ -1663,14 +1545,10 @@ function HomePageBody() {
     <>
       <HeroSection />
       <ProblemSection />
-      <SignatureWorkflowSection />
       <BenefitsSection />
       <ProcessSection />
+      <SignatureWorkflowSection />
       <PersonaSection />
-      <ProductPreviewSection />
-      <ReportSection />
-      <OutcomesSection />
-      <TrustSection />
       <FinalCtaSection />
     </>
   )
@@ -1744,11 +1622,11 @@ function ContactPageBody() {
     <>
       <SubpageHero
         eyebrow="Contact"
-        title="Book a demo and see Bridge in context."
+        title="Book a demo and see Arch9 in context."
         copy="Use this page as the framework for demo bookings, implementation conversations, and commercial follow-up."
         highlights={[
           'Show the workflow signature and reporting story in one walkthrough.',
-          'Discuss how Bridge fits current developer, legal, and sales operations.',
+          'Discuss how Arch9 fits current agency, legal, finance and client operations.',
           'Turn interest into a cleaner commercial next step.',
         ]}
       />
@@ -1813,7 +1691,7 @@ function ContactPageBody() {
 
 function GenericSubpage({ currentPath, eyebrow, title, copy, highlights, modules }) {
   return (
-    <BridgeShell currentPath={currentPath} title={`Bridge | ${title}`}>
+    <BridgeShell currentPath={currentPath} title={`Arch9 | ${title}`}>
       <SubpageHero eyebrow={eyebrow} title={title} copy={copy} highlights={highlights} />
       <FrameworkGrid items={modules} />
       <FinalCtaSection />
@@ -1821,9 +1699,102 @@ function GenericSubpage({ currentPath, eyebrow, title, copy, highlights, modules
   )
 }
 
+export function BridgeBuyPage() {
+  return (
+    <GenericSubpage
+      currentPath="/bridge/buy"
+      eyebrow="Buy"
+      title="Property discovery, tools and resources in one place."
+      copy="Browse residential and commercial properties, new developments, calculators and buyer guides from the dedicated Buy area."
+      highlights={[
+        'Residential and commercial property pathways live under Buy.',
+        'New developments and buyer resources sit beside practical calculators.',
+        'Search begins here, then Arch9 carries the transaction through to registration.',
+      ]}
+      modules={buyNavItems.map((item) => ({ title: item.label, copy: item.copy }))}
+    />
+  )
+}
+
+export function BridgeToolsPage() {
+  return (
+    <GenericSubpage
+      currentPath="/bridge/tools"
+      eyebrow="Tools"
+      title="Decision tools for buyers and property teams."
+      copy="Use calculators and structured workflows to make the next property decision clearer before the transaction begins."
+      highlights={[
+        'Affordability, bond, transfer cost and yield calculators.',
+        'Professional tools for transaction tracking and client updates.',
+        'Built to support the full property journey rather than a single listing moment.',
+      ]}
+      modules={[
+        { title: 'Affordability Calculator', copy: 'Estimate a realistic buying range before enquiry.' },
+        { title: 'Bond Calculator', copy: 'Understand repayment scenarios and finance readiness.' },
+        { title: 'Transfer Cost Calculator', copy: 'Plan once-off transaction costs earlier.' },
+      ]}
+    />
+  )
+}
+
+export function BridgeResourcesPage() {
+  return (
+    <GenericSubpage
+      currentPath="/bridge/resources"
+      eyebrow="Resources"
+      title="Guides for a more confident property journey."
+      copy="Buyer guides, transaction explainers and market context help every stakeholder understand what comes next."
+      highlights={[
+        'Buyer resources support search, offer and registration readiness.',
+        'Professional resources explain better client experience workflows.',
+        'Market insight content keeps the platform larger than listings alone.',
+      ]}
+      modules={buyerDiscoveryCards.map((card) => ({ title: card.title, copy: card.copy }))}
+    />
+  )
+}
+
+export function BridgePricingPage() {
+  return (
+    <GenericSubpage
+      currentPath="/bridge/pricing"
+      eyebrow="Pricing"
+      title="Pricing built around your transaction operation."
+      copy="Arch9 pricing can scale with agencies, branches and teams that need a better client transaction experience."
+      highlights={[
+        'Designed for agencies that want enterprise-level client experience.',
+        'Role-based platform value across agents, attorneys and originators.',
+        'Demo-led pricing keeps the package aligned to your workflow.',
+      ]}
+      modules={enterpriseCards.map((card) => ({ title: card.title, copy: card.copy }))}
+    />
+  )
+}
+
+export function BridgeAboutPage() {
+  return (
+    <GenericSubpage
+      currentPath="/bridge/about"
+      eyebrow="About"
+      title="Arch9 powers property transactions from search to registration."
+      copy="Arch9 is a transaction operating system for property teams that want better visibility, less administration and a more premium client journey."
+      highlights={[
+        'Agent-first, while still serving buyers and sellers.',
+        'Built around transaction visibility and stakeholder confidence.',
+        'Designed to make world-class client experience accessible to every agency.',
+      ]}
+      modules={[
+        { title: 'Transaction Operating System', copy: 'A connected platform for the full property journey.' },
+        { title: 'Better client experience', copy: 'Portals, updates and next steps that feel premium.' },
+        { title: 'Less administration', copy: 'Reduce manual chasing by making progress visible.' },
+      ]}
+    />
+  )
+}
+
 export default function BridgeLanding() {
   return (
-    <BridgeShell currentPath="/bridge" title="Bridge | Property transaction platform">
+    <BridgeShell currentPath="/bridge" title="Arch9 | Property Transaction Operating System">
       <HomePageBody />
     </BridgeShell>
   )
@@ -1835,7 +1806,7 @@ export function BridgeProductPage() {
       currentPath="/bridge/product"
       eyebrow="Product"
       title="The transaction coordination layer for property teams."
-      copy="Bridge picks up where traditional property CRMs stop. It turns the transaction itself into the operating layer."
+      copy="Arch9 picks up where traditional property CRMs stop. It turns the transaction itself into the operating layer."
       highlights={[
         'One shared record for workflow, documents, and accountability.',
         'Portfolio-level visibility paired with unit-level detail.',
@@ -1856,7 +1827,7 @@ export function BridgeSolutionsPage() {
       currentPath="/bridge/solutions"
       eyebrow="Solutions"
       title="One platform, tailored to each role in the transaction."
-      copy="Bridge is not four disconnected tools. It is one structured operating system with role-specific views."
+      copy="Arch9 is not four disconnected tools. It is one structured operating system with role-specific views."
       highlights={[
         'Developers see portfolio movement and reporting readiness.',
         'Conveyancers get structured legal workflow and document control.',
@@ -1872,7 +1843,7 @@ export function BridgeHowItWorksPage() {
     <GenericSubpage
       currentPath="/bridge/how-it-works"
       eyebrow="How It Works"
-      title="Bridge follows the real transaction lifecycle."
+      title="Arch9 follows the real transaction lifecycle."
       copy="The product mirrors how property transactions actually progress, so every stage carries clearer ownership and reporting value."
       highlights={[
         'Open the deal correctly from day one.',
@@ -1886,7 +1857,7 @@ export function BridgeHowItWorksPage() {
 
 export function BridgeContactPage() {
   return (
-    <BridgeShell currentPath="/bridge/contact" title="Bridge | Contact">
+    <BridgeShell currentPath="/bridge/contact" title="Arch9 | Contact">
       <ContactPageBody />
     </BridgeShell>
   )

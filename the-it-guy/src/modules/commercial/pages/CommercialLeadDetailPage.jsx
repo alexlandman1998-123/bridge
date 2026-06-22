@@ -53,7 +53,7 @@ import { getCommercialLookupData, resolveCommercialOrganisationContext } from '.
 
 const CARD_CLASS = 'rounded-[18px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.04)]'
 
-const TAB_KEYS = ['overview', 'profile', 'property', 'mandate', 'listing', 'funding', 'matching', 'viewings', 'offers', 'proposal', 'appointments', 'documents', 'activity', 'conversion']
+const TAB_KEYS = ['overview', 'profile', 'property', 'mandate', 'listing', 'funding', 'matching', 'viewings', 'offers', 'proposal', 'appointments', 'documents', 'activity', 'conversion', 'history']
 
 const LANDLORD_RELATIONSHIP_TYPES = [
   'Owner',
@@ -122,6 +122,8 @@ const TENANT_DOCUMENT_CHECKLIST = [
   'Lease Application',
   'Board Resolution',
 ]
+
+const TENANT_JOURNEY_STAGE_KEYS = ['captured', 'contacted', 'requirement', 'matching', 'viewing', 'hot', 'handover']
 
 const SELLER_RELATIONSHIP_TYPES = [
   'Owner',
@@ -722,13 +724,6 @@ function getTenantProposal(record = {}) {
   }
 }
 
-function tenantHasOnboardingSent(record = {}) {
-  const roleSpecific = getLeadRoleSpecific(record)
-  const metadata = record.metadata || record.metadata_json || {}
-  return Boolean(firstText(record.onboardingSentAt, record.onboarding_sent_at, roleSpecific.onboardingSentAt, roleSpecific.onboarding_sent_at) ||
-    ['sent', 'submitted', 'complete'].includes(normalizeKey(record.onboardingStatus || record.onboarding_status || roleSpecific.onboardingStatus || metadata.onboarding_status)))
-}
-
 function getTenantReadiness(record = {}) {
   const requirement = getTenantRequirement(record)
   const profile = getTenantProfile(record)
@@ -745,20 +740,6 @@ function getTenantReadiness(record = {}) {
   const percentage = Math.round((checks.filter((check) => check.complete).length / checks.length) * 100)
   const label = percentage >= 80 ? 'Requirement Ready' : percentage >= 45 ? 'Needs Attention' : 'Incomplete'
   return { percentage, label, checks }
-}
-
-function getTenantNextBestAction(record = {}) {
-  const requirement = getTenantRequirement(record)
-  const matching = getTenantMatching(record)
-  const viewing = getTenantViewing(record)
-  const proposal = getTenantProposal(record)
-  if (!tenantHasOnboardingSent(record)) return { label: 'Send Tenant Onboarding', description: 'Request occupier details and supporting tenant documents.', action: 'send_onboarding' }
-  if (!requirement.requirementCaptured) return { label: 'Capture Requirement', description: 'Capture preferred areas, size, budget and timing.', action: 'capture_requirement' }
-  if (!matching.matchCount) return { label: 'Run Vacancy Matching', description: 'Search available vacancies against this tenant requirement.', action: 'match_vacancies' }
-  if (!viewing.upcoming && !viewing.completed) return { label: 'Schedule Viewing', description: 'Book a viewing for one of the matched vacancies.', action: 'schedule_viewing' }
-  if (!proposal.proposalSent) return { label: 'Prepare Proposal', description: 'Prepare a proposal for the preferred vacancy shortlist.', action: 'prepare_proposal' }
-  if (!proposal.hotSigned) return { label: 'Prepare Heads Of Terms', description: 'Move accepted proposal terms into HOT.', action: 'prepare_hot' }
-  return { label: 'Convert to Deal', description: 'HOT is signed and this tenant lead can move into a lease deal.', action: 'convert_deal' }
 }
 
 function buildTenantSummaryCards(lead = {}, activities = []) {
@@ -785,13 +766,11 @@ function buildTenantJourney(lead = {}) {
   const steps = [
     { key: 'captured', label: 'Lead Captured', done: true, date: lead.createdAt ? formatShortDate(lead.createdAt) : '', subtext: 'Tenant lead created' },
     { key: 'contacted', label: 'Contacted', done: ['contacted', 'qualified', 'active', 'negotiation', 'converted'].includes(status), subtext: 'Broker contact logged' },
-    { key: 'onboarding', label: 'Tenant Onboarding Sent', done: tenantHasOnboardingSent(lead), subtext: 'Tenant onboarding request sent' },
-    { key: 'requirement', label: 'Requirement Captured', done: requirement.requirementCaptured, subtext: 'Size, area, budget and timing captured' },
+    { key: 'requirement', label: 'Requirements Captured', done: requirement.requirementCaptured, subtext: 'Size, area, budget and timing captured' },
     { key: 'matching', label: 'Vacancies Matched', done: matching.matchCount > 0, subtext: 'Vacancies matched to requirement' },
     { key: 'viewing', label: 'Viewing Scheduled', done: viewing.upcoming > 0 || viewing.completed > 0, subtext: 'Viewing booked or completed' },
-    { key: 'proposal', label: 'Proposal Submitted', done: proposal.proposalSent, subtext: 'Proposal sent to tenant' },
     { key: 'hot', label: 'HOT Signed', done: proposal.hotSigned, subtext: 'Heads of Terms signed' },
-    { key: 'deal', label: 'Deal Created', done: dealCreated, subtext: 'Lease deal opened' },
+    { key: 'handover', label: 'Handover', done: dealCreated, subtext: 'Deal conversion and handover' },
   ]
   const firstIncomplete = steps.findIndex((step) => !step.done)
   return steps.map((step, index) => ({ ...step, state: step.done ? 'complete' : index === firstIncomplete ? 'current' : 'upcoming' }))
@@ -1327,6 +1306,8 @@ export function CommercialLeadJourney({
   title = 'Lead Journey',
   subtitle = 'Qualification and conversion path for this commercial lead.',
   completionBanner = null,
+  activeKey = '',
+  onSelect = null,
 }) {
   return (
     <section className={`${CARD_CLASS} p-4`}>
@@ -1345,13 +1326,15 @@ export function CommercialLeadJourney({
           </div>
         </div>
       ) : null}
-      <div className={`mt-5 grid gap-3 md:grid-cols-4 ${items.length === 7 ? 'xl:grid-cols-7' : 'xl:grid-cols-8'}`}>
+      <div className={`mt-5 flex gap-3 overflow-x-auto pb-2 md:grid md:overflow-visible md:pb-0 md:grid-cols-4 ${items.length === 7 ? 'xl:grid-cols-7' : 'xl:grid-cols-8'}`}>
         {items.map((item, index) => {
           const complete = item.state === 'complete'
-          const current = item.state === 'current'
+          const selected = activeKey === item.key
+          const current = item.state === 'current' || selected
           const blocked = item.state === 'blocked'
-          return (
-            <div key={item.key || item.label} className="relative rounded-[16px] border border-slate-200 bg-[#fbfcfe] p-3">
+          const interactive = typeof onSelect === 'function'
+          const content = (
+            <>
               {index < items.length - 1 ? <span className="absolute left-[calc(100%-2px)] top-7 hidden h-px w-4 bg-slate-200 md:block" /> : null}
               <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold ${
                 complete
@@ -1367,7 +1350,25 @@ export function CommercialLeadJourney({
               <p className="mt-3 text-sm font-semibold text-[#102236]">{item.label}</p>
               <p className="mt-1 text-xs text-slate-500">{item.subtext}</p>
               <p className="mt-2 text-xs font-semibold text-slate-400">{item.date || titleCase(item.state)}</p>
-            </div>
+            </>
+          )
+          return (
+            interactive ? (
+              <button
+                key={item.key || item.label}
+                type="button"
+                onClick={() => onSelect(item.key)}
+                className={`relative min-w-[190px] rounded-[16px] border p-3 text-left transition md:min-w-0 ${
+                  selected ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 bg-[#fbfcfe] hover:border-emerald-200 hover:bg-white'
+                }`}
+              >
+                {content}
+              </button>
+            ) : (
+              <div key={item.key || item.label} className="relative min-w-[190px] rounded-[16px] border border-slate-200 bg-[#fbfcfe] p-3 md:min-w-0">
+                {content}
+              </div>
+            )
           )
         })}
       </div>
@@ -1774,80 +1775,191 @@ function LandlordConversionPanel({ lead }) {
   )
 }
 
-function TenantOverview({ lead, onSendOnboarding, onCaptureRequirement, onMatchVacancies, onScheduleViewing, onPrepareProposal, onPrepareHot, onConvertToDeal }) {
-  const nextAction = getTenantNextBestAction(lead)
-  const readiness = getTenantReadiness(lead)
+function TenantRequirementSummaryCard({ lead, onCaptureRequirement }) {
+  const requirement = getTenantRequirement(lead)
+  const hasRequirement = requirement.requirementCaptured
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Requirement Summary</h2>
+          <p className="mt-1 text-sm text-slate-500">Key demand information for this tenant lead.</p>
+        </div>
+        <Button type="button" variant={hasRequirement ? 'secondary' : 'primary'} className={`rounded-[14px] ${hasRequirement ? '' : 'bg-[#102b46] hover:bg-[#143858]'}`} onClick={onCaptureRequirement}>
+          Capture Requirements
+        </Button>
+      </div>
+      {hasRequirement ? (
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <DetailField label="Preferred Area / Node" value={requirement.preferredAreasLabel} />
+          <DetailField label="Asset Class" value={requirement.assetClassLabel} />
+          <DetailField label="Size Range" value={[requirement.minSizeSqm ? `${requirement.minSizeSqm} m²` : '', requirement.maxSizeSqm ? `${requirement.maxSizeSqm} m²` : ''].filter(Boolean).join(' - ') || (requirement.targetSizeSqm ? `${requirement.targetSizeSqm} m²` : 'Not captured')} />
+          <DetailField label="Budget / Rental" value={requirement.monthlyBudget ? `R${requirement.monthlyBudget}` : requirement.budgetPerSqm ? `R${requirement.budgetPerSqm}/sqm` : 'Not captured'} />
+          <DetailField label="Desired Occupation Date" value={requirement.occupationDate} />
+          <DetailField label="Occupier Type" value={getTenantProfile(lead).relationshipType} />
+          <DetailField label="Assigned Broker" value={getBroker(lead)} />
+        </div>
+      ) : (
+        <div className="mt-4 rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-5">
+          <p className="text-sm font-semibold text-[#102236]">No requirements captured yet.</p>
+          <p className="mt-1 text-sm text-slate-500">Capture preferred area, asset class, size range, budget and occupation timing.</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function TenantMatchedVacanciesCard({ lead, onMatchVacancies, onScheduleViewing }) {
   const matching = getTenantMatching(lead)
   const matches = matching.matches.length ? matching.matches : [
     { property: 'Retail Plaza', area: 'Area pending', assetClass: getAssetClassLabel(lead), size: 'Size pending', rental: 'Rental pending', availability: 'Availability pending', matchScore: matching.matchCount ? '78%' : 'Pending' },
     { property: 'Office Park', area: 'Node pending', assetClass: 'Office', size: 'Size pending', rental: 'Rental pending', availability: 'Availability pending', matchScore: 'Pending' },
     { property: 'Industrial Warehouse', area: 'Node pending', assetClass: 'Industrial', size: 'Size pending', rental: 'Rental pending', availability: 'Availability pending', matchScore: 'Pending' },
   ]
-  const actionMap = {
-    send_onboarding: onSendOnboarding,
-    capture_requirement: onCaptureRequirement,
-    match_vacancies: onMatchVacancies,
-    schedule_viewing: onScheduleViewing,
-    prepare_proposal: onPrepareProposal,
-    prepare_hot: onPrepareHot,
-    convert_deal: onConvertToDeal,
-  }
   return (
-    <div className="grid gap-4 xl:grid-cols-3">
-      <section className={`${CARD_CLASS} p-5`}>
-        <div className="flex h-11 w-11 items-center justify-center rounded-[15px] bg-blue-50 text-blue-700">
-          <Target size={18} />
+    <section className={`${CARD_CLASS} p-5`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Matched Vacancies</h2>
+          <p className="mt-1 text-sm text-slate-500">Shortlist and matching actions for this tenant requirement.</p>
         </div>
-        <h2 className="mt-4 text-base font-semibold tracking-[-0.03em] text-[#102236]">Next Best Action</h2>
-        <p className="mt-2 text-lg font-semibold text-[#102236]">{nextAction.label}</p>
-        <p className="mt-2 text-sm leading-6 text-slate-500">{nextAction.description}</p>
-        <Button type="button" className="mt-4 w-full justify-center rounded-[14px] bg-[#102b46] hover:bg-[#143858]" onClick={actionMap[nextAction.action]}>
-          {nextAction.label}
-        </Button>
-      </section>
-
-      <section className={`${CARD_CLASS} p-5`}>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Requirement Readiness Score</h2>
-            <p className="mt-1 text-sm text-slate-500">{readiness.label}</p>
-          </div>
-          <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-lg font-semibold text-emerald-700">
-            {readiness.percentage}%
-          </span>
-        </div>
-        <div className="mt-4 grid gap-2">
-          {readiness.checks.map((check) => (
-            <div key={check.key} className="flex items-center justify-between gap-3 rounded-[14px] border border-slate-200 bg-[#fbfcfe] px-3 py-2">
-              <span className="text-sm font-medium text-[#102236]">{check.label}</span>
-              <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full ${check.complete ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
-                <CheckCircle2 size={14} />
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className={`${CARD_CLASS} p-5`}>
-        <div className="flex h-11 w-11 items-center justify-center rounded-[15px] bg-slate-50 text-slate-700">
-          <Building2 size={18} />
-        </div>
-        <h2 className="mt-4 text-base font-semibold tracking-[-0.03em] text-[#102236]">Match Centre</h2>
-        <p className="mt-2 text-lg font-semibold text-[#102236]">{matching.matchCount || 0} Potential Matches</p>
+        <Button type="button" variant="secondary" className="rounded-[14px]" onClick={onMatchVacancies}>Find Matching Vacancies</Button>
+      </div>
+      {matching.matchCount ? (
         <div className="mt-4 grid gap-2">
           {matches.slice(0, 3).map((match) => (
             <div key={match.property || match.id} className="rounded-[14px] border border-slate-200 bg-[#fbfcfe] px-3 py-2">
-              <p className="text-sm font-semibold text-[#102236]">{match.property || match.propertyName || 'Matched vacancy'}</p>
-              <p className="mt-1 text-xs text-slate-500">{match.area || match.node || 'Area pending'} · {match.assetClass || match.asset_class || 'Asset class pending'}</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#102236]">{match.property || match.propertyName || 'Matched vacancy'}</p>
+                  <p className="mt-1 text-xs text-slate-500">{match.area || match.node || 'Area pending'} · {match.assetClass || match.asset_class || 'Asset class pending'}</p>
+                </div>
+                <span className="text-xs font-semibold text-emerald-700">{match.matchScore || match.match_score || 'Match'}</span>
+              </div>
             </div>
           ))}
+          <Button type="button" variant="secondary" className="mt-2 justify-center rounded-[14px]" onClick={onScheduleViewing}>Schedule Viewing</Button>
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <Button type="button" variant="secondary" className="justify-center rounded-[14px]" onClick={onMatchVacancies}>View Matches</Button>
-          <Button type="button" variant="secondary" className="justify-center rounded-[14px]" onClick={onMatchVacancies}>Send Matches</Button>
-          <Button type="button" variant="secondary" className="justify-center rounded-[14px]" onClick={onScheduleViewing} disabled={!matching.matchCount}>Schedule Viewing</Button>
+      ) : (
+        <div className="mt-4 rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-5">
+          <p className="text-sm font-semibold text-[#102236]">No vacancies matched yet.</p>
+          <p className="mt-1 text-sm text-slate-500">Run matching once the requirement is captured.</p>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function TenantNotesCard({ lead }) {
+  const requirement = getTenantRequirement(lead)
+  const roleSpecific = getLeadRoleSpecific(lead)
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Notes</h2>
+      <div className="mt-4 grid gap-3">
+        <DetailField label="Internal Notes" value={firstText(lead.notes, roleSpecific.internalNotes, roleSpecific.internal_notes) || 'No internal notes captured.'} />
+        <DetailField label="Broker Notes" value={firstText(lead.followUpNote, lead.lastActivityNote, roleSpecific.brokerNotes, roleSpecific.broker_notes) || 'No broker notes captured.'} />
+        <DetailField label="Requirement Notes" value={requirement.specialRequirements || 'No requirement notes captured.'} />
+      </div>
+    </section>
+  )
+}
+
+function TenantStageWorkspace({ lead, activeStage, onCaptureRequirement, onMatchVacancies, onScheduleViewing, onPrepareProposal, onPrepareHot, onConvertToDeal }) {
+  if (activeStage === 'requirement') {
+    return (
+      <div className="grid gap-4">
+        <section className={`${CARD_CLASS} p-5`}>
+          <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Requirements Captured Workspace</h2>
+          <p className="mt-1 text-sm text-slate-500">Requirement summary, requirement form and qualification notes.</p>
+        </section>
+        <TenantRequirementPanel lead={lead} onCaptureRequirement={onCaptureRequirement} />
+      </div>
+    )
+  }
+  if (activeStage === 'matching') {
+    return (
+      <div className="grid gap-4">
+        <section className={`${CARD_CLASS} p-5`}>
+          <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Vacancies Matched Workspace</h2>
+          <p className="mt-1 text-sm text-slate-500">Matched vacancies, suggested properties and matching actions.</p>
+        </section>
+        <TenantMatchingPanel lead={lead} onMatchVacancies={onMatchVacancies} onScheduleViewing={onScheduleViewing} />
+      </div>
+    )
+  }
+  if (activeStage === 'viewing') {
+    return (
+      <div className="grid gap-4">
+        <section className={`${CARD_CLASS} p-5`}>
+          <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Viewing Scheduled Workspace</h2>
+          <p className="mt-1 text-sm text-slate-500">Viewings, viewing calendar and viewing notes.</p>
+        </section>
+        <TenantViewingsPanel lead={lead} onScheduleViewing={onScheduleViewing} />
+      </div>
+    )
+  }
+  if (activeStage === 'hot') {
+    return (
+      <div className="grid gap-4">
+        <section className={`${CARD_CLASS} p-5`}>
+          <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">HOT Signed Workspace</h2>
+          <p className="mt-1 text-sm text-slate-500">Proposal, Heads of Terms and negotiation data.</p>
+        </section>
+        <TenantProposalHotPanel lead={lead} onPrepareProposal={onPrepareProposal} onPrepareHot={onPrepareHot} />
+      </div>
+    )
+  }
+  if (activeStage === 'handover') {
+    return (
+      <section className={`${CARD_CLASS} p-5`}>
+        <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">Handover Workspace</h2>
+        <p className="mt-1 text-sm text-slate-500">Deal conversion and commercial deal information.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Button type="button" className="justify-center rounded-[14px] bg-[#102b46] hover:bg-[#143858]" onClick={onConvertToDeal}>Convert To Deal</Button>
+          <DetailField label="Commercial Deal Information" value={firstText(lead.dealId, lead.deal_id) ? 'Deal linked' : 'No commercial deal linked yet'} />
         </div>
       </section>
+    )
+  }
+  return (
+    <section className={`${CARD_CLASS} p-5`}>
+      <h2 className="text-base font-semibold tracking-[-0.03em] text-[#102236]">{activeStage === 'contacted' ? 'Contacted Workspace' : 'Lead Captured Workspace'}</h2>
+      <p className="mt-1 text-sm text-slate-500">{activeStage === 'contacted' ? 'Broker contact and qualification context.' : 'Key lead information captured at source.'}</p>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <DetailField label="Tenant Lead" value={getLeadName(lead)} />
+        <DetailField label="Contact Person" value={getContactName(lead)} />
+        <DetailField label="Contact Number" value={getPhone(lead)} />
+        <DetailField label="Assigned Broker" value={getBroker(lead)} />
+      </div>
+    </section>
+  )
+}
+
+function TenantOverview({ lead, activities = [], activeStage = 'captured', onCaptureRequirement, onMatchVacancies, onScheduleViewing, onPrepareProposal, onPrepareHot, onConvertToDeal }) {
+  return (
+    <div className="grid gap-4">
+      <TenantStageWorkspace
+        lead={lead}
+        activeStage={activeStage}
+        onCaptureRequirement={onCaptureRequirement}
+        onMatchVacancies={onMatchVacancies}
+        onScheduleViewing={onScheduleViewing}
+        onPrepareProposal={onPrepareProposal}
+        onPrepareHot={onPrepareHot}
+        onConvertToDeal={onConvertToDeal}
+      />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <div className="grid gap-4">
+          <TenantRequirementSummaryCard lead={lead} onCaptureRequirement={onCaptureRequirement} />
+          <CommercialLeadActivityFeed activities={activities} />
+        </div>
+        <div className="grid gap-4">
+          <TenantMatchedVacanciesCard lead={lead} onMatchVacancies={onMatchVacancies} onScheduleViewing={onScheduleViewing} />
+          <TenantNotesCard lead={lead} />
+        </div>
+      </div>
+      <AssetIntelligenceCards lead={lead} scope="requirement" />
     </div>
   )
 }
@@ -2765,6 +2877,15 @@ function MoreActionsMenu({ open, onToggle, onEdit, onAddNote, onLogCall, onSendO
 }
 
 function buildTabs(leadType = '', dealType = '') {
+  if (leadType === 'tenant' && normalizeDealType(dealType) === 'lease') {
+    return [
+      { key: 'overview', label: 'Overview' },
+      { key: 'documents', label: 'Documents' },
+      { key: 'activity', label: 'Activity' },
+      { key: 'history', label: 'History' },
+    ]
+  }
+
   const requirementLabel = ['tenant', 'buyer'].includes(leadType)
     ? 'Requirement'
     : ['landlord', 'seller'].includes(leadType)
@@ -2780,13 +2901,6 @@ function buildTabs(leadType = '', dealType = '') {
     tabs.push(
       { key: 'mandate', label: 'Mandate' },
       { key: 'listing', label: 'Listing' },
-    )
-  }
-  if (leadType === 'tenant' && normalizeDealType(dealType) === 'lease') {
-    tabs.push(
-      { key: 'matching', label: 'Matching' },
-      { key: 'viewings', label: 'Viewings' },
-      { key: 'proposal', label: 'Proposal / HOT' },
     )
   }
   if (leadType === 'buyer' && normalizeDealType(dealType) === 'sale') {
@@ -2806,6 +2920,11 @@ function buildTabs(leadType = '', dealType = '') {
   ]
 }
 
+function journeyStageKey(value = '') {
+  const normalized = normalizeKey(value)
+  return TENANT_JOURNEY_STAGE_KEYS.includes(normalized) ? normalized : ''
+}
+
 function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeProp = 'lease', leadType: leadTypeProp = '' }) {
   const params = useParams()
   const location = useLocation()
@@ -2817,7 +2936,7 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
   const [lead, setLead] = useState(null)
   const [activities, setActivities] = useState([])
   const [menuOpen, setMenuOpen] = useState(false)
-  const activeTab = TAB_KEYS.includes(searchParams.get('detailTab')) ? searchParams.get('detailTab') : 'overview'
+  const requestedTab = TAB_KEYS.includes(searchParams.get('detailTab')) ? searchParams.get('detailTab') : 'overview'
 
   const loadLead = useCallback(async () => {
     setLoading(true)
@@ -2859,6 +2978,8 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
   const isSpecializedWorkspace = isLeasingLandlord || isLeasingTenant || isSalesSeller || isSalesBuyer
   const backPath = getBackPath(inferredDealType, location.search)
   const tabs = useMemo(() => buildTabs(inferredLeadType, inferredDealType), [inferredDealType, inferredLeadType])
+  const activeTab = tabs.some((tab) => tab.key === requestedTab) ? requestedTab : 'overview'
+  const activeTenantJourneyStage = isLeasingTenant && journeyStageKey(searchParams.get('journeyStage')) ? journeyStageKey(searchParams.get('journeyStage')) : ''
   const summaryCards = useMemo(() => {
     if (isLeasingLandlord) return buildLandlordSummaryCards(lead || {}, activities)
     if (isLeasingTenant) return buildTenantSummaryCards(lead || {}, activities)
@@ -2873,6 +2994,7 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
     if (isSalesBuyer) return buildBuyerJourney(lead || {})
     return buildJourney(lead || {})
   }, [activities, isLeasingLandlord, isLeasingTenant, isSalesBuyer, isSalesSeller, lead])
+  const selectedTenantJourneyStage = activeTenantJourneyStage || journey.find((item) => item.state === 'current')?.key || journey[0]?.key || 'captured'
   const landlordOnboarded = isLeasingLandlord && getLandlordJourneyStage(lead || {}, activities) === 'LANDLORD_ONBOARDED'
   const leadName = getLeadName(lead || {})
   const assetClass = getAssetClass(lead || {})
@@ -2882,6 +3004,15 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
     const next = new URLSearchParams(searchParams)
     if (nextTab === 'overview') next.delete('detailTab')
     else next.set('detailTab', nextTab)
+    setSearchParams(next, { replace: true })
+  }
+
+  function setTenantJourneyStage(nextStage) {
+    const stage = journeyStageKey(nextStage)
+    if (!stage) return
+    const next = new URLSearchParams(searchParams)
+    next.delete('detailTab')
+    next.set('journeyStage', stage)
     setSearchParams(next, { replace: true })
   }
 
@@ -2954,10 +3085,6 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
   function handleRequestDocuments() {
     setMenuOpen(false)
     window.alert('Supporting document request is ready to connect to the commercial document workflow.')
-  }
-
-  function handleMatchTenant() {
-    window.alert('Tenant matching will be enabled once a vacancy exists.')
   }
 
   function handleConvertToDeal() {
@@ -3108,28 +3235,22 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
     if (isLeasingTenant) {
       if (activeTab === 'overview') {
         return (
-          <div className="grid gap-4">
-            <TenantOverview
-              lead={lead}
-              onSendOnboarding={handleSendOnboarding}
-              onCaptureRequirement={handleCaptureRequirement}
-              onMatchVacancies={handleMatchVacancies}
-              onScheduleViewing={handleScheduleViewing}
-              onPrepareProposal={handlePrepareProposal}
-              onPrepareHot={handlePrepareHot}
-              onConvertToDeal={handleConvertToDeal}
-            />
-            <AssetIntelligenceCards lead={lead} scope="requirement" />
-          </div>
+          <TenantOverview
+            lead={lead}
+            activities={activities}
+            activeStage={selectedTenantJourneyStage}
+            onCaptureRequirement={handleCaptureRequirement}
+            onMatchVacancies={handleMatchVacancies}
+            onScheduleViewing={handleScheduleViewing}
+            onPrepareProposal={handlePrepareProposal}
+            onPrepareHot={handlePrepareHot}
+            onConvertToDeal={handleConvertToDeal}
+          />
         )
       }
-      if (activeTab === 'profile') return <TenantProfilePanel lead={lead} />
-      if (activeTab === 'property') return <TenantRequirementPanel lead={lead} onCaptureRequirement={handleCaptureRequirement} />
-      if (activeTab === 'matching') return <TenantMatchingPanel lead={lead} onMatchVacancies={handleMatchVacancies} onScheduleViewing={handleScheduleViewing} />
-      if (activeTab === 'viewings') return <TenantViewingsPanel lead={lead} onScheduleViewing={handleScheduleViewing} />
-      if (activeTab === 'proposal') return <TenantProposalHotPanel lead={lead} onPrepareProposal={handlePrepareProposal} onPrepareHot={handlePrepareHot} />
       if (activeTab === 'documents') return <TenantDocumentsPanel lead={lead} />
       if (activeTab === 'activity') return <CommercialLeadActivityFeed activities={activities} />
+      if (activeTab === 'history') return <TenantConversionPanel lead={lead} />
       return <TenantConversionPanel lead={lead} />
     }
 
@@ -3318,17 +3439,17 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
               </>
             ) : isLeasingTenant ? (
               <>
-                <Button type="button" className="h-11 rounded-[14px] bg-[#102b46] px-4 hover:bg-[#143858]" onClick={handleSendOnboarding}>
-                  <Send size={15} />
-                  Send Onboarding
-                </Button>
-                <Button type="button" variant="secondary" className="h-11 rounded-[14px] px-4" onClick={handleCaptureRequirement}>
+                <Button type="button" className="h-11 rounded-[14px] bg-[#102b46] px-4 hover:bg-[#143858]" onClick={handleCaptureRequirement}>
                   <ClipboardList size={15} />
-                  Capture Requirement
+                  Capture Requirements
                 </Button>
-                <Button type="button" variant="secondary" className="h-11 rounded-[14px] px-4" onClick={handleMatchVacancies}>
-                  <Target size={15} />
-                  Match Vacancies
+                <Button type="button" variant="secondary" className="h-11 rounded-[14px] px-4" onClick={handleScheduleViewing}>
+                  <CalendarDays size={15} />
+                  Schedule Viewing
+                </Button>
+                <Button type="button" variant="secondary" className="h-11 rounded-[14px] px-4" onClick={handleConvertToDeal}>
+                  <ArrowLeft size={15} className="rotate-180" />
+                  Convert To Deal
                 </Button>
               </>
             ) : isSalesSeller ? (
@@ -3390,6 +3511,8 @@ function CommercialLeadDetailPage({ leadId: leadIdProp = '', dealType: dealTypeP
         items={journey}
         title={isLeasingLandlord ? 'Landlord Journey' : 'Lead Journey'}
         subtitle={isLeasingLandlord ? 'Progress from lead to active landlord client.' : 'Qualification and conversion path for this commercial lead.'}
+        activeKey={isLeasingTenant ? selectedTenantJourneyStage : ''}
+        onSelect={isLeasingTenant ? setTenantJourneyStage : null}
         completionBanner={landlordOnboarded ? {
           title: 'Landlord Successfully Onboarded',
           description: 'This landlord is now an active client. Properties, vacancies and leasing activity are managed separately.',

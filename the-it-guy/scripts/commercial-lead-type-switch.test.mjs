@@ -10,6 +10,12 @@ assert.match(source, /createPortal\(/, 'lead row actions menu should render thro
 assert.match(source, /document\.body/, 'lead row actions portal should mount on document.body')
 assert.match(source, /className="fixed z-\[80\] w-56/, 'lead row actions menu should use fixed viewport positioning')
 assert.doesNotMatch(source, /absolute right-0 top-11 z-20 w-56/, 'lead row actions menu should not be clipped by table overflow')
+assert.match(source, /\['Lead', 'Type', 'Category \/ Requirement', 'Area', 'Budget \/ Rental', 'Broker', 'Status', 'Actions'\]/, 'leasing leads table should use the simplified eight-column header')
+assert.match(source, /colSpan=\{8\}/, 'leasing leads table empty and loading states should span the simplified table')
+assert.doesNotMatch(source, /lead\.initials/, 'leasing leads rows and cards should not render lead initials avatars')
+assert.doesNotMatch(source, /getLeadStageSecondary/, 'leasing leads status cells should not render duplicated stage subtext')
+assert.doesNotMatch(source, /Status \/ Stage/, 'leasing leads table header should label the column as Status only')
+assert.doesNotMatch(source, /Client \/ Company/, 'leasing leads table should not render the duplicate Client / Company column')
 
 const landlordKeys = source.match(/landlord: \[([\s\S]*?)\],\n  tenant:/)?.[1] || ''
 assert.ok(landlordKeys, 'landlord role-specific switch keys should be defined')

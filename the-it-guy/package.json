@@ -34,6 +34,7 @@
     "test:commercial-leasing-deal-create-modal": "node scripts/commercial-leasing-deal-create-modal.test.mjs",
     "test:attorney-navigation-refactor": "node scripts/attorney-navigation-refactor.test.mjs",
     "test:admin-mobile-dashboard": "node scripts/admin-mobile-dashboard-refactor.test.mjs",
+    "test:arch9-homepage-refactor": "node scripts/arch9-homepage-refactor.test.mjs",
     "test:commercial-landlord-lead-detail": "node scripts/commercial-landlord-lead-detail.test.mjs",
     "test:commercial-tenant-canvassing-modal": "node scripts/commercial-tenant-canvassing-modal.test.mjs",
     "test:commercial-tenant-lead-detail": "node scripts/commercial-tenant-lead-detail.test.mjs",

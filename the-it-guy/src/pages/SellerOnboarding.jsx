@@ -1823,11 +1823,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     })
   }
 
-  function patchPropertyDisclosure(patch = {}) {
+  function patchPropertyDisclosure(patchOrKey = {}, value = undefined) {
     setForm((previous) => {
       const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
       })
+      const patch = typeof patchOrKey === 'string' ? { [patchOrKey]: value } : patchOrKey
       const next = normalizePropertyDisclosure({ ...current, ...patch }, { kind: current.kind })
       return {
         ...(previous || {}),

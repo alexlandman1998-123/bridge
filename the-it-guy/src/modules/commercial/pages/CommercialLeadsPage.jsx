@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Clock3,
   Download,
   MapPin,
   MessageSquare,
@@ -480,24 +479,6 @@ function getLeadTypeLabel(lead = {}) {
   return getRoleLabel(role)
 }
 
-function getLeadClientRole(lead = {}) {
-  const role = normalizeLeadRole(lead)
-  if (role === 'landlord') return 'Owner'
-  if (role === 'tenant') return 'Occupier'
-  if (role === 'seller') return 'Owner'
-  if (role === 'buyer') return 'Buyer'
-  return 'Client'
-}
-
-function getLeadClientSecondary(lead = {}) {
-  const role = normalizeLeadRole(lead)
-  if (role === 'landlord') return 'Asset Manager / Property Manager'
-  if (role === 'tenant') return 'Tenant Rep / Decision Maker'
-  if (role === 'buyer') return 'Decision Maker'
-  if (role === 'seller') return 'Asset Owner'
-  return lead.companyName || 'Company pending'
-}
-
 function getLeadRequirementLabel(lead = {}) {
   const role = normalizeLeadRole(lead)
   const roleSpecific = getLeadRoleSpecific(lead)
@@ -534,10 +515,6 @@ function getControlledLeadStatusLabel(lead = {}) {
   if (status === 'active') return 'Active'
   if (['contacted', 'follow_up'].includes(status)) return 'Qualification'
   return 'New'
-}
-
-function getLeadStageSecondary(lead = {}) {
-  return normalizeText(lead.lastActivityNote) || getLeadStageLabel(lead) || 'Call logged'
 }
 
 function isLeadQualifiedEnough(lead = {}) {
@@ -1147,60 +1124,39 @@ function LeadRow({
   const statusLabel = getControlledLeadStatusLabel(lead)
   return (
     <tr className="cursor-pointer border-b border-slate-200 bg-white transition hover:bg-slate-50/60" onClick={() => onOpen?.(lead)}>
-      <td className="px-4 py-4 align-top">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-            {lead.initials || 'CL'}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#102236]">{getLeadTitle(lead)}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{getLeadContactName(lead)}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{getLeadContactPhone(lead)}</p>
-          </div>
+      <td className="px-4 py-3.5 align-middle">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[#102236]">{getLeadTitle(lead)}</p>
+          <p className="mt-1 truncate text-[13px] text-slate-500">{getLeadContactName(lead)}</p>
+          <p className="mt-1 truncate text-[13px] text-slate-500">{getLeadContactPhone(lead)}</p>
         </div>
       </td>
-      <td className="px-4 py-4 align-top">
+      <td className="px-4 py-3.5 align-middle">
         <LeadBadge tone={getProspectBadgeVariant(lead.prospectRole)}>{getLeadTypeLabel(lead)}</LeadBadge>
       </td>
-      <td className="px-4 py-4 align-top">
+      <td className="px-4 py-3.5 align-middle">
         <div className="grid gap-1">
           <LeadBadge tone={getCategoryBadgeVariant(lead.propertyCategory)}>
             <Building2 size={12} className="mr-1" />
             {getPropertyCategoryLabel(lead.propertyCategory)}
           </LeadBadge>
-          <span className="max-w-[180px] text-xs text-slate-500">{getLeadRequirementLabel(lead)}</span>
+          <span className="max-w-[180px] truncate text-[13px] text-slate-500">{getLeadRequirementLabel(lead)}</span>
         </div>
       </td>
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-semibold text-[#102236]">{getLeadClientRole(lead)}</p>
-        <p className="mt-1 text-xs text-slate-500">{getLeadClientSecondary(lead)}</p>
+      <td className="px-4 py-3.5 align-middle">
+        <p className="line-clamp-2 max-w-[240px] text-sm font-medium leading-5 text-[#102236]">{getLeadAreaLabel(lead)}</p>
       </td>
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-medium text-[#102236]">{getLeadAreaLabel(lead)}</p>
-      </td>
-      <td className="px-4 py-4 align-top">
+      <td className="px-4 py-3.5 align-middle">
         <p className="text-sm font-semibold text-[#102236]">{budget.value}</p>
-        <p className="mt-1 text-xs text-slate-500">{budget.label}</p>
+        <p className="mt-1 text-[13px] text-slate-500">{budget.label}</p>
       </td>
-      <td className="px-4 py-4 align-top">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-            {(lead.assignedBrokerName || 'U').slice(0, 2).toUpperCase()}
-          </div>
-          <p className="text-sm font-medium text-[#102236]">{lead.assignedBrokerName || 'Unassigned'}</p>
-        </div>
+      <td className="px-4 py-3.5 align-middle">
+        <p className="max-w-[140px] truncate text-sm font-medium text-[#102236]">{lead.assignedBrokerName || 'Unassigned'}</p>
       </td>
-      <td className="px-4 py-4 align-top">
-        <div className="grid gap-1">
-          <LeadBadge tone={getLeadStatusTone(lead)}>{statusLabel}</LeadBadge>
-          <span className="text-xs text-slate-500">{getLeadStageSecondary(lead)}</span>
-        </div>
+      <td className="px-4 py-3.5 align-middle">
+        <LeadBadge tone={getLeadStatusTone(lead)}>{statusLabel}</LeadBadge>
       </td>
-      <td className="px-4 py-4 align-top">
-        <p className="text-sm font-medium text-[#102236]">{lead.lastActivityAt ? formatRelativeTime(lead.lastActivityAt) : 'No activity yet'}</p>
-        <p className="mt-1 text-xs text-slate-500">{lead.lastActivityNote || 'Lead created'}</p>
-      </td>
-      <td className="px-4 py-4 align-top" onClick={(event) => event.stopPropagation()}>
+      <td className="px-4 py-3.5 text-right align-middle" onClick={(event) => event.stopPropagation()}>
         <LeadActionsMenu
           lead={lead}
           open={menuOpen}
@@ -1235,15 +1191,10 @@ function LeadCard({
   return (
     <article className="rounded-[24px] border border-[#e6edf4] bg-white p-4 shadow-[0_8px_26px_rgba(0,0,0,0.04)]" onClick={() => onOpen?.(lead)}>
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-            {lead.initials || 'CL'}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#102236]">{getLeadTitle(lead)}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{getLeadContactName(lead)}</p>
-            <p className="mt-1 truncate text-xs text-slate-500">{getLeadContactPhone(lead)}</p>
-          </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[#102236]">{getLeadTitle(lead)}</p>
+          <p className="mt-1 truncate text-[13px] text-slate-500">{getLeadContactName(lead)}</p>
+          <p className="mt-1 truncate text-[13px] text-slate-500">{getLeadContactPhone(lead)}</p>
         </div>
         <LeadActionsMenu
           lead={lead}
@@ -1277,11 +1228,7 @@ function LeadCard({
         </div>
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
           <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Status</span>
-          <span className="font-semibold">{getControlledLeadStatusLabel(lead)}</span>
-        </div>
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-400">Last Activity</span>
-          <span className="font-semibold">{lead.lastActivityAt ? formatRelativeTime(lead.lastActivityAt) : 'No activity yet'}</span>
+          <LeadBadge tone={getLeadStatusTone(lead)}>{getControlledLeadStatusLabel(lead)}</LeadBadge>
         </div>
       </div>
     </article>
@@ -2336,24 +2283,24 @@ function CommercialLeadsPage({ dealType = '' }) {
           <div className="overflow-hidden">
             <div className="hidden lg:block">
               <div className="max-h-[560px] overflow-auto">
-                <table className="min-w-[1280px] w-full border-separate border-spacing-0">
-                  <thead className="sticky top-0 z-10 bg-[#f7fafc] text-left text-[12px] font-semibold uppercase tracking-[0.12em] text-[#61758b]">
+                <table className="min-w-[1040px] w-full border-separate border-spacing-0">
+                  <thead className="sticky top-0 z-10 bg-[#f7fafc] text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-[#61758b]">
                     <tr>
-                      {['Lead', 'Type', 'Category / Requirement', 'Client / Company', 'Area', 'Budget / Rental', 'Broker', 'Status / Stage', 'Last Activity', 'Actions'].map((label) => (
-                        <th key={label} className="border-b border-[#e7edf4] px-4 py-3">{label}</th>
+                      {['Lead', 'Type', 'Category / Requirement', 'Area', 'Budget / Rental', 'Broker', 'Status', 'Actions'].map((label) => (
+                        <th key={label} className={`border-b border-[#e7edf4] px-4 py-3 ${label === 'Actions' ? 'text-right' : ''}`}>{label}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? Array.from({ length: 6 }).map((_, index) => (
                       <tr key={`lead-loading-${index}`}>
-                        <td colSpan={10} className="border-b border-[#eef3f7] px-5 py-4">
+                        <td colSpan={8} className="border-b border-[#eef3f7] px-5 py-4">
                           <div className="h-16 animate-pulse rounded-[16px] bg-slate-100" />
                         </td>
                       </tr>
                     )) : error ? (
                       <tr>
-                        <td colSpan={10} className="px-0 py-0">
+                        <td colSpan={8} className="px-0 py-0">
                           <InlineTableEmptyState icon={CalendarDays} title="Commercial leads could not be loaded" description={error} />
                         </td>
                       </tr>
@@ -2374,7 +2321,7 @@ function CommercialLeadsPage({ dealType = '' }) {
                       />
                     )) : (
                       <tr>
-                        <td colSpan={10} className="px-0 py-0">
+                        <td colSpan={8} className="px-0 py-0">
                           {renderEmptyState()}
                         </td>
                       </tr>
