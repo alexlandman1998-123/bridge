@@ -19,41 +19,45 @@ import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
 import { getAttorneyOperationalWorkspaceData } from '../services/attorneyOperations'
 
 const MATTER_VIEW_COPY = {
+  active: {
+    title: 'Transactions',
+    description: 'Current working files across transfer, bond registration, and cancellation workflows.',
+  },
   all: {
-    title: 'All Matters',
-    description: 'A unified operational queue for every matter assigned to this attorney firm.',
+    title: 'Transactions',
+    description: 'A unified operational queue for every transaction assigned to this attorney firm.',
   },
   transfer: {
-    title: 'Transfer Matters',
-    description: 'Filtered view of matters where transfer work is required or assigned to the firm.',
+    title: 'Transfer Transactions',
+    description: 'Filtered view of transactions where transfer work is required or assigned to the firm.',
   },
   bond: {
-    title: 'Bond Matters',
-    description: 'Filtered view of bond and hybrid-finance matters requiring bond attorney workflow.',
+    title: 'Bond Transactions',
+    description: 'Filtered view of bond and hybrid-finance transactions requiring bond attorney workflow.',
   },
   cancellation: {
-    title: 'Cancellation Matters',
-    description: 'Filtered view of matters with existing seller bond cancellation requirements.',
+    title: 'Cancellation Transactions',
+    description: 'Filtered view of transactions with existing seller bond cancellation requirements.',
   },
   shared: {
-    title: 'Shared Matters',
-    description: 'Matters where multiple legal roles or firms are involved in the same transaction.',
+    title: 'Shared Transactions',
+    description: 'Transactions where multiple legal roles or firms are involved in the same file.',
   },
   delayed: {
-    title: 'Delayed Matters',
-    description: 'Matters with blockers, overdue workflow signals, or SLA risk.',
+    title: 'Delayed Transactions',
+    description: 'Transactions with blockers, overdue workflow signals, or SLA risk.',
   },
   registered: {
-    title: 'Registered Matters',
-    description: 'Completed or registered matters ready for close-out and reporting.',
+    title: 'Registered Transactions',
+    description: 'Completed registrations retained for close-out, reporting, and historical search.',
   },
   archived: {
-    title: 'Archived Matters',
-    description: 'Closed matters retained for firm records, audit, and historical reference.',
+    title: 'Archived Transactions',
+    description: 'Closed, cancelled, or dead transactions retained for firm records and audit.',
   },
   'full-service': {
-    title: 'Full-Service Matters',
-    description: 'Matters where transfer, bond, and cancellation work all apply to the same transaction.',
+    title: 'Full-Service Transactions',
+    description: 'Transactions where transfer, bond, and cancellation work all apply to the same file.',
   },
 }
 
@@ -63,6 +67,12 @@ const ALL_MATTER_FILTERS = [
   { key: 'delayed', label: 'Delayed' },
   { key: 'registered', label: 'Registered' },
   { key: 'shared', label: 'Shared' },
+]
+
+const TRANSACTION_WORKSPACE_TABS = [
+  { key: 'active', label: 'Active' },
+  { key: 'registered', label: 'Registered' },
+  { key: 'archived', label: 'Archived' },
 ]
 
 function normalize(value) {
@@ -115,8 +125,11 @@ function matterMatchesView(matter = {}, view = 'all') {
   const stage = normalize(matter.currentStage)
   const status = normalize(matter.status)
   const lifecycle = normalize(matter.lifecycleState)
+  const isRegistered = lifecycle.includes('registered') || stage.includes('registered') || Boolean(matter.registrationDate)
+  const isArchived = lifecycle.includes('archived') || lifecycle.includes('closed') || status.includes('cancel') || status.includes('dead')
 
   if (type === 'all') return true
+  if (type === 'active') return !isRegistered && !isArchived
   if (type === 'transfer') return lanes.includes('transfer')
   if (type === 'bond') return lanes.includes('bond')
   if (type === 'cancellation') return lanes.includes('cancellation')
@@ -125,10 +138,8 @@ function matterMatchesView(matter = {}, view = 'all') {
     return ['transfer', 'bond', 'cancellation'].every((lane) => lanes.includes(lane))
   }
   if (type === 'delayed') return Boolean(matter.flags?.delayed) || status.includes('attention') || status.includes('blocked')
-  if (type === 'registered') {
-    return lifecycle.includes('registered') || stage.includes('registered') || Boolean(matter.registrationDate)
-  }
-  if (type === 'archived') return lifecycle.includes('archived')
+  if (type === 'registered') return isRegistered
+  if (type === 'archived') return isArchived
   return true
 }
 
@@ -187,7 +198,7 @@ function StatusPill({ children, tone = 'neutral' }) {
   )
 }
 
-function LoadingState({ copy = 'Loading attorney matters…' }) {
+function LoadingState({ copy = 'Loading attorney transactions…' }) {
   return (
     <section className="w-full px-3 py-4 sm:px-4 lg:px-5">
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -204,15 +215,15 @@ function EmptyState({ view, filter = 'all' }) {
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
         <BriefcaseBusiness size={20} />
       </div>
-      <h2 className="mt-4 text-base font-semibold text-slate-950">No {filterLabel}{MATTER_VIEW_COPY[view]?.title?.toLowerCase() || 'matters'} visible</h2>
+      <h2 className="mt-4 text-base font-semibold text-slate-950">No {filterLabel}{MATTER_VIEW_COPY[view]?.title?.toLowerCase() || 'transactions'} visible</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-        Matters appear here when they are assigned to this firm and match the current operational filter.
+        Transactions appear here when they are assigned to this firm and match the current operational filter.
       </p>
       <Link
         to="/new-transaction"
         className="mt-5 inline-flex items-center justify-center rounded-xl border border-[#12314f] bg-[#12314f] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b4264]"
       >
-        Create Matter
+        Create Transaction
       </Link>
     </section>
   )
@@ -224,7 +235,7 @@ function SummaryStrip({ matters = [] }) {
   const cancellation = matters.filter((matter) => getWorkflowLanes(matter).includes('Cancellation')).length
   const delayed = matters.filter((matter) => getRiskTone(matter) === 'danger').length
   const items = [
-    { label: 'Visible Matters', value: matters.length, icon: BriefcaseBusiness, tone: 'bg-blue-50 text-blue-700' },
+    { label: 'Visible Transactions', value: matters.length, icon: BriefcaseBusiness, tone: 'bg-blue-50 text-blue-700' },
     { label: 'Transfer Lanes', value: transfer, icon: Columns3, tone: 'bg-sky-50 text-sky-700' },
     { label: 'Bond Lanes', value: bond, icon: Banknote, tone: 'bg-violet-50 text-violet-700' },
     { label: 'Cancellation Lanes', value: cancellation, icon: ShieldAlert, tone: 'bg-amber-50 text-amber-700' },
@@ -264,7 +275,7 @@ function MatterCard({ matter }) {
         <div className="min-w-0">
           <p className="truncate text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-slate-500">{matter.matterReference}</p>
           <h3 className="mt-1 truncate text-base font-semibold text-slate-950">{matter.propertyLabel || 'Property pending'}</h3>
-          <p className="mt-1 truncate text-sm text-slate-500">{matter.developmentName || 'Standalone matter'}</p>
+          <p className="mt-1 truncate text-sm text-slate-500">{matter.developmentName || 'Standalone transaction'}</p>
         </div>
         <StatusPill tone={riskTone}>{matter.status || 'On track'}</StatusPill>
       </div>
@@ -320,7 +331,7 @@ function MatterCard({ matter }) {
         state={matterNavigationState}
         className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#12314f] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#0d253d]"
       >
-        Open Matter
+        Open Transaction
         <ArrowRight size={15} />
       </Link>
     </article>
@@ -335,13 +346,13 @@ function MattersTable({ matters = [] }) {
           <thead className="bg-slate-50 text-[0.68rem] uppercase tracking-[0.12em] text-slate-500">
             <tr>
               {[
-                'Matter Ref',
-                'Property / Unit',
+                'Reference',
+                'Property',
                 'Buyer',
                 'Seller',
                 'Finance',
-                'Workflow Lanes',
-                'Current Stage',
+                'Workflow',
+                'Stage',
                 'Blocked',
                 'SLA',
                 'Assigned Team',
@@ -363,7 +374,7 @@ function MattersTable({ matters = [] }) {
                   <td className="px-4 py-4 font-semibold text-slate-950">{matter.matterReference}</td>
                   <td className="max-w-[240px] px-4 py-4">
                     <p className="truncate font-medium text-slate-900">{matter.propertyLabel || 'Property pending'}</p>
-                    <p className="mt-1 truncate text-xs text-slate-500">{matter.developmentName || 'Standalone matter'}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{matter.developmentName || 'Standalone transaction'}</p>
                   </td>
                   <td className="max-w-[180px] px-4 py-4 text-slate-700"><span className="block truncate">{matter.buyerName || matter.clientName || 'Buyer pending'}</span></td>
                   <td className="max-w-[180px] px-4 py-4 text-slate-700"><span className="block truncate">{matter.sellerName || 'Seller pending'}</span></td>
@@ -396,7 +407,7 @@ function MattersTable({ matters = [] }) {
 }
 
 function AttorneyMattersPage() {
-  const { matterType = 'all' } = useParams()
+  const { matterType = 'active' } = useParams()
   const permissionsState = useAttorneyPermissions()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -407,6 +418,7 @@ function AttorneyMattersPage() {
   const [allMatterFilter, setAllMatterFilter] = useState('all')
 
   const viewKey = MATTER_VIEW_COPY[matterType] ? matterType : 'all'
+  const viewCopy = MATTER_VIEW_COPY[viewKey] || MATTER_VIEW_COPY.active
 
   useEffect(() => {
     let active = true
@@ -420,7 +432,7 @@ function AttorneyMattersPage() {
         setData(next)
       } catch (loadError) {
         if (!active) return
-        setError(loadError?.message || 'Unable to load attorney matters.')
+        setError(loadError?.message || 'Unable to load attorney transactions.')
       } finally {
         if (active) setLoading(false)
       }
@@ -469,7 +481,7 @@ function AttorneyMattersPage() {
         <div className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
           <h1 className="text-lg font-semibold text-slate-950">Firm workspace unavailable</h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            We could not load an active firm matter queue just now. Please refresh or open Firm Settings to repair the attorney firm context.
+            We could not load an active firm transaction queue just now. Please refresh or open Firm Settings to repair the attorney firm context.
           </p>
         </div>
       </section>
@@ -479,7 +491,12 @@ function AttorneyMattersPage() {
   return (
     <main className="w-full max-w-none px-0 py-4">
       <div className="mx-auto w-full max-w-[1800px] space-y-5">
-        <section className="flex justify-end">
+        <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Attorney Transaction OS</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-slate-950">{viewCopy.title}</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{viewCopy.description}</p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -498,6 +515,25 @@ function AttorneyMattersPage() {
               Cards
             </button>
           </div>
+        </section>
+
+        <section className="flex max-w-full gap-2 overflow-x-auto pb-1">
+          {TRANSACTION_WORKSPACE_TABS.map((tab) => {
+            const active = viewKey === tab.key
+            return (
+              <Link
+                key={tab.key}
+                to={`/attorney/transactions/${tab.key}`}
+                className={`inline-flex h-10 shrink-0 items-center rounded-xl border px-4 text-sm font-semibold transition ${
+                  active
+                    ? 'border-[#12314f] bg-[#12314f] text-white shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {tab.label}
+              </Link>
+            )
+          })}
         </section>
 
         {viewKey === 'all' ? (
@@ -528,7 +564,7 @@ function AttorneyMattersPage() {
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search by matter ref, buyer, seller, property, stage..."
+              placeholder="Search by reference, buyer, seller, property, stage..."
               className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
             />
           </label>
@@ -563,12 +599,12 @@ function AttorneyMattersPage() {
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid gap-3 md:grid-cols-3">
             {[
-              { label: 'Permissions', value: data?.permissions?.can_view_all_firm_matters ? 'Firm-wide visibility' : 'Assigned matters only', icon: UserRoundCheck },
+              { label: 'Permissions', value: data?.permissions?.can_view_all_firm_matters ? 'Firm-wide visibility' : 'Assigned transactions only', icon: UserRoundCheck },
               { label: 'Document Operations', value: data?.documentQueue?.length || 0, icon: FileWarning },
               { label: 'Priority Queue', value: data?.priorityQueue?.length || 0, icon: AlertTriangle },
               { label: 'Last Sync', value: formatDate(new Date().toISOString()), icon: CheckCircle2 },
               { label: 'Outstanding Fees', value: formatCurrency(0), icon: Banknote },
-              { label: 'SLA Watch', value: `${visibleMatters.filter((matter) => getRiskTone(matter) !== 'success').length} matter(s)`, icon: Clock3 },
+              { label: 'SLA Watch', value: `${visibleMatters.filter((matter) => getRiskTone(matter) !== 'success').length} transaction(s)`, icon: Clock3 },
             ].map((item) => {
               const Icon = item.icon
               return (

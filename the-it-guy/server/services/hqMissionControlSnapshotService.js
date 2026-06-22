@@ -477,7 +477,7 @@ async function runSelectQuery(client, table, fields, options = {}) {
   return query
 }
 
-async function selectRows(client, table, selectVariants, options = {}) {
+export async function selectRows(client, table, selectVariants, options = {}) {
   const variants = Array.isArray(selectVariants) ? selectVariants : [selectVariants || '*']
   let lastError = null
 
@@ -551,7 +551,7 @@ async function selectMaybeSingle(client, table, selectVariants, options = {}) {
   throw lastError || new Error(`Unable to read ${table}.`)
 }
 
-async function fetchAllRows(client, table, selectVariants, options = {}) {
+export async function fetchAllRows(client, table, selectVariants, options = {}) {
   const rows = []
   let page = 0
   let fieldsUsed = ''
@@ -636,7 +636,7 @@ function getBearerToken(headers = {}) {
   return normalizeText(match?.[1])
 }
 
-async function authenticateHqRequest(headers = {}) {
+export async function authenticateHqRequest(headers = {}) {
   const accessToken = getBearerToken(headers)
   if (!accessToken) {
     const error = new Error('Authentication is required.')

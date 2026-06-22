@@ -38,6 +38,40 @@ export async function fetchMissionControlSnapshot({ signal } = {}) {
   return payload
 }
 
+export async function fetchAdminMobileDashboard({ signal } = {}) {
+  const accessToken = await resolveAccessToken()
+  if (!accessToken) {
+    const error = new Error('Authentication is required.')
+    error.status = 401
+    error.code = 'unauthorized'
+    throw error
+  }
+
+  const response = await fetch('/api/admin/mobile-dashboard', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    signal,
+  })
+
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch {
+    payload = null
+  }
+
+  if (!response.ok) {
+    const error = new Error(normalizeText(payload?.message) || 'Admin mobile dashboard could not be loaded.')
+    error.status = response.status
+    error.code = normalizeText(payload?.error) || 'admin_mobile_dashboard_error'
+    throw error
+  }
+
+  return payload
+}
+
 async function resolveAccessToken() {
   if (!supabase) return ''
   const session = await supabase.auth.getSession()

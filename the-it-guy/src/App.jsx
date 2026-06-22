@@ -1562,7 +1562,27 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['attorney']}>
                     <AttorneyFirmRoute>
-                      <Navigate to="/attorney/matters/all" replace />
+                      <Navigate to="/attorney/transactions/active" replace />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/attorney/transactions"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <Navigate to="/attorney/transactions/active" replace />
+                    </AttorneyFirmRoute>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/attorney/transactions/:matterType"
+                element={
+                  <RoleRoute allowedRoles={['attorney']}>
+                    <AttorneyFirmRoute>
+                      <AttorneyMattersPage />
                     </AttorneyFirmRoute>
                   </RoleRoute>
                 }
@@ -2560,7 +2580,7 @@ function AppRoutes() {
                 <Route
                   path="organisation"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent', 'bond_originator']}>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                       <SettingsOrganisationPage />
                     </RoleRoute>
                   }

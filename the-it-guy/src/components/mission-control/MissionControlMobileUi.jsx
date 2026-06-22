@@ -1,9 +1,13 @@
 import {
+  Activity,
   Bell,
+  BriefcaseBusiness,
   Building2,
   ChevronRight,
   CircleAlert,
   CircleCheckBig,
+  Clock3,
+  DollarSign,
   FileCheck2,
   FileText,
   Grid2x2,
@@ -11,6 +15,9 @@ import {
   Home,
   LayoutGrid,
   LineChart,
+  MoreHorizontal,
+  PieChart,
+  Search,
   TrendingUp,
   UserPlus,
   Users,
@@ -42,6 +49,14 @@ function formatPercentDelta(value) {
   return `${numeric > 0 ? '+' : ''}${Math.round(numeric)}% vs 30d`
 }
 
+function formatPercentChange(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return ''
+  const percent = Math.abs(numeric) <= 1 ? numeric * 100 : numeric
+  if (percent === 0) return '0%'
+  return `${percent > 0 ? '+' : ''}${Math.round(percent)}%`
+}
+
 function formatChangeLabel(value, fallback = '') {
   return formatPercentDelta(value) || fallback
 }
@@ -49,6 +64,12 @@ function formatChangeLabel(value, fallback = '') {
 function formatMetricValue(value) {
   if (value === null || value === undefined) return '—'
   return formatMissionControlCount(value)
+}
+
+function formatDashboardValue(value, valueType = '') {
+  if (value === null || value === undefined) return '—'
+  if (valueType === 'currency') return formatCurrencyCompact(value)
+  return formatMetricValue(value)
 }
 
 function getToneStyles(tone = 'blue') {
@@ -95,6 +116,14 @@ function getToneStyles(tone = 'blue') {
 
 function renderMetricIcon(icon = '', className = '') {
   switch (icon) {
+    case 'transactions':
+      return <BriefcaseBusiness className={className} />
+    case 'registrations':
+      return <FileCheck2 className={className} />
+    case 'revenue':
+      return <DollarSign className={className} />
+    case 'organisations':
+      return <Building2 className={className} />
     case 'building':
       return <Building2 className={className} />
     case 'users':
@@ -106,6 +135,20 @@ function renderMetricIcon(icon = '', className = '') {
     default:
       return <Grid2x2 className={className} />
   }
+}
+
+function getNetworkHealthTone(status = '') {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized === 'critical') return 'red'
+  if (normalized === 'attention') return 'orange'
+  return 'green'
+}
+
+function getAttentionTone(severity = '') {
+  const normalized = String(severity || '').toLowerCase()
+  if (normalized === 'critical') return 'red'
+  if (normalized === 'warning') return 'orange'
+  return 'green'
 }
 
 function renderActivityIcon(type = '', tone = 'blue', className = '') {
@@ -211,6 +254,233 @@ export function MissionControlMobileHeader({ initials = 'HQ', avatarUrl = '', al
   )
 }
 
+export function MissionControlMobileDashboardHero({ dashboard }) {
+  const healthTone = getNetworkHealthTone(dashboard?.networkHealth?.status)
+  const healthStyles = getToneStyles(healthTone)
+  const healthStatus = String(dashboard?.networkHealth?.status || 'healthy')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[0.98rem] font-medium text-[#667085]">Good morning, {dashboard?.greetingName || 'Alex'}</p>
+          <h1 className="mt-2 text-[2.35rem] font-semibold leading-none text-[#0f172a]">
+            {formatMetricValue(dashboard?.headline?.value)} {dashboard?.headline?.label || 'Active Transactions'}
+          </h1>
+          <p className="mt-3 text-[0.98rem] leading-6 text-[#667085]">{dashboard?.headline?.subtitle || 'Across the Arch9 ecosystem'}</p>
+        </div>
+      </div>
+
+      <MobileSurface className="px-4 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className={cn('inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full', healthStyles.soft)}>
+              <HeartPulse className={cn('h-5 w-5', healthStyles.badge.split(' ')[1])} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[0.72rem] font-semibold uppercase text-[#667085]">Network Health</p>
+              <p className="mt-1 text-[0.94rem] font-semibold text-[#0f172a]">{dashboard?.networkHealth?.alertCount || 0} active alerts</p>
+            </div>
+          </div>
+          <span className={cn('inline-flex shrink-0 rounded-full px-3 py-1.5 text-[0.78rem] font-semibold', healthStyles.pill)}>
+            {dashboard?.networkHealth?.score ?? '—'}% {healthStatus}
+          </span>
+        </div>
+      </MobileSurface>
+    </div>
+  )
+}
+
+export function MissionControlKpiGrid({ items = [] }) {
+  if (!items.length) return <MobileSurface className="px-4 py-4 text-sm text-[#667085]">No KPI data available yet.</MobileSurface>
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {items.map((item) => {
+        const toneStyles = getToneStyles(item?.tone)
+        const changeLabel = formatPercentChange(item?.changePct)
+
+        return (
+          <MobileSurface key={item.key} className="min-h-[154px] px-4 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <span className={cn('inline-flex h-10 w-10 items-center justify-center rounded-full', toneStyles.soft)}>
+                {renderMetricIcon(item?.icon, cn('h-4 w-4', toneStyles.badge.split(' ')[1]))}
+              </span>
+              {changeLabel ? <span className={cn('rounded-full px-2 py-1 text-[0.7rem] font-semibold', toneStyles.pill)}>{changeLabel}</span> : null}
+            </div>
+            <p className="mt-4 text-[1.75rem] font-semibold leading-none text-[#0f172a]">{formatDashboardValue(item?.value, item?.valueType)}</p>
+            <p className="mt-2 text-[0.88rem] font-semibold leading-5 text-[#102033]">{item?.label || 'Metric'}</p>
+            {item?.helper ? <p className="mt-2 line-clamp-2 text-[0.78rem] leading-4 text-[#667085]">{item.helper}</p> : null}
+          </MobileSurface>
+        )
+      })}
+    </div>
+  )
+}
+
+export function MissionControlAttentionList({ items = [] }) {
+  if (!items.length) return <MobileSurface className="px-4 py-4 text-sm text-[#667085]">No attention items right now.</MobileSurface>
+
+  return (
+    <MobileSurface className="overflow-hidden">
+      <div className="divide-y divide-[#edf2f7]">
+        {items.map((item) => {
+          const tone = getAttentionTone(item?.severity)
+          const toneStyles = getToneStyles(tone)
+
+          return (
+            <div key={item.key} className="flex items-center gap-3 px-4 py-3.5">
+              <span className={cn('inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full', toneStyles.soft)}>
+                {tone === 'green' ? <CircleCheckBig className="h-4 w-4 text-[#1f8a4c]" /> : <CircleAlert className={cn('h-4 w-4', toneStyles.badge.split(' ')[1])} />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[0.95rem] font-semibold text-[#0f172a]">{item?.label || 'Attention item'}</p>
+                <p className="mt-1 truncate text-[0.8rem] text-[#667085]">{item?.helper || 'No action needed.'}</p>
+              </div>
+              <p className="text-[1.35rem] font-semibold leading-none text-[#0f172a]">{formatMetricValue(item?.value)}</p>
+            </div>
+          )
+        })}
+      </div>
+    </MobileSurface>
+  )
+}
+
+export function MissionControlDistributionCard({ distribution }) {
+  const items = distribution?.items || []
+  const total = Number(distribution?.uniqueTransactionsTotal || 0)
+
+  if (!items.length) return <MobileSurface className="px-4 py-4 text-sm text-[#667085]">No transaction distribution available yet.</MobileSurface>
+
+  return (
+    <MobileSurface className="px-4 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#f5f9ff] text-[#2a5bd7]">
+            <PieChart className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="text-[0.72rem] font-semibold uppercase text-[#667085]">Unique Total</p>
+            <p className="mt-1 text-[1.45rem] font-semibold leading-none text-[#0f172a]">{formatMetricValue(total)}</p>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 space-y-3">
+        {items.map((item) => {
+          const toneStyles = getToneStyles(item?.tone)
+          const percent = total > 0 ? Math.round((Number(item?.value || 0) / total) * 100) : 0
+
+          return (
+            <div key={item.key}>
+              <div className="flex items-center justify-between gap-3 text-[0.86rem]">
+                <span className="font-medium text-[#102033]">{item.label}</span>
+                <span className="font-semibold text-[#0f172a]">{formatMetricValue(item.value)}</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#edf2f7]">
+                <div className="h-full rounded-full" style={{ width: `${Math.min(percent, 100)}%`, backgroundColor: toneStyles.line }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </MobileSurface>
+  )
+}
+
+export function MissionControlAverageRegistrationCard({ metric }) {
+  const changeLabel = formatPercentChange(metric?.changePct)
+
+  return (
+    <MobileSurface className="px-4 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#ebfff4] text-[#1f8a4c]">
+            <Clock3 className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[0.72rem] font-semibold uppercase text-[#667085]">Average Registration Time</p>
+            <p className="mt-2 text-[2rem] font-semibold leading-none text-[#0f172a]">
+              {metric?.days === null || metric?.days === undefined ? '—' : `${formatMetricValue(metric.days)} days`}
+            </p>
+          </div>
+        </div>
+        {changeLabel ? <span className="rounded-full bg-[#ebfff4] px-3 py-1 text-[0.78rem] font-semibold text-[#1f8a4c]">{changeLabel}</span> : null}
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-[16px] bg-[#f8fafc] px-3 py-3">
+          <p className="text-[0.72rem] font-semibold uppercase text-[#667085]">Previous</p>
+          <p className="mt-1 text-[1.1rem] font-semibold text-[#0f172a]">{metric?.previousDays ? `${formatMetricValue(metric.previousDays)} days` : '—'}</p>
+        </div>
+        <div className="rounded-[16px] bg-[#f8fafc] px-3 py-3">
+          <p className="text-[0.72rem] font-semibold uppercase text-[#667085]">Benchmark</p>
+          <p className="mt-1 text-[1.1rem] font-semibold text-[#0f172a]">{metric?.benchmarkDays ? `${formatMetricValue(metric.benchmarkDays)} days` : '—'}</p>
+        </div>
+      </div>
+      {metric?.helper ? <p className="mt-3 text-[0.84rem] text-[#667085]">{metric.helper}</p> : null}
+    </MobileSurface>
+  )
+}
+
+export function MissionControlTrendSection({ trends, activeRange = '30d', onRangeChange }) {
+  const ranges = [
+    { key: '30d', label: '30 Days' },
+    { key: '6m', label: '6 Months' },
+    { key: '12m', label: '12 Months' },
+  ]
+  const items = trends?.ranges?.[activeRange] || []
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 rounded-[18px] border border-[#e7edf5] bg-white p-1">
+        {ranges.map((range) => (
+          <button
+            key={range.key}
+            type="button"
+            className={cn(
+              'rounded-[14px] px-2 py-2 text-[0.78rem] font-semibold transition',
+              activeRange === range.key ? 'bg-[#0f172a] text-white' : 'text-[#667085]',
+            )}
+            onClick={() => onRangeChange?.(range.key)}
+          >
+            {range.label}
+          </button>
+        ))}
+      </div>
+
+      {items.length ? (
+        <div className="space-y-3">
+          {items.map((item) => {
+            const values = (item?.data || []).map((point) => point.value)
+            const latest = values[values.length - 1]
+            const toneStyles = getToneStyles(item?.tone)
+
+            return (
+              <MobileSurface key={item.key} className="px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className={cn('inline-flex h-10 w-10 items-center justify-center rounded-full', toneStyles.soft)}>
+                      <Activity className={cn('h-4 w-4', toneStyles.badge.split(' ')[1])} />
+                    </span>
+                    <p className="text-[0.95rem] font-semibold text-[#0f172a]">{item.label}</p>
+                  </div>
+                  <p className="text-[1.15rem] font-semibold text-[#0f172a]">{formatDashboardValue(latest, item?.valueType)}</p>
+                </div>
+                <div className="mt-3 overflow-hidden rounded-[16px] bg-[#fbfcff]">
+                  <Sparkline values={values} tone={item?.tone} className="h-[72px]" />
+                </div>
+              </MobileSurface>
+            )
+          })}
+        </div>
+      ) : (
+        <MobileSurface className="px-4 py-4 text-sm text-[#667085]">No trend data available for this period.</MobileSurface>
+      )}
+    </div>
+  )
+}
+
 export function MissionControlHeroCarousel({ snapshot }) {
   const healthTone = snapshot?.platformHealth?.criticalAttentionItems > 0 ? 'orange' : 'green'
   const healthStyles = getToneStyles(healthTone)
@@ -309,6 +579,10 @@ export function MissionControlMetricTile({ item }) {
 }
 
 export function MissionControlActivityFeed({ items = [] }) {
+  if (!items.length) {
+    return <MobileSurface className="px-4 py-4 text-sm text-[#667085]">No recent activity.</MobileSurface>
+  }
+
   return (
     <MobileSurface className="overflow-hidden">
       <div className="divide-y divide-[#edf2f7]">
@@ -324,8 +598,8 @@ export function MissionControlActivityFeed({ items = [] }) {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-[0.98rem] font-semibold tracking-[-0.02em] text-[#0f172a]">{item.title}</p>
-                    <p className="mt-1 truncate text-[0.9rem] text-[#475467]">{item.primaryText}</p>
-                    {item.secondaryText ? <p className="mt-1 truncate text-[0.84rem] text-[#667085]">{item.secondaryText}</p> : null}
+                    <p className="mt-1 truncate text-[0.9rem] text-[#475467]">{item.primaryText || item.description}</p>
+                    {item.secondaryText || item.organisationName ? <p className="mt-1 truncate text-[0.84rem] text-[#667085]">{item.secondaryText || item.organisationName}</p> : null}
                   </div>
                   <p className="shrink-0 pt-0.5 text-[0.78rem] font-medium text-[#667085]">{item.timestampLabel}</p>
                 </div>
@@ -340,11 +614,11 @@ export function MissionControlActivityFeed({ items = [] }) {
 
 export function MissionControlBottomNav({ alertsCount = 0 }) {
   const items = [
-    { key: 'home', label: 'Home', to: '/dashboard', icon: Home, match: ['/dashboard', '/'] },
-    { key: 'transactions', label: 'Transactions', to: '/transactions', icon: FileText, match: ['/transactions'] },
-    { key: 'growth', label: 'Growth', to: '/reports', icon: TrendingUp, match: ['/reports'] },
-    { key: 'alerts', label: 'Alerts', to: '/command-center#live-activity', icon: Bell, match: ['/command-center#live-activity'] },
-    { key: 'hq', label: 'HQ', to: '/command-center', icon: Grid2x2, match: ['/command-center'] },
+    { key: 'dashboard', label: 'Dashboard', to: '/command-center', icon: Home, match: ['/command-center'] },
+    { key: 'ecosystem', label: 'Ecosystem', to: '/reports', icon: Building2, match: ['/reports'] },
+    { key: 'alerts', label: 'Alerts', to: '/command-center#attention-required', icon: Bell, match: ['/command-center#attention-required'] },
+    { key: 'search', label: 'Search', to: '/search', icon: Search, match: ['/search'] },
+    { key: 'more', label: 'More', to: '/settings', icon: MoreHorizontal, match: ['/settings'] },
   ]
   const badgeLabel = alertsCount > 99 ? '99+' : String(Math.max(alertsCount, 0))
 
@@ -359,7 +633,7 @@ export function MissionControlBottomNav({ alertsCount = 0 }) {
             <NavLink
               key={item.key}
               to={item.to}
-              end={item.key === 'home' || item.key === 'hq'}
+              end={item.key === 'dashboard'}
               className={({ isActive }) =>
                 cn(
                   'flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[18px] px-2 py-2 text-[0.74rem] font-medium transition',

@@ -3,6 +3,7 @@ import {
   BadgePercent,
   Building2,
   CreditCard,
+  FileText,
   FileSignature,
   Handshake,
   Home,
@@ -93,6 +94,12 @@ const SETTINGS_CARDS = [
     title: 'Users & Permissions',
     description: 'Invite users, adjust role assignments, and control access by organisation.',
     icon: Shield,
+  },
+  {
+    to: '/attorney/audit-logs',
+    title: 'Audit Logs',
+    description: 'Review legal activity, document, and workflow audit trails from Settings.',
+    icon: FileText,
   },
   {
     to: '/settings/billing',

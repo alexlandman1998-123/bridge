@@ -13,19 +13,24 @@ import {
 } from '../components/mission-control/MissionControlUi'
 import {
   MissionControlActivityFeed,
+  MissionControlAttentionList,
+  MissionControlAverageRegistrationCard,
   MissionControlBottomNav,
   MissionControlCompactBanner,
-  MissionControlHeroCarousel,
-  MissionControlMetricTile,
+  MissionControlDistributionCard,
+  MissionControlKpiGrid,
+  MissionControlMobileDashboardHero,
   MissionControlMobileHeader,
   MissionControlSectionHeading,
+  MissionControlTrendSection,
 } from '../components/mission-control/MissionControlMobileUi'
 import { useWorkspace } from '../context/WorkspaceContext'
-import { fetchMissionControlSnapshot } from '../services/hqMissionControlApi'
+import { fetchAdminMobileDashboard, fetchMissionControlSnapshot } from '../services/hqMissionControlApi'
 import {
+  getAdminMobileDashboardMockSnapshot,
   getLegacyMissionControlMockSnapshot,
-  getMissionControlMockSnapshot,
-  normalizeMissionControlSnapshot,
+  normalizeAdminMobileDashboardSnapshot,
+  shouldUseAdminMobileDashboardMockSnapshot,
   shouldUseMissionControlMockSnapshot,
 } from '../services/missionControlSnapshotModel'
 import { cn } from '../lib/utils'
@@ -72,6 +77,73 @@ function getProfileAvatarUrl(profile = null) {
       profile?.photo_url ||
       '',
   ).trim()
+}
+
+function buildAdminMobileDashboardFallback(snapshot = null, displayName = 'Alex') {
+  const firstName = normalizeText(displayName).split(/\s+/)[0] || 'Alex'
+  const activeTransactions = Number(snapshot?.summary?.activeTransactions || 0)
+  const registrationsThisMonth = Number(snapshot?.executive?.registrationTrend?.registeredThisMonth || snapshot?.summary?.registeredToday || 0)
+  const revenueThisMonth = snapshot?.executive?.revenue?.actualThisMonth ?? snapshot?.executive?.revenue?.subscriptionRevenue ?? null
+  const activeOrganisations = Number(snapshot?.funnel?.organisationsLive || snapshot?.growth?.activeAgencies || 0)
+  const stalledTransactions = Number(snapshot?.transactionHealth?.stuck || snapshot?.stuckTransactions?.length || 0)
+  const inactiveOrganisations = Number(snapshot?.organisationsNeedingAttention?.length || 0)
+  const failedInvites = Number(snapshot?.invites?.failedInvites || 0)
+  const alertCount = stalledTransactions + inactiveOrganisations + failedInvites
+  const score = Math.max(0, Math.min(100, 100 - Math.min(stalledTransactions * 2, 30) - Math.min(failedInvites, 15) - Math.min(inactiveOrganisations, 20)))
+
+  return normalizeAdminMobileDashboardSnapshot({
+    greetingName: firstName,
+    headline: {
+      value: activeTransactions,
+      label: 'Active Transactions',
+      subtitle: 'Across the Arch9 ecosystem',
+    },
+    networkHealth: {
+      score,
+      status: score >= 90 ? 'healthy' : score >= 70 ? 'attention' : 'critical',
+      alertCount,
+    },
+    kpis: [
+      { key: 'activeTransactions', label: 'Active Transactions', value: activeTransactions, helper: 'Residential, bond and commercial activity', icon: 'transactions', tone: 'blue' },
+      { key: 'registrationsThisMonth', label: 'Registrations This Month', value: registrationsThisMonth, changePct: snapshot?.executive?.registrationTrend?.percentageChange ?? null, helper: registrationsThisMonth > 0 ? 'Registered transfers this month' : 'No registrations yet this month.', icon: 'registrations', tone: 'green' },
+      { key: 'revenueThisMonth', label: 'Revenue This Month', value: revenueThisMonth, valueType: 'currency', helper: revenueThisMonth === null ? 'Revenue events are not connected yet.' : 'Recognised platform revenue', icon: 'revenue', tone: 'purple' },
+      { key: 'activeOrganisations', label: 'Active Organisations', value: activeOrganisations, changePct: snapshot?.executive?.growthTrend?.percentageChange ?? null, helper: 'Meaningful activity in the last 30 days', icon: 'organisations', tone: 'orange' },
+    ],
+    attentionRequired: [
+      { key: 'stalledTransactions', label: 'Stalled Transactions', value: stalledTransactions, helper: 'No meaningful progress for more than 7 days', severity: stalledTransactions > 0 ? 'critical' : 'healthy' },
+      { key: 'inactiveOrganisations', label: 'Inactive Organisations', value: inactiveOrganisations, helper: 'No login or platform activity for 30 days', severity: inactiveOrganisations > 0 ? 'warning' : 'healthy' },
+      { key: 'failedInvites', label: 'Failed Invites', value: failedInvites, helper: 'Failed, bounced, expired or stale pending invites', severity: failedInvites > 0 ? 'warning' : 'healthy' },
+      { key: 'integrationIssues', label: 'Integration Issues', value: 0, helper: 'Unresolved failed platform integrations', severity: 'healthy' },
+    ],
+    transactionDistribution: {
+      uniqueTransactionsTotal: activeTransactions,
+      items: [
+        { key: 'agents', label: 'Agents', value: activeTransactions, tone: 'blue' },
+        { key: 'attorneys', label: 'Attorneys', value: activeTransactions, tone: 'green' },
+        { key: 'bondOriginators', label: 'Bond Originators', value: 0, tone: 'purple' },
+        { key: 'commercial', label: 'Commercial', value: 0, tone: 'orange' },
+      ],
+    },
+    averageRegistrationTime: {
+      days: null,
+      previousDays: null,
+      changePct: null,
+      benchmarkDays: 45,
+      helper: 'No registrations yet this month.',
+    },
+    trends: {
+      ranges: {
+        '30d': [
+          { key: 'transactionVolume', label: 'Transaction Volume', tone: 'blue', data: [{ label: 'Now', value: activeTransactions }] },
+          { key: 'registrations', label: 'Registrations', tone: 'green', data: [{ label: 'Now', value: registrationsThisMonth }] },
+          { key: 'revenue', label: 'Revenue', tone: 'purple', valueType: 'currency', data: [{ label: 'Now', value: revenueThisMonth || 0 }] },
+        ],
+        '6m': [],
+        '12m': [],
+      },
+    },
+    recentActivity: snapshot?.recentActivity || [],
+  })
 }
 
 function normalizeText(value = '') {
@@ -262,6 +334,7 @@ export default function CommandCenterPage() {
   const [snapshot, setSnapshot] = useState(null)
   const [mobileSnapshot, setMobileSnapshot] = useState(null)
   const [mobileSnapshotSource, setMobileSnapshotSource] = useState('loading')
+  const [mobileTrendRange, setMobileTrendRange] = useState('30d')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -285,20 +358,38 @@ export default function CommandCenterPage() {
         if (!active) return
         if (shouldUseMissionControlMockSnapshot({ liveSnapshot: nextSnapshot })) {
           setSnapshot(getLegacyMissionControlMockSnapshot())
-          setMobileSnapshot(getMissionControlMockSnapshot())
+          setMobileSnapshot(getAdminMobileDashboardMockSnapshot())
           setMobileSnapshotSource('mock')
           setError(null)
         } else {
           setSnapshot(nextSnapshot)
-          setMobileSnapshot(normalizeMissionControlSnapshot(nextSnapshot))
-          setMobileSnapshotSource('live')
+          try {
+            const nextMobileDashboard = await fetchAdminMobileDashboard({ signal: controller.signal })
+            if (!active) return
+            if (shouldUseAdminMobileDashboardMockSnapshot({ liveSnapshot: nextMobileDashboard })) {
+              setMobileSnapshot(getAdminMobileDashboardMockSnapshot())
+              setMobileSnapshotSource('mock')
+            } else {
+              setMobileSnapshot(normalizeAdminMobileDashboardSnapshot(nextMobileDashboard))
+              setMobileSnapshotSource('live')
+            }
+          } catch (mobileError) {
+            if (!active || mobileError?.name === 'AbortError') return
+            if (shouldUseAdminMobileDashboardMockSnapshot({ error: mobileError })) {
+              setMobileSnapshot(getAdminMobileDashboardMockSnapshot())
+              setMobileSnapshotSource('mock')
+            } else {
+              setMobileSnapshot(buildAdminMobileDashboardFallback(nextSnapshot, displayName))
+              setMobileSnapshotSource('legacy')
+            }
+          }
           setError(null)
         }
       } catch (nextError) {
         if (!active || nextError?.name === 'AbortError') return
         if (shouldUseMissionControlMockSnapshot({ error: nextError })) {
           setSnapshot(getLegacyMissionControlMockSnapshot())
-          setMobileSnapshot(getMissionControlMockSnapshot())
+          setMobileSnapshot(getAdminMobileDashboardMockSnapshot())
           setMobileSnapshotSource('mock')
           setError(null)
         } else {
@@ -318,7 +409,7 @@ export default function CommandCenterPage() {
       active = false
       controller.abort()
     }
-  }, [reloadKey])
+  }, [displayName, reloadKey])
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -409,20 +500,40 @@ export default function CommandCenterPage() {
 
           {!showSkeleton && mobileSnapshot ? (
             <>
-              <MissionControlHeroCarousel snapshot={mobileSnapshot} />
+              <MissionControlMobileDashboardHero dashboard={mobileSnapshot} />
 
               <section className="space-y-4">
-                <MissionControlSectionHeading title="At a Glance" actionLabel="View all" actionTo="/reports" />
-                <div className="flex gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                  {mobileSnapshot.atAGlance.map((item) => (
-                    <MissionControlMetricTile key={item.key} item={item} />
-                  ))}
-                </div>
+                <MissionControlSectionHeading title="Key Performance" />
+                <MissionControlKpiGrid items={mobileSnapshot.kpis} />
               </section>
 
-              <section id="live-activity" className="space-y-4">
-                <MissionControlSectionHeading title="Live Activity" actionLabel="View all" actionTo="/transactions" />
-                <MissionControlActivityFeed items={mobileSnapshot.liveActivity} />
+              <section id="attention-required" className="space-y-4">
+                <MissionControlSectionHeading title="Attention Required" actionLabel="View alerts" actionTo="/command-center#attention-required" />
+                <MissionControlAttentionList items={mobileSnapshot.attentionRequired} />
+              </section>
+
+              <section className="space-y-4">
+                <MissionControlSectionHeading title="Transaction Distribution" />
+                <MissionControlDistributionCard distribution={mobileSnapshot.transactionDistribution} />
+              </section>
+
+              <section className="space-y-4">
+                <MissionControlSectionHeading title="Avg. Registration Time" />
+                <MissionControlAverageRegistrationCard metric={mobileSnapshot.averageRegistrationTime} />
+              </section>
+
+              <section className="space-y-4">
+                <MissionControlSectionHeading title="Performance Trends" />
+                <MissionControlTrendSection
+                  trends={mobileSnapshot.trends}
+                  activeRange={mobileTrendRange}
+                  onRangeChange={setMobileTrendRange}
+                />
+              </section>
+
+              <section id="recent-activity" className="space-y-4">
+                <MissionControlSectionHeading title="Recent Activity" actionLabel="View all" actionTo="/transactions" />
+                <MissionControlActivityFeed items={mobileSnapshot.recentActivity} />
               </section>
             </>
           ) : null}

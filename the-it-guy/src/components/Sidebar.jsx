@@ -104,7 +104,7 @@ const ICON_BY_KEY = {
   documents: Files,
   partners: Handshake,
   organizations: Building2,
-  attorney_matters: Files,
+  attorney_matters: SwitchCamera,
   attorney_matters_all: Files,
   attorney_matters_transfer: SwitchCamera,
   attorney_matters_bond: FileCheck2,
@@ -260,7 +260,7 @@ function Sidebar() {
         role === 'developer'
           ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'organizations', label: 'Organizations', to: '/organizations' }, { key: 'settings', label: 'Settings', to: '/settings' }]
           : role === 'attorney'
-            ? [{ key: 'organizations', label: 'Organizations', to: '/organizations' }, { key: 'settings', label: 'Settings', to: '/settings' }, { key: 'audit_logs', label: 'Audit Logs', to: '/attorney/audit-logs' }]
+            ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
             : role === 'agent'
               ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
               : role === 'client'
@@ -474,7 +474,7 @@ function Sidebar() {
 
       {firmNavItems.length ? (
         <nav className="ui-nav-stack ui-sidebar-secondary" aria-label="Secondary Navigation">
-          {role === 'attorney' ? <p className="ui-sidebar-section-label px-3">Firm</p> : null}
+          {role === 'attorney' ? <p className="ui-sidebar-section-label px-3">Firm Administration</p> : null}
           {firmNavItems.map((item) => renderNavItem(item))}
         </nav>
       ) : null}

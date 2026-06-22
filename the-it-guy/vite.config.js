@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { createAdminMobileDashboardResponse } from './server/services/adminMobileDashboardApi.js'
 import { createMissionControlResponse, writeNodeJsonResponse } from './server/services/hqMissionControlApi.js'
 
 function missionControlApiPlugin() {
@@ -8,6 +9,13 @@ function missionControlApiPlugin() {
     configureServer(server) {
       server.middlewares.use('/api/hq/mission-control', async (request, response) => {
         const payload = await createMissionControlResponse({
+          method: request.method,
+          headers: request.headers,
+        })
+        writeNodeJsonResponse(response, payload)
+      })
+      server.middlewares.use('/api/admin/mobile-dashboard', async (request, response) => {
+        const payload = await createAdminMobileDashboardResponse({
           method: request.method,
           headers: request.headers,
         })

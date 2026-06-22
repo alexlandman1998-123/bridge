@@ -15,6 +15,10 @@ function normalizeLower(value = '') {
   return normalizeText(value).toLowerCase()
 }
 
+function normalizeToken(value = '') {
+  return normalizeLower(value).replace(/[\s-]+/g, '_')
+}
+
 function truthyFlag(value) {
   return ['1', 'true', 'yes', 'on', 'enabled'].includes(normalizeLower(value))
 }
@@ -75,6 +79,33 @@ function cloneSnapshot(snapshot) {
     revenueMtd: { ...snapshot.revenueMtd, sparkline: [...(snapshot.revenueMtd?.sparkline || [])] },
     atAGlance: (snapshot.atAGlance || []).map((item) => ({ ...item })),
     liveActivity: (snapshot.liveActivity || []).map((item) => ({ ...item })),
+  }
+}
+
+function cloneAdminMobileDashboard(snapshot) {
+  return {
+    ...snapshot,
+    headline: { ...(snapshot.headline || {}) },
+    networkHealth: { ...(snapshot.networkHealth || {}) },
+    kpis: (snapshot.kpis || []).map((item) => ({ ...item })),
+    attentionRequired: (snapshot.attentionRequired || []).map((item) => ({ ...item })),
+    transactionDistribution: {
+      ...(snapshot.transactionDistribution || {}),
+      items: (snapshot.transactionDistribution?.items || []).map((item) => ({ ...item })),
+    },
+    averageRegistrationTime: { ...(snapshot.averageRegistrationTime || {}) },
+    trends: {
+      ranges: Object.fromEntries(
+        Object.entries(snapshot.trends?.ranges || {}).map(([key, items]) => [
+          key,
+          (items || []).map((item) => ({
+            ...item,
+            data: (item.data || []).map((point) => ({ ...point })),
+          })),
+        ]),
+      ),
+    },
+    recentActivity: (snapshot.recentActivity || []).map((item) => ({ ...item })),
   }
 }
 
@@ -203,8 +234,79 @@ export const MISSION_CONTROL_MOCK_SNAPSHOT = Object.freeze({
   alertsCount: 12,
 })
 
+export const ADMIN_MOBILE_DASHBOARD_MOCK = Object.freeze({
+  generatedAt: new Date('2026-06-22T10:00:00.000Z').toISOString(),
+  greetingName: 'Alex',
+  headline: {
+    value: 1247,
+    label: 'Active Transactions',
+    subtitle: 'Across the Arch9 ecosystem',
+  },
+  networkHealth: {
+    score: 94,
+    status: 'healthy',
+    alertCount: 18,
+  },
+  kpis: [
+    { key: 'activeTransactions', label: 'Active Transactions', value: 1247, changePct: 0.18, helper: 'Residential, bond and commercial activity', icon: 'transactions', tone: 'blue' },
+    { key: 'registrationsThisMonth', label: 'Registrations This Month', value: 68, changePct: 0.12, helper: 'Registered transfers this month', icon: 'registrations', tone: 'green' },
+    { key: 'revenueThisMonth', label: 'Revenue This Month', value: 1240000, valueType: 'currency', changePct: 0.09, helper: 'Recognised platform revenue', icon: 'revenue', tone: 'purple' },
+    { key: 'activeOrganisations', label: 'Active Organisations', value: 142, changePct: 0.06, helper: 'Meaningful activity in the last 30 days', icon: 'organisations', tone: 'orange' },
+  ],
+  attentionRequired: [
+    { key: 'stalledTransactions', label: 'Stalled Transactions', value: 7, helper: 'No meaningful progress for more than 7 days', severity: 'critical' },
+    { key: 'inactiveOrganisations', label: 'Inactive Organisations', value: 4, helper: 'No login or platform activity for 30 days', severity: 'warning' },
+    { key: 'failedInvites', label: 'Failed Invites', value: 5, helper: 'Failed, bounced, expired or stale pending invites', severity: 'warning' },
+    { key: 'integrationIssues', label: 'Integration Issues', value: 2, helper: 'Unresolved failed platform integrations', severity: 'critical' },
+  ],
+  transactionDistribution: {
+    uniqueTransactionsTotal: 1247,
+    items: [
+      { key: 'agents', label: 'Agents', value: 860, tone: 'blue' },
+      { key: 'attorneys', label: 'Attorneys', value: 735, tone: 'green' },
+      { key: 'bondOriginators', label: 'Bond Originators', value: 312, tone: 'purple' },
+      { key: 'commercial', label: 'Commercial', value: 75, tone: 'orange' },
+    ],
+  },
+  averageRegistrationTime: {
+    days: 41,
+    previousDays: 45,
+    changePct: -0.0888,
+    benchmarkDays: 45,
+    helper: 'Created to registered',
+  },
+  trends: {
+    ranges: {
+      '30d': [
+        { key: 'transactionVolume', label: 'Transaction Volume', tone: 'blue', data: [{ label: '25d', value: 1100 }, { label: '20d', value: 1140 }, { label: '15d', value: 1180 }, { label: '10d', value: 1210 }, { label: '5d', value: 1230 }, { label: 'Now', value: 1247 }] },
+        { key: 'registrations', label: 'Registrations', tone: 'green', data: [{ label: '25d', value: 42 }, { label: '20d', value: 48 }, { label: '15d', value: 53 }, { label: '10d', value: 60 }, { label: '5d', value: 64 }, { label: 'Now', value: 68 }] },
+        { key: 'revenue', label: 'Revenue', tone: 'purple', valueType: 'currency', data: [{ label: '25d', value: 830000 }, { label: '20d', value: 920000 }, { label: '15d', value: 1010000 }, { label: '10d', value: 1110000 }, { label: '5d', value: 1180000 }, { label: 'Now', value: 1240000 }] },
+      ],
+      '6m': [
+        { key: 'transactionVolume', label: 'Transaction Volume', tone: 'blue', data: [{ label: 'W-5', value: 960 }, { label: 'W-4', value: 1010 }, { label: 'W-3', value: 1080 }, { label: 'W-2', value: 1140 }, { label: 'W-1', value: 1200 }, { label: 'Now', value: 1247 }] },
+        { key: 'registrations', label: 'Registrations', tone: 'green', data: [{ label: 'W-5', value: 39 }, { label: 'W-4', value: 44 }, { label: 'W-3', value: 50 }, { label: 'W-2', value: 57 }, { label: 'W-1', value: 63 }, { label: 'Now', value: 68 }] },
+        { key: 'revenue', label: 'Revenue', tone: 'purple', valueType: 'currency', data: [{ label: 'W-5', value: 760000 }, { label: 'W-4', value: 850000 }, { label: 'W-3', value: 970000 }, { label: 'W-2', value: 1080000 }, { label: 'W-1', value: 1170000 }, { label: 'Now', value: 1240000 }] },
+      ],
+      '12m': [
+        { key: 'transactionVolume', label: 'Transaction Volume', tone: 'blue', data: [{ label: 'M-5', value: 810 }, { label: 'M-4', value: 900 }, { label: 'M-3', value: 1010 }, { label: 'M-2', value: 1115 }, { label: 'M-1', value: 1190 }, { label: 'Now', value: 1247 }] },
+        { key: 'registrations', label: 'Registrations', tone: 'green', data: [{ label: 'M-5', value: 31 }, { label: 'M-4', value: 38 }, { label: 'M-3', value: 45 }, { label: 'M-2', value: 51 }, { label: 'M-1', value: 61 }, { label: 'Now', value: 68 }] },
+        { key: 'revenue', label: 'Revenue', tone: 'purple', valueType: 'currency', data: [{ label: 'M-5', value: 620000 }, { label: 'M-4', value: 760000 }, { label: 'M-3', value: 890000 }, { label: 'M-2', value: 1030000 }, { label: 'M-1', value: 1160000 }, { label: 'Now', value: 1240000 }] },
+      ],
+    },
+  },
+  recentActivity: [
+    { id: 'registration-completed', type: 'registration_completed', title: 'Registration completed', description: '17 Eagle Street, Benoni', organisationName: 'Harcourts East Rand', time: new Date('2026-06-22T09:58:00.000Z').toISOString(), severity: 'info' },
+    { id: 'mandate-signed', type: 'mandate_signed', title: 'Mandate signed', description: 'Commercial lease mandate confirmed', organisationName: 'Greenstone Commercial Team', time: new Date('2026-06-22T09:52:00.000Z').toISOString(), severity: 'info' },
+    { id: 'integration-warning', type: 'integration_failed', title: 'Integration needs attention', description: 'Document delivery retry queued', organisationName: 'Arch9 Platform', time: new Date('2026-06-22T09:41:00.000Z').toISOString(), severity: 'warning' },
+  ],
+})
+
 export function getMissionControlMockSnapshot() {
   return cloneSnapshot(MISSION_CONTROL_MOCK_SNAPSHOT)
+}
+
+export function getAdminMobileDashboardMockSnapshot() {
+  return cloneAdminMobileDashboard(ADMIN_MOBILE_DASHBOARD_MOCK)
 }
 
 export function getLegacyMissionControlMockSnapshot(now = new Date()) {
@@ -404,6 +506,112 @@ export function normalizeMissionControlSnapshot(liveSnapshot = null) {
     })),
     alertsCount: Number(attentionItems || criticalAttentionItems || 0),
   }
+}
+
+export function normalizeAdminMobileDashboardSnapshot(liveSnapshot = null) {
+  if (!liveSnapshot || typeof liveSnapshot !== 'object') return null
+
+  const headlineValue = toFiniteNumber(liveSnapshot?.headline?.value)
+  const kpis = Array.isArray(liveSnapshot?.kpis) ? liveSnapshot.kpis : []
+  const attentionRequired = Array.isArray(liveSnapshot?.attentionRequired) ? liveSnapshot.attentionRequired : []
+  const distributionItems = Array.isArray(liveSnapshot?.transactionDistribution?.items) ? liveSnapshot.transactionDistribution.items : []
+  const recentActivity = Array.isArray(liveSnapshot?.recentActivity) ? liveSnapshot.recentActivity : []
+  const ranges = liveSnapshot?.trends?.ranges && typeof liveSnapshot.trends.ranges === 'object' ? liveSnapshot.trends.ranges : {}
+
+  return {
+    generatedAt: normalizeText(liveSnapshot.generatedAt),
+    greetingName: normalizeText(liveSnapshot.greetingName) || 'Alex',
+    headline: {
+      value: headlineValue,
+      label: normalizeText(liveSnapshot?.headline?.label) || 'Active Transactions',
+      subtitle: normalizeText(liveSnapshot?.headline?.subtitle) || 'Across the Arch9 ecosystem',
+    },
+    networkHealth: {
+      score: toFiniteNumber(liveSnapshot?.networkHealth?.score),
+      status: normalizeToken(liveSnapshot?.networkHealth?.status) || 'healthy',
+      alertCount: toFiniteNumber(liveSnapshot?.networkHealth?.alertCount) || 0,
+    },
+    kpis: kpis.map((item, index) => ({
+      key: normalizeText(item?.key) || `kpi-${index + 1}`,
+      label: normalizeText(item?.label) || 'Metric',
+      value: toFiniteNumber(item?.value),
+      valueType: normalizeText(item?.valueType),
+      changePct: toFiniteNumber(item?.changePct),
+      helper: normalizeText(item?.helper),
+      icon: normalizeText(item?.icon),
+      tone: normalizeText(item?.tone) || 'blue',
+    })),
+    attentionRequired: attentionRequired.map((item, index) => ({
+      key: normalizeText(item?.key) || `attention-${index + 1}`,
+      label: normalizeText(item?.label) || 'Attention item',
+      value: toFiniteNumber(item?.value) || 0,
+      helper: normalizeText(item?.helper),
+      severity: normalizeToken(item?.severity) || 'healthy',
+    })),
+    transactionDistribution: {
+      uniqueTransactionsTotal: toFiniteNumber(liveSnapshot?.transactionDistribution?.uniqueTransactionsTotal) || headlineValue || 0,
+      items: distributionItems.map((item, index) => ({
+        key: normalizeText(item?.key) || `distribution-${index + 1}`,
+        label: normalizeText(item?.label) || 'Workspace',
+        value: toFiniteNumber(item?.value) || 0,
+        tone: normalizeText(item?.tone) || 'blue',
+      })),
+    },
+    averageRegistrationTime: {
+      days: toFiniteNumber(liveSnapshot?.averageRegistrationTime?.days),
+      previousDays: toFiniteNumber(liveSnapshot?.averageRegistrationTime?.previousDays),
+      changePct: toFiniteNumber(liveSnapshot?.averageRegistrationTime?.changePct),
+      benchmarkDays: toFiniteNumber(liveSnapshot?.averageRegistrationTime?.benchmarkDays),
+      helper: normalizeText(liveSnapshot?.averageRegistrationTime?.helper),
+    },
+    trends: {
+      ranges: Object.fromEntries(
+        Object.entries(ranges).map(([range, items]) => [
+          range,
+          (Array.isArray(items) ? items : []).map((item, index) => ({
+            key: normalizeText(item?.key) || `trend-${index + 1}`,
+            label: normalizeText(item?.label) || 'Trend',
+            tone: normalizeText(item?.tone) || 'blue',
+            valueType: normalizeText(item?.valueType),
+            data: (Array.isArray(item?.data) ? item.data : []).map((point, pointIndex) => ({
+              label: normalizeText(point?.label) || String(pointIndex + 1),
+              value: toFiniteNumber(point?.value) || 0,
+            })),
+          })),
+        ]),
+      ),
+    },
+    recentActivity: recentActivity.slice(0, 8).map((item, index) => ({
+      id: normalizeText(item?.id) || `activity-${index + 1}`,
+      type: normalizeText(item?.type) || 'activity',
+      title: normalizeText(item?.title) || humanizeToken(item?.type || 'Activity'),
+      description: normalizeText(item?.description) || 'Platform update',
+      organisationName: normalizeText(item?.organisationName),
+      time: normalizeText(item?.time),
+      timestampLabel: formatRelativeActivityTime(item?.time),
+      severity: normalizeToken(item?.severity) || 'info',
+      tone: toneFromActivity(item),
+    })),
+  }
+}
+
+export function hasAdminMobileDashboardData(snapshot = null) {
+  if (!snapshot) return false
+  return Boolean(
+    snapshot.headline?.value !== null ||
+      snapshot.networkHealth?.score !== null ||
+      snapshot.kpis?.some((item) => item.value !== null) ||
+      snapshot.attentionRequired?.length ||
+      snapshot.transactionDistribution?.items?.some((item) => item.value > 0) ||
+      snapshot.recentActivity?.length,
+  )
+}
+
+export function shouldUseAdminMobileDashboardMockSnapshot({ liveSnapshot = null, error = null } = {}) {
+  if (!MISSION_CONTROL_MOCKS_ENABLED) return false
+  if (error) return true
+  const normalized = normalizeAdminMobileDashboardSnapshot(liveSnapshot)
+  return !hasAdminMobileDashboardData(normalized)
 }
 
 export function hasMissionControlSnapshotData(snapshot = null) {
