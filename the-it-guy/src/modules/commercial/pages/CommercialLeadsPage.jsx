@@ -627,6 +627,61 @@ function buildNotesSummary(draft = {}) {
   return rows.length ? `Commercial lead details\n${rows.join('\n')}` : ''
 }
 
+const LEAD_MODAL_ROLE_SPECIFIC_KEYS = {
+  landlord: [
+    'propertyName',
+    'propertyAddress',
+    'areaNode',
+    'vacancyDetails',
+    'estimatedMonthlyRental',
+    'estimatedAnnualRental',
+    'leaseTimeline',
+    'targetPurchaseTimeline',
+  ],
+  tenant: [
+    'requirementName',
+    'lookingFor',
+    'preferredArea',
+    'spaceRequirement',
+    'sizeRange',
+    'budgetRange',
+    'desiredOccupationDate',
+    'requirementNotes',
+    'leaseTimeline',
+    'targetPurchaseTimeline',
+  ],
+  seller: [
+    'propertyName',
+    'propertyAddress',
+    'areaNode',
+    'reasonForSelling',
+    'expectedAskingPrice',
+    'estimatedPropertyValue',
+    'targetPurchaseTimeline',
+  ],
+  buyer: [
+    'requirementName',
+    'lookingFor',
+    'preferredArea',
+    'spaceRequirement',
+    'sizeRange',
+    'budgetRange',
+    'desiredOccupationDate',
+    'fundingStatus',
+    'requirementNotes',
+    'targetPurchaseTimeline',
+  ],
+}
+
+function hasMeaningfulRoleSpecificDraftValues(draft = {}, role = '', baseline = {}) {
+  const keys = LEAD_MODAL_ROLE_SPECIFIC_KEYS[normalizeKey(role)] || []
+  return keys.some((key) => {
+    const value = normalizeText(draft[key])
+    if (!value) return false
+    return value !== normalizeText(baseline[key])
+  })
+}
+
 function getDefaultBroker(lookups = {}) {
   const brokers = toLookupOptions(lookups).brokers || []
   const first = brokers[0]
@@ -1346,27 +1401,10 @@ function NewCommercialLeadModal({
 
   function handleRoleChange(nextRole) {
     if (nextRole === selectedRole) return
-    const roleSpecificKeys = [
-      'propertyName',
-      'propertyAddress',
-      'areaNode',
-      'requirementName',
-      'lookingFor',
-      'preferredArea',
-      'spaceRequirement',
-      'sizeRange',
-      'budgetRange',
-      'vacancyDetails',
-      'reasonForSelling',
-      'desiredOccupationDate',
-      'fundingStatus',
-      'expectedAskingPrice',
-      'estimatedPropertyValue',
-      'requirementNotes',
-      'leaseTimeline',
-      'targetPurchaseTimeline',
-    ]
-    const hasTypedValues = roleSpecificKeys.some((key) => Boolean(normalizeText(draft[key])))
+    const baselineDraft = mode === 'edit' ? {} : buildInitialDraft(null, selectedBroker)
+    baselineDraft.prospectRole = selectedRole
+    baselineDraft.dealType = getDealTypeFromRole(selectedRole)
+    const hasTypedValues = hasMeaningfulRoleSpecificDraftValues(draft, selectedRole, baselineDraft)
     if (hasTypedValues && !window.confirm('Changing the lead type may hide some entered fields. Continue?')) return
     setSelectedRole(nextRole)
     setDraft((previous) => ({
