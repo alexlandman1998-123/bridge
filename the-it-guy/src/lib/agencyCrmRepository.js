@@ -20,8 +20,10 @@ const LEAD_SELECT_FIELDS =
   `${LEGACY_LEAD_SELECT_FIELDS}, branch_id, assigned_user_id, created_by`
 const LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL =
   `${LEAD_SELECT_FIELDS}, assigned_agent_email`
+const LEAD_SELECT_FIELDS_SELLER_BRIDGE =
+  `${LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status`
 const LEAD_SELECT_FIELDS_EXTENDED =
-  `${LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL}, listing_id, mandate_packet_id, seller_onboarding_token, seller_onboarding_status, enquired_listing_id, enquired_property_title, enquired_property_address, enquired_property_price, source_reference_id, raw_enquiry_payload`
+  `${LEAD_SELECT_FIELDS_SELLER_BRIDGE}, enquired_listing_id, enquired_property_title, enquired_property_address, enquired_property_price, source_reference_id, raw_enquiry_payload`
 const LEAD_SELECT_FIELDS_LOCATION =
   `${LEAD_SELECT_FIELDS_EXTENDED}, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id`
 const LEAD_ACTIVITY_SELECT_FIELDS =
@@ -539,6 +541,9 @@ async function selectLeadsWithCompatibility(queryBuilderFactory) {
   let leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_LOCATION)
   if (leadResult.error && isMissingColumnError(leadResult.error)) {
     leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_EXTENDED)
+  }
+  if (leadResult.error && isMissingColumnError(leadResult.error)) {
+    leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_SELLER_BRIDGE)
   }
   if (leadResult.error && isMissingColumnError(leadResult.error)) {
     leadResult = await queryBuilderFactory(LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL)

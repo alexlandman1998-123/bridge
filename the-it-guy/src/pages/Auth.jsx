@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { setStoredDevAuthRole } from '../lib/devAuth'
 import { isDevAuthBypassEnabled } from '../lib/devAuth'
+import { clearPostLoginRedirect, getPostLoginRedirect } from '../lib/resolveMobileAwareRedirect'
 import { APP_ROLE_LABELS } from '../lib/roles'
 import { canAccessHQ } from '../auth/hqAccess'
 import {
@@ -59,7 +60,7 @@ function getRedirectPath(location) {
     return fromPath
   }
 
-  return '/dashboard'
+  return getPostLoginRedirect('/dashboard')
 }
 
 function resolveEmailVerificationRedirectTo(nextPath = '/setup') {
@@ -374,13 +375,14 @@ function Auth({ onDevBypass = null }) {
       if (data?.session) {
         const pendingInvitePath = resolvePendingInvitePath(location)
         const target = pendingInvitePath || redirectTo
+        clearPostLoginRedirect()
         console.debug('[REDIRECT] auth:session-present', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
       }
     }
 
     void checkSession()
-  }, [navigate, redirectTo])
+  }, [location, navigate, redirectTo])
 
   useEffect(() => {
     if (!inviteDrivenSignup) return
@@ -497,6 +499,7 @@ function Auth({ onDevBypass = null }) {
 
         const pendingInvitePath = resolvePendingInvitePath(location)
         const target = pendingInvitePath || await resolveFounderLoginTarget(redirectTo)
+        clearPostLoginRedirect()
         console.debug('[AUTH] login:success', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
         return
@@ -562,6 +565,7 @@ function Auth({ onDevBypass = null }) {
       if (data?.session) {
         const pendingInvitePath = resolvePendingInvitePath(location)
         const target = pendingInvitePath || resolveSignupIntentRoute(intentWithEmail)
+        clearPostLoginRedirect()
         console.debug('[REDIRECT] signup:session-created', { target, pendingInvite: Boolean(pendingInvitePath) })
         navigate(target, { replace: true })
         return
@@ -631,6 +635,7 @@ function Auth({ onDevBypass = null }) {
   function handleDevBypass(role) {
     setStoredDevAuthRole(role)
     onDevBypass?.(role)
+    clearPostLoginRedirect()
     navigate('/dashboard', { replace: true })
   }
 

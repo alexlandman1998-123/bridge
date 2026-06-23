@@ -1,6 +1,8 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppErrorBoundary from './components/AppErrorBoundary'
 import AccessState from './components/access/AccessState'
+import MobileLoginRedirectGate from './components/mobile-shell/MobileLoginRedirectGate'
+import MobileRouteGuard from './components/mobile-shell/MobileRouteGuard'
 import PermissionGate from './components/PermissionGate'
 import TokenRouteGate from './components/routing/TokenRouteGate'
 import { AuthSessionProvider, useAuthSession } from './context/AuthSessionContext'
@@ -18,6 +20,7 @@ import { markRouteFirstVisibleContent, markRouteRendered } from './lib/performan
 import { isOnboardingRoute } from './lib/onboardingRouting'
 import { ONBOARDING_REQUIRED_REASONS } from './constants/onboardingStatuses'
 import { resolveSignupIntentRoute } from './lib/signupIntent'
+import { storePostLoginRedirect } from './lib/resolveMobileAwareRedirect'
 import { evaluateAccessRequirement, getRouteAccessRequirement } from './auth/permissions/permissionResolver'
 import { canAccessHQ } from './auth/hqAccess'
 import { PERMISSIONS } from './auth/permissions/permissionRegistry'
@@ -290,9 +293,20 @@ const ExecutiveSnapshot = lazy(() => import('./pages/ExecutiveSnapshot'))
 const ExternalTransactionPortal = lazy(() => import('./pages/ExternalTransactionPortal'))
 const Financials = lazy(() => import('./pages/Financials'))
 const LegalDocumentWorkspacePage = lazy(() => import('./pages/LegalDocumentWorkspacePage'))
+const MobileLayout = lazy(() => import('./components/mobile-shell/MobileLayout'))
 const MobileDevelopmentDetailPage = lazy(() => import('./pages/mobile/MobileDevelopmentDetailPage'))
 const MobileDevelopmentsPage = lazy(() => import('./pages/mobile/MobileDevelopmentsPage'))
+const MobileHome = lazy(() => import('./pages/mobile/MobileHome'))
+const MobileModulePage = lazy(() => import('./pages/mobile/MobileModulePage'))
+const MobileMore = lazy(() => import('./pages/mobile/MobileMore'))
+const MobileActivityPage = lazy(() => import('./pages/mobile/MobileActivityPage'))
+const MobileDocumentsPage = lazy(() => import('./pages/mobile/MobileDocumentsPage'))
+const MobileInboxPage = lazy(() => import('./pages/mobile/MobileInboxPage'))
+const MobileOnboardingPage = lazy(() => import('./pages/mobile/MobileOnboardingPage'))
+const MobileSearchPage = lazy(() => import('./pages/mobile/MobileSearchPage'))
+const MobileTasksPage = lazy(() => import('./pages/mobile/MobileTasksPage'))
 const MobileTransactionDetailPage = lazy(() => import('./pages/mobile/MobileTransactionDetailPage'))
+const MobileWorkspacePage = lazy(() => import('./pages/mobile/MobileWorkspacePage'))
 const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
 const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
 const Pipeline = lazy(() => import('./pages/Pipeline'))
@@ -868,6 +882,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
 
   if (authState.status === 'unauthenticated' || !session) {
     console.debug('[REDIRECT] auth:missing-session', { target: '/auth', from: location.pathname })
+    storePostLoginRedirect(`${location.pathname || '/'}${location.search || ''}${location.hash || ''}`)
     return <Navigate to="/auth" replace state={{ from: location }} />
   }
 
@@ -1236,6 +1251,24 @@ function ProtectedLayout({ onLogout, session }) {
   return <AppLayout onLogout={onLogout} session={session} user={session?.user || null} />
 }
 
+function MobileProtectedLayout({ onLogout, session }) {
+  if (isSupabaseConfigured && !session) {
+    return <Navigate to="/auth" replace />
+  }
+
+  return <MobileLayout onLogout={onLogout} />
+}
+
+function MobilePublicPortalShell({ children }) {
+  return (
+    <div className="min-h-screen bg-[#f6f8fb] text-[#10243a]">
+      <main className="mx-auto w-full max-w-[520px] px-4 py-4">
+        {children}
+      </main>
+    </div>
+  )
+}
+
 function OrganisationGate({ children }) {
   const { role, activeMemberships } = useWorkspace()
   const { loading, error, refreshOrganisation } = useOrganisation()
@@ -1393,7 +1426,38 @@ function AppRoutes() {
             <Route path="/bond-originator/onboarding" element={<RoleModuleOnboarding expectedRole="bond_originator" />} />
             <Route path="/client-access" element={<ClientAccessNotice onLogout={logout} />} />
 
-            <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
+            <Route element={<MobileLoginRedirectGate />}>
+              <Route element={<OrganisationGate><MobileRouteGuard /></OrganisationGate>}>
+                <Route element={<MobileProtectedLayout onLogout={logout} session={session} />}>
+                  <Route path="/mobile" element={<Navigate to="/mobile/home" replace />} />
+                  <Route path="/mobile/home" element={<AppErrorBoundary scope="mobile-home" title="Mobile home failed to load"><MobileHome /></AppErrorBoundary>} />
+                  <Route path="/mobile/transactions" element={<AppErrorBoundary scope="mobile-transactions" title="Mobile transactions failed to load"><MobileModulePage moduleKey="transactions" /></AppErrorBoundary>} />
+                  <Route path="/mobile/leads" element={<AppErrorBoundary scope="mobile-leads" title="Mobile leads failed to load"><MobileModulePage moduleKey="leads" /></AppErrorBoundary>} />
+                  <Route path="/mobile/documents" element={<AppErrorBoundary scope="mobile-documents" title="Mobile documents failed to load"><MobileDocumentsPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/notifications" element={<AppErrorBoundary scope="mobile-notifications" title="Mobile notifications failed to load"><MobileInboxPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/inbox" element={<AppErrorBoundary scope="mobile-inbox" title="Mobile inbox failed to load"><MobileInboxPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/search" element={<AppErrorBoundary scope="mobile-search" title="Mobile search failed to load"><MobileSearchPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/reports" element={<AppErrorBoundary scope="mobile-reports" title="Mobile reports failed to load"><MobileModulePage moduleKey="reports" /></AppErrorBoundary>} />
+                  <Route path="/mobile/matters" element={<AppErrorBoundary scope="mobile-matters" title="Mobile matters failed to load"><MobileModulePage moduleKey="matters" /></AppErrorBoundary>} />
+                  <Route path="/mobile/applications" element={<AppErrorBoundary scope="mobile-applications" title="Mobile applications failed to load"><MobileModulePage moduleKey="applications" /></AppErrorBoundary>} />
+                  <Route path="/mobile/pipeline" element={<AppErrorBoundary scope="mobile-pipeline" title="Mobile pipeline failed to load"><MobileModulePage moduleKey="pipeline" /></AppErrorBoundary>} />
+                  <Route path="/mobile/listings" element={<AppErrorBoundary scope="mobile-listings" title="Mobile listings failed to load"><MobileModulePage moduleKey="listings" /></AppErrorBoundary>} />
+                  <Route path="/mobile/deals" element={<AppErrorBoundary scope="mobile-deals" title="Mobile deals failed to load"><MobileModulePage moduleKey="deals" /></AppErrorBoundary>} />
+                  <Route path="/mobile/tasks" element={<AppErrorBoundary scope="mobile-tasks" title="Mobile tasks failed to load"><MobileTasksPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/activity" element={<AppErrorBoundary scope="mobile-activity" title="Mobile activity failed to load"><MobileActivityPage /></AppErrorBoundary>} />
+                  <Route path="/mobile/transaction/:workspaceId" element={<AppErrorBoundary scope="mobile-transaction-workspace" title="Mobile transaction failed to load"><MobileWorkspacePage workspaceType="transaction" /></AppErrorBoundary>} />
+                  <Route path="/mobile/lead/:workspaceId" element={<AppErrorBoundary scope="mobile-lead-workspace" title="Mobile lead failed to load"><MobileWorkspacePage workspaceType="lead" /></AppErrorBoundary>} />
+                  <Route path="/mobile/matter/:workspaceId" element={<AppErrorBoundary scope="mobile-matter-workspace" title="Mobile matter failed to load"><MobileWorkspacePage workspaceType="matter" /></AppErrorBoundary>} />
+                  <Route path="/mobile/application/:workspaceId" element={<AppErrorBoundary scope="mobile-application-workspace" title="Mobile application failed to load"><MobileWorkspacePage workspaceType="application" /></AppErrorBoundary>} />
+                  <Route path="/mobile/deal/:workspaceId" element={<AppErrorBoundary scope="mobile-deal-workspace" title="Mobile deal failed to load"><MobileWorkspacePage workspaceType="deal" /></AppErrorBoundary>} />
+                  <Route path="/mobile/commercial-lead/:workspaceId" element={<AppErrorBoundary scope="mobile-commercial-lead-workspace" title="Mobile commercial lead failed to load"><MobileWorkspacePage workspaceType="commercialLead" /></AppErrorBoundary>} />
+                  <Route path="/mobile/listing/:workspaceId" element={<AppErrorBoundary scope="mobile-listing-workspace" title="Mobile listing failed to load"><MobileWorkspacePage workspaceType="listing" /></AppErrorBoundary>} />
+                  <Route path="/mobile/more" element={<AppErrorBoundary scope="mobile-more" title="Mobile more menu failed to load"><MobileMore /></AppErrorBoundary>} />
+                  <Route path="/mobile/*" element={<Navigate to="/mobile/home" replace />} />
+                </Route>
+              </Route>
+
+              <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
               <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
@@ -2696,6 +2760,7 @@ function AppRoutes() {
                   }
                 />
               </Route>
+              </Route>
             </Route>
           </Route>
 
@@ -2739,6 +2804,8 @@ function AppRoutes() {
           <Route path="/client/:token/bond-application" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
           <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/mobile/buyer-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-buyer-onboarding" title="Mobile buyer onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="buyer" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/mobile/seller-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-seller-onboarding" title="Mobile seller onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="seller" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/:token" element={<SellerLegacyRedirect />} />
           <Route path="/seller/:token/mandate" element={<SellerLegacyRedirect />} />
           <Route path="/seller/:token/documents" element={<SellerLegacyRedirect />} />

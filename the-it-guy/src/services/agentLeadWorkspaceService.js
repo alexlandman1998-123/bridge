@@ -742,6 +742,21 @@ async function safeReadHydratedPrivateListing(listingId = '') {
   }
 }
 
+async function safeReadSellerOnboardingForListing(listingId = '') {
+  if (!isSupabaseConfigured || !supabase || !isUuidLike(listingId)) return null
+  const { data, error } = await supabase
+    .from('private_listing_seller_onboarding')
+    .select('id, private_listing_id, token, token_expires_at, seller_type, ownership_structure, marital_regime, form_data, status, submitted_at, created_at, updated_at')
+    .eq('private_listing_id', listingId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error) {
+    if (isRecoverableReadError(error, 'private_listing_seller_onboarding')) return null
+    throw error
+  }
+  return Array.isArray(data) ? data[0] || null : null
+}
+
 function getNormalizedListingId(row = {}) {
   return normalizeText(row?.id || row?.listingId || row?.listing_id || row?.privateListingId || row?.private_listing_id)
 }
@@ -958,7 +973,37 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     hydratedLinkedListing = await safeReadHydratedPrivateListing(candidateListingId)
     if (hydratedLinkedListing) break
   }
-  const hydratedListing = hydratedLinkedListing ? normalizeListing(hydratedLinkedListing) : null
+  const fallbackListingId = [...new Set(candidateListingIds)][0] || ''
+  const fallbackSellerOnboarding = fallbackListingId ? await safeReadSellerOnboardingForListing(fallbackListingId) : null
+  const hydratedListingSource = hydratedLinkedListing && fallbackSellerOnboarding
+    ? {
+        ...hydratedLinkedListing,
+        sellerOnboarding: hydratedLinkedListing.sellerOnboarding || hydratedLinkedListing.seller_onboarding || fallbackSellerOnboarding,
+        seller_onboarding: hydratedLinkedListing.seller_onboarding || hydratedLinkedListing.sellerOnboarding || fallbackSellerOnboarding,
+      }
+    : hydratedLinkedListing
+  const hydratedListing = hydratedListingSource ? normalizeListing(hydratedListingSource) : null
+  const fallbackListing = !hydratedListing && fallbackListingId && fallbackSellerOnboarding
+    ? normalizeListing({
+        id: fallbackListingId,
+        listing_id: fallbackListingId,
+        listingId: fallbackListingId,
+        organisation_id: lead?.organisation_id,
+        leadId: context.leadId,
+        sellerLeadId: context.leadId,
+        seller_lead_id: context.leadId,
+        originatingCrmLeadId: context.leadId,
+        originating_crm_lead_id: context.leadId,
+        assignedAgentId: lead?.assignedAgentId || lead?.assigned_agent_id,
+        assigned_agent_id: lead?.assignedAgentId || lead?.assigned_agent_id,
+        title: lead?.property_interest || lead?.seller_property_address || lead?.formatted_address || 'Seller listing',
+        property_address: lead?.seller_property_address || lead?.formatted_address || '',
+        sellerOnboarding: fallbackSellerOnboarding,
+        seller_onboarding: fallbackSellerOnboarding,
+        sellerOnboardingStatus: fallbackSellerOnboarding.status,
+        seller_onboarding_status: fallbackSellerOnboarding.status,
+      })
+    : null
   const hydratedListingId = getNormalizedListingId(hydratedListing)
   const candidateListingIdSet = new Set(candidateListingIds)
   const workspaceListings = normalizedListings
@@ -966,6 +1011,9 @@ export async function fetchAgentLeadWorkspace({ organisationId = '', leadId = ''
     .filter((listing) => matchesLeadContext(listing, context) || candidateListingIdSet.has(getNormalizedListingId(listing)))
   if (hydratedListing && !workspaceListings.some((listing) => getNormalizedListingId(listing) === hydratedListingId)) {
     workspaceListings.push(hydratedListing)
+  }
+  if (fallbackListing && !workspaceListings.some((listing) => getNormalizedListingId(listing) === getNormalizedListingId(fallbackListing))) {
+    workspaceListings.push(fallbackListing)
   }
   const expandedContext = {
     ...context,

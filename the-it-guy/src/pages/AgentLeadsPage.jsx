@@ -12141,10 +12141,43 @@ function getSellerListingDocumentWeight(listing = null) {
   return documents * 100 + linkedUploads * 10 + requirements
 }
 
+function getSellerListingHydrationWeight(listing = null) {
+  if (!listing) return -1
+  const onboarding = listing?.sellerOnboarding ||
+    listing?.seller_onboarding ||
+    listing?.sellerOnboardingRecord ||
+    listing?.seller_onboarding_record ||
+    {}
+  const formData = isPlainObject(onboarding?.formData)
+    ? onboarding.formData
+    : isPlainObject(onboarding?.form_data)
+      ? onboarding.form_data
+      : {}
+  const commission = isPlainObject(listing?.commission) ? listing.commission : {}
+  const hasFormData = Object.keys(formData).length > 0
+  const hasCommission = Object.values(commission).some((value) => {
+    if (value === undefined || value === null) return false
+    if (typeof value === 'object') return isPlainObject(value) ? Object.keys(value).length > 0 : false
+    return normalizeText(value) !== ''
+  })
+  const hasCanonicalFacts = Boolean(
+    listing?.sellerCanonicalFacts ||
+    listing?.seller_canonical_facts_json ||
+    onboarding?.canonicalFacts ||
+    onboarding?.canonical_facts_json,
+  )
+
+  return (hasFormData ? 1000 : 0) + (hasCommission ? 300 : 0) + (hasCanonicalFacts ? 100 : 0)
+}
+
 function chooseRichestSellerListing(candidates = []) {
   return (Array.isArray(candidates) ? candidates : [])
     .filter(Boolean)
-    .sort((left, right) => getSellerListingDocumentWeight(right) - getSellerListingDocumentWeight(left))[0] || null
+    .sort((left, right) => {
+      const hydrationDelta = getSellerListingHydrationWeight(right) - getSellerListingHydrationWeight(left)
+      if (hydrationDelta) return hydrationDelta
+      return getSellerListingDocumentWeight(right) - getSellerListingDocumentWeight(left)
+    })[0] || null
 }
 
 function mergeSellerDocumentRows(primaryRows = [], fallbackRows = []) {
@@ -15615,7 +15648,7 @@ function AgentLeadWorkspace() {
   const linkedSellerListing = useMemo(() => {
     if (!row) return null
     const leadListingId = normalizeText(row.listingId || row.listing_id || row.privateListingId || row.private_listing_id)
-    const matches = [...(row.listings || []), ...(data?.listings || [])].filter((listing) => {
+    const matches = [...(data?.listings || []), ...(row.listings || [])].filter((listing) => {
       const listingId = normalizeText(listing?.id || listing?.listingId || listing?.listing_id)
       const sellerLeadId = normalizeText(listing?.sellerLeadId || listing?.seller_lead_id || listing?.originatingCrmLeadId || listing?.originating_crm_lead_id || listing?.leadId || listing?.lead_id)
       return (leadListingId && listingId === leadListingId) || sellerLeadId === row.leadId

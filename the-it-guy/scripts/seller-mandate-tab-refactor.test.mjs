@@ -6,6 +6,8 @@ import { createServer } from 'vite'
 const appRoot = fileURLToPath(new URL('..', import.meta.url))
 
 const workspaceSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+const leadWorkspaceServiceSource = await readFile(new URL('../src/services/agentLeadWorkspaceService.js', import.meta.url), 'utf8')
+const agencyCrmRepositorySource = await readFile(new URL('../src/lib/agencyCrmRepository.js', import.meta.url), 'utf8')
 const legalWorkspaceSource = await readFile(new URL('../src/pages/LegalDocumentWorkspacePage.jsx', import.meta.url), 'utf8')
 const mandateMapperSource = await readFile(new URL('../src/core/documents/mandateDataMapper.js', import.meta.url), 'utf8')
 
@@ -45,6 +47,14 @@ assert.ok(workspaceSource.includes('SELLER_SPECIAL_MANDATE_CONDITION_OPTIONS'), 
 assert.ok(workspaceSource.includes('validateSellerMandateDraft'), 'mandate save should validate required structured fields')
 assert.match(workspaceSource, /commission_percentage:\s*commissionType === 'percentage'/, 'mandate save should persist the canonical commission_percentage key')
 assert.match(workspaceSource, /formData\.commission_percentage/, 'mandate reload should hydrate the canonical commission_percentage key')
+assert.ok(workspaceSource.includes('getSellerListingHydrationWeight'), 'seller mandate reload should prefer hydrated seller listings')
+assert.match(workspaceSource, /getSellerListingHydrationWeight\(right\) - getSellerListingHydrationWeight\(left\)/, 'seller listing picker should rank hydrated records before thin summary records')
+assert.match(workspaceSource, /\.\.\.\(data\?\.listings \|\| \[\]\), \.\.\.\(row\.listings \|\| \[\]\)/, 'seller listing matches should consider workspace listings before row summary listings')
+assert.ok(leadWorkspaceServiceSource.includes('safeReadSellerOnboardingForListing'), 'lead workspace should fall back to seller onboarding by listing id')
+assert.ok(leadWorkspaceServiceSource.includes('fallbackSellerOnboarding'), 'lead workspace should attach fallback seller onboarding data')
+assert.ok(leadWorkspaceServiceSource.includes('sellerOnboarding: fallbackSellerOnboarding'), 'fallback listing should expose sellerOnboarding form data to the mandate tab')
+assert.ok(agencyCrmRepositorySource.includes('LEAD_SELECT_FIELDS_SELLER_BRIDGE'), 'lead select fallback should preserve seller bridge fields')
+assert.match(agencyCrmRepositorySource, /LEAD_SELECT_FIELDS_EXTENDED[\s\S]+LEAD_SELECT_FIELDS_SELLER_BRIDGE[\s\S]+LEAD_SELECT_FIELDS_WITH_AGENT_EMAIL/, 'lead select fallback should try seller bridge fields before dropping to legacy agent fields')
 assert.ok(workspaceSource.includes('updatePrivateListing(listingId'), 'mandate save should sync listing mandate_type')
 assert.ok(workspaceSource.includes('updatePrivateListingOnboardingFormData'), 'mandate save should persist to onboarding form data')
 assert.ok(workspaceSource.includes('Save Mandate'), 'mandate tab should keep a manual Save Mandate action')

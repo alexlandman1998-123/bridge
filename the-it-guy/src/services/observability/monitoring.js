@@ -19,3 +19,7 @@ export function trackPermissionMetric(eventName, context = {}) {
 export function trackSystemMetric(eventName, context = {}) {
   return trackTelemetryEvent({ ...context, category: 'system', eventName })
 }
+
+export function trackMobileMetric(eventName, context = {}) {
+  return trackTelemetryEvent({ ...context, category: 'mobile', eventName })
+}

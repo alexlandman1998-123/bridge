@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { recordAuditEvent } from '../lib/activityAudit'
+import { clearPostLoginRedirect, getPostLoginRedirect } from '../lib/resolveMobileAwareRedirect'
 import { clearSupabaseLocalAuthState, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { loadSignupIntentForUser, markSignupIntentReadyForOnboarding, resolveSignupIntentRoute } from '../lib/signupIntent'
 
@@ -9,7 +10,7 @@ const PENDING_ORG_INVITE_TOKEN_STORAGE_KEY = 'itg:pending-org-invite-token'
 
 function resolveSafeNextPath(search = '') {
   const raw = new URLSearchParams(search).get('next')
-  if (!raw || !raw.startsWith('/')) return '/onboarding/profile'
+  if (!raw || !raw.startsWith('/')) return getPostLoginRedirect('/onboarding/profile')
   if (raw.startsWith('/auth/callback')) return '/onboarding/profile'
   return raw
 }
@@ -96,6 +97,7 @@ export default function AuthCallback() {
         const readyIntent = loadedIntent ? await markSignupIntentReadyForOnboarding({ user, intent: loadedIntent }) : null
         const pendingInvitePath = resolvePendingInvitePath()
         const target = pendingInvitePath || (readyIntent ? resolveSignupIntentRoute(readyIntent) : resolveSafeNextPath(location.search))
+        clearPostLoginRedirect()
         recordAuditEvent('session_restored_from_callback', {
           target,
           pendingInvite: Boolean(pendingInvitePath),
