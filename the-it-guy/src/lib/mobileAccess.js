@@ -1,4 +1,4 @@
-import { resolveMobileRoleCategory } from '../config/mobileShell'
+import { resolveMobileRoleCategory } from '../config/mobileShell.js'
 
 const MOBILE_ENABLED_ROLES = new Set(['agent', 'principal', 'attorney', 'bond_originator', 'commercial'])
 

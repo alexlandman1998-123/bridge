@@ -11,8 +11,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { useOrganisation } from '../../context/OrganisationContext'
 import { MobileCard, MobileEmptyState, MobileErrorState, MobileLoadingState } from '../../components/mobile-shell/MobileShellStates'
-import { getMobileDashboardSnapshot } from '../../services/mobileDashboardService'
+import { getMobileDashboardSnapshot, getMobileDashboardSnapshotAsync } from '../../services/mobileDashboardService'
 import { trackMobileMetric } from '../../services/observability/monitoring'
 
 const CARD_TONES = {
@@ -118,11 +119,12 @@ function ActivityRow({ item }) {
 
 export default function MobileHome() {
   const workspace = useWorkspace()
+  const { organisation, loading: organisationLoading } = useOrganisation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [state, setState] = useState(() => {
     try {
-      return { loading: false, error: '', snapshot: getMobileDashboardSnapshot({ workspace }) }
+      return { loading: true, error: '', snapshot: getMobileDashboardSnapshot({ workspace }) }
     } catch (error) {
       return { loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null }
     }
@@ -130,13 +132,63 @@ export default function MobileHome() {
   const showUnsupportedNotice = searchParams.get('mobileNotice') === 'unsupported'
 
   const load = useCallback(() => {
-    try {
-      const snapshot = getMobileDashboardSnapshot({ workspace })
-      setState({ loading: false, error: '', snapshot })
-    } catch (error) {
-      setState({ loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null })
+    if (organisationLoading) {
+      setState((previous) => ({ ...previous, loading: true, error: '' }))
+      return () => {}
     }
-  }, [workspace])
+
+    let active = true
+    setState((previous) => ({ ...previous, loading: !previous.snapshot, error: '' }))
+    getMobileDashboardSnapshotAsync({ workspace, organisation })
+      .then((snapshot) => {
+        if (!active) return
+        setState({ loading: false, error: '', snapshot })
+      })
+      .catch((error) => {
+        if (!active) return
+        try {
+          setState({
+            loading: false,
+            error: '',
+            snapshot: getMobileDashboardSnapshot({ workspace }),
+          })
+        } catch {
+          setState({ loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null })
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [organisation, organisationLoading, workspace])
+
+  useEffect(() => {
+    if (organisationLoading) return undefined
+
+    let active = true
+    Promise.resolve()
+      .then(() => getMobileDashboardSnapshotAsync({ workspace, organisation }))
+      .then((snapshot) => {
+        if (!active) return
+        setState({ loading: false, error: '', snapshot })
+      })
+      .catch((error) => {
+        if (!active) return
+        try {
+          setState({
+            loading: false,
+            error: '',
+            snapshot: getMobileDashboardSnapshot({ workspace }),
+          })
+        } catch {
+          setState({ loading: false, error: error?.message || "We couldn't load your dashboard.", snapshot: null })
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [organisation, organisationLoading, workspace])
 
   useEffect(() => {
     if (!state.snapshot) return

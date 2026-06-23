@@ -1,5 +1,5 @@
-import { mapDesktopRouteToMobile, isPortalOrPublicRoute } from '../config/mobileRouteMappings'
-import { getDesktopLandingRoute, userCanAccessMobile } from './mobileAccess'
+import { mapDesktopRouteToMobile, isPortalOrPublicRoute } from '../config/mobileRouteMappings.js'
+import { getDesktopLandingRoute, userCanAccessMobile } from './mobileAccess.js'
 
 export const POST_LOGIN_REDIRECT_STORAGE_KEY = 'arch9_post_login_redirect'
 

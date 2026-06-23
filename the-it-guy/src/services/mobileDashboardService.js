@@ -1,5 +1,13 @@
 import { getAgentDemoTransactionRowsFromStorage } from '../lib/agentDemoTransactionStorage'
 import { resolveMobileRoleCategory } from '../config/mobileShell'
+import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../lib/api'
+import {
+  getDashboardPipelineValue,
+  getScopedDashboardTransactions,
+} from '../lib/dashboardTransactionIntegrity'
+import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { deriveResidentialDashboardMetrics } from './residentialDashboardService'
+import { getAgentPrivateListings } from './privateListingService'
 
 const DEFAULT_EMPTY = Object.freeze([])
 
@@ -33,6 +41,333 @@ function getDaysSince(value = null) {
   const timestamp = new Date(value).getTime()
   if (!Number.isFinite(timestamp)) return 0
   return Math.max(Math.floor((Date.now() - timestamp) / 86400000), 0)
+}
+
+function getOrganisationId(workspace = {}, organisation = null) {
+  return normalizeText(
+    organisation?.id ||
+      organisation?.organisationId ||
+      organisation?.organisation_id ||
+      organisation?.workspaceId ||
+      workspace.currentWorkspace?.organisationId ||
+      workspace.currentWorkspace?.organisation_id ||
+      workspace.currentWorkspace?.id ||
+      workspace.workspace?.id,
+  )
+}
+
+function getWorkspaceDevelopmentId(workspace = {}) {
+  const id = normalizeText(workspace.workspace?.id)
+  if (!id || id === 'all') return null
+  return id
+}
+
+function getTransactionFromRow(row = {}) {
+  return row?.transaction && typeof row.transaction === 'object' ? row.transaction : row
+}
+
+function getRowUpdatedAt(row = {}) {
+  const transaction = getTransactionFromRow(row)
+  return transaction.updated_at || transaction.last_meaningful_activity_at || row.updated_at || row.created_at || null
+}
+
+function getRowAddress(row = {}, fallback = 'Transaction') {
+  const transaction = getTransactionFromRow(row)
+  const unit = row.unit || {}
+  const development = row.development || {}
+  const unitNumber = normalizeText(unit.unit_number || unit.unitNumber)
+  const developmentName = normalizeText(development.name || row.developmentName)
+  return normalizeText(
+    transaction.property_address_line_1 ||
+      transaction.propertyAddress ||
+      transaction.address ||
+      row.address ||
+      row.title ||
+      unit.address ||
+      (developmentName && unitNumber ? `${developmentName} ${unitNumber}` : '') ||
+      developmentName,
+    fallback,
+  )
+}
+
+function getRowBuyerName(row = {}) {
+  const transaction = getTransactionFromRow(row)
+  const buyer = row.buyer || transaction.buyer || {}
+  return normalizeText(
+    buyer.fullName ||
+      buyer.name ||
+      transaction.buyer_name ||
+      transaction.client_name ||
+      row.clientName,
+    'Client pending',
+  )
+}
+
+function getRowStage(row = {}) {
+  const transaction = getTransactionFromRow(row)
+  return normalizeText(
+    transaction.current_main_stage ||
+      transaction.current_sub_stage_summary ||
+      row.mainStage ||
+      transaction.stage ||
+      row.stage,
+    'In progress',
+  )
+}
+
+function getRowValue(row = {}) {
+  const transaction = getTransactionFromRow(row)
+  return Number(
+    transaction.purchase_price ||
+      transaction.sales_price ||
+      transaction.sale_price ||
+      row.valueRaw ||
+      row.value ||
+      row.unit?.price ||
+      0,
+  )
+}
+
+function getListingValue(row = {}) {
+  const amount = Number(
+    row.askingPrice ||
+      row.asking_price ||
+      row.estimatedValue ||
+      row.estimated_value ||
+      row.price ||
+      row.value ||
+      0,
+  )
+  return Number.isFinite(amount) ? amount : 0
+}
+
+function getListingStatusText(row = {}) {
+  return normalizeText([
+    row.listingStatus,
+    row.listing_status,
+    row.status,
+    row.mandateStatus,
+    row.mandate_status,
+    row.visibility,
+    row.listing_visibility,
+  ].join(' ')).toLowerCase()
+}
+
+function isActiveListing(row = {}) {
+  const text = getListingStatusText(row)
+  return !['archived', 'deleted', 'withdrawn', 'cancelled', 'canceled', 'expired'].some((term) => text.includes(term))
+}
+
+function buildResidentialActiveWork(rows = []) {
+  return rows.slice(0, 5).map((row, index) => {
+    const transaction = getTransactionFromRow(row)
+    const transactionId = normalizeText(transaction.id || row.id)
+    const updatedAt = getRowUpdatedAt(row)
+    const value = getRowValue(row)
+    const stage = getRowStage(row)
+    return {
+      id: transactionId || `residential-work-${index}`,
+      title: getRowAddress(row, `Transaction ${index + 1}`),
+      eyebrow: getRowBuyerName(row),
+      stage,
+      status: normalizeText(transaction.next_action || transaction.status || transaction.lifecycle_state, stage),
+      progress: Math.min(92, Math.max(18, 24 + index * 13)),
+      meta: updatedAt ? `${getDaysSince(updatedAt)} days in stage` : 'Recently updated',
+      value: value > 0 ? formatCurrencyShort(value) : '',
+      to: transactionId ? `/mobile/transaction/${transactionId}` : '/mobile/transactions',
+    }
+  })
+}
+
+function buildResidentialRecentActivity(rows = []) {
+  return rows.slice(0, 10).map((row, index) => {
+    const transaction = getTransactionFromRow(row)
+    const updatedAt = getRowUpdatedAt(row)
+    return {
+      id: transaction.id ? `${transaction.id}-activity` : `residential-activity-${index}`,
+      title: normalizeText(transaction.next_action || transaction.current_sub_stage_summary || getRowStage(row), 'Transaction updated'),
+      body: getRowAddress(row, 'Workspace item updated'),
+      time: updatedAt ? `${getDaysSince(updatedAt)}d ago` : index === 0 ? 'Now' : `${index + 1}h ago`,
+    }
+  })
+}
+
+function buildResidentialSummaryCards({ category, metrics = {}, taskCount = 0 } = {}) {
+  const cardsByKey = new Map((metrics.kpis || []).map((item) => [item.key, item]))
+  const activeTransactions = cardsByKey.get('active_transactions')
+  const activeListings = cardsByKey.get('active_listings')
+  const pipelineValue = cardsByKey.get('pipeline_value')
+  const commissionForecast = cardsByKey.get('commission_forecast')
+
+  return [
+    {
+      key: 'active',
+      label: activeTransactions?.label || (category === 'principal' ? 'Active Transactions' : 'My Active Transactions'),
+      value: activeTransactions?.compactValue || activeTransactions?.value || 0,
+      tone: 'green',
+    },
+    {
+      key: 'listings',
+      label: activeListings?.label || (category === 'principal' ? 'Active Listings / Mandates' : 'My Active Listings / Mandates'),
+      value: activeListings?.compactValue || activeListings?.value || 0,
+      tone: 'blue',
+    },
+    {
+      key: 'pipeline',
+      label: pipelineValue?.label || 'Pipeline Value',
+      value: pipelineValue?.compactValue || pipelineValue?.value || 'R0',
+      tone: 'navy',
+    },
+    {
+      key: 'tasks',
+      label: 'Tasks Due',
+      value: taskCount,
+      tone: 'amber',
+      supportingValue: commissionForecast?.compactValue || commissionForecast?.value || '',
+    },
+  ]
+}
+
+function toResidentialMetricRow(row = {}) {
+  const transaction = getTransactionFromRow(row)
+  return {
+    ...row,
+    id: transaction.id || row.id,
+    transactionId: transaction.id || row.id,
+    address: getRowAddress(row, ''),
+    title: getRowAddress(row, ''),
+    stage: getRowStage(row),
+    status: transaction.status || transaction.lifecycle_state || row.status || getRowStage(row),
+    value: getRowValue(row),
+    valueRaw: getRowValue(row),
+    sales_price: transaction.sales_price,
+    purchase_price: transaction.purchase_price,
+    buyerName: getRowBuyerName(row),
+    clientName: getRowBuyerName(row),
+    developmentName: row.development?.name || '',
+    updated_at: getRowUpdatedAt(row),
+    current_main_stage: transaction.current_main_stage,
+    current_sub_stage_summary: transaction.current_sub_stage_summary,
+    next_action: transaction.next_action,
+    lifecycle_state: transaction.lifecycle_state,
+    operational_state: transaction.operational_state,
+    finance_status: transaction.finance_status,
+    onboarding_status: transaction.onboarding_status,
+  }
+}
+
+async function getResidentialRows({ category, workspace = {}, organisationId = '' } = {}) {
+  const role = normalizeText(workspace.role || workspace.baseRole)
+  const profile = workspace.profile || {}
+  if (role === 'agent' || category === 'agent' || category === 'principal') {
+    if (category === 'principal') {
+      return fetchTransactionsListSummary({
+        developmentId: null,
+        activeTransactionsOnly: false,
+        organisationId,
+      })
+    }
+    if (!profile.id) return []
+    return fetchTransactionsByParticipantSummary({
+      userId: profile.id,
+      roleType: 'agent',
+      organisationId,
+    })
+  }
+
+  const overview = await fetchDashboardOverview({
+    developmentId: getWorkspaceDevelopmentId(workspace),
+    organisationId,
+  })
+  return overview.rows || []
+}
+
+async function getResidentialListings({ category, workspace = {}, organisationId = '' } = {}) {
+  const profile = workspace.profile || {}
+  if (!profile.id && !profile.email) return []
+  try {
+    const rows = await getAgentPrivateListings(profile.id || '', {
+      organisationId,
+      includeAllOrganisationListings: category === 'principal',
+      assignedAgentEmail: profile.email || '',
+    })
+    return (Array.isArray(rows) ? rows : []).filter(isActiveListing)
+  } catch (error) {
+    console.warn('[mobile-dashboard] Unable to load private listings.', error)
+    return []
+  }
+}
+
+export async function getMobileDashboardSnapshotAsync({ workspace = {}, organisation = null } = {}) {
+  const category = resolveMobileRoleCategory(workspace)
+  if (!isSupabaseConfigured || !['agent', 'principal', 'default'].includes(category)) {
+    return getMobileDashboardSnapshot({ workspace })
+  }
+
+  const copy = ROLE_COPY[category] || ROLE_COPY.agent
+  const organisationId = getOrganisationId(workspace, organisation)
+  const [rawRows, listingRows] = await Promise.all([
+    getResidentialRows({ category, workspace, organisationId }),
+    getResidentialListings({ category, workspace, organisationId }),
+  ])
+  const scopedRows = getScopedDashboardTransactions(rawRows, { organisationId, activeOnly: false })
+  const activeRows = getScopedDashboardTransactions(scopedRows, { organisationId })
+  const activeMetricRows = activeRows.map(toResidentialMetricRow)
+  const listingValue = listingRows.reduce((sum, row) => sum + getListingValue(row), 0)
+  const transactionPipelineValue = getDashboardPipelineValue(activeRows)
+  const pipelineValue = transactionPipelineValue + listingValue
+  const estimatedCommission = Math.round(pipelineValue * 0.035)
+  const metrics = deriveResidentialDashboardMetrics({
+    scope: category === 'principal' ? 'principal' : 'agent',
+    mode: 'sales',
+    branchId: workspace.workspace?.id || '',
+    currentUserId: workspace.profile?.id || workspace.profile?.userId || '',
+    source: {
+      kpis: {
+        activeTransactions: activeRows.length,
+        activeListings: listingRows.length,
+        mandates: listingRows.length,
+        pipelineValue,
+        expectedCommission: estimatedCommission,
+        trends: {
+          activeTransactions: null,
+          activeListings: null,
+          pipelineValue: null,
+          expectedCommission: null,
+        },
+      },
+      activeTransactions: activeMetricRows,
+      recentTransactions: activeMetricRows,
+      transactionFlow: activeMetricRows,
+      residentialTransactionFlow: activeMetricRows,
+      listingCount: listingRows.length,
+      activeListings: listingRows.length,
+      commissionForecastValue: estimatedCommission,
+      revenue: { forecast: { expectedCommission: estimatedCommission } },
+      pipeline: {
+        totalValue: pipelineValue,
+        mandateInsights: { active_mandates: listingRows.length },
+      },
+    },
+  })
+
+  return {
+    category,
+    displayName: getDisplayName(workspace),
+    greeting: getGreeting(),
+    generatedAt: new Date().toISOString(),
+    summaryCards: buildResidentialSummaryCards({ category, metrics }),
+    activeWork: buildResidentialActiveWork(activeRows),
+    tasks: DEFAULT_EMPTY,
+    recentActivity: buildResidentialRecentActivity(activeRows),
+    quickActions: copy.quickActions,
+    insight: pipelineValue > 0
+      ? { label: 'Pipeline Snapshot', value: `${formatCurrencyShort(pipelineValue)} Pipeline`, body: `${activeRows.length} active transaction${activeRows.length === 1 ? '' : 's'} and ${listingRows.length} active listing${listingRows.length === 1 ? '' : 's'}.` }
+      : null,
+    copy,
+    notifications: { unreadCount: 0 },
+    metrics,
+  }
 }
 
 function getAgentRows() {
