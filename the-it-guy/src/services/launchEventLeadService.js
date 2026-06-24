@@ -60,38 +60,61 @@ function shouldUseLocalLaunchCapture() {
 }
 
 export function buildLaunchEventLeadPayload(form = {}) {
-  const name = normalizeText(form.name)
+  const name = normalizeText(form.fullName || form.name)
   const phone = normalizeText(form.phone)
   const email = normalizeEmail(form.email)
-  const interest = normalizeText(form.interest)
-  const preferredWindow = normalizeText(form.preferredWindow)
-  const note = normalizeText(form.note)
+  const roleType = normalizeText(form.roleType || form.interest)
+  const discussionFocus = normalizeText(form.discussionFocus)
+  const preferredTime = normalizeText(form.preferredTime || form.preferredWindow)
+  const note = normalizeText(form.notes || form.note)
   const company = normalizeText(form.company)
 
   return {
     event_slug: 'arch9-launch-2026-06-24',
+    event_name: 'Arch9 Launch',
+    event_date: '2026-06-24',
     full_name: name,
     phone,
     email: email || null,
     company: company || null,
-    interest,
-    preferred_window: preferredWindow || null,
+    interest: roleType,
+    role_type: roleType,
+    discussion_focus: discussionFocus || null,
+    preferred_time: preferredTime || null,
+    preferred_window: preferredTime || null,
     note: note || null,
     status: 'new',
-    source: 'event_qr',
+    source: 'arch9_launch_qr',
     metadata: {
       utm: readUtmParams(),
       device: readDeviceContext(),
-      preferredFollowUp: normalizeText(form.preferredFollowUp) || 'private_follow_up_this_week',
+      followUpRequest: {
+        fullName: name,
+        email: email || '',
+        phone,
+        company,
+        roleType,
+        discussionFocus,
+        notes: note,
+        preferredTime,
+        source: 'arch9_launch_qr',
+        eventName: 'Arch9 Launch',
+        eventDate: '2026-06-24',
+        status: 'new',
+      },
     },
   }
 }
 
 export function validateLaunchEventLead(form = {}) {
   const errors = {}
-  if (!normalizeText(form.name)) errors.name = 'Tell us your name.'
+  const email = normalizeEmail(form.email)
+  if (!normalizeText(form.fullName || form.name)) errors.name = 'Tell us your name.'
   if (!normalizeText(form.phone)) errors.phone = 'Add a phone number so the team can reach you.'
-  if (!normalizeText(form.interest)) errors.interest = 'Choose what best describes you.'
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Enter a valid email address.'
+  if (!normalizeText(form.roleType || form.interest)) errors.roleType = 'Choose what best describes you.'
+  if (!normalizeText(form.discussionFocus)) errors.discussionFocus = 'Choose a main focus.'
+  if (!normalizeText(form.preferredTime || form.preferredWindow)) errors.preferredTime = 'Choose a preferred time.'
   return errors
 }
 
@@ -106,11 +129,9 @@ export async function submitLaunchEventLead(form = {}) {
     throw new Error('Arch9 could not save this request on this device. Please show this screen to the launch team.')
   }
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from(EVENT_LEADS_TABLE)
     .insert(payload)
-    .select('id, full_name, status, created_at')
-    .single()
 
   if (error) {
     console.warn('[launchEventLeadService] remote submit failed; saved locally instead', error)
@@ -121,5 +142,12 @@ export async function submitLaunchEventLead(form = {}) {
     throw new Error('We could not save your request yet. Please try again or show this screen to the Arch9 team.')
   }
 
-  return { lead: data, source: 'remote' }
+  return {
+    lead: {
+      full_name: payload.full_name,
+      status: payload.status,
+      created_at: new Date().toISOString(),
+    },
+    source: 'remote',
+  }
 }

@@ -5,22 +5,27 @@ create extension if not exists "pgcrypto";
 create table if not exists public.launch_event_leads (
   id uuid primary key default gen_random_uuid(),
   event_slug text not null,
+  event_name text not null default 'Arch9 Launch',
+  event_date date not null default date '2026-06-24',
   full_name text not null,
   phone text not null,
   email text,
   company text,
   interest text not null,
+  role_type text,
+  discussion_focus text,
+  preferred_time text,
   preferred_window text,
   note text,
   status text not null default 'new',
-  source text not null default 'event_qr',
+  source text not null default 'arch9_launch_qr',
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint launch_event_leads_status_check
     check (status in ('new', 'contacted', 'demo_started', 'qualified', 'closed', 'spam')),
   constraint launch_event_leads_source_check
-    check (source in ('event_qr', 'manual', 'import')),
+    check (source in ('event_qr', 'arch9_launch_qr', 'manual', 'import')),
   constraint launch_event_leads_interest_check
     check (interest in ('developer', 'agency', 'commercial', 'attorney', 'bond_originator', 'buyer_seller', 'other')),
   constraint launch_event_leads_name_not_blank
@@ -61,7 +66,7 @@ create policy "Launch event guests can submit leads"
   with check (
     event_slug = 'arch9-launch-2026-06-24'
     and status = 'new'
-    and source = 'event_qr'
+    and source in ('event_qr', 'arch9_launch_qr')
   );
 
 drop policy if exists "Authenticated team can read launch leads" on public.launch_event_leads;
