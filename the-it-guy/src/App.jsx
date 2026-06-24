@@ -191,6 +191,7 @@ const AttorneySchedulingPage = lazy(() => import('./pages/AttorneySchedulingPage
 const AttorneyTransactionDetail = lazy(() => import('./pages/AttorneyTransactionDetail'))
 const Auth = lazy(() => import('./pages/Auth'))
 const AuthCallback = lazy(() => import('./pages/AuthCallback'))
+const Arch9LaunchConcierge = lazy(() => import('./pages/Arch9LaunchConcierge'))
 const BridgeAgentsPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAgentsPage')
 const BridgeAboutPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeAboutPage')
 const BridgeBuyPage = lazyNamed(() => import('./pages/BridgeLanding'), 'BridgeBuyPage')
@@ -1400,6 +1401,9 @@ function AppRoutes() {
           <Route path="/bridge/for-conveyancers" element={<BridgeConveyancersPage />} />
           <Route path="/bridge/for-agents" element={<BridgeAgentsPage />} />
           <Route path="/bridge/for-buyers" element={<BridgeBuyersPage />} />
+          <Route path="/arch9-launch" element={<Arch9LaunchConcierge />} />
+          <Route path="/launch/arch9" element={<Arch9LaunchConcierge />} />
+          <Route path="/qr/arch9" element={<Arch9LaunchConcierge />} />
           <Route element={<MobileExecutiveLayout />}>
             <Route path="/m/developments" element={<MobileDevelopmentsPage />} />
             <Route path="/m/developments/:developmentId" element={<MobileDevelopmentDetailPage />} />

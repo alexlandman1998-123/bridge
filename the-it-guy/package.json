@@ -29,6 +29,7 @@
     "test:lead-suggestions": "node scripts/lead-suggestions.test.mjs",
     "test:lead-recommendations": "node scripts/lead-recommendations.test.mjs",
     "test:lead-property-sharing": "node scripts/lead-property-sharing.test.mjs",
+    "test:arch9-launch-concierge": "node scripts/arch9-launch-concierge.test.mjs",
     "test:commercial-lead-detail": "node scripts/commercial-lead-detail-foundation.test.mjs",
     "test:commercial-lead-type-switch": "node scripts/commercial-lead-type-switch.test.mjs",
     "test:commercial-leasing-deal-create-modal": "node scripts/commercial-leasing-deal-create-modal.test.mjs",
