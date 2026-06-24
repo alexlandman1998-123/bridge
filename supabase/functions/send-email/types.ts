@@ -109,6 +109,23 @@ export type SendLegacyTestPayload = {
   name?: string;
 };
 
+export type SendArch9LaunchConfirmationPayload = {
+  type:
+    | "arch9_launch_confirmation"
+    | "launch_confirmation"
+    | "arch9_concierge_confirmation";
+  to: string;
+  recipientName?: string;
+  recipient_name?: string;
+  roleType?: string;
+  role_type?: string;
+  discussionFocus?: string;
+  discussion_focus?: string;
+  preferredTime?: string;
+  preferred_time?: string;
+  source?: string;
+};
+
 export type SendWorkspaceInvitePayload = {
   type: "workspace_invite" | "team_invite" | "branch_invite" | "agent_invite";
   to: string;

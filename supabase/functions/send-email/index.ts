@@ -12,6 +12,7 @@ import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
+import { handleArch9LaunchConfirmationEmail } from "./handlers/arch9LaunchConfirmation.ts";
 import { handleBondIntakeNotificationEmail } from "./handlers/bondIntakeNotification.ts";
 import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBuyerIntro.ts";
 import { handleCommercialAccessNotificationEmail } from "./handlers/commercialAccessNotification.ts";
@@ -24,6 +25,7 @@ import {
 } from "./handlers/transactionRoleplayerIntro.ts";
 import { handleTransactionPartnerInvitationEmail } from "./handlers/transactionPartnerInvitation.ts";
 import type {
+  SendArch9LaunchConfirmationPayload,
   SendAppointmentEmailPayload,
   SendBondIntakeNotificationPayload,
   SendBondOriginatorBuyerIntroPayload,
@@ -476,6 +478,24 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
+      [
+        "arch9_launch_confirmation",
+        "launch_confirmation",
+        "arch9_concierge_confirmation",
+      ].includes(type) &&
+      (payload as SendArch9LaunchConfirmationPayload).to
+    ) {
+      console.log("[send-email] routing template", {
+        route: "arch9_launch_confirmation",
+        recipient: recipient || null,
+      });
+      return await handleArch9LaunchConfirmationEmail({
+        ...(payload as SendArch9LaunchConfirmationPayload),
+        type: "arch9_launch_confirmation",
+      });
+    }
+
+    if (
       ["legacy_test", "test_email", "bridge_email_test"].includes(type) &&
       (payload as SendLegacyTestPayload).to
     ) {
@@ -524,6 +544,7 @@ Deno.serve(async (req: Request) => {
           "appointment_confirmation_required",
           "appointment_reminder",
           "appointment_documents_required",
+          "arch9_launch_confirmation",
           "legacy_test",
         ],
       });
@@ -565,6 +586,7 @@ Deno.serve(async (req: Request) => {
         "appointment_confirmation_required",
         "appointment_reminder",
         "appointment_documents_required",
+        "arch9_launch_confirmation",
         "legacy_test",
       ],
     });

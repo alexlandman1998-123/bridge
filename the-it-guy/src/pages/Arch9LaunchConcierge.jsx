@@ -18,7 +18,6 @@ import { AnimatePresence, motion as Motion } from 'motion/react'
 import { useMemo, useState } from 'react'
 import { submitLaunchEventLead } from '../services/launchEventLeadService'
 
-const DOMAIN_LABEL = 'app.arch9.co.za'
 const LAUNCH_SHARE_URL = 'https://app.arch9.co.za/launch/arch9?source=launch_concierge_success'
 const WHATSAPP_SHARE_MESSAGE = `Hi,
 
@@ -180,7 +179,6 @@ function StepShell({ step, children, onBack }) {
 
       <div className="mt-7 flex-1">{children}</div>
 
-      <footer className="mt-5 text-center text-[0.7rem] font-semibold text-[#101817]">{DOMAIN_LABEL}</footer>
     </div>
   )
 }
@@ -256,7 +254,6 @@ function IntroScreen({ onStart }) {
           <LockKeyhole className="h-4 w-4" />
           <span>Your details are private and secure</span>
         </div>
-        <footer className="mt-5 text-center text-[0.78rem] font-semibold text-[#101817]">{DOMAIN_LABEL}</footer>
       </div>
     </div>
   )
@@ -534,7 +531,6 @@ function SuccessScreen({ form }) {
           </p>
         </section>
       </div>
-      <footer className="mt-8 text-center text-[0.76rem] font-semibold text-[#101817]">{DOMAIN_LABEL}</footer>
     </div>
   )
 }

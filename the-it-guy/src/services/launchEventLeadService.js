@@ -1,4 +1,4 @@
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const EVENT_LEADS_TABLE = 'launch_event_leads'
 const LOCAL_STORAGE_KEY = 'arch9:launch-event-leads:v1'
@@ -130,6 +130,34 @@ export function validateLaunchEventLead(form = {}) {
   return errors
 }
 
+async function sendLaunchConfirmationEmail(payload) {
+  if (!payload?.email) {
+    return { sent: false, skipped: true, reason: 'missing_email' }
+  }
+
+  const { data, error } = await invokeEdgeFunction('send-email', {
+    body: {
+      type: 'arch9_launch_confirmation',
+      to: payload.email,
+      recipientName: payload.full_name,
+      roleType: payload.role_type,
+      discussionFocus: payload.discussion_focus,
+      preferredTime: payload.preferred_time,
+      source: 'arch9_launch_qr',
+    },
+  })
+
+  if (error || data?.error) {
+    console.warn('[launchEventLeadService] confirmation email failed', error || data)
+    return {
+      sent: false,
+      error: error?.message || data?.error || 'Confirmation email failed.',
+    }
+  }
+
+  return { sent: Boolean(data?.sent), data }
+}
+
 export async function submitLaunchEventLead(form = {}) {
   const payload = buildLaunchEventLeadPayload(form)
 
@@ -154,6 +182,8 @@ export async function submitLaunchEventLead(form = {}) {
     throw new Error('We could not save your request yet. Please try again or show this screen to the Arch9 team.')
   }
 
+  const confirmationEmail = await sendLaunchConfirmationEmail(payload)
+
   return {
     lead: {
       full_name: payload.full_name,
@@ -161,5 +191,6 @@ export async function submitLaunchEventLead(form = {}) {
       created_at: new Date().toISOString(),
     },
     source: 'remote',
+    confirmationEmail,
   }
 }

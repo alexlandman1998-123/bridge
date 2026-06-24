@@ -2,8 +2,12 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
 const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+const indexSource = await fs.readFile(new URL('../index.html', import.meta.url), 'utf8')
 const pageSource = await fs.readFile(new URL('../src/pages/Arch9LaunchConcierge.jsx', import.meta.url), 'utf8')
 const serviceSource = await fs.readFile(new URL('../src/services/launchEventLeadService.js', import.meta.url), 'utf8')
+const sendEmailIndexSource = await fs.readFile(new URL('../../supabase/functions/send-email/index.ts', import.meta.url), 'utf8')
+const sendEmailTypesSource = await fs.readFile(new URL('../../supabase/functions/send-email/types.ts', import.meta.url), 'utf8')
+const arch9EmailSource = await fs.readFile(new URL('../../supabase/functions/send-email/handlers/arch9LaunchConfirmation.ts', import.meta.url), 'utf8')
 const migrationSource = await fs.readFile(new URL('../../supabase/migrations/202606230001_arch9_launch_event_leads.sql', import.meta.url), 'utf8')
 
 assert.match(appSource, /Arch9LaunchConcierge/, 'App should lazy-load the Arch9 launch concierge page')
@@ -47,6 +51,23 @@ for (const copy of [
   assert.match(pageSource, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Launch page should include: ${copy}`)
 }
 
+for (const removedCopy of [
+  'DOMAIN_LABEL',
+  'app.arch9.co.za</',
+]) {
+  assert.doesNotMatch(pageSource, new RegExp(removedCopy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Launch page should not include redundant footer copy: ${removedCopy}`)
+}
+
+for (const marker of [
+  '<title>Arch9 Concierge</title>',
+  'Request a private Arch9 strategy session after the launch.',
+  'https://app.arch9.co.za/arch9-launch-preview.png',
+  'https://app.arch9.co.za/qr/arch9',
+  'summary_large_image',
+]) {
+  assert.match(indexSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Index metadata should include ${marker}`)
+}
+
 for (const marker of [
   "event_slug: 'arch9-launch-2026-06-24'",
   "event_name: 'Arch9 Launch'",
@@ -58,8 +79,34 @@ for (const marker of [
   "preferred_time: preferredTime || null",
   "function shouldUseLocalLaunchCapture()",
   "remote submit failed; saved locally instead",
+  "invokeEdgeFunction('send-email'",
+  "type: 'arch9_launch_confirmation'",
+  "confirmation email failed",
 ]) {
   assert.match(serviceSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Lead service should include ${marker}`)
+}
+
+for (const marker of [
+  'handleArch9LaunchConfirmationEmail',
+  'arch9_launch_confirmation',
+]) {
+  assert.match(sendEmailIndexSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `send-email index should include ${marker}`)
+}
+
+for (const marker of [
+  'SendArch9LaunchConfirmationPayload',
+  'arch9_concierge_confirmation',
+]) {
+  assert.match(sendEmailTypesSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `send-email types should include ${marker}`)
+}
+
+for (const marker of [
+  'Thank you. We’ll be in contact shortly.',
+  'We’ve received your request for a private Arch9 strategy session.',
+  'RESEND_API_KEY',
+  'Arch9 Concierge',
+]) {
+  assert.match(arch9EmailSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Arch9 confirmation email should include ${marker}`)
 }
 
 for (const marker of [
