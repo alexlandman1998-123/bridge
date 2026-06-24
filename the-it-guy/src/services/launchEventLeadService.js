@@ -1,6 +1,7 @@
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const EVENT_LEADS_TABLE = 'launch_event_leads'
+const REFERRAL_CLICKS_TABLE = 'launch_event_referral_clicks'
 const LOCAL_STORAGE_KEY = 'arch9:launch-event-leads:v1'
 
 function normalizeText(value = '') {
@@ -40,6 +41,17 @@ function readDeviceContext() {
     userAgent: navigator.userAgent || '',
     viewport: `${window.innerWidth || 0}x${window.innerHeight || 0}`,
     submittedAt: new Date().toISOString(),
+  }
+}
+
+function readReferralClickContext() {
+  if (typeof window === 'undefined') return {}
+  return {
+    pageUrl: window.location.href,
+    referrer: document.referrer || '',
+    userAgent: navigator.userAgent || '',
+    viewport: `${window.innerWidth || 0}x${window.innerHeight || 0}`,
+    clickedAt: new Date().toISOString(),
   }
 }
 
@@ -158,6 +170,36 @@ async function sendLaunchConfirmationEmail(payload) {
   return { sent: Boolean(data?.sent), data }
 }
 
+async function sendLaunchInternalNotificationEmail(payload) {
+  const { data, error } = await invokeEdgeFunction('send-email', {
+    body: {
+      type: 'arch9_launch_internal_notification',
+      to: 'alexlandman1998@gmail.com',
+      fullName: payload.full_name,
+      email: payload.email,
+      phone: payload.phone,
+      company: payload.company,
+      roleType: payload.role_type,
+      discussionFocus: payload.discussion_focus,
+      preferredTime: payload.preferred_time,
+      note: payload.note,
+      pageUrl: payload.metadata?.device?.pageUrl,
+      submittedAt: payload.metadata?.device?.submittedAt,
+      source: 'arch9_launch_qr',
+    },
+  })
+
+  if (error || data?.error) {
+    console.warn('[launchEventLeadService] internal notification email failed', error || data)
+    return {
+      sent: false,
+      error: error?.message || data?.error || 'Internal notification email failed.',
+    }
+  }
+
+  return { sent: Boolean(data?.sent), data }
+}
+
 export async function submitLaunchEventLead(form = {}) {
   const payload = buildLaunchEventLeadPayload(form)
 
@@ -183,6 +225,7 @@ export async function submitLaunchEventLead(form = {}) {
   }
 
   const confirmationEmail = await sendLaunchConfirmationEmail(payload)
+  const internalNotificationEmail = await sendLaunchInternalNotificationEmail(payload)
 
   return {
     lead: {
@@ -192,5 +235,46 @@ export async function submitLaunchEventLead(form = {}) {
     },
     source: 'remote',
     confirmationEmail,
+    internalNotificationEmail,
   }
+}
+
+export async function recordLaunchReferralClick({ action, shareLink, eventName } = {}) {
+  const normalizedAction = normalizeText(action)
+  const normalizedShareLink = normalizeText(shareLink)
+
+  if (!normalizedAction || !normalizedShareLink) {
+    return { tracked: false, skipped: true, reason: 'missing_required_fields' }
+  }
+
+  if (shouldUseLocalLaunchCapture() || !isSupabaseConfigured || !supabase) {
+    return { tracked: false, skipped: true, source: 'local' }
+  }
+
+  const context = readReferralClickContext()
+  const payload = {
+    event_slug: 'arch9-launch-2026-06-24',
+    event_name: 'Arch9 Launch',
+    action: normalizedAction,
+    source: 'launch_concierge_success',
+    share_link: normalizedShareLink,
+    page_url: context.pageUrl || null,
+    referrer: context.referrer || null,
+    user_agent: context.userAgent || null,
+    metadata: {
+      eventName: normalizeText(eventName),
+      device: context,
+    },
+  }
+
+  const { error } = await supabase
+    .from(REFERRAL_CLICKS_TABLE)
+    .insert(payload)
+
+  if (error) {
+    console.warn('[launchEventLeadService] referral click tracking failed', error)
+    return { tracked: false, error: error?.message || 'Referral click tracking failed.' }
+  }
+
+  return { tracked: true }
 }

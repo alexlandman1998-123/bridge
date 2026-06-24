@@ -126,6 +126,31 @@ export type SendArch9LaunchConfirmationPayload = {
   source?: string;
 };
 
+export type SendArch9LaunchInternalNotificationPayload = {
+  type:
+    | "arch9_launch_internal_notification"
+    | "launch_internal_notification"
+    | "arch9_concierge_internal_notification";
+  to: string;
+  fullName?: string;
+  full_name?: string;
+  email?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  roleType?: string;
+  role_type?: string;
+  discussionFocus?: string | null;
+  discussion_focus?: string | null;
+  preferredTime?: string | null;
+  preferred_time?: string | null;
+  note?: string | null;
+  pageUrl?: string;
+  page_url?: string;
+  submittedAt?: string;
+  submitted_at?: string;
+  source?: string;
+};
+
 export type SendWorkspaceInvitePayload = {
   type: "workspace_invite" | "team_invite" | "branch_invite" | "agent_invite";
   to: string;

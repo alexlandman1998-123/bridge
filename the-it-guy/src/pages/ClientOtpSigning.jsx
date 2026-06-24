@@ -29,6 +29,87 @@ function setupSignatureCanvas(canvas) {
   drawCanvasBackground(canvas)
 }
 
+function DocumentPreviewCard({ payload }) {
+  const propertyLabel = [payload?.property?.developmentName, payload?.property?.unitLabel]
+    .filter(Boolean)
+    .join(' • ') || 'Property to be confirmed'
+  const purchaserName = payload?.buyer?.name || 'Client'
+  const transactionReference = payload?.transaction?.transactionReference || payload?.transaction?.id || 'Draft OTP'
+  const uploadedAt = payload?.otpDocument?.uploadedAt
+    ? new Date(payload.otpDocument.uploadedAt).toLocaleDateString('en-ZA', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+    : 'Ready for review'
+
+  return (
+    <div className="rounded-[18px] border border-[#dbe5ef] bg-[#f8fbff] p-3 sm:p-5">
+      <div className="mx-auto max-w-[760px] rounded-[18px] border border-[#d8e2ed] bg-white shadow-[0_18px_45px_rgba(20,33,50,0.08)]">
+        <div className="border-b border-[#e4ecf4] px-5 py-5 sm:px-8">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.22em] text-[#7890a8]">Offer to Purchase</p>
+              <h3 className="mt-2 text-[1.35rem] font-semibold tracking-[-0.04em] text-[#142132] sm:text-[1.65rem]">
+                Signature copy
+              </h3>
+            </div>
+            <div className="rounded-full border border-[#dbe5ef] bg-[#fbfdff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+              {uploadedAt}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 sm:px-8">
+          <div className="rounded-[14px] border border-[#e2eaf3] bg-[#fbfdff] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Property</p>
+            <p className="mt-2 text-sm font-semibold leading-5 text-[#20384f]">{propertyLabel}</p>
+          </div>
+          <div className="rounded-[14px] border border-[#e2eaf3] bg-[#fbfdff] p-4">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Purchaser</p>
+            <p className="mt-2 text-sm font-semibold leading-5 text-[#20384f]">{purchaserName}</p>
+          </div>
+        </div>
+
+        <div className="px-5 pb-5 sm:px-8 sm:pb-8">
+          <div className="space-y-3 rounded-[14px] border border-[#e2eaf3] p-4 text-sm leading-6 text-[#41566d]">
+            <p>
+              This document records the purchaser&apos;s offer and the terms to proceed with the transaction.
+              Review the full OTP before signing below.
+            </p>
+            <div className="grid gap-2 border-t border-[#edf2f7] pt-3 sm:grid-cols-3">
+              <div>
+                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#8da0b4]">Reference</p>
+                <p className="mt-1 truncate font-semibold text-[#20384f]">{transactionReference}</p>
+              </div>
+              <div>
+                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#8da0b4]">Document</p>
+                <p className="mt-1 font-semibold text-[#20384f]">{payload?.otpDocument?.name || 'OTP'}</p>
+              </div>
+              <div>
+                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#8da0b4]">Status</p>
+                <p className="mt-1 font-semibold text-[#20384f]">Awaiting signature</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-[14px] border border-dashed border-[#b8c9dc] bg-[#fbfdff] p-4">
+            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Signing area</p>
+            <div className="mt-8 flex items-end justify-between gap-6">
+              <div className="h-px flex-1 bg-[#9fb2c6]" />
+              <div className="h-px flex-1 bg-[#9fb2c6]" />
+            </div>
+            <div className="mt-2 flex justify-between gap-6 text-xs font-semibold text-[#607387]">
+              <span>Purchaser signature</span>
+              <span>Date</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ClientOtpSigning() {
   const { token = '' } = useParams()
   const [loading, setLoading] = useState(true)
@@ -218,13 +299,7 @@ function ClientOtpSigning() {
               Open full document
             </a>
           </div>
-          <div className="overflow-hidden rounded-[14px] border border-[#dbe5ef]">
-            <iframe
-              src={payload?.otpDocument?.previewUrl || 'about:blank'}
-              title="OTP document preview"
-              className="h-[62vh] w-full bg-white"
-            />
-          </div>
+          <DocumentPreviewCard payload={payload} />
         </section>
 
         <section className="rounded-[22px] border border-[#dbe5ef] bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { AnimatePresence, motion as Motion } from 'motion/react'
 import { useMemo, useState } from 'react'
-import { submitLaunchEventLead } from '../services/launchEventLeadService'
+import { recordLaunchReferralClick, submitLaunchEventLead } from '../services/launchEventLeadService'
 
 const LAUNCH_SHARE_URL = 'https://app.arch9.co.za/launch/arch9?source=launch_concierge_success'
 const WHATSAPP_SHARE_MESSAGE = `Hi,
@@ -109,15 +109,21 @@ function FirstName({ name }) {
   return firstName ? `, ${firstName}` : ''
 }
 
-function trackReferralAction(eventName) {
+function trackReferralAction(eventName, action) {
   if (typeof window === 'undefined') return
   const payload = {
     event: eventName,
+    action,
     source: 'launch_concierge_success',
     shareLink: LAUNCH_SHARE_URL,
   }
   window.dataLayer?.push(payload)
   window.dispatchEvent(new CustomEvent('arch9_launch_referral_action', { detail: payload }))
+  void recordLaunchReferralClick({
+    action,
+    eventName,
+    shareLink: LAUNCH_SHARE_URL,
+  })
 }
 
 async function copyTextToClipboard(text) {
@@ -456,7 +462,7 @@ function SuccessScreen({ form }) {
   const [copyStatus, setCopyStatus] = useState('')
 
   function handleWhatsAppShare() {
-    trackReferralAction('success_referral_whatsapp_clicked')
+    trackReferralAction('success_referral_whatsapp_clicked', 'whatsapp')
     if (typeof window === 'undefined') return
     window.open(`https://wa.me/?text=${encodeURIComponent(WHATSAPP_SHARE_MESSAGE)}`, '_blank', 'noopener,noreferrer')
   }
@@ -464,7 +470,7 @@ function SuccessScreen({ form }) {
   async function handleCopyLink() {
     try {
       await copyTextToClipboard(LAUNCH_SHARE_URL)
-      trackReferralAction('success_referral_copy_link_clicked')
+      trackReferralAction('success_referral_copy_link_clicked', 'copy_link')
       setCopyStatus('Invitation link copied')
       window.setTimeout(() => setCopyStatus(''), 2200)
     } catch {

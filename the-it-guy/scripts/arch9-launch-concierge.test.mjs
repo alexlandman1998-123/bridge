@@ -9,6 +9,7 @@ const sendEmailIndexSource = await fs.readFile(new URL('../../supabase/functions
 const sendEmailTypesSource = await fs.readFile(new URL('../../supabase/functions/send-email/types.ts', import.meta.url), 'utf8')
 const arch9EmailSource = await fs.readFile(new URL('../../supabase/functions/send-email/handlers/arch9LaunchConfirmation.ts', import.meta.url), 'utf8')
 const migrationSource = await fs.readFile(new URL('../../supabase/migrations/202606230001_arch9_launch_event_leads.sql', import.meta.url), 'utf8')
+const referralMigrationSource = await fs.readFile(new URL('../../supabase/migrations/202606240002_arch9_launch_referral_clicks.sql', import.meta.url), 'utf8')
 
 assert.match(appSource, /Arch9LaunchConcierge/, 'App should lazy-load the Arch9 launch concierge page')
 for (const route of ['/arch9-launch', '/launch/arch9', '/qr/arch9']) {
@@ -42,6 +43,7 @@ for (const copy of [
   'Invitation link copied',
   'success_referral_whatsapp_clicked',
   'success_referral_copy_link_clicked',
+  'recordLaunchReferralClick',
   'launch_concierge_success',
   'https://wa.me/?text=',
   'Built around your agency',
@@ -81,21 +83,30 @@ for (const marker of [
   "remote submit failed; saved locally instead",
   "invokeEdgeFunction('send-email'",
   "type: 'arch9_launch_confirmation'",
+  "type: 'arch9_launch_internal_notification'",
+  "to: 'alexlandman1998@gmail.com'",
   "confirmation email failed",
+  "internal notification email failed",
+  'launch_event_referral_clicks',
+  'recordLaunchReferralClick',
 ]) {
   assert.match(serviceSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Lead service should include ${marker}`)
 }
 
 for (const marker of [
   'handleArch9LaunchConfirmationEmail',
+  'handleArch9LaunchInternalNotificationEmail',
   'arch9_launch_confirmation',
+  'arch9_launch_internal_notification',
 ]) {
   assert.match(sendEmailIndexSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `send-email index should include ${marker}`)
 }
 
 for (const marker of [
   'SendArch9LaunchConfirmationPayload',
+  'SendArch9LaunchInternalNotificationPayload',
   'arch9_concierge_confirmation',
+  'arch9_concierge_internal_notification',
 ]) {
   assert.match(sendEmailTypesSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `send-email types should include ${marker}`)
 }
@@ -103,6 +114,8 @@ for (const marker of [
 for (const marker of [
   'Thank you. We’ll be in contact shortly.',
   'We’ve received your request for a private Arch9 strategy session.',
+  'New concierge request',
+  'arch9_launch_internal_notification',
   'RESEND_API_KEY',
   'Arch9 Concierge',
 ]) {
@@ -122,6 +135,16 @@ for (const marker of [
   'grant insert on public.launch_event_leads to anon',
 ]) {
   assert.match(migrationSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Migration should include ${marker}`)
+}
+
+for (const marker of [
+  'create table if not exists public.launch_event_referral_clicks',
+  "action in ('whatsapp', 'copy_link')",
+  'Launch guests can count referral clicks',
+  'grant insert on public.launch_event_referral_clicks to anon',
+  'Authenticated team can read referral clicks',
+]) {
+  assert.match(referralMigrationSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `Referral migration should include ${marker}`)
 }
 
 const followUpMigrationSource = await fs.readFile(new URL('../../supabase/migrations/202606240001_arch9_launch_follow_up_fields.sql', import.meta.url), 'utf8')

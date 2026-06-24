@@ -12,7 +12,10 @@ import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
-import { handleArch9LaunchConfirmationEmail } from "./handlers/arch9LaunchConfirmation.ts";
+import {
+  handleArch9LaunchConfirmationEmail,
+  handleArch9LaunchInternalNotificationEmail,
+} from "./handlers/arch9LaunchConfirmation.ts";
 import { handleBondIntakeNotificationEmail } from "./handlers/bondIntakeNotification.ts";
 import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBuyerIntro.ts";
 import { handleCommercialAccessNotificationEmail } from "./handlers/commercialAccessNotification.ts";
@@ -26,6 +29,7 @@ import {
 import { handleTransactionPartnerInvitationEmail } from "./handlers/transactionPartnerInvitation.ts";
 import type {
   SendArch9LaunchConfirmationPayload,
+  SendArch9LaunchInternalNotificationPayload,
   SendAppointmentEmailPayload,
   SendBondIntakeNotificationPayload,
   SendBondOriginatorBuyerIntroPayload,
@@ -496,6 +500,24 @@ Deno.serve(async (req: Request) => {
     }
 
     if (
+      [
+        "arch9_launch_internal_notification",
+        "launch_internal_notification",
+        "arch9_concierge_internal_notification",
+      ].includes(type) &&
+      (payload as SendArch9LaunchInternalNotificationPayload).to
+    ) {
+      console.log("[send-email] routing template", {
+        route: "arch9_launch_internal_notification",
+        recipient: recipient || null,
+      });
+      return await handleArch9LaunchInternalNotificationEmail({
+        ...(payload as SendArch9LaunchInternalNotificationPayload),
+        type: "arch9_launch_internal_notification",
+      });
+    }
+
+    if (
       ["legacy_test", "test_email", "bridge_email_test"].includes(type) &&
       (payload as SendLegacyTestPayload).to
     ) {
@@ -545,6 +567,7 @@ Deno.serve(async (req: Request) => {
           "appointment_reminder",
           "appointment_documents_required",
           "arch9_launch_confirmation",
+          "arch9_launch_internal_notification",
           "legacy_test",
         ],
       });
@@ -587,6 +610,7 @@ Deno.serve(async (req: Request) => {
         "appointment_reminder",
         "appointment_documents_required",
         "arch9_launch_confirmation",
+        "arch9_launch_internal_notification",
         "legacy_test",
       ],
     });
