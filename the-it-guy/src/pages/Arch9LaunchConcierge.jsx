@@ -5,10 +5,11 @@ import {
   Building2,
   CalendarCheck2,
   Check,
-  ChevronDown,
   Clock3,
+  Copy,
   Landmark,
   LockKeyhole,
+  MessageCircle,
   Scale,
   UserRound,
   UsersRound,
@@ -18,6 +19,15 @@ import { useMemo, useState } from 'react'
 import { submitLaunchEventLead } from '../services/launchEventLeadService'
 
 const DOMAIN_LABEL = 'app.arch9.co.za'
+const LAUNCH_SHARE_URL = 'https://app.arch9.co.za/launch/arch9?source=launch_concierge_success'
+const WHATSAPP_SHARE_MESSAGE = `Hi,
+
+I thought you might find this interesting.
+
+Arch9 is helping property professionals reduce admin, improve visibility and move transactions faster through a single shared platform.
+
+Learn more:
+${LAUNCH_SHARE_URL}`
 
 const ROLE_OPTIONS = [
   { value: 'developer', label: 'Developer', icon: Building2 },
@@ -29,17 +39,15 @@ const ROLE_OPTIONS = [
 ]
 
 const FOCUS_OPTIONS = [
-  { value: '', label: 'Select an option' },
-  { value: 'faster_registrations', label: 'Faster registrations' },
-  { value: 'agent_crm', label: 'Agent CRM' },
-  { value: 'attorney_workspace', label: 'Attorney workspace' },
-  { value: 'bond_originator_workflow', label: 'Bond originator workflow' },
-  { value: 'commercial_pipeline', label: 'Commercial pipeline' },
-  { value: 'developer_sales', label: 'Developer sales' },
-  { value: 'client_portals', label: 'Client portals' },
-  { value: 'document_generation', label: 'Document generation' },
-  { value: 'executive_reporting', label: 'Executive reporting' },
-  { value: 'general_overview', label: 'General overview' },
+  'Faster registrations',
+  'Less admin',
+  'Better client communication',
+  'Better visibility across transactions',
+  'More time selling, less time chasing',
+  'Better team accountability',
+  'Commercial property workflows',
+  'Developer sales management',
+  'Show me everything',
 ]
 
 const TIME_OPTIONS = [
@@ -50,9 +58,9 @@ const TIME_OPTIONS = [
 ]
 
 const INTRO_POINTS = [
-  { label: '15 minute call', icon: Clock3 },
-  { label: 'Tailored to your business', icon: UserRound },
-  { label: 'No setup required', icon: LockKeyhole },
+  'Built around your agency',
+  'Faster transactions, fewer follow-ups',
+  'Complete visibility from offer to registration',
 ]
 
 const NEXT_STEPS = [
@@ -73,8 +81,8 @@ const STEP_COPY = {
   },
   3: {
     kicker: 'Step 3 of 4',
-    title: 'What would you like to discuss?',
-    subtitle: 'Choose the main focus for our conversation.',
+    title: 'What would you like to improve most?',
+    subtitle: 'Select up to 2.',
   },
   4: {
     kicker: 'Step 4 of 4',
@@ -100,6 +108,34 @@ function isValidEmail(value = '') {
 function FirstName({ name }) {
   const firstName = String(name || '').trim().split(/\s+/)[0]
   return firstName ? `, ${firstName}` : ''
+}
+
+function trackReferralAction(eventName) {
+  if (typeof window === 'undefined') return
+  const payload = {
+    event: eventName,
+    source: 'launch_concierge_success',
+    shareLink: LAUNCH_SHARE_URL,
+  }
+  window.dataLayer?.push(payload)
+  window.dispatchEvent(new CustomEvent('arch9_launch_referral_action', { detail: payload }))
+}
+
+async function copyTextToClipboard(text) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  if (typeof document === 'undefined') return
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
 }
 
 function StepShell({ step, children, onBack }) {
@@ -190,49 +226,37 @@ function PrimaryButton({ children, icon = ArrowRight, className = '', ...props }
 
 function IntroScreen({ onStart }) {
   return (
-    <div className="flex min-h-[100svh] flex-col px-7 pb-6 pt-8">
-      <div className="flex items-center justify-between">
-        <span className="text-[1.08rem] font-semibold text-[#101817]">09:18</span>
-        <span className="rounded-[5px] bg-[#101817] px-1.5 py-0.5 text-[0.72rem] font-bold text-white">88</span>
-      </div>
-
-      <section className="flex flex-1 flex-col justify-center py-8">
+    <div className="flex h-[100svh] min-h-[680px] flex-col overflow-hidden px-7 pb-5 pt-10">
+      <section className="flex flex-1 flex-col justify-center py-3">
         <div className="text-center">
-          <p className="font-sans text-[1.52rem] font-light tracking-[0.38em] text-[#123a34]">ARCH9</p>
-          <div className="mt-28 inline-flex items-center gap-2 rounded-full bg-[#ebe7dd] px-4 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.22em] text-[#6c5a36]">
-            <span className="text-[#0b4b3c]">✦</span>
-            Arch9 Concierge
-          </div>
-          <h1 className="mx-auto mt-11 max-w-[20rem] font-serif text-[2.8rem] leading-[1.15] tracking-[-0.04em] text-[#111817]">
-            Let’s continue the conversation.
+          <p className="font-sans text-[1.9rem] font-light tracking-[0.42em] text-[#123a34]">ARCH9</p>
+          <h1 className="mx-auto mt-16 max-w-[20rem] font-serif text-[2.55rem] leading-[1.08] tracking-[-0.04em] text-[#111817]">
+            Let’s take your agency to the next level.
           </h1>
-          <p className="mx-auto mt-7 max-w-[17rem] text-center text-[1.2rem] leading-8 text-[#5d6361]">
+          <p className="mx-auto mt-5 max-w-[17rem] text-center text-[1.04rem] leading-7 text-[#5d6361]">
             Request a private strategy session after today’s launch.
           </p>
         </div>
 
-        <div className="mt-16 grid gap-7">
-          {INTRO_POINTS.map((item) => {
-            const Icon = item.icon
-            return (
-              <div key={item.label} className="flex items-center gap-5">
-                <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[#eeece6] text-[#123a34]">
-                  <Icon className="h-6 w-6" />
-                </span>
-                <span className="text-[1.06rem] text-[#101817]">{item.label}</span>
-              </div>
-            )
-          })}
+        <div className="mt-10 grid gap-3">
+          {INTRO_POINTS.map((item) => (
+            <div key={item} className="flex min-h-[48px] items-center gap-3 rounded-full border border-[#dcd6cb] bg-white/42 px-4 py-2.5">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#064734] text-white">
+                <Check className="h-3.5 w-3.5" />
+              </span>
+              <span className="text-[0.94rem] leading-5 text-[#101817]">{item}</span>
+            </div>
+          ))}
         </div>
       </section>
 
       <div>
-        <PrimaryButton onClick={onStart}>Start Request</PrimaryButton>
-        <div className="mt-5 flex items-center justify-center gap-2 text-[0.9rem] text-[#686f6c]">
+        <PrimaryButton onClick={onStart} className="h-[58px]">Start Request</PrimaryButton>
+        <div className="mt-4 flex items-center justify-center gap-2 text-[0.84rem] text-[#686f6c]">
           <LockKeyhole className="h-4 w-4" />
           <span>Your details are private and secure</span>
         </div>
-        <footer className="mt-8 text-center text-[0.82rem] font-semibold text-[#101817]">{DOMAIN_LABEL}</footer>
+        <footer className="mt-5 text-center text-[0.78rem] font-semibold text-[#101817]">{DOMAIN_LABEL}</footer>
       </div>
     </div>
   )
@@ -323,29 +347,54 @@ function RoleStep({ form, errors, updateField, onNext, onBack }) {
 }
 
 function FocusStep({ form, errors, updateField, onNext, onBack }) {
+  const selectedFocus = Array.isArray(form.discussionFocus) ? form.discussionFocus : []
+
+  function toggleFocus(option) {
+    if (selectedFocus.includes(option)) {
+      updateField('discussionFocus', selectedFocus.filter((item) => item !== option))
+      return
+    }
+    if (selectedFocus.length >= 2) {
+      updateField('discussionFocusError', 'Select up to 2.')
+      return
+    }
+    updateField('discussionFocus', [...selectedFocus, option])
+  }
+
   return (
     <StepShell step={3} onBack={onBack}>
-      <label className="block">
-        <span className="sr-only">Discussion focus</span>
-        <span className="relative block">
-          <select
-            value={form.discussionFocus}
-            onChange={(event) => updateField('discussionFocus', event.target.value)}
-            className={cx(
-              'h-[58px] w-full appearance-none rounded-[8px] border bg-white/46 px-4 pr-11 text-[0.95rem] text-[#111817] outline-none transition focus:border-[#0b4b3c] focus:ring-4 focus:ring-[#0b4b3c]/10',
-              errors.discussionFocus ? 'border-[#9f241b]' : 'border-[#d3cdc2]',
-            )}
-          >
-            {FOCUS_OPTIONS.map((option) => (
-              <option key={option.value || 'empty'} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#111817]" />
-        </span>
-      </label>
-      <FieldError>{errors.discussionFocus}</FieldError>
+      <div className="grid gap-2.5">
+        {FOCUS_OPTIONS.map((option) => {
+          const selected = selectedFocus.includes(option)
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() => toggleFocus(option)}
+              className={cx(
+                'flex min-h-[46px] items-center gap-3 rounded-[8px] border px-3.5 text-left text-[0.91rem] leading-5 transition duration-200',
+                selected
+                  ? 'border-[#064734] bg-[#064734] text-white shadow-[0_12px_26px_rgba(6,71,52,0.14)]'
+                  : 'border-[#d3cdc2] bg-white/42 text-[#111817] hover:border-[#b9b1a4]',
+              )}
+              style={selected ? { background: '#064734', borderColor: '#064734', color: '#ffffff' } : undefined}
+              aria-pressed={selected}
+            >
+              <span
+                className={cx(
+                  'grid h-5 w-5 shrink-0 place-items-center rounded-[5px] border transition',
+                  selected ? 'border-white bg-white text-[#064734]' : 'border-[#9fa39f] bg-transparent text-transparent',
+                )}
+                aria-hidden="true"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </span>
+              <span>{option}</span>
+            </button>
+          )
+        })}
+      </div>
+      <FieldError>{errors.discussionFocus || form.discussionFocusError}</FieldError>
 
       <label className="mt-5 block">
         <span className="mb-2 block text-[0.92rem] font-medium text-[#111817]">Anything specific we should know?</span>
@@ -358,7 +407,7 @@ function FocusStep({ form, errors, updateField, onNext, onBack }) {
         />
       </label>
 
-      <div className="mt-20">
+      <div className="mt-8">
         <PrimaryButton onClick={onNext}>Next</PrimaryButton>
       </div>
     </StepShell>
@@ -407,6 +456,26 @@ function TimeStep({ form, errors, updateField, onSubmit, onBack, status, submitE
 }
 
 function SuccessScreen({ form }) {
+  const [copyStatus, setCopyStatus] = useState('')
+
+  function handleWhatsAppShare() {
+    trackReferralAction('success_referral_whatsapp_clicked')
+    if (typeof window === 'undefined') return
+    window.open(`https://wa.me/?text=${encodeURIComponent(WHATSAPP_SHARE_MESSAGE)}`, '_blank', 'noopener,noreferrer')
+  }
+
+  async function handleCopyLink() {
+    try {
+      await copyTextToClipboard(LAUNCH_SHARE_URL)
+      trackReferralAction('success_referral_copy_link_clicked')
+      setCopyStatus('Invitation link copied')
+      window.setTimeout(() => setCopyStatus(''), 2200)
+    } catch {
+      setCopyStatus('Could not copy link')
+      window.setTimeout(() => setCopyStatus(''), 2200)
+    }
+  }
+
   return (
     <div className="flex min-h-[100svh] flex-col px-7 pb-6 pt-8">
       <div className="flex flex-1 flex-col justify-center">
@@ -434,6 +503,36 @@ function SuccessScreen({ form }) {
             })}
           </div>
         </section>
+
+        <section className="mt-8 border-t border-[#ded8ce] pt-7">
+          <h2 className="font-serif text-[1.45rem] leading-tight tracking-[-0.02em] text-[#111817]">
+            Know someone who might also benefit?
+          </h2>
+          <p className="mt-4 max-w-[20rem] text-[0.94rem] leading-6 text-[#5d6361]">
+            We&apos;re happy to meet with principals, agents, attorneys, bond originators and developers who are looking to modernise their property operations.
+          </p>
+
+          <div className="mt-6 grid gap-3">
+            <PrimaryButton onClick={handleWhatsAppShare} icon={MessageCircle} className="h-[56px]">
+              Share via WhatsApp
+            </PrimaryButton>
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="inline-flex h-[52px] w-full items-center justify-center gap-3 rounded-[10px] border border-[#d3cdc2] bg-white/44 px-5 text-[0.95rem] font-medium text-[#111817] transition hover:border-[#b9b1a4]"
+            >
+              <span>Copy Link</span>
+              <Copy className="h-4 w-4" />
+            </button>
+          </div>
+
+          <p aria-live="polite" className={cx(
+            'mt-3 min-h-[1.25rem] text-center text-[0.82rem] font-medium transition',
+            copyStatus === 'Invitation link copied' ? 'text-[#064734]' : 'text-[#9f241b]',
+          )}>
+            {copyStatus}
+          </p>
+        </section>
       </div>
       <footer className="mt-8 text-center text-[0.76rem] font-semibold text-[#101817]">{DOMAIN_LABEL}</footer>
     </div>
@@ -449,7 +548,8 @@ export default function Arch9LaunchConcierge() {
     phone: '',
     company: '',
     roleType: '',
-    discussionFocus: '',
+    discussionFocus: [],
+    discussionFocusError: '',
     notes: '',
     preferredTime: '',
     website: '',
@@ -479,7 +579,11 @@ export default function Arch9LaunchConcierge() {
   }), [])
 
   function updateField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }))
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+      ...(field === 'discussionFocus' ? { discussionFocusError: '' } : {}),
+    }))
     setErrors((current) => {
       if (!current[field]) return current
       const next = { ...current }
@@ -501,7 +605,14 @@ export default function Arch9LaunchConcierge() {
       if (!isValidEmail(form.email)) nextErrors.email = 'Enter a valid email address.'
     }
     if (targetStep === 2 && !form.roleType) nextErrors.roleType = 'Choose one option.'
-    if (targetStep === 3 && !form.discussionFocus) nextErrors.discussionFocus = 'Choose a main focus.'
+    if (targetStep === 3) {
+      const focusCount = Array.isArray(form.discussionFocus) ? form.discussionFocus.length : Number(Boolean(form.discussionFocus))
+      if (!focusCount) nextErrors.discussionFocus = 'Choose at least one option.'
+      if (focusCount > 2) nextErrors.discussionFocus = 'Select up to 2.'
+      if (focusCount > 0 && focusCount <= 2 && form.discussionFocusError) {
+        setForm((current) => ({ ...current, discussionFocusError: '' }))
+      }
+    }
     if (targetStep === 4 && !form.preferredTime) nextErrors.preferredTime = 'Choose a preferred time.'
     setErrors(nextErrors)
     return Object.keys(nextErrors).length === 0

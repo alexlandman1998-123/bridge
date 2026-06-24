@@ -11,6 +11,14 @@ function normalizeEmail(value = '') {
   return normalizeText(value).toLowerCase()
 }
 
+function normalizeSelectionList(value = []) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeText(item)).filter(Boolean)
+  }
+  const text = normalizeText(value)
+  return text ? [text] : []
+}
+
 function readUtmParams() {
   if (typeof window === 'undefined') return {}
   const params = new URLSearchParams(window.location.search || '')
@@ -64,7 +72,8 @@ export function buildLaunchEventLeadPayload(form = {}) {
   const phone = normalizeText(form.phone)
   const email = normalizeEmail(form.email)
   const roleType = normalizeText(form.roleType || form.interest)
-  const discussionFocus = normalizeText(form.discussionFocus)
+  const discussionFocusSelections = normalizeSelectionList(form.discussionFocus)
+  const discussionFocus = discussionFocusSelections.join('; ')
   const preferredTime = normalizeText(form.preferredTime || form.preferredWindow)
   const note = normalizeText(form.notes || form.note)
   const company = normalizeText(form.company)
@@ -95,6 +104,7 @@ export function buildLaunchEventLeadPayload(form = {}) {
         company,
         roleType,
         discussionFocus,
+        discussionFocusSelections,
         notes: note,
         preferredTime,
         source: 'arch9_launch_qr',
@@ -113,7 +123,9 @@ export function validateLaunchEventLead(form = {}) {
   if (!normalizeText(form.phone)) errors.phone = 'Add a phone number so the team can reach you.'
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Enter a valid email address.'
   if (!normalizeText(form.roleType || form.interest)) errors.roleType = 'Choose what best describes you.'
-  if (!normalizeText(form.discussionFocus)) errors.discussionFocus = 'Choose a main focus.'
+  const discussionFocusCount = normalizeSelectionList(form.discussionFocus).length
+  if (!discussionFocusCount) errors.discussionFocus = 'Choose at least one option.'
+  if (discussionFocusCount > 2) errors.discussionFocus = 'Select up to 2.'
   if (!normalizeText(form.preferredTime || form.preferredWindow)) errors.preferredTime = 'Choose a preferred time.'
   return errors
 }
