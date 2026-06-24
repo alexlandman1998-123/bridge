@@ -190,8 +190,9 @@ export async function handleArch9LaunchConfirmationEmail(
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
 
-  const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@arch9.co.za>";
+  const from = normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+    "Arch9 Concierge <onboarding@resend.dev>";
   const replyTo = normalizeText(Deno.env.get("ARCH9_REPLY_TO_EMAIL"));
   const recipientName = normalizeText(payload.recipientName || payload.recipient_name);
   const roleType = normalizeText(payload.roleType || payload.role_type);
@@ -273,8 +274,9 @@ export async function handleArch9LaunchInternalNotificationEmail(
     return jsonResponse(500, { error: "Missing RESEND_API_KEY secret." });
   }
 
-  const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 Concierge <no-reply@arch9.co.za>";
+  const from = normalizeText(Deno.env.get("ARCH9_RESEND_FROM_EMAIL")) ||
+    normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
+    "Arch9 Concierge <onboarding@resend.dev>";
   const replyTo = normalizeText(payload.email) ||
     normalizeText(Deno.env.get("ARCH9_REPLY_TO_EMAIL"));
   const fullName = normalizeText(payload.fullName || payload.full_name);

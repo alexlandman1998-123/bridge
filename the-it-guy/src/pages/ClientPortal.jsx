@@ -6468,7 +6468,7 @@ function ClientPortal() {
           <div className="space-y-6 px-5 py-5 md:px-8 md:py-8 xl:px-10">
             {hideSellerWorkspaceHeader ? null : (
             <section className="rounded-[24px] border border-[#223d57] bg-[linear-gradient(135deg,#10253a_0%,#1d3c5b_60%,#2a5078_100%)] px-5 py-5 text-white shadow-[0_20px_36px_rgba(12,24,40,0.3)]">
-              <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em]">Welcome, {clientFirstName}</h2>
+              <h2 className="text-[1.35rem] font-semibold tracking-[-0.03em] text-[#f8fbff]">Welcome, {clientFirstName}</h2>
               <p className="mt-2 text-sm leading-6 text-[#d6e5f3]">
                 This is your secure transaction workspace. Your updates, documents, and next steps are kept in one place so
                 you can always see what is happening.

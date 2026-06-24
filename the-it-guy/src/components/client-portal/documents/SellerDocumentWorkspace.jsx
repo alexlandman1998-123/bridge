@@ -82,6 +82,12 @@ function SellerDocumentWorkspace({
   onOpenDocument = null,
   errorMessage = '',
   onPrimaryUploadAction = null,
+  eyebrow = 'Seller Portal',
+  description = 'Upload and track the documents needed for your property sale.',
+  stillNeededDescription = 'These outstanding required documents are still blocking progress.',
+  allCompleteMessage = 'All required documents have been uploaded.',
+  footerText = 'Use the row actions to upload, view, or re-upload documents without leaving this page.',
+  listId = 'seller-document-list',
 }) {
   const activeTab = tabs.find((tab) => tab.key === activeTabKey) || tabs[0] || null
   const summary = buildSummaryModel(requiredItems)
@@ -109,9 +115,9 @@ function SellerDocumentWorkspace({
       <header className="rounded-[28px] border border-[#dde6f0] bg-white px-5 py-5 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Seller Portal</p>
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{eyebrow}</p>
             <h2 className="mt-2 text-[2rem] font-semibold tracking-[-0.05em] text-[#142132] sm:text-[2.125rem]">Documents</h2>
-            <p className="mt-2 text-[0.97rem] leading-7 text-[#5f7288]">Upload and track the documents needed for your property sale.</p>
+            <p className="mt-2 text-[0.97rem] leading-7 text-[#5f7288]">{description}</p>
           </div>
           <button
             type="button"
@@ -164,7 +170,7 @@ function SellerDocumentWorkspace({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-[1.08rem] font-semibold tracking-[-0.03em] text-[#142132]">Still needed</h3>
-                <p className="mt-1 text-sm leading-6 text-[#6b7d93]">These outstanding required documents are still blocking progress.</p>
+                <p className="mt-1 text-sm leading-6 text-[#6b7d93]">{stillNeededDescription}</p>
               </div>
             </div>
             {summary.blockingItems.length ? (
@@ -189,7 +195,7 @@ function SellerDocumentWorkspace({
               </div>
             ) : (
               <div className="mt-4 rounded-[18px] border border-[#cfe8d8] bg-[#f1fbf4] px-4 py-4 text-sm font-medium text-[#247148]">
-                All required documents have been uploaded.
+                {allCompleteMessage}
               </div>
             )}
           </section>
@@ -213,7 +219,7 @@ function SellerDocumentWorkspace({
           </section>
         </aside>
 
-        <section id="seller-document-list" className="rounded-[28px] border border-[#dde6f0] bg-white px-4 py-4 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-5 sm:py-5">
+        <section id={listId} className="rounded-[28px] border border-[#dde6f0] bg-white px-4 py-4 shadow-[0_20px_40px_rgba(15,23,42,0.06)] sm:px-5 sm:py-5">
           <div className="overflow-x-auto">
             <nav className="inline-flex min-w-full gap-2 rounded-[18px] bg-[#f3f6fa] p-1.5">
               {tabs.map((tab) => {
@@ -270,7 +276,7 @@ function SellerDocumentWorkspace({
           ) : null}
 
           <div className="mt-5 flex items-center justify-between rounded-[20px] border border-[#e4ebf3] bg-[#f9fbfe] px-4 py-3 text-sm text-[#60748a]">
-            <p>Use the row actions to upload, view, or re-upload documents without leaving this page.</p>
+            <p>{footerText}</p>
             <button
               type="button"
               onClick={() => onPrimaryUploadAction?.()}

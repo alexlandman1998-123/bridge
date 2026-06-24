@@ -64,6 +64,22 @@ function getStatusPresentation(status = '') {
 
 function getCategoryPresentation(categoryKey = '') {
   const normalized = String(categoryKey || '').trim().toLowerCase()
+  if (normalized === 'sales') {
+    return {
+      label: 'Sales',
+      icon: FileSignature,
+      chipClasses: 'border-[#d8e0f1] bg-[#f8faff] text-[#48607e]',
+      tileClasses: 'border-[#d8e0f1] bg-[#f8faff] text-[#48607e]',
+    }
+  }
+  if (normalized === 'finance') {
+    return {
+      label: 'Finance',
+      icon: Landmark,
+      chipClasses: 'border-[#d7eadf] bg-[#f3fbf6] text-[#256c49]',
+      tileClasses: 'border-[#d7eadf] bg-[#f3fbf6] text-[#256c49]',
+    }
+  }
   if (normalized === 'fica') {
     return {
       label: 'FICA',
@@ -137,7 +153,7 @@ function getSupportingLine(item = {}, normalizedStatus = '') {
   if (normalizedStatus === 'rejected') {
     return item?.metaLine || 'Please upload a corrected or clearer file to continue.'
   }
-  return item?.metaLine || 'Required before your sale can move forward.'
+  return item?.metaLine || 'Required before your transaction can move forward.'
 }
 
 function buildPrimaryAction(item = {}, normalizedStatus = '', canUpload = false, canOpen = false) {
