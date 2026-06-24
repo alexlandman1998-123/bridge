@@ -5160,13 +5160,21 @@ export default function LegalDocumentWorkspace({
                     <div className="inline-flex items-center rounded-full border border-[#dbe5f0] bg-[#f7faff] p-1">
                       <button
                         type="button"
-                          className={`rounded-full px-4 py-2 text-xs font-semibold transition ${centerTab === 'editor' ? 'bg-white text-[#102033] shadow-[0_8px_18px_rgba(16,32,51,0.08)]' : 'text-[#6f839b]'}`}
-                          onClick={() => setCenterTab('editor')}
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    ) : null}
+                        className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold transition ${centerTab === 'preview' ? 'bg-white text-[#102033] shadow-[0_8px_18px_rgba(16,32,51,0.08)]' : 'text-[#6f839b]'}`}
+                        onClick={() => setCenterTab('preview')}
+                      >
+                        <Eye size={13} />
+                        Preview
+                      </button>
+                      <button
+                        type="button"
+                        className={`rounded-full px-4 py-2 text-xs font-semibold transition ${centerTab === 'editor' ? 'bg-white text-[#102033] shadow-[0_8px_18px_rgba(16,32,51,0.08)]' : 'text-[#6f839b]'}`}
+                        onClick={() => setCenterTab('editor')}
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  ) : null}
                     {generatedPreviewUrl && typeof onView === 'function' ? (
                       <Button type="button" size="sm" variant="secondary" onClick={() => void onView?.()}>
                         Open Draft
