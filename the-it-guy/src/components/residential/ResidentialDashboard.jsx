@@ -45,16 +45,18 @@ function formatCount(value) {
 function buildSparklinePath(points = []) {
   const values = (Array.isArray(points) ? points : []).map(toNumber).filter((value) => Number.isFinite(value))
   if (!values.length) return { line: '', area: '', dots: [] }
+  const chartValues = values.length > 1 ? values : [values[0], values[0]]
   const max = Math.max(1, ...values)
   const min = Math.min(...values)
-  const spread = Math.max(1, max - min)
-  const dots = values.map((value, index) => {
-    const x = values.length > 1 ? (index / (values.length - 1)) * 100 : 0
-    const y = 76 - ((value - min) / spread) * 44
+  const spread = max - min
+  const flat = spread === 0
+  const dots = chartValues.map((value, index) => {
+    const x = 4 + (chartValues.length > 1 ? (index / (chartValues.length - 1)) * 92 : 0)
+    const y = flat ? 48 : 68 - ((value - min) / spread) * 46
     return { x, y, value }
   })
   const line = dots.map((dot, index) => `${index === 0 ? 'M' : 'L'} ${dot.x} ${dot.y}`).join(' ')
-  const area = `${line} L 100 84 L 0 84 Z`
+  const area = `${line} L 96 78 L 4 78 Z`
   return { line, area, dots }
 }
 
@@ -120,8 +122,9 @@ export function ResidentialKpiCard({ icon, label, value, trend, sparkline = [], 
   const IconComponent = icon || LineChart
   const style = toneStyles[tone] || toneStyles.blue
   const { line, area, dots } = buildSparklinePath(sparkline)
+  const gradientId = `spark-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
   return (
-    <article className={`${cardClass} flex min-h-[152px] flex-col overflow-hidden p-4 sm:p-5`}>
+    <article className={`${cardClass} flex min-h-[172px] flex-col overflow-hidden p-4 sm:p-5`}>
       <div className="flex items-start gap-3">
         <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[16px] ${style.bubble}`}>
           <IconComponent size={20} />
@@ -132,24 +135,25 @@ export function ResidentialKpiCard({ icon, label, value, trend, sparkline = [], 
           <div className="mt-2"><TrendPill value={trend} label="vs previous 30 days" /></div>
         </div>
       </div>
-      <div className="mt-auto min-w-0">
+      <div className="mt-4 min-w-0">
         {emptyCopy ? <p className="mt-1 text-[0.74rem] text-[#7b8ca2]">{emptyCopy}</p> : null}
         {line ? (
-          <svg viewBox="0 0 100 84" className="mt-2 h-[46px] w-full overflow-visible" role="img" aria-label={`${label} trend sparkline`}>
+          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-[64px] w-full overflow-visible" role="img" aria-label={`${label} trend sparkline`}>
             <defs>
-              <linearGradient id={`spark-${label.replace(/\s+/g, '-').toLowerCase()}`} x1="0" x2="0" y1="0" y2="1">
+              <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor={style.stroke} stopOpacity="0.18" />
                 <stop offset="100%" stopColor={style.stroke} stopOpacity="0" />
               </linearGradient>
             </defs>
-            <path d={area} fill={`url(#spark-${label.replace(/\s+/g, '-').toLowerCase()})`} opacity="0.8" />
-            <polyline fill="none" points={dots.map((dot) => `${dot.x},${dot.y}`).join(' ')} stroke={style.stroke} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
-            {dots.map((dot, index) => (
-              <circle key={`${label}-spark-${index}`} cx={dot.x} cy={dot.y} r="1.7" fill="#ffffff" stroke={style.stroke} strokeWidth="1.2" />
-            ))}
+            <line x1="4" x2="96" y1="78" y2="78" stroke="#e8eef5" strokeWidth="1" />
+            <path d={area} fill={`url(#${gradientId})`} opacity="0.95" />
+            <path d={line} fill="none" stroke={style.stroke} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            {dots.length ? (
+              <circle cx={dots[dots.length - 1].x} cy={dots[dots.length - 1].y} r="2.1" fill="#ffffff" stroke={style.stroke} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            ) : null}
           </svg>
         ) : (
-          <div className="mt-2 flex h-[46px] items-center justify-center text-[0.72rem] text-[#8a9aac]">No trend yet</div>
+          <div className="flex h-[64px] items-center justify-center rounded-[16px] bg-[#f8fafc] text-[0.72rem] text-[#8a9aac]">No trend yet</div>
         )}
       </div>
     </article>

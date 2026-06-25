@@ -1404,12 +1404,11 @@ function ClientOnboarding() {
 
   const buyerFlow = useMemo(
     () =>
-      payload?.onboardingFlow ||
       resolveBuyerOnboardingFlow(formData, payload?.transaction || {}, {
         purchaserType: formData.purchaser_type || payload?.purchaserType || payload?.transaction?.purchaser_type || 'individual',
         financeType: formData.purchase_finance_type || payload?.transaction?.finance_type || 'cash',
       }),
-    [formData, payload?.onboardingFlow, payload?.purchaserType, payload?.transaction],
+    [formData, payload?.purchaserType, payload?.transaction],
   )
   const purchaserType = normalizePurchaserType(
     buyerFlow.purchaser_branch || formData.purchaser_type || payload?.purchaserType || 'individual',
@@ -2219,7 +2218,7 @@ function ClientOnboarding() {
             const developerPhone = normalizeWhatsappLabel(whatsappContext?.developer?.phone, '')
             const attorneyPhone = normalizeWhatsappLabel(whatsappContext?.attorney?.phone, '')
             const bondOriginatorPhone = normalizeWhatsappLabel(whatsappContext?.bondOriginator?.phone, '')
-            const normalizedClientPortalPath = String(clientPortalPath || '').trim()
+            const normalizedClientPortalPath = String(nextClientPortalPath || clientPortalPath || '').trim()
             const clientPortalLink = normalizedClientPortalPath
               ? `${window.location.origin}${normalizedClientPortalPath.startsWith('/') ? normalizedClientPortalPath : `/${normalizedClientPortalPath}`}`
               : `${window.location.origin}/client-access`

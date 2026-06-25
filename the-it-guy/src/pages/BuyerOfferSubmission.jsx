@@ -299,6 +299,7 @@ function BuyerOfferSubmission() {
   const propertyImageUrl = getListingImageUrl(listing)
   const agentName = firstText(context?.canonicalOffer?.conditions?.agentName, invite?.agentName) || 'Assigned agent'
   const agencyName = firstText(context?.canonicalOffer?.conditions?.organisationName, context?.canonicalOffer?.conditions?.agencyName) || 'Arch9 Partner Agency'
+  const submitButtonLabel = counterPendingBuyer ? 'Submit Revised Offer' : 'Submit Offer Securely'
   const offerStrength = useMemo(() => {
     const hasBuyerDetails = Boolean(form.fullName && form.email && form.phone)
     const checks = [
@@ -763,7 +764,7 @@ function BuyerOfferSubmission() {
               disabled={submitting || (mobileStep === 2 && context?.source === 'canonical' && !canSubmitCanonicalOffer)}
               className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[18px] bg-[#0F7A5A] px-5 text-sm font-bold text-white shadow-[0_12px_28px_rgba(15,122,90,0.22)] transition hover:bg-[#0B654A] disabled:bg-[#9CA3AF] md:hidden"
             >
-              {mobileStep === 2 ? (submitting ? 'Submitting...' : 'Submit Offer Securely') : 'Continue'}
+              {mobileStep === 2 ? (submitting ? 'Submitting...' : submitButtonLabel) : 'Continue'}
               {mobileStep === 2 ? <ShieldCheck size={16} /> : <ArrowRight size={16} />}
             </button>
             <button
@@ -771,7 +772,7 @@ function BuyerOfferSubmission() {
               disabled={submitting || (context?.source === 'canonical' && !canSubmitCanonicalOffer)}
               className="hidden min-h-12 min-w-[360px] items-center justify-center gap-2 rounded-[18px] bg-[#0F7A5A] px-5 text-sm font-bold text-white shadow-[0_12px_28px_rgba(15,122,90,0.22)] transition hover:bg-[#0B654A] disabled:bg-[#9CA3AF] md:inline-flex"
             >
-              {submitting ? 'Submitting...' : 'Submit Offer Securely'}
+              {submitting ? 'Submitting...' : submitButtonLabel}
               <ShieldCheck size={16} />
             </button>
           </div>
