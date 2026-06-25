@@ -3,7 +3,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 
 const STAGING_PROJECT_REF = 'isdowlnollckzvltkasn'
-const DEFAULT_APP_URL = 'https://app.bridgenine.co.za'
+const DEFAULT_APP_URL = 'https://app.arch9.co.za'
 const AUTH_STATE_PATH = path.join('playwright', '.auth', 'staging-internal.json')
 
 function parseEnvFile(filePath) {

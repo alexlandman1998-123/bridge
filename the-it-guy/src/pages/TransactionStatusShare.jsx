@@ -140,7 +140,7 @@ function TransactionStatusShare() {
     <main className="status-share-page">
       <section className="status-share-card">
         <header className="status-share-header">
-          <p>bridge.</p>
+          <p>Arch9</p>
           <h1>Transaction Status</h1>
           <span>Last updated {formatDateTime(updatedAt)}</span>
         </header>
@@ -170,7 +170,7 @@ function TransactionStatusShare() {
           ].filter(Boolean)}
           comments={externalProgressItems.map((item) => ({
             id: item.id,
-            authorName: 'Bridge Workspace',
+            authorName: 'Arch9 Workspace',
             commentBody: item.body,
             createdAt: item.createdAt,
             discussionType: 'status',

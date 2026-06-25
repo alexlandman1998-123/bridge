@@ -679,7 +679,7 @@ function buildSamplePreviewContext(packetType = 'otp') {
         mandate_type: 'sole',
         special_conditions: 'No special conditions captured in sample mode.',
       },
-      generatedByName: 'Bridge Template Tester',
+      generatedByName: 'Arch9 Template Tester',
       generatedByRole: 'principal',
     }
   }
@@ -709,7 +709,7 @@ function buildSamplePreviewContext(packetType = 'otp') {
         authorityConfirmed: true,
       },
       property: {
-        property_name: 'Bridge Towers',
+        property_name: 'Arch9 Towers',
         address: '100 Main Road, Sandton',
         building_grade: 'A Grade',
         gla_m2: 1250,
@@ -733,7 +733,7 @@ function buildSamplePreviewContext(packetType = 'otp') {
       commissionPercentage: '7.5%',
       mandateStartDate: '2026-06-01',
       mandateExpiryDate: '2026-12-31',
-      generatedByName: 'Bridge Template Tester',
+      generatedByName: 'Arch9 Template Tester',
       generatedByRole: 'principal',
     }
   }
@@ -759,7 +759,7 @@ function buildSamplePreviewContext(packetType = 'otp') {
       phone: '0830000000',
     },
     specialConditions: 'Sample preview condition.',
-    generatedByName: 'Bridge Template Tester',
+    generatedByName: 'Arch9 Template Tester',
     generatedByRole: 'principal',
   }
 }
@@ -3075,7 +3075,7 @@ export default function SettingsSigningTemplatesPage({
                   <p className="mt-3 text-sm font-semibold text-[#102033]">{formatRenderModeLabel(selectedClassification.renderMode)}</p>
                   <p className="mt-2 text-xs leading-5 text-[#6b7c93]">
                     {selectedClassification.renderMode === TEMPLATE_RENDER_MODES.NATIVE_STRUCTURED
-                      ? 'Built from sections and merge fields inside Bridge.'
+                      ? 'Built from sections and merge fields inside Arch9.'
                       : 'Uses an uploaded DOCX file as the base template.'}
                   </p>
                 </div>

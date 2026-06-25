@@ -17,7 +17,7 @@ function envEnabled(value: string | undefined, fallback = true) {
 
 function resolveActionLabel(eventKind: string, decision: string) {
   if (eventKind === "decision" && decision === "approved") return "Open Commercial";
-  if (eventKind === "decision") return "Open Bridge";
+  if (eventKind === "decision") return "Open Arch9";
   return "Review Request";
 }
 
@@ -50,11 +50,11 @@ export async function handleCommercialAccessNotificationEmail(
   }
 
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <no-reply@bridge9.app>";
+    "Arch9 <no-reply@bridge9.app>";
   const recipientName = normalizeText(payload.recipientName || payload.recipient_name) || "there";
   const requesterName = normalizeText(payload.requesterName || payload.requester_name) || "A workspace user";
   const requesterEmail = normalizeText(payload.requesterEmail || payload.requester_email);
-  const organisationName = normalizeText(payload.organisationName || payload.organisation_name) || "your Bridge workspace";
+  const organisationName = normalizeText(payload.organisationName || payload.organisation_name) || "your Arch9 workspace";
   const actionLink = normalizeText(payload.actionLink || payload.action_link);
 
   const isDecision = eventKind === "decision";
@@ -95,7 +95,7 @@ export async function handleCommercialAccessNotificationEmail(
     securityBody:
       "Commercial workspace access can only be approved by authorised principals and workspace administrators.",
     helpBody:
-      "Open Bridge to review Commercial access and keep workspace permissions aligned with your brokerage process.",
+      "Open Arch9 to review Commercial access and keep workspace permissions aligned with your brokerage process.",
     organisationName,
   });
 
@@ -106,7 +106,7 @@ export async function handleCommercialAccessNotificationEmail(
     organisationName ? `Workspace: ${organisationName}` : "",
     requesterName ? `Requester: ${requesterName}` : "",
     requesterEmail ? `Requester Email: ${requesterEmail}` : "",
-    actionLink ? `Open Bridge: ${actionLink}` : "",
+    actionLink ? `Open Arch9: ${actionLink}` : "",
   ].filter(Boolean).join("\n");
 
   const sendResult = await sendViaResendApi({

@@ -40,7 +40,7 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
     normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   const supportEmail =
     normalizeText(payload.supportEmail) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
@@ -51,7 +51,7 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const propertyLabel = propertyTitle ||
     (propertyCount > 1 ? `${propertyCount} viewed properties` : "the property you viewed");
@@ -76,12 +76,12 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
     renderBridgeCta("Open Secure Offer Link", offerLink),
   ].join("");
   const html = renderBridgeEmailLayout({
-    preheader: `Your secure Bridge offer link is ready for ${propertyLabel}.`,
+    preheader: `Your secure Arch9 offer link is ready for ${propertyLabel}.`,
     title: "Offer Link Ready",
     greeting: `Hi ${buyerName},`,
     contentHtml,
     securityTitle: "Secure Offer Portal",
-    securityBody: "Your offer link is shared through Bridge so your agent can keep the offer, viewing, and transaction record connected.",
+    securityBody: "Your offer link is shared through Arch9 so your agent can keep the offer, viewing, and transaction record connected.",
     helpBody: "Need help? Reply to this email or contact your agent before submitting an offer.",
     organisationName,
     supportEmail,
@@ -105,7 +105,7 @@ export async function handleBuyerOfferLinkEmail(payload: SendBuyerOfferLinkPaylo
     "Need help? Reply to this email or contact your agent before submitting an offer.",
     "",
     organisationName,
-    "Powered by Bridge",
+    "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
   const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {

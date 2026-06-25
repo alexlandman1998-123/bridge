@@ -41,7 +41,7 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
     normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   const supportEmail =
     normalizeText(payload.supportEmail) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
@@ -52,7 +52,7 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const subject = `Offer received for ${propertyTitle}`;
   const introParagraphs = [
@@ -80,7 +80,7 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
     greeting: `Hi ${sellerName},`,
     contentHtml,
     securityTitle: "Secure Seller Review",
-    securityBody: "Your offer review link is shared through Bridge so the offer decision stays connected to the listing, buyer lead, and transaction workflow.",
+    securityBody: "Your offer review link is shared through Arch9 so the offer decision stays connected to the listing, buyer lead, and transaction workflow.",
     helpBody: "Need help? Reply to this email or contact your agent before making a decision.",
     organisationName,
     supportEmail,
@@ -104,7 +104,7 @@ export async function handleSellerOfferReviewEmail(payload: SendSellerOfferRevie
     "Need help? Reply to this email or contact your agent before making a decision.",
     "",
     organisationName,
-    "Powered by Bridge",
+    "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
   const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {

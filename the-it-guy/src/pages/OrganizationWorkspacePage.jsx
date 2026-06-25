@@ -1581,7 +1581,7 @@ function OrganizationListPage() {
     <main className="min-h-screen bg-[#f5f8fb] px-4 py-8">
       <section className="mx-auto max-w-6xl space-y-6">
         <header className="rounded-[28px] border border-[#dbe4ef] bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.08)]">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8395aa]">Bridge Organizations</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8395aa]">Arch9 Organizations</span>
           <h1 className="mt-2 text-[2rem] font-semibold tracking-[-0.04em] text-[#142132]">Organizations, members, and firm ownership</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[#60758d]">
             Create a firm, request membership, and manage organization profiles without introducing branches, teams, or routing rules.

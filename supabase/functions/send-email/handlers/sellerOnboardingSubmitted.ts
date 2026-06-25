@@ -30,7 +30,7 @@ function toRecord(value: unknown): Record<string, unknown> {
 async function resolveSenderOrganisationBranding(
   supabase: any,
   organisationId: string,
-  fallbackName = "Bridge",
+  fallbackName = "Arch9",
 ) {
   let senderOrganisationName = fallbackName;
   let senderOrganisationLogoUrl = "";
@@ -313,12 +313,12 @@ export async function handleSellerOnboardingSubmittedEmail(
 
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const organisationName =
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   let supportEmail =
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));

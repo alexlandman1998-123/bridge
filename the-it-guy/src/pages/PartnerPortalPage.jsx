@@ -94,7 +94,7 @@ function PartnerPortalShell({ view = 'dashboard', setView = () => {}, dashboard 
   return (
     <main className="min-h-screen bg-[#f4f8fb] text-[#142132]">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-[#dbe5f0] bg-white px-4 py-5 lg:block">
-        <p className="text-xl font-semibold tracking-[-0.02em] text-[#143250]">bridge.</p>
+        <p className="text-xl font-semibold tracking-[-0.02em] text-[#143250]">Arch9</p>
         <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#71869d]">Partner Portal</p>
         <nav className="mt-8 space-y-1">
           {NAV_ITEMS.map((item) => {

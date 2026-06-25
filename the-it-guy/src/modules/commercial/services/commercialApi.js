@@ -988,7 +988,7 @@ async function sendCommercialAccessNotificationEmails({
           requestId: request.id,
           requesterName: request.requesterName,
           requesterEmail: request.requesterEmail,
-          organisationName: organisationName || 'Bridge workspace',
+          organisationName: organisationName || 'Arch9 workspace',
           actionLink: buildCommercialAccessActionLink(actionRoute),
         },
       })
@@ -1180,7 +1180,7 @@ export async function requestCommercialAccessForCurrentUser({ message = '' } = {
   await assertCommercialAccessWorkflowInstalled({ forceRefresh: true })
   const context = await resolveCommercialOrganisationContext()
   const userId = context.userId || await getCurrentUserId()
-  const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Bridge workspace'
+  const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Arch9 workspace'
   if (!context.organisationId || !userId) {
     throw new Error('An active organisation membership is required before Commercial access can be requested.')
   }
@@ -1297,7 +1297,7 @@ export async function remindCommercialAccessReviewersForCurrentUser() {
   await assertCommercialAccessWorkflowInstalled({ forceRefresh: true })
   const context = await resolveCommercialOrganisationContext()
   const userId = context.userId || await getCurrentUserId()
-  const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Bridge workspace'
+  const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Arch9 workspace'
   if (!context.organisationId || !userId) {
     throw new Error('An active organisation membership is required before Commercial access can be reminded.')
   }
@@ -1386,7 +1386,7 @@ export async function reviewCommercialAccessRequest(requestId, { decision = 'app
   const context = await resolveCommercialOrganisationContext()
   assertCommercialAccessReviewer(context)
   const userId = context.userId || await getCurrentUserId()
-  const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Bridge workspace'
+  const organisationName = normalizeText(context.organisation?.displayName || context.organisation?.name) || 'Arch9 workspace'
   const normalizedDecision = normalizeLower(decision) === 'rejected' ? 'rejected' : 'approved'
 
   const requestQuery = await supabase
@@ -3713,7 +3713,7 @@ async function notifyPortalDocumentRequest({ organisationId, request = {} } = {}
           actionLink: portalUrl,
           transactionId: row.commercial_transaction_id,
           transactionTitle: request.document_name || 'Document requested',
-          organisationName: 'Bridge Commercial',
+          organisationName: 'Arch9 Commercial',
           subject: `${request.document_name || 'Commercial document'} requested`,
         },
       })

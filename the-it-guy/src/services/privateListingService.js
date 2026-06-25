@@ -1719,7 +1719,7 @@ function buildSellerPortalDocumentsEmailPayload({ listing = {}, onboarding = {},
     onboardingLink: portalLink,
     transactionReference: normalizeText(listing?.listingReference || listing?.listing_reference),
     agentName: normalizeText(listing?.assignedAgentName || listing?.assignedAgent || listing?.agentName || 'Your agent'),
-    organisationName: normalizeText(listing?.agencyOrganisation || listing?.organisationName || listing?.agencyName || 'Bridge'),
+    organisationName: normalizeText(listing?.agencyOrganisation || listing?.organisationName || listing?.agencyName || 'Arch9'),
     supportEmail: normalizeText(listing?.assignedAgentEmail || listing?.agentEmail || ''),
   }
 }

@@ -506,7 +506,7 @@ export function buildBondApplicationPdfHtml(viewModel, generatedAt = new Date().
 <body>
   <main class="page">
     <header class="hero">
-      <div class="brand"><strong>ooba homeloans</strong><span>Powered by Bridge</span></div>
+      <div class="brand"><strong>ooba homeloans</strong><span>Powered by Arch9</span></div>
       <h1>Bond Application Summary</h1>
       <p class="sub">${escapeHtml(vm.applicant?.fullName || 'Applicant not captured')} • ${escapeHtml(vm.application?.id || 'Pending')} • Generated ${escapeHtml(formatDateTime(generatedAt))}</p>
       <span class="pill">${escapeHtml(vm.application?.readinessLabel || 'Not Ready')} · ${escapeHtml(vm.risk?.level || 'Incomplete')}</span>

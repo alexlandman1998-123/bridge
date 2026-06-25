@@ -728,7 +728,7 @@ export function getEmploymentTypeHelper(value) {
     case 'unemployed':
       return 'You will usually be asked for alternative income, source-of-funds support, and recent bank statements.'
     case 'other':
-      return 'Bridge will request a broader set of finance support documents so the bond application is not delayed.'
+      return 'Arch9 will request a broader set of finance support documents so the bond application is not delayed.'
     default:
       return ''
   }
@@ -752,7 +752,7 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
           : []),
       ],
       {
-        description: 'This tells Bridge how the purchase will be funded and which finance path should activate.',
+        description: 'This tells Arch9 how the purchase will be funded and which finance path should activate.',
       },
     ),
   ]
@@ -798,7 +798,7 @@ function getFinanceSections(financeType, purchaserType = 'individual') {
             }),
           ],
           {
-            description: 'This tells Bridge exactly which finance documents must be requested for the bond or hybrid funding lane.',
+            description: 'This tells Arch9 exactly which finance documents must be requested for the bond or hybrid funding lane.',
           },
         ),
       )
@@ -2294,7 +2294,7 @@ export function getOnboardingStepDefinitions(formData = {}, options = {}) {
     {
       key: 'intro',
       title: 'Transaction Context',
-      description: 'This onboarding helps Bridge configure your purchase, document checklist, and the teams involved.',
+      description: 'This onboarding helps Arch9 configure your purchase, document checklist, and the teams involved.',
     },
     {
       key: 'purchaser_entity',

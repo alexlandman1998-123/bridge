@@ -44,12 +44,12 @@ export async function handleBondIntakeNotificationEmail(
   }
 
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <no-reply@bridge9.app>";
+    "Arch9 <no-reply@bridge9.app>";
   const subject = normalizeText(payload.subject) || "Bond application update";
   const title = normalizeText(payload.title) || "Bond application update";
   const recipientName = normalizeText(payload.recipientName) || "there";
   const message = normalizeText(payload.message) ||
-    "There is an update on a bond application in Bridge.";
+    "There is an update on a bond application in Arch9.";
   const metadata = payload.metadata && typeof payload.metadata === "object"
     ? payload.metadata
     : {};
@@ -80,8 +80,8 @@ export async function handleBondIntakeNotificationEmail(
     securityBody:
       "Bond application information is available only to authorised parties on the transaction.",
     helpBody:
-      "Please open Bridge to review the application and continue with the next action.",
-    organisationName: "Bridge",
+      "Please open Arch9 to review the application and continue with the next action.",
+    organisationName: "Arch9",
   });
 
   const text = [
@@ -91,7 +91,7 @@ export async function handleBondIntakeNotificationEmail(
     transactionId ? `Transaction: ${transactionId}` : "",
     applicationLink ? `View Application: ${applicationLink}` : "",
     "",
-    "Please open Bridge to review the application and continue with the next action.",
+    "Please open Arch9 to review the application and continue with the next action.",
   ].filter(Boolean).join("\n");
 
   const sendResult = await sendViaResendApi({

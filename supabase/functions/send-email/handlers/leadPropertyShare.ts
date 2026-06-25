@@ -40,7 +40,7 @@ export async function handleLeadPropertyShareEmail(payload: SendLeadPropertyShar
   const text = normalizeText(payload.text || payload.message) || subject;
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,

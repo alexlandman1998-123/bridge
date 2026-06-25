@@ -4,7 +4,7 @@ import {
 } from '../core/finance/financeReadinessSelectors'
 
 export const FINANCE_INTELLIGENCE_DISCLAIMER =
-  'Bridge operational insights are estimates based on workflow and onboarding data. Final financial approval remains subject to lender assessment and supporting documentation.'
+  'Arch9 operational insights are estimates based on workflow and onboarding data. Final financial approval remains subject to lender assessment and supporting documentation.'
 
 const analyticsCache = new Map()
 

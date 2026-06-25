@@ -893,7 +893,7 @@ export function selectConveyancerLiveActivity(rows = [], limit = 12) {
     .slice(0, limit)
     .map((record) => {
       const category = getActivityCategory(record)
-      const actor = category === 'documents' ? 'Buyer' : category === 'comments' ? 'Internal Team' : 'Bridge Workflow'
+      const actor = category === 'documents' ? 'Buyer' : category === 'comments' ? 'Internal Team' : 'Arch9 Workflow'
       const roleLabel = category === 'documents' ? 'Documents' : category === 'comments' ? 'Comments' : 'Stage Change'
       return {
         ...asLegacyMatterRow(record),
@@ -916,7 +916,7 @@ export function selectConveyancerRecentFeed(rows = [], limit = 8) {
   return selectAttorneyRecentActivity(rows, limit).map((item) => ({
     ...item,
     category: 'stage_changes',
-    actor: 'Bridge Workflow',
+    actor: 'Arch9 Workflow',
     roleLabel: 'Stage Change',
     eventLabel: item.stageLabel,
     title: `${item.stageLabel} • ${item.buyerName}`,

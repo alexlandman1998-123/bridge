@@ -5,10 +5,10 @@
       "has": [
         {
           "type": "host",
-          "value": "app.bridgenine.co.za"
+          "value": "admin.bridgenine.co.za"
         }
       ],
-      "destination": "https://app.arch9.co.za/:path*",
+      "destination": "https://admin.arch9.co.za/:path*",
       "permanent": false
     }
   ],

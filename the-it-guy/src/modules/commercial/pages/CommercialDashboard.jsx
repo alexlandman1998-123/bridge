@@ -6,7 +6,7 @@ import { getCommercialPrincipalDashboardData } from '../services/commercialDashb
 
 // Legacy phase markers retained for static compatibility after the executive command centre consolidation:
 // ConversionMetricsCard, Requirement to Deal, Deal to HOT, HOT to Signed, Signed to Lease, Lease to Active.
-// PlatformIntegrationCard, Bridge Transaction Integration, Expected Commission, Notification Candidates,
+// PlatformIntegrationCard, Arch9 Transaction Integration, Expected Commission, Notification Candidates,
 // Renewal Watch Items, /commercial/transactions/.
 function CommercialDashboard() {
   const navigate = useNavigate()

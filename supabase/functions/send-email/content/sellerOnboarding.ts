@@ -198,7 +198,7 @@ export function buildSellerOnboardingEmailHtml({
     securityTitle,
     securityBody,
     helpBody,
-    organisationName: organisationName || "Bridge",
+    organisationName: organisationName || "Arch9",
     senderOrganisationName,
     senderOrganisationLogoUrl,
     supportEmail: supportEmail || "",
@@ -302,8 +302,8 @@ export function buildSellerOnboardingEmailText({
     "",
     helpBody,
     "",
-    organisationName || "Bridge",
-    "Powered by Bridge",
+    organisationName || "Arch9",
+    "Powered by Arch9",
   ]
     .filter(Boolean)
     .join("\n");

@@ -5,7 +5,7 @@ export function createOnboardingIntegrityError(reason, metadata = {}) {
     code: reason || 'onboarding_corrupted',
     severity: 'error',
     entityType: 'onboarding',
-    userMessage: 'Your setup needs to be repaired before Bridge can open the workspace.',
+    userMessage: 'Your setup needs to be repaired before Arch9 can open the workspace.',
     metadata,
   })
 }

@@ -162,7 +162,7 @@ export function getAppointmentCalendarTitle(appointment = {}) {
   )
   return appointmentTypeLabel.toLowerCase().startsWith('bridge:')
     ? appointmentTypeLabel
-    : `Bridge: ${appointmentTypeLabel}`
+    : `Arch9: ${appointmentTypeLabel}`
 }
 
 export function getAppointmentCalendarLocation(appointment = {}) {
@@ -198,7 +198,7 @@ export function getAppointmentCalendarDescription(appointment = {}) {
     : ''
 
   const lines = [
-    'This appointment is part of your Bridge property transaction.',
+    'This appointment is part of your Arch9 property transaction.',
     resolveAudienceLabel(appointment),
     transactionReference ? `Transaction reference: ${transactionReference}` : '',
     status ? `Status: ${status}` : '',
@@ -206,7 +206,7 @@ export function getAppointmentCalendarDescription(appointment = {}) {
     `Participants: ${participantLine}`,
     `Instructions: ${instructions}`,
     portalLink ? `Portal: ${portalLink}` : '',
-    'Need help? Contact your Bridge transaction team.',
+    'Need help? Contact your Arch9 transaction team.',
   ].filter(Boolean)
 
   return lines.join('\n')
@@ -222,7 +222,7 @@ export function buildAppointmentICSPayload(appointment = {}, options = {}) {
 
   const timeZone = toText(options?.timeZone || options?.timezone || getEffectiveTimezone(appointment), DEFAULT_TIMEZONE)
   const participants = getParticipants(appointment)
-  const organizerName = toText(appointment?.organizerName || appointment?.assignedAgentName || appointment?.agentName || 'Bridge')
+  const organizerName = toText(appointment?.organizerName || appointment?.assignedAgentName || appointment?.agentName || 'Arch9')
   const organizerEmail = toText(appointment?.organizerEmail || appointment?.assignedAgentEmail || appointment?.agentEmail)
   const uid = getAppointmentUid(appointment)
   const title = getAppointmentCalendarTitle(appointment)
@@ -258,7 +258,7 @@ function renderIcsContent(payload = {}) {
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Bridge//Appointments//EN',
+    'PRODID:-//Arch9//Appointments//EN',
     `METHOD:${payload.method || 'REQUEST'}`,
     'CALSCALE:GREGORIAN',
     'BEGIN:VEVENT',
@@ -266,7 +266,7 @@ function renderIcsContent(payload = {}) {
     `DTSTAMP:${formatIcsUtc(new Date())}`,
     `DTSTART;TZID=${escapeIcsText(payload.timeZone || DEFAULT_TIMEZONE)}:${formatIcsDateTimeInTimezone(payload.start, payload.timeZone || DEFAULT_TIMEZONE)}`,
     `DTEND;TZID=${escapeIcsText(payload.timeZone || DEFAULT_TIMEZONE)}:${formatIcsDateTimeInTimezone(payload.end, payload.timeZone || DEFAULT_TIMEZONE)}`,
-    `SUMMARY:${escapeIcsText(payload.title || 'Bridge Appointment')}`,
+    `SUMMARY:${escapeIcsText(payload.title || 'Arch9 Appointment')}`,
     `DESCRIPTION:${escapeIcsText(payload.description || '')}`,
     `LOCATION:${escapeIcsText(payload.location || '')}`,
     `STATUS:${escapeIcsText(payload.status || 'CONFIRMED')}`,
@@ -274,7 +274,7 @@ function renderIcsContent(payload = {}) {
   ]
 
   if (payload.organizer?.email) {
-    lines.push(`ORGANIZER;CN=${escapeIcsText(payload.organizer.name || 'Bridge')}:MAILTO:${escapeIcsText(payload.organizer.email)}`)
+    lines.push(`ORGANIZER;CN=${escapeIcsText(payload.organizer.name || 'Arch9')}:MAILTO:${escapeIcsText(payload.organizer.email)}`)
   }
 
   for (const attendee of Array.isArray(payload.attendees) ? payload.attendees : []) {

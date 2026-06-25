@@ -791,7 +791,7 @@ function buildOnboardingDocumentMarkup({
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>Bridge Onboarding Information</title>
+      <title>Arch9 Onboarding Information</title>
       <style>
         :root {
           color-scheme: light;
@@ -951,7 +951,7 @@ function buildOnboardingDocumentMarkup({
       <main class="page">
         <header class="topbar">
           <div>
-            <p class="brand">Bridge</p>
+            <p class="brand">Arch9</p>
             <h1>Onboarding Information</h1>
             <p class="subtext">${escapePortalHtml(portal?.unit?.development?.name || 'Development')} • Unit ${escapePortalHtml(
               portal?.unit?.unit_number || '—',
@@ -2368,7 +2368,7 @@ function normalizeHumanUpdateSummary(value) {
 
 function buildClientFacingUpdate(item) {
   if (item?.title || item?.description) {
-    const actorName = item?.actor || item?.authorName || 'Bridge'
+    const actorName = item?.actor || item?.authorName || 'Arch9'
     const actorRole = item?.actorRole || item?.authorRoleLabel || 'Transaction Team'
     const createdLabel = (item?.timestamp || item?.createdAt)
       ? new Date(item?.timestamp || item?.createdAt).toLocaleString()
@@ -2387,8 +2387,8 @@ function buildClientFacingUpdate(item) {
   const rawBody = String(item?.commentBody || item?.commentText || '')
     .replace(/\s+/g, ' ')
     .trim()
-  const actorName = item?.authorName || 'Bridge Team'
-  const actorRole = item?.authorRoleLabel || 'Bridge Team'
+  const actorName = item?.authorName || 'Arch9 Team'
+  const actorRole = item?.authorRoleLabel || 'Arch9 Team'
   const createdLabel = item?.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recently'
   const contextLabel = `Updated by ${actorName} • ${actorRole} • ${createdLabel}`
 
@@ -2455,7 +2455,7 @@ function buildClientFacingUpdate(item) {
 
   if (String(item?.discussionType || '').toLowerCase() === 'system') {
     return {
-      title: 'Bridge update',
+      title: 'Arch9 update',
       summary: normalizeHumanUpdateSummary(rawBody),
       contextLabel,
     }
@@ -2471,7 +2471,7 @@ function buildClientFacingUpdate(item) {
 function buildClientJourneyFeedItem(item, index = 0) {
   const authoredAt = item?.timestamp || item?.createdAt || item?.created_at || ''
   const timestampLabel = authoredAt ? new Date(authoredAt).toLocaleString() : 'Recently'
-  const authorName = item?.actor || item?.authorName || item?.author_name || 'Bridge Team'
+  const authorName = item?.actor || item?.authorName || item?.author_name || 'Arch9 Team'
   const normalizedRole = String(item?.actorRole || item?.authorRoleLabel || item?.authorRole || item?.author_role || '').toLowerCase()
   const authorRole = normalizedRole.includes('attorney') || normalizedRole.includes('conveyancer')
     ? 'Attorney'
@@ -2483,7 +2483,7 @@ function buildClientJourneyFeedItem(item, index = 0) {
           ? 'Developer'
           : normalizedRole.includes('admin')
             ? 'Internal Admin'
-            : 'Bridge System'
+            : 'Arch9 System'
   const formatted = buildClientFacingUpdate(item)
 
   return {
@@ -2678,7 +2678,7 @@ function SellerWelcomeHero({
             </span>
             <div className="min-w-0">
               <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Your Agent</span>
-              <h2 className="mt-1.5 text-base font-semibold text-[#142132]">{sellerAgencyName || sellerAgentName || 'Bridge Property Team'}</h2>
+              <h2 className="mt-1.5 text-base font-semibold text-[#142132]">{sellerAgencyName || sellerAgentName || 'Arch9 Property Team'}</h2>
               {sellerAgentName && sellerAgentName !== sellerAgencyName ? (
                 <p className="mt-1 text-sm text-[#64748b]">{sellerAgentName}</p>
               ) : null}
@@ -5605,7 +5605,7 @@ function ClientPortal() {
   const teamMembers = [
     {
       title: 'Sales Team',
-      name: portal?.transaction?.assigned_agent || portal?.unit?.development?.developer_company || 'Bridge Sales',
+      name: portal?.transaction?.assigned_agent || portal?.unit?.development?.developer_company || 'Arch9 Sales',
       detail: portal?.transaction?.assigned_agent_email || 'Handles deal updates and coordination.',
     },
     ...(hasAttorneyRolePlayers
@@ -5623,8 +5623,8 @@ function ClientPortal() {
       detail: portal?.transaction?.assigned_bond_originator_email || 'Supports finance approvals and lender feedback.',
     },
     {
-      title: 'Bridge Support',
-      name: portal?.unit?.development?.developer_company || 'Bridge Operations',
+      title: 'Arch9 Support',
+      name: portal?.unit?.development?.developer_company || 'Arch9 Operations',
       detail: 'Keeps the transaction workspace, documents, and handover records aligned.',
     },
   ]
@@ -5680,7 +5680,7 @@ function ClientPortal() {
     'Property sale',
   )
   const sellerAddressLines = splitSellerPortalAddress(sellerPropertyTitle)
-  const sellerAgencyName = pickFirstText(portal?.unit?.development?.name, activeSellingContext?.agencyName, activeSellingContext?.agency_name, 'Bridge')
+  const sellerAgencyName = pickFirstText(portal?.unit?.development?.name, activeSellingContext?.agencyName, activeSellingContext?.agency_name, 'Arch9')
   const sellerAgentName = pickFirstText(
     portal?.transaction?.assigned_agent,
     activeSellingContext?.assignedAgentName,
@@ -6335,7 +6335,7 @@ function ClientPortal() {
       <div className="flex min-h-screen">
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-[280px] flex-col overflow-y-auto bg-[#152432] px-5 py-4 text-slate-100 [background-image:radial-gradient(circle_at_18%_-6%,rgba(108,152,193,0.18)_0%,transparent_34%),linear-gradient(180deg,#243c4f_0%,#152432_100%)] lg:flex">
           <div className="border-b border-white/10 pb-3 pt-[1.2rem]">
-            <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">bridge.</h1>
+            <h1 className="text-[3rem] font-bold leading-none tracking-[-0.05em] text-[#f8fbff]">Arch9</h1>
             <p className="mt-2.5 text-[0.82rem] tracking-[0.02em] text-[#c8d5e3]">Client Transaction Workspace</p>
             {effectiveWorkspace === 'seller' ? (
               <div className="mt-4 rounded-[18px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3.5 py-3.5">
@@ -6348,7 +6348,7 @@ function ClientPortal() {
                 {sellerAddressLines.line2 ? (
                   <p className="mt-1 text-xs leading-5 text-[#b8c8d8]">{sellerAddressLines.line2}</p>
                 ) : null}
-                <p className="mt-3 text-xs leading-5 text-[#d7e3ef]">{sellerAgencyName || sellerAgentName || 'Bridge Property Team'}</p>
+                <p className="mt-3 text-xs leading-5 text-[#d7e3ef]">{sellerAgencyName || sellerAgentName || 'Arch9 Property Team'}</p>
                 <div className="mt-3 h-1 rounded-full bg-white/10">
                   <div className="h-1 rounded-full bg-[linear-gradient(90deg,#34d399,#38bdf8)]" style={{ width: `${sellerProgressPercent}%` }} />
                 </div>
@@ -6420,7 +6420,7 @@ function ClientPortal() {
                 {sellerAddressLines.line2 ? (
                   <p className="mt-1 text-xs font-medium text-[#64748b]">{sellerAddressLines.line2}</p>
                 ) : null}
-                <p className="mt-2 text-xs text-[#64748b]">{sellerAgencyName || sellerAgentName || 'Bridge Property Team'}</p>
+                <p className="mt-2 text-xs text-[#64748b]">{sellerAgencyName || sellerAgentName || 'Arch9 Property Team'}</p>
                 <div className="mt-3 h-1 rounded-full bg-[#dde7f1]">
                   <div className="h-1 rounded-full bg-[#17a37a]" style={{ width: `${sellerProgressPercent}%` }} />
                 </div>
@@ -6493,7 +6493,7 @@ function ClientPortal() {
                   </h1>
                   <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">
                     {hasSellingContext
-                      ? 'Your seller workflow is active and linked to your Bridge record.'
+                      ? 'Your seller workflow is active and linked to your Arch9 record.'
                       : 'Let your agent know you would like to sell a property and they can help you start onboarding.'}
                   </p>
                 </div>

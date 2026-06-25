@@ -52,7 +52,7 @@ export const APP_ROLE_MODULE_COPY = {
   },
   platform_admin: {
     title: 'Platform Admin',
-    subtitle: 'Bridge administration',
+    subtitle: 'Arch9 administration',
   },
 }
 

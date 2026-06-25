@@ -112,7 +112,7 @@ function RevenueForecastPage() {
         <article className="rounded-3xl border border-[#d8e5f3] bg-white/85 p-6 shadow-[0_18px_36px_rgba(15,23,42,0.08)]">
           <AiInsightPanel
             title="AI Revenue Recommendations"
-            copy="Bridge has prioritized targeted actions with the highest near-term revenue impact."
+            copy="Arch9 has prioritized targeted actions with the highest near-term revenue impact."
           />
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {mockRevenueForecast.recommendations.map((item) => (

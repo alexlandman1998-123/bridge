@@ -37,7 +37,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: false }),
     completionEffects: ['record_viewing_outcome'],
     allowedRescheduleRoles: ['buyer', 'seller', 'agent', 'attorney', 'bond_originator', 'developer_representative'],
-    calendarTitle: 'Bridge: Viewing Appointment',
+    calendarTitle: 'Arch9: Viewing Appointment',
     calendarDescription: 'This appointment is for viewing the property and discussing next steps.',
   },
   seller_consultation: {
@@ -57,7 +57,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: false }),
     completionEffects: ['capture_seller_consultation_outcome'],
     allowedRescheduleRoles: ['seller', 'agent', 'attorney', 'developer_representative'],
-    calendarTitle: 'Bridge: Seller Consultation',
+    calendarTitle: 'Arch9: Seller Consultation',
     calendarDescription: 'This consultation aligns your listing process and next steps.',
   },
   buyer_consultation: {
@@ -77,7 +77,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: false }),
     completionEffects: ['capture_buyer_consultation_outcome'],
     allowedRescheduleRoles: ['buyer', 'agent', 'bond_originator'],
-    calendarTitle: 'Bridge: Buyer Consultation',
+    calendarTitle: 'Arch9: Buyer Consultation',
     calendarDescription: 'This consultation confirms your purchase path and requirements.',
   },
   mandate_signing: {
@@ -97,7 +97,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: true }),
     completionEffects: ['mark_mandate_signature_complete'],
     allowedRescheduleRoles: ['seller', 'agent', 'attorney'],
-    calendarTitle: 'Bridge: Mandate Signing Appointment',
+    calendarTitle: 'Arch9: Mandate Signing Appointment',
     calendarDescription: 'This appointment is for reviewing and signing the seller mandate.',
   },
   otp_signing: {
@@ -120,7 +120,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: true }),
     completionEffects: ['mark_otp_signing_appointment_completed', 'update_workflow_step_otp_signing', 'create_client_activity_event'],
     allowedRescheduleRoles: ['buyer', 'seller', 'agent', 'attorney', 'bond_originator'],
-    calendarTitle: 'Bridge: OTP Signing Appointment',
+    calendarTitle: 'Arch9: OTP Signing Appointment',
     calendarDescription: 'This appointment is for signing the Offer to Purchase for your transaction.',
   },
   transfer_signing: {
@@ -144,7 +144,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: true }),
     completionEffects: ['mark_transfer_signing_step_completed', 'create_transfer_progress_update', 'unlock_next_transfer_step'],
     allowedRescheduleRoles: ['buyer', 'seller', 'attorney', 'agent', 'developer_representative'],
-    calendarTitle: 'Bridge: Transfer Signing Appointment',
+    calendarTitle: 'Arch9: Transfer Signing Appointment',
     calendarDescription: 'This appointment is part of your transfer process and covers transfer document signing.',
   },
   bond_signing: {
@@ -167,7 +167,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: true }),
     completionEffects: ['mark_bond_signing_step_completed', 'update_bond_workflow', 'create_client_activity_event'],
     allowedRescheduleRoles: ['buyer', 'bond_attorney', 'bond_originator', 'agent'],
-    calendarTitle: 'Bridge: Bond Signing Appointment',
+    calendarTitle: 'Arch9: Bond Signing Appointment',
     calendarDescription: 'This appointment covers signing your bond documents for bank registration.',
   },
   finance_consultation: {
@@ -190,7 +190,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: true }),
     completionEffects: ['capture_finance_consultation_outcome'],
     allowedRescheduleRoles: ['buyer', 'bond_originator', 'agent'],
-    calendarTitle: 'Bridge: Finance Consultation',
+    calendarTitle: 'Arch9: Finance Consultation',
     calendarDescription: 'This appointment reviews your finance readiness and application process.',
   },
   attorney_consultation: {
@@ -210,7 +210,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: false }),
     completionEffects: ['capture_attorney_consultation_outcome'],
     allowedRescheduleRoles: ['buyer', 'seller', 'attorney', 'agent'],
-    calendarTitle: 'Bridge: Attorney Consultation',
+    calendarTitle: 'Arch9: Attorney Consultation',
     calendarDescription: 'This consultation helps align the legal transfer process and next steps.',
   },
   handover: {
@@ -233,7 +233,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: true }),
     completionEffects: ['mark_handover_appointment_completed', 'open_snag_workflow_if_applicable', 'create_client_activity_event'],
     allowedRescheduleRoles: ['buyer', 'seller', 'agent', 'developer_representative'],
-    calendarTitle: 'Bridge: Handover Appointment',
+    calendarTitle: 'Arch9: Handover Appointment',
     calendarDescription: 'This appointment is for property handover and snag capture.',
   },
   snag_inspection: {
@@ -253,7 +253,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: false }),
     completionEffects: ['mark_snag_inspection_complete', 'create_client_activity_event'],
     allowedRescheduleRoles: ['buyer', 'developer_representative', 'agent'],
-    calendarTitle: 'Bridge: Snag Inspection',
+    calendarTitle: 'Arch9: Snag Inspection',
     calendarDescription: 'This appointment captures snag/defect issues before final acceptance.',
   },
   internal_meeting: {
@@ -276,7 +276,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     ],
     completionEffects: ['record_internal_meeting_outcome'],
     allowedRescheduleRoles: ['agent', 'attorney', 'bond_originator', 'developer_representative', 'internal_staff'],
-    calendarTitle: 'Bridge: Internal Coordination Meeting',
+    calendarTitle: 'Arch9: Internal Coordination Meeting',
     calendarDescription: 'Internal operational coordination meeting.',
   },
   client_meeting: {
@@ -296,7 +296,7 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: false }),
     completionEffects: ['record_client_meeting_outcome'],
     allowedRescheduleRoles: ['buyer', 'seller', 'client', 'agent', 'attorney', 'bond_originator'],
-    calendarTitle: 'Bridge: Client Meeting',
+    calendarTitle: 'Arch9: Client Meeting',
     calendarDescription: 'This meeting keeps the transaction or client workflow aligned.',
   },
   other: {
@@ -316,8 +316,8 @@ export const APPOINTMENT_TYPE_TEMPLATES = {
     reminderRules: withDefaultReminders({ includeDocsReminder: false }),
     completionEffects: ['record_outcome'],
     allowedRescheduleRoles: ['buyer', 'seller', 'client', 'agent', 'attorney', 'bond_originator', 'developer_representative'],
-    calendarTitle: 'Bridge: Appointment',
-    calendarDescription: 'This appointment is part of your Bridge workflow.',
+    calendarTitle: 'Arch9: Appointment',
+    calendarDescription: 'This appointment is part of your Arch9 workflow.',
   },
 }
 
@@ -354,6 +354,6 @@ export const GENERIC_APPOINTMENT_TEMPLATE = {
   reminderRules: withDefaultReminders({ includeDocsReminder: false }),
   completionEffects: ['record_outcome'],
   allowedRescheduleRoles: ['buyer', 'seller', 'agent', 'attorney', 'bond_originator', 'developer_representative'],
-  calendarTitle: 'Bridge: Appointment',
-  calendarDescription: 'This appointment is part of your Bridge transaction process.',
+  calendarTitle: 'Arch9: Appointment',
+  calendarDescription: 'This appointment is part of your Arch9 transaction process.',
 }

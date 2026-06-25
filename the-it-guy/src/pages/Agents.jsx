@@ -262,7 +262,7 @@ function AgentAvatar({ agent = {}, initials = '', className = '' }) {
 function buildInviteMessage({ invite, inviteLink }) {
   const agentName = `${invite?.firstName || ''} ${invite?.surname || ''}`.trim() || 'Agent'
   const orgName = invite?.organisationName || 'your organisation'
-  return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Bridge 9.\n\nComplete your agent onboarding here:\n${inviteLink}\n\n- Bridge`
+  return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Arch9.\n\nComplete your agent onboarding here:\n${inviteLink}\n\n- Arch9`
 }
 
 function AgentInviteModal({
@@ -458,7 +458,7 @@ function CreateOrganisationModal({
       <form id="create-organisation-form" className="space-y-4" onSubmit={onSubmit}>
         <label className="grid gap-1.5">
           <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Organisation Name</span>
-          <Field value={name} onChange={(event) => onChange(event.target.value)} placeholder="e.g. Bridge Realty Pretoria" />
+          <Field value={name} onChange={(event) => onChange(event.target.value)} placeholder="e.g. Arch9 Realty Pretoria" />
         </label>
         {error ? <p className="rounded-[12px] border border-[#f2d7d7] bg-[#fff6f6] px-3 py-2 text-sm text-[#b42318]">{error}</p> : null}
       </form>
@@ -539,7 +539,7 @@ function buildAgentInviteForm({ profile, directory }) {
     email: '',
     mobile: '',
     organisationId: String(agency?.id || profile?.agencyId || '').trim().toLowerCase(),
-    organisationName: String(agency?.name || profile?.agencyName || profile?.companyName || 'Bridge Organisation').trim(),
+    organisationName: String(agency?.name || profile?.agencyName || profile?.companyName || 'Arch9 Organisation').trim(),
     branchId: '',
     office: '',
     commissionStructureId: '',
@@ -653,7 +653,7 @@ function normalizeOrganisationUserAgent(user = {}, context = {}) {
     office: user.branchName || (user.branchId ? 'Assigned Branch' : 'Head Office'),
     branchId: user.branchId || null,
     organisationId: normalizeAgentRecordId(context.organisationId || user.organisationId || ''),
-    organisationName: context.organisationName || user.organisationName || 'Bridge Organisation',
+    organisationName: context.organisationName || user.organisationName || 'Arch9 Organisation',
     role,
     status: normalizeAgentDirectoryStatus(user.status),
     invitedAt: user.invitedAt || null,
@@ -831,7 +831,7 @@ function normalizeInviteAgentRow(invite = {}, context = {}) {
   const name = String(invite.name || [firstName, lastName].filter(Boolean).join(' ') || email || 'Invited agent').trim()
   const status = normalizeAgentDirectoryStatus(invite.status || AGENT_INVITE_STATUS.PENDING_INVITE)
   const organisationId = normalizeAgentRecordId(invite.organisationId || invite.targetWorkspaceId || context.organisationId || '')
-  const organisationName = String(invite.organisationName || context.organisationName || 'Bridge Organisation').trim()
+  const organisationName = String(invite.organisationName || context.organisationName || 'Arch9 Organisation').trim()
   const branchName = String(invite.branchName || invite.office || '').trim()
   return {
     id: id || email,
@@ -951,7 +951,7 @@ function resolveOrganisationOptions({ directory = null, invites = [], profile = 
   const register = (id, name) => {
     const normalizedId = String(id || '').trim().toLowerCase()
     if (!normalizedId) return
-    const normalizedName = String(name || '').trim() || 'Bridge Organisation'
+    const normalizedName = String(name || '').trim() || 'Arch9 Organisation'
     if (!deduped.has(normalizedId)) {
       deduped.set(normalizedId, { id: normalizedId, name: normalizedName })
       return
@@ -971,7 +971,7 @@ function resolveOrganisationOptions({ directory = null, invites = [], profile = 
   ;(invites || []).forEach((invite) => register(invite?.organisationId, invite?.organisationName))
 
   if (!deduped.size && profile?.agencyId) {
-    register(profile.agencyId, profile?.agencyName || profile?.companyName || 'Bridge Organisation')
+    register(profile.agencyId, profile?.agencyName || profile?.companyName || 'Arch9 Organisation')
   }
 
   return [...deduped.values()].sort((left, right) => left.name.localeCompare(right.name))
@@ -4450,14 +4450,14 @@ function AgentMemberWorkspace({
       if (!orgId) return
       memberships.set(orgId, {
         id: orgId,
-        name: String(agent?.agencyName || '').trim() || 'Bridge Organisation',
+        name: String(agent?.agencyName || '').trim() || 'Arch9 Organisation',
       })
     })
 
     if (!memberships.size && agentDirectory?.agency?.id) {
       memberships.set(String(agentDirectory.agency.id).trim().toLowerCase(), {
         id: String(agentDirectory.agency.id).trim().toLowerCase(),
-        name: String(agentDirectory.agency.name || 'Bridge Organisation').trim(),
+        name: String(agentDirectory.agency.name || 'Arch9 Organisation').trim(),
       })
     }
 
@@ -4775,7 +4775,7 @@ export function AgentsPage() {
           profilePhotoUrl: getAgentAvatarUrl(directoryMatch) || getAgentAvatarUrl(invite) || getAgentAvatarUrl(agent),
           office: directoryMatch?.office || agent?.office || 'Office',
           organisationId,
-          organisationName: directoryMatch?.agencyName || directory?.agency?.name || 'Bridge Organisation',
+          organisationName: directoryMatch?.agencyName || directory?.agency?.name || 'Arch9 Organisation',
           role: directoryMatch?.role || invite?.role || 'agent',
           status,
           invitedAt: directoryMatch?.invitedAt || invite?.invitedAt || null,
@@ -4828,7 +4828,7 @@ export function AgentsPage() {
           profilePhotoUrl: getAgentAvatarUrl(profile),
           office: directory?.agency?.office || 'Head Office',
           organisationId: String(directory?.agency?.id || performanceSources.organisationSettings?.organisation?.id || '').trim().toLowerCase(),
-          organisationName: directory?.agency?.name || profile?.companyName || 'Bridge Organisation',
+          organisationName: directory?.agency?.name || profile?.companyName || 'Arch9 Organisation',
           role: 'principal',
           status: AGENT_INVITE_STATUS.ACTIVE,
           invitedAt: null,
@@ -5217,7 +5217,7 @@ export function AgentsPage() {
             type: invite?.branchId ? 'branch_invite' : 'workspace_invite',
             to: recipientEmail,
             inviteeName: `${invite?.firstName || ''} ${invite?.surname || ''}`.trim(),
-            organisationName: invite?.organisationName || 'Bridge Organisation',
+            organisationName: invite?.organisationName || 'Arch9 Organisation',
             workspaceRole: 'agent',
             inviteLink,
           },
@@ -5289,8 +5289,8 @@ export function AgentsPage() {
       })
 
       setActionMessage(created.reusedExistingInvite
-        ? 'This agent already had a pending invite, so Bridge resent the existing onboarding link.'
-        : 'Agent invite sent. The agent has been sent an onboarding link to verify and activate their Bridge profile.')
+        ? 'This agent already had a pending invite, so Arch9 resent the existing onboarding link.'
+        : 'Agent invite sent. The agent has been sent an onboarding link to verify and activate their Arch9 profile.')
       setInviteSentContext({
         email: created.invite?.email || inviteForm.email.trim(),
         link: created.inviteLink || buildAgentInviteLink(created.invite?.token),

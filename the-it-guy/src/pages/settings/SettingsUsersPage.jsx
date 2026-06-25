@@ -512,7 +512,7 @@ export default function SettingsUsersPage() {
         ) : null}
         {!isPrincipalClaimInviteMode && usesAgencyGovernance && isPrincipalInviteRole(inviteForm.role) ? (
           <SettingsBanner tone="success">
-            Principal selected. Bridge will send a principal claim link instead of granting principal access immediately.
+            Principal selected. Arch9 will send a principal claim link instead of granting principal access immediately.
           </SettingsBanner>
         ) : null}
         <form className={settingsGridClass} onSubmit={handleInvite}>

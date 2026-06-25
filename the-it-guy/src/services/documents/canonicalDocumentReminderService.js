@@ -561,7 +561,7 @@ export function renderReminderMessage(group = {}, { context = {}, customNote = '
     gate_name: gateName,
     upload_link: context.upload_link || '',
     due_date: context.due_date || '',
-    requester_name: context.requester_name || 'Bridge',
+    requester_name: context.requester_name || 'Arch9',
     reason: group.items?.[0]?.requirement?.rejection_reason || '',
   }
   return {

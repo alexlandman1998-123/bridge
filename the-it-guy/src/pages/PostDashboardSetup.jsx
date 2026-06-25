@@ -233,7 +233,7 @@ function getDefaultForm(intent, profile) {
     operatingArea: '',
     primaryContactName: normalizeText(profile?.fullName),
     workspaceNameForRequest: '',
-    requestMessage: `Please approve my access to your ${workspaceNoun} on Bridge.`,
+    requestMessage: `Please approve my access to your ${workspaceNoun} on Arch9.`,
     inviteToken: normalizeText(intent?.invite_token),
   }
 }
@@ -640,8 +640,8 @@ export default function PostDashboardSetup() {
     : isAgencyPrincipalSetup
       ? getAgencySetupDescription(agencySetupType)
       : isBondOwnerSetup
-        ? 'Choose the originator setup type, then capture the owner, operating, and launch-team details Bridge needs to create a complete bond workspace.'
-        : 'Bridge has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
+        ? 'Choose the originator setup type, then capture the owner, operating, and launch-team details Arch9 needs to create a complete bond workspace.'
+        : 'Arch9 has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
 
   useEffect(() => {
     setForm((previous) => ({
@@ -1212,7 +1212,7 @@ export default function PostDashboardSetup() {
           <SetupSectionHeader
             eyebrow="Workspace type"
             title="Choose your originator setup"
-            copy="This controls the workspace kind Bridge creates and the defaults used for teams, scope, and owner coverage."
+            copy="This controls the workspace kind Arch9 creates and the defaults used for teams, scope, and owner coverage."
             icon={Building2}
           />
           <div className="agency-setup-list">
@@ -1323,8 +1323,8 @@ export default function PostDashboardSetup() {
             eyebrow="Operating setup"
             title={isPersonalBondOriginator ? 'Pipeline and coverage' : 'Default team and launch roles'}
             copy={isPersonalBondOriginator
-              ? 'Bridge creates a personal pipeline and gives the owner full coverage at launch.'
-              : 'Bridge creates one finance team immediately, then uses these launch choices to avoid leaving the workspace without coverage.'}
+              ? 'Arch9 creates a personal pipeline and gives the owner full coverage at launch.'
+              : 'Arch9 creates one finance team immediately, then uses these launch choices to avoid leaving the workspace without coverage.'}
             icon={Users}
           />
           <div className="setup-field-grid">
@@ -1411,8 +1411,8 @@ export default function PostDashboardSetup() {
           eyebrow="Final check"
           title={isPersonalBondOriginator ? 'Create the independent originator workspace' : 'Create the bond company workspace'}
           copy={isPersonalBondOriginator
-            ? 'Bridge will create a solo originator workspace, activate the owner membership, and create the personal pipeline.'
-            : 'Bridge will create the company workspace, activate the owner membership, create the default team, and queue the launch invites.'}
+            ? 'Arch9 will create a solo originator workspace, activate the owner membership, and create the personal pipeline.'
+            : 'Arch9 will create the company workspace, activate the owner membership, create the default team, and queue the launch invites.'}
           icon={CheckCircle2}
         />
         <div className="agency-review-grid">
@@ -1685,7 +1685,7 @@ export default function PostDashboardSetup() {
         <SetupSectionHeader
           eyebrow="Final check"
           title={`Create the ${agencySetupLabel} workspace`}
-          copy="Bridge will create the organisation, save this setup, activate the principal account, and queue the team invitations."
+          copy="Arch9 will create the organisation, save this setup, activate the principal account, and queue the team invitations."
           icon={CheckCircle2}
         />
         <div className="agency-review-grid">
@@ -1704,7 +1704,7 @@ export default function PostDashboardSetup() {
           <div>
             <Palette size={18} />
             <span>Branding</span>
-            <strong>{branding.logoLight ? 'Logo uploaded' : 'Bridge fallback'}</strong>
+            <strong>{branding.logoLight ? 'Logo uploaded' : 'Arch9 fallback'}</strong>
             <small>{branding.brandColours?.primary || '#274C69'} primary</small>
           </div>
         </div>
@@ -1970,7 +1970,7 @@ export default function PostDashboardSetup() {
           {canAcceptInvite ? (
             <form className="grid gap-4 rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4" onSubmit={handleAcceptInvite}>
               <SetupStatusCard title="Invite acceptance">
-                <p>Confirm the invite token and Bridge will create your active membership if the invite is valid.</p>
+                <p>Confirm the invite token and Arch9 will create your active membership if the invite is valid.</p>
               </SetupStatusCard>
               <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
                 Invite token
@@ -2030,7 +2030,7 @@ export default function PostDashboardSetup() {
 
           {onboardingState?.recoveryReason ? (
             <SetupStatusCard title="Recovery required" tone="warning">
-              <p>Bridge needs to repair: {onboardingState.recoveryReason.replace(/_/g, ' ')}.</p>
+              <p>Arch9 needs to repair: {onboardingState.recoveryReason.replace(/_/g, ' ')}.</p>
             </SetupStatusCard>
           ) : null}
 

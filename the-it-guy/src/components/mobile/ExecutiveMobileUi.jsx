@@ -103,7 +103,7 @@ export function MobileTopBar({ title, subtitle = '', backTo = null, rightAction 
               subtitle ? 'mt-1' : 'mt-0',
             )}
           >
-            {toDisplayText(title, 'Bridge')}
+            {toDisplayText(title, 'Arch9')}
           </h1>
         </div>
       </div>

@@ -47,7 +47,7 @@ export async function handleBondOriginatorBuyerIntroEmail(
   const title = normalizeText(payload.title) ||
     "Your bond application has been assigned";
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <no-reply@bridge9.app>";
+    "Arch9 <no-reply@bridge9.app>";
 
   const fields = [
     { label: "Bond Originator", value: consultantName },
@@ -84,7 +84,7 @@ export async function handleBondOriginatorBuyerIntroEmail(
       "Your bond application information is available only to authorised parties involved in your transaction.",
     helpBody:
       "Please respond quickly to any document requests so the bond team can keep your application moving.",
-    organisationName: "Bridge",
+    organisationName: "Arch9",
   });
 
   const text = [

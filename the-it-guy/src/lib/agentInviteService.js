@@ -112,7 +112,7 @@ function ensureDirectoryShape(directory = {}) {
   if (legacyAgencyId && !normalizedAgencies.some((item) => String(item?.id || '').trim().toLowerCase() === legacyAgencyId)) {
     normalizedAgencies.unshift({
       id: legacyAgencyId,
-      name: legacyAgencyName || 'Bridge Organisation',
+      name: legacyAgencyName || 'Arch9 Organisation',
       createdAt: null,
       updatedAt: null,
     })
@@ -121,12 +121,12 @@ function ensureDirectoryShape(directory = {}) {
   const primaryAgency = directory?.agency?.id
     ? {
         id: legacyAgencyId,
-        name: legacyAgencyName || 'Bridge Organisation',
+        name: legacyAgencyName || 'Arch9 Organisation',
       }
     : normalizedAgencies[0]
       ? {
           id: String(normalizedAgencies[0].id || '').trim().toLowerCase(),
-          name: normalizeOrganisationName(normalizedAgencies[0].name) || 'Bridge Organisation',
+          name: normalizeOrganisationName(normalizedAgencies[0].name) || 'Arch9 Organisation',
         }
       : null
 
@@ -135,7 +135,7 @@ function ensureDirectoryShape(directory = {}) {
     agencies: normalizedAgencies
       .map((item) => ({
         id: normalizeOrganisationId(item?.id, item?.name),
-        name: normalizeOrganisationName(item?.name) || 'Bridge Organisation',
+        name: normalizeOrganisationName(item?.name) || 'Arch9 Organisation',
         createdAt: item?.createdAt || null,
         updatedAt: item?.updatedAt || null,
         createdByUserId: item?.createdByUserId || null,
@@ -301,7 +301,7 @@ export function buildAgentInviteLink(token, baseUrl = '') {
     baseUrl ||
     (typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
-      : 'https://app.bridgenine.co.za')
+      : 'https://app.arch9.co.za')
   return `${origin}/invite/${token}`
 }
 
@@ -332,7 +332,7 @@ export function createAgentInvite({
   const directory = readAgentDirectory()
   const existingInvites = readAgentInvites()
   const normalizedOrgId = normalizeOrganisationId(organisationId || directory?.agency?.id, organisationName || directory?.agency?.name)
-  const resolvedOrgName = String(organisationName || directory?.agency?.name || 'Bridge Organisation').trim()
+  const resolvedOrgName = String(organisationName || directory?.agency?.name || 'Arch9 Organisation').trim()
 
   const duplicateInvite = existingInvites.find((invite) => {
     const inviteEmail = normalizeEmail(invite?.email)
@@ -424,7 +424,7 @@ export function createAgentInvite({
       agencies: [
         {
           id: normalizedOrgId,
-          name: resolvedOrgName || 'Bridge Organisation',
+          name: resolvedOrgName || 'Arch9 Organisation',
           createdAt: nowIso,
           updatedAt: nowIso,
           createdByUserId: String(invitedByUserId || '').trim() || null,

@@ -440,7 +440,7 @@ function CommercialBrokersPage() {
     setFormError('')
     setNotice({
       tone: 'pending',
-      message: `Sending invite to ${inviteDraft.email}. You can keep working while Bridge handles the email.`,
+      message: `Sending invite to ${inviteDraft.email}. You can keep working while Arch9 handles the email.`,
     })
     setPendingInvites((current) => [
       {

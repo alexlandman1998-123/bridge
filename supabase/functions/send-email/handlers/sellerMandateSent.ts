@@ -41,7 +41,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   const supportEmail =
     normalizeText(payload.supportEmail) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
@@ -68,7 +68,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
 
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const subject = normalizeText(templateOverrides?.subject) ||
     (recipientRole === "agent"
@@ -83,7 +83,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
       ]
       : [
         `Your ${mandateType.toLowerCase()} for ${propertyTitle} is ready for secure review and signature.`,
-        "Bridge keeps the mandate workflow connected between you, your agent, and the supporting transaction team.",
+        "Arch9 keeps the mandate workflow connected between you, your agent, and the supporting transaction team.",
       ];
   const processSteps = Array.isArray(templateOverrides?.processSteps) && templateOverrides.processSteps.length
     ? templateOverrides.processSteps
@@ -128,7 +128,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     greeting: `Hi ${recipientName},`,
     contentHtml,
     securityTitle: normalizeText(templateOverrides?.securityTitle) || "Secure Mandate Review",
-    securityBody: normalizeText(templateOverrides?.securityBody) || "Your mandate is shared through a secure Bridge link. Only authorised parties involved in your transaction can access this workflow.",
+    securityBody: normalizeText(templateOverrides?.securityBody) || "Your mandate is shared through a secure Arch9 link. Only authorised parties involved in your transaction can access this workflow.",
     helpBody: normalizeText(templateOverrides?.helpBody) || "Need help? Reply to this email or contact your agent directly before signing.",
     organisationName,
     supportEmail,
@@ -153,7 +153,7 @@ export async function handleSellerMandateSentEmail(payload: SendSellerMandateSen
     "Need help? Reply to this email or contact your agent directly before signing.",
     "",
     organisationName,
-    "Powered by Bridge",
+    "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
   console.log("[mandate_signing_email] send attempt", {

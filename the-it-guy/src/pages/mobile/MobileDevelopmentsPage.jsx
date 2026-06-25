@@ -196,14 +196,14 @@ export default function MobileDevelopmentsPage() {
   }, [bottlenecks, rows, state.developments])
 
   const companyTitle = useMemo(() => {
-    return developmentCards.find((item) => item.developerCompany)?.developerCompany || 'Bridge'
+    return developmentCards.find((item) => item.developerCompany)?.developerCompany || 'Arch9'
   }, [developmentCards])
 
   return (
     <>
      <MobileTopBar
   title="Developments"
-  subtitle="Bridge Right Now"
+  subtitle="Arch9 Right Now"
   tone="hero"
   className="min-h-[148px] py-7"
         rightAction={

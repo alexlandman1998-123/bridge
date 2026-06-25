@@ -751,7 +751,7 @@ function buildAttorneyFinalReportHtml(report) {
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Bridge Final Transaction Report</title>
+  <title>Arch9 Final Transaction Report</title>
   <style>
     body { margin: 0; padding: 24px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111827; background: #fff; }
     h1, h2, h3 { margin: 0; }
@@ -771,7 +771,7 @@ function buildAttorneyFinalReportHtml(report) {
   </style>
 </head>
 <body>
-  <h1>Bridge Final Transaction Report</h1>
+  <h1>Arch9 Final Transaction Report</h1>
   <p class="meta">Generated ${escapeHtml(formatDateTime(report.generatedAt))}</p>
   <p class="meta">Reference ${escapeHtml(report.transaction?.reference || '-')} • Lifecycle ${escapeHtml(toTitle(report.lifecycleState || 'active'))}</p>
 
@@ -1787,7 +1787,7 @@ function humanizeTransactionEvent(event = {}) {
     body: normalizeRichTextToPlainText(detail) || 'Matter activity recorded.',
     createdAt: event.createdAt || event.created_at,
     kind: category === 'system' ? 'system' : 'event',
-    authorName: eventData.actorName || eventData.createdByName || (category === 'system' ? 'Bridge' : 'Matter team'),
+    authorName: eventData.actorName || eventData.createdByName || (category === 'system' ? 'Arch9' : 'Matter team'),
     roleLabel: toTitle(event.createdByRole || event.created_by_role || eventData.actorRole || 'system'),
     category,
     categoryLabel: meta.label,
@@ -5000,7 +5000,7 @@ function AttorneyTransactionDetail() {
       {
         key: 'buyer_email',
         label: 'Buyer email captured',
-        description: 'Required before Bridge can send the introduction email.',
+        description: 'Required before Arch9 can send the introduction email.',
         complete: hasBuyerEmail,
         required: true,
       },
@@ -7085,7 +7085,7 @@ function AttorneyTransactionDetail() {
               '',
           ),
           onboardingLink: inviteContext.onboardingLink,
-          agentName: cleanDetailText(transaction?.assigned_agent || profile?.fullName || profile?.name || profile?.email || 'Bridge'),
+          agentName: cleanDetailText(transaction?.assigned_agent || profile?.fullName || profile?.name || profile?.email || 'Arch9'),
         },
       })
       const responseError = response?.error || response?.data?.error
@@ -7652,7 +7652,7 @@ function AttorneyTransactionDetail() {
 
       await addTransactionDiscussionComment({
         transactionId: transaction.id,
-        authorName: profile?.fullName || profile?.email || 'Bridge Conveyancing',
+        authorName: profile?.fullName || profile?.email || 'Arch9 Conveyancing',
         authorRole: 'attorney',
         commentText: prefixedDiscussion,
         unitId: unit?.id || null,

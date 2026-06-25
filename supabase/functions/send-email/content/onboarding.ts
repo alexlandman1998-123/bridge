@@ -17,8 +17,8 @@ export function buildOnboardingSubject(
       : "Congratulations, the seller accepted your offer";
   }
   return transactionReference
-    ? `Complete your Bridge onboarding (${transactionReference})`
-    : "Complete your Bridge onboarding";
+    ? `Complete your Arch9 onboarding (${transactionReference})`
+    : "Complete your Arch9 onboarding";
 }
 
 function pickText(value: string | undefined, fallback: string) {
@@ -85,12 +85,12 @@ export function buildOnboardingEmailHtml({
     templateOverrides?.introParagraphs,
     acceptedOffer
       ? [
-        "Congratulations, the seller has accepted your offer. This is an exciting step, and Bridge is here to help keep the next part of the journey clear and coordinated.",
+        "Congratulations, the seller has accepted your offer. This is an exciting step, and Arch9 is here to help keep the next part of the journey clear and coordinated.",
         "Your accepted offer is now moving into the formal transaction workflow. Your agent and transaction team will guide you through onboarding, documents, finance where applicable, and the transfer process.",
       ]
       : [
-        "Your property transaction has been added to Bridge and your onboarding process is now ready to begin.",
-        "Bridge is a property transaction platform that keeps buyers, sellers, agents, attorneys, and bond originators connected throughout the process.",
+        "Your property transaction has been added to Arch9 and your onboarding process is now ready to begin.",
+        "Arch9 is a property transaction platform that keeps buyers, sellers, agents, attorneys, and bond originators connected throughout the process.",
       ],
   );
   const capabilityBullets = pickLines(templateOverrides?.capabilityBullets, [
@@ -104,7 +104,7 @@ export function buildOnboardingEmailHtml({
     acceptedOffer
       ? [
         "Complete your buyer onboarding details so the transaction record is ready for the transfer team.",
-        "Upload the requested FICA and supporting documents securely in Bridge.",
+        "Upload the requested FICA and supporting documents securely in Arch9.",
         "If your offer depends on finance, expect follow-up from your bond originator or finance team.",
         "Your transfer attorney details and other roleplayers will be shared as they are confirmed.",
       ]
@@ -123,7 +123,7 @@ export function buildOnboardingEmailHtml({
   const contentHtml = [
     renderBridgeIntroParagraphs(introParagraphs),
     `<div style="margin: 14px 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
-       <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What you can do in Bridge</p>
+       <p style="margin: 0 0 10px; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; color: #5f7590; font-weight: 700;">What you can do in Arch9</p>
        ${renderBridgeBullets(capabilityBullets)}
      </div>`,
     `<div style="margin: 0 0 16px; padding: 14px; border: 1px solid #dbe6f2; border-radius: 12px; background: #ffffff;">
@@ -148,7 +148,7 @@ export function buildOnboardingEmailHtml({
       templateOverrides?.preheader,
       acceptedOffer
         ? "The seller has accepted your offer. Start buyer onboarding to continue."
-        : "Your Bridge onboarding is ready. Complete your details and documents to continue.",
+        : "Your Arch9 onboarding is ready. Complete your details and documents to continue.",
     ),
     title: pickText(
       templateOverrides?.title,
@@ -162,13 +162,13 @@ export function buildOnboardingEmailHtml({
     ),
     securityBody: pickText(
       templateOverrides?.securityBody,
-      "Your information and documents are handled securely through Bridge. Only authorised parties involved in your transaction can access your onboarding details.",
+      "Your information and documents are handled securely through Arch9. Only authorised parties involved in your transaction can access your onboarding details.",
     ),
     helpBody: pickText(
       templateOverrides?.helpBody,
       "Need help? Reply to this email or contact your property representative directly.",
     ),
-    organisationName: organisationName || "Bridge",
+    organisationName: organisationName || "Arch9",
     supportEmail: supportEmail || "",
     supportPhone: supportPhone || "",
   });
@@ -227,8 +227,8 @@ export function buildOnboardingEmailText({
         "Your accepted offer is now moving into the formal transaction workflow. Your agent and transaction team will guide you through onboarding, documents, finance where applicable, and the transfer process.",
       ]
       : [
-        "Your property transaction has been added to Bridge and your onboarding process is now ready.",
-        "Bridge helps keep buyers, sellers, agents, attorneys, and bond originators connected throughout your transaction.",
+        "Your property transaction has been added to Arch9 and your onboarding process is now ready.",
+        "Arch9 helps keep buyers, sellers, agents, attorneys, and bond originators connected throughout your transaction.",
       ],
   );
   const capabilityBullets = pickLines(templateOverrides?.capabilityBullets, [
@@ -263,7 +263,7 @@ export function buildOnboardingEmailText({
     "",
     ...introParagraphs,
     "",
-    "You can use Bridge to:",
+    "You can use Arch9 to:",
     ...capabilityBullets.map((line) => `- ${line}`),
     propertyLine ? `Property: ${propertyLine}` : null,
     unitNumber || unitLabel ? `Unit: ${unitNumber || unitLabel}` : null,
@@ -282,7 +282,7 @@ export function buildOnboardingEmailText({
     supportLine ? `Support: ${supportLine}` : null,
     pickText(
       templateOverrides?.securityBody,
-      "Your information and documents are handled securely through Bridge and shared only with authorised parties in your transaction.",
+      "Your information and documents are handled securely through Arch9 and shared only with authorised parties in your transaction.",
     ),
     "",
     pickText(
@@ -290,8 +290,8 @@ export function buildOnboardingEmailText({
       "Need help? Reply to this email or contact your property representative directly.",
     ),
     "",
-    organisationName || "Bridge",
-    "Powered by Bridge",
+    organisationName || "Arch9",
+    "Powered by Arch9",
   ]
     .filter(Boolean)
     .join("\n");

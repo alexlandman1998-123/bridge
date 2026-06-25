@@ -224,7 +224,7 @@ export const growthNetwork = {
     { name: 'Carla Pretorius', value: 280000, volume: 8, avatar: 'CP' },
   ],
   topOriginators: [
-    { name: 'Bridge Bond Desk', approvalRate: '92%', avgApprovalDays: 11, value: 520000 },
+    { name: 'Arch9 Bond Desk', approvalRate: '92%', avgApprovalDays: 11, value: 520000 },
     { name: 'Summit Originators', approvalRate: '88%', avgApprovalDays: 14, value: 410000 },
     { name: 'Velocity Finance', approvalRate: '85%', avgApprovalDays: 15, value: 360000 },
   ],

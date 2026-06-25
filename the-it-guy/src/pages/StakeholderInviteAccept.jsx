@@ -46,7 +46,7 @@ function StakeholderInviteAccept() {
   return (
     <section className="mx-auto max-w-[720px] space-y-4 rounded-[22px] border border-borderDefault bg-surface p-6 shadow-surface">
       <div className="space-y-1.5">
-        <span className="text-label font-semibold uppercase text-textMuted">Bridge Collaboration</span>
+        <span className="text-label font-semibold uppercase text-textMuted">Arch9 Collaboration</span>
         <h1 className="text-page-title font-semibold text-textStrong">Stakeholder Invitation</h1>
         <p className="text-secondary text-textMuted">
           Accept this invite to get access to the transaction workspace and collaboration timeline.

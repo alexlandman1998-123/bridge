@@ -62,7 +62,7 @@ function FinanceProgressBar({
   loadingStage = '',
   onStageChange,
   title = 'Bond Application Progress',
-  description = 'Bond finance workflow status shared across Bridge.',
+  description = 'Bond finance workflow status shared across Arch9.',
   className = '',
 }) {
   const workflow = workflowData?.workflow || workflowData || null

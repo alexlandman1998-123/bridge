@@ -298,10 +298,10 @@ function Sidebar({ activeView, allowedGroups, level, onViewChange, profile, onSi
 
       <div className="admin-identity">
         <div className="admin-avatar" aria-hidden="true">
-          BA
+          A9
         </div>
         <div>
-          <strong>Bridge Admin</strong>
+          <strong>Arch9 | Command</strong>
           <span>{roleLabel}</span>
         </div>
       </div>
@@ -1643,7 +1643,7 @@ function MobileMore({ onNavigate, onSignOut, snapshot }) {
 
 function MobileSecondaryView({ activeView, access, onNavigate, profile, snapshot }) {
   if (activeView === 'health') return <><MobileHeader snapshot={snapshot} title="Platform Health" subtitle="Current platform operating signals." /><PlatformHealthSection health={snapshot.platformHealth} /></>
-  if (activeView === 'legalTemplates') return <><MobileHeader snapshot={snapshot} title="Legal Templates" subtitle="Residential and commercial template bridge." /><LegalTemplatesView /></>
+  if (activeView === 'legalTemplates') return <><MobileHeader snapshot={snapshot} title="Legal Templates" subtitle="Residential and commercial template layer." /><LegalTemplatesView /></>
   if (activeView === 'revenue') return <><MobileHeader snapshot={snapshot} title="Revenue" subtitle="Financial overview." /><FinancialSection financials={snapshot.financials} /></>
   if (activeView === 'growth') return <><MobileHeader snapshot={snapshot} title="Growth" subtitle="Adoption and organisation growth." /><GrowthSection growth={snapshot.growth} /></>
   if (activeView === 'ecosystem') return <><MobileHeader snapshot={snapshot} title="Ecosystem" subtitle="Participants and role coverage." /><EcosystemSection ecosystem={snapshot.ecosystem} /></>
@@ -2028,7 +2028,7 @@ function LegalTemplatesView({ scopedOrganisationId = '', scopedOrganisationName 
 
       <section className="panel legal-template-readiness">
         <div className="panel-heading">
-          <h2>Bridge Readiness</h2>
+          <h2>Arch9 Readiness</h2>
           <button className="secondary-button compact" disabled={isReadinessLoading} onClick={() => loadReadiness(filters)} type="button">
             <RefreshCw className={isReadinessLoading ? 'spin' : ''} size={16} />
             Scan

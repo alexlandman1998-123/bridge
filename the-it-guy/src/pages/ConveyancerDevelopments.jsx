@@ -167,7 +167,7 @@ function ConveyancerDevelopments() {
           attentionStatus: attention.status,
           attentionLabel: attention.label,
           attentionLines: attention.lines,
-          assignedAttorneyName: isBondRole ? 'Bridge Finance' : 'Bridge Conveyancing',
+          assignedAttorneyName: isBondRole ? 'Arch9 Finance' : 'Arch9 Conveyancing',
           lastUpdatedAt: item.lastActivityAt,
           lastUpdatedLabel: formatRelativeDate(item.lastActivityAt),
           primaryCtaUrl: `/developments/${item.id}`,

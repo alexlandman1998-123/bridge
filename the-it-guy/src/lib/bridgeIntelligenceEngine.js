@@ -809,7 +809,7 @@ export async function refreshBridgeIntelligenceForLifecycleEvent({
     await completeRun(run?.id, summary, 'completed')
     return summary
   } catch (error) {
-    await completeRun(run?.id, { error: error?.message || 'Bridge intelligence failed.' }, 'failed').catch(() => null)
+    await completeRun(run?.id, { error: error?.message || 'Arch9 intelligence failed.' }, 'failed').catch(() => null)
     throw error
   }
 }

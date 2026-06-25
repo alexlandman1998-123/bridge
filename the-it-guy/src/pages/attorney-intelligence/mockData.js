@@ -169,13 +169,13 @@ export const mockPartners = {
     { id: 'agent-2', label: 'UrbanNest Realty', type: 'agency', value: 62, strength: 'medium' },
     { id: 'dev-1', label: 'Axis Property', type: 'developer', value: 78, strength: 'strong' },
     { id: 'dev-2', label: 'Zenith Urban', type: 'developer', value: 56, strength: 'medium' },
-    { id: 'bond-1', label: 'Bridge Bond Desk', type: 'bond_originator', value: 49, strength: 'emerging' },
+    { id: 'bond-1', label: 'Arch9 Bond Desk', type: 'bond_originator', value: 49, strength: 'emerging' },
   ],
   topCurrentPartners: [
     { name: 'Prime Residential Group', type: 'Agency', volume: 42, value: 38000000, reliability: 91 },
     { name: 'Axis Property Group', type: 'Developer', volume: 36, value: 33500000, reliability: 89 },
     { name: 'UrbanNest Realty', type: 'Agency', volume: 28, value: 24100000, reliability: 84 },
-    { name: 'Bridge Bond Desk', type: 'Bond Originator', volume: 21, value: 18600000, reliability: 82 },
+    { name: 'Arch9 Bond Desk', type: 'Bond Originator', volume: 21, value: 18600000, reliability: 82 },
     { name: 'Platinum Property Co.', type: 'Agency', volume: 19, value: 15200000, reliability: 79 },
   ],
   missingHighValuePartners: [

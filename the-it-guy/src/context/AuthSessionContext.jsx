@@ -183,7 +183,7 @@ export function AuthSessionProvider({ children }) {
       setAuthState({
         ...EMPTY_AUTH_STATE,
         status: 'error',
-        bootError: 'Supabase is not configured. Bridge auth requires Supabase.',
+        bootError: 'Supabase is not configured. Arch9 auth requires Supabase.',
       })
       return
     }
@@ -329,7 +329,7 @@ export function AuthSessionProvider({ children }) {
           status: 'error',
           session,
           user: session.user,
-          bootError: error?.message || 'Unable to load your Bridge workspace.',
+          bootError: error?.message || 'Unable to load your Arch9 workspace.',
         })
       }
     }

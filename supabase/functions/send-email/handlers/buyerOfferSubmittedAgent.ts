@@ -37,7 +37,7 @@ export async function handleBuyerOfferSubmittedAgentEmail(payload: SendBuyerOffe
     normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   const supportEmail =
     normalizeText(payload.supportEmail) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
@@ -48,13 +48,13 @@ export async function handleBuyerOfferSubmittedAgentEmail(payload: SendBuyerOffe
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const subject = `Buyer offer submitted: ${propertyTitle}`;
   const contentHtml = [
     renderBridgeIntroParagraphs([
       `${buyerName} submitted an offer for ${propertyTitle}.`,
-      "Review the offer in Bridge before sending it to the seller.",
+      "Review the offer in Arch9 before sending it to the seller.",
       note ? `Buyer note: ${note}` : "",
     ]),
     renderBridgeSummaryCard(
@@ -67,7 +67,7 @@ export async function handleBuyerOfferSubmittedAgentEmail(payload: SendBuyerOffe
       ],
       "Buyer Offer Summary",
     ),
-    agentReviewUrl ? renderBridgeCta("Review Offer In Bridge", agentReviewUrl) : "",
+    agentReviewUrl ? renderBridgeCta("Review Offer In Arch9", agentReviewUrl) : "",
   ].join("");
 
   const html = renderBridgeEmailLayout({
@@ -76,8 +76,8 @@ export async function handleBuyerOfferSubmittedAgentEmail(payload: SendBuyerOffe
     greeting: `Hi ${agentName},`,
     contentHtml,
     securityTitle: "Canonical Offer Record",
-    securityBody: "This submission has been captured as a canonical Bridge offer and linked to the buyer lead, viewing, and listing where available.",
-    helpBody: "Open Bridge to review the offer and send it to the seller when ready.",
+    securityBody: "This submission has been captured as a canonical Arch9 offer and linked to the buyer lead, viewing, and listing where available.",
+    helpBody: "Open Arch9 to review the offer and send it to the seller when ready.",
     organisationName,
     supportEmail,
     supportPhone,
@@ -96,10 +96,10 @@ export async function handleBuyerOfferSubmittedAgentEmail(payload: SendBuyerOffe
     note ? `Buyer note: ${note}` : null,
     agentReviewUrl ? `Review offer: ${agentReviewUrl}` : null,
     "",
-    "Review the offer in Bridge before sending it to the seller.",
+    "Review the offer in Arch9 before sending it to the seller.",
     "",
     organisationName,
-    "Powered by Bridge",
+    "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
   const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {

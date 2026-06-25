@@ -13,7 +13,7 @@ export function getRecoveryDescriptor(reason = '') {
   const descriptors = {
     [ONBOARDING_REQUIRED_REASONS.noProfile]: {
       title: 'Profile setup is needed',
-      description: 'We could not find a complete Bridge profile for this account.',
+      description: 'We could not find a complete Arch9 profile for this account.',
       actionLabel: 'Complete profile setup',
       route: '/onboarding/profile',
     },
@@ -55,7 +55,7 @@ export function getRecoveryDescriptor(reason = '') {
     },
     [ONBOARDING_REQUIRED_REASONS.appRoleMissing]: {
       title: 'Business role needs confirmation',
-      description: 'Confirm your Bridge role so we can route you to the right workspace setup.',
+      description: 'Confirm your Arch9 role so we can route you to the right workspace setup.',
       actionLabel: 'Confirm role',
       route: '/onboarding/profile',
     },
@@ -63,7 +63,7 @@ export function getRecoveryDescriptor(reason = '') {
 
   return descriptors[normalized] || {
     title: 'Setup needs attention',
-    description: 'Bridge found an incomplete onboarding state and stopped before opening a dashboard.',
+    description: 'Arch9 found an incomplete onboarding state and stopped before opening a dashboard.',
     actionLabel: 'Continue setup',
     route: '/setup/recovery',
   }

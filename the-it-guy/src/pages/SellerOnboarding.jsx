@@ -1481,7 +1481,7 @@ function SellerCompletedState({ token, listing, form, brand }) {
               Open Seller Portal
             </Link>
             <Link to="/" className="inline-flex min-h-[50px] w-full items-center justify-center rounded-[16px] border border-[#b7dfc3] bg-white px-4 py-3 text-sm font-semibold text-[#14532d] sm:w-auto">
-              Return to Bridge
+              Return to Arch9
             </Link>
           </div>
         </div>

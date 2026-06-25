@@ -103,7 +103,7 @@ function RoleModuleOnboarding({ expectedRole }) {
     <div className="auth-page onboarding-page agency-onboarding-page">
       <main className="auth-shell onboarding-shell agency-onboarding-shell">
         <section className="auth-hero onboarding-hero agency-onboarding-hero">
-          <p className="auth-brand">bridge.</p>
+          <p className="auth-brand">Arch9</p>
           <h1 style={{ color: '#ffffff' }}>{copy.title}</h1>
           <p>{copy.description}</p>
         </section>

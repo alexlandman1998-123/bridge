@@ -201,7 +201,7 @@ function onboardingMessage({ clientType = 'tenant', sourceRecord = {}, mode = 's
 
 function buildOnboardingEmailPayload({
   clientType = 'tenant',
-  organisationName = 'Bridge Commercial',
+  organisationName = 'Arch9 Commercial',
   sourceRecord = {},
   contact = {},
   portalUrl = '',
@@ -454,7 +454,7 @@ async function sendOnboardingEmail({
   mode = 'sent',
   contact = {},
   sourceRecord = {},
-  organisationName = 'Bridge Commercial',
+  organisationName = 'Arch9 Commercial',
   portalUrl = '',
   missingFields = [],
   missingDocuments = [],
@@ -794,7 +794,7 @@ export async function createCommercialOnboardingInvitation({
       mode: 'sent',
       contact: resolvedContact,
       sourceRecord,
-      organisationName: sourceRecord.organisationName || resolvedContact.company || 'Bridge Commercial',
+      organisationName: sourceRecord.organisationName || resolvedContact.company || 'Arch9 Commercial',
       portalUrl,
     })
     const sendError = response?.error || response?.data?.error
@@ -946,7 +946,7 @@ export async function submitCommercialOnboarding(token) {
     contact: workspace.contact || {},
     sourceRecord: onboarding.sourceRecord || {},
     portalUrl: `/commercial/onboarding/${access.token}`,
-    organisationName: onboarding.sourceRecord?.organisationName || workspace.contact?.company || 'Bridge Commercial',
+    organisationName: onboarding.sourceRecord?.organisationName || workspace.contact?.company || 'Arch9 Commercial',
     missingFields,
     missingDocuments,
   })
@@ -956,7 +956,7 @@ export async function submitCommercialOnboarding(token) {
       mode,
       contact: workspace.contact || {},
       sourceRecord: onboarding.sourceRecord || {},
-      organisationName: onboarding.sourceRecord?.organisationName || workspace.contact?.company || 'Bridge Commercial',
+      organisationName: onboarding.sourceRecord?.organisationName || workspace.contact?.company || 'Arch9 Commercial',
       portalUrl: `/commercial/onboarding/${access.token}`,
       missingFields,
       missingDocuments,
@@ -997,7 +997,7 @@ export async function resendCommercialOnboardingInvitation(accessId, mode = 'rem
         company: contact.company_name || contact.company || '',
       },
       sourceRecord: onboarding.sourceRecord || {},
-      organisationName: onboarding.sourceRecord?.organisationName || contact.company_name || 'Bridge Commercial',
+      organisationName: onboarding.sourceRecord?.organisationName || contact.company_name || 'Arch9 Commercial',
       portalUrl,
       missingFields: onboarding.missingFields || [],
       missingDocuments: onboarding.missingDocuments || [],

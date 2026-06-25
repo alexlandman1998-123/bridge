@@ -121,7 +121,7 @@ export function buildAppointmentEmailHtml({
     title: eventTitle(eventType),
     greeting: `Hi ${pickText(recipientName, 'there')},`,
     contentHtml,
-    helpBody: 'Need help? Reply to this email and your Bridge team will assist you.',
+    helpBody: 'Need help? Reply to this email and your Arch9 team will assist you.',
   })
 }
 
@@ -175,9 +175,9 @@ export function buildAppointmentEmailText({
     rescheduleLink ? `Request reschedule: ${rescheduleLink}` : null,
     actionLink ? `View appointment: ${actionLink}` : null,
     '',
-    'Need help? Reply to this email and your Bridge team will assist you.',
+    'Need help? Reply to this email and your Arch9 team will assist you.',
     '',
-    'Bridge',
+    'Arch9',
   ]
     .filter(Boolean)
     .join('\n')

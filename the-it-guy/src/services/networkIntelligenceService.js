@@ -111,7 +111,7 @@ export function toPartnerSuggestion(row = {}) {
     organizationTypeLabel: getOrganizationTypeLabel(organizationType),
     organizationSubtype: normalizeText(row.organization_subtype || row.organizationSubtype),
     networkSignal: toInteger(row.network_signal || row.networkSignal),
-    reason: normalizeText(row.reason) || 'Suggested from Bridge network activity',
+    reason: normalizeText(row.reason) || 'Suggested from Arch9 network activity',
   }
 }
 

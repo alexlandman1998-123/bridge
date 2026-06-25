@@ -171,7 +171,7 @@ function inferSourceLabel(value = '') {
   const normalized = normalizeLower(value)
   if (normalized.includes('property24')) return 'Property24'
   if (normalized.includes('private')) return 'Private Property'
-  if (normalized.includes('bridge')) return 'Bridge Listings'
+  if (normalized.includes('bridge')) return 'Arch9 Listings'
   if (normalized.includes('referral')) return 'Referral'
   if (normalized.includes('website')) return 'Website'
   if (normalized.includes('manual')) return 'Manual'

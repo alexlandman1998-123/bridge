@@ -38,7 +38,7 @@ function normalizeLower(value = '') {
 }
 
 function buildAppointmentActionUrl(path = '') {
-  const fallbackOrigin = 'https://app.bridgenine.co.za'
+  const fallbackOrigin = 'https://app.arch9.co.za'
   const origin =
     typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin

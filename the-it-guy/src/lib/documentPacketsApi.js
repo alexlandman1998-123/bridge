@@ -1934,14 +1934,14 @@ export async function resolveDocumentPacketBranding({ organisationId = null } = 
 
   return {
     organisationId: context.organisationId,
-    organisationName: normalizeText(orgResult.data?.display_name || orgResult.data?.name || 'Bridge Workspace'),
+    organisationName: normalizeText(orgResult.data?.display_name || orgResult.data?.name || 'Arch9 Workspace'),
     logoLightUrl,
     logoDarkUrl,
     logoHighContrastUrl: normalizeNullableText(brandingData?.logo_high_contrast_url) || logoDarkUrl,
     organisationLogoUrl: logoLightUrl,
     organisationLogoDarkUrl: logoDarkUrl,
-    bridgeLegalName: 'Bridge Legal',
-    bridgeLogoLabel: 'Powered by Bridge 9',
+    bridgeLegalName: 'Arch9 Legal',
+    bridgeLogoLabel: 'Powered by Arch9',
     bridgeLogoLightUrl: '/brand/bridge_9_white_background.png',
     bridgeLogoDarkUrl: '/brand/bridge_9_dark_background.png',
   }

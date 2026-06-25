@@ -39,13 +39,13 @@ export async function handleTransactionPartnerInvitationEmail(
 
   const companyName = normalizeText(payload.companyName ?? payload.company_name) || "your firm";
   const contactName = normalizeText(payload.contactName ?? payload.contact_name) || "there";
-  const organisationName = normalizeText(payload.invitedByOrganisation ?? payload.invited_by_organisation) || "Bridge";
+  const organisationName = normalizeText(payload.invitedByOrganisation ?? payload.invited_by_organisation) || "Arch9";
   const roleLabel = resolveRoleLabel(payload);
   const transactionId = normalizeText(payload.transactionId ?? payload.transaction_id);
   const reusedProspect = payload.reusedProspect === true || payload.reused_prospect === true ||
     Boolean(normalizeText(payload.partnerProspectId ?? payload.partner_prospect_id ?? ""));
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <no-reply@bridge9.app>";
+    "Arch9 <no-reply@bridge9.app>";
   const subject = reusedProspect
     ? `${organisationName} has selected your firm for another property transaction`
     : `${organisationName} has selected your firm for a property transaction`;
@@ -60,7 +60,7 @@ export async function handleTransactionPartnerInvitationEmail(
     contentHtml: [
       renderBridgeIntroParagraphs([
         message,
-        "Accept the invitation to create your Bridge account and access the transaction workspace.",
+        "Accept the invitation to create your Arch9 account and access the transaction workspace.",
       ]),
       renderBridgeSummaryCard([
         { label: "Role", value: roleLabel },

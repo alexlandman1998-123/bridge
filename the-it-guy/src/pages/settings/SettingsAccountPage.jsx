@@ -43,14 +43,14 @@ function loadImageFromDataUrl(dataUrl) {
   return new Promise((resolve, reject) => {
     const image = new Image()
     image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Bridge could not read that image. Try a JPG or PNG file.'))
+    image.onerror = () => reject(new Error('Arch9 could not read that image. Try a JPG or PNG file.'))
     image.src = dataUrl
   })
 }
 
 async function createProfileAvatarCanvas(file) {
   if (file.size > AVATAR_MAX_SOURCE_BYTES) {
-    throw new Error('Choose an image smaller than 12MB. Bridge will resize it before saving.')
+    throw new Error('Choose an image smaller than 12MB. Arch9 will resize it before saving.')
   }
 
   const originalDataUrl = await readImageFileAsDataUrl(file)
@@ -58,7 +58,7 @@ async function createProfileAvatarCanvas(file) {
   const sourceSize = Math.min(image.naturalWidth || image.width, image.naturalHeight || image.height)
 
   if (!sourceSize) {
-    throw new Error('Bridge could not read that image. Try a different profile picture.')
+    throw new Error('Arch9 could not read that image. Try a different profile picture.')
   }
 
   const outputSize = Math.min(AVATAR_TARGET_SIZE, sourceSize)
@@ -70,7 +70,7 @@ async function createProfileAvatarCanvas(file) {
   const context = canvas.getContext('2d')
 
   if (!context) {
-    throw new Error('Bridge could not resize that image in this browser. Try a smaller JPG or PNG file.')
+    throw new Error('Arch9 could not resize that image in this browser. Try a smaller JPG or PNG file.')
   }
 
   context.fillStyle = '#ffffff'
@@ -96,7 +96,7 @@ async function createProfileAvatarFile(file) {
     }
   }
 
-  throw new Error('Bridge resized the image, but it is still too large. Try a simpler JPG or PNG file.')
+  throw new Error('Arch9 resized the image, but it is still too large. Try a simpler JPG or PNG file.')
 }
 
 export default function SettingsAccountPage() {
@@ -163,7 +163,7 @@ export default function SettingsAccountPage() {
       return
     }
     if (file.size > AVATAR_MAX_SOURCE_BYTES) {
-      setAvatarError('Choose an image smaller than 12MB. Bridge will resize it before saving.')
+      setAvatarError('Choose an image smaller than 12MB. Arch9 will resize it before saving.')
       event.target.value = ''
       return
     }
@@ -262,7 +262,7 @@ export default function SettingsAccountPage() {
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
       <form className="space-y-0" onSubmit={handleSave}>
-        <SettingsSectionCard title="Profile" description="These details identify you across Bridge and external workspaces.">
+        <SettingsSectionCard title="Profile" description="These details identify you across Arch9 and external workspaces.">
           <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-[#e1e9f2] bg-[#fbfdff] p-4 sm:flex-row sm:items-center">
             <div className="flex items-center gap-4">
               <span className="inline-flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#d7e2ef] bg-white text-lg font-semibold text-[#244e70] shadow-sm">
@@ -270,7 +270,7 @@ export default function SettingsAccountPage() {
               </span>
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold text-[#10243a]">Profile picture</h2>
-                <p className="mt-1 max-w-xl text-sm leading-6 text-[#60758d]">Shown in Bridge headers, agent workspaces, and seller-facing appointment surfaces where your profile is used.</p>
+                <p className="mt-1 max-w-xl text-sm leading-6 text-[#60758d]">Shown in Arch9 headers, agent workspaces, and seller-facing appointment surfaces where your profile is used.</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2 sm:ml-auto">
@@ -357,7 +357,7 @@ export default function SettingsAccountPage() {
             />
             <SettingsToggleRow
               title="In-app notifications"
-              description="Show task, handoff, and document activity in the Bridge workspace."
+              description="Show task, handoff, and document activity in the Arch9 workspace."
               checked={form.notificationPreferences.inAppNotifications}
               onChange={(value) => updateNotification('inAppNotifications', value)}
             />

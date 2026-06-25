@@ -39,21 +39,21 @@ function buildIcsAttachment(payload: SendAppointmentEmailPayload) {
   const uid = normalizeText(payload.appointmentId)
     ? `bridge-${normalizeText(payload.appointmentId)}@bridge.app`
     : `bridge-${crypto.randomUUID()}@bridge.app`
-  const title = normalizeText(payload.appointmentTitle || payload.appointmentType || 'Bridge Appointment')
+  const title = normalizeText(payload.appointmentTitle || payload.appointmentType || 'Arch9 Appointment')
   const location = normalizeText(payload.meetingUrl || payload.location || 'To be confirmed')
   const description = [
     normalizeText(payload.notes),
     normalizeText(payload.actionLink) ? `Appointment link: ${normalizeText(payload.actionLink)}` : '',
   ].filter(Boolean).join('\n\n')
   const organizerEmail = normalizeText(payload.organizerEmail || 'appointments@bridge.co.za')
-  const organizerName = normalizeText(payload.organizerName || 'Bridge')
+  const organizerName = normalizeText(payload.organizerName || 'Arch9')
   const attendeeEmail = normalizeText(payload.to)
   const attendeeName = normalizeText(payload.recipientName || payload.to || 'Participant')
 
   const content = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Bridge 9//Appointments//EN',
+    'PRODID:-//Arch9//Appointments//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:REQUEST',
     'BEGIN:VEVENT',
@@ -94,7 +94,7 @@ export async function handleAppointmentEmail(payload: SendAppointmentEmailPayloa
   const sender =
     normalizeText(Deno.env.get('RESEND_APPOINTMENTS_FROM_EMAIL')) ||
     normalizeText(Deno.env.get('RESEND_FROM_EMAIL')) ||
-    'Bridge Appointments <appointments@bridge.co.za>'
+    'Arch9 Appointments <appointments@bridge.co.za>'
 
   const subject = buildAppointmentSubject(eventType, normalizeText(payload.appointmentType) || 'Appointment')
   const html = buildAppointmentEmailHtml({

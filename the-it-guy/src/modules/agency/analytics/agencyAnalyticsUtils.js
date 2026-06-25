@@ -297,7 +297,7 @@ function buildLeadFunnel(leads = [], appointments = [], transactions = []) {
 function buildLeadSourceBreakdown(leads = []) {
   const labels = {
     property24: 'Property24',
-    bridge_listings: 'Bridge Listings',
+    bridge_listings: 'Arch9 Listings',
     private_property: 'Private Property',
     referral: 'Referral',
     social_media: 'Social Media',

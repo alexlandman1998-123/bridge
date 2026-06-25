@@ -30,7 +30,7 @@ function OpportunityEnginePage() {
       <section className="rounded-3xl border border-[#d8e5f3] bg-white/85 p-6 shadow-[0_18px_36px_rgba(15,23,42,0.08)]">
         <h2 className="text-[1.22rem] font-semibold tracking-[-0.03em] text-[#142132]">AI Opportunity Map</h2>
         <p className="mt-2 text-[0.95rem] leading-7 text-[#607389]">
-          Bridge combines listing activity, transaction behaviour, and market share data to show where your firm can grow.
+          Arch9 combines listing activity, transaction behaviour, and market share data to show where your firm can grow.
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <article className="rounded-2xl border border-[#d9e6f3] bg-[#f7fbff] px-4 py-4">
@@ -76,7 +76,7 @@ function OpportunityEnginePage() {
 
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 <MetricBar label="Active Listings" value={leadAgent.activeListings} percent={100} helper="Live inventory in territory" />
-                <MetricBar label="Est. Monthly Transactions" value={leadAgent.estimatedMonthlyTransactions} percent={76} helper="Bridge velocity estimate" tone="green" />
+                <MetricBar label="Est. Monthly Transactions" value={leadAgent.estimatedMonthlyTransactions} percent={76} helper="Arch9 velocity estimate" tone="green" />
                 <MetricBar label="Current Appointments" value={leadAgent.currentAppointments} percent={5} helper="With your firm" tone="amber" />
                 <MetricBar label="Revenue Opportunity" value={`${formatCurrency(leadAgent.estimatedRevenueOpportunity)}/mo`} percent={91} helper="Potential if converted" />
               </div>
@@ -148,7 +148,7 @@ function OpportunityEnginePage() {
                 ))}
               </div>
               <AiInsightPanel
-                copy="Bridge has detected strong sales activity but no preferred attorney assigned. Early relationship capture could secure recurring transfer work."
+                copy="Arch9 has detected strong sales activity but no preferred attorney assigned. Early relationship capture could secure recurring transfer work."
               />
             </div>
           </div>

@@ -218,7 +218,7 @@ function buildDocumentShell({ title, subtitle, sectionTitle, sectionCopy, conten
     <body>
       <main>
         <section class="hero">
-          <span class="eyebrow">Bridge.</span>
+          <span class="eyebrow">Arch9.</span>
           <h1>${title}</h1>
           <p class="subtitle">${subtitle}</p>
           <div class="section">

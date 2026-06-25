@@ -870,7 +870,7 @@ function Report() {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bridge Portfolio Report</title>
+    <title>Arch9 Portfolio Report</title>
     <style>${REPORT_EXPORT_CSS}</style>
   </head>
   <body class="report-export-window">

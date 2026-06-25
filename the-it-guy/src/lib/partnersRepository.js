@@ -859,8 +859,8 @@ function mapOrganisation(row = {}) {
   const settings = row.settings_json && typeof row.settings_json === 'object' ? row.settings_json : {}
   return {
     id: normalizeText(row.id),
-    name: normalizeText(row.display_name || row.displayName || row.name) || 'Bridge Organisation',
-    displayName: normalizeText(row.display_name || row.displayName || row.name) || 'Bridge Organisation',
+    name: normalizeText(row.display_name || row.displayName || row.name) || 'Arch9 Organisation',
+    displayName: normalizeText(row.display_name || row.displayName || row.name) || 'Arch9 Organisation',
     legalName: normalizeText(row.legal_name || row.legalName),
     type: normalizeOrganisationType(row.type || row.workspace_type),
     logoUrl: normalizeText(row.logo_url || row.logoUrl),
@@ -1276,7 +1276,7 @@ function buildInvitePayloadBase({
   preferred = false,
 }) {
   const toWorkspaceType = normalizeOrganisationType(recipientWorkspaceType || workspaceType)
-  const fromOrganisationName = normalizeText(senderOrganisationName) || 'Bridge Organisation'
+  const fromOrganisationName = normalizeText(senderOrganisationName) || 'Arch9 Organisation'
   const normalizedScopeType = normalizePartnerScopeType(scopeType)
   const storageRecipientEmail = resolveRecipientEmailForStorage(recipientEmail, recipientOrganisationId)
   return filterInvitationPayload({

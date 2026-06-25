@@ -1376,7 +1376,7 @@ function ExternalTransactionPortal() {
                       return (
                         <article key={note.id} className="external-client-update-card">
                           <header>
-                            <strong>{note.authorName || note.authorRoleLabel || 'Bridge Workspace'}</strong>
+                            <strong>{note.authorName || note.authorRoleLabel || 'Arch9 Workspace'}</strong>
                             <span>{formatShortDate(note.createdAt)}</span>
                           </header>
                           <p>{toClientSafeUpdateMessage(parsed.body)}</p>
@@ -1589,7 +1589,7 @@ function ExternalTransactionPortal() {
               const parsed = parseUpdate(note)
               return {
                 id: note.id,
-                authorName: note.authorName || note.authorRoleLabel || 'Bridge Workspace',
+                authorName: note.authorName || note.authorRoleLabel || 'Arch9 Workspace',
                 authorRoleLabel: note.authorRoleLabel,
                 commentBody: toClientSafeUpdateMessage(parsed.body),
                 createdAt: note.createdAt,

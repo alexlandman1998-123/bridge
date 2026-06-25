@@ -169,14 +169,14 @@ function normalizeKey(value) {
 }
 
 const ATTORNEY_OPTIONS = [
-  'Bridge Conveyancing',
+  'Arch9 Conveyancing',
   'Hayley Appel',
   'Stonehouse Legal',
   'Transfer Desk Pretoria',
 ]
 
 const BOND_ORIGINATOR_OPTIONS = [
-  'Bridge Finance',
+  'Arch9 Finance',
   'Sygnia Home Loans',
   'Mortgage Connect',
   'Prime Bond Desk',
@@ -533,7 +533,7 @@ function extractSellerPortalTokenFromLink(link = '') {
   if (!text) return ''
   const path = (() => {
     try {
-      return new URL(text, typeof window !== 'undefined' ? window.location.origin : 'https://app.bridgenine.co.za').pathname
+      return new URL(text, typeof window !== 'undefined' ? window.location.origin : 'https://app.arch9.co.za').pathname
     } catch {
       return text
     }
@@ -924,7 +924,7 @@ function wrapPdfText(value = '', maxChars = 86) {
   return lines.length ? lines : ['']
 }
 
-function buildSellerProfilePdf({ agencyName = 'Bridge', generatedDate = '', summary = [], sections = [] }) {
+function buildSellerProfilePdf({ agencyName = 'Arch9', generatedDate = '', summary = [], sections = [] }) {
   const pages = [[]]
   let y = 790
   const addLine = (text, { x = 48, size = 10, bold = false, gap = 15, maxChars = 86 } = {}) => {
@@ -1377,8 +1377,8 @@ function AgentListingDetail() {
   })
   const [savingCommission, setSavingCommission] = useState(false)
   const [rolePlayersDraft, setRolePlayersDraft] = useState({
-    attorney: 'Bridge Conveyancing',
-    bondOriginator: 'Bridge Finance',
+    attorney: 'Arch9 Conveyancing',
+    bondOriginator: 'Arch9 Finance',
   })
   const [viewings, setViewings] = useState([])
   const [interestedLeadRows, setInterestedLeadRows] = useState([])
@@ -1693,8 +1693,8 @@ function AgentListingDetail() {
     if (!listingRecord) return
     setMarketingDraft(buildPropertyDraft(listingRecord))
     setRolePlayersDraft({
-      attorney: String(listingRecord?.rolePlayers?.attorney || 'Bridge Conveyancing').trim(),
-      bondOriginator: String(listingRecord?.rolePlayers?.bondOriginator || 'Bridge Finance').trim(),
+      attorney: String(listingRecord?.rolePlayers?.attorney || 'Arch9 Conveyancing').trim(),
+      bondOriginator: String(listingRecord?.rolePlayers?.bondOriginator || 'Arch9 Finance').trim(),
     })
   }, [listingRecord])
 
@@ -2077,7 +2077,7 @@ function AgentListingDetail() {
           await sendWhatsAppNotification({
             to: formatSouthAfricanWhatsAppNumber(selectedLead.phone),
             role: 'buyer',
-            message: `Hi ${buyerName},\n\nYour viewing for ${propertyLabel} is complete.\n\nSubmit your secure offer here:\n${link}\n\nThis link expires on ${formatDate(invite?.expiresAt)}.\n\n- Bridge`,
+            message: `Hi ${buyerName},\n\nYour viewing for ${propertyLabel} is complete.\n\nSubmit your secure offer here:\n${link}\n\nThis link expires on ${formatDate(invite?.expiresAt)}.\n\n- Arch9`,
           })
         } catch (error) {
           console.error('[Offers] buyer offer WhatsApp notification failed', error)
@@ -2158,7 +2158,7 @@ function AgentListingDetail() {
     }
 
     if (!token) {
-      throw new Error('No seller client portal token is linked to this listing yet. Send seller onboarding first so Bridge can create the portal link.')
+      throw new Error('No seller client portal token is linked to this listing yet. Send seller onboarding first so Arch9 can create the portal link.')
     }
     if (!isValidEmail(sellerEmail)) {
       throw new Error('No seller email is linked to this listing yet. Add the seller email before resending the client portal link.')
@@ -2401,7 +2401,7 @@ function AgentListingDetail() {
             const whatsappResult = await sendWhatsAppNotification({
               to: normalizedSellerPhone,
               role: 'seller',
-              message: `Hi ${sellerDisplayName},\n\nYour agent has started your seller onboarding for ${propertyLabel}.\n\nPlease complete your onboarding here:\n${onboardingLink}\n\nAgent: ${agentDisplayName}\n\n- Bridge`,
+              message: `Hi ${sellerDisplayName},\n\nYour agent has started your seller onboarding for ${propertyLabel}.\n\nPlease complete your onboarding here:\n${onboardingLink}\n\nAgent: ${agentDisplayName}\n\n- Arch9`,
             })
             if (!whatsappResult?.ok) deliveryWarning = `${deliveryWarning} WhatsApp delivery needs attention.`
           } catch (error) {
@@ -3951,7 +3951,7 @@ function AgentListingDetail() {
   }
 
   function handleDownloadSellerProfilePdf() {
-    const agencyName = String(profile?.organisationName || profile?.companyName || profile?.agencyName || 'Bridge').trim()
+    const agencyName = String(profile?.organisationName || profile?.companyName || profile?.agencyName || 'Arch9').trim()
     const summary = [
       { label: 'Seller', value: sellerProfile.name },
       { label: 'Seller Type', value: sellerProfile.type },
@@ -4395,7 +4395,7 @@ function AgentListingDetail() {
   async function handleDeleteListing() {
     const listingTitle = String(listingRecord?.listingTitle || 'this listing').trim()
     const confirmed = window.confirm(
-      `Permanently delete "${listingTitle}"?\n\nThis removes the listing from Bridge, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.`,
+      `Permanently delete "${listingTitle}"?\n\nThis removes the listing from Arch9, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.`,
     )
     if (!confirmed) return
 
@@ -4864,7 +4864,7 @@ function AgentListingDetail() {
               </div>
             </HubCard>
 
-            <HubCard icon={CheckCircle2} title="Features & Amenities" copy="Public-facing feature chips for Bridge Listings and external portal copy." complete={sectionStatusByKey.features?.complete}>
+            <HubCard icon={CheckCircle2} title="Features & Amenities" copy="Public-facing feature chips for Arch9 Listings and external portal copy." complete={sectionStatusByKey.features?.complete}>
               <div className="mt-5 flex flex-wrap gap-2">
                 {FEATURE_OPTIONS.map((feature) => {
                   const active = marketingDraft.selectedFeatures.includes(feature)
@@ -4891,7 +4891,7 @@ function AgentListingDetail() {
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Full Description</span>
                   <Field as="textarea" rows={6} value={marketingDraft.description} onChange={(event) => updateMarketingDraft('description', event.target.value)} placeholder="Public-facing listing description." />
-                  <span className="text-xs text-[#607387]">Public-facing field. This can feed Bridge Listings and portal exports later.</span>
+                  <span className="text-xs text-[#607387]">Public-facing field. This can feed Arch9 Listings and portal exports later.</span>
                 </label>
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Short Description / Listing Preview Copy</span>
@@ -5054,7 +5054,7 @@ function AgentListingDetail() {
                   ['Duplicate Listing', ''],
                   ['Open Property24 Link', marketingDraft.property24ListingUrl],
                   ['Open Private Property Link', marketingDraft.privatePropertyListingUrl],
-                  ['Publish to Bridge Listings', ''],
+                  ['Publish to Arch9 Listings', ''],
                   ['View Public Listing', marketingDraft.bridgeListingPublicUrl],
                 ].map(([label, href]) => (
                   href ? (
@@ -5168,7 +5168,7 @@ function AgentListingDetail() {
                 </label>
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Listing Source</span>
-                  <Field value={marketingDraft.source} onChange={(event) => updateMarketingDraft('source', event.target.value)} placeholder="Property24 / Bridge Listings / Referral" />
+                  <Field value={marketingDraft.source} onChange={(event) => updateMarketingDraft('source', event.target.value)} placeholder="Property24 / Arch9 Listings / Referral" />
                 </label>
               </div>
             </section>
@@ -5846,7 +5846,7 @@ function AgentListingDetail() {
               )) : null}
               {!sentPropertiesLoading && !sentPropertyRows.length ? (
                 <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#6b7d93]">
-                  This listing has not been sent to any leads from Bridge yet.
+                  This listing has not been sent to any leads from Arch9 yet.
                 </div>
               ) : null}
             </div>
@@ -6307,7 +6307,7 @@ function AgentListingDetail() {
 
                 <div className="mt-5 grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   {[
-                    { label: 'Views', value: formatCompactNumber(listingPerformance.totalViews), meta: `${formatCompactNumber(listingPerformance.portalViews)} portal / ${formatCompactNumber(listingPerformance.bridgeViews)} Bridge`, icon: Eye },
+                    { label: 'Views', value: formatCompactNumber(listingPerformance.totalViews), meta: `${formatCompactNumber(listingPerformance.portalViews)} portal / ${formatCompactNumber(listingPerformance.bridgeViews)} Arch9`, icon: Eye },
                     { label: 'Leads', value: formatCompactNumber(listingPerformance.leadCount), meta: `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users },
                     { label: 'Viewings', value: formatCompactNumber(listingPerformance.scheduledViewings), meta: `${formatCompactNumber(listingPerformance.completedViewings)} completed`, icon: CalendarDays },
                     { label: 'Offers', value: formatCompactNumber(listingPerformance.offerCount), meta: `${formatCompactNumber(metrics.pendingOffers)} active / pending`, icon: HandCoins },
@@ -6870,10 +6870,10 @@ function AgentListingDetail() {
                   <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                     <div>
                       <h3 className="text-base font-semibold text-[#142132]">Listing Site Data</h3>
-                      <p className="mt-1 text-sm text-[#607387]">Canonical data for the future Bridge listing site.</p>
+                      <p className="mt-1 text-sm text-[#607387]">Canonical data for the future Arch9 listing site.</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => setDetailMessage('Listing preview will open once the public Bridge listing route is connected.')}>
+                      <Button size="sm" variant="secondary" onClick={() => setDetailMessage('Listing preview will open once the public Arch9 listing route is connected.')}>
                         <Eye size={15} />
                         Preview Listing
                       </Button>

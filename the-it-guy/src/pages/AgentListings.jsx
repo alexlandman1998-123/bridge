@@ -69,7 +69,7 @@ const CANONICAL_LISTING_STRUCTURE = [
 ]
 const TRANSFER_ATTORNEY_OPTIONS = ['Tuckers Attorneys', 'Van Breda Conveyancers', 'Ndlovu Legal Transfers']
 const BOND_ATTORNEY_OPTIONS = ['Bond & Co Attorneys', 'HomeLoan Legal Desk', 'Mokoena Bond Attorneys']
-const BOND_ORIGINATOR_OPTIONS = ['Bridge Bond Desk', 'Prime Originators', 'Urban Finance Originators']
+const BOND_ORIGINATOR_OPTIONS = ['Arch9 Bond Desk', 'Prime Originators', 'Urban Finance Originators']
 
 function formatCurrency(value) {
   const amount = Number(value || 0)
@@ -1551,7 +1551,7 @@ function AgentListings({ initialTab = null } = {}) {
         const whatsappResult = await sendWhatsAppNotification({
           to: normalizedSellerPhone,
           role: 'seller',
-          message: `Hi ${sellerDisplayName},\n\nYour agent has started your seller onboarding for ${propertyLabel}.\n\nPlease complete your onboarding here:\n${onboardingLink}\n\nAgent: ${agentDisplayName}\n\n- Bridge`,
+          message: `Hi ${sellerDisplayName},\n\nYour agent has started your seller onboarding for ${propertyLabel}.\n\nPlease complete your onboarding here:\n${onboardingLink}\n\nAgent: ${agentDisplayName}\n\n- Arch9`,
         })
         if (!whatsappResult?.ok) {
           console.error('[Seller Onboarding] WhatsApp notification failed', {
@@ -1591,7 +1591,7 @@ function AgentListings({ initialTab = null } = {}) {
 
     const listingTitle = String(card?.title || 'this listing').trim()
     const confirmed = window.confirm(
-      `Permanently delete "${listingTitle}"?\n\nThis removes the listing from Bridge, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.`,
+      `Permanently delete "${listingTitle}"?\n\nThis removes the listing from Arch9, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.`,
     )
     if (!confirmed) return
 

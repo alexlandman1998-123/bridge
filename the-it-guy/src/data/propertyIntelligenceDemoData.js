@@ -2,7 +2,7 @@ export const propertyIntelligenceDemoData = {
   meta: {
     mode: 'Demo Mode Only',
     title: 'Property Intelligence Command Centre',
-    subtitle: 'National property intelligence, forecasting, and market insight powered by the Bridge Network.',
+    subtitle: 'National property intelligence, forecasting, and market insight powered by the Arch9 Network.',
     routeContext: 'Bond Originator / Reports / Predictive Intelligence',
     snapshotTitle: 'South African Property Network Snapshot',
     generatedLabel: 'Generated 14 minutes ago',
@@ -13,12 +13,12 @@ export const propertyIntelligenceDemoData = {
     marketPulse: {
       eyebrow: 'National Monitoring Network',
       title: 'South African Property Market Pulse',
-      copy: 'Demo-mode provincial intelligence showing how Bridge could monitor market health across a national property network.',
+      copy: 'Demo-mode provincial intelligence showing how Arch9 could monitor market health across a national property network.',
     },
     emergingSignals: {
       eyebrow: 'AI-Detected Signals',
       title: 'Emerging Market Signals',
-      copy: 'Mock signals presented as if detected by a future Bridge intelligence layer.',
+      copy: 'Mock signals presented as if detected by a future Arch9 intelligence layer.',
     },
     opportunities: {
       eyebrow: 'Opportunity Engine',
@@ -52,14 +52,14 @@ export const propertyIntelligenceDemoData = {
     ],
   },
   aiBriefing: {
-    title: 'Bridge AI Executive Briefing',
+    title: 'Arch9 AI Executive Briefing',
     badge: 'Generated 14 minutes ago',
     paragraphs: [
-      'Bridge AI has detected continued strengthening in the South African residential property market.',
+      'Arch9 AI has detected continued strengthening in the South African residential property market.',
       'Buyer demand remains strongest in Gauteng and the Western Cape, with transaction activity increasing by 6.4% over the previous quarter.',
       'FNB and Nedbank currently maintain the fastest average bond approval turnaround times.',
       'Residential developments in Midrand, Centurion and Somerset West continue to show above-average buyer activity.',
-      'Based on current transaction velocity, Bridge AI forecasts moderate market expansion through Q3.',
+      'Based on current transaction velocity, Arch9 AI forecasts moderate market expansion through Q3.',
     ],
   },
   marketHealth: {
@@ -206,7 +206,7 @@ export const propertyIntelligenceDemoData = {
     ],
   },
   marketIntelligenceSignals: {
-    title: 'Bridge AI Market Signals',
+    title: 'Arch9 AI Market Signals',
     observations: [
       { title: 'Backup Power Demand Rising', confidence: '94%' },
       { title: 'Western Cape Buyer Migration Increasing', confidence: '91%' },
@@ -224,7 +224,7 @@ export const propertyIntelligenceDemoData = {
     ],
   },
   marketExecutiveSummary: {
-    title: 'Bridge AI Market Summary',
+    title: 'Arch9 AI Market Summary',
     badge: 'Generated 8 minutes ago',
     paragraphs: [
       'Buyer activity remains concentrated in Gauteng and the Western Cape.',
@@ -335,12 +335,12 @@ export const propertyIntelligenceDemoData = {
   },
   forecastInsights: {
     eyebrow: 'Forecast Analysis',
-    title: 'Bridge AI Forecast Analysis',
+    title: 'Arch9 AI Forecast Analysis',
     badge: 'Generated 11 minutes ago',
     confidenceLabel: 'Forecast Confidence',
     confidence: '92%',
     paragraphs: [
-      'Bridge AI forecasts continued growth in first-time buyer activity over the next 90 days.',
+      'Arch9 AI forecasts continued growth in first-time buyer activity over the next 90 days.',
       'Demand is expected to remain concentrated in Gauteng and the Western Cape.',
       'Properties featuring backup power, solar infrastructure and estate security continue to outperform market averages.',
       'Midrand and Somerset West currently present the strongest forecast growth indicators.',
@@ -357,7 +357,7 @@ export const propertyIntelligenceDemoData = {
     ],
   },
   forecastTimeline: {
-    title: 'What Bridge Expects Next',
+    title: 'What Arch9 Expects Next',
     sequenceLabel: 'Sequence',
     items: [
       { horizon: 'Next 30 Days', event: 'Buyer demand increasing' },
@@ -378,7 +378,7 @@ export const propertyIntelligenceDemoData = {
   },
   forecastExecutiveSummary: {
     eyebrow: 'Executive Outlook',
-    title: 'Bridge AI National Outlook',
+    title: 'Arch9 AI National Outlook',
     badge: 'Updated 6 minutes ago',
     confidenceLabel: 'Forecast Confidence',
     confidence: '92%',
@@ -386,7 +386,7 @@ export const propertyIntelligenceDemoData = {
       'The South African residential property market remains in an expansion phase.',
       'Buyer demand continues to outpace listing growth in key regions, particularly Gauteng and the Western Cape.',
       'Transaction activity is expected to strengthen over the next quarter, supported by improving approval rates and increased first-time buyer participation.',
-      'Bridge AI currently forecasts moderate-to-strong market growth through the next 90-day cycle.',
+      'Arch9 AI currently forecasts moderate-to-strong market growth through the next 90-day cycle.',
     ],
   },
   bankIntelligenceMetrics: {
@@ -468,7 +468,7 @@ export const propertyIntelligenceDemoData = {
   },
   aiBankRecommendations: {
     eyebrow: 'Recommendation Engine',
-    title: 'Bridge AI Lending Recommendations',
+    title: 'Arch9 AI Lending Recommendations',
     confidenceLabel: 'Confidence',
     items: [
       { recommendation: 'Applications matching Profile A currently have an estimated 87% approval probability at FNB.', confidence: '92%' },
@@ -517,7 +517,7 @@ export const propertyIntelligenceDemoData = {
   },
   bankExecutiveBriefing: {
     eyebrow: 'Executive Bank Briefing',
-    title: 'Bridge AI Lending Outlook',
+    title: 'Arch9 AI Lending Outlook',
     badge: 'Generated 12 minutes ago',
     confidenceLabel: 'Confidence',
     confidence: '91%',
@@ -525,7 +525,7 @@ export const propertyIntelligenceDemoData = {
       'National approval rates continue to strengthen across major lenders.',
       'FNB and Nedbank currently maintain the strongest combination of approval performance and turnaround efficiency.',
       'Demand from first-time buyers remains the primary growth driver in the residential lending market.',
-      'Bridge AI expects approval volumes to increase through the next quarter, supported by sustained buyer demand and improving application quality.',
+      'Arch9 AI expects approval volumes to increase through the next quarter, supported by sustained buyer demand and improving application quality.',
     ],
   },
   partnerIntelligenceMetrics: {
@@ -665,7 +665,7 @@ export const propertyIntelligenceDemoData = {
   },
   partnerOpportunityEngine: {
     eyebrow: 'Partner Opportunity Engine',
-    title: 'Bridge AI Partner Opportunities',
+    title: 'Arch9 AI Partner Opportunities',
     items: [
       {
         partner: 'Harcourts Pretoria',
@@ -713,7 +713,7 @@ export const propertyIntelligenceDemoData = {
   ecosystemNetworkData: {
     eyebrow: 'Network Intelligence',
     title: 'Property Ecosystem Network',
-    subtitle: 'Demo-mode transaction flow showing how Bridge could sit at the centre of buyers, agencies, finance, conveyancing and development activity.',
+    subtitle: 'Demo-mode transaction flow showing how Arch9 could sit at the centre of buyers, agencies, finance, conveyancing and development activity.',
     flowLabel: 'Transaction Flow',
     nodes: [
       { id: 'buyers', label: 'Buyers', x: 12, y: 50 },
@@ -722,7 +722,7 @@ export const propertyIntelligenceDemoData = {
       { id: 'banks', label: 'Banks', x: 68, y: 28 },
       { id: 'attorneys', label: 'Attorneys', x: 84, y: 50 },
       { id: 'developers', label: 'Developers', x: 48, y: 78 },
-      { id: 'bridge', label: 'Bridge Intelligence Layer', x: 48, y: 28, primary: true },
+      { id: 'bridge', label: 'Arch9 Intelligence Layer', x: 48, y: 28, primary: true },
     ],
     links: [
       { source: 'buyers', target: 'agents' },
@@ -739,7 +739,7 @@ export const propertyIntelligenceDemoData = {
   },
   partnerExecutiveBriefing: {
     eyebrow: 'Executive Partner Briefing',
-    title: 'Bridge AI Ecosystem Briefing',
+    title: 'Arch9 AI Ecosystem Briefing',
     badge: 'Generated 7 minutes ago',
     confidenceLabel: 'Confidence',
     confidence: '93%',
@@ -747,7 +747,7 @@ export const propertyIntelligenceDemoData = {
       'Agency activity continues to strengthen across Gauteng and the Western Cape.',
       'Developer demand remains concentrated around major urban growth corridors.',
       'Originators continue to benefit from improving approval rates and growing buyer participation.',
-      'Bridge AI has identified increasing collaboration opportunities between top-performing agencies, developers and finance providers.',
+      'Arch9 AI has identified increasing collaboration opportunities between top-performing agencies, developers and finance providers.',
       'The overall partner network remains healthy and is expected to expand through the next quarter.',
     ],
   },
@@ -822,7 +822,7 @@ export const propertyIntelligenceDemoData = {
   },
   resourceOptimisationRecommendations: {
     eyebrow: 'Resource Optimisation',
-    title: 'Bridge AI Resource Optimisation',
+    title: 'Arch9 AI Resource Optimisation',
     expectedSlaImprovementLabel: 'Expected SLA Improvement',
     confidenceLabel: 'Confidence',
     recommendations: [
@@ -884,13 +884,13 @@ export const propertyIntelligenceDemoData = {
   },
   operationsExecutiveBriefing: {
     eyebrow: 'Executive Operations Briefing',
-    title: 'Bridge AI Operational Briefing',
+    title: 'Arch9 AI Operational Briefing',
     badge: 'Generated 5 minutes ago',
     confidenceLabel: 'Confidence',
     confidence: '94%',
     paragraphs: [
       'National processing capacity remains healthy, although regional pressure continues to increase within Gauteng.',
-      'Bridge AI has identified consultant utilisation risks across several high-volume branches.',
+      'Arch9 AI has identified consultant utilisation risks across several high-volume branches.',
       'Current workload balancing opportunities could improve SLA performance by approximately 18% nationally.',
       'Forecast transaction growth is expected to increase operational demand over the next quarter, particularly within bond origination teams.',
       'Additional staffing requirements are likely to emerge in Gauteng and KwaZulu-Natal if current growth trends continue.',
@@ -907,7 +907,7 @@ export const propertyIntelligenceDemoData = {
   },
   aiRecommendationMetrics: {
     eyebrow: 'Executive Decision Layer',
-    title: 'Bridge AI Decision Centre',
+    title: 'Arch9 AI Decision Centre',
     subtitle: 'Strategic opportunities, risks and recommendations generated across the South African property ecosystem.',
     primaryMetric: {
       label: 'Active AI Recommendations',
@@ -926,12 +926,12 @@ export const propertyIntelligenceDemoData = {
   },
   executiveAiBriefing: {
     eyebrow: 'CEO Briefing',
-    title: 'Bridge AI Executive Summary',
+    title: 'Arch9 AI Executive Summary',
     badge: 'Generated 3 minutes ago',
     confidenceLabel: 'Confidence',
     confidence: '93%',
     paragraphs: [
-      'Bridge AI has identified strong growth opportunities within Gauteng and the Western Cape.',
+      'Arch9 AI has identified strong growth opportunities within Gauteng and the Western Cape.',
       'Approval performance improvements across major lenders continue to support transaction growth.',
       'Several operational bottlenecks have emerged within high-volume branches.',
       'Current optimisation opportunities could increase revenue potential by approximately R24.8 million while improving service delivery metrics.',
@@ -1060,7 +1060,7 @@ export const propertyIntelligenceDemoData = {
     ],
   },
   bridgeWouldDoToday: {
-    title: 'If Bridge Were Running Your Business',
+    title: 'If Arch9 Were Running Your Business',
     priorities: [
       { priority: 'Priority 1', action: 'Move 32 applications from Pretoria North.', benefitLabel: 'Expected Benefit', benefit: '24% SLA Improvement' },
       { priority: 'Priority 2', action: 'Increase first-time buyer acquisition.', benefitLabel: 'Expected Revenue', benefit: 'R1.4m' },
@@ -1116,7 +1116,7 @@ export const propertyIntelligenceDemoData = {
       { id: 'banks', label: 'Banks', x: 67, y: 28 },
       { id: 'attorneys', label: 'Attorneys', x: 86, y: 50 },
       { id: 'developers', label: 'Developers', x: 47, y: 78 },
-      { id: 'bridge', label: 'Bridge Digital Twin', x: 47, y: 28, primary: true },
+      { id: 'bridge', label: 'Arch9 Digital Twin', x: 47, y: 28, primary: true },
     ],
     links: [
       { source: 'buyers', target: 'agents' },
@@ -1237,7 +1237,7 @@ export const propertyIntelligenceDemoData = {
         ],
       },
       'agency-growth': {
-        label: '500 New Agencies Join Bridge',
+        label: '500 New Agencies Join Arch9',
         metrics: [
           { label: 'Revenue', value: '+R38m' },
           { label: 'Transactions', value: '+31,000' },
@@ -1277,7 +1277,7 @@ export const propertyIntelligenceDemoData = {
         ],
       },
       'bridge-2030': {
-        label: 'Bridge 2030',
+        label: 'Arch9 2030',
         metrics: [
           { label: 'Revenue', value: 'R1bn+' },
           { label: 'Transactions', value: '500,000+' },
@@ -1329,11 +1329,11 @@ export const propertyIntelligenceDemoData = {
     },
   },
   simulationNarratives: {
-    title: 'Bridge AI Outcome Analysis',
+    title: 'Arch9 AI Outcome Analysis',
     generatedLabel: 'Generated instantly',
     narratives: {
       'national-expansion': [
-        'Based on the selected scenario, Bridge expects transaction volume to increase by approximately 24,000 transactions annually.',
+        'Based on the selected scenario, Arch9 expects transaction volume to increase by approximately 24,000 transactions annually.',
         'Additional operational capacity will likely be required within Gauteng and the Western Cape.',
         'Approval demand is expected to increase across all major lenders, with FNB and Nedbank experiencing the largest volume increases.',
         'The overall ecosystem remains healthy under the selected growth assumptions.',
@@ -1344,14 +1344,14 @@ export const propertyIntelligenceDemoData = {
         'Capacity pressure increases meaningfully, but remains manageable with phased consultant expansion.',
       ],
       'national-scale': [
-        'At 100,000 annual transactions, Bridge begins operating as a national property infrastructure layer.',
+        'At 100,000 annual transactions, Arch9 begins operating as a national property infrastructure layer.',
         'Revenue potential increases sharply as connected partners and applications compound across the ecosystem.',
         'Operational scaling becomes the primary execution constraint rather than market demand.',
       ],
       'agency-growth': [
         'Adding 500 agencies increases transaction density across major metro markets.',
         'Revenue impact is strongest where agency growth overlaps with finance-ready buyer demand.',
-        'Bridge would need targeted onboarding capacity and regional support expansion.',
+        'Arch9 would need targeted onboarding capacity and regional support expansion.',
       ],
       'interest-rate-cut': [
         'A lower interest rate scenario improves buyer demand and bond application conversion.',
@@ -1366,10 +1366,10 @@ export const propertyIntelligenceDemoData = {
       'developer-boom': [
         'Developer activity accelerates demand around Midrand, Somerset West and Ballito.',
         'Bond application growth rises as new unit inventory enters the network.',
-        'Bridge would benefit from development finance campaigns and capacity planning in growth corridors.',
+        'Arch9 would benefit from development finance campaigns and capacity planning in growth corridors.',
       ],
       'bridge-2030': [
-        'At maturity, Bridge becomes a national transaction and intelligence infrastructure layer.',
+        'At maturity, Arch9 becomes a national transaction and intelligence infrastructure layer.',
         'The simulated ecosystem supports 500,000+ transactions, 10,000+ partners and R1bn+ revenue potential.',
         'This scenario represents strategic vision rather than production forecasting.',
       ],
@@ -1385,13 +1385,13 @@ export const propertyIntelligenceDemoData = {
       ],
       'pressure-test': [
         'The pressure-test scenario highlights how macro headwinds can reduce transaction velocity.',
-        'Bridge remains operationally stable, but growth opportunities narrow.',
+        'Arch9 remains operationally stable, but growth opportunities narrow.',
         'Executive focus should shift toward conversion quality and partner retention.',
       ],
       'conveyancing-scale': [
         'Scaling attorney participation improves transaction throughput and registration efficiency.',
         'The strongest impact appears in high-volume regions with existing branch pressure.',
-        'Bridge can unlock measurable value by reducing downstream transaction friction.',
+        'Arch9 can unlock measurable value by reducing downstream transaction friction.',
       ],
     },
   },
@@ -1400,8 +1400,8 @@ export const propertyIntelligenceDemoData = {
     cards: [
       { id: 'national-expansion', title: 'National Expansion', description: 'Model a broad South African network expansion.' },
       { id: 'ooba-partnership', title: 'Ooba Partnership', description: 'Simulate strategic distribution through Ooba.' },
-      { id: 'national-scale', title: '100,000 Transactions Per Year', description: 'Model Bridge at transaction infrastructure scale.' },
-      { id: 'agency-growth', title: '500 New Agencies Join Bridge', description: 'Estimate agency network expansion impact.' },
+      { id: 'national-scale', title: '100,000 Transactions Per Year', description: 'Model Arch9 at transaction infrastructure scale.' },
+      { id: 'agency-growth', title: '500 New Agencies Join Arch9', description: 'Estimate agency network expansion impact.' },
       { id: 'interest-rate-cut', title: 'Interest Rate Cut', description: 'Model demand response to lower borrowing costs.' },
       { id: 'developer-boom', title: 'Developer Growth Boom', description: 'Simulate accelerated development inventory.' },
     ],
@@ -1418,7 +1418,7 @@ export const propertyIntelligenceDemoData = {
     ],
   },
   nationalScaleScenario: {
-    title: 'Bridge At National Scale',
+    title: 'Arch9 At National Scale',
     metrics: [
       { label: 'Annual Transactions', value: '100,000' },
       { label: 'Revenue', value: 'R150m+' },
@@ -1472,7 +1472,7 @@ export const propertyIntelligenceDemoData = {
     ],
   },
   bridge2030Vision: {
-    title: 'Bridge 2030 Vision',
+    title: 'Arch9 2030 Vision',
     subtitle: 'Strategic vision state for boardroom presentation mode.',
     metrics: [
       { label: 'Transactions', value: '500,000+' },
@@ -1483,15 +1483,15 @@ export const propertyIntelligenceDemoData = {
   },
   strategicOutlook: {
     eyebrow: 'Final AI Summary',
-    title: 'Bridge AI Strategic Outlook',
+    title: 'Arch9 AI Strategic Outlook',
     badge: 'Generated: Now',
     confidenceLabel: 'Confidence',
     confidence: '91%',
     paragraphs: [
-      'Bridge simulations indicate substantial opportunity exists through increased ecosystem participation and transaction volume growth.',
+      'Arch9 simulations indicate substantial opportunity exists through increased ecosystem participation and transaction volume growth.',
       'Strategic partnerships with major industry participants significantly accelerate market reach and revenue generation.',
       'Operational capacity requirements remain manageable under all tested growth scenarios, provided scaling occurs in a structured manner.',
-      'Bridge remains well-positioned to evolve into the intelligence and transaction infrastructure layer of the South African property ecosystem.',
+      'Arch9 remains well-positioned to evolve into the intelligence and transaction infrastructure layer of the South African property ecosystem.',
     ],
   },
 }

@@ -201,7 +201,7 @@ function normalizeClientPortalNotification(notification = {}) {
   return {
     id: notification?.id || `notification_${Math.random().toString(36).slice(2, 10)}`,
     type: normalizeNotificationType(notification?.notificationType || notification?.notification_type || notification?.type),
-    title: String(notification?.title || 'Bridge Update').trim(),
+    title: String(notification?.title || 'Arch9 Update').trim(),
     description: String(notification?.description || '').trim(),
     priority: normalizePriority(notification?.priority),
     status: normalizeStatus(notification?.status),
@@ -236,7 +236,7 @@ export async function createClientPortalNotification(payload = {}) {
     transactionId: payload.transactionId || payload.transaction_id || null,
     clientPortalToken: token,
     notificationType,
-    title: payload.title || 'Bridge Update',
+    title: payload.title || 'Arch9 Update',
     description: payload.description || '',
     priority: normalizePriority(payload.priority),
     status: normalizeStatus(payload.status || 'unread'),

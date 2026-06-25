@@ -176,7 +176,7 @@ export default function SettingsLanding() {
     <div className={settingsPageClass}>
       <SettingsPageHeader
         kicker="Settings"
-        title={role === 'bond_originator' ? 'Manage your bond originator workspace' : 'Manage how Bridge runs'}
+        title={role === 'bond_originator' ? 'Manage your bond originator workspace' : 'Manage how Arch9 runs'}
         description={
           role === 'bond_originator'
             ? 'Control the workspace details, operating structure, automation, and account defaults used across the bond origination module.'

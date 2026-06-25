@@ -263,7 +263,7 @@ function PartnerProspectPicker({
 }) {
   return (
     <div className="space-y-2">
-      <Field label={label} hint="Search firms already referenced on Bridge. Selecting a pending firm pre-fills and resends the transaction invitation.">
+      <Field label={label} hint="Search firms already referenced on Arch9. Selecting a pending firm pre-fills and resends the transaction invitation.">
         <input
           type="search"
           value={query}
@@ -1377,7 +1377,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             '',
             `Congratulations on taking the next step toward securing your property at ${developmentName} – ${unitReference}.`,
             '',
-            'Bridge is your central transaction platform. It brings together your agent, developer, and attorney into one place, so you always know what’s happening and what’s required next.',
+            'Arch9 is your central transaction platform. It brings together your agent, developer, and attorney into one place, so you always know what’s happening and what’s required next.',
             '',
             'To get started, please complete your onboarding here:',
             onboardingLink || '[Onboarding link unavailable]',
@@ -1389,7 +1389,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             '',
             'If you have any questions along the way, you’ll be guided step-by-step.',
             '',
-            '– Bridge',
+            '– Arch9',
           ].join('\n')
 
           console.log('[WhatsApp Debug] client onboarding payload', {

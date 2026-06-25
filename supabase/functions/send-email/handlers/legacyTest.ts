@@ -17,14 +17,14 @@ export async function handleLegacyTestEmail(payload: SendLegacyTestPayload) {
   const name = normalizeText(payload.name) || "there";
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const emailResult = await sendViaResendApi({
     apiKey: resendApiKey,
     from: sender,
     to,
-    subject: "Bridge email test",
-    html: `<p>Hi ${name}, your Bridge email system is working.</p>`,
+    subject: "Arch9 email test",
+    html: `<p>Hi ${name}, your Arch9 email system is working.</p>`,
   });
 
   if (!emailResult.ok) {

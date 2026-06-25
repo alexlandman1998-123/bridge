@@ -651,7 +651,7 @@ function Auth({ onDevBypass = null }) {
           <div className="auth-network-pattern" aria-hidden="true" />
           <div className="auth-hero-orbit" aria-hidden="true" />
           <div className="auth-hero-top">
-            <p className="auth-brand">bridge.</p>
+            <p className="auth-brand">Arch9</p>
           </div>
           <h1>The Property Industry,<br /> <span>Connected.</span></h1>
           <p>Real-time infrastructure powering every transaction, every professional, every day.</p>
@@ -742,7 +742,7 @@ function Auth({ onDevBypass = null }) {
                   <section className="signup-choice-stack signup-step-panel">
                     <div className="auth-card-head compact">
                       <span className="auth-card-eyebrow">STEP 1 OF 3</span>
-                      <h2>Welcome to Bridge 👋</h2>
+                      <h2>Welcome to Arch9 👋</h2>
                       <p>Let&apos;s build your workspace.</p>
                     </div>
                     <div className="signup-section-heading">
@@ -861,7 +861,7 @@ function Auth({ onDevBypass = null }) {
                 {mode === 'login' ? (
                   <div className="auth-card-head compact">
                     <span className="auth-card-eyebrow">SECURE ACCESS</span>
-                    <h2>Sign in to Bridge</h2>
+                    <h2>Sign in to Arch9</h2>
                     <p>Use your workspace credentials to open the property transaction platform.</p>
                   </div>
                 ) : null}
@@ -876,7 +876,7 @@ function Auth({ onDevBypass = null }) {
                     <div>
                       <span className="auth-card-eyebrow">Workspace Creation</span>
                       <h3>Building your workspace</h3>
-                      <p>Preparing your Bridge account using the selected role contract.</p>
+                      <p>Preparing your Arch9 account using the selected role contract.</p>
                     </div>
                     <div className="auth-build-checklist">
                       {WORKSPACE_CHECKLIST.map((item, index) => (
@@ -896,7 +896,7 @@ function Auth({ onDevBypass = null }) {
                       <h2>{inviteDrivenSignup ? 'Create your account' : 'Create your secure account'}</h2>
                       <p>
                         {inviteDrivenSignup
-                          ? 'Complete these details and Bridge will take you straight into the invited workspace.'
+                          ? 'Complete these details and Arch9 will take you straight into the invited workspace.'
                           : selectedBusinessTypeLabel
                             ? `${selectedBusinessTypeLabel} workspace setup will continue after verification.`
                             : 'Workspace setup will continue after verification.'}
@@ -983,10 +983,10 @@ function Auth({ onDevBypass = null }) {
                     {currentIntent && !inviteDrivenSignup ? (
                       <p className="rounded-[14px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
                         {currentIntent.workspace_action === 'create_workspace'
-                          ? 'After verification, Bridge will continue with workspace setup for your business.'
+                          ? 'After verification, Arch9 will continue with workspace setup for your business.'
                           : currentIntent.workspace_action === 'accept_invite'
-                            ? 'After verification, Bridge will return you to this invitation.'
-                            : 'After verification, Bridge will guide you to join or request access to the right workspace.'}
+                            ? 'After verification, Arch9 will return you to this invitation.'
+                            : 'After verification, Arch9 will guide you to join or request access to the right workspace.'}
                       </p>
                     ) : null}
                     {!inviteDrivenSignup ? (
@@ -1046,7 +1046,7 @@ function Auth({ onDevBypass = null }) {
 
           {!isSupabaseConfigured ? (
             <p className="auth-demo-note">
-              Supabase env vars are missing, so Bridge authentication is disabled until the environment is configured.
+              Supabase env vars are missing, so Arch9 authentication is disabled until the environment is configured.
             </p>
           ) : null}
 

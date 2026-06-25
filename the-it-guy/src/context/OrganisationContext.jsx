@@ -73,8 +73,8 @@ function buildAuthOrganisationSnapshot(authState) {
   const membership = authState.currentMembership || {}
   const organisation = normalizeOrganisation({
     id: workspace.id || membership.workspaceId || '',
-    name: workspace.name || 'Bridge Workspace',
-    displayName: workspace.name || 'Bridge Workspace',
+    name: workspace.name || 'Arch9 Workspace',
+    displayName: workspace.name || 'Arch9 Workspace',
     type: workspace.type || authState.workspaceType || '',
     logoUrl: '',
   })
@@ -109,8 +109,8 @@ function buildWorkspaceOrganisationSnapshot(authState) {
     workspaceId: workspace.id || membership.workspaceId || '',
     organisationId: backingOrganisationId || workspace.id || membership.workspaceId || '',
     partnerOrganisationId: backingOrganisationId || workspace.id || membership.workspaceId || '',
-    name: workspace.name || 'Bridge Workspace',
-    displayName: workspace.name || 'Bridge Workspace',
+    name: workspace.name || 'Arch9 Workspace',
+    displayName: workspace.name || 'Arch9 Workspace',
     type: workspace.type || authState.workspaceType || '',
     logoUrl,
   })

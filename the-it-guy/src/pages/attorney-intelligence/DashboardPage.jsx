@@ -58,7 +58,7 @@ function DashboardPage() {
             <div>
               <h2 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">AI Growth Snapshot</h2>
               <p className="mt-2 max-w-2xl text-[0.95rem] leading-7 text-[#607389]">
-                Bridge has identified 38 potential transactions per month in your active market where your firm is currently not appointed.
+                Arch9 has identified 38 potential transactions per month in your active market where your firm is currently not appointed.
               </p>
             </div>
             <OpportunityScoreBadge score={attorneyOpportunityData.confidenceScore} />

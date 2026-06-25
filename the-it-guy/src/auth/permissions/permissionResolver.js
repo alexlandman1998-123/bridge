@@ -483,7 +483,7 @@ export function evaluateAccessRequirement(requirement = null, context = {}) {
     resolved.appRole !== normalizeCanonicalAppRole(requirement.appRole, '') &&
     (!requirement.workspaceType || resolved.workspaceType !== normalizeWorkspaceType(requirement.workspaceType))
   ) {
-    return { ok: false, reason: 'wrong_app_role', message: 'Your Bridge role does not include access to this area.' }
+    return { ok: false, reason: 'wrong_app_role', message: 'Your Arch9 role does not include access to this area.' }
   }
   if (requirement.workspaceType && resolved.systemRole !== SYSTEM_ROLES.client && resolved.appRole !== APP_ROLES.client && resolved.workspaceType !== normalizeWorkspaceType(requirement.workspaceType)) {
     return { ok: false, reason: 'wrong_workspace_type', message: 'This workspace does not include access to this area.' }

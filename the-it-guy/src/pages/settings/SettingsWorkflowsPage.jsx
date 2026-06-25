@@ -220,7 +220,7 @@ export default function SettingsWorkflowsPage() {
           </div>
         </SettingsSectionCard>
 
-        <SettingsSectionCard title="Workflow Defaults" description="Set which operational lanes Bridge should create and maintain by default.">
+        <SettingsSectionCard title="Workflow Defaults" description="Set which operational lanes Arch9 should create and maintain by default.">
           <div>
             <SettingsToggleRow
               title="Finance workflow enabled by default"

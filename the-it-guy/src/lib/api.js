@@ -11036,7 +11036,7 @@ async function createTransactionNotificationIfPossible(client, payload = {}) {
     user_id: userId,
     role_type: normalizeRoleType(payload.roleType || null),
     notification_type: normalizeNotificationType(payload.notificationType),
-    title: normalizeTextValue(payload.title || 'Bridge Update'),
+    title: normalizeTextValue(payload.title || 'Arch9 Update'),
     message: normalizeTextValue(payload.message || ''),
     is_read: false,
     read_at: null,
@@ -11625,7 +11625,7 @@ async function runDocumentAutomationIfPossible(
         if (stageAdvanceResult.advanced) {
           await addTransactionDiscussionComment({
             transactionId,
-            authorName: 'Bridge System',
+            authorName: 'Arch9 System',
             authorRole: 'internal_admin',
             commentText: automationMessage,
             unitId: null,
@@ -12260,7 +12260,7 @@ const ADDITIONAL_DOCUMENT_REQUESTER_ROLES = new Set([
 function buildAdditionalDocumentRequestEmailCopy({ actorRole, request, transaction = {}, portalLink = '' } = {}) {
   const actorLabel =
     TRANSACTION_ROLE_LABELS[normalizeRoleType(actorRole)] ||
-    String(actorRole || 'Bridge team')
+    String(actorRole || 'Arch9 team')
       .replaceAll('_', ' ')
       .replace(/\b\w/g, (match) => match.toUpperCase())
   const documentTitle = normalizeTextValue(request?.title || request?.document_type || 'Additional document')
@@ -12276,7 +12276,7 @@ function buildAdditionalDocumentRequestEmailCopy({ actorRole, request, transacti
     `${actorLabel} requested ${documentTitle} for your application${reference ? ` (${reference})` : ''}.`,
     propertyLabel ? `Property: ${propertyLabel}.` : '',
     dueDate ? `Due date: ${dueDate}.` : '',
-    portalLink ? 'Please open your Bridge portal to upload the document.' : 'Please upload the requested document in your Bridge portal.',
+    portalLink ? 'Please open your Arch9 portal to upload the document.' : 'Please upload the requested document in your Arch9 portal.',
   ].filter(Boolean)
 
   return {
@@ -18321,9 +18321,9 @@ export async function sendOtpToClient({
       'Open your secure signing link:',
       sendResult?.signingLink || signingLink,
       '',
-      'If you have any questions, please contact your Bridge transaction team.',
+      'If you have any questions, please contact your Arch9 transaction team.',
       '',
-      '- Bridge',
+      '- Arch9',
     ]
       .filter(Boolean)
       .join('\n')
@@ -32454,7 +32454,7 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
 
     await addTransactionDiscussionComment({
       transactionId: transaction.id,
-      authorName: 'Bridge System',
+      authorName: 'Arch9 System',
       authorRole: 'internal_admin',
       commentText: `[system] Buyer onboarding completed. ${otpPendingState?.nextAction || 'Signed OTP is required before finance or attorney handoff.'}`,
       unitId: transaction.unit_id || null,
@@ -35551,7 +35551,7 @@ function normalizeClientPortalNotificationRow(row = {}) {
     clientPortalToken: row?.client_portal_token || null,
     clientRole: normalizeClientPortalNotificationRole(row?.client_role),
     type: normalizeClientPortalNotificationType(row?.notification_type),
-    title: normalizeTextValue(row?.title || 'Bridge Update'),
+    title: normalizeTextValue(row?.title || 'Arch9 Update'),
     description: normalizeTextValue(row?.description || ''),
     priority: normalizeClientPortalNotificationPriority(row?.priority),
     status: normalizeClientPortalNotificationStatus(row?.status),
@@ -35575,7 +35575,7 @@ export async function upsertClientPortalNotification({
   transactionId = null,
   clientPortalToken = null,
   notificationType = 'action_required',
-  title = 'Bridge Update',
+  title = 'Arch9 Update',
   description = '',
   priority = 'normal',
   status = 'unread',
@@ -35653,7 +35653,7 @@ export async function upsertClientPortalNotification({
     }
 
     if (
-      existing.title === normalizeTextValue(title || 'Bridge Update') &&
+      existing.title === normalizeTextValue(title || 'Arch9 Update') &&
       existing.description === normalizeTextValue(description || '') &&
       existing.priority === normalizedPriority &&
       existing.actionLabel === normalizeNullableText(actionLabel) &&
@@ -35666,7 +35666,7 @@ export async function upsertClientPortalNotification({
     const { data: updated, error: updateError } = await client
       .from('client_portal_notifications')
       .update({
-        title: normalizeTextValue(title || 'Bridge Update'),
+        title: normalizeTextValue(title || 'Arch9 Update'),
         description: normalizeNullableText(description),
         priority: normalizedPriority,
         status: normalizedStatus,
@@ -35702,7 +35702,7 @@ export async function upsertClientPortalNotification({
     client_portal_token: normalizeNullableText(clientPortalToken || token),
     client_role: normalizedRole,
     notification_type: normalizedType,
-    title: normalizeTextValue(title || 'Bridge Update'),
+    title: normalizeTextValue(title || 'Arch9 Update'),
     description: normalizeNullableText(description),
     priority: normalizedPriority,
     status: normalizedStatus,
@@ -36795,7 +36795,7 @@ function buildSignedOtpSummaryPdfFile({
   })()
 
   const lines = [
-    'Bridge - Signed Offer to Purchase (OTP)',
+    'Arch9 - Signed Offer to Purchase (OTP)',
     '',
     `Transaction: ${transactionReference || 'N/A'}`,
     `Property: ${[developmentName, unitLabel].filter(Boolean).join(' - ') || 'N/A'}`,
@@ -36809,7 +36809,7 @@ function buildSignedOtpSummaryPdfFile({
     `Original OTP document: ${sourceDocumentName || 'Offer to Purchase (OTP)'}`,
     `Original document path: ${sourceDocumentPath || 'N/A'}`,
     '',
-    'Generated by Bridge Transaction Workspace',
+    'Generated by Arch9 Transaction Workspace',
   ]
 
   const bytes = buildSimplePdfBytesFromLines(lines)
@@ -36964,7 +36964,7 @@ async function triggerPostSigningWorkflowIfNeeded(
   if (stageResult?.advanced) {
     await addTransactionDiscussionComment({
       transactionId: normalizedTransactionId,
-      authorName: 'Bridge System',
+      authorName: 'Arch9 System',
       authorRole: 'internal_admin',
       commentText: `[system] ${workflowMessage}`,
       client,

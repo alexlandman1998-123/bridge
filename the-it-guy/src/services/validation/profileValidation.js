@@ -44,7 +44,7 @@ export async function validateProfileState(userId, options = {}) {
       severity: INTEGRITY_SEVERITIES.critical,
       entityType: 'user',
       entityId: id,
-      message: 'Authenticated user has no Bridge profile.',
+      message: 'Authenticated user has no Arch9 profile.',
     }))
     return { entityType: 'profile', entityId: id, profile: null, issues, ...summarizeIssues(issues) }
   }

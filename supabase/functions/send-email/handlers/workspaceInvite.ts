@@ -39,7 +39,7 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
   if (!to) return jsonResponse(400, { error: "Missing required field: to" });
   if (!inviteLink) return jsonResponse(400, { error: "Missing required field: inviteLink" });
 
-  const organisationName = normalizeText(payload.organisationName || payload.organisation_name) || "Bridge workspace";
+  const organisationName = normalizeText(payload.organisationName || payload.organisation_name) || "Arch9 workspace";
   const inviteeName = normalizeText(
     payload.inviteeName || payload.invitee_name || payload.agentName ||
       payload.agent_name,
@@ -54,7 +54,7 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
   );
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const safeOrganisationName = escapeHtml(organisationName);
   const safeInviteeName = escapeHtml(inviteeName);
@@ -75,7 +75,7 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
 
   const html = `
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-      ${safeInviterName} invited you to join ${safeOrganisationName} on Bridge.
+      ${safeInviterName} invited you to join ${safeOrganisationName} on Arch9.
     </div>
     <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0;padding:0;background:#edf3f8;">
       <tr>
@@ -95,7 +95,7 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
                           </td>
                           <td align="right" style="vertical-align:middle;">
                             <div style="display:inline-block;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.24);color:#dbeafe;font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;">
-                              Powered by Bridge
+                              Powered by Arch9
                             </div>
                           </td>
                         </tr>
@@ -103,13 +103,13 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
                       <div style="height:28px;line-height:28px;">&nbsp;</div>
                       <p style="margin:0 0 10px;color:#bfe2ff;font-size:12px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;">Workspace invitation</p>
                       <h1 style="margin:0;color:#ffffff;font-size:36px;line-height:1.08;font-weight:800;letter-spacing:-0.04em;">Join ${safeOrganisationName}</h1>
-                      <p style="margin:14px 0 0;max-width:520px;color:#dbeafe;font-size:16px;line-height:1.65;">You have been invited into a premium Bridge workspace as ${safeWorkspaceRole}.</p>
+                      <p style="margin:14px 0 0;max-width:520px;color:#dbeafe;font-size:16px;line-height:1.65;">You have been invited into a premium Arch9 workspace as ${safeWorkspaceRole}.</p>
                     </td>
                   </tr>
                   <tr>
                     <td style="padding:34px 34px 28px;background:#ffffff;">
                       <p style="margin:0 0 18px;color:#142132;font-size:18px;line-height:1.6;">Hi ${safeInviteeName},</p>
-                      <p style="margin:0 0 24px;color:#40536a;font-size:16px;line-height:1.7;">${safeInviterName} invited you to create or connect your Bridge account and enter the ${safeOrganisationName} workspace.</p>
+                      <p style="margin:0 0 24px;color:#40536a;font-size:16px;line-height:1.7;">${safeInviterName} invited you to create or connect your Arch9 account and enter the ${safeOrganisationName} workspace.</p>
                       <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:separate;border-spacing:0 12px;margin:0 0 26px;">
                         <tr>
                           <td style="padding:16px 18px;border:1px solid #e2eaf4;border-radius:18px;background:#f8fbff;">
@@ -143,7 +143,7 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
                   <tr>
                     <td style="padding:20px 34px 28px;border-top:1px solid #edf2f7;background:#fbfdff;">
                       <p style="margin:0;color:#748aa2;font-size:12px;line-height:1.6;">This invite was sent for ${safeOrganisationName}. If you were not expecting it, you can ignore this email.</p>
-                      <p style="margin:8px 0 0;color:#9aaabc;font-size:12px;line-height:1.6;">${currentYear} Bridge. Secure workspace infrastructure for property teams.</p>
+                      <p style="margin:8px 0 0;color:#9aaabc;font-size:12px;line-height:1.6;">${currentYear} Arch9. Secure workspace infrastructure for property teams.</p>
                     </td>
                   </tr>
                 </table>
@@ -159,9 +159,9 @@ export async function handleWorkspaceInviteEmail(payload: SendWorkspaceInvitePay
     apiKey: resendApiKey,
     from: sender,
     to,
-    subject: `You're invited to join ${organisationName} on Bridge`,
+    subject: `You're invited to join ${organisationName} on Arch9`,
     html,
-    text: `Hi ${inviteeName}, ${inviterName} invited you to join ${organisationName} on Bridge as ${workspaceRole}. Accept the invite: ${inviteLink}`,
+    text: `Hi ${inviteeName}, ${inviterName} invited you to join ${organisationName} on Arch9 as ${workspaceRole}. Accept the invite: ${inviteLink}`,
   });
 
   if (!emailResult.ok) {

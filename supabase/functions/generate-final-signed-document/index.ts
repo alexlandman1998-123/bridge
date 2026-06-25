@@ -586,7 +586,7 @@ function resolveAssetUrl(value: unknown) {
   const raw = normalizeText(value);
   if (!raw) return "";
   if (/^(https?:|data:)/i.test(raw)) return raw;
-  const base = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || Deno.env.get("VITE_SITE_URL")) || "https://app.bridgenine.co.za";
+  const base = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || Deno.env.get("VITE_SITE_URL")) || "https://app.arch9.co.za";
   const path = raw.startsWith("/") ? raw : `/${raw}`;
   return `${base.replace(/\/+$/, "")}${path}`;
 }
@@ -1547,7 +1547,7 @@ async function buildFallbackMandatePdfBytes({
       maxHeight: 54,
     });
     if (!drewBridgeLogo) {
-      page.drawText("bridge", {
+      page.drawText("Arch", {
         x: pageWidth - marginX - 118,
         y: pageHeight - 105,
         size: 30,
@@ -1555,7 +1555,7 @@ async function buildFallbackMandatePdfBytes({
         color: rgb(0.10, 0.22, 0.30),
       });
       page.drawText("9", {
-        x: pageWidth - marginX - 22,
+        x: pageWidth - marginX - 47,
         y: pageHeight - 105,
         size: 30,
         font: boldFont,

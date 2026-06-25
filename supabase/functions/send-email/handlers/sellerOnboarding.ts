@@ -29,7 +29,7 @@ function toRecord(value: unknown): Record<string, unknown> {
 async function resolveSenderOrganisationBranding(
   supabase: any,
   organisationId: string,
-  fallbackName = "Bridge",
+  fallbackName = "Arch9",
 ) {
   let senderOrganisationName = fallbackName;
   let senderOrganisationLogoUrl = "";
@@ -158,7 +158,7 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
     ? normalizeText(payload.portalLink) || normalizeText(payload.onboardingLink)
     : normalizeText(payload.onboardingLink);
   const agentName = normalizeText(payload.agentName);
-  const organisationName = normalizeText(payload.organisationName) || "Bridge";
+  const organisationName = normalizeText(payload.organisationName) || "Arch9";
   const organisationId = normalizeText(payload.organisationId);
   let supportEmail = normalizeText(payload.supportEmail);
   let supportPhone = normalizeText(payload.supportPhone);
@@ -199,7 +199,7 @@ export async function handleSellerOnboardingEmail(payload: SendSellerOnboardingP
 
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const subject =
     normalizeText(templateOverrides?.subject) ||

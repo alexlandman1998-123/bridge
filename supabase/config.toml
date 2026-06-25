@@ -1,8 +1,45 @@
 
+[auth]
+enabled = true
+site_url = "https://app.arch9.co.za"
+additional_redirect_urls = [
+  "https://app.arch9.co.za/auth/callback",
+  "https://app.arch9.co.za/auth",
+  "https://app.arch9.co.za/onboarding/profile",
+  "https://app.bridgenine.co.za/auth/callback",
+  "https://app.bridgenine.co.za/auth",
+  "https://app.bridgenine.co.za/onboarding/profile",
+  "https://admin.arch9.co.za",
+  "https://admin.arch9.co.za/",
+  "https://admin.bridgenine.co.za",
+  "https://admin.bridgenine.co.za/",
+  "http://localhost:5173/auth/callback",
+  "http://127.0.0.1:5173/auth/callback",
+  "http://localhost:5175/auth/callback",
+  "http://127.0.0.1:5175/auth/callback",
+  "http://localhost:5177/auth/callback",
+  "http://127.0.0.1:5177/auth/callback",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
+]
+
 [auth.rate_limit]
+anonymous_users = 30
 email_sent = 1000
-sign_in_sign_ups = 1000
-token_verifications = 1000
+sign_in_sign_ups = 30
+sms_sent = 30
+token_refresh = 150
+token_verifications = 30
+web3 = 30
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.email]
+enable_confirmations = true
+max_frequency = "1m0s"
+otp_length = 8
 
 [functions.send-email]
 enabled = true

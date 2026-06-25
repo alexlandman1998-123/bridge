@@ -95,7 +95,7 @@ export function buildReservationDepositReceivedEmailText(
     payload.clientPortalLink ? `Open Client Portal: ${payload.clientPortalLink}` : null,
     previewText,
     "",
-    "Bridge",
+    "Arch9",
   ]
     .filter(Boolean)
     .join("\n");

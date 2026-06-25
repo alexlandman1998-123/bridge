@@ -90,7 +90,7 @@ export function readRuntimeFixtureMetadata(filePath = DEFAULT_METADATA_PATH) {
 
 export function readRuntimeAuthState(filePath = DEFAULT_AUTH_STATE_PATH) {
   const authState = safeReadJson(filePath, 'Bond runtime auth state')
-  const originEntry = (authState.origins || []).find((item) => item.origin === 'https://app.bridgenine.co.za')
+  const originEntry = (authState.origins || []).find((item) => item.origin === 'https://app.arch9.co.za')
   const tokenEntry = originEntry?.localStorage?.find((item) => String(item.name || '').includes('auth-token'))
   if (!tokenEntry) {
     throw new Error('Bond runtime auth state is missing the Bridge auth token entry')

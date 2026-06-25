@@ -1,4 +1,4 @@
-# Bridge Admin
+# Arch9 | Command
 
 Internal admin dashboard for `admin.arch9.co.za`.
 
@@ -9,7 +9,7 @@ npm install
 npm run dev
 ```
 
-Create a local `.env` file with the same Supabase frontend values used by the main Bridge app:
+Create a local `.env` file with the same Supabase frontend values used by the main Arch9 app:
 
 ```bash
 VITE_SUPABASE_URL=...

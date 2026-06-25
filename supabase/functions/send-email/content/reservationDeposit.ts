@@ -150,7 +150,7 @@ export function buildReservationDepositEmailText(payload: ReservationDepositEmai
     "",
     "Once payment is received, our team will continue with the next transaction steps.",
     "",
-    "Bridge",
+    "Arch9",
   ]
     .filter(Boolean)
     .join("\n");

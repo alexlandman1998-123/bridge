@@ -98,7 +98,7 @@ export function buildOnboardingSubmittedEmailText(
     "",
     previewText,
     "",
-    "Bridge",
+    "Arch9",
   ]
     .filter(Boolean)
     .join("\n");
@@ -181,7 +181,7 @@ export function buildClientPortalLinkEmailText(payload: OnboardingSubmittedEmail
     "",
     previewText,
     "",
-    "Bridge",
+    "Arch9",
   ]
     .filter(Boolean)
     .join("\n");

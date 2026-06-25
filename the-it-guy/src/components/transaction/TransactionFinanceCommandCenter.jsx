@@ -1039,7 +1039,7 @@ function FinanceCommandCenter({
             title="Bond Application Progress"
             description={workspace.financeType === 'combination'
               ? 'Bond lane progress for the hybrid finance workflow.'
-              : 'Bond finance workflow status shared across Bridge.'}
+              : 'Bond finance workflow status shared across Arch9.'}
           />
           {workspace.financeType === 'combination' ? (
             <CashPortionStatusPanel items={proofStatusItems} />

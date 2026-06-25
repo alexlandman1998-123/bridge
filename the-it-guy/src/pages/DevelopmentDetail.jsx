@@ -2402,7 +2402,7 @@ function DevelopmentDetail() {
       `Type: ${docTypeLabel}`,
       item?.fileUrl ? `Link: ${item.fileUrl}` : 'Link: (not available)',
       '',
-      'Sent via Bridge.',
+      'Sent via Arch9.',
     ].join('\n')
 
     setSelectedDocumentForEmail(item)
@@ -5345,7 +5345,7 @@ function DevelopmentDetail() {
         open={emailComposeOpen}
         onClose={emailSending ? undefined : closeDocumentEmailComposer}
         title="Send Document via Email"
-        subtitle="Compose an email for the selected development document. Bridge will prefill the document context and file link."
+        subtitle="Compose an email for the selected development document. Arch9 will prefill the document context and file link."
         className="max-w-[640px]"
       >
         <form className="space-y-4" onSubmit={handleSendDocumentEmail}>

@@ -41,7 +41,7 @@ const PROCESS_LABELS = {
 const OWNER_LABELS = {
   bond_originator: 'Bond Originator',
   attorney: 'Attorney / Conveyancer',
-  internal: 'Bridge Team',
+  internal: 'Arch9 Team',
   developer: 'Developer',
   client: 'Client',
 }
@@ -333,7 +333,7 @@ function ProcessCard({ process, expanded, onToggle }) {
             {PROCESS_LABELS[process.process_type] || toTitleCase(process.process_type)}
           </h4>
           <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-            Owner: {OWNER_LABELS[process.owner_type] || 'Bridge Team'}
+            Owner: {OWNER_LABELS[process.owner_type] || 'Arch9 Team'}
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -657,7 +657,7 @@ function ClientModulePage() {
                     <article key={comment.id || `${comment.author_name}-${comment.created_at}`} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfdff] px-5 py-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <strong className="block text-sm font-semibold text-[#142132]">{comment.author_name || 'Bridge Team'}</strong>
+                          <strong className="block text-sm font-semibold text-[#142132]">{comment.author_name || 'Arch9 Team'}</strong>
                           <span className="mt-1 block text-xs font-semibold uppercase tracking-[0.08em] text-[#8aa0b8]">
                             {toTitleCase(comment.author_role || 'operational')}
                           </span>
@@ -803,7 +803,7 @@ function ClientModulePage() {
                     <article key={comment.id || `${comment.author_name}-${comment.created_at}`} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] px-4 py-3.5">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <strong className="block text-sm font-semibold text-[#142132]">{comment.author_name || 'Bridge Team'}</strong>
+                          <strong className="block text-sm font-semibold text-[#142132]">{comment.author_name || 'Arch9 Team'}</strong>
                           <span className="mt-1 block text-xs font-semibold uppercase tracking-[0.08em] text-[#8aa0b8]">
                             {toTitleCase(comment.author_role || 'operational')}
                           </span>
@@ -1163,7 +1163,7 @@ function ClientModulePage() {
               <TeamMemberCard label="Portal access" value="Enabled" meta="Your client workspace is active." />
               <TeamMemberCard label="Document updates" value="Notifications on" meta="Your team will notify you when more documents are needed." />
               <TeamMemberCard label="Snag reporting" value={(detail?.developmentSettings?.snag_tracking_enabled ?? true) ? 'Enabled' : 'Not active'} meta="Only used when relevant to your purchase." />
-              <TeamMemberCard label="Support" value="Bridge Team" meta="Questions can be routed through the transaction updates feed." />
+              <TeamMemberCard label="Support" value="Arch9 Team" meta="Questions can be routed through the transaction updates feed." />
             </div>
           </section>
         </div>

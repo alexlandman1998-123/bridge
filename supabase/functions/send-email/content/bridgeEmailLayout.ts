@@ -79,9 +79,9 @@ export function renderBridgeEmailLayout({
   greeting,
   contentHtml,
   securityTitle = "Security & Privacy",
-  securityBody = "Your information and documents are handled securely through Bridge. Only authorised parties involved in your transaction can access your onboarding details.",
+  securityBody = "Your information and documents are handled securely through Arch9. Only authorised parties involved in your transaction can access your onboarding details.",
   helpBody = "Need help? Reply to this email or contact your property representative directly.",
-  organisationName = "Bridge",
+  organisationName = "Arch9",
   senderOrganisationName = "",
   senderOrganisationLogoUrl = "",
   supportEmail = "",
@@ -102,7 +102,7 @@ export function renderBridgeEmailLayout({
 }) {
   const safeSupportEmail = supportEmail ? escapeHtml(supportEmail) : "";
   const safeSupportPhone = supportPhone ? escapeHtml(supportPhone) : "";
-  const resolvedOrganisationName = senderOrganisationName || organisationName || "Bridge";
+  const resolvedOrganisationName = senderOrganisationName || organisationName || "Arch9";
   const safeOrganisationName = escapeHtml(resolvedOrganisationName);
   const safeOrganisationLogoUrl = senderOrganisationLogoUrl ? escapeHtml(senderOrganisationLogoUrl) : "";
   const supportLine = [safeSupportEmail, safeSupportPhone].filter(Boolean).join(" · ");
@@ -129,7 +129,7 @@ export function renderBridgeEmailLayout({
           </div>
           <p style="margin: 0 0 6px; font-size: 13px; line-height: 1.6; color: #35506d;">${escapeHtml(helpBody)}</p>
           ${supportLine ? `<p style="margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: #35506d;">Support: ${supportLine}</p>` : ""}
-          <p style="margin: 0; font-size: 12px; line-height: 1.6; color: #748aa2;">${safeOrganisationName} · Powered by Bridge</p>
+          <p style="margin: 0; font-size: 12px; line-height: 1.6; color: #748aa2;">${safeOrganisationName} · Powered by Arch9</p>
         </div>
       </div>
     </div>

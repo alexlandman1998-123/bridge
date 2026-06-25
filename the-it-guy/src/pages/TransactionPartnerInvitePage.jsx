@@ -220,7 +220,7 @@ function TransactionPartnerInvitePage() {
     <main className="min-h-screen bg-[#f5f8fb] px-4 py-10">
       <section className="mx-auto max-w-[820px] overflow-hidden rounded-[28px] border border-[#dbe4ef] bg-white shadow-[0_24px_70px_rgba(15,23,42,0.1)]">
         <div className="border-b border-[#e6edf5] bg-[#fbfdff] px-6 py-5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8395aa]">Bridge Transaction Invitation</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8395aa]">Arch9 Transaction Invitation</span>
           <h1 className="mt-2 text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">
             You have been invited to participate in a property transaction.
           </h1>
@@ -302,7 +302,7 @@ function TransactionPartnerInvitePage() {
                   <div>
                     <h2 className="text-lg font-semibold text-[#142132]">Create Account</h2>
                     <p className="mt-1 text-sm leading-6 text-[#60758d]">
-                      This creates your Bridge account and connects it to this transaction only.
+                      This creates your Arch9 account and connects it to this transaction only.
                     </p>
                   </div>
 

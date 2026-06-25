@@ -695,7 +695,7 @@ function resolveEventKey(eventType, metadata = {}) {
 function buildEventCopy(eventType, { transaction = {}, recipients = {}, metadata = {} } = {}) {
   const buyer = buyerName(transaction, recipients)
   const property = propertyLabel(transaction, metadata)
-  const actorName = safeDisplayName([metadata.actorName, metadata.actor?.name], 'Bridge')
+  const actorName = safeDisplayName([metadata.actorName, metadata.actor?.name], 'Arch9')
   const assigneeName = safeDisplayName([metadata.assignee?.name, metadata.assigneeName, recipients.assignedConsultant?.name], 'the assigned consultant')
   const consultantName = safeDisplayName([metadata.consultantName, metadata.assignedConsultantName], 'your bond originator')
   const organisationName = normalizeText(metadata.organisationName || metadata.bondOrganisationName)

@@ -183,7 +183,7 @@ function validateFirmInformation(values) {
     errors.email = 'Please enter a valid email address.'
   }
   if (values.website && !isValidWebsite(values.website)) {
-    errors.website = 'Please enter a valid domain, such as bridge9.co.za.'
+    errors.website = 'Please enter a valid domain, such as arch9.co.za.'
   }
   return errors
 }

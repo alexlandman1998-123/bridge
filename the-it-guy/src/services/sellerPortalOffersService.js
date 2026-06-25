@@ -258,7 +258,7 @@ export async function getSellerPortalOffers({ token } = {}) {
     propertyId: workspaceData?.property?.id || portal?.unit?.id || '',
     agent: {
       id: assignedAgent?.id || '',
-      name: assignedAgent?.full_name || assignedAgent?.name || 'Bridge Property Team',
+      name: assignedAgent?.full_name || assignedAgent?.name || 'Arch9 Property Team',
       phone: assignedAgent?.phone || '',
       email: assignedAgent?.email || '',
     },

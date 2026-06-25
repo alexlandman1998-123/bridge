@@ -40,9 +40,20 @@ const lazyNamed = (loader, exportName) => lazy(() => loader().then((module) => (
 
 const COMMERCIAL_MODULE_MARKERS = new Set(['commercial', 'commercial_brokerage', 'commercial_agency'])
 const WORKSPACE_SWITCHER_STORAGE_KEY = 'bridge:active-workspace'
+const PUBLIC_WEBSITE_HOSTS = new Set(['arch9.co.za', 'www.arch9.co.za'])
 
 function normalizeRouteText(value = '') {
   return String(value || '').trim().toLowerCase()
+}
+
+function isPublicWebsiteHost() {
+  if (typeof window === 'undefined') return false
+  const hostname = normalizeRouteText(window.location.hostname)
+  return PUBLIC_WEBSITE_HOSTS.has(hostname) || hostname.startsWith('bridge-website-')
+}
+
+function PublicAwareRootRoute() {
+  return isPublicWebsiteHost() ? <BridgeLanding /> : <Navigate to="/dashboard" replace />
 }
 
 function getPreferredWorkspaceMode() {
@@ -842,7 +853,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
         <section className="auth-loading-screen">
           <div className="auth-loading-card">
             <h2>Still preparing your workspace…</h2>
-            <p>Bridge is still loading your profile, workspace, and permissions. This can take longer after schema updates.</p>
+            <p>Arch9 is still loading your profile, workspace, and permissions. This can take longer after schema updates.</p>
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
@@ -891,7 +902,7 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     return (
       <section className="auth-loading-screen">
         <div className="auth-loading-card">
-          <h2>We couldn’t load your Bridge account.</h2>
+          <h2>We couldn’t load your Arch9 account.</h2>
           <p>{profileError || 'Authentication boot failed.'}</p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
             <button
@@ -1013,7 +1024,7 @@ function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceTyp
   }
 
   if (!allowedRoles.includes(role)) {
-    return <AccessDenied message="Your Bridge role does not include access to this module." />
+    return <AccessDenied message="Your Arch9 role does not include access to this module." />
   }
 
   const canAccessWithoutMembership =
@@ -1077,7 +1088,7 @@ function AttorneyFirmRoute({ children, requireFirm = true }) {
   }
 
   if (role !== 'attorney') {
-    return <AccessDenied message="Your Bridge role does not include access to the attorney workspace." />
+    return <AccessDenied message="Your Arch9 role does not include access to the attorney workspace." />
   }
 
   if (suspendedAttorneyMembership?.status === 'suspended') {
@@ -1385,8 +1396,9 @@ function AppRoutes() {
       <OrganisationProvider>
         <EnvironmentValidationBanner />
         <RouteObservability />
-        <Suspense fallback={<PageSkeleton label="Loading Bridge" />}>
+        <Suspense fallback={<PageSkeleton label="Loading Arch9" />}>
           <Routes>
+          <Route path="/" element={<PublicAwareRootRoute />} />
           <Route path="/bridge" element={<BridgeLanding />} />
           <Route path="/bridge/buy" element={<BridgeBuyPage />} />
           <Route path="/bridge/product" element={<BridgeProductPage />} />
@@ -1462,7 +1474,6 @@ function AppRoutes() {
               </Route>
 
               <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary>} />
               <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
               <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout onLogout={logout} user={session?.user || null} /></AppErrorBoundary></RoleRoute>}>

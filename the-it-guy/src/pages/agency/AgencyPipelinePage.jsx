@@ -7795,7 +7795,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             baseUrl:
               (typeof window !== 'undefined' && window.location?.origin)
                 ? window.location.origin
-              : 'https://app.bridgenine.co.za',
+              : 'https://app.arch9.co.za',
             targetSignerRole,
           })
           agentSigningLink = agentSigningLink || resolveSignerLinkByRole(linkResult?.signers, 'agent', agentRecipientEmail)
@@ -7819,7 +7819,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               const origin =
                 (typeof window !== 'undefined' && window.location?.origin)
                   ? window.location.origin
-                  : 'https://app.bridgenine.co.za'
+                  : 'https://app.arch9.co.za'
               if (!sellerSigningLink) {
                 const matchedSeller =
                   signerRows.find(
@@ -9026,7 +9026,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
     const transactionId = normalizeText(selectedLeadLinkedTransactionId)
     if (!transactionId) {
-      setError('Create or accept an offer first, then Bridge can create the transaction and send buyer onboarding.')
+      setError('Create or accept an offer first, then Arch9 can create the transaction and send buyer onboarding.')
       return
     }
 
@@ -9115,7 +9115,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         selectedAppointmentId,
         {
           status: 'cancelled',
-          cancellationReason: normalizeText(appointmentOutcomeForm.agentNotes || appointmentForm.notes) || 'Cancelled from Bridge appointment detail.',
+          cancellationReason: normalizeText(appointmentOutcomeForm.agentNotes || appointmentForm.notes) || 'Cancelled from Arch9 appointment detail.',
         },
         {
           actor: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
@@ -11277,7 +11277,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div>
                                 <h3 className="text-base font-semibold text-[#18324b]">Listing Readiness</h3>
-                                <p className="mt-1 text-xs text-[#6a8098]">Uses the linked listing fields already captured in Bridge.</p>
+                                <p className="mt-1 text-xs text-[#6a8098]">Uses the linked listing fields already captured in Arch9.</p>
                               </div>
                               <span className="rounded-full bg-white px-3 py-1 text-xs font-bold uppercase tracking-[0.1em] text-[#315b7a]">
                                 {selectedSellerReadiness.listingReadiness.percent}% complete
@@ -13715,7 +13715,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h4 className="text-sm font-semibold text-[#1f3952]">Appointment Snapshot</h4>
-                  <p className="mt-1 text-xs text-[#6a8098]">Bridge is the master record. Calendar files and RSVP links are generated from this appointment.</p>
+                  <p className="mt-1 text-xs text-[#6a8098]">Arch9 is the master record. Calendar files and RSVP links are generated from this appointment.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="secondary" size="sm" onClick={handleCopyAppointmentLink}>Copy Link</Button>

@@ -15,7 +15,7 @@ export function IntelligenceShell({ title, subtitle, children }) {
               Preview Mode — simulated intelligence for demonstration
             </span>
             <span className="inline-flex shrink-0 items-center self-start gap-1.5 whitespace-nowrap rounded-full border border-[#cae8d7] bg-[#f2fcf7] px-3 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] leading-none text-[#2f7f58]">
-              <BrainCircuit size={13} /> Bridge AI Active
+              <BrainCircuit size={13} /> Arch9 AI Active
             </span>
           </div>
         </div>

@@ -97,7 +97,7 @@ function toFriendlyPageError(error = null) {
     return 'You do not have permission to view this legal document workspace.'
   }
   if (message.includes('failed to fetch') || message.includes('network')) {
-    return 'Bridge could not reach the legal document service. Please retry.'
+    return 'Arch9 could not reach the legal document service. Please retry.'
   }
   return raw || 'Unable to load this legal document workspace.'
 }
@@ -127,7 +127,7 @@ function buildAgentFromProfile(profile = null) {
     fullName:
       normalizeText(profile?.fullName) ||
       [profile?.firstName, profile?.lastName].map(normalizeText).filter(Boolean).join(' ') ||
-      'Bridge User',
+      'Arch9 User',
     email: normalizeText(profile?.email).toLowerCase(),
     phone: normalizeText(profile?.phone || profile?.phoneNumber || profile?.mobile || profile?.cellphone),
     ffcNumber: normalizeText(profile?.ffcNumber || profile?.ppraNumber || profile?.fidelityFundCertificateNumber),
@@ -1043,7 +1043,7 @@ export default function LegalDocumentWorkspacePage() {
         )
         if (routeLeadId && !documentPacketBelongsToLead(packet, routeLeadId)) {
           effectiveRoutePacketId = ''
-          packetOwnershipWarnings.push('The packet in this link belongs to another lead, so Bridge ignored it for this workspace.')
+          packetOwnershipWarnings.push('The packet in this link belongs to another lead, so Arch9 ignored it for this workspace.')
         }
         resolvedPacketType = resolvedPacketType || normalizeKey(packet?.packet_type || packet?.packetType || 'mandate')
         if (effectiveRoutePacketId) {

@@ -252,7 +252,7 @@ function AttorneyAssignmentSection({ transactionId, financeType = 'cash', transa
               <div>
                 <h4 className="text-base font-semibold text-textStrong">Resolved Legal Workflow</h4>
                 <p className="mt-1 text-sm text-textMuted">
-                  Bridge has evaluated the transaction facts and identified the attorney roles that apply.
+                  Arch9 has evaluated the transaction facts and identified the attorney roles that apply.
                 </p>
               </div>
               {workflow.missingRequiredRoles.length ? (

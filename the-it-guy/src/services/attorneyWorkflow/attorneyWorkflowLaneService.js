@@ -451,7 +451,7 @@ async function fetchLaneDocumentRequests(client, transactionId) {
 }
 
 function actorLabel(id) {
-  return id ? 'Transaction team' : 'Bridge'
+  return id ? 'Transaction team' : 'Arch9'
 }
 
 function buildTimelineFromSources({ updates = [], history = [], documentRequests = [], permissionByLane = {} }) {

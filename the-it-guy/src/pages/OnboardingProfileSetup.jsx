@@ -232,7 +232,7 @@ function OnboardingProfileSetup() {
     <div className="auth-page onboarding-page agency-onboarding-page">
       <main className="auth-shell onboarding-shell agency-onboarding-shell">
         <section className="auth-hero onboarding-hero agency-onboarding-hero">
-          <p className="auth-brand">bridge.</p>
+          <p className="auth-brand">Arch9</p>
           <h1 style={{ color: '#ffffff' }}>Complete Your Profile</h1>
           <p>Set your details and choose the module you want to onboard into first.</p>
         </section>
@@ -243,10 +243,10 @@ function OnboardingProfileSetup() {
             <h2>{isPrincipalClaimIntent ? 'Before We Claim the Workspace' : 'Before We Continue'}</h2>
             <p>
               {isPrincipalClaimIntent
-                ? 'We found a principal claim. Confirm your profile details before Bridge captures the workspace as yours.'
+                ? 'We found a principal claim. Confirm your profile details before Arch9 captures the workspace as yours.'
                 : signupIntent
                   ? 'We found your signup path. Confirm your profile details before workspace setup.'
-                  : 'Confirm your business type and position so Bridge can recover the correct onboarding path.'}
+                  : 'Confirm your business type and position so Arch9 can recover the correct onboarding path.'}
             </p>
           </div>
 
@@ -272,7 +272,7 @@ function OnboardingProfileSetup() {
 
             {signupIntent ? (
               <section className="mt-4 rounded-[16px] border border-[#dbe8f3] bg-[#f8fbff] px-4 py-3 text-sm leading-6 text-[#48627d]">
-                Bridge will continue with {APP_ROLE_LABELS[signupIntent.app_role] || 'workspace'} setup.
+                Arch9 will continue with {APP_ROLE_LABELS[signupIntent.app_role] || 'workspace'} setup.
                 {signupIntent.workspace_action === 'create_workspace'
                   ? ' You will create the workspace in the next step.'
                   : ' You will join by invite or request access in the next step.'}

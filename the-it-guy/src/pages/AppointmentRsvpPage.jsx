@@ -17,7 +17,7 @@ function actionToStatus(action = '') {
 function statusCopy(status = '') {
   if (status === 'Accepted') return 'Thanks, your attendance has been confirmed.'
   if (status === 'Declined') return 'Thanks, your response has been recorded.'
-  if (status === 'Proposed New Time') return 'Thanks, your alternative time request has been sent to the Bridge team.'
+  if (status === 'Proposed New Time') return 'Thanks, your alternative time request has been sent to the Arch9 team.'
   return 'Choose a response for this appointment request.'
 }
 
@@ -130,7 +130,7 @@ export default function AppointmentRsvpPage() {
   return (
     <main className="min-h-screen bg-[#f3f7fb] px-4 py-8 text-[#17263a]">
       <section className="mx-auto max-w-2xl rounded-[24px] border border-[#dbe6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,35,55,0.08)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6d829a]">Bridge Appointment</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6d829a]">Arch9 Appointment</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-[#142338]">Appointment Request</h1>
         {loading ? (
           <div className="mt-6 rounded-[16px] border border-[#e0e8f2] bg-[#f8fbff] px-4 py-5 text-sm text-[#5d7289]">
@@ -143,7 +143,7 @@ export default function AppointmentRsvpPage() {
         ) : (
           <>
             <div className="mt-5 rounded-[18px] border border-[#dde7f1] bg-[#f8fbff] p-4">
-              <h2 className="text-lg font-semibold text-[#172d43]">{appointment?.title || 'Bridge Appointment'}</h2>
+              <h2 className="text-lg font-semibold text-[#172d43]">{appointment?.title || 'Arch9 Appointment'}</h2>
               <div className="mt-3 grid gap-2 text-sm text-[#526b84] md:grid-cols-2">
                 <p><span className="font-semibold text-[#203a52]">Date:</span> {appointment?.appointment_date || 'To be confirmed'}</p>
                 <p><span className="font-semibold text-[#203a52]">Time:</span> {[appointment?.start_time, appointment?.end_time].filter(Boolean).join(' - ') || 'To be confirmed'}</p>
@@ -232,7 +232,7 @@ export default function AppointmentRsvpPage() {
             )}
           </>
         )}
-        <Link to="/bridge" className="mt-6 inline-flex text-sm font-semibold text-[#214f75]">Back to Bridge</Link>
+        <Link to="/bridge" className="mt-6 inline-flex text-sm font-semibold text-[#214f75]">Back to Arch9</Link>
       </section>
     </main>
   )

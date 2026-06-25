@@ -172,7 +172,7 @@ export function deriveAuthBootOnboardingState({
 
 export async function loadBridgeAuthState({ session, selectedWorkspaceId = '' } = {}) {
   if (!isSupabaseConfigured || !supabase) {
-    throw new Error('Supabase is not configured. Bridge auth requires Supabase in this environment.')
+    throw new Error('Supabase is not configured. Arch9 auth requires Supabase in this environment.')
   }
 
   if (!session?.user?.id) {

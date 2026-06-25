@@ -98,7 +98,7 @@ function getInviteLink(token, baseUrl = '') {
     baseUrl ||
     (typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
-      : 'https://app.bridgenine.co.za')
+      : 'https://app.arch9.co.za')
   return `${origin}/client/offer/${token}`
 }
 

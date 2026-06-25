@@ -115,7 +115,7 @@ export async function handleClientOnboardingEmail(
   const defaultOrganisationName =
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   const defaultSupportEmail =
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL")) ||
@@ -345,7 +345,7 @@ export async function handleClientOnboardingEmail(
   const onboardingUrl =
     `${appBaseUrl}/client/onboarding/${resolvedOnboarding.token}`;
   const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const transactionReference = normalizeText(transaction.transaction_reference);
   const purchasePriceRaw = Number(

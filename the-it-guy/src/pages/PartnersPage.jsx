@@ -290,7 +290,7 @@ function buildPartnerOverviewCopy(partner = {}) {
   if (kind === 'agency') {
     return `Agency organisation operating in ${location}, available for transaction collaboration and agent-level coordination through this relationship.`
   }
-  return `Verified Bridge organisation operating in ${location}, available through this partner connection for operational collaboration.`
+  return `Verified Arch9 organisation operating in ${location}, available through this partner connection for operational collaboration.`
 }
 
 function buildPartnerServiceDeliveryCopy(partner = {}) {
@@ -548,7 +548,7 @@ function PartnerOrganisationProfilePage({
       {
         label: 'Active Branches',
         value: visibleBranches.length ? formatNumber(visibleBranches.length) : '0',
-        subtext: visibleBranches.length ? 'Branches currently visible in Bridge' : 'No branch visibility published yet',
+        subtext: visibleBranches.length ? 'Branches currently visible in Arch9' : 'No branch visibility published yet',
         icon: Building2,
       },
       {
@@ -727,7 +727,7 @@ function PartnerOrganisationProfilePage({
                 <HeroStat
                   label="Transactions"
                   value={Number.isFinite(Number(transactionStats.activeTransactions)) ? formatNumber(transactionStats.activeTransactions) : '—'}
-                  subtext={Number.isFinite(Number(transactionStats.activeTransactions)) ? 'Shared collaborations visible in Bridge' : 'No transaction volume published'}
+                  subtext={Number.isFinite(Number(transactionStats.activeTransactions)) ? 'Shared collaborations visible in Arch9' : 'No transaction volume published'}
                   icon={Network}
                 />
                 <HeroStat
@@ -797,9 +797,9 @@ function PartnerOrganisationProfilePage({
 
           <ProfileBand className="overflow-hidden">
             <ProfileSectionHeader
-              eyebrow="Bridge Activity"
+              eyebrow="Arch9 Activity"
               title="Live relationship activity"
-              description="A quick read on the visible work Bridge can associate with this partner connection."
+              description="A quick read on the visible work Arch9 can associate with this partner connection."
             />
             <div className="grid gap-4 px-5 py-5 sm:px-6">
               {bridgeMetrics.map((metric) => (
@@ -819,7 +819,7 @@ function PartnerOrganisationProfilePage({
           <ProfileSectionHeader
             eyebrow="Consultants"
             title={getOperationalPeopleSectionTitle(selectedPartner?.type)}
-            description="Visible operational people inside this organisation connection. This is the list Bridge can safely expose through current visibility rules."
+            description="Visible operational people inside this organisation connection. This is the list Arch9 can safely expose through current visibility rules."
           />
           <div className="space-y-5 px-5 py-5 sm:px-6">
             {partnerPeopleLoading ? (
@@ -866,7 +866,7 @@ function PartnerOrganisationProfilePage({
                         </h3>
                         <p className="mt-1 text-sm leading-6 text-[#60758d]">
                           {selectedVisiblePerson
-                            ? 'Bridge can surface the current work attached to this visible partner contact.'
+                            ? 'Arch9 can surface the current work attached to this visible partner contact.'
                             : 'Choose a visible person to review current listings associated with this partner relationship.'}
                         </p>
                       </div>
@@ -902,7 +902,7 @@ function PartnerOrganisationProfilePage({
                 title="No consultants have been published yet."
                 description={
                   partnerPeopleMessage ||
-                  'This organisation has not made any consultants visible through Bridge. It is not an error, just an empty relationship surface until visibility permissions are set.'
+                  'This organisation has not made any consultants visible through Arch9. It is not an error, just an empty relationship surface until visibility permissions are set.'
                 }
               />
             )}
@@ -971,7 +971,7 @@ function PartnerOrganisationProfilePage({
               <ProfileSectionHeader
                 eyebrow="Connected Organisations"
                 title="Works with"
-                description="Other connected organisations currently visible within your Bridge network."
+                description="Other connected organisations currently visible within your Arch9 network."
               />
               <div className="space-y-3 px-5 py-5 sm:px-6">
                 {relatedOrganisations.map((item) => (

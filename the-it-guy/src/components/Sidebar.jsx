@@ -169,9 +169,9 @@ const ICON_BY_KEY = {
   mission_control: LayoutDashboard,
 }
 
-const BRIDGE_BRAND_MARK = 'bridge.'
+const BRIDGE_BRAND_MARK = 'Arch9'
 const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
-const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
+const BRIDGE_POWERED_LABEL = 'Powered by Arch9'
 const ATTORNEY_SECONDARY_KEYS = new Set(['financials', 'team_departments', 'reports'])
 const BOND_NAV_SECTIONS = [
   {

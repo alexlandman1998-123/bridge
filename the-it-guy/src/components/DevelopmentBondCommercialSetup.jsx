@@ -245,7 +245,7 @@ function DevelopmentBondCommercialSetup({ developmentId, onSaved }) {
                 <div className="max-w-3xl">
                   <h4 className="text-base font-semibold text-[#142132]">Originator and commission model</h4>
                   <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-                    Capture the mandated originator, how Bridge earns, and the default payout assumption for granted bonds.
+                    Capture the mandated originator, how Arch9 earns, and the default payout assumption for granted bonds.
                   </p>
                 </div>
                 <Button type="button" variant="secondary" onClick={() => setRulesModalOpen(true)}>

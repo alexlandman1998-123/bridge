@@ -433,7 +433,7 @@ function DeveloperContent() {
     <>
       <IntelligenceInsightCard
         title="AI Development Strategy"
-        copy="Bridge AI analyses live transaction behaviour to recommend what to build, where to build, and how to price it."
+        copy="Arch9 AI analyses live transaction behaviour to recommend what to build, where to build, and how to price it."
         icon={BrainCircuit}
         footer={<StatusBadge label="Confidence Score: 89%" tone="success" />}
       >
@@ -466,7 +466,7 @@ function DeveloperContent() {
 
       <IntelligenceInsightCard
         title="Business Risk Detection"
-        copy="Bridge detects risks before they appear in retrospective reports."
+        copy="Arch9 detects risks before they appear in retrospective reports."
         icon={AlertTriangle}
       >
         <div className="grid gap-2.5">
@@ -491,7 +491,7 @@ function DeveloperContent() {
 
       <IntelligenceInsightCard
         title="Growth & Network Opportunities"
-        copy="Bridge identifies partners, suppliers, and areas that can unlock growth."
+        copy="Arch9 identifies partners, suppliers, and areas that can unlock growth."
         icon={Lightbulb}
         footer={
           <button
@@ -524,7 +524,7 @@ function AttorneyContent() {
     <>
       <IntelligenceInsightCard
         title="Autonomous Transaction Engine"
-        copy="Bridge AI monitors every transfer, triggers next steps, and escalates only when human attention is required."
+        copy="Arch9 AI monitors every transfer, triggers next steps, and escalates only when human attention is required."
         icon={Activity}
         footer={<StatusBadge label="AI Operating Layer Active" tone="success" />}
       >
@@ -545,7 +545,7 @@ function AttorneyContent() {
 
       <IntelligenceInsightCard
         title="Predictive Registration Engine"
-        copy="Bridge predicts expected registration dates based on live file progress, partner response time, and transaction patterns."
+        copy="Arch9 predicts expected registration dates based on live file progress, partner response time, and transaction patterns."
         icon={ShieldCheck}
       >
         <div className="grid gap-2.5">
@@ -558,7 +558,7 @@ function AttorneyContent() {
 
       <IntelligenceInsightCard
         title="Revenue & Market Position"
-        copy="Bridge forecasts revenue and tracks the firm’s market position by value and volume."
+        copy="Arch9 forecasts revenue and tracks the firm’s market position by value and volume."
         icon={Landmark}
       >
         <div className="grid grid-cols-2 gap-2.5">
@@ -578,7 +578,7 @@ function AttorneyContent() {
 
       <IntelligenceInsightCard
         title="Partner Growth Engine"
-        copy="Bridge identifies new business opportunities through the transaction network."
+        copy="Arch9 identifies new business opportunities through the transaction network."
         icon={Building2}
         footer={
           <button
@@ -690,7 +690,7 @@ export default function IntelligenceBetaPage() {
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e4f2] bg-white text-[#365e86]">
               <BrainCircuit size={15} />
             </span>
-            <h2 className="text-[1.03rem] font-semibold tracking-[-0.02em] text-[#152538]">Bridge AI Recommendations</h2>
+            <h2 className="text-[1.03rem] font-semibold tracking-[-0.02em] text-[#152538]">Arch9 AI Recommendations</h2>
           </div>
           <div className="mt-4 grid gap-2.5">
             {personaData.assistant.map((item) => (

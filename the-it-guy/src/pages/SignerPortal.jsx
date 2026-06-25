@@ -103,10 +103,10 @@ function BridgeMark() {
   return (
     <div className="flex min-w-0 items-center gap-3">
       <span className="flex h-11 w-32 items-center justify-center overflow-hidden rounded-[14px] border border-[#d8e3ef] bg-white px-2 shadow-[0_10px_24px_rgba(17,47,80,0.10)] sm:w-40">
-        <img src={BRIDGE9_LOGO_URL} alt="Bridge9" className="max-h-8 w-full object-contain" />
+        <img src={BRIDGE9_LOGO_URL} alt="Arch9" className="max-h-8 w-full object-contain" />
       </span>
       <div>
-        <p className="text-sm font-bold leading-none text-[#142132]">Bridge9</p>
+        <p className="text-sm font-bold leading-none text-[#142132]">Arch9</p>
         <p className="mt-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#748aa2]">Secure Signing</p>
       </div>
     </div>

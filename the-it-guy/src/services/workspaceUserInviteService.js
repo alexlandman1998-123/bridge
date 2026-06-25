@@ -106,9 +106,9 @@ function buildInviteMessage({ invite, inviteLink }) {
   const agentName = getInviteeName(invite) || 'Agent'
   const orgName = normalizeText(invite?.organisationName) || 'your organisation'
   if (invite?.inviteType === INVITE_TYPES.principalClaim || invite?.role === 'principal_claim') {
-    return `Hi ${agentName},\n\n${orgName} has invited you to claim principal access on Bridge 9.\n\nStart the claim here:\n${inviteLink}\n\n- Bridge`
+    return `Hi ${agentName},\n\n${orgName} has invited you to claim principal access on Arch9.\n\nStart the claim here:\n${inviteLink}\n\n- Arch9`
   }
-  return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Bridge 9.\n\nComplete your onboarding here:\n${inviteLink}\n\n- Bridge`
+  return `Hi ${agentName},\n\nYou have been invited to join ${orgName} on Arch9.\n\nComplete your onboarding here:\n${inviteLink}\n\n- Arch9`
 }
 
 function resolveInviteError(error) {
@@ -225,7 +225,7 @@ async function resolveWorkspaceDefaults(input = {}) {
   const contextBranding = resolveInviteBranding(input, context)
   return {
     workspaceId: workspaceId || normalizeText(context?.organisation?.id),
-    organisationName: organisationName || normalizeText(context?.organisation?.displayName || context?.organisation?.name) || 'Bridge Organisation',
+    organisationName: organisationName || normalizeText(context?.organisation?.displayName || context?.organisation?.name) || 'Arch9 Organisation',
     organisationLogoUrl: contextBranding.organisationLogoUrl || inputBranding.organisationLogoUrl,
     organisationLogoIconUrl: contextBranding.organisationLogoIconUrl || inputBranding.organisationLogoIconUrl,
     brandPrimaryColor: contextBranding.brandPrimaryColor || inputBranding.brandPrimaryColor,
@@ -319,7 +319,7 @@ function normalizeWorkspaceInviteRow(row = {}, defaults = {}) {
       row.organisations?.name ||
       metadata.organisation_name ||
       metadata.organisationName,
-  ) || 'Bridge Organisation'
+  ) || 'Arch9 Organisation'
   const branchName = normalizeText(metadata.branch_name || metadata.branchName)
   const role = principalClaimInvite
     ? 'principal_claim'
@@ -382,7 +382,7 @@ async function sendInviteEmail({ invite, inviteLink }) {
       to: invite.email,
       inviteeName: invite.name || getInviteeName(invite),
       inviterName: invite.invitedByName || '',
-      organisationName: invite.organisationName || 'Bridge Organisation',
+      organisationName: invite.organisationName || 'Arch9 Organisation',
       workspaceRole: invite.roleLabel || formatRoleLabel(invite.role),
       supportEmail: invite.supportEmail || '',
       organisationLogoUrl: invite.organisationLogoUrl || '',
@@ -507,7 +507,7 @@ export async function resendWorkspaceUserInvite(input = {}) {
     invite: {
       ...invite,
       email,
-      organisationName: normalizeText(input.organisationName || invite.organisationName) || 'Bridge Organisation',
+      organisationName: normalizeText(input.organisationName || invite.organisationName) || 'Arch9 Organisation',
     },
     inviteLink,
     deliveryPatch: {

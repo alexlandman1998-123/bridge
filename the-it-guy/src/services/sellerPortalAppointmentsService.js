@@ -61,7 +61,7 @@ function resolveAgent(appointment = {}) {
       participant?.name ||
       participant?.participantName ||
       participant?.participant_name,
-    'Bridge Property Team',
+    'Arch9 Property Team',
   )
 
   return {

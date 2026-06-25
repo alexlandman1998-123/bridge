@@ -44,13 +44,13 @@ function resolvePacketErrorFeedback(error = null) {
   if (code === 'HTML_RENDER_FAILED' || code === 'PDF_RENDER_FAILED') {
     return {
       label: 'Renderer failed',
-      message: 'Bridge could not assemble the final PDF from the native template. Please retry.',
+      message: 'Arch9 could not assemble the final PDF from the native template. Please retry.',
     }
   }
   if (code === 'STORAGE_UPLOAD_FAILED') {
     return {
       label: 'Storage upload failed',
-      message: 'Bridge generated the document but could not save it to storage. Please retry.',
+      message: 'Arch9 generated the document but could not save it to storage. Please retry.',
     }
   }
   if (code === 'MISSING_RENDERED_FILE_PATH' || code === 'MISSING_RENDERED_FILE_REFERENCE') {
@@ -80,7 +80,7 @@ function resolvePacketErrorFeedback(error = null) {
   if (code === 'NO_SIGNING_FIELDS') {
     return {
       label: 'Signing seed unavailable',
-      message: 'Bridge could not create default signing fields from current packet data.',
+      message: 'Arch9 could not create default signing fields from current packet data.',
     }
   }
   if (code === 'SIGNING_ALREADY_PROGRESSING') {
@@ -116,7 +116,7 @@ function resolvePacketErrorFeedback(error = null) {
   if (code === 'FINAL_SIGNED_UPLOAD_FAILED') {
     return {
       label: 'Final upload failed',
-      message: 'Bridge could not store the final signed artifact. Please retry.',
+      message: 'Arch9 could not store the final signed artifact. Please retry.',
     }
   }
 

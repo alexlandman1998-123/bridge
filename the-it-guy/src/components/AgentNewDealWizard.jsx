@@ -2509,7 +2509,7 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Recommended Role Players</p>
-                          <p className="mt-1 text-sm text-[#5f748c]">Bridge will use your saved operational partner preferences first, then fall back to manual selections.</p>
+                          <p className="mt-1 text-sm text-[#5f748c]">Arch9 will use your saved operational partner preferences first, then fall back to manual selections.</p>
                         </div>
                         {routingRecommendationsLoading ? (
                           <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Resolving...</span>

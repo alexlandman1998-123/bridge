@@ -236,7 +236,7 @@ const productPreviews = [
     id: 'reporting',
     label: 'Reporting',
     title: 'Report-ready operational clarity',
-    copy: 'Bridge turns workflow activity into presentable oversight so teams stop rebuilding transaction status in spreadsheets.',
+    copy: 'Arch9 turns workflow activity into presentable oversight so teams stop rebuilding transaction status in spreadsheets.',
     metrics: ['Executive-ready summaries', 'Development-level trend reporting', 'Fewer manual stakeholder updates'],
     premium: true,
   },
@@ -267,7 +267,7 @@ const trustPanels = [
 const trustAccordion = [
   {
     title: 'Built for real transaction flow',
-    copy: 'Bridge follows the transaction as it actually moves across commercial, legal, and buyer-facing milestones rather than forcing teams into generic CRM logic.',
+    copy: 'Arch9 follows the transaction as it actually moves across commercial, legal, and buyer-facing milestones rather than forcing teams into generic CRM logic.',
   },
   {
     title: 'Created for high-trust workflows',
@@ -282,22 +282,22 @@ const trustAccordion = [
 const rolePageContent = {
   developers: {
     title: 'For Developers',
-    summary: 'Bridge gives developers a single operating layer across units, transaction flow, bottlenecks, and reporting readiness.',
+    summary: 'Arch9 gives developers a single operating layer across units, transaction flow, bottlenecks, and reporting readiness.',
     highlights: ['Portfolio visibility', 'Cross-team accountability', 'Cleaner reporting'],
   },
   conveyancers: {
     title: 'For Conveyancers',
-    summary: 'Bridge keeps legal workflow, document readiness, and stakeholder communication anchored to the same live matter.',
+    summary: 'Arch9 keeps legal workflow, document readiness, and stakeholder communication anchored to the same live matter.',
     highlights: ['Matter control', 'Structured milestones', 'Status clarity'],
   },
   agents: {
     title: 'For Agents',
-    summary: 'Bridge extends visibility beyond the sale so agents stay informed as the transaction progresses toward transfer and handover.',
+    summary: 'Arch9 extends visibility beyond the sale so agents stay informed as the transaction progresses toward transfer and handover.',
     highlights: ['Post-sale visibility', 'Cleaner buyer conversations', 'Fewer manual follow-ups'],
   },
   buyers: {
     title: 'For Buyers',
-    summary: 'Bridge gives buyers a clearer journey with guided expectations, document prompts, and next-step visibility throughout the transaction.',
+    summary: 'Arch9 gives buyers a clearer journey with guided expectations, document prompts, and next-step visibility throughout the transaction.',
     highlights: ['Clearer expectations', 'More confidence', 'Professional experience'],
   },
 }
@@ -1216,7 +1216,7 @@ function ProductPreviewSection() {
             <SectionIntro
               eyebrow="Platform preview"
               title="A stronger product story, anchored in the software itself."
-              copy="This section sells the product. The previews are intentionally distinct, and the reporting state gets the highest visual weight because Bridge’s edge is operational clarity as much as workflow coordination."
+              copy="This section sells the product. The previews are intentionally distinct, and the reporting state gets the highest visual weight because Arch9’s edge is operational clarity as much as workflow coordination."
             />
           </CardHeader>
           <CardContent>
@@ -1310,7 +1310,7 @@ function ReportSection() {
                 Operational clarity that is presentable, not patched together.
               </CardTitle>
               <CardDescription className="text-[15px]">
-                Bridge turns transaction activity into cleaner oversight for leadership and cleaner communication for stakeholders. The reporting story should be a first-class message, not a footnote.
+                Arch9 turns transaction activity into cleaner oversight for leadership and cleaner communication for stakeholders. The reporting story should be a first-class message, not a footnote.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
@@ -1332,7 +1332,7 @@ function ReportSection() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-[11px] uppercase tracking-[0.2em] text-white/52">Development summary</div>
-                    <div className="mt-3 text-[1.12rem] font-semibold text-white">Bridge quarterly reporting pack</div>
+                    <div className="mt-3 text-[1.12rem] font-semibold text-white">Arch9 quarterly reporting pack</div>
                   </div>
                   <Badge variant="contrast" className="bg-white text-marketing-contrast">Exportable</Badge>
                 </div>
@@ -1355,7 +1355,7 @@ function ReportSection() {
               </div>
               <div className="grid gap-4 md:grid-cols-[0.94fr,1.06fr]">
                 <div className="rounded-[24px] border border-white/10 bg-black/[0.14] p-5 text-sm leading-7 text-white/72">
-                  Instead of asking teams to manually reconcile status before a leadership meeting, Bridge makes the workflow itself the reporting substrate.
+                  Instead of asking teams to manually reconcile status before a leadership meeting, Arch9 makes the workflow itself the reporting substrate.
                 </div>
                 <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5">
                   <div className="text-[11px] uppercase tracking-[0.18em] text-white/52">Included in the view</div>
@@ -1384,7 +1384,7 @@ function OutcomesSection() {
           <DarkFeaturePanel className="p-7 md:p-8">
             <Badge variant="accent" className="border-white/10 bg-white/[0.08] text-[#eadcc7]">Outcomes</Badge>
             <div className="mt-5 max-w-[12ch] text-[clamp(2.2rem,4vw,3.6rem)] font-semibold leading-[0.94] tracking-[-0.06em] text-white">
-              Why teams use Bridge
+              Why teams use Arch9
             </div>
             <p className="mt-4 text-[15px] leading-7 text-white/70">
               The value is operational and commercial: better oversight, stronger process control, clearer client communication, and faster movement through the real transaction lifecycle.
@@ -1794,7 +1794,7 @@ export function BridgeAboutPage() {
 
 export default function BridgeLanding() {
   return (
-    <BridgeShell currentPath="/bridge" title="Arch9 | Property Transaction Operating System">
+    <BridgeShell currentPath="/bridge" title="Arch9">
       <HomePageBody />
     </BridgeShell>
   )

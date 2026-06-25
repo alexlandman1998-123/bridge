@@ -5,7 +5,7 @@ export const EMAIL_TEMPLATE_KEYS = {
 }
 
 const DEFAULT_CLIENT_SECURITY_BODY =
-  'Your information and documents are handled securely through Bridge. Only authorised parties involved in your transaction can access your onboarding details.'
+  'Your information and documents are handled securely through Arch9. Only authorised parties involved in your transaction can access your onboarding details.'
 
 const DEFAULT_SELLER_SECURITY_BODY =
   'Your information is securely stored and only shared with authorised parties involved in your property sale.'
@@ -14,12 +14,12 @@ export const DEFAULT_EMAIL_TEMPLATE_SETTINGS = {
   [EMAIL_TEMPLATE_KEYS.CLIENT_ONBOARDING]: {
     templateKey: EMAIL_TEMPLATE_KEYS.CLIENT_ONBOARDING,
     displayName: 'Client Onboarding',
-    subject: 'Complete your Bridge onboarding',
+    subject: 'Complete your Arch9 onboarding',
     title: 'Client Onboarding',
-    preheader: 'Your Bridge onboarding is ready. Complete your details and documents to continue.',
+    preheader: 'Your Arch9 onboarding is ready. Complete your details and documents to continue.',
     introParagraphs: [
-      'Your property transaction has been added to Bridge and your onboarding process is now ready to begin.',
-      'Bridge is a property transaction platform that keeps buyers, sellers, agents, attorneys, and bond originators connected throughout the process.',
+      'Your property transaction has been added to Arch9 and your onboarding process is now ready to begin.',
+      'Arch9 is a property transaction platform that keeps buyers, sellers, agents, attorneys, and bond originators connected throughout the process.',
     ],
     capabilityBullets: [
       'Complete your onboarding information',
@@ -70,7 +70,7 @@ export const DEFAULT_EMAIL_TEMPLATE_SETTINGS = {
     introParagraphs: [
       'The seller has submitted their onboarding for the property.',
       'Please review the submission and generate the mandate from the lead workspace.',
-      'Bridge keeps the onboarding, mandate, and signing flow tied to the same lead record.',
+      'Arch9 keeps the onboarding, mandate, and signing flow tied to the same lead record.',
     ],
     processSteps: [
       'Open the lead workspace.',
@@ -80,7 +80,7 @@ export const DEFAULT_EMAIL_TEMPLATE_SETTINGS = {
     ],
     ctaLabel: 'Generate Mandate',
     securityTitle: 'Submission Review',
-    securityBody: 'This handoff is shared securely through Bridge and is only visible to authorised members of the transaction workspace.',
+    securityBody: 'This handoff is shared securely through Arch9 and is only visible to authorised members of the transaction workspace.',
     helpBody: 'Need help? Reply to this email or open the lead workspace to continue the mandate workflow.',
   },
 }

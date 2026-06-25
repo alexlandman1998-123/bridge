@@ -254,7 +254,7 @@ export const agentIntelligenceMockData = {
     attorneys: [
       { firm: 'Tuckers Attorneys', activeTransfers: 8, avgTransferTime: '74 days', bottlenecks: 'Low', registrationRate: 88 },
       { firm: 'Mpho & Co', activeTransfers: 5, avgTransferTime: '81 days', bottlenecks: 'Medium', registrationRate: 76 },
-      { firm: 'Bridge Legal', activeTransfers: 4, avgTransferTime: '79 days', bottlenecks: 'Medium', registrationRate: 80 },
+      { firm: 'Arch9 Legal', activeTransfers: 4, avgTransferTime: '79 days', bottlenecks: 'Medium', registrationRate: 80 },
     ],
     referralSources: [
       { partner: 'Prime Residential Group', leads: 14, deals: 4, conversion: 28.6, revenue: 12800000 },

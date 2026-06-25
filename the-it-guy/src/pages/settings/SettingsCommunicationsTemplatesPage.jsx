@@ -119,7 +119,7 @@ export default function SettingsCommunicationsTemplatesPage() {
       <SettingsPageHeader
         kicker="Settings"
         title="Communications Templates"
-        description="Edit the Bridge-branded onboarding and seller handoff email copy used across the current communications sequence."
+        description="Edit the Arch9-branded onboarding and seller handoff email copy used across the current communications sequence."
       />
 
       {!canEdit ? (
@@ -130,7 +130,7 @@ export default function SettingsCommunicationsTemplatesPage() {
 
       <SettingsSectionCard
         title="Template Library"
-        description="Select a template, edit copy, and save. Layout/branding remains locked to the Bridge email design system."
+        description="Select a template, edit copy, and save. Layout/branding remains locked to the Arch9 email design system."
       >
         <div className="grid gap-3 md:grid-cols-2">
           {templateOptions.map((templateKey) => {

@@ -183,7 +183,7 @@ export default function BranchCommandCentrePage() {
     return (
       <EmptyState
         title="No branch workspace available"
-        copy={isBranchScoped ? 'This branch manager does not have an assigned branch yet, so Bridge is withholding branch data by default.' : 'Create or assign a branch before using the command centre.'}
+        copy={isBranchScoped ? 'This branch manager does not have an assigned branch yet, so Arch9 is withholding branch data by default.' : 'Create or assign a branch before using the command centre.'}
       />
     )
   }

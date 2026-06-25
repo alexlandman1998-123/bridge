@@ -180,7 +180,7 @@ function BrandingStep({
             )}
             <div>
               <p style={{ margin: 0, fontWeight: 700 }}>{previewName}</p>
-              <p className="status-message" style={{ margin: 0 }}>Powered by Bridge</p>
+              <p className="status-message" style={{ margin: 0 }}>Powered by Arch9</p>
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.4rem' }}>

@@ -212,7 +212,7 @@ function formatMandateOwnershipType(value) {
 function buildSellerClientPortalLink(token) {
   const normalized = String(token || '').trim()
   if (!normalized) return ''
-  const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.bridgenine.co.za'
+  const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za'
   return `${origin}/client/${normalized}/selling`
 }
 
@@ -912,7 +912,7 @@ function LegacyPipeline() {
         const whatsappResult = await sendWhatsAppNotification({
           to: sellerPhone,
           role: 'seller_mandate',
-          message: `Hi ${sellerName},\n\nYour ${mandateTypeLabel.toLowerCase()} for ${propertyTitle} is ready for review.\n\nYou can review the mandate in your client portal selling workspace here:\n${portalLink || 'Portal link unavailable'}\n\nIf you disagree with the terms, please request changes in the portal (commission terms are review-only).\n\n- Bridge`,
+          message: `Hi ${sellerName},\n\nYour ${mandateTypeLabel.toLowerCase()} for ${propertyTitle} is ready for review.\n\nYou can review the mandate in your client portal selling workspace here:\n${portalLink || 'Portal link unavailable'}\n\nIf you disagree with the terms, please request changes in the portal (commission terms are review-only).\n\n- Arch9`,
         })
         if (!whatsappResult?.ok) {
           console.error('[Seller Mandate] WhatsApp notification failed', {

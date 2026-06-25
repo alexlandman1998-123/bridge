@@ -64,7 +64,7 @@ const SECTION_META = Object.freeze({
 export default function BondModuleHubPage({ section = 'teams' }) {
   const meta = SECTION_META[section] || {
     title: 'Bond Workspace',
-    eyebrow: 'Bridge',
+    eyebrow: 'Arch9',
     description: 'This section is ready for expanded bond operations workflows.',
     icon: FileBarChart2,
     cards: [],

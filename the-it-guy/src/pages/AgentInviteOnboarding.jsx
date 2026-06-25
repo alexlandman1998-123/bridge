@@ -85,7 +85,7 @@ export default function AgentInviteOnboarding() {
                 organisationName:
                   workspaceInviteContext.invite.organisations?.display_name ||
                   workspaceInviteContext.invite.organisations?.name ||
-                  'Bridge Workspace',
+                  'Arch9 Workspace',
                 email: workspaceInviteContext.invite.invited_email,
                 role: workspaceInviteContext.invite.organisation_role,
                 firstName: '',
@@ -325,7 +325,7 @@ export default function AgentInviteOnboarding() {
             <h1 className="text-[1.2rem] font-semibold text-[#142132]">Profile Activated</h1>
           </div>
           <p className="mt-3 text-sm text-[#3f6a4e]">
-            Your Bridge agent profile is now active under {invite?.organisationName || 'the organisation'}.
+            Your Arch9 agent profile is now active under {invite?.organisationName || 'the organisation'}.
           </p>
           <div className="mt-5">
             {sessionUserEmail ? (
@@ -395,7 +395,7 @@ export default function AgentInviteOnboarding() {
               checked={form.acceptedTerms}
                 onChange={(event) => setForm((previous) => ({ ...previous, acceptedTerms: event.target.checked }))}
             />
-            <span>I accept this invitation and agree to be linked to the selected organisation workspace on Bridge.</span>
+            <span>I accept this invitation and agree to be linked to the selected organisation workspace on Arch9.</span>
           </label>
 
           {inviteSource === 'supabase' && !sessionUserEmail ? (

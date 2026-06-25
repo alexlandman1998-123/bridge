@@ -260,13 +260,13 @@ function InviteBrandStrip({ workspaceName = '', workspaceLogoUrl = '' }) {
       </div>
 
       <div className="flex shrink-0 items-center justify-end">
-        <img src="/brand/bridge_9_white_background.png" alt="Bridge9" className="h-20 w-36 object-contain object-right sm:h-24 sm:w-44" />
+        <img src="/brand/bridge_9_white_background.png" alt="Arch9" className="h-20 w-36 object-contain object-right sm:h-24 sm:w-44" />
       </div>
     </div>
   )
 }
 
-function InviteHeader({ icon, eyebrow = 'Bridge Invite', title, subtitle, tone = 'primary' }) {
+function InviteHeader({ icon, eyebrow = 'Arch9 Invite', title, subtitle, tone = 'primary' }) {
   const iconClassName = tone === 'danger'
     ? 'bg-dangerSoft text-danger'
     : tone === 'success'
@@ -398,7 +398,7 @@ export default function InviteResolver() {
     return rows
   }, [branchName, roleLabel, workspaceName])
   const invitePurpose = useMemo(() => {
-    if (!invite) return 'Bridge invite'
+    if (!invite) return 'Arch9 invite'
     if (invite.inviteType === 'transaction_invite') return 'Transaction collaboration'
     if (invite.inviteType === 'workspace_and_transaction_invite') return 'Workspace and transaction collaboration'
     if (invite.inviteType === 'client_invite') return 'Client access'
@@ -537,7 +537,7 @@ export default function InviteResolver() {
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
             title={principalClaimInvite ? 'Principal claim started' : 'Invite accepted'}
-            subtitle={principalClaimInvite ? 'Your claim invite has been accepted. Continue to onboarding so Bridge can capture the organisation details before access is finalised.' : 'Your access has been created and verified.'}
+            subtitle={principalClaimInvite ? 'Your claim invite has been accepted. Continue to onboarding so Arch9 can capture the organisation details before access is finalised.' : 'Your access has been created and verified.'}
             tone="success"
           />
           <InviteActionPanel>
@@ -559,12 +559,12 @@ export default function InviteResolver() {
           <InviteHeader
             icon={<CheckCircle2 size={22} />}
             title={principalClaimInvite ? 'Principal claim already started' : 'You’re already connected'}
-            subtitle={principalClaimInvite ? `This claim invite has already been accepted for ${invitedEmail || 'your account'}. Continue to onboarding to finish the claim.` : `This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Bridge to access the workspace.`}
+            subtitle={principalClaimInvite ? `This claim invite has already been accepted for ${invitedEmail || 'your account'}. Continue to onboarding to finish the claim.` : `This invite has already been accepted for ${invitedEmail || 'your account'}. Continue into Arch9 to access the workspace.`}
             tone="success"
           />
           <InviteActionPanel>
             <Link to={target} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-control bg-primary px-5 py-2.5 text-secondary font-semibold text-white shadow-surface transition hover:bg-primaryHover">
-              Continue to Bridge <ArrowRight size={16} />
+              Continue to Arch9 <ArrowRight size={16} />
             </Link>
           </InviteActionPanel>
         </InviteCard>
@@ -589,7 +589,7 @@ export default function InviteResolver() {
               <Button type="button" onClick={() => void handleSwitchAccount()}>
                 Switch account
               </Button>
-              <SecondaryInviteLink to="/dashboard">Back to Bridge</SecondaryInviteLink>
+              <SecondaryInviteLink to="/dashboard">Back to Arch9</SecondaryInviteLink>
             </div>
           </InviteActionPanel>
         </InviteCard>
@@ -612,7 +612,7 @@ export default function InviteResolver() {
           <InviteActionPanel>
             {error ? <p className="rounded-control border border-danger/30 bg-dangerSoft px-3 py-2 text-secondary text-danger">{error}</p> : null}
             <div className="flex justify-center">
-              <SecondaryInviteLink to="/dashboard">Back to Bridge</SecondaryInviteLink>
+              <SecondaryInviteLink to="/dashboard">Back to Arch9</SecondaryInviteLink>
             </div>
           </InviteActionPanel>
         </InviteCard>
@@ -643,8 +643,8 @@ export default function InviteResolver() {
           ) : (
             <p className="text-center text-helper text-textMuted">
               {principalClaimInvite
-                ? 'Continue with the invited email address. Bridge will start the claim process without granting principal access automatically.'
-                : 'Continue with the invited email address. Bridge will apply the workspace and role from this invite.'}
+                ? 'Continue with the invited email address. Arch9 will start the claim process without granting principal access automatically.'
+                : 'Continue with the invited email address. Arch9 will apply the workspace and role from this invite.'}
             </p>
           )}
           <div className="flex flex-wrap justify-center gap-2">

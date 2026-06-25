@@ -775,7 +775,7 @@ export default function SettingsOrganisationPage() {
 
         <SettingsSectionCard
           title="Partner Profile Content"
-          description="Write the public-facing company overview and service delivery copy that appears on Bridge partner profiles. Each role can be edited separately."
+          description="Write the public-facing company overview and service delivery copy that appears on Arch9 partner profiles. Each role can be edited separately."
         >
           <div className="grid gap-4 xl:grid-cols-2">
             {PARTNER_PROFILE_CONTENT_ROLES.map((roleOption) => {
@@ -794,7 +794,7 @@ export default function SettingsOrganisationPage() {
                         value={roleContent.aboutCompany || ''}
                         disabled={!canEdit}
                         onChange={(event) => updatePartnerProfileContentField(roleOption.key, 'aboutCompany', event.target.value)}
-                        placeholder={`Describe how this ${roleOption.label.toLowerCase()} presents itself to Bridge partners.`}
+                        placeholder={`Describe how this ${roleOption.label.toLowerCase()} presents itself to Arch9 partners.`}
                       />
                     </label>
                     <label className={settingsFieldClass}>
@@ -834,13 +834,13 @@ export default function SettingsOrganisationPage() {
                   ? `Uploaded: ${onboarding.branding.logoLightName}`
                   : onboarding.branding?.logoLight
                     ? `Uploaded: ${getLogoPreviewLabel(onboarding.branding.logoLight, 'Primary logo')}`
-                    : 'No primary logo uploaded yet (Bridge fallback is active)'}
+                    : 'No primary logo uploaded yet (Arch9 fallback is active)'}
               </p>
               {onboarding.branding?.logoLight ? (
                 <img className="agency-logo-preview" src={onboarding.branding.logoLight} alt="Light logo preview" />
               ) : (
                 <div className="rounded-[12px] border border-dashed border-[#d9e4ef] bg-[#f8fbff] px-4 py-6 text-center text-sm text-[#6b7d93]">
-                  Bridge fallback branding will be used for large brand surfaces.
+                  Arch9 fallback branding will be used for large brand surfaces.
                 </div>
               )}
             </article>

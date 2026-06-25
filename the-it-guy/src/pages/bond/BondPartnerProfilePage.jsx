@@ -648,7 +648,7 @@ function ListingsSection({ listings, loading, error, campaigns, listingAttributi
                   </div>
                 ) : null}
                 <div className="mt-auto grid gap-2">
-                  <PublicationPill label="Bridge" status={listing.publicationStatuses.bridge} />
+                  <PublicationPill label="Arch9" status={listing.publicationStatuses.bridge} />
                   <PublicationPill label="Property24" status={listing.publicationStatuses.property24} />
                   <PublicationPill label="PrivateProperty" status={listing.publicationStatuses.privateProperty} />
                   <PublicationPill label="Website" status={listing.publicationStatuses.website} />
@@ -734,7 +734,7 @@ function ListingsSection({ listings, loading, error, campaigns, listingAttributi
             <PageCard className="mt-6 shadow-none">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8fa7]">Publication Visibility</p>
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                <PublicationPill label="Bridge" status={selectedListing.publicationStatuses.bridge} />
+                <PublicationPill label="Arch9" status={selectedListing.publicationStatuses.bridge} />
                 <PublicationPill label="Property24" status={selectedListing.publicationStatuses.property24} />
                 <PublicationPill label="PrivateProperty" status={selectedListing.publicationStatuses.privateProperty} />
                 <PublicationPill label="Website" status={selectedListing.publicationStatuses.website} />
@@ -812,7 +812,7 @@ function ListingsSection({ listings, loading, error, campaigns, listingAttributi
                 </label>
               </div>
               <div className="rounded-[16px] bg-[#f7fafc] p-4 text-sm leading-6 text-[#60758d]">
-                Bridge will create the campaign, repayment profile, pre-approval link, and starter co-branded asset records. Full attribution stays locked for a later phase.
+                Arch9 will create the campaign, repayment profile, pre-approval link, and starter co-branded asset records. Full attribution stays locked for a later phase.
               </div>
               <button
                 type="button"
@@ -1172,7 +1172,7 @@ function CampaignsSection({ campaigns, loading, error, onCreateFromOpportunity, 
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8fa7]">Opportunity Engine</p>
             <h2 className="mt-2 text-3xl font-semibold tracking-[-0.01em] text-[#10243a]">Partner growth opportunities</h2>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-[#60758d]">Bridge surfaces listings that could benefit from finance visibility. Agent ownership stays intact; campaigns belong to this relationship.</p>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-[#60758d]">Arch9 surfaces listings that could benefit from finance visibility. Agent ownership stays intact; campaigns belong to this relationship.</p>
           </div>
           <div className="rounded-[16px] bg-[#f7fafc] p-5">
             <p className="text-sm font-semibold text-[#10243a]">Campaign Analytics</p>

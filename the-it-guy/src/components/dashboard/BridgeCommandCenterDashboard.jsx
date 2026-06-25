@@ -297,7 +297,7 @@ function buildDashboardModel(rows = [], profile = {}) {
 
   return {
     profileName: profile?.fullName || profile?.name || profile?.displayName || 'John',
-    organisationName: profile?.organisationName || profile?.companyName || 'Bridge Workspace',
+    organisationName: profile?.organisationName || profile?.companyName || 'Arch9 Workspace',
     kpis: [
       {
         label: 'Active Transactions',

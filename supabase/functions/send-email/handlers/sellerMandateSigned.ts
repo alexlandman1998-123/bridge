@@ -31,7 +31,7 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   const supportEmail =
     normalizeText(payload.supportEmail) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
@@ -43,7 +43,7 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
 
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const subject = `Signed mandate ready: ${propertyTitle}`;
   const html = renderBridgeEmailLayout({
@@ -55,7 +55,7 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
         `All required signatures for the mandate on ${propertyTitle} are complete.`,
         downloadLink
           ? "Use the secure download link below to access the signed PDF."
-          : "The signed mandate record is available in Bridge for authorised users linked to this workflow.",
+          : "The signed mandate record is available in Arch9 for authorised users linked to this workflow.",
       ]),
       renderBridgeCta("Download signed mandate", downloadLink),
       renderBridgeSummaryCard(
@@ -70,9 +70,9 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     ].join(""),
     securityTitle: "Secure Mandate Record",
     securityBody: downloadLink
-      ? "This download link is secure and time-limited. Authorised users can also access the signed mandate from Bridge."
-      : "The signed mandate record is retained in Bridge for authorised users linked to this workflow.",
-    helpBody: "Need help? Reply to this email or review the listing workflow in Bridge.",
+      ? "This download link is secure and time-limited. Authorised users can also access the signed mandate from Arch9."
+      : "The signed mandate record is retained in Arch9 for authorised users linked to this workflow.",
+    helpBody: "Need help? Reply to this email or review the listing workflow in Arch9.",
     organisationName,
     supportEmail,
     supportPhone,
@@ -85,10 +85,10 @@ export async function handleSellerMandateSignedEmail(payload: SendSellerMandateS
     `Document: ${signedDocumentName}`,
     downloadLink ? `Download: ${downloadLink}` : "",
     "",
-    "The signed mandate is retained in Bridge for authorised users linked to this workflow.",
+    "The signed mandate is retained in Arch9 for authorised users linked to this workflow.",
     "",
     organisationName,
-    "Powered by Bridge",
+    "Powered by Arch9",
   ].join("\n");
 
   const emailResult = await sendViaResendApi({

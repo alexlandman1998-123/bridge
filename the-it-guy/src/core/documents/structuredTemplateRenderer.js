@@ -323,12 +323,12 @@ export function renderStructuredTemplate({
   }
 
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Document`
-  const orgName = normalizeText(branding?.organisationName || branding?.organisation_name) || 'Bridge Workspace'
+  const orgName = normalizeText(branding?.organisationName || branding?.organisation_name) || 'Arch9 Workspace'
   const organisationLogo = resolvePublicAssetUrl(
     normalizeText(branding?.logoLightUrl || branding?.organisationLogoUrl || branding?.logoDarkUrl || branding?.logoHighContrastUrl || branding?.organisationLogoDarkUrl || branding?.organisationLogoHighContrastUrl || branding?.organisation_high_contrast_logo_url || ''),
     assetBaseUrl,
   )
-  const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Bridge 9'
+  const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Arch9'
   const bridgeLogoUrl = resolvePublicAssetUrl(branding?.bridgeLogoLightUrl || '/brand/bridge_9_white_background.png', assetBaseUrl)
   const documentReference =
     normalizeText(placeholders.document_reference || placeholders.transaction_reference || placeholders.packet_reference) ||

@@ -449,7 +449,7 @@ function PostViewingOfferPortal() {
           <div className="rounded-[24px] border border-[#dce6f2] bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,0.08)]">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6e8198]">Bridge offer portal</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6e8198]">Arch9 offer portal</p>
                 <h1 className="mt-2 text-2xl font-semibold text-[#102033] sm:text-3xl">Make an offer on a viewed property</h1>
                 <p className="mt-2 max-w-[620px] text-sm leading-6 text-[#61738a]">
                   Review the properties from your viewing session and submit an offer on one or more of them.

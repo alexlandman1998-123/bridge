@@ -69,7 +69,7 @@ export default function BridgeCommandPalette() {
             <span className="rounded-full border border-marketing-borderStrong bg-white px-2 py-1 text-[11px] uppercase tracking-[0.2em] text-marketing-subtle">
               Command
             </span>
-            Bridge quick jump
+            Arch9 quick jump
           </DialogTitle>
           <DialogDescription>
             Navigate the marketing site like product software. Press <span className="font-semibold text-marketing-ink">Esc</span> to close.
@@ -77,7 +77,7 @@ export default function BridgeCommandPalette() {
         </DialogHeader>
         <Command
           className="overflow-hidden"
-          label="Bridge command palette"
+          label="Arch9 command palette"
           filter={(value, search, keywords) => {
             const haystack = `${value} ${(keywords || []).join(' ')}`.toLowerCase()
             return haystack.includes(search.toLowerCase()) ? 1 : 0

@@ -51,11 +51,11 @@ export async function handleOfferDecisionNotificationEmail(
   const nextStep = normalizeText(payload.nextStep) ||
     (recipientRole === "buyer"
       ? "Your agent will contact you with the next step."
-      : "Open Bridge to continue the offer workflow.");
+      : "Open Arch9 to continue the offer workflow.");
   const organisationName = normalizeText(payload.organisationName) ||
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   const supportEmail = normalizeText(payload.supportEmail) ||
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
@@ -63,7 +63,7 @@ export async function handleOfferDecisionNotificationEmail(
     normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const subject = isAcceptedBuyerNotification
     ? `Congratulations, the seller accepted your offer: ${propertyTitle}`
@@ -71,7 +71,7 @@ export async function handleOfferDecisionNotificationEmail(
   const intro = isAcceptedBuyerNotification
     ? [
       `Congratulations, ${sellerName} has accepted your offer for ${propertyTitle}.`,
-      "This is an exciting step. Bridge will help keep the next part of the journey clear, coordinated, and easy to follow.",
+      "This is an exciting step. Arch9 will help keep the next part of the journey clear, coordinated, and easy to follow.",
     ]
     : isBuyerRecipient
     ? [
@@ -125,8 +125,8 @@ export async function handleOfferDecisionNotificationEmail(
       ? "Secure Transaction Workflow"
       : "Offer Workflow Updated",
     securityBody: isAcceptedBuyerNotification
-      ? "Your accepted offer and next steps are handled through Bridge and shared only with authorised parties involved in your transaction."
-      : "This decision was recorded through Bridge and linked to the canonical buyer offer record.",
+      ? "Your accepted offer and next steps are handled through Arch9 and shared only with authorised parties involved in your transaction."
+      : "This decision was recorded through Arch9 and linked to the canonical buyer offer record.",
     helpBody: isAcceptedBuyerNotification
       ? "Your agent will guide you through the next step. You can reply to this email if you need help."
       : nextStep,
@@ -157,7 +157,7 @@ export async function handleOfferDecisionNotificationEmail(
       : nextStep,
     "",
     organisationName,
-    "Powered by Bridge",
+    "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
   const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {

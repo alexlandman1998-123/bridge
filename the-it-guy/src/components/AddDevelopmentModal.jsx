@@ -242,7 +242,7 @@ function buildDeveloperAccessLink(token) {
   const origin =
     typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
-      : 'https://app.bridgenine.co.za'
+      : 'https://app.arch9.co.za'
   return `${origin}/auth?developer_invite=${encodeURIComponent(token)}`
 }
 
@@ -602,7 +602,7 @@ function validateStockStep(stockPlan, stockStepIndex) {
           throw new Error(`${floorplan.name} needs a list price.`)
         }
         if (availableTargets.length > 1 && floorplan.distributionMode !== 'custom') {
-          throw new Error(`${floorplan.name} needs custom phase or block allocation. Bridge will not auto-split grouped stock.`)
+          throw new Error(`${floorplan.name} needs custom phase or block allocation. Arch9 will not auto-split grouped stock.`)
         }
         if (floorplan.distributionMode === 'selected' && availableTargets.length > 1 && !(floorplan.selectedTargetIds || []).length) {
           throw new Error(`${floorplan.name} needs at least one selected target.`)
@@ -1002,7 +1002,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         await sendWhatsAppNotification({
           to: normalizedPhone,
           role: 'developer_invite',
-          message: `Hi ${safeContactName},\n\nYou have been invited to access ${details.name} on Bridge.\n\nOpen your developer access link:\n${onboardingLink}\n\nCompany: ${safeCompanyName}`,
+          message: `Hi ${safeContactName},\n\nYou have been invited to access ${details.name} on Arch9.\n\nOpen your developer access link:\n${onboardingLink}\n\nCompany: ${safeCompanyName}`,
         })
       } catch (whatsappError) {
         console.error('[Development Invite] developer WhatsApp notification failed', whatsappError)
@@ -1767,7 +1767,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 <div className="space-y-2">
                   <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Stock Master</h4>
                   <p className="text-sm leading-6 text-[#6b7d93]">
-                    Tell Bridge how the development is structured, define your stock templates once, and generate the full unit inventory only
+                    Tell Arch9 how the development is structured, define your stock templates once, and generate the full unit inventory only
                     when you are ready.
                   </p>
                 </div>
@@ -2016,7 +2016,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                                   <div>
                                     <strong className="block text-sm font-semibold text-[#142132]">Floorplan {floorplanIndex + 1}</strong>
                                     <span className="mt-1 block text-sm leading-6 text-[#6b7d93]">
-                                      Define the commercial template once, then let Bridge generate the actual units later.
+                                      Define the commercial template once, then let Arch9 generate the actual units later.
                                     </span>
                                   </div>
                                   {unitType.floorplans.length > 1 ? (
@@ -2077,7 +2077,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                                     <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                                       <div>
                                         <strong className="block text-sm font-semibold text-[#142132]">Custom distribution</strong>
-                                        <p className="text-sm leading-6 text-[#6b7d93]">Set the exact quantity for each phase or block. Bridge will not auto-split grouped stock for you.</p>
+                                        <p className="text-sm leading-6 text-[#6b7d93]">Set the exact quantity for each phase or block. Arch9 will not auto-split grouped stock for you.</p>
                                       </div>
                                       <span className={`text-sm font-medium ${customTotal === Number(floorplan.quantity || 0) ? 'text-[#1f6d3c]' : 'text-[#b42318]'}`}>
                                         {customTotal} / {Number(floorplan.quantity || 0) || 0} assigned
@@ -2128,7 +2128,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   <div className="space-y-2">
                     <h5 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">Review and generate your unit stock</h5>
                     <p className="text-sm leading-6 text-[#6b7d93]">
-                      Check the totals, confirm the numbering strategy, and let Bridge generate the full unit inventory for this development.
+                      Check the totals, confirm the numbering strategy, and let Arch9 generate the full unit inventory for this development.
                     </p>
                   </div>
 
@@ -2250,7 +2250,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     </div>
                   ) : (
                     <div className="rounded-[20px] border border-[#d8e7dc] bg-[#f3fbf5] p-4 text-sm leading-6 text-[#1f6d3c]">
-                      Stock plan looks good. Bridge will create the generated units and carry floorplan references into the documents step.
+                      Stock plan looks good. Arch9 will create the generated units and carry floorplan references into the documents step.
                     </div>
                   )}
                 </section>

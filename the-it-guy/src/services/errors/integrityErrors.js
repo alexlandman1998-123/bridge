@@ -6,7 +6,7 @@ export function createIntegrityError(issue, metadata = {}) {
     severity: issue?.severity || 'error',
     entityType: issue?.entityType || 'unknown',
     entityId: issue?.entityId || '',
-    userMessage: 'Bridge found a data integrity issue. Please use diagnostics or contact support.',
+    userMessage: 'Arch9 found a data integrity issue. Please use diagnostics or contact support.',
     metadata: { issue, ...metadata },
   })
 }

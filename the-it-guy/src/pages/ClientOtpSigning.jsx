@@ -268,7 +268,7 @@ function ClientOtpSigning() {
     <main className="min-h-screen bg-[#f4f7fb] px-4 py-8">
       <div className="mx-auto max-w-5xl space-y-5">
         <header className="rounded-[22px] border border-[#dbe5ef] bg-white p-6 shadow-[0_16px_34px_rgba(15,23,42,0.05)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d8197]">Bridge Client Portal</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#6d8197]">Arch9 Client Portal</p>
           <h1 className="mt-2 text-[1.6rem] font-semibold tracking-[-0.03em] text-[#142132]">OTP Signing</h1>
           <p className="mt-2 text-sm text-[#62778f]">
             Review your Offer to Purchase and sign to proceed with the transaction.

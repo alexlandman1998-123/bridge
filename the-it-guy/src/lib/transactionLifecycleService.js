@@ -322,7 +322,7 @@ function buildTransactionRow({
 } = {}) {
   const transactionId = generateId('transaction')
   const onboardingToken = `buyer-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
-  const onboardingUrl = `${typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.bridgenine.co.za'}/client/onboarding/${onboardingToken}`
+  const onboardingUrl = `${typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za'}/client/onboarding/${onboardingToken}`
 
   const offerAmount = money(
     payload?.offerAmount ??

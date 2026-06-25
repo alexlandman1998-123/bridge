@@ -504,7 +504,7 @@ function BranchAgentInviteModal({
       const resolvedRoleLabel = formatRoleLabel(resolvedWorkspaceRole)
       const inviteResult = await createWorkspaceUserInvite({
         workspaceId: organisation?.id || branch?.organisationId,
-        organisationName: organisation?.name || 'Bridge Organisation',
+        organisationName: organisation?.name || 'Arch9 Organisation',
         role: resolvedWorkspaceRole,
         roleLabel: resolvedRoleLabel,
         branchId: branch?.id,
@@ -574,7 +574,7 @@ function BranchAgentInviteModal({
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <label className="grid gap-1.5">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Organisation</span>
-              <Field value={organisation?.name || 'Bridge Organisation'} disabled />
+              <Field value={organisation?.name || 'Arch9 Organisation'} disabled />
             </label>
             <label className="grid gap-1.5">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Branch</span>
@@ -708,7 +708,7 @@ function BranchInviteDetailModal({
       setMessage('')
       await resendWorkspaceUserInvite({
         ...invite,
-        organisationName: organisation?.name || invite?.organisationName || 'Bridge Organisation',
+        organisationName: organisation?.name || invite?.organisationName || 'Arch9 Organisation',
       })
       setMessage(`Invite resent to ${invite.email}.`)
       onResent?.()

@@ -563,7 +563,7 @@ function Onboarding() {
       <div className="auth-page onboarding-page agency-onboarding-page">
         <main className="auth-shell onboarding-shell agency-onboarding-shell">
           <section className="auth-hero onboarding-hero agency-onboarding-hero">
-            <p className="auth-brand">bridge.</p>
+            <p className="auth-brand">Arch9</p>
             <h1>Complete Your Agent Profile</h1>
             <p>Confirm your profile details to activate your organisation access.</p>
           </section>
@@ -629,8 +629,8 @@ function Onboarding() {
     <div className="auth-page onboarding-page agency-onboarding-page">
       <main className="auth-shell onboarding-shell agency-onboarding-shell">
         <section className="auth-hero onboarding-hero agency-onboarding-hero">
-          <p className="auth-brand">bridge.</p>
-          <h1 style={{ color: '#ffffff' }}>Welcome to Bridge.</h1>
+          <p className="auth-brand">Arch9</p>
+          <h1 style={{ color: '#ffffff' }}>Welcome to Arch9.</h1>
           <p>Configure your agency structure, ownership, permissions, and team access before launch.</p>
 
           <div className="auth-hero-points">

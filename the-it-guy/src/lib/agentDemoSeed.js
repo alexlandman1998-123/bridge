@@ -19,7 +19,7 @@ const KEY_PIPELINE = 'itg:pipeline-leads:v1'
 
 const AGENCY = {
   id: 'agency-bridge-realty-group',
-  name: 'Bridge Realty Group',
+  name: 'Arch9 Realty Group',
   headquarters: 'Sandton',
 }
 
@@ -368,7 +368,7 @@ function createTransactionRow({
       marketing_source: marketingSource,
       assigned_agent: agent.name,
       assigned_agent_email: agent.email,
-      attorney: 'Bridge Conveyancing',
+      attorney: 'Arch9 Conveyancing',
       assigned_attorney_email: 'transfers@bridgeconveyancing.co.za',
       bank: financeType === 'cash' ? 'N/A' : ['Standard Bank', 'FNB', 'ABSA', 'Nedbank'][price % 4],
       lifecycle_state: lifecycleState,

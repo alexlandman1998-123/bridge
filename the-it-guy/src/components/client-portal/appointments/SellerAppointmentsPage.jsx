@@ -110,7 +110,7 @@ function MethodIcon({ method }) {
 }
 
 function AgentAvatar({ agent }) {
-  const initials = String(agent?.name || 'Bridge Property Team')
+  const initials = String(agent?.name || 'Arch9 Property Team')
     .trim()
     .split(/\s+/)
     .slice(0, 2)

@@ -625,7 +625,7 @@ export function renderPacketPreviewHtml({
 } = {}) {
   const normalizedPacketType = normalizeText(packetType).toLowerCase()
   const safeTitle = normalizeText(title) || `${toTitleCase(packetType)} Packet Preview`
-  const orgName = normalizeText(branding?.organisationName || '') || 'Bridge Workspace'
+  const orgName = normalizeText(branding?.organisationName || '') || 'Arch9 Workspace'
   const organisationLogo = resolvePublicAssetUrl(
     normalizeText(branding?.logoLightUrl || '') ||
     normalizeText(branding?.organisationLogoUrl || '') ||
@@ -636,7 +636,7 @@ export function renderPacketPreviewHtml({
     normalizeText(branding?.organisation_high_contrast_logo_url || '') ||
     '',
   )
-  const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Bridge 9'
+  const bridgeLogoLabel = normalizeText(branding?.bridgeLogoLabel || '') || 'Arch9'
   const bridgeLogoUrl = resolvePublicAssetUrl(branding?.bridgeLogoLightUrl || '/brand/bridge_9_white_background.png')
   const isMandatePreview = normalizedPacketType === 'mandate'
   const documentReference =
@@ -999,7 +999,7 @@ export function renderPacketPreviewHtml({
               </div>`}
             </div>
             <span class="packet-preview-bridge">
-              ${bridgeLogoUrl ? `<img src="${escapeHtml(bridgeLogoUrl)}" alt="Bridge 9" />` : escapeHtml(bridgeLogoLabel)}
+              ${bridgeLogoUrl ? `<img src="${escapeHtml(bridgeLogoUrl)}" alt="Arch9" />` : escapeHtml(bridgeLogoLabel)}
             </span>
           </header>
           <div class="packet-preview-title">
@@ -1019,7 +1019,7 @@ export function renderPacketPreviewHtml({
               </span>
               <span class="legal-preview-page-number">Page 1 of 1 (preview)</span>
               <span class="legal-preview-footer-bridge">
-                ${bridgeLogoUrl ? `<img src="${escapeHtml(bridgeLogoUrl)}" alt="Bridge 9" />` : escapeHtml(bridgeLogoLabel)}
+                ${bridgeLogoUrl ? `<img src="${escapeHtml(bridgeLogoUrl)}" alt="Arch9" />` : escapeHtml(bridgeLogoLabel)}
               </span>
             </footer>
           ` : ''}

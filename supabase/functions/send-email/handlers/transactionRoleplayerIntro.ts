@@ -258,13 +258,13 @@ function buildRoleplayerHandoffContent({
       "Open or update your matter record against this transaction reference.",
       "Review the buyer and seller details and contact the buyer if transfer documents or FICA items are needed.",
       "Coordinate with the agent and finance roleplayer so transfer preparation stays aligned.",
-      "Share progress updates back through Bridge as the legal workflow moves forward.",
+      "Share progress updates back through Arch9 as the legal workflow moves forward.",
     ]
     : [
       "Contact the buyer to confirm their finance application requirements and outstanding documents.",
       "Track bank submission, feedback, approval, and grant or guarantee readiness.",
       "Keep the agent and transfer attorney informed of finance milestones that affect transfer timing.",
-      "Share progress updates back through Bridge as the finance workflow moves forward.",
+      "Share progress updates back through Arch9 as the finance workflow moves forward.",
     ];
 
   const summaryRows = [
@@ -510,13 +510,13 @@ export async function handleTransactionRoleplayerIntroEmail(
   const organisationName =
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   const supportEmail = normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
   const supportPhone = normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   if (!transferAttorneyName && !transferAttorneyEmail) {
     return jsonResponse(400, {
@@ -557,7 +557,7 @@ export async function handleTransactionRoleplayerIntroEmail(
       ? "Your bond originator or finance team may contact you about finance documents, bank feedback, and approval progress."
       : "Because this is not marked as a bond transaction, finance follow-up will focus on proof of funds and any payment milestones that apply.",
     "Your agent remains your first point of contact for sale-related questions and will help coordinate between the parties.",
-    "Bridge will keep the transaction record, documents, and next steps coordinated as the matter progresses.",
+    "Arch9 will keep the transaction record, documents, and next steps coordinated as the matter progresses.",
   ];
 
   const subject = transactionReference
@@ -620,7 +620,7 @@ export async function handleTransactionRoleplayerIntroEmail(
     "Need help? Reply to this email or contact your agent directly.",
     "",
     organisationName,
-    "Powered by Bridge",
+    "Powered by Arch9",
   ].filter(Boolean).join("\n");
 
   const emailResult = await sendViaResendApi({
@@ -856,13 +856,13 @@ export async function handleTransactionRoleplayerHandoffEmail(
   const organisationName =
     normalizeText(Deno.env.get("BRIDGE_ORGANISATION_NAME")) ||
     normalizeText(Deno.env.get("ORGANISATION_NAME")) ||
-    "Bridge";
+    "Arch9";
   const supportEmail = normalizeText(Deno.env.get("BRIDGE_SUPPORT_EMAIL")) ||
     normalizeText(Deno.env.get("SUPPORT_EMAIL"));
   const supportPhone = normalizeText(Deno.env.get("BRIDGE_SUPPORT_PHONE")) ||
     normalizeText(Deno.env.get("SUPPORT_PHONE"));
   const sender = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const sentRecipients: Array<{
     role: string;
@@ -903,7 +903,7 @@ export async function handleTransactionRoleplayerHandoffEmail(
       securityBody:
         "This handoff contains transaction context for authorised roleplayers only. Please handle buyer and seller information confidentially.",
       helpBody:
-        "Need anything corrected? Reply to this email so the Bridge team can update the transaction record.",
+        "Need anything corrected? Reply to this email so the Arch9 team can update the transaction record.",
       organisationName,
       supportEmail,
       supportPhone,
@@ -913,10 +913,10 @@ export async function handleTransactionRoleplayerHandoffEmail(
       "",
       text,
       "",
-      "Need anything corrected? Reply to this email so the Bridge team can update the transaction record.",
+      "Need anything corrected? Reply to this email so the Arch9 team can update the transaction record.",
       "",
       organisationName,
-      "Powered by Bridge",
+      "Powered by Arch9",
     ].join("\n");
     const emailResult = await sendViaResendApi({
       apiKey: resendApiKey,

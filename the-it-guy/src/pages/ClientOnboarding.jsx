@@ -2300,7 +2300,7 @@ function ClientOnboarding() {
                 '',
                 'You’ll continue to receive updates as your transaction progresses.',
                 '',
-                '– Bridge',
+                '– Arch9',
               ].join('\n'),
             })
 
@@ -2366,7 +2366,7 @@ function ClientOnboarding() {
                     '',
                     'Once payment is received, our team will continue with the next transaction steps.',
                     '',
-                    '– Bridge',
+                    '– Arch9',
                   ]
                     .filter(Boolean)
                     .join('\n'),

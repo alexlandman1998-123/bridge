@@ -23,7 +23,7 @@ function DeveloperIntelligenceOpportunityEnginePage() {
       <section className="rounded-3xl border border-[#d8e5f3] bg-white/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.08)]">
         <p className="text-[0.82rem] font-semibold uppercase tracking-[0.12em] text-[#6a819c]">Opportunity Engine</p>
         <h2 className="mt-2 text-[1.8rem] font-semibold tracking-[-0.05em] text-[#142132]">
-          Bridge has identified {formatCurrency(developerIntelligenceOverview.opportunityValueMonthly)}/month in untapped development opportunity
+          Arch9 has identified {formatCurrency(developerIntelligenceOverview.opportunityValueMonthly)}/month in untapped development opportunity
         </h2>
         <div className="mt-4 flex flex-wrap gap-2.5">
           <ScoreBadge score={developerIntelligenceOverview.confidenceScore} label="Opportunity Confidence" />

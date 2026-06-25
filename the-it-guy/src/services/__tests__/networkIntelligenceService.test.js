@@ -98,7 +98,7 @@ try {
 
     assert.equal(suggestion.name, 'BetterBond')
     assert.equal(suggestion.organizationTypeLabel, 'Bond Originator')
-    assert.equal(suggestion.reason, 'Suggested from Bridge network activity')
+    assert.equal(suggestion.reason, 'Suggested from Arch9 network activity')
     assert.equal(suggestion.networkSignal, 63)
   }
 

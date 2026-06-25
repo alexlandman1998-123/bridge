@@ -94,6 +94,6 @@ export async function reportError(error, {
   return {
     category: safeCategory,
     message: safeMessage,
-    userMessage: 'Something went wrong. Bridge has logged the issue for review.',
+    userMessage: 'Something went wrong. Arch9 has logged the issue for review.',
   }
 }

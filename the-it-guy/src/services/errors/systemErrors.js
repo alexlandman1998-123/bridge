@@ -5,7 +5,7 @@ export function createSystemConfigurationError(message, metadata = {}) {
     code: 'system_configuration_error',
     severity: 'critical',
     entityType: 'system',
-    userMessage: 'Bridge is not configured safely. Contact support.',
+    userMessage: 'Arch9 is not configured safely. Contact support.',
     metadata,
   })
 }

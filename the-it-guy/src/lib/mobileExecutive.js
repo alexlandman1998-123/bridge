@@ -171,7 +171,7 @@ export function buildActivityFeedItems({ comments = [], events = [] } = {}) {
     })),
     ...comments.map((item) => ({
       id: `comment-${item.id || item.createdAt || item.created_at || Math.random().toString(36).slice(2)}`,
-      title: item.authorName || item.author_name || 'Bridge Team',
+      title: item.authorName || item.author_name || 'Arch9 Team',
       body: item.commentBody || item.comment_text || item.commentText || 'No update text available.',
       timestamp: item.createdAt || item.created_at || null,
       meta: item.authorRoleLabel || item.author_role || 'Comment',

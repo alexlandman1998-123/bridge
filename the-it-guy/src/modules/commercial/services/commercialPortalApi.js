@@ -927,7 +927,7 @@ export async function createCommercialPortalInvitation({ organisationId, transac
         actionLink: buildAbsoluteUrl(portalUrl),
         transactionId: transaction.id,
         transactionTitle: transaction.title || transaction.transaction_name || 'Commercial transaction',
-        organisationName: transaction.organisationName || 'Bridge Commercial',
+        organisationName: transaction.organisationName || 'Arch9 Commercial',
         subject: `${portalRoleLabel(role)} access for ${transaction.title || 'your commercial workspace'}`,
       },
     })
@@ -1012,7 +1012,7 @@ export async function resendCommercialPortalInvitation(accessId) {
         actionLink: buildAbsoluteUrl(portalUrl),
         transactionId: row.commercial_transaction_id,
         transactionTitle: 'Commercial portal access',
-        organisationName: 'Bridge Commercial',
+        organisationName: 'Arch9 Commercial',
         subject: `${portalRoleLabel(row.portal_role)} access reminder`,
       },
     })

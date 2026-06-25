@@ -17,7 +17,7 @@ const COPY = {
   },
   workspace_missing: {
     title: 'Workspace missing',
-    description: 'Bridge could not find an active workspace for your account.',
+    description: 'Arch9 could not find an active workspace for your account.',
   },
   branch_missing: {
     title: 'Branch assignment missing',

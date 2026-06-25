@@ -5326,7 +5326,7 @@ function PropertyShareDialog({ draft, organisationId = '', lead, requirements = 
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-950">Send To Buyer</h2>
-            <p className="mt-1 text-sm text-slate-500">Preview the property update before Bridge sends or prepares the outbound payload.</p>
+            <p className="mt-1 text-sm text-slate-500">Preview the property update before Arch9 sends or prepares the outbound payload.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600">Close</button>
         </div>
@@ -6744,7 +6744,7 @@ function LeadRecommendationsPanel({ recommendations = [], actor, onSaved, onShar
             </article>
           )
         }) : (
-          <EmptyState title="No recommendations yet" copy="Bridge will create recommended actions from lead events, suggestions, viewings, offers, communication logs, and inactivity checks." />
+          <EmptyState title="No recommendations yet" copy="Arch9 will create recommended actions from lead events, suggestions, viewings, offers, communication logs, and inactivity checks." />
         )}
       </div>
     </section>
@@ -10623,7 +10623,7 @@ function LeadOfferTransactionConversionPanel({ organisationId, lead, actor, onSa
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-950">Transaction Conversion</h3>
-            <p className="mt-1 text-sm text-slate-500">Send an offer link first. Once the seller accepts an offer, Bridge can create the transaction from that accepted offer.</p>
+            <p className="mt-1 text-sm text-slate-500">Send an offer link first. Once the seller accepts an offer, Arch9 can create the transaction from that accepted offer.</p>
           </div>
           <StatusPill tone="slate">Waiting for offer</StatusPill>
         </div>
@@ -11556,7 +11556,7 @@ function getSellerTimelineItems(timeline = [], limit = 5) {
       title,
       description,
       timestamp,
-      actor: normalizeText(item.actorName || item.agentName || item.agent?.name || item.createdByName || item.created_by_name) || 'Bridge',
+      actor: normalizeText(item.actorName || item.agentName || item.agent?.name || item.createdByName || item.created_by_name) || 'Arch9',
     }
   })
 }
@@ -11574,7 +11574,7 @@ function getSellerActivityActor(item = {}) {
       item.created_by_name ||
       item.createdBy ||
       item.created_by,
-  ) || 'Bridge'
+  ) || 'Arch9'
 }
 
 function getInitials(value = '') {
@@ -16042,7 +16042,7 @@ function AgentLeadWorkspace() {
       return
     }
     try {
-      const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.bridgenine.co.za'
+      const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za'
       await navigator.clipboard.writeText(`${origin}/agent/listings/${encodeURIComponent(listingId)}`)
       setSellerActionError('')
       setSellerActionMessage('Listing link copied.')

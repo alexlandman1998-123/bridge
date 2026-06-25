@@ -637,7 +637,7 @@ function toFriendlyGenerationMessage(code = '', fallback = '') {
     case 'DOCX_RENDER_FAILED':
       return 'The mandate data was valid, but the PDF could not be generated. Please try again.'
     case 'PACKET_VERSION_CREATE_FAILED':
-      return 'The mandate was generated, but Bridge could not save the packet version. Please try again.'
+      return 'The mandate was generated, but Arch9 could not save the packet version. Please try again.'
     default:
       return fallback || 'The mandate could not be generated. Please retry after checking the seller and property information.'
   }
@@ -967,7 +967,7 @@ function withSystemPlaceholders(placeholders = {}, context = {}, branding = null
     normalizeText(context?.organisation?.name) ||
     normalizeText(context?.agency?.organisationName) ||
     normalizeText(context?.agency?.name) ||
-    'Bridge Workspace'
+    'Arch9 Workspace'
   const logoLightUrl =
     normalizeNullableText(branding?.logoLightUrl) ||
     normalizeNullableText(branding?.organisationLogoUrl) ||
@@ -986,7 +986,7 @@ function withSystemPlaceholders(placeholders = {}, context = {}, branding = null
     normalizeNullableText(context?.organisation?.logoDarkUrl) ||
     normalizeNullableText(context?.agency?.logoDarkUrl) ||
     logoLightUrl
-  const bridgeLabel = normalizeText(branding?.bridgeLegalName || branding?.bridgeLogoLabel) || 'Bridge Legal'
+  const bridgeLabel = normalizeText(branding?.bridgeLegalName || branding?.bridgeLogoLabel) || 'Arch9 Legal'
   const bridgeLogoLightUrl = resolvePublicAssetUrl(branding?.bridgeLogoLightUrl || '/brand/bridge_9_white_background.png')
   const bridgeLogoDarkUrl = resolvePublicAssetUrl(branding?.bridgeLogoDarkUrl || '/brand/bridge_9_dark_background.png')
 

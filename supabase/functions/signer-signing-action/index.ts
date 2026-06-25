@@ -666,7 +666,7 @@ async function createPrivateListingForSignedMandate({
     private_listing_id: listing.id,
     activity_type: "listing_created_after_mandate",
     activity_title: "Listing auto-created from signed mandate",
-    activity_description: "The mandate was fully signed, so Bridge created and linked the private listing shell.",
+    activity_description: "The mandate was fully signed, so Arch9 created and linked the private listing shell.",
     performed_by: payload.created_by,
     visibility: "internal",
     metadata: {
@@ -943,7 +943,7 @@ async function maybeSendSellerMandateInvite({
     .single();
   if (sellerUpdate.error) throw sellerUpdate.error;
 
-  const appBaseUrl = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("CLIENT_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || "https://app.bridgenine.co.za").replace(/\/$/, "");
+  const appBaseUrl = normalizeText(Deno.env.get("PUBLIC_APP_URL") || Deno.env.get("CLIENT_APP_URL") || Deno.env.get("VITE_PUBLIC_APP_URL") || "https://app.arch9.co.za").replace(/\/$/, "");
   const emailResult = await invokeSendEmail({
     body: {
       type: "seller_mandate_sent",

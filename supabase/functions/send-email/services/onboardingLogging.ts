@@ -40,7 +40,7 @@ export async function logOnboardingEmailSideEffects({
 
   const commentsInsert = await supabase.from("transaction_comments").insert({
     transaction_id: transactionId,
-    author_name: "Bridge System",
+    author_name: "Arch9 System",
     author_role: "system",
     comment_text: `[system] ${activityMessage}`,
   });

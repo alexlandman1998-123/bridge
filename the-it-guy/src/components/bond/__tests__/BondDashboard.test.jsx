@@ -342,7 +342,7 @@ function makeSnapshot(overrides = {}) {
             },
             partnerPerformance: [
               { key: 'agency', sourceType: 'Agencies', partner: 'Prime Realty', applicationsReferred: 16, submittedApplications: 9, approvalRate: 70, conversionRate: 56, pipelineValueLabel: 'R 16 000 000', projectedCommissionLabel: 'R 192 000', href: '/bond/partners?source=agency' },
-              { key: 'developers', sourceType: 'Developers', partner: 'Bridge Developments', applicationsReferred: 12, submittedApplications: 7, approvalRate: 76, conversionRate: 58, pipelineValueLabel: 'R 12 000 000', projectedCommissionLabel: 'R 144 000', href: '/bond/developments' },
+              { key: 'developers', sourceType: 'Developers', partner: 'Arch9 Developments', applicationsReferred: 12, submittedApplications: 7, approvalRate: 76, conversionRate: 58, pipelineValueLabel: 'R 12 000 000', projectedCommissionLabel: 'R 144 000', href: '/bond/developments' },
             ],
             revenue: {
               revenueThisMonthLabel: 'R 7.65m',

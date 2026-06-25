@@ -246,7 +246,7 @@ function ExecutiveSnapshot() {
         <header className="snapshot-hero-card">
           <div className="snapshot-hero-head">
             <div>
-              <p className="snapshot-brand">bridge.</p>
+              <p className="snapshot-brand">Arch9</p>
               <h1>Sam&apos;s Update</h1>
               <p className="snapshot-subtitle">Premium live executive portfolio overview.</p>
             </div>

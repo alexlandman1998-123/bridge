@@ -63,7 +63,7 @@ export function isAttorneyDemoModeActiveForWorkspace({ role = '', baseRole = '',
 export function buildAttorneyDemoFirm() {
   return {
     id: ATTORNEY_DEMO_FIRM_ID,
-    name: 'Bridge Demo Attorneys',
+    name: 'Arch9 Demo Attorneys',
     registrationNumber: '',
     vatNumber: '',
     website: '',

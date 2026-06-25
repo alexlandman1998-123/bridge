@@ -325,7 +325,7 @@ function toFriendlyWorkspaceError(error = null, fallback = 'Unable to complete t
   }
   if (code === 'NO_GENERATED_VERSION') return 'Generate a draft version before continuing.'
   if (code === 'GENERATION_TIMEOUT') {
-    return 'Mandate generation is taking too long. The template render service looks stalled, so Bridge stopped waiting. Please try again.'
+    return 'Mandate generation is taking too long. The template render service looks stalled, so Arch9 stopped waiting. Please try again.'
   }
   if (code === 'MISSING_TEMPLATE_FILE') return 'The active legal template is not available for rendering. Check the current template configuration first.'
   if (code === 'NATIVE_TEMPLATE_NOT_RENDERABLE') return 'The active native template is not renderable yet. Cover the required sections and merge fields first.'
@@ -814,7 +814,7 @@ function renderEditablePreviewHtml({
     normalizeText(branding?.organisationLogoDarkUrl) ||
     normalizeText(branding?.organisationLogoHighContrastUrl)
   const bridgeLogo = normalizeText(branding?.bridgeLogoLightUrl) || BRIDGE_LOGO_LIGHT_URL
-  const bridgeFallbackLabel = 'Bridge 9'
+  const bridgeFallbackLabel = 'Arch9'
   const renderClauseText = (value) =>
     escapeHtml(value)
       .replace(/{{\s*([a-zA-Z0-9._-]+)\s*}}/g, '<span class="merge-missing">{{$1}}</span>')
@@ -896,7 +896,7 @@ function renderEditablePreviewHtml({
         <main class="page">
           <header class="doc-header">
             <span class="agency-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
-            <span class="bridge-brand">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Bridge 9" />` : escapeHtml(bridgeFallbackLabel)}</span>
+            <span class="bridge-brand">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Arch9" />` : escapeHtml(bridgeFallbackLabel)}</span>
           </header>
           <section class="doc-title">
             <h1>${escapeHtml(title)}</h1>
@@ -908,7 +908,7 @@ function renderEditablePreviewHtml({
           <footer class="doc-footer">
             <span class="footer-brand">${agencyLogo ? `<img src="${escapeHtml(agencyLogo)}" alt="${escapeHtml(orgName)} logo" />` : escapeHtml(orgName)}</span>
             <span class="page-no">Page 1 of 1 (preview)</span>
-            <span class="footer-bridge">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Bridge 9" />` : escapeHtml(bridgeFallbackLabel)}</span>
+            <span class="footer-bridge">${bridgeLogo ? `<img src="${escapeHtml(bridgeLogo)}" alt="Arch9" />` : escapeHtml(bridgeFallbackLabel)}</span>
           </footer>
         </main>
       </body>
@@ -1030,8 +1030,8 @@ function resolveWorkspaceBranding({
       'dark_logo_url',
       'logo_high_contrast_url',
     ]),
-    bridgeLegalName: normalizeText(merged.bridgeLegalName) || normalizeText(merged.bridge_legal_name) || 'Bridge Legal',
-    bridgeLogoLabel: normalizeText(merged.bridgeLogoLabel) || 'Bridge 9',
+    bridgeLegalName: normalizeText(merged.bridgeLegalName) || normalizeText(merged.bridge_legal_name) || 'Arch9 Legal',
+    bridgeLogoLabel: normalizeText(merged.bridgeLogoLabel) || 'Arch9',
     bridgeLogoLightUrl: normalizeText(merged.bridgeLogoLightUrl) || normalizeText(merged.bridge_legal_logo_light_url) || BRIDGE_LOGO_LIGHT_URL,
     bridgeLogoDarkUrl: normalizeText(merged.bridgeLogoDarkUrl) || normalizeText(merged.bridge_legal_logo_dark_url) || BRIDGE_LOGO_DARK_URL,
     transactionReference: normalizeText(transactionReference),
@@ -3432,7 +3432,7 @@ export default function LegalDocumentWorkspace({
       },
     })
 
-    const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.bridgenine.co.za'
+    const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://app.arch9.co.za'
     const linkResult = await generateSigningLinks({
       packetId: resolvedPacketId,
       packetVersionId: versionId,
@@ -4586,7 +4586,7 @@ export default function LegalDocumentWorkspace({
       }
 
       if (!link) {
-        throw new Error('Bridge generated the mandate, but the download link is not ready yet. Refresh and try again.')
+        throw new Error('Arch9 generated the mandate, but the download link is not ready yet. Refresh and try again.')
       }
 
       if (isMandatePacket && signingMethod === 'physical' && statusState?.packet?.id) {
@@ -5199,7 +5199,7 @@ export default function LegalDocumentWorkspace({
                     <div className="flex min-h-[620px] flex-col items-center justify-center rounded-[24px] border border-dashed border-[#d8e2ef] bg-white px-6 text-center">
                       <FileText size={24} className="text-[#7287a0]" />
                       <p className="mt-3 text-base font-semibold text-[#102033]">Generate the first draft to preview this document.</p>
-                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Bridge will create a packet draft and load the document lifecycle here without changing your existing data flow.</p>
+                      <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Arch9 will create a packet draft and load the document lifecycle here without changing your existing data flow.</p>
                     </div>
                   ) : null}
 
@@ -5228,7 +5228,7 @@ export default function LegalDocumentWorkspace({
                       <p className="mt-3 text-base font-semibold text-[#102033]">
                         {latestVersion?.id
                           ? 'Draft exists, but preview is not available yet.'
-                          : 'Bridge could not generate this document. Check missing fields or template setup.'}
+                          : 'Arch9 could not generate this document. Check missing fields or template setup.'}
                       </p>
                       <p className="mt-1 max-w-md text-sm text-[#6b7c93]">Preview and final render controls still rely on the existing packet generation pipeline.</p>
                     </div>

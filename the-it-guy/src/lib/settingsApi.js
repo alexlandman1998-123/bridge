@@ -1247,7 +1247,7 @@ function resolveCommissionCalculation({
 }
 
 function buildDefaultOrganisation(profile = null) {
-  const baseName = normalizeText(profile?.companyName) || 'Bridge Workspace'
+  const baseName = normalizeText(profile?.companyName) || 'Arch9 Workspace'
 
   return {
     id: null,
@@ -1597,7 +1597,7 @@ function buildAtomicAgencyOnboardingPayload({ mergedDraft = {}, context = {}, us
   const principalParts = principalName.split(/\s+/).filter(Boolean)
   const principalFirstName = principalParts[0] || context.profile?.firstName || ''
   const principalLastName = principalParts.slice(1).join(' ') || context.profile?.lastName || ''
-  const agencyName = normalizeText(info.agencyName || context.profile?.companyName) || 'Bridge Agency'
+  const agencyName = normalizeText(info.agencyName || context.profile?.companyName) || 'Arch9 Agency'
   const settings = {
     ...DEFAULT_ORGANISATION_SETTINGS,
     ...safeJson(context.organisationSettings, DEFAULT_ORGANISATION_SETTINGS),
@@ -1869,7 +1869,7 @@ function createAtomicOnboardingError(rpcResult = {}, fallbackMessage = 'Agency s
 
 function getAppOrigin() {
   if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
-  return normalizeText(import.meta.env?.VITE_APP_URL) || 'https://app.bridgenine.co.za'
+  return normalizeText(import.meta.env?.VITE_APP_URL) || 'https://app.arch9.co.za'
 }
 
 function getInviteeFirstName(name = '') {
@@ -1909,7 +1909,7 @@ async function dispatchAgencyInviteEmails({ client, workspaceId, mergedDraft, or
   if (query.error) {
     return {
       sent: [],
-      warnings: [`Invite records were created, but Bridge could not load invite links for email delivery: ${query.error.message}`],
+      warnings: [`Invite records were created, but Arch9 could not load invite links for email delivery: ${query.error.message}`],
     }
   }
 
@@ -2289,7 +2289,7 @@ async function ensureOrganisationContext(client) {
 
     if (!organisation && canAutoCreateOrganisation) {
       console.debug('[ONBOARDING] org:auto-create:start', { userId: user.id })
-      const fallbackName = normalizeText(profile.companyName) || 'Bridge Workspace'
+      const fallbackName = normalizeText(profile.companyName) || 'Arch9 Workspace'
       const organisationId = createUuid()
       const ownerEmail = normalizeEmail(profile.email || user.email)
       if (!ownerEmail) {
@@ -2795,7 +2795,7 @@ export async function uploadAccountAvatar({ file } = {}) {
   const publicUrl = normalizeText(publicUrlData?.publicUrl)
 
   if (!publicUrl) {
-    throw new Error('Profile picture uploaded, but Bridge could not resolve its public URL.')
+    throw new Error('Profile picture uploaded, but Arch9 could not resolve its public URL.')
   }
 
   return {
@@ -5421,7 +5421,7 @@ export async function fetchOrganisationInviteByToken(token) {
     return { ok: false, reason: 'expired', invite: null }
   }
 
-  let organisationName = 'Bridge Organisation'
+  let organisationName = 'Arch9 Organisation'
   if (inviteRow.organisation_id) {
     const orgQuery = await client
       .from('organisations')

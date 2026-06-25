@@ -895,7 +895,7 @@ async function fetchBondPartnerPeopleFallback({ relationship, currentOrganisatio
 function normalizePublicationStatuses(value = {}) {
   const statuses = value && typeof value === 'object' ? value : {}
   return {
-    bridge: normalizeText(statuses.bridge || statuses.Bridge || 'not_published') || 'not_published',
+    bridge: normalizeText(statuses.bridge || statuses.Bridge || statuses.Arch9 || 'not_published') || 'not_published',
     property24: normalizeText(statuses.property24 || statuses.property_24 || statuses.Property24 || 'not_published') || 'not_published',
     privateProperty: normalizeText(statuses.private_property || statuses.privateProperty || statuses.PrivateProperty || 'not_published') || 'not_published',
     website: normalizeText(statuses.website || statuses.Website || 'not_published') || 'not_published',

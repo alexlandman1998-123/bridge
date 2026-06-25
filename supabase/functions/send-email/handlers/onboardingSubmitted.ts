@@ -275,7 +275,7 @@ export async function handleOnboardingSubmittedEmail(
 
   const sender =
     normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Bridge <onboarding@resend.dev>";
+    "Arch9 <onboarding@resend.dev>";
 
   const delivery = await prepareEmailDelivery(payload as Record<string, unknown>, {
     communicationType,

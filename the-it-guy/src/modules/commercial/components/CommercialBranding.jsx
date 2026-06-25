@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useOrganisation } from '../../../context/OrganisationContext'
 
-const BRIDGE_BRAND_MARK = 'bridge.'
-const BRIDGE_POWERED_LABEL = 'Powered by Bridge'
+const BRIDGE_BRAND_MARK = 'Arch9'
+const BRIDGE_POWERED_LABEL = 'Powered by Arch9'
 
 function CommercialBranding({ compact = false }) {
   const { branding, loading: organisationLoading } = useOrganisation()

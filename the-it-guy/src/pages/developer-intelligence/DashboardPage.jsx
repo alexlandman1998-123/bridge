@@ -94,7 +94,7 @@ function DeveloperIntelligenceDashboardPage() {
             <div>
               <h3 className="text-[1.2rem] font-semibold tracking-[-0.03em] text-[#142132]">AI Market Snapshot</h3>
               <p className="mt-2 max-w-2xl text-[0.95rem] leading-7 text-[#607389]">
-                Bridge has identified 64 potential monthly transactions in your active regions.
+                Arch9 has identified 64 potential monthly transactions in your active regions.
               </p>
             </div>
             <ScoreBadge score={developerIntelligenceOverview.confidenceScore} label="Confidence" />

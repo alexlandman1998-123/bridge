@@ -62,7 +62,7 @@ export function buildSellerOnboardingSubmittedEmailHtml({
     : [
       `${sellerName || "The seller"} has submitted their onboarding for ${propertyLabel}.`,
       "Please review the submitted details and generate the mandate from the lead workspace.",
-      "Bridge keeps the onboarding, mandate, and signing flow tied to the same lead record.",
+      "Arch9 keeps the onboarding, mandate, and signing flow tied to the same lead record.",
     ];
   const processSteps = Array.isArray(templateOverrides?.processSteps) && templateOverrides.processSteps.length
     ? templateOverrides.processSteps
@@ -76,7 +76,7 @@ export function buildSellerOnboardingSubmittedEmailHtml({
   const securityTitle = pickText(templateOverrides?.securityTitle, "Submission Review");
   const securityBody = pickText(
     templateOverrides?.securityBody,
-    "This handoff is shared securely through Bridge and is only visible to authorised members of the transaction workspace.",
+    "This handoff is shared securely through Arch9 and is only visible to authorised members of the transaction workspace.",
   );
   const helpBody = pickText(
     templateOverrides?.helpBody,
@@ -104,7 +104,7 @@ export function buildSellerOnboardingSubmittedEmailHtml({
   return renderBridgeEmailLayout({
     preheader: pickText(
       templateOverrides?.preheader,
-      "The seller has submitted onboarding. Review it and generate the mandate from Bridge.",
+      "The seller has submitted onboarding. Review it and generate the mandate from Arch9.",
     ),
     title: pickText(templateOverrides?.title, "Seller Onboarding Submitted"),
     greeting: `Hi ${pickText(agentName, "there")},`,
@@ -112,7 +112,7 @@ export function buildSellerOnboardingSubmittedEmailHtml({
     securityTitle,
     securityBody,
     helpBody,
-    organisationName: organisationName || "Bridge",
+    organisationName: organisationName || "Arch9",
     senderOrganisationName,
     senderOrganisationLogoUrl,
     supportEmail: supportEmail || "",
@@ -156,7 +156,7 @@ export function buildSellerOnboardingSubmittedEmailText({
     "",
     "Need help? Reply to this email or open the lead workspace to continue the mandate workflow.",
     "",
-    organisationName || "Bridge",
+    organisationName || "Arch9",
   ]
     .filter(Boolean)
     .join("\n");

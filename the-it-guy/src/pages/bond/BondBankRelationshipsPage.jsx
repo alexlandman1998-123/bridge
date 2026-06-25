@@ -1339,7 +1339,7 @@ function BankPanelManagementView({ panelRows = [], systemBanks = [], canManage =
           </div>
         )}
       </CommandSection>
-      {!systemBanks.length ? <EmptyState title="Global bank directory is empty" description="A Bridge administrator needs to add active banks before originators can configure their panel." icon={Landmark} /> : null}
+      {!systemBanks.length ? <EmptyState title="Global bank directory is empty" description="A Arch9 administrator needs to add active banks before originators can configure their panel." icon={Landmark} /> : null}
     </>
   )
 }

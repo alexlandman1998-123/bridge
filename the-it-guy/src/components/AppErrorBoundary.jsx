@@ -163,7 +163,7 @@ class AppErrorBoundary extends Component {
           <h2>{staleChunkError ? 'Loading the latest app version' : this.props.title || 'We hit an unexpected error'}</h2>
           <p>
             {this.state.recoveringFromStaleChunk
-              ? 'A newer version of Bridge is available. Refreshing this page now.'
+              ? 'A newer version of Arch9 is available. Refreshing this page now.'
               : staleChunkError
                 ? 'This page was opened with an older app file. Refresh to load the latest version.'
                 : getErrorMessage(this.state.error)}

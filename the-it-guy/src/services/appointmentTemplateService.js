@@ -131,7 +131,7 @@ export function applyAppointmentTemplate(type, payload = {}) {
     calendarTitle:
       normalizeText(payload?.calendarTitle || payload?.calendar_title)
       || template.calendarTitle
-      || `Bridge: ${template.label}`,
+      || `Arch9: ${template.label}`,
     calendarDescription:
       normalizeText(payload?.calendarDescription || payload?.calendar_description)
       || template.calendarDescription
