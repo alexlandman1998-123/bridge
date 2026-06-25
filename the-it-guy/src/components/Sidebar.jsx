@@ -171,7 +171,6 @@ const ICON_BY_KEY = {
 
 const BRIDGE_BRAND_MARK = 'Arch9'
 const BRIDGE_BRAND_SUBTITLE = 'Property Transaction OS'
-const BRIDGE_POWERED_LABEL = 'Powered by Arch9'
 const ATTORNEY_SECONDARY_KEYS = new Set(['financials', 'team_departments', 'reports'])
 const BOND_NAV_SECTIONS = [
   {
@@ -428,14 +427,12 @@ function Sidebar() {
                   onError={() => setLogoLoadFailure({ url: branding.logoUrl, failed: true })}
                 />
               </div>
-              <p className="ui-sidebar-brand-powered">{BRIDGE_POWERED_LABEL}</p>
             </div>
           ) : showBrandPlaceholder ? (
             <div className="ui-sidebar-brand-org" aria-label="Loading organisation branding">
               <div className="ui-sidebar-brand-logo-wrap ui-sidebar-brand-logo-wrap-loading">
                 <span className="ui-sidebar-brand-logo-placeholder" />
               </div>
-              <p className="ui-sidebar-brand-powered">{BRIDGE_POWERED_LABEL}</p>
             </div>
           ) : (
             <>

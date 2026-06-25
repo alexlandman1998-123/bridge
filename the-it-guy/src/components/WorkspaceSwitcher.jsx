@@ -100,7 +100,6 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace, variant = 'de
       className={`ui-workspace-switcher ${variant === 'compact' ? 'ui-workspace-switcher-compact' : ''}`.trim()}
       onClick={(event) => event.stopPropagation()}
     >
-      <p className="ui-workspace-switcher-heading">Current workspace</p>
       <button
         type="button"
         className="ui-workspace-switcher-trigger"

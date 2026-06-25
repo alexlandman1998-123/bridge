@@ -32,17 +32,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ResidentialAppointments,
-  ResidentialAttentionRequired,
-  ResidentialActiveTransactionsCarousel,
-  ResidentialCommissionForecast,
+  ResidentialCommandCenterGrid,
   ResidentialDashboardModeToggle,
-  ResidentialDashboardShell,
-  ResidentialKpiCard,
-  ResidentialPerformanceChart,
-  ResidentialTopPerformers,
-  ResidentialTransactionFlow,
-  ResidentialTransactionHealth,
 } from '../components/residential/ResidentialDashboard'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
@@ -2242,64 +2233,25 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', profile, dateRang
   )
 
   return (
-    <ResidentialDashboardShell className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {model.kpis.map((item, index) => {
-          const icons = [ArrowRightLeft, BriefcaseBusiness, WalletCards, Landmark]
-          const Icon = icons[index] || FileText
-          return (
-            <ResidentialKpiCard
-              key={item.key}
-              icon={Icon}
-              label={item.label}
-              value={item.compactValue || item.value}
-              trend={item.trend}
-              sparkline={item.sparkline}
-              tone={item.tone}
-              emptyCopy=""
-            />
-          )
-        })}
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <ResidentialTransactionHealth data={model.transactionHealth} scope="principal" mode={mode} />
-        <ResidentialPerformanceChart data={model.performance} scope="principal" mode={mode} />
-      </div>
-
-      <ResidentialTransactionFlow data={model.transactionFlow} scope="principal" mode={mode} />
-
-      <ResidentialActiveTransactionsCarousel
-        title={model.activeTransactions.title}
-        rows={model.activeTransactions.rows}
-        scope="principal"
-        onViewAll={onViewTransactions}
-        onOpenRecord={onOpenTransaction}
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        <ResidentialAttentionRequired data={model.attention} scope="principal" />
-        <ResidentialCommissionForecast data={model.commissionForecast} scope="principal" />
-      </div>
-
-      <ResidentialTopPerformers data={model.topPerformers} scope="principal" />
-
-      <ResidentialAppointments
-        module="principal"
-        organisationId={data?.meta?.agencyId || ''}
-        userId={profile?.id || profile?.userId || ''}
-        userEmail={profile?.email || ''}
-        includeAll
-        canManage
-        refreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}`}
-        scope="principal"
-        onViewCalendar={onViewCalendar}
-        onOpenCalendar={onOpenCalendar}
-        onManageAppointment={onManageAppointment}
-        onOpenAppointment={onOpenAppointment}
-        onScheduleAppointment={onScheduleAppointment}
-      />
-    </ResidentialDashboardShell>
+    <ResidentialCommandCenterGrid
+      model={model}
+      scope="principal"
+      mode={mode}
+      kpiIcons={[ArrowRightLeft, BriefcaseBusiness, WalletCards, Landmark]}
+      organisationId={data?.meta?.agencyId || ''}
+      userId={profile?.id || profile?.userId || ''}
+      userEmail={profile?.email || ''}
+      includeAllAppointments
+      canManageAppointments
+      appointmentRefreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}`}
+      onViewTransactions={onViewTransactions}
+      onOpenTransaction={onOpenTransaction}
+      onViewCalendar={onViewCalendar}
+      onOpenCalendar={onOpenCalendar}
+      onManageAppointment={onManageAppointment}
+      onOpenAppointment={onOpenAppointment}
+      onScheduleAppointment={onScheduleAppointment}
+    />
   )
 }
 

@@ -19,17 +19,7 @@ import ConveyancerDashboardPage from '../components/ConveyancerDashboardPage'
 import BridgeCommandCenterDashboard from '../components/dashboard/BridgeCommandCenterDashboard'
 import ActivePipelineCarousel from '../components/pipeline/ActivePipelineCarousel'
 import { PillToggle } from '../components/ui/FilterBar'
-import {
-  ResidentialAppointments,
-  ResidentialAttentionRequired,
-  ResidentialActiveTransactionsCarousel,
-  ResidentialCommissionForecast,
-  ResidentialDashboardShell,
-  ResidentialKpiCard,
-  ResidentialPerformanceChart,
-  ResidentialTransactionFlow,
-  ResidentialTransactionHealth,
-} from '../components/residential/ResidentialDashboard'
+import { ResidentialCommandCenterGrid } from '../components/residential/ResidentialDashboard'
 import {
   STAGE_AGING_BUCKETS,
   selectActiveTransactions,
@@ -4029,7 +4019,7 @@ function renderActiveTransactionsBlock({
             <>
               {!isPrincipalAgentView && agentResidentialModel ? (
                 <section className="mt-6">
-                  <ResidentialDashboardShell className="space-y-5">
+                  <div className="space-y-5">
                     <div className="flex flex-wrap items-center justify-end gap-2.5">
                       <PillToggle
                         items={[
@@ -4043,64 +4033,28 @@ function renderActiveTransactionsBlock({
                       />
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                      {agentResidentialModel.kpis.map((item, index) => {
-                        const icons = [ArrowRightLeft, Building2, Banknote, TrendingUp]
-                        const Icon = icons[index] || ArrowRightLeft
-                        return (
-                          <ResidentialKpiCard
-                            key={item.key}
-                            icon={Icon}
-                            label={item.label}
-                            value={item.compactValue || item.value}
-                            trend={item.trend}
-                            sparkline={item.sparkline}
-                            tone={item.tone}
-                            emptyCopy=""
-                          />
-                        )
-                      })}
-                    </div>
-
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                      <ResidentialTransactionHealth data={agentResidentialModel.transactionHealth} scope="agent" mode={residentialMode} />
-                      <ResidentialPerformanceChart data={agentResidentialModel.performance} scope="agent" mode={residentialMode} />
-                    </div>
-
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                      <ResidentialTransactionFlow data={agentResidentialModel.transactionFlow} scope="agent" mode={residentialMode} />
-                      <ResidentialActiveTransactionsCarousel
-                        title={agentResidentialModel.activeTransactions.title}
-                        rows={agentResidentialModel.activeTransactions.rows}
-                        scope="agent"
-                        onViewAll={() => navigate('/transactions')}
-                        onOpenRecord={(record) => {
-                          if (record?.id) navigate(`/transactions/${record.id}`)
-                        }}
-                      />
-                    </div>
-
-                    <ResidentialAppointments
-                      module="agent"
+                    <ResidentialCommandCenterGrid
+                      model={agentResidentialModel}
+                      scope="agent"
+                      mode={residentialMode}
+                      kpiIcons={[ArrowRightLeft, Building2, Banknote, TrendingUp]}
                       organisationId={organisationIdForAppointments}
                       userId={String(profile?.id || '').trim()}
                       userEmail={String(profile?.email || '').trim()}
-                      includeAll={false}
-                      canManage={false}
-                      scope="agent"
-                      refreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
+                      includeAllAppointments={false}
+                      canManageAppointments={false}
+                      appointmentRefreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
+                      onViewTransactions={() => navigate('/transactions')}
+                      onOpenTransaction={(record) => {
+                        if (record?.id) navigate(`/transactions/${record.id}`)
+                      }}
                       onViewCalendar={() => navigate('/pipeline/calendar')}
                       onOpenCalendar={() => navigate('/pipeline/calendar')}
                       onManageAppointment={() => navigate('/pipeline/calendar')}
                       onOpenAppointment={() => navigate('/pipeline/calendar')}
                       onScheduleAppointment={() => navigate('/pipeline/calendar')}
                     />
-
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                      <ResidentialAttentionRequired data={agentResidentialModel.attention} scope="agent" />
-                      <ResidentialCommissionForecast data={agentResidentialModel.commissionForecast} scope="agent" />
-                    </div>
-                  </ResidentialDashboardShell>
+                  </div>
                 </section>
               ) : null}
 

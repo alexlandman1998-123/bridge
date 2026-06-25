@@ -13,12 +13,11 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import AppointmentDashboardSection from '../appointments/dashboard/AppointmentDashboardSection'
-import ActivePipelineCarousel from '../pipeline/ActivePipelineCarousel'
 import { formatCurrencyCompactZAR } from '../../services/residentialDashboardService'
 
-const shellClass = 'space-y-4'
-const cardClass = 'rounded-[20px] border border-[#dfe7f0] bg-white shadow-[0_16px_36px_rgba(15,23,42,0.055)]'
-const sectionClass = 'rounded-[20px] border border-[#dfe7f0] bg-white shadow-[0_16px_36px_rgba(15,23,42,0.055)]'
+const shellClass = 'space-y-5 lg:space-y-6'
+const cardClass = 'rounded-[20px] border border-[#dfe7f0] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)]'
+const sectionClass = 'rounded-[20px] border border-[#dfe7f0] bg-white shadow-[0_18px_44px_rgba(15,23,42,0.06)]'
 const countFormat = new Intl.NumberFormat('en-ZA')
 
 const toneStyles = {
@@ -86,7 +85,7 @@ function EmptyState({ title, copy }) {
 }
 
 export function ResidentialDashboardShell({ children, className = '' }) {
-  return <section className={`${shellClass} ${className}`}>{children}</section>
+  return <section className={`${shellClass} min-w-0 ${className}`}>{children}</section>
 }
 
 export function ResidentialDashboardModeToggle({ value = 'sales', onChange }) {
@@ -122,21 +121,21 @@ export function ResidentialKpiCard({ icon, label, value, trend, sparkline = [], 
   const style = toneStyles[tone] || toneStyles.blue
   const { line, area, dots } = buildSparklinePath(sparkline)
   return (
-    <article className={`${cardClass} flex min-h-[136px] flex-col justify-between p-4 sm:p-4.5`}>
-      <div className="flex items-start justify-between gap-3">
-        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${style.bubble}`}>
-          <IconComponent size={18} />
+    <article className={`${cardClass} flex min-h-[152px] flex-col overflow-hidden p-4 sm:p-5`}>
+      <div className="flex items-start gap-3">
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[16px] ${style.bubble}`}>
+          <IconComponent size={20} />
         </span>
-        <TrendPill value={trend} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[0.86rem] font-semibold text-[#344054]">{label}</p>
+          <p className="mt-2 text-[1.9rem] font-semibold leading-none tracking-[-0.035em] text-[#101828] tabular-nums">{value}</p>
+          <div className="mt-2"><TrendPill value={trend} label="vs previous 30 days" /></div>
+        </div>
       </div>
-      <div className="mt-2 min-w-0">
-        <p className="truncate text-[0.82rem] font-semibold text-[#52657a]">{label}</p>
-        <p className="mt-2 text-[1.85rem] font-semibold leading-none tracking-[-0.03em] text-[#101828] tabular-nums">{value}</p>
+      <div className="mt-auto min-w-0">
         {emptyCopy ? <p className="mt-1 text-[0.74rem] text-[#7b8ca2]">{emptyCopy}</p> : null}
-      </div>
-      <div className="mt-3 min-h-[38px]">
         {line ? (
-          <svg viewBox="0 0 100 84" className="h-[44px] w-full overflow-visible" role="img" aria-label={`${label} trend sparkline`}>
+          <svg viewBox="0 0 100 84" className="mt-2 h-[46px] w-full overflow-visible" role="img" aria-label={`${label} trend sparkline`}>
             <defs>
               <linearGradient id={`spark-${label.replace(/\s+/g, '-').toLowerCase()}`} x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor={style.stroke} stopOpacity="0.18" />
@@ -150,7 +149,7 @@ export function ResidentialKpiCard({ icon, label, value, trend, sparkline = [], 
             ))}
           </svg>
         ) : (
-          <div className="flex h-[44px] items-center justify-center text-[0.72rem] text-[#8a9aac]">No trend yet</div>
+          <div className="mt-2 flex h-[46px] items-center justify-center text-[0.72rem] text-[#8a9aac]">No trend yet</div>
         )}
       </div>
     </article>
@@ -191,8 +190,10 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
   const cursor = gradientState.cursor
   const gradient = gradientStops.length ? `conic-gradient(${gradientStops.join(', ')}, #e8eef6 ${cursor}% 100%)` : 'conic-gradient(#e8eef6 0% 100%)'
 
+  const attentionCount = toNumber(data?.attentionRequired) + toNumber(data?.criticalDelays)
+
   return (
-    <section className={`${sectionClass} flex h-full min-h-[332px] flex-col p-4 sm:p-5`}>
+    <section className={`${sectionClass} flex h-full min-h-[338px] flex-col p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || 'Transaction Health'}</h3>
@@ -203,28 +204,33 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
         </span>
       </div>
 
-      <div className="mt-6 grid flex-1 gap-6 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
-        <div className="mx-auto grid h-[172px] w-[172px] place-items-center rounded-full" style={{ background: gradient }}>
-          <div className="grid h-[110px] w-[110px] place-items-center rounded-full bg-white text-center shadow-inner">
+      <div className="mt-6 grid flex-1 gap-6 md:grid-cols-[176px_minmax(0,1fr)] md:items-center">
+        <div className="mx-auto grid h-[168px] w-[168px] place-items-center rounded-full" style={{ background: gradient }}>
+          <div className="grid h-[108px] w-[108px] place-items-center rounded-full bg-white text-center shadow-inner">
             <div>
               <p className="text-[1.8rem] font-semibold leading-none text-[#101828] tabular-nums">{Math.max(0, Math.round(data?.total || 0))}</p>
               <p className="mt-1 text-xs font-medium text-[#667085]">Total</p>
             </div>
           </div>
         </div>
-        <div className="space-y-3">
+        <div className="min-w-0 overflow-hidden rounded-[16px] border border-[#e4edf6]">
+          <div className="grid grid-cols-[minmax(0,1fr)_70px_78px] bg-[#f8fafc] px-3 py-2 text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">
+            <span>Stage</span>
+            <span className="text-right">Deals</span>
+            <span className="text-right">% Total</span>
+          </div>
           {segments.length ? segments.map((segment) => {
             const tone = toneStyles[segment.tone] || toneStyles.blue
             return (
-              <div key={segment.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+              <div key={segment.key} className="grid grid-cols-[minmax(0,1fr)_70px_78px] items-center border-t border-[#edf2f7] px-3 py-3">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 text-sm font-semibold text-[#203247]">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ background: tone.stroke }} />
                     <span className="truncate">{segment.label}</span>
                   </p>
-                  <p className="mt-1 text-xs text-[#7b8ca2]">{Math.max(0, Math.round(segment.percentage || 0))}%</p>
                 </div>
-                <span className="text-sm font-semibold text-[#101828] tabular-nums">{Math.max(0, Math.round(segment.count || 0))}</span>
+                <span className="text-right text-sm font-semibold text-[#101828] tabular-nums">{Math.max(0, Math.round(segment.count || 0))}</span>
+                <span className="text-right text-sm font-semibold text-[#52657a] tabular-nums">{Math.max(0, Math.round(segment.percentage || 0))}%</span>
               </div>
             )
           }) : (
@@ -234,6 +240,18 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
           )}
         </div>
       </div>
+      {attentionCount > 0 ? (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-[14px] border border-[#dbeafe] bg-[#f8fbff] px-3 py-2.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[12px] bg-[#edf5ff] text-[#1769d1]"><Clock3 size={15} /></span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[#203247]">{formatCount(attentionCount)} deal{attentionCount === 1 ? '' : 's'} need attention</p>
+              <p className="truncate text-xs text-[#667085]">Delayed or blocked items may require follow-up.</p>
+            </div>
+          </div>
+          <ChevronRight size={16} className="shrink-0 text-[#1769d1]" />
+        </div>
+      ) : null}
     </section>
   )
 }
@@ -271,15 +289,16 @@ export function ResidentialPerformanceChart({ data, scope = 'principal' }) {
         </div>
       </div>
 
-      <div className="mt-5 flex flex-1 flex-col justify-between">
-        <div className="flex-1">
-          <svg viewBox="0 0 100 84" className="h-[180px] w-full overflow-visible" role="img" aria-label="Performance trend">
+      <div className="mt-5 flex min-h-0 flex-1 flex-col justify-between">
+        <div className="min-h-[190px] flex-1 rounded-[16px] border border-[#edf2f7] bg-[linear-gradient(180deg,#fbfdff_0%,#ffffff_100%)] px-3 py-3">
+          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-full min-h-[190px] w-full overflow-visible" role="img" aria-label="Performance trend">
             <defs>
               <linearGradient id="performanceGradient" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor="#4f86e8" stopOpacity="0.18" />
                 <stop offset="100%" stopColor="#4f86e8" stopOpacity="0" />
               </linearGradient>
             </defs>
+            {[20, 40, 60, 80].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} stroke="#e8eef6" strokeWidth="0.8" vectorEffect="non-scaling-stroke" />)}
             {line ? <path d={area} fill="url(#performanceGradient)" opacity="0.85" /> : null}
             {line ? <polyline fill="none" points={dots.map((dot) => `${dot.x},${dot.y}`).join(' ')} stroke="#4f86e8" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /> : null}
             {dots.map((dot, index) => (
@@ -287,10 +306,10 @@ export function ResidentialPerformanceChart({ data, scope = 'principal' }) {
             ))}
           </svg>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          {(data?.series || []).slice(0, 3).map((point, index) => (
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {(data?.series || []).slice(-4).map((point, index) => (
             <div key={`performance-metric-${index}`} className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5">
-              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Month {index + 1}</p>
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Period {index + 1}</p>
               <p className="mt-1 text-[1rem] font-semibold text-[#142132] tabular-nums">{Math.max(0, Math.round(toNumber(point)))}%</p>
             </div>
           ))}
@@ -333,11 +352,11 @@ export function ResidentialTransactionFlow({ data, scope = 'principal' }) {
         </div>
       </div>
 
-      <div className="mt-5 grid grid-flow-col auto-cols-[minmax(220px,1fr)] gap-3 overflow-x-auto pb-1 md:grid-flow-row md:auto-cols-auto md:grid-cols-2 xl:grid-cols-5 xl:overflow-visible xl:pb-0">
+      <div className="mt-5 grid grid-flow-col auto-cols-[minmax(214px,1fr)] gap-3 overflow-x-auto pb-1 md:grid-flow-row md:auto-cols-auto md:grid-cols-2 xl:grid-cols-5 xl:overflow-visible xl:pb-0">
         {stages.map((stage) => {
           const tone = toneStyles[stage.tone] || toneStyles.blue
           return (
-            <div key={stage.key} className="flex min-h-[170px] snap-start flex-col rounded-[18px] border border-[#dfe7f0] bg-[#fbfdff] p-4">
+            <div key={stage.key} className="flex min-h-[126px] snap-start flex-col rounded-[16px] border border-[#dfe7f0] bg-[#fbfdff] p-3.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
@@ -350,17 +369,15 @@ export function ResidentialTransactionFlow({ data, scope = 'principal' }) {
                       <Info size={11} />
                     </span>
                   </div>
-                  <p className="mt-2 text-[1.3rem] font-semibold tracking-[-0.03em] text-[#101828] tabular-nums">
-                    {formatCount(stage.count)} Transaction{Number(stage.count || 0) === 1 ? '' : 's'}
-                  </p>
-                  <p className="mt-2 text-[1.02rem] font-semibold text-[#203247]">{stage.formattedValue || formatCurrencyCompactZAR(stage.value || 0)}</p>
+                  <p className="mt-2 text-[1.55rem] font-semibold leading-none tracking-[-0.035em] text-[#101828] tabular-nums">{formatCount(stage.count)}</p>
+                  <p className="mt-1.5 text-[0.9rem] font-semibold text-[#203247]">{stage.formattedValue || formatCurrencyCompactZAR(stage.value || 0)}</p>
                 </div>
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-[0.72rem] font-semibold ${tone.soft}`}>
                   {Math.max(0, Math.round(stage.percentage || 0))}%
                 </span>
               </div>
 
-              <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#edf2f7]">
+              <div className="mt-auto h-2 overflow-hidden rounded-full bg-[#edf2f7]">
                 <div className="h-full rounded-full" style={{ width: `${clamp(toNumber(stage.percentage), 0, 100)}%`, background: tone.stroke }} />
               </div>
 
@@ -395,22 +412,44 @@ export function ResidentialActiveTransactionsCarousel({ title, rows = [], scope 
   const totalPipelineValue = rows.reduce((sum, row) => sum + toNumber(row.valueRaw || row.value), 0)
 
   return (
-    <section className={`${sectionClass} p-4 sm:p-5`}>
-      <ActivePipelineCarousel
-        title={title}
-        subtitle={scope === 'agent' ? 'Track your active deals and progress.' : 'Track active deals and their progress.'}
-        mode="residential_sales"
-        records={records}
-        onViewAll={onViewAll}
-        onOpenRecord={onOpenRecord}
-        summary={{
-          primary: `${rows.length} transaction${rows.length === 1 ? '' : 's'} in progress`,
-          secondary: `Total pipeline value: ${formatCurrencyCompactZAR(totalPipelineValue)}`,
-          actionLabel: 'View all pipeline',
-          onAction: onViewAll,
-        }}
-        viewAllLabel="View all transactions"
-      />
+    <section className={`${sectionClass} flex h-full min-h-[320px] flex-col p-4 sm:p-5`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[1rem] font-semibold text-[#101828]">{title}</h3>
+          <p className="mt-1 text-sm text-[#667085]">{scope === 'agent' ? 'Track your active deals and progress.' : 'Track active deals and their progress.'}</p>
+        </div>
+        <button type="button" onClick={onViewAll} className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#1769d1]">
+          View all <ChevronRight size={14} />
+        </button>
+      </div>
+      <div className="mt-4 flex-1 divide-y divide-[#edf2f7] overflow-hidden">
+        {records.length ? records.slice(0, 4).map((record) => (
+          <button
+            key={record.id}
+            type="button"
+            onClick={() => onOpenRecord?.(record)}
+            className="grid w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 py-3 text-left first:pt-0 last:pb-0"
+          >
+            <span className="h-12 w-12 overflow-hidden rounded-[12px] border border-[#e4edf6] bg-[#f1f5f9]">
+              {record.imageUrl ? <img src={record.imageUrl} alt="" className="h-full w-full object-cover" /> : <span className="grid h-full w-full place-items-center text-[#7b8ca2]"><BriefcaseBusiness size={17} /></span>}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-[#101828]">{record.title}</span>
+              <span className="mt-1 block truncate text-xs text-[#667085]">{record.subtitle}</span>
+            </span>
+            <span className="text-right">
+              <span className="block text-sm font-semibold text-[#101828]">{record.valueLabel}</span>
+              <span className="mt-1 block text-xs text-[#667085]">{record.ownerName}</span>
+            </span>
+          </button>
+        )) : (
+          <EmptyState title="No active transactions" copy="Active transactions will appear here once deals move into progress." />
+        )}
+      </div>
+      <div className="mt-4 flex items-center justify-between rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5 text-xs">
+        <span className="font-semibold text-[#52657a]">{rows.length} transaction{rows.length === 1 ? '' : 's'} in progress</span>
+        <span className="font-semibold text-[#101828]">{formatCurrencyCompactZAR(totalPipelineValue)}</span>
+      </div>
     </section>
   )
 }
@@ -474,14 +513,14 @@ export function ResidentialTopPerformers({ data, scope = 'principal' }) {
 
   const items = Array.isArray(data?.items) ? data.items : []
   return (
-    <section className={`${sectionClass} p-4 sm:p-5`}>
+    <section className={`${sectionClass} flex h-full min-h-[320px] flex-col p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || 'Top Performers'}</h3>
           <p className="mt-1 text-sm text-[#667085]">Top agents by selected period.</p>
         </div>
       </div>
-      <div className="mt-4 overflow-hidden rounded-[16px] border border-[#e4edf6]">
+      <div className="mt-4 flex-1 overflow-hidden rounded-[16px] border border-[#e4edf6]">
         <table className="w-full border-separate border-spacing-0">
           <thead className="bg-[#f8fafc] text-left text-xs uppercase tracking-[0.08em] text-[#7b8ca2]">
             <tr>
@@ -530,7 +569,7 @@ export function ResidentialCommissionForecast({ data, scope = 'principal' }) {
 
   const { line, area, dots } = buildSparklinePath(data?.series || [])
   return (
-    <section className={`${sectionClass} flex h-full min-h-[332px] flex-col p-4 sm:p-5`}>
+    <section className={`${sectionClass} flex h-full min-h-[320px] flex-col p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || (scope === 'agent' ? 'My Commission Forecast' : 'Commission Forecast')}</h3>
@@ -541,7 +580,7 @@ export function ResidentialCommissionForecast({ data, scope = 'principal' }) {
         </span>
       </div>
       <div className="mt-4 flex-1">
-        <svg viewBox="0 0 100 84" className="h-[170px] w-full overflow-visible" role="img" aria-label="Commission forecast">
+        <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-[132px] w-full overflow-visible" role="img" aria-label="Commission forecast">
           <defs>
             <linearGradient id="forecastGradient" x1="0" x2="0" y1="0" y2="1">
               <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.18" />
@@ -555,7 +594,7 @@ export function ResidentialCommissionForecast({ data, scope = 'principal' }) {
           ))}
         </svg>
       </div>
-      <div className="mt-4 space-y-2">
+      <div className="mt-3 space-y-2">
         {(data?.rows || []).slice(0, 3).map((row) => (
           <div key={row.key} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5">
             <div>
@@ -606,5 +645,84 @@ export function ResidentialAppointments({
       onScheduleAppointment={onScheduleAppointment || undefined}
       refreshKey={refreshKey}
     />
+  )
+}
+
+export function ResidentialCommandCenterGrid({
+  model,
+  scope = 'principal',
+  mode = 'sales',
+  kpiIcons = [],
+  organisationId = '',
+  userId = '',
+  userEmail = '',
+  includeAllAppointments = false,
+  canManageAppointments = false,
+  appointmentRefreshKey = '',
+  onViewTransactions,
+  onOpenTransaction,
+  onViewCalendar,
+  onOpenCalendar,
+  onManageAppointment,
+  onOpenAppointment,
+  onScheduleAppointment,
+}) {
+  if (!model) return null
+  const fallbackIcons = [ArrowRight, BriefcaseBusiness, LineChart, Landmark]
+  const showTopPerformers = scope !== 'agent' && !model.topPerformers?.hidden
+  return (
+    <ResidentialDashboardShell>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {model.kpis.map((item, index) => {
+          const Icon = kpiIcons[index] || fallbackIcons[index] || FileText
+          return (
+            <ResidentialKpiCard
+              key={item.key}
+              icon={Icon}
+              label={item.label}
+              value={item.compactValue || item.value}
+              trend={item.trend}
+              sparkline={item.sparkline}
+              tone={item.tone}
+              emptyCopy=""
+            />
+          )
+        })}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <ResidentialTransactionHealth data={model.transactionHealth} scope={scope} mode={mode} />
+        <ResidentialPerformanceChart data={model.performance} scope={scope} mode={mode} />
+      </div>
+
+      <ResidentialTransactionFlow data={model.transactionFlow} scope={scope} mode={mode} />
+
+      <div className={`grid gap-4 ${showTopPerformers ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+        <ResidentialActiveTransactionsCarousel
+          title={model.activeTransactions.title}
+          rows={model.activeTransactions.rows}
+          scope={scope}
+          onViewAll={onViewTransactions}
+          onOpenRecord={onOpenTransaction}
+        />
+        {showTopPerformers ? <ResidentialTopPerformers data={model.topPerformers} scope={scope} /> : null}
+        <ResidentialCommissionForecast data={model.commissionForecast} scope={scope} />
+        <ResidentialAppointments
+          module={scope === 'agent' ? 'agent' : 'principal'}
+          organisationId={organisationId}
+          userId={userId}
+          userEmail={userEmail}
+          includeAll={includeAllAppointments}
+          canManage={canManageAppointments}
+          refreshKey={appointmentRefreshKey}
+          scope={scope}
+          onViewCalendar={onViewCalendar}
+          onOpenCalendar={onOpenCalendar}
+          onManageAppointment={onManageAppointment}
+          onOpenAppointment={onOpenAppointment}
+          onScheduleAppointment={onScheduleAppointment}
+        />
+      </div>
+    </ResidentialDashboardShell>
   )
 }
