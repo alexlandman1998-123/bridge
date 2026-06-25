@@ -197,7 +197,7 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
   const attentionCount = toNumber(data?.attentionRequired) + toNumber(data?.criticalDelays)
 
   return (
-    <section className={`${sectionClass} flex h-full min-h-[338px] flex-col p-4 sm:p-5`}>
+    <section className={`${sectionClass} flex h-full min-h-[280px] flex-col p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || 'Transaction Health'}</h3>
@@ -208,11 +208,11 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
         </span>
       </div>
 
-      <div className="mt-6 grid flex-1 gap-6 md:grid-cols-[176px_minmax(0,1fr)] md:items-center">
-        <div className="mx-auto grid h-[168px] w-[168px] place-items-center rounded-full" style={{ background: gradient }}>
-          <div className="grid h-[108px] w-[108px] place-items-center rounded-full bg-white text-center shadow-inner">
+      <div className="mt-4 grid flex-1 gap-4 md:grid-cols-[142px_minmax(0,1fr)] md:items-center">
+        <div className="mx-auto grid h-[136px] w-[136px] place-items-center rounded-full" style={{ background: gradient }}>
+          <div className="grid h-[86px] w-[86px] place-items-center rounded-full bg-white text-center shadow-inner">
             <div>
-              <p className="text-[1.8rem] font-semibold leading-none text-[#101828] tabular-nums">{Math.max(0, Math.round(data?.total || 0))}</p>
+              <p className="text-[1.55rem] font-semibold leading-none text-[#101828] tabular-nums">{Math.max(0, Math.round(data?.total || 0))}</p>
               <p className="mt-1 text-xs font-medium text-[#667085]">Total</p>
             </div>
           </div>
@@ -226,7 +226,7 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
           {segments.length ? segments.map((segment) => {
             const tone = toneStyles[segment.tone] || toneStyles.blue
             return (
-              <div key={segment.key} className="grid grid-cols-[minmax(0,1fr)_70px_78px] items-center border-t border-[#edf2f7] px-3 py-3">
+              <div key={segment.key} className="grid grid-cols-[minmax(0,1fr)_70px_78px] items-center border-t border-[#edf2f7] px-3 py-2.5">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 text-sm font-semibold text-[#203247]">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ background: tone.stroke }} />
@@ -245,7 +245,7 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
         </div>
       </div>
       {attentionCount > 0 ? (
-        <div className="mt-4 flex items-center justify-between gap-3 rounded-[14px] border border-[#dbeafe] bg-[#f8fbff] px-3 py-2.5">
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-[14px] border border-[#dbeafe] bg-[#f8fbff] px-3 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[12px] bg-[#edf5ff] text-[#1769d1]"><Clock3 size={15} /></span>
             <div className="min-w-0">
@@ -282,7 +282,7 @@ export function ResidentialPerformanceChart({ data, scope = 'principal' }) {
   const currentValue = Number.isFinite(Number(data?.currentValue)) ? Math.round(Number(data.currentValue)) : null
 
   return (
-    <section className={`${sectionClass} flex h-full min-h-[332px] flex-col p-4 sm:p-5`}>
+    <section className={`${sectionClass} flex h-full min-h-[280px] flex-col p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || (scope === 'agent' ? 'My Performance' : 'Agency Performance')}</h3>
@@ -293,26 +293,26 @@ export function ResidentialPerformanceChart({ data, scope = 'principal' }) {
         </div>
       </div>
 
-      <div className="mt-5 flex min-h-0 flex-1 flex-col justify-between">
-        <div className="min-h-[190px] flex-1 rounded-[16px] border border-[#edf2f7] bg-[linear-gradient(180deg,#fbfdff_0%,#ffffff_100%)] px-3 py-3">
-          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-full min-h-[190px] w-full overflow-visible" role="img" aria-label="Performance trend">
+      <div className="mt-4 flex min-h-0 flex-1 flex-col justify-between">
+        <div className="min-h-[128px] flex-1 rounded-[16px] border border-[#edf2f7] bg-[linear-gradient(180deg,#fbfdff_0%,#ffffff_100%)] px-3 py-3">
+          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-full min-h-[128px] w-full overflow-visible" role="img" aria-label="Performance trend">
             <defs>
               <linearGradient id="performanceGradient" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor="#4f86e8" stopOpacity="0.18" />
                 <stop offset="100%" stopColor="#4f86e8" stopOpacity="0" />
               </linearGradient>
             </defs>
-            {[20, 40, 60, 80].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} stroke="#e8eef6" strokeWidth="0.8" vectorEffect="non-scaling-stroke" />)}
+            {[26, 50, 74].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} stroke="#e8eef6" strokeWidth="0.6" vectorEffect="non-scaling-stroke" />)}
             {line ? <path d={area} fill="url(#performanceGradient)" opacity="0.85" /> : null}
-            {line ? <polyline fill="none" points={dots.map((dot) => `${dot.x},${dot.y}`).join(' ')} stroke="#4f86e8" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /> : null}
+            {line ? <path d={line} fill="none" stroke="#4f86e8" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" /> : null}
             {dots.map((dot, index) => (
-              <circle key={`performance-dot-${index}`} cx={dot.x} cy={dot.y} r="1.7" fill="#ffffff" stroke="#4f86e8" strokeWidth="1.2" />
+              <circle key={`performance-dot-${index}`} cx={dot.x} cy={dot.y} r="1.35" fill="#ffffff" stroke="#4f86e8" strokeWidth="1" vectorEffect="non-scaling-stroke" />
             ))}
           </svg>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {(data?.series || []).slice(-4).map((point, index) => (
-            <div key={`performance-metric-${index}`} className="rounded-[16px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5">
+            <div key={`performance-metric-${index}`} className="rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2">
               <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Period {index + 1}</p>
               <p className="mt-1 text-[1rem] font-semibold text-[#142132] tabular-nums">{Math.max(0, Math.round(toNumber(point)))}%</p>
             </div>
