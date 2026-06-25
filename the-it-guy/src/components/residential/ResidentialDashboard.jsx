@@ -13,6 +13,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import AppointmentDashboardSection from '../appointments/dashboard/AppointmentDashboardSection'
+import ActivePipelineCarousel from '../pipeline/ActivePipelineCarousel'
 import { formatCurrencyCompactZAR } from '../../services/residentialDashboardService'
 
 const shellClass = 'space-y-5 lg:space-y-6'
@@ -398,8 +399,8 @@ export function ResidentialTransactionFlow({ data, scope = 'principal' }) {
 }
 
 export function ResidentialActiveTransactionsCarousel({ title, rows = [], scope = 'principal', onViewAll, onOpenRecord }) {
-  const records = rows.slice(0, 8).map((row) => ({
-    id: row.id,
+  const records = rows.slice(0, 8).map((row, index) => ({
+    id: row.id || row.key || `${index}-${row.address || row.property || row.title || 'transaction'}`,
     title: row.address || row.property || row.title || 'Transaction',
     subtitle: row.area || row.assignedAgent || 'Residential active deal',
     value: row.valueRaw || 0,
@@ -414,46 +415,24 @@ export function ResidentialActiveTransactionsCarousel({ title, rows = [], scope 
     imageUrl: row.imageUrl || row.propertyImage,
   }))
   const totalPipelineValue = rows.reduce((sum, row) => sum + toNumber(row.valueRaw || row.value), 0)
+  const recordById = new Map(records.map((record) => [record.id, record]))
 
   return (
-    <section className={`${sectionClass} flex h-full min-h-[320px] flex-col p-4 sm:p-5`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-[1rem] font-semibold text-[#101828]">{title}</h3>
-          <p className="mt-1 text-sm text-[#667085]">{scope === 'agent' ? 'Track your active deals and progress.' : 'Track active deals and their progress.'}</p>
-        </div>
-        <button type="button" onClick={onViewAll} className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#1769d1]">
-          View all <ChevronRight size={14} />
-        </button>
-      </div>
-      <div className="mt-4 flex-1 divide-y divide-[#edf2f7] overflow-hidden">
-        {records.length ? records.slice(0, 4).map((record) => (
-          <button
-            key={record.id}
-            type="button"
-            onClick={() => onOpenRecord?.(record)}
-            className="grid w-full grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-3 py-3 text-left first:pt-0 last:pb-0"
-          >
-            <span className="h-12 w-12 overflow-hidden rounded-[12px] border border-[#e4edf6] bg-[#f1f5f9]">
-              {record.imageUrl ? <img src={record.imageUrl} alt="" className="h-full w-full object-cover" /> : <span className="grid h-full w-full place-items-center text-[#7b8ca2]"><BriefcaseBusiness size={17} /></span>}
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-[#101828]">{record.title}</span>
-              <span className="mt-1 block truncate text-xs text-[#667085]">{record.subtitle}</span>
-            </span>
-            <span className="text-right">
-              <span className="block text-sm font-semibold text-[#101828]">{record.valueLabel}</span>
-              <span className="mt-1 block text-xs text-[#667085]">{record.ownerName}</span>
-            </span>
-          </button>
-        )) : (
-          <EmptyState title="No active transactions" copy="Active transactions will appear here once deals move into progress." />
-        )}
-      </div>
-      <div className="mt-4 flex items-center justify-between rounded-[14px] border border-[#e4edf6] bg-[#fbfdff] px-3 py-2.5 text-xs">
-        <span className="font-semibold text-[#52657a]">{rows.length} transaction{rows.length === 1 ? '' : 's'} in progress</span>
-        <span className="font-semibold text-[#101828]">{formatCurrencyCompactZAR(totalPipelineValue)}</span>
-      </div>
+    <section className={`${sectionClass} p-4 sm:p-5`}>
+      <ActivePipelineCarousel
+        title={title}
+        subtitle={scope === 'agent' ? 'Track your active deals and progress.' : 'Track active deals and their progress.'}
+        mode="residential_sales"
+        records={records}
+        onViewAll={onViewAll}
+        onOpenRecord={(recordId) => onOpenRecord?.(recordById.get(recordId) || recordId)}
+        viewAllLabel="View all"
+        summary={{
+          primary: `${rows.length} transaction${rows.length === 1 ? '' : 's'} in progress`,
+          secondary: `${formatCurrencyCompactZAR(totalPipelineValue)} total pipeline value`,
+        }}
+        emptyState={<EmptyState title="No active transactions" copy="Active transactions will appear here once deals move into progress." />}
+      />
     </section>
   )
 }
@@ -701,16 +680,20 @@ export function ResidentialCommandCenterGrid({
 
       <ResidentialTransactionFlow data={model.transactionFlow} scope={scope} mode={mode} />
 
-      <div className={`grid gap-4 ${showTopPerformers ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
-        <ResidentialActiveTransactionsCarousel
-          title={model.activeTransactions.title}
-          rows={model.activeTransactions.rows}
-          scope={scope}
-          onViewAll={onViewTransactions}
-          onOpenRecord={onOpenTransaction}
-        />
+      <ResidentialActiveTransactionsCarousel
+        title={model.activeTransactions.title}
+        rows={model.activeTransactions.rows}
+        scope={scope}
+        onViewAll={onViewTransactions}
+        onOpenRecord={onOpenTransaction}
+      />
+
+      <div className={`grid gap-4 ${showTopPerformers ? 'xl:grid-cols-2' : 'xl:grid-cols-1'}`}>
         {showTopPerformers ? <ResidentialTopPerformers data={model.topPerformers} scope={scope} /> : null}
         <ResidentialCommissionForecast data={model.commissionForecast} scope={scope} />
+      </div>
+
+      <div className="min-w-0">
         <ResidentialAppointments
           module={scope === 'agent' ? 'agent' : 'principal'}
           organisationId={organisationId}
