@@ -118,6 +118,18 @@ import { buildWorkflowActivityEvent } from '../core/workflows/events'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import { buildTransactionStageProgressModel } from '../core/transactions/stageProgressEngine'
 import { buildWorkspaceHeaderConfigForRole } from '../core/transactions/workspaceHeaderConfig'
+import {
+  buildTransactionWorkspaceMenuItems,
+  resolveTransactionWorkspaceMenuAlias,
+  resolveTransactionWorkspaceProfile,
+} from '../core/transactions/transactionWorkspaceProfile'
+import { buildDeveloperTransactionRelationshipSummary } from '../core/transactions/developerTransactionRelationshipProfile.js'
+import { buildDeveloperTransactionOperationsSummary } from '../core/transactions/developerTransactionOperationsProfile.js'
+import {
+  buildDeveloperAgentMandatePacketContext,
+  buildDeveloperTransactionMandateProfile,
+} from '../core/transactions/developerTransactionMandateProfile.js'
+import { buildDeveloperTransactionReadinessProfile } from '../core/transactions/developerTransactionReadinessProfile.js'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { generatePacketVersion, listPacketTemplates } from '../core/documents/packetService'
 import { resolveDocumentPacketActionState, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
@@ -131,7 +143,7 @@ const currency = new Intl.NumberFormat('en-ZA', {
 
 const PANEL_SHELL = 'rounded-[28px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]'
 const PANEL_COMPACT = 'rounded-[24px] border border-[#dbe5ef] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] p-5 shadow-[0_16px_34px_rgba(15,23,42,0.05)]'
-const WORKSPACE_MENU_IDS = ['overview', 'transfer', 'bond', 'cancellation', 'onboarding', 'documents', 'financials', 'tasks', 'activity', 'alterations', 'snags']
+const WORKSPACE_MENU_IDS = ['overview', 'transfer', 'bond', 'cancellation', 'onboarding', 'documents', 'financials', 'tasks', 'activity', 'handover', 'alterations', 'snags']
 const FINANCE_TYPE_SELECT_OPTIONS = [
   { value: 'cash', label: 'Cash' },
   { value: 'bond', label: 'Bond' },
@@ -368,20 +380,6 @@ function normalizeDisplayName(value) {
   return toTitleLabel(normalized)
 }
 
-function isDevelopmentTransactionWorkspace(transaction = {}, unit = {}) {
-  const normalizedType = normalizeText(transaction?.transaction_type).toLowerCase()
-
-  if (normalizedType === 'private' || normalizedType === 'private_property') {
-    return false
-  }
-
-  if (normalizedType === 'development' || normalizedType === 'developer_sale' || normalizedType === 'developer') {
-    return true
-  }
-
-  return Boolean(transaction?.development_id || transaction?.developmentId || unit?.development_id || unit?.development?.id)
-}
-
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
 }
@@ -565,6 +563,20 @@ function getLibraryStatusTone(status = '') {
   }
   if (normalized === 'superseded') {
     return 'border-[#f7eadb] bg-[#fff9f0] text-[#8a5511]'
+  }
+  return 'border-[#dde7f1] bg-[#f8fbff] text-[#64748b]'
+}
+
+function getDeveloperOperationToneClasses(tone = '') {
+  const normalized = String(tone || '').trim().toLowerCase()
+  if (normalized === 'success') {
+    return 'border-[#cfe3d7] bg-[#eef8f1] text-[#2f7a51]'
+  }
+  if (normalized === 'warning') {
+    return 'border-[#f1ddd0] bg-[#fff8f3] text-[#a15b31]'
+  }
+  if (normalized === 'danger') {
+    return 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'
   }
   return 'border-[#dde7f1] bg-[#f8fbff] text-[#64748b]'
 }
@@ -2721,6 +2733,7 @@ function UnitDetail() {
     warnings: [],
     actionHint: 'No packet record was found for this context.',
   }))
+  const [developerMandatePacketId, setDeveloperMandatePacketId] = useState('')
   const [stageForm, setStageForm] = useState({
     main_stage: 'AVAIL',
     finance_type: 'cash',
@@ -4415,6 +4428,92 @@ function UnitDetail() {
     navigate(path)
   }
 
+  function buildDeveloperMandateLegalWorkspacePath(packetId = '', mode = 'view') {
+    const resolvedTransactionId = String(transaction?.id || '').trim()
+    if (!resolvedTransactionId) return ''
+    const params = new URLSearchParams()
+    params.set('mode', resolveWorkspaceModeFromAction(mode))
+    params.set('returnTo', `${location.pathname}${location.search}`)
+    const resolvedPacketId = String(packetId || developerMandatePacketId || '').trim()
+    if (resolvedPacketId) params.set('packetId', resolvedPacketId)
+    return `/transactions/${resolvedTransactionId}/legal/mandate?${params.toString()}`
+  }
+
+  async function openDeveloperAgentMandateWorkspace(mode = 'view') {
+    if (!transaction?.id) {
+      setError('Transaction data is not available for the mandate workspace.')
+      return
+    }
+    if (!developerMandateProfile?.developerAgentMandateRequired) {
+      setError('This developer transaction does not require a developer-agent mandate.')
+      return
+    }
+    if (!developerMandateProfile.readyForMandate) {
+      setError('Add the developer and selling agent details before opening the developer-agent mandate.')
+      return
+    }
+
+    try {
+      setSalesActionLoading('developer_agent_mandate')
+      setError('')
+      const existingPackets = await listDocumentPackets({
+        organisationId: transaction?.organisation_id || null,
+        packetType: 'mandate',
+        transactionId: transaction.id,
+        limit: 10,
+      }).catch((packetError) => {
+        if (['PACKETS_SCHEMA_MISSING', 'PACKETS_RLS_DENIED'].includes(packetError?.code)) return []
+        throw packetError
+      })
+      let packet = (Array.isArray(existingPackets) ? existingPackets : []).find((item) => {
+        const context = item?.source_context_json && typeof item.source_context_json === 'object' ? item.source_context_json : {}
+        return context.mandateType === 'developer_agent_mandate' || context.contextType === 'developer_agent_mandate'
+      }) || null
+
+      if (!packet?.id) {
+        const templates = await listPacketTemplates({
+          packetType: 'mandate',
+          moduleType: 'agency',
+          includeInactive: false,
+          organisationId: transaction?.organisation_id || null,
+        }).catch(() => [])
+        const template = Array.isArray(templates) ? templates[0] : null
+        const sourceContextJson = buildDeveloperAgentMandatePacketContext({
+          mandateProfile: developerMandateProfile,
+          transaction,
+          unit,
+          buyer,
+        })
+
+        packet = await createDocumentPacket({
+          organisationId: transaction?.organisation_id || null,
+          packetType: 'mandate',
+          title: `Developer-Agent Mandate - ${unit?.unit_number ? `Unit ${unit.unit_number}` : unit?.development?.name || 'Development Transaction'}`,
+          transactionId: transaction.id,
+          dealId: transaction.id,
+          unitId: unit?.id || null,
+          status: 'ready_for_generation',
+          templateId: isUuidLike(template?.id) ? normalizeText(template?.id) : null,
+          templateKeySnapshot: normalizeText(template?.template_key || template?.templateKey || template?.key || 'developer_agent_mandate'),
+          templateLabelSnapshot: normalizeText(template?.template_label || template?.templateLabel || template?.label || 'Developer-Agent Mandate'),
+          assignedAgentId: isUuidLike(transaction?.assigned_user_id) ? transaction.assigned_user_id : null,
+          sourceContextJson,
+        })
+      }
+
+      setDeveloperMandatePacketId(normalizeText(packet?.id))
+      const path = buildDeveloperMandateLegalWorkspacePath(packet?.id, mode)
+      if (!path) {
+        throw new Error('Unable to open developer-agent mandate workspace for this transaction.')
+      }
+      navigate(path)
+    } catch (mandateError) {
+      setError(mandateError?.message || 'Unable to open developer-agent mandate workspace.')
+    } finally {
+      setSalesActionLoading('')
+    }
+  }
+
   function handleOtpPrimaryAction() {
     const actionKey = String(otpPacketActionState?.actionKey || '').trim().toLowerCase()
     openOtpLegalWorkspace(actionKey)
@@ -5364,11 +5463,15 @@ function UnitDetail() {
     clientIssues,
     alterationRequests,
     developmentSettings,
+    handover,
     transactionSubprocesses,
     transactionFinanceWorkflow,
     mainStage,
     onboarding,
     purchaserTypeLabel,
+    rolePlayers = [],
+    transactionRolePlayers = [],
+    transaction_role_players: transactionRolePlayersSnake = [],
     transactionParticipants,
     activeViewerPermissions,
     transactionDiscussion,
@@ -5381,6 +5484,13 @@ function UnitDetail() {
   const elevatedWorkspaceRoles = ['developer', 'internal_admin', 'agent', 'attorney']
   const hasWorkspaceEditOverride = elevatedWorkspaceRoles.includes(workspaceRole)
   const effectiveEditorRole = hasWorkspaceEditOverride ? workspaceRole : actingRole
+  const isAgentWorkspace = workspaceRole === 'agent'
+  const transactionWorkspaceProfile = resolveTransactionWorkspaceProfile({
+    transaction,
+    unit,
+    workspaceRole,
+  })
+  const workspaceLabels = transactionWorkspaceProfile.labels
 
   const isAttorneyLens = workspaceRole === 'attorney' || actingRole === 'attorney'
   const canSeeAttorneyCloseout = ['developer', 'internal_admin', 'attorney'].includes(effectiveEditorRole)
@@ -5679,7 +5789,7 @@ function UnitDetail() {
   const buyerRequirementActions = Array.isArray(detail?.requiredTransactionActions)
     ? detail.requiredTransactionActions.filter((action) => action && String(action.severity || '').toLowerCase() === 'critical')
     : []
-  const isDevelopmentTransaction = isDevelopmentTransactionWorkspace(transaction, unit)
+  const isDevelopmentTransaction = transactionWorkspaceProfile.isDeveloperSale
   const reservationRequired = Boolean(transaction?.reservation_required)
   const reservationStatusRaw = String(transaction?.reservation_status || '').trim().toLowerCase()
   const reservationStatusLabel =
@@ -6165,7 +6275,6 @@ function UnitDetail() {
     }))
   }
 
-  const isAgentWorkspace = workspaceRole === 'agent'
   const transactionReference =
     transaction?.transaction_reference ||
     transaction?.matter_number ||
@@ -6173,7 +6282,9 @@ function UnitDetail() {
   const propertyIdentityTitle = propertyAddressForOtp !== 'Not captured'
     ? propertyAddressForOtp
     : [unit.development?.name, unit?.unit_number ? `Unit ${unit.unit_number}` : null].filter(Boolean).join(' • ') || 'Property address pending'
-  const sellerDisplayName = transaction?.seller_name || transaction?.seller || 'Seller pending'
+  const sellerDisplayName = transactionWorkspaceProfile.isDeveloperSale
+    ? unit?.development?.name || transaction?.developer_name || transaction?.developer || workspaceLabels.sellerPending
+    : transaction?.seller_name || transaction?.seller || workspaceLabels.sellerPending
   const assignedAgentDisplayName =
     stageForm.assigned_agent ||
     transaction?.assigned_agent ||
@@ -6193,24 +6304,69 @@ function UnitDetail() {
     'Not assigned'
   const bondOriginatorStatusLabel =
     bondOriginatorParticipant?.stakeholderStatus === 'invited' ? 'Pending Acceptance' : bondOriginatorParticipant?.stakeholderStatus === 'active' ? 'Active' : ''
+  const transactionRoleplayerRows = [
+    ...(Array.isArray(rolePlayers) ? rolePlayers : []),
+    ...(Array.isArray(transactionRolePlayers) ? transactionRolePlayers : []),
+    ...(Array.isArray(transactionRolePlayersSnake) ? transactionRolePlayersSnake : []),
+  ]
+  const developerRelationshipSummary = transactionWorkspaceProfile.isDeveloperSale
+    ? buildDeveloperTransactionRelationshipSummary({
+        transaction,
+        unit,
+        buyer,
+        rolePlayers: transactionRoleplayerRows,
+        transactionParticipants,
+      })
+    : null
+  const developerOperationsSummary = transactionWorkspaceProfile.isDeveloperSale
+    ? buildDeveloperTransactionOperationsSummary({
+        transaction,
+        handover,
+        documents,
+        clientIssues,
+        developmentSettings,
+        onboardingStatus,
+      })
+    : null
+  const developerMandateProfile = transactionWorkspaceProfile.isDeveloperSale
+    ? buildDeveloperTransactionMandateProfile({
+        transaction,
+        unit,
+        buyer,
+        relationshipSummary: developerRelationshipSummary,
+      })
+    : null
+  const developerReadinessProfile = transactionWorkspaceProfile.isDeveloperSale
+    ? buildDeveloperTransactionReadinessProfile({
+        transaction,
+        relationshipSummary: developerRelationshipSummary,
+        operationsSummary: developerOperationsSummary,
+        mandateProfile: developerMandateProfile,
+        onboardingStatus,
+      })
+    : null
   const targetRegistrationLabel =
     formatDate(transaction?.expected_transfer_date || transaction?.registration_date || transaction?.registered_at || transaction?.completed_at)
   const bondAmountLabel = hasCapturedFinancials && transaction?.bond_amount ? currency.format(Number(transaction.bond_amount || 0)) : 'Not captured'
   const depositAmountLabel = hasCapturedFinancials && transaction?.deposit_amount ? currency.format(Number(transaction.deposit_amount || 0)) : 'Not captured'
-      const matterHealthLabel = stageProgressModel.currentStageBlockers.length
+      const matterHealthLabel = developerReadinessProfile?.healthLabel || (stageProgressModel.currentStageBlockers.length
     ? 'Attention'
     : documentLibrarySummary.missing > 0
       ? 'Waiting'
-      : 'On Track'
+      : 'On Track')
   const matterHealthTone =
-    matterHealthLabel === 'Attention'
+    developerReadinessProfile?.healthTone
+      ? getDeveloperOperationToneClasses(developerReadinessProfile.healthTone)
+      : matterHealthLabel === 'Attention'
       ? 'border-[#f5d7bc] bg-[#fff7ed] text-[#b85d12]'
       : matterHealthLabel === 'Waiting'
         ? 'border-[#d9e3ee] bg-[#f7fafc] text-[#60758c]'
         : 'border-[#cfe8d8] bg-[#effaf3] text-[#197a45]'
   const latestUpdatedLabel = formatDateTime(transaction?.updated_at || transaction?.created_at)
-  const nextActionTitle = activeNextActionRecommendation || transaction?.next_action || 'Review transaction progress'
+  const developerReadinessAction = developerReadinessProfile?.nextAction || null
+  const nextActionTitle = developerReadinessAction?.title || activeNextActionRecommendation || transaction?.next_action || 'Review transaction progress'
   const nextActionDescription =
+    developerReadinessAction?.description ||
     stageProgressModel.currentStageBlockers[0] ||
     transaction?.next_action ||
     (onboardingComplete ? 'Review the active workflow and keep parties aligned.' : 'Complete the buyer onboarding and supporting document steps.')
@@ -6219,7 +6375,7 @@ function UnitDetail() {
     : targetRegistrationLabel !== 'Not set'
       ? targetRegistrationLabel
       : 'No due date'
-  const nextActionPriority = matterHealthLabel === 'Attention' ? 'High' : matterHealthLabel === 'Waiting' ? 'Medium' : 'Normal'
+  const nextActionPriority = developerReadinessAction?.priority || (matterHealthLabel === 'Attention' ? 'High' : matterHealthLabel === 'Waiting' ? 'Medium' : 'Normal')
   const rollupOverviewAction = usingTransactionRollupOverview
     ? buildOverviewActionFromRollup(transactionRollup, transaction)
     : null
@@ -6392,7 +6548,12 @@ function UnitDetail() {
       disabled: !clientPortalLink?.token,
     },
   ]
-  const agentUpcomingActions = suggestedNextActions.slice(0, 3)
+  const developerUpcomingActionItems = Array.isArray(developerReadinessProfile?.actionQueue)
+    ? developerReadinessProfile.actionQueue.slice(0, 3)
+    : []
+  const agentUpcomingActions = developerUpcomingActionItems.length
+    ? developerUpcomingActionItems.map((item) => item.title)
+    : suggestedNextActions.slice(0, 3)
   while (agentUpcomingActions.length < 3) {
     agentUpcomingActions.push(['Awaiting bond approval', 'Prepare transfer documents', 'Review latest activity'][agentUpcomingActions.length])
   }
@@ -6451,38 +6612,219 @@ function UnitDetail() {
       </div>
     </WorkspacePanel>
   ) : null
+  const developerRelationshipPanel = developerRelationshipSummary ? (
+    <WorkspacePanel
+      title="Developer Transaction Structure"
+      copy="Developer-sale relationships for this unit, including buyer, selling agent, finance, and transfer parties."
+      className="no-print"
+      actions={
+        <span className="inline-flex items-center rounded-full border border-[#dbe6f0] bg-white px-3 py-1 text-xs font-semibold text-[#35546c]">
+          {developerRelationshipSummary.summaryLabel}
+        </span>
+      }
+    >
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {developerRelationshipSummary.rows.map((row) => {
+          const statusKey = String(row.status || '').trim().toLowerCase()
+          const statusTone =
+            statusKey === 'active'
+              ? 'border-[#cfe8d8] bg-[#effaf3] text-[#197a45]'
+              : statusKey === 'missing' || statusKey.includes('pending')
+                ? 'border-[#f2ddc1] bg-[#fff7ed] text-[#9a5a1a]'
+                : 'border-[#dce6f0] bg-[#f8fbfd] text-[#60758c]'
+          return (
+            <article key={row.id} className="min-w-0 rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{row.label}</span>
+                  <strong className="mt-1 block truncate text-sm font-semibold text-[#142132]">{row.name}</strong>
+                  {row.email ? <span className="mt-1 block truncate text-xs font-medium text-[#6b7d93]">{row.email}</span> : null}
+                </div>
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold uppercase tracking-[0.06em] ${statusTone}`}>
+                  {row.status}
+                </span>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="rounded-[16px] border border-[#dce6f0] bg-white px-4 py-3">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Mandate Model</span>
+          <strong className="mt-1 block text-sm font-semibold text-[#142132]">
+            {developerMandateProfile?.mandateLabel || developerRelationshipSummary.mandateLabel}
+          </strong>
+          <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+            {developerMandateProfile?.mandateCopy ||
+              'Developer sales do not use the private seller mandate path. When an external selling agent is assigned, the mandate is between developer and agent.'}
+          </p>
+          {developerMandateProfile?.developerAgentMandateRequired ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void openDeveloperAgentMandateWorkspace('view')}
+                disabled={!developerMandateProfile.readyForMandate || salesActionLoading === 'developer_agent_mandate'}
+              >
+                {salesActionLoading === 'developer_agent_mandate' ? 'Opening...' : 'Open Mandate'}
+              </Button>
+              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getDeveloperOperationToneClasses(developerMandateProfile.readyForMandate ? 'success' : 'warning')}`}>
+                {developerMandateProfile.readyForMandate ? 'Ready' : `${developerMandateProfile.missingSignerRoles.length} missing`}
+              </span>
+            </div>
+          ) : null}
+        </div>
+        <div className="rounded-[16px] border border-[#dce6f0] bg-white px-4 py-3">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Readiness</span>
+          <strong className="mt-1 block text-sm font-semibold text-[#142132]">
+            {developerRelationshipSummary.missingRequiredRows.length
+              ? `${developerRelationshipSummary.missingRequiredRows.length} required role${developerRelationshipSummary.missingRequiredRows.length === 1 ? '' : 's'} missing`
+              : 'Required parties captured'}
+          </strong>
+          <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+            {developerRelationshipSummary.missingRequiredRows.length
+              ? developerRelationshipSummary.missingRequiredRows.map((row) => row.label).join(', ')
+              : 'Buyer and developer relationship context is available for downstream workflow routing.'}
+          </p>
+        </div>
+      </div>
+      {developerMandateProfile?.developerAgentMandateRequired ? (
+        <div className="mt-4 rounded-[16px] border border-[#dce6f0] bg-white px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Developer-Agent Mandate Signers</span>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Required parties for the developer-agent mandate. This prevents the file from being treated as a private seller mandate.</p>
+            </div>
+            <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getDeveloperOperationToneClasses(developerMandateProfile.readyForMandate ? 'success' : 'warning')}`}>
+              {developerMandateProfile.readyForMandate ? 'Signer-ready' : 'Needs setup'}
+            </span>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {developerMandateProfile.requiredSigners.map((signer) => (
+              <article key={signer.role} className="rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{signer.label}</span>
+                    <strong className="mt-1 block truncate text-sm font-semibold text-[#142132]">{signer.signerName || 'Not configured'}</strong>
+                    {signer.signerEmail ? <span className="mt-0.5 block truncate text-xs text-[#7b8ca2]">{signer.signerEmail}</span> : null}
+                  </div>
+                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.64rem] font-semibold ${getDeveloperOperationToneClasses(signer.configured ? 'success' : 'warning')}`}>
+                    {signer.configured ? 'Ready' : 'Missing'}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void openDeveloperAgentMandateWorkspace('generate')}
+              disabled={!developerMandateProfile.readyForMandate || salesActionLoading === 'developer_agent_mandate'}
+            >
+              {salesActionLoading === 'developer_agent_mandate' ? 'Opening...' : 'Prepare Mandate'}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('documents')}>
+              Document Library
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </WorkspacePanel>
+  ) : null
+  const developerOperationsPanel = developerOperationsSummary ? (
+    <WorkspacePanel
+      title="Developer Operations"
+      copy="Operational readiness for reservation deposit, buyer onboarding, handover, documents, and post-handover support."
+      className="no-print"
+      actions={
+        <Button type="button" variant="secondary" size="sm" onClick={() => setWorkspaceMenu('handover')}>
+          Open Handover
+        </Button>
+      }
+    >
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {developerOperationsSummary.cards.map((card) => (
+          <article key={card.id} className="rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{card.label}</span>
+                <strong className="mt-1 block truncate text-sm font-semibold text-[#142132]">{card.value}</strong>
+                <span className="mt-1 block truncate text-xs font-medium text-[#6b7d93]">{card.meta}</span>
+              </div>
+              <span className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full border ${getDeveloperOperationToneClasses(card.tone)}`} />
+            </div>
+          </article>
+        ))}
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <section className="rounded-[16px] border border-[#dce6f0] bg-white px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Handover Readiness</span>
+              <strong className="mt-1 block text-sm font-semibold text-[#142132]">
+                {developerOperationsSummary.handover.ready ? 'Ready for handover' : 'Readiness items open'}
+              </strong>
+            </div>
+            <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getDeveloperOperationToneClasses(developerOperationsSummary.handover.ready ? 'success' : 'warning')}`}>
+              {developerOperationsSummary.handover.completedChecklistCount}/{developerOperationsSummary.handover.checklistTotalCount}
+            </span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#edf3f8]">
+            <div
+              className="h-full rounded-full bg-[#2f7a51]"
+              style={{
+                width: `${developerOperationsSummary.handover.checklistTotalCount ? Math.round((developerOperationsSummary.handover.completedChecklistCount / developerOperationsSummary.handover.checklistTotalCount) * 100) : 0}%`,
+              }}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('snags')}>
+              View Snags
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('documents')}>
+              View Documents
+            </Button>
+          </div>
+        </section>
+        <section className="rounded-[16px] border border-[#dce6f0] bg-white px-4 py-3">
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">Current blockers</span>
+          {developerOperationsSummary.handover.blockers.length ? (
+            <ul className="mt-2 space-y-1.5 text-sm leading-6 text-[#5f7086]">
+              {developerOperationsSummary.handover.blockers.map((blocker) => (
+                <li key={blocker} className="flex gap-2">
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#d97706]" />
+                  <span>{blocker}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm leading-6 text-[#5f7086]">No operational blockers are currently flagged for handover readiness.</p>
+          )}
+        </section>
+      </div>
+    </WorkspacePanel>
+  ) : null
 
-  const workspaceMenus = isAgentWorkspace
-    ? [
-        { id: 'overview', label: 'Overview' },
-        { id: 'onboarding', label: 'Parties', meta: onboardingStatus },
-        { id: 'documents', label: 'Documents', meta: `${documents?.length || 0}` },
-        { id: 'financials', label: 'Finance', meta: hasCapturedFinanceType ? financeLabel : 'Not set' },
-        { id: 'transfer', label: 'Transfer', meta: mainStageLabel },
-        { id: 'tasks', label: 'Next Actions', meta: `${agentUpcomingActions.length}` },
-        { id: 'activity', label: 'Activity', meta: `${(transactionDiscussion || []).length}` },
-        ...(developmentSettings?.alteration_requests_enabled
-          ? [{ id: 'alterations', label: 'Alterations', meta: `${alterationRequests?.length || 0}` }]
-          : []),
-        ...(developmentSettings?.snag_reporting_enabled
-          ? [{ id: 'snags', label: 'Snags', meta: `${clientIssues?.length || 0}` }]
-          : []),
-      ]
-    : [
-        { id: 'overview', label: 'Overview', meta: isRegisteredUnit ? 'Unit summary' : 'Transaction summary' },
-        { id: 'onboarding', label: 'Client Information', meta: onboardingStatus },
-        ...(canViewBondWorkspaceTab
-          ? [{ id: 'bond', label: 'Bond', meta: bondApplicationStatus }]
-          : []),
-        { id: 'documents', label: 'Documents', meta: `${documents?.length || 0} files` },
-        { id: 'alterations', label: 'Alterations', meta: developmentSettings?.alteration_requests_enabled ? `${alterationRequests?.length || 0} requests` : 'Module off' },
-        { id: 'snags', label: 'Snags', meta: developmentSettings?.snag_reporting_enabled ? `${clientIssues?.length || 0} logged` : 'Module off' },
-      ]
-  const requestedWorkspaceMenu = isAgentWorkspace && workspaceMenu === 'bond'
-    ? 'financials'
-    : isAgentWorkspace && workspaceMenu === 'cancellation'
-      ? 'transfer'
-      : workspaceMenu
+  const workspaceMenus = buildTransactionWorkspaceMenuItems(transactionWorkspaceProfile, {
+    isAgentWorkspace,
+    onboardingStatus,
+    documentsCount: documents?.length || 0,
+    financeMeta: hasCapturedFinanceType ? financeLabel : 'Not set',
+    mainStageLabel,
+    taskCount: agentUpcomingActions.length,
+    activityCount: (transactionDiscussion || []).length,
+    canViewBondWorkspaceTab,
+    bondApplicationStatus,
+    isRegisteredUnit,
+    handoverMeta: developerOperationsSummary?.handover?.statusLabel || 'Pending',
+    alterationEnabled: Boolean(developmentSettings?.alteration_requests_enabled),
+    alterationCount: alterationRequests?.length || 0,
+    snagEnabled: Boolean(developmentSettings?.snag_reporting_enabled),
+    snagCount: clientIssues?.length || 0,
+  })
+  const requestedWorkspaceMenu = resolveTransactionWorkspaceMenuAlias(transactionWorkspaceProfile, workspaceMenu)
   const activeWorkspaceMenu = workspaceMenus.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
   const showOverviewWorkspaceHero = activeWorkspaceMenu === 'overview'
   const workspaceHeaderRole = ['developer', 'attorney', 'agent', 'bond_originator'].includes(effectiveEditorRole)
@@ -6490,11 +6832,18 @@ function UnitDetail() {
     : 'developer'
   const resolvedBuyerDisplayName = normalizeDisplayName(buyer?.name)
   const resolvedDevelopmentName = normalizeDisplayName(unit?.development?.name)
+  const workspaceHeaderTitle =
+    transactionWorkspaceProfile.isDeveloperSale
+      ? resolvedDevelopmentName || propertyIdentityTitle || transactionWorkspaceProfile.header.titleFallback
+      : resolvedDevelopmentName || resolvedBuyerDisplayName || transactionWorkspaceProfile.header.titleFallback
+  const workspaceHeaderSubtitle = resolvedBuyerDisplayName
+    ? `${workspaceLabels.buyer}: ${resolvedBuyerDisplayName}`
+    : transactionWorkspaceProfile.header.subtitlePending
   const workspaceHeaderConfig = buildWorkspaceHeaderConfigForRole({
     role: workspaceHeaderRole,
-    title: resolvedDevelopmentName || resolvedBuyerDisplayName || 'Property Transaction',
+    title: workspaceHeaderTitle,
     unitLabel: `Unit ${unit.unit_number}`,
-    subtitle: resolvedBuyerDisplayName ? `Buyer: ${resolvedBuyerDisplayName}` : 'Buyer: Pending assignment',
+    subtitle: workspaceHeaderSubtitle,
     buyerLabel: resolvedBuyerDisplayName,
     currentStageLabel: mainStageLabel,
     mainStageLabel,
@@ -6688,9 +7037,9 @@ function UnitDetail() {
 
           <div className="mt-5 grid gap-3 text-sm md:grid-cols-2 2xl:grid-cols-3">
             {[
-              { label: 'Buyer', value: buyer?.name || 'Buyer pending', icon: UserRound },
-              { label: 'Seller', value: sellerDisplayName, icon: UserRound },
-              { label: 'Assigned Agent', value: assignedAgentDisplayName, icon: Building2 },
+              { label: workspaceLabels.buyer, value: buyer?.name || `${workspaceLabels.buyer} pending`, icon: UserRound },
+              { label: workspaceLabels.seller, value: sellerDisplayName, icon: UserRound },
+              { label: workspaceLabels.agent, value: assignedAgentDisplayName, icon: Building2 },
               { label: 'Transfer Attorney', value: transferAttorneyDisplayName, subtext: transferAttorneyStatusLabel, icon: Scale },
               { label: 'Bond Originator', value: bondAttorneyDisplayName, subtext: bondOriginatorStatusLabel, icon: Landmark },
               { label: 'Last Updated', value: displayedLatestUpdatedLabel, icon: Clock3 },
@@ -7344,12 +7693,12 @@ function UnitDetail() {
                       onClick={() => (
                         usingTransactionRollupOverview && rollupOverviewAction?.primaryAction?.actionKey
                           ? void handleOverviewWorkflowAction(rollupOverviewAction.primaryAction)
-                          : setWorkspaceMenu('transfer')
+                          : setWorkspaceMenu(developerReadinessAction?.targetMenu || 'transfer')
                       )}
                     >
                       {usingTransactionRollupOverview
                         ? rollupOverviewAction?.primaryAction?.label || 'Open Workflow'
-                        : 'View Action'}
+                        : developerReadinessAction?.primaryButtonLabel || 'View Action'}
                     </Button>
                     <Button
                       type="button"
@@ -7358,13 +7707,18 @@ function UnitDetail() {
                       onClick={() => (
                         usingTransactionRollupOverview
                           ? setWorkspaceMenu(getRollupOverviewTarget(rollupOverviewAction?.primaryAction, transactionRollup))
-                          : openDocumentsWorkspace()
+                          : developerReadinessAction?.targetMenu && developerReadinessAction.targetMenu !== 'documents'
+                            ? setWorkspaceMenu(developerReadinessAction.targetMenu)
+                            : openDocumentsWorkspace()
                       )}
                     >
-                      {usingTransactionRollupOverview ? 'Open Workflow' : 'Open Documents'}
+                      {usingTransactionRollupOverview ? 'Open Workflow' : developerReadinessAction?.targetMenu === 'documents' ? 'Open Documents' : 'Open Area'}
                     </Button>
                   </div>
                 </section>
+
+                {developerRelationshipPanel}
+                {developerOperationsPanel}
 
                 <section ref={discussionPanelRef} className="rounded-[22px] border border-[#dfe8f2] bg-white p-5 shadow-[0_12px_26px_rgba(15,23,42,0.04)]">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -7433,11 +7787,11 @@ function UnitDetail() {
                         key={`${action}-${index}`}
                         type="button"
                         className="flex w-full items-center justify-between gap-3 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5 text-left transition hover:border-[#d7e4f0] hover:bg-white"
-                        onClick={() => setWorkspaceMenu(index === 1 ? 'financials' : index === 2 ? 'transfer' : 'documents')}
+                        onClick={() => setWorkspaceMenu(developerUpcomingActionItems[index]?.targetMenu || (index === 1 ? 'financials' : index === 2 ? 'transfer' : 'documents'))}
                       >
                         <span className="min-w-0">
                           <strong className="block truncate text-sm font-semibold text-[#1d3144]">{action}</strong>
-                          <span className="mt-0.5 block text-xs text-[#8496ab]">{index === 0 ? nextActionDueLabel : 'Upcoming'}</span>
+                          <span className="mt-0.5 block text-xs text-[#8496ab]">{developerUpcomingActionItems[index]?.priority || (index === 0 ? nextActionDueLabel : 'Upcoming')}</span>
                         </span>
                         <ChevronRight size={15} className="shrink-0 text-[#8ca0b6]" />
                       </button>
@@ -7481,6 +7835,9 @@ function UnitDetail() {
             </div>
           ) : (
           <>
+            {developerRelationshipPanel}
+            {developerOperationsPanel}
+
             {showReservationDepositOverviewCard ? (
               <WorkspacePanel
                 title="Reservation Deposit"
@@ -7944,7 +8301,8 @@ function UnitDetail() {
           >
             <div className="divide-y divide-[#e6edf5] overflow-hidden rounded-[18px] border border-[#dfe8f2] bg-white">
               {agentUpcomingActions.map((action, index) => {
-                const targetMenu = index === 1 ? 'financials' : index === 2 ? 'transfer' : 'documents'
+                const developerAction = developerUpcomingActionItems[index] || null
+                const targetMenu = developerAction?.targetMenu || (index === 1 ? 'financials' : index === 2 ? 'transfer' : 'documents')
                 const responsibleParty = targetMenu === 'financials'
                   ? bondAttorneyDisplayName || 'Finance team'
                   : targetMenu === 'transfer'
@@ -7962,7 +8320,7 @@ function UnitDetail() {
                           </span>
                         </div>
                         <p className="mt-1 text-sm leading-6 text-[#63758a]">
-                          {index === 0 ? nextActionDescription : 'Upcoming operational action for this transaction.'}
+                          {developerAction?.description || (index === 0 ? nextActionDescription : 'Upcoming operational action for this transaction.')}
                         </p>
                       </div>
                       <Button type="button" variant="secondary" size="sm" onClick={() => setWorkspaceMenu(targetMenu)}>
@@ -7973,8 +8331,8 @@ function UnitDetail() {
                       {[
                         ['Due', index === 0 ? nextActionDueLabel : 'Upcoming'],
                         ['Responsible', responsibleParty],
-                        ['Priority', index === 0 ? nextActionPriority : 'Normal'],
-                        ['Status', matterHealthLabel],
+                        ['Priority', developerAction?.priority || (index === 0 ? nextActionPriority : 'Normal')],
+                        ['Status', developerAction?.statusLabel || matterHealthLabel],
                       ].map(([label, value]) => (
                         <div key={label} className="min-w-0 rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2">
                           <span className="block font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{label}</span>
@@ -8080,8 +8438,8 @@ function UnitDetail() {
         {activeWorkspaceMenu === 'onboarding' ? (
           <div className="space-y-4">
             <WorkspacePanel
-              title="Client Information"
-              copy="Buyer onboarding control panel for manual alignment, finance structure, and required-document readiness."
+              title={workspaceLabels.onboardingPanel}
+              copy={workspaceLabels.onboardingCopy}
               actions={
                 <div className="no-print flex flex-wrap gap-3">
                   <Button
@@ -8549,11 +8907,11 @@ function UnitDetail() {
               <div className="mt-5 grid gap-4 xl:grid-cols-2">
                 {[
                   {
-                    title: 'Buyer Overview',
+                    title: workspaceLabels.buyerOverview,
                     entries: [
-                      ['Buyer Name', ownerDisplayName],
-                      ['Buyer Email', clientInfoForm.buyer_email || buyer?.email || '—'],
-                      ['Buyer Phone', clientInfoForm.buyer_phone || buyer?.phone || '—'],
+                      [`${workspaceLabels.buyer} Name`, ownerDisplayName],
+                      [`${workspaceLabels.buyer} Email`, clientInfoForm.buyer_email || buyer?.email || '—'],
+                      [`${workspaceLabels.buyer} Phone`, clientInfoForm.buyer_phone || buyer?.phone || '—'],
                       ['Purchaser Type', getPurchaserTypeLabel(normalizedPurchaserType)],
                       ['Registration Date', formatDate(registeredAt)],
                     ],
@@ -8834,6 +9192,141 @@ function UnitDetail() {
               )}
             </WorkspacePanel>
           </div>
+        ) : null}
+
+        {activeWorkspaceMenu === 'handover' ? (
+          <WorkspacePanel
+            title="Handover & Inspection"
+            copy="Track practical handover readiness, inspection completion, meter readings, documents, and snag follow-through."
+            className="no-print"
+            actions={
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={() => setWorkspaceMenu('documents')}>
+                  Documents
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('snags')}>
+                  Snags
+                </Button>
+              </div>
+            }
+          >
+            {developerOperationsSummary ? (
+              <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ['Handover Status', developerOperationsSummary.handover.statusLabel],
+                    ['Scheduled Date', formatDate(developerOperationsSummary.handover.date)],
+                    ['Snag Readiness', developerOperationsSummary.snags.enabled ? `${developerOperationsSummary.snags.openCount} open` : 'Module Off'],
+                    ['Handover Documents', `${developerOperationsSummary.handover.documentCount} ready`],
+                  ].map(([label, value]) => (
+                    <article key={label} className="rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] px-4 py-3">
+                      <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8496ab]">{label}</span>
+                      <strong className="mt-1 block text-sm font-semibold text-[#142132]">{value}</strong>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                  <section className="rounded-[18px] border border-[#dce6f0] bg-white p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#142132]">Inspection Checklist</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
+                          {developerOperationsSummary.handover.completedChecklistCount} of {developerOperationsSummary.handover.checklistTotalCount} items complete.
+                        </p>
+                      </div>
+                      <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getDeveloperOperationToneClasses(developerOperationsSummary.handover.ready ? 'success' : 'warning')}`}>
+                        {developerOperationsSummary.handover.ready ? 'Ready' : 'In progress'}
+                      </span>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {developerOperationsSummary.handover.checklist.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
+                          <span className="text-sm font-medium text-[#35546c]">{item.label}</span>
+                          <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getDeveloperOperationToneClasses(item.complete ? 'success' : 'warning')}`}>
+                            {item.complete ? 'Complete' : 'Pending'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 grid gap-2 text-sm text-[#4f647a] sm:grid-cols-2">
+                      <span><strong className="font-semibold text-[#1f3448]">Electricity:</strong> {handover?.electricityMeterReading || 'Not captured'}</span>
+                      <span><strong className="font-semibold text-[#1f3448]">Water:</strong> {handover?.waterMeterReading || 'Not captured'}</span>
+                      <span><strong className="font-semibold text-[#1f3448]">Gas:</strong> {handover?.gasMeterReading || 'Not captured'}</span>
+                      <span><strong className="font-semibold text-[#1f3448]">Signed by:</strong> {handover?.signatureName || 'Not signed'}</span>
+                    </div>
+                  </section>
+
+                  <section className="rounded-[18px] border border-[#dce6f0] bg-white p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#142132]">Handover Documents</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Manuals, warranty, occupation, inspection, and handover documents linked to this file.</p>
+                      </div>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('documents')}>
+                        Open Library
+                      </Button>
+                    </div>
+                    <div className="mt-4 space-y-2.5">
+                      {developerOperationsSummary.handover.documents.length ? (
+                        developerOperationsSummary.handover.documents.slice(0, 5).map((document) => {
+                          const canOpenDocument = Boolean(document?.url || document?.file_path)
+                          return (
+                            <article key={document.id || document.name} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2.5">
+                              <div className="min-w-0">
+                                <strong className="block truncate text-sm font-semibold text-[#142132]">{document.name || 'Handover document'}</strong>
+                                <span className="mt-0.5 block text-xs text-[#7b8ca2]">{document.category || document.portal_workspace_category || 'Handover'} - {formatDate(document.created_at || document.updated_at)}</span>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={!canOpenDocument}
+                                onClick={() => canOpenDocument && void openWorkspaceDocument(document, { download: false, filename: document.name || 'handover-document' })}
+                              >
+                                View
+                              </Button>
+                            </article>
+                          )
+                        })
+                      ) : (
+                        <div className="rounded-[14px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
+                          No handover documents have been uploaded yet.
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                </div>
+
+                <section className="rounded-[18px] border border-[#dce6f0] bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#142132]">Readiness Notes</h4>
+                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">These items help the developer, selling agent, and transfer team understand what may block practical handover.</p>
+                    </div>
+                    <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getDeveloperOperationToneClasses(developerOperationsSummary.handover.ready ? 'success' : 'warning')}`}>
+                      {developerOperationsSummary.handover.ready ? 'Clear' : `${developerOperationsSummary.handover.blockers.length} open`}
+                    </span>
+                  </div>
+                  {developerOperationsSummary.handover.blockers.length ? (
+                    <ul className="mt-3 grid gap-2 text-sm leading-6 text-[#5f7086] md:grid-cols-2">
+                      {developerOperationsSummary.handover.blockers.map((blocker) => (
+                        <li key={blocker} className="rounded-[14px] border border-[#f1ddd0] bg-[#fff8f3] px-3 py-2 text-[#8a5511]">{blocker}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 rounded-[14px] border border-[#cfe3d7] bg-[#eef8f1] px-3 py-2 text-sm font-medium text-[#2f7a51]">
+                      No handover blockers are currently flagged.
+                    </p>
+                  )}
+                </section>
+              </div>
+            ) : (
+              <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">
+                Handover is only available for developer-sale transactions.
+              </div>
+            )}
+          </WorkspacePanel>
         ) : null}
 
         {activeWorkspaceMenu === 'snags' ? (

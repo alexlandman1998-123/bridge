@@ -1,5 +1,6 @@
-import { normalizeStageLabel } from '../../lib/stages'
-import { normalizeFinanceType as normalizeCanonicalFinanceType } from './financeType'
+import { normalizeStageLabel } from '../../lib/stages.js'
+import { normalizeFinanceType as normalizeCanonicalFinanceType } from './financeType.js'
+import { buildDeveloperTransactionReadinessProfileFromRow } from './developerTransactionReadinessProfile.js'
 
 function normalizeFinanceType(value) {
   return normalizeCanonicalFinanceType(value, { allowUnknown: true })
@@ -11,6 +12,11 @@ function cleanText(value) {
 }
 
 export function getReportNextAction(row) {
+  const developerReadiness = buildDeveloperTransactionReadinessProfileFromRow(row)
+  if (developerReadiness?.nextAction?.title) {
+    return developerReadiness.nextAction.title
+  }
+
   const workflowNextStep = cleanText(row?.report?.nextStep)
   if (workflowNextStep) {
     return workflowNextStep

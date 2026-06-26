@@ -95,6 +95,8 @@ assert.deepEqual(
 )
 
 assert.equal(getMandateSignerRoleLabel('purchaser_2', { secondarySignerLabel: 'Co-owner' }), 'Co-owner')
+assert.equal(getMandateSignerRoleLabel('seller', { roleLabels: { seller: 'Developer' } }), 'Developer')
+assert.equal(getMandateSignerRoleLabel('agent', { roleLabels: { agent: 'Selling Agent' } }), 'Selling Agent')
 
 const filteredWithoutSpouse = filterMandateSigningRows([
   { signer_role: 'agent' },

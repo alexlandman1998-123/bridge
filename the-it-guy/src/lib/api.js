@@ -109,6 +109,11 @@ import {
   SUBPROCESS_TYPES,
   TRANSACTION_ROLE_LABELS,
 } from '../core/transactions/roleConfig'
+import {
+  buildDeveloperTransactionRoleplayerSnapshot,
+  normalizeDeveloperTransactionRoleType,
+  resolveDeveloperTransactionRelationshipProfile,
+} from '../core/transactions/developerTransactionRelationshipProfile.js'
 import { getRolePermissions, normalizeFinanceManagedBy, normalizeRoleType } from '../core/transactions/permissions'
 import { resolveWorkflowLanePermissions } from '../core/workflows/permissions'
 import {
@@ -19624,12 +19629,23 @@ export async function rollbackTransaction(args = {}) {
   return deleteTransactionEverywhere(args)
 }
 
-function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
+function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
   if (!Array.isArray(rolePlayers)) {
     return []
   }
 
-  const allowedRoleTypes = new Set(['transfer_attorney', 'bond_originator', 'bond_attorney', 'cancellation_attorney'])
+  const relationshipProfile = resolveDeveloperTransactionRelationshipProfile({
+    transactionType: options.transactionType || options.transaction_type,
+    roleTypes: rolePlayers.map((item) => item?.roleType || item?.role_type || ''),
+    hasExternalAgent: rolePlayers.some((item) => normalizeDeveloperTransactionRoleType(item?.roleType || item?.role_type) === 'agent'),
+  })
+  const allowedRoleTypes = new Set([
+    'transfer_attorney',
+    'bond_originator',
+    'bond_attorney',
+    'cancellation_attorney',
+    ...(relationshipProfile.isDeveloperSale ? ['developer_contact', 'agent'] : ['agent']),
+  ])
   const allowedSources = new Set([
     'agency_preferred',
     'buyer_appointed',
@@ -19643,7 +19659,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
 
   return rolePlayers
     .map((item) => {
-      const roleType = normalizeTextValue(item?.roleType || '').toLowerCase()
+      const roleType = normalizeDeveloperTransactionRoleType(item?.roleType || item?.role_type || '')
       if (!allowedRoleTypes.has(roleType)) {
         return null
       }
@@ -19653,11 +19669,51 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
         allowedSources,
         fallback: 'transaction_direct',
       })
-      const partnerName = normalizeTextValue(partner.companyName || partner.contactPerson || '')
+      const partnerName = normalizeTextValue(
+        partner.companyName ||
+          partner.organisationName ||
+          partner.partnerName ||
+          partner.name ||
+          item?.companyName ||
+          item?.organisationName ||
+          item?.partnerName ||
+          '',
+      )
+      const contactPerson = normalizeNullableText(
+        partner.contactPerson ||
+          partner.contactName ||
+          item?.contactPerson ||
+          item?.contactName ||
+          partner.name ||
+          item?.name ||
+          partnerName,
+      )
+      const email = normalizeNullableText(
+        partner.email ||
+          partner.emailAddress ||
+          partner.email_address ||
+          item?.email ||
+          item?.emailAddress ||
+          item?.email_address,
+      )?.toLowerCase() || null
+      const partnerOrganisationId = normalizeNullableUuid(
+        item?.partnerOrganisationId ||
+          item?.organisationId ||
+          item?.organisation_id ||
+          partner.partnerOrganisationId ||
+          partner.organisationId ||
+          partner.organisation_id,
+      )
+      const userId = normalizeNullableUuid(item?.userId || item?.user_id || partner.userId || partner.user_id)
+      const regionId = normalizeNullableUuid(item?.regionId || item?.region_id || partner.regionId || partner.region_id)
+      const workspaceUnitId = normalizeNullableUuid(item?.workspaceUnitId || item?.workspace_unit_id || partner.workspaceUnitId || partner.workspace_unit_id)
+      const branchId = normalizeNullableUuid(item?.branchId || item?.branch_id || partner.branchId || partner.branch_id)
+      const teamId = normalizeNullableUuid(item?.teamId || item?.team_id || partner.teamId || partner.team_id)
 
-      if (!partnerName && normalizedSource !== 'agency_preferred') {
+      if (!partnerName && !contactPerson && !email && !partnerOrganisationId && !userId && normalizedSource !== 'agency_preferred') {
         return null
       }
+      const roleplayerSnapshot = buildDeveloperTransactionRoleplayerSnapshot({ roleType }, relationshipProfile)
 
       return {
         roleType,
@@ -19665,50 +19721,38 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = []) {
         preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
         partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
         partnerConnectionId: normalizeNullableUuid(item?.partnerConnectionId || item?.connectionId || partner.partnerConnectionId || partner.connectionId),
-        partnerOrganisationId: normalizeNullableUuid(
-          item?.partnerOrganisationId ||
-            item?.organisationId ||
-            item?.organisation_id ||
-            partner.partnerOrganisationId ||
-            partner.organisationId ||
-            partner.organisation_id,
-        ),
-        userId: normalizeNullableUuid(item?.userId || item?.user_id || partner.userId || partner.user_id),
-        regionId: normalizeNullableUuid(item?.regionId || item?.region_id || partner.regionId || partner.region_id),
-        workspaceUnitId: normalizeNullableUuid(item?.workspaceUnitId || item?.workspace_unit_id || partner.workspaceUnitId || partner.workspace_unit_id),
-        branchId: normalizeNullableUuid(item?.branchId || item?.branch_id || partner.branchId || partner.branch_id),
-        teamId: normalizeNullableUuid(item?.teamId || item?.team_id || partner.teamId || partner.team_id),
+        partnerOrganisationId,
+        userId,
+        regionId,
+        workspaceUnitId,
+        branchId,
+        teamId,
         partnerName: partnerName || null,
-        contactPerson: normalizeNullableText(partner.contactPerson),
-        email: normalizeNullableText(partner.email)?.toLowerCase() || null,
-        phone: normalizeNullableText(partner.phone),
+        contactPerson,
+        email,
+        phone: normalizeNullableText(partner.phone || partner.phoneNumber || partner.phone_number || item?.phone || item?.phoneNumber || item?.phone_number),
         website: normalizeNullableText(partner.website),
         physicalAddress: normalizeNullableText(partner.physicalAddress),
         province: normalizeNullableText(partner.province),
         notes: normalizeNullableText(partner.notes),
+        relationshipProfile: relationshipProfile.key,
         snapshot: {
+          ...roleplayerSnapshot,
           roleType,
           selectionSource: normalizedSource,
           preferredPartnerId: normalizeNullableUuid(item?.preferredPartnerId || partner.partnerId),
           partnerRelationshipId: normalizeNullableUuid(item?.partnerRelationshipId || partner.partnerRelationshipId),
           partnerConnectionId: normalizeNullableUuid(item?.partnerConnectionId || item?.connectionId || partner.partnerConnectionId || partner.connectionId),
-          partnerOrganisationId: normalizeNullableUuid(
-            item?.partnerOrganisationId ||
-              item?.organisationId ||
-              item?.organisation_id ||
-              partner.partnerOrganisationId ||
-              partner.organisationId ||
-              partner.organisation_id,
-          ),
-          userId: normalizeNullableUuid(item?.userId || item?.user_id || partner.userId || partner.user_id),
-          regionId: normalizeNullableUuid(item?.regionId || item?.region_id || partner.regionId || partner.region_id),
-          workspaceUnitId: normalizeNullableUuid(item?.workspaceUnitId || item?.workspace_unit_id || partner.workspaceUnitId || partner.workspace_unit_id),
-          branchId: normalizeNullableUuid(item?.branchId || item?.branch_id || partner.branchId || partner.branch_id),
-          teamId: normalizeNullableUuid(item?.teamId || item?.team_id || partner.teamId || partner.team_id),
+          partnerOrganisationId,
+          userId,
+          regionId,
+          workspaceUnitId,
+          branchId,
+          teamId,
           partner: {
             companyName: normalizeNullableText(partner.companyName),
-            contactPerson: normalizeNullableText(partner.contactPerson),
-            email: normalizeNullableText(partner.email)?.toLowerCase() || null,
+            contactPerson,
+            email,
             phone: normalizeNullableText(partner.phone),
             website: normalizeNullableText(partner.website),
             physicalAddress: normalizeNullableText(partner.physicalAddress),
@@ -19774,7 +19818,7 @@ async function insertRecordWithMissingColumnFallback(client, table, payload = {}
   let result = await client.from(table).insert(currentPayload).select(select).limit(1)
   let attempts = 0
 
-  while (result.error && attempts < 12) {
+  while (result.error && attempts < 24) {
     const missingKey = Object.keys(currentPayload).find((key) => isMissingColumnError(result.error, key))
     if (!missingKey) break
     delete currentPayload[missingKey]
@@ -19802,16 +19846,31 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
 
   for (const item of rolePlayers) {
     const resolvedUserId = item.userId || (item.email ? profileIdByEmail[item.email] || null : null)
+    const scope = resolveRoleplayerSelectionScope(item, resolvedUserId)
     const payload = {
       transaction_id: transactionId,
       role_type: item.roleType,
       selection_source: item.selectionSource,
       preferred_partner_id: item.preferredPartnerId || null,
       partner_relationship_id: item.partnerRelationshipId || null,
+      partner_connection_id: item.partnerConnectionId || null,
+      partner_organisation_id: scope.organisationId || item.partnerOrganisationId || null,
       organisation_id: item.partnerOrganisationId || null,
       workspace_unit_id: item.workspaceUnitId || null,
       branch_id: item.branchId || null,
       user_id: resolvedUserId,
+      assigned_organisation_id: scope.organisationId,
+      assigned_workspace_unit_id: scope.workspaceUnitId,
+      assigned_branch_id: scope.branchId,
+      assigned_region_id: scope.regionId,
+      assigned_team_id: scope.teamId,
+      assigned_user_id: resolvedUserId,
+      scope_level: scope.scopeLevel,
+      scope_metadata: {
+        source: 'persist_transaction_role_players',
+        relationshipProfile: item.relationshipProfile || item.snapshot?.relationshipProfile || null,
+        roleType: item.roleType,
+      },
       partner_name: item.partnerName || null,
       contact_person: item.contactPerson || null,
       email_address: item.email || null,
@@ -19831,9 +19890,12 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
         canonicalTransactionId: transactionId,
         roleplayerStatus: item.assignmentStatus || 'assigned',
         userId: resolvedUserId,
-        organisationId: item.partnerOrganisationId || null,
-        workspaceUnitId: item.workspaceUnitId || null,
-        branchId: item.branchId || null,
+        organisationId: scope.organisationId || item.partnerOrganisationId || null,
+        partnerOrganisationId: scope.organisationId || item.partnerOrganisationId || null,
+        workspaceUnitId: scope.workspaceUnitId || item.workspaceUnitId || null,
+        branchId: scope.branchId || item.branchId || null,
+        regionId: scope.regionId || item.regionId || null,
+        teamId: scope.teamId || item.teamId || null,
       },
       updated_at: nowIso,
     }
@@ -19872,8 +19934,10 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
         transactionId,
         roleType: item.roleType,
         assignedUserId: resolvedUserId,
-        organisationId: item.partnerOrganisationId || null,
-        branchId: item.branchId || null,
+        organisationId: scope.organisationId || item.partnerOrganisationId || null,
+        regionId: scope.regionId || item.regionId || null,
+        branchId: scope.branchId || item.branchId || null,
+        teamId: scope.teamId || item.teamId || null,
         sourceModule: 'transaction',
         sourceEvent: 'persist_transaction_role_players',
         assignmentSource: item.assignmentSource || item.selectionSource || 'transaction_direct',
@@ -19898,8 +19962,10 @@ async function persistTransactionRolePlayersIfPossible(client, { transactionId, 
       transactionId,
       roleType: item.roleType,
       assignedUserId: resolvedUserId,
-      organisationId: item.partnerOrganisationId || null,
-      branchId: item.branchId || null,
+      organisationId: scope.organisationId || item.partnerOrganisationId || null,
+      regionId: scope.regionId || item.regionId || null,
+      branchId: scope.branchId || item.branchId || null,
+      teamId: scope.teamId || item.teamId || null,
       sourceModule: 'transaction',
       sourceEvent: 'persist_transaction_role_players',
       assignmentSource: item.assignmentSource || item.selectionSource || 'transaction_direct',
@@ -20623,7 +20689,7 @@ async function updateRecordByIdWithMissingColumnFallback(client, table, id, payl
   let result = await client.from(table).update(currentPayload).eq('id', id).select(select).limit(1)
   let attempts = 0
 
-  while (result.error && attempts < 10) {
+  while (result.error && attempts < 24) {
     const missingKey = Object.keys(currentPayload).find((key) => isMissingColumnError(result.error, key))
     if (!missingKey) break
     delete currentPayload[missingKey]
@@ -22143,7 +22209,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const purchaserType = normalizePurchaserType(setup.purchaserType)
 
   const deferFinanceType = Boolean(options?.deferFinanceType)
-  const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [])
+  const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [], { transactionType })
   const sourceContext = options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {}
   const shouldAutoResolveRolePlayers = options?.disableAutoPartnerRouting !== true
   const autoRoutingRoleTypes = shouldAutoResolveRolePlayers

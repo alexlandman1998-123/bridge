@@ -353,8 +353,9 @@ export function resolveMandateSecondarySignerConfig({ packet = null, sourceConte
   }
 }
 
-export function getMandateSignerRoleLabel(role = '', { secondarySignerLabel = 'Co-signer' } = {}) {
+export function getMandateSignerRoleLabel(role = '', { secondarySignerLabel = 'Co-signer', roleLabels = {} } = {}) {
   const normalized = normalizeKey(role)
+  if (roleLabels && typeof roleLabels === 'object' && normalizeText(roleLabels[normalized])) return normalizeText(roleLabels[normalized])
   if (normalized === 'agent') return 'Agent'
   if (normalized === 'seller') return 'Seller'
   if (normalized === 'purchaser_2') return normalizeText(secondarySignerLabel) || 'Co-signer'

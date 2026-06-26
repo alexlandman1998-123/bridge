@@ -42,7 +42,7 @@ const DEMO_BANKS = [
 ]
 
 const DEMO_PIPELINE = [
-  { key: 'leads', label: 'New Leads', count: 56, conversion: 12, icon: Users, color: '#1d63ed', warning: '' },
+  { key: 'leads', label: 'Buyer Leads', count: 56, conversion: 12, icon: Users, color: '#1d63ed', warning: '' },
   { key: 'otp', label: 'OTP Signed', count: 34, conversion: 8, icon: FileCheck2, color: '#1472d8', warning: '' },
   { key: 'finance', label: 'Finance', count: 28, conversion: 6, icon: Landmark, color: '#f59e0b', warning: '5 waiting on bank' },
   { key: 'attorney', label: 'Attorney', count: 18, conversion: 4, icon: Gavel, color: '#0d9488', warning: '' },
@@ -426,7 +426,7 @@ function PipelineHero({ stages, conversion }) {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#101d31]">Transaction Pipeline</h2>
-          <p className="mt-1 text-sm text-[#6b7d93]">Live workflow movement from new lead to registration.</p>
+          <p className="mt-1 text-sm text-[#6b7d93]">Live workflow movement from buyer interest to registration.</p>
         </div>
         <button type="button" className="inline-flex h-10 items-center justify-center gap-2 rounded-[13px] border border-[#dbe5f0] bg-white px-3.5 text-sm font-semibold text-[#17324b] shadow-[0_8px_18px_rgba(15,23,42,0.05)]">
           View Pipeline

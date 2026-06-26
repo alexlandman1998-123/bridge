@@ -319,7 +319,8 @@ function Pipeline({ initialAgentViewMode = 'pipeline' } = {}) {
 }
 
 function LegacyPipeline() {
-  const { workspace, profile } = useWorkspace()
+  const { role, workspace, profile } = useWorkspace()
+  const isDeveloperPipeline = role === 'developer'
   const [pipelineTab, setPipelineTab] = useState('buyers')
   const [sellerStageFilter, setSellerStageFilter] = useState(SELLER_PIPELINE_STAGE.ALL)
   const [viewMode, setViewMode] = useState('table')
@@ -525,7 +526,7 @@ function LegacyPipeline() {
     event.preventDefault()
 
     if (!form.name.trim()) {
-      setError('Lead name is required.')
+      setError('Buyer lead name is required.')
       return
     }
 
@@ -1245,7 +1246,7 @@ function LegacyPipeline() {
   }, [filteredLeads])
 
   const summaryCards = useMemo(() => {
-    if (pipelineTab === 'sellers') {
+    if (!isDeveloperPipeline && pipelineTab === 'sellers') {
       return [
         { key: SELLER_PIPELINE_STAGE.SELLER_LEAD, label: 'Seller Leads', value: sellerStockRows.filter((row) => row.stage === SELLER_PIPELINE_STAGE.SELLER_LEAD).length, tone: 'bg-[#f8fbff] text-[#31506a]' },
         { key: SELLER_PIPELINE_STAGE.ONBOARDING_PENDING, label: 'Onboarding Pending', value: sellerStockRows.filter((row) => row.stage === SELLER_PIPELINE_STAGE.ONBOARDING_PENDING).length, tone: 'bg-[#fff7ed] text-[#9a5b13]' },
@@ -1260,12 +1261,19 @@ function LegacyPipeline() {
     const closed = filteredLeads.filter((lead) => ['Closed', 'Lost', 'Not Active'].includes(lead.status)).length
 
     return [
-      { label: 'Total Leads', value: filteredLeads.length, tone: 'bg-[#f8fbff] text-[#31506a]' },
+      { label: 'Buyer Leads', value: filteredLeads.length, tone: 'bg-[#f8fbff] text-[#31506a]' },
       { label: 'Open Pipeline', value: openPipeline, tone: 'bg-[#eef7f2] text-[#1c7d45]' },
       { label: 'Follow Ups', value: followUps, tone: 'bg-[#f7f9fc] text-[#5b7087]' },
       { label: 'Closed Outcomes', value: closed, tone: 'bg-[#fff7ed] text-[#9a5b13]' },
     ]
-  }, [filteredLeads, pipelineTab, sellerStockRows])
+  }, [filteredLeads, isDeveloperPipeline, pipelineTab, sellerStockRows])
+
+  useEffect(() => {
+    if (!isDeveloperPipeline || pipelineTab !== 'sellers') return
+    setPipelineTab('buyers')
+    setSellerStageFilter(SELLER_PIPELINE_STAGE.ALL)
+    setShowForm(false)
+  }, [isDeveloperPipeline, pipelineTab])
 
   const selectedLeadProfile = useMemo(() => {
     if (!selectedLead) return null
@@ -1306,10 +1314,10 @@ function LegacyPipeline() {
   return (
     <section className="space-y-5">
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-2 md:grid-cols-2">
+        <div className={`grid gap-2 ${isDeveloperPipeline ? '' : 'md:grid-cols-2'}`}>
           {[
-            { key: 'buyers', label: 'Buyers', copy: 'Lead capture and deal conversion' },
-            { key: 'sellers', label: 'Sellers', copy: 'Seller → onboarding → mandate → activation' },
+            { key: 'buyers', label: isDeveloperPipeline ? 'Buyer Pipeline' : 'Buyers', copy: isDeveloperPipeline ? 'Buyer lead capture and unit conversion' : 'Lead capture and deal conversion' },
+            ...(!isDeveloperPipeline ? [{ key: 'sellers', label: 'Sellers', copy: 'Seller → onboarding → mandate → activation' }] : []),
           ].map((tab) => {
             const active = pipelineTab === tab.key
             return (
@@ -1446,13 +1454,13 @@ function LegacyPipeline() {
       {!loading && showForm && pipelineTab === 'buyers' ? (
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
           <div className="flex flex-col gap-2">
-            <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Add Lead</h3>
-            <p className="text-sm leading-7 text-[#6b7d93]">Capture a manual lead and drop it directly into the active pipeline.</p>
+            <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Add Buyer Lead</h3>
+            <p className="text-sm leading-7 text-[#6b7d93]">Capture a buyer lead and drop it directly into the active pipeline.</p>
           </div>
 
           <form className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleCreateLead}>
             <label className="grid gap-2 xl:col-span-2">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Lead Name</span>
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Name</span>
               <Field value={form.name} onChange={(event) => updateForm('name', event.target.value)} placeholder="Client or entity name" />
             </label>
             <label className="grid gap-2">
@@ -1517,7 +1525,7 @@ function LegacyPipeline() {
             <div className="flex flex-wrap items-center gap-3 xl:col-span-4">
               <Button type="submit">
                 <Plus size={16} />
-                Save Lead
+                Save Buyer Lead
               </Button>
               <Button variant="ghost" onClick={() => setShowForm(false)}>
                 Cancel

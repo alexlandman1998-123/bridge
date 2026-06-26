@@ -2501,8 +2501,13 @@ export async function generateDocumentPacketSigningLinks({
     : null
 
   if (isMandatePacket && normalizedTargetSignerRole) {
+    const packetSourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object' ? packet.source_context_json : {}
+    const roleLabels = packetSourceContext?.mandateType === 'developer_agent_mandate' || packetSourceContext?.contextType === 'developer_agent_mandate'
+      ? { agent: 'Selling Agent', seller: 'Developer' }
+      : {}
     const targetRoleLabel = getMandateSignerRoleLabel(normalizedTargetSignerRole, {
       secondarySignerLabel: mandateSecondarySigner?.label || 'Co-signer',
+      roleLabels,
     })
     if (!targetedMandateSigner) {
       throw new Error(`${targetRoleLabel} has already completed signing or is not configured.`)

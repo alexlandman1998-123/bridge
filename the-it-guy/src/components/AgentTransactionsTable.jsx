@@ -1,6 +1,7 @@
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, CheckCircle2, MoreHorizontal, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MAIN_STAGE_LABELS, getMainStageFromDetailedStage } from '../lib/stages'
+import { buildDeveloperTransactionReadinessProfileFromRow } from '../core/transactions/developerTransactionReadinessProfile.js'
 import { calculateApprovalProbability, calculateOperationalRisk, calculateTransactionVelocity } from '../services/financeIntelligenceService'
 import Button from './ui/Button'
 import DataTable, { DataTableInner } from './ui/DataTable'
@@ -87,6 +88,17 @@ function getProgressPercent(row, mainStageKey = '') {
 }
 
 function getHealth(row, mainStageKey = '') {
+  const developerReadiness = buildDeveloperTransactionReadinessProfileFromRow(row)
+  if (developerReadiness?.healthLabel) {
+    if (developerReadiness.healthTone === 'danger') {
+      return { label: developerReadiness.healthLabel, className: 'transaction-health-attention' }
+    }
+    if (developerReadiness.healthTone === 'warning') {
+      return { label: developerReadiness.healthLabel, className: 'transaction-health-waiting' }
+    }
+    return { label: developerReadiness.healthLabel, className: 'transaction-health-track' }
+  }
+
   const status = String(row?.transaction?.status || row?.transaction?.operational_state || '').trim().toLowerCase()
   const lifecycle = String(row?.transaction?.lifecycle_state || '').trim().toLowerCase()
   const stage = String(row?.stage || '').trim().toLowerCase()

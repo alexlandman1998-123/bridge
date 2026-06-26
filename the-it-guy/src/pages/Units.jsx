@@ -422,6 +422,44 @@ function dedupeRowsByTransaction(rows = []) {
   return [...byIdentity.values()]
 }
 
+function getMembershipWorkspaceId(membership = {}) {
+  return String(
+    membership?.workspaceId ||
+      membership?.organisationId ||
+      membership?.organisation_id ||
+      membership?.workspace?.id ||
+      '',
+  ).trim()
+}
+
+function getMembershipWorkspaceType(membership = {}) {
+  return String(
+    membership?.workspaceType ||
+      membership?.workspace_type ||
+      membership?.workspace?.type ||
+      '',
+  ).trim()
+}
+
+function isDemoIdentifier(value) {
+  return /^(mock|demo|seed)([-_:]|$)/i.test(String(value || '').trim())
+}
+
+function isDemoTransactionRow(row = {}) {
+  if (row?.isDemo || row?.demo || row?.__demo || row?.transaction?.isDemo || row?.transaction?.demo || row?.transaction?.__demo) {
+    return true
+  }
+
+  return [
+    row?.transaction?.id,
+    row?.transaction?.transaction_reference,
+    row?.transaction?.application_reference,
+    row?.unit?.id,
+    row?.development?.id,
+    row?.buyer?.id,
+  ].some(isDemoIdentifier)
+}
+
 function classifyAttorneySource(row) {
   const assignedAgent = String(row?.transaction?.assigned_agent || '').trim()
   const rawSource = String(row?.transaction?.marketing_source || row?.transaction?.lead_source || '')
@@ -572,7 +610,7 @@ function isBondPipelineLifecycleRow(row) {
 function Units() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, role, profile } = useWorkspace()
+  const { workspace, role, profile, currentWorkspace, workspaceType, currentMembership, activeMemberships } = useWorkspace()
 
   const [rows, setRows] = useState([])
   const [developmentOptions, setDevelopmentOptions] = useState([])
@@ -616,6 +654,18 @@ function Units() {
   const isAttorneyRole = role === 'attorney'
   const isClientRole = role === 'client'
   const isDeveloperWorkspaceRole = role === 'developer' || role === 'internal_admin'
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || workspace?.type || ''
+  const developerOrganisationId = useMemo(() => {
+    if (!isDeveloperWorkspaceRole) return ''
+    if (resolvedWorkspaceType === 'developer_company') {
+      return String(currentWorkspace?.id || workspace?.id || '').trim()
+    }
+    if (getMembershipWorkspaceType(currentMembership) === 'developer_company') {
+      return getMembershipWorkspaceId(currentMembership)
+    }
+    const developerMembership = (activeMemberships || []).find((membership) => getMembershipWorkspaceType(membership) === 'developer_company')
+    return getMembershipWorkspaceId(developerMembership)
+  }, [activeMemberships, currentMembership, currentWorkspace?.id, isDeveloperWorkspaceRole, resolvedWorkspaceType, workspace?.id])
   const isTransactionsRoute = location.pathname === '/transactions' || location.pathname === '/transactions/'
   const canToggleUnitsView = !isBondRole && !isAttorneyRole
   const canDeleteTransactions = role === 'developer' || role === 'internal_admin' || role === 'agent'
@@ -941,10 +991,18 @@ function Units() {
       ))
       return
     }
+    if (isDeveloperWorkspaceRole) {
+      setFilters((previous) => (
+        previous.developmentId === 'all'
+          ? previous
+          : { ...previous, developmentId: 'all' }
+      ))
+      return
+    }
     if (workspace.id !== 'all') {
       setFilters((previous) => ({ ...previous, developmentId: workspace.id }))
     }
-  }, [isAgentRole, workspace.id])
+  }, [isAgentRole, isDeveloperWorkspaceRole, workspace.id])
 
   useEffect(() => {
     setSelectedUnitIds((previous) => previous.filter((unitId) => rows.some((row) => row?.unit?.id === unitId)))
@@ -1021,20 +1079,31 @@ function Units() {
             }, [])
         }
       } else {
-        ;[unitsData, options] = await Promise.all([
-          isDeveloperWorkspaceRole
-            ? fetchTransactionsListSummary({
+        if (isDeveloperWorkspaceRole) {
+          if (!developerOrganisationId) {
+            unitsData = []
+            options = []
+          } else {
+            ;[unitsData, options] = await Promise.all([
+              fetchTransactionsListSummary({
+                organisationId: developerOrganisationId,
                 developmentId: filters.developmentId === 'all' ? null : filters.developmentId,
                 stage: filters.stage,
                 financeType: filters.financeType,
                 activeTransactionsOnly: true,
-              })
-            : fetchUnitsDataSummary({
-                ...filters,
-                activeTransactionsOnly: isDeveloperWorkspaceRole,
               }),
-          fetchDevelopmentOptions(),
-        ])
+              fetchDevelopmentOptions({ organisationId: developerOrganisationId }),
+            ])
+          }
+        } else {
+          ;[unitsData, options] = await Promise.all([
+            fetchUnitsDataSummary({
+              ...filters,
+              activeTransactionsOnly: false,
+            }),
+            fetchDevelopmentOptions(),
+          ])
+        }
       }
 
       if (isBondRole) {
@@ -1234,7 +1303,10 @@ function Units() {
       })
 
       const normalizedRows = dedupeRowsByTransaction(filteredRows)
-      const activeRows = normalizedRows.filter((row) => Boolean(row?.transaction?.id))
+      const activeRows = normalizedRows.filter((row) => (
+        Boolean(row?.transaction?.id) &&
+        (!isDeveloperWorkspaceRole || !isDemoTransactionRow(row))
+      ))
       timer.mark('filter_end', {
         normalizedRows: normalizedRows.length,
         activeRows: activeRows.length,
@@ -1262,7 +1334,7 @@ function Units() {
     } finally {
       setLoading(false)
     }
-  }, [deferredSearch, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile, role, workspace.id])
+  }, [deferredSearch, developerOrganisationId, filters, isAgentRole, isPrincipalAgentView, isAttorneyRole, isBondRole, isDeveloperWorkspaceRole, participantScopedRole, profile, role, workspace.id])
 
   useEffect(() => {
     void loadData()

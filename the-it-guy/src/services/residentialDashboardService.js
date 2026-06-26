@@ -1,3 +1,6 @@
+import { buildDeveloperTransactionReadinessProfileFromRow } from '../core/transactions/developerTransactionReadinessProfile.js'
+import { getReportNextAction } from '../core/transactions/reportNextAction.js'
+
 const ZAR_COMPACT = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
@@ -38,6 +41,17 @@ function getFirstArray(...values) {
     if (Array.isArray(value) && value.length) return value
   }
   return []
+}
+
+function mapDeveloperHealthToDashboardHealth(row = {}) {
+  const readiness = buildDeveloperTransactionReadinessProfileFromRow(row)
+  if (!readiness?.healthLabel) return null
+  const tone = normalizeKey(readiness.healthTone)
+  const key = tone === 'danger' ? 'attention' : tone === 'warning' ? 'waiting' : 'on_track'
+  return {
+    key,
+    label: readiness.healthLabel,
+  }
 }
 
 function compactMonthLabel(index = 0) {
@@ -127,7 +141,64 @@ function getTransactionValue(row = {}) {
     row?.contract_value,
     row?.salePrice,
     row?.sale_price,
+    row?.transaction?.sales_price,
+    row?.transaction?.purchase_price,
+    row?.transaction?.salePrice,
+    row?.transaction?.sale_price,
+    row?.unit?.price,
+    row?.unit?.list_price,
   )
+}
+
+function isDeveloperTransactionRow(row = {}) {
+  const transaction = row?.transaction || row || {}
+  const normalizedType = normalizeKey(transaction.transaction_type || transaction.transactionType || transaction.type)
+  if (['private', 'private_property', 'second_hand'].includes(normalizedType)) return false
+  if (['developer_sale', 'development', 'developer'].includes(normalizedType)) return true
+  return Boolean(
+    row?.development?.id ||
+      row?.unit?.development_id ||
+      row?.unit?.developmentId ||
+      transaction.development_id ||
+      transaction.developmentId,
+  )
+}
+
+function getDeveloperMainStage(row = {}) {
+  const transaction = row?.transaction || row || {}
+  const explicit = normalizeText(row?.mainStage || transaction.current_main_stage || transaction.currentMainStage).toUpperCase()
+  if (explicit) return explicit
+
+  const text = normalizeKey([
+    row?.stage,
+    row?.stageKey,
+    row?.stageLabel,
+    transaction.stage,
+    transaction.current_sub_stage_summary,
+    transaction.lifecycle_state,
+    transaction.operational_state,
+  ].join(' '))
+
+  if (text.includes('registered') || text.includes('completed')) return 'REG'
+  if (text.includes('lodged') || text.includes('registration')) return 'XFER'
+  if (text.includes('transfer') || text.includes('attorney') || text.includes('convey')) return 'ATTY'
+  if (text.includes('finance') || text.includes('bond') || text.includes('bank')) return 'FIN'
+  if (text.includes('otp') || text.includes('offer') || text.includes('signed')) return 'OTP'
+  if (text.includes('deposit') || text.includes('reservation')) return 'DEP'
+  return 'AVAIL'
+}
+
+function getDeveloperTransactionFlowStageKey(row = {}) {
+  const transaction = row?.transaction || row || {}
+  const lifecycle = normalizeKey(transaction.lifecycle_state || transaction.lifecycleState)
+  if (['archived', 'cancelled', 'canceled'].includes(lifecycle)) return null
+
+  const mainStage = getDeveloperMainStage(row)
+  if (mainStage === 'REG') return 'ready_for_registration'
+  if (mainStage === 'XFER' || mainStage === 'ATTY') return 'transfer'
+  if (mainStage === 'FIN') return 'finance'
+  if (mainStage === 'OTP') return 'otp_signed'
+  return 'buyer_onboarding'
 }
 
 function getResidentialTransactionFinanceType(row = {}) {
@@ -170,6 +241,10 @@ function isResidentialTransactionClosed(row = {}) {
 }
 
 function getResidentialTransactionFlowStageKey(row = {}) {
+  if (isDeveloperTransactionRow(row)) {
+    return getDeveloperTransactionFlowStageKey(row)
+  }
+
   if (isResidentialTransactionClosed(row)) return null
 
   const text = normalizeKey([
@@ -302,21 +377,24 @@ function buildResidentialTransactionFlowBucketsFromAggregates(rows = [], { total
   return buckets
 }
 
-function serializeResidentialTransactionFlowBuckets(buckets = new Map(), { scope = 'principal', totalValue = 0, totalCount = 0 } = {}) {
+function serializeResidentialTransactionFlowBuckets(buckets = new Map(), { scope = 'principal', totalValue = 0, totalCount = 0, developerContext = false } = {}) {
   const safeTotalValue = Math.max(0, toNumber(totalValue))
   const safeTotalCount = Math.max(0, toNumber(totalCount))
   const stages = RESIDENTIAL_TRANSACTION_FLOW_STAGES.map((stage, index) => {
     const bucket = buckets.get(stage.key) || {}
     const value = Math.max(0, toNumber(bucket.value))
+    const developerFirstStage = developerContext && stage.key === 'buyer_onboarding'
     return {
       key: stage.key,
-      label: stage.label,
+      label: developerFirstStage ? 'Reservation / Buyer Setup' : stage.label,
       count: Math.max(0, toNumber(bucket.count)),
       value,
       percentage: safeTotalValue > 0 ? Math.round((value / safeTotalValue) * 100) : 0,
       formattedValue: formatCurrencyCompactZAR(value),
       tone: stage.tone,
-      description: bucket.description || stage.description,
+      description: developerFirstStage
+        ? 'Development transactions still in reservation, buyer onboarding, or early setup.'
+        : bucket.description || stage.description,
       order: index,
     }
   })
@@ -325,7 +403,7 @@ function serializeResidentialTransactionFlowBuckets(buckets = new Map(), { scope
 
   return {
     title: scope === 'agent' ? 'My Transaction Flow' : 'Transaction Flow',
-    summaryLabel: 'Active Pipeline Overview',
+    summaryLabel: developerContext ? 'Development Pipeline Overview' : 'Active Pipeline Overview',
     activeTransactionCount: safeTotalCount,
     activeTransactionLabel: `${formatCount(safeTotalCount)} Active Transaction${safeTotalCount === 1 ? '' : 's'}`,
     pipelineValue: safeTotalValue,
@@ -540,6 +618,8 @@ function deriveResidentialTransactionFlow(source = {}, { mode = 'sales', scope =
   }
 
   const activeRows = getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions)
+  const developerRowsCount = activeRows.filter(isDeveloperTransactionRow).length
+  const developerContext = activeRows.length > 0 && developerRowsCount >= Math.ceil(activeRows.length / 2)
   const totalCount = getFirstNumber(source.transactions?.totalActive, source.kpis?.activeTransactions, activeRows.length)
   const totalValue = getFirstNumber(
     derivePipelineValue(source),
@@ -560,7 +640,7 @@ function deriveResidentialTransactionFlow(source = {}, { mode = 'sales', scope =
       ? buildResidentialTransactionFlowBucketsFromAggregates(aggregateRows, { totalCount, totalValue })
       : buildResidentialTransactionFlowBucketsFromRows(activeRows)
 
-  return serializeResidentialTransactionFlowBuckets(buckets, { scope, totalValue, totalCount })
+  return serializeResidentialTransactionFlowBuckets(buckets, { scope, totalValue, totalCount, developerContext })
 }
 
 function deriveResidentialAttentionItems(source = {}, { scope = 'principal', mode = 'sales' } = {}) {
@@ -765,23 +845,43 @@ export function deriveResidentialDashboardMetrics({
     transactionFlow: deriveResidentialTransactionFlow(source, { mode, scope }),
     activeTransactions: {
       title: getTransactionLabel({ scope }),
-      rows: getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions).map((row, index) => ({
-        id: normalizeText(row?.id || row?.transactionId || index),
-        propertyImage: row?.propertyImage || row?.imageUrl || row?.thumbnailUrl || '',
-        imageUrl: row?.imageUrl || row?.propertyImage || row?.thumbnailUrl || '',
-        status: row?.status || row?.stage || row?.stageLabel || 'Active',
-        stageKey: row?.stageKey || '',
-        valueRaw: getFirstNumber(row?.value, row?.dealValue, row?.transactionValue, row?.price, row?.salesPrice, row?.sales_price, row?.purchase_price),
-        value: formatCurrencyCompactZAR(getFirstNumber(row?.value, row?.dealValue, row?.transactionValue, row?.price, row?.salesPrice, row?.sales_price, row?.purchase_price)),
-        address: row?.address || row?.title || row?.propertyIdentifier || row?.propertyName || '',
-        area: row?.area || row?.suburb || row?.developmentName || '',
-        assignedAgent: row?.assignedAgent || row?.assigned_agent || row?.agent || '',
-        ownerName: row?.assignedAgent || row?.assigned_agent || row?.agent || '',
-        ownerRoleLabel: row?.ownerRoleLabel || 'Agent',
-        clientLabel: row?.clientLabel || 'Buyer',
-        clientName: row?.clientName || row?.buyerName || '',
-        daysInStage: row?.daysInStage || row?.daysActive || '',
-      })),
+      rows: getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions).map((row, index) => {
+        const valueRaw = getFirstNumber(row?.value, row?.dealValue, row?.transactionValue, row?.price, row?.salesPrice, row?.sales_price, row?.purchase_price)
+        const developerReadiness = buildDeveloperTransactionReadinessProfileFromRow(row)
+        const developerHealth = developerReadiness
+          ? {
+              key: normalizeKey(developerReadiness.healthTone) === 'danger'
+                ? 'attention'
+                : normalizeKey(developerReadiness.healthTone) === 'warning'
+                  ? 'waiting'
+                  : 'on_track',
+              label: developerReadiness.healthLabel,
+            }
+          : mapDeveloperHealthToDashboardHealth(row)
+        const nextAction = developerReadiness?.nextAction?.title || row?.nextAction || row?.next_action || getReportNextAction(row)
+
+        return {
+          id: normalizeText(row?.id || row?.transactionId || index),
+          propertyImage: row?.propertyImage || row?.imageUrl || row?.thumbnailUrl || '',
+          imageUrl: row?.imageUrl || row?.propertyImage || row?.thumbnailUrl || '',
+          status: row?.status || row?.stage || row?.stageLabel || 'Active',
+          stageKey: row?.stageKey || '',
+          valueRaw,
+          value: formatCurrencyCompactZAR(valueRaw),
+          address: row?.address || row?.title || row?.propertyIdentifier || row?.propertyName || '',
+          propertyName: row?.propertyName || row?.address || row?.title || row?.propertyIdentifier || row?.propertyName || '',
+          developmentName: row?.developmentName || row?.area || row?.suburb || row?.development?.name || '',
+          area: row?.area || row?.suburb || row?.developmentName || '',
+          assignedAgent: row?.assignedAgent || row?.assigned_agent || row?.agent || '',
+          ownerName: row?.assignedAgent || row?.assigned_agent || row?.agent || '',
+          ownerRoleLabel: row?.ownerRoleLabel || 'Agent',
+          clientLabel: row?.clientLabel || 'Buyer',
+          clientName: row?.clientName || row?.buyerName || row?.buyer?.name || '',
+          daysInStage: row?.daysInStage || row?.daysActive || '',
+          nextAction: nextAction || row?.nextAction || row?.next_action || '',
+          health: developerHealth || row?.health || null,
+        }
+      }),
       emptyState: emptyLeasing || !getFirstArray(source.activeTransactions, source.recentTransactions, source.transactions?.activeTransactions).length,
       emptyCopy: scope === 'agent'
         ? 'No active transactions yet. Transactions will appear here once offers are accepted and deals move into progress.'

@@ -433,8 +433,15 @@ const SIGNER_ROLE_BLUEPRINT = {
 const BRIDGE_LOGO_LIGHT_URL = '/brand/bridge_9_white_background.png'
 const BRIDGE_LOGO_DARK_URL = '/brand/bridge_9_dark_background.png'
 
-function resolveSignerBlueprint(packetType = 'mandate') {
+function resolveSignerBlueprint(packetType = 'mandate', options = {}) {
   const key = normalizeKey(packetType)
+  const mandateType = normalizeKey(options.mandateType || options.contextType)
+  if (key === 'mandate' && mandateType === 'developer_agent_mandate') {
+    return [
+      { role: 'agent', label: 'Selling Agent', required: true },
+      { role: 'seller', label: 'Developer', required: true },
+    ]
+  }
   return SIGNER_ROLE_BLUEPRINT[key] || SIGNER_ROLE_BLUEPRINT.mandate
 }
 
@@ -537,7 +544,7 @@ function resolveSignerStatusTone(status = '', statusState = '') {
   return 'border-[#dfe6ef] bg-[#f5f8fb] text-[#60758d]'
 }
 
-function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSecondarySignerRequired = false, secondarySignerLabel = 'Co-signer', signerDefaults = {} } = {}) {
+function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSecondarySignerRequired = false, secondarySignerLabel = 'Co-signer', signerDefaults = {}, sourceContext = {} } = {}) {
   const rows = Array.isArray(signers) ? signers : []
   const byRole = new Map()
   for (const row of rows) {
@@ -547,8 +554,9 @@ function resolveSignerRoster({ packetType = 'mandate', signers = [], mandateSeco
   }
 
   const normalizedPacketType = normalizeKey(packetType)
+  const mandateType = normalizeKey(sourceContext?.mandateType || sourceContext?.contextType)
   const blueprint = [
-    ...resolveSignerBlueprint(packetType),
+    ...resolveSignerBlueprint(packetType, { mandateType }),
     ...(normalizedPacketType === 'mandate' && mandateSecondarySignerRequired
       ? [{ role: 'purchaser_2', label: secondarySignerLabel, required: true }]
       : []),
@@ -1558,7 +1566,10 @@ function MergeChecklistPanel({ packetType = 'mandate', placeholders = {}, compac
 }
 
 function SignerChecklistPanel({ packetType = 'mandate', signers = [], statusState, mandateSecondarySignerRequired = false, secondarySignerLabel = 'Co-signer' }) {
-  const signerRows = resolveSignerRoster({ packetType, signers, mandateSecondarySignerRequired, secondarySignerLabel })
+  const sourceContext = statusState?.packet?.source_context_json && typeof statusState.packet.source_context_json === 'object'
+    ? statusState.packet.source_context_json
+    : {}
+  const signerRows = resolveSignerRoster({ packetType, signers, mandateSecondarySignerRequired, secondarySignerLabel, sourceContext })
   return (
     <section className="rounded-[18px] border border-[#dce6f2] bg-white p-4">
       <h4 className="text-sm font-semibold text-[#1a2f45]">Signer Checklist</h4>
@@ -2428,8 +2439,9 @@ export default function LegalDocumentWorkspace({
       mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
       secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
       signerDefaults,
+      sourceContext,
     })
-  }, [mandateSecondarySignerConfig?.label, mandateSecondarySignerConfig?.required, packetType, signerDefaults, statusState?.signingSummary?.signers])
+  }, [mandateSecondarySignerConfig?.label, mandateSecondarySignerConfig?.required, packetType, signerDefaults, sourceContext, statusState?.signingSummary?.signers])
 
   const signerValidation = useMemo(() => {
     const rosterWithDraft = signerRoster.map((row) => {
@@ -3352,6 +3364,7 @@ export default function LegalDocumentWorkspace({
       mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
       secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
       signerDefaults,
+      sourceContext: workingStatus?.packet?.source_context_json || sourceContext,
     }).map((row) => {
       const draft = signerDraftByRole[row.role] || null
       if (!draft) return row
@@ -3375,6 +3388,7 @@ export default function LegalDocumentWorkspace({
         mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
         secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
         signerDefaults,
+        sourceContext: workingStatus?.packet?.source_context_json || sourceContext,
       }).map((row) => {
         const draft = signerDraftByRole[row.role] || null
         if (!draft) return row
@@ -4052,12 +4066,20 @@ export default function LegalDocumentWorkspace({
       mandateSecondarySignerRequired: Boolean(mandateSecondarySignerConfig?.required),
       secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
       signerDefaults,
+      sourceContext: currentStatus?.packet?.source_context_json || sourceContext,
     })
     const currentAgentSigner = currentRoster.find((row) => normalizeKey(row.role) === 'agent') || null
     const agentHasSigned = Boolean(currentAgentSigner?.signedAt) || normalizeKey(currentAgentSigner?.statusRaw || currentAgentSigner?.status) === 'signed'
     const normalizedTargetSignerRole = normalizeKey(targetSignerRole) || (isMandatePacket && !resend && !agentHasSigned ? 'agent' : '')
+    const currentRoleLabels = currentRoster.reduce((accumulator, row) => {
+      accumulator[normalizeKey(row.role)] = row.label
+      return accumulator
+    }, {})
     const targetSignerLabel = normalizedTargetSignerRole
-      ? getMandateSignerRoleLabel(normalizedTargetSignerRole, { secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer' }).toLowerCase()
+      ? getMandateSignerRoleLabel(normalizedTargetSignerRole, {
+          secondarySignerLabel: mandateSecondarySignerConfig?.label || 'Co-signer',
+          roleLabels: currentRoleLabels,
+        }).toLowerCase()
       : 'signer'
     setActionProgressMessage(resend ? `Refreshing ${targetSignerLabel} link…` : 'Preparing signer links…')
     const { linkResult } = await ensureSignerReadinessBeforeSend({ isResend: resend, targetSignerRole: normalizedTargetSignerRole })

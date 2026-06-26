@@ -13,4 +13,4 @@ export {
   getSummaryStats,
   isInTransferStage,
   normalizeStageLabel,
-} from '../../lib/stages'
+} from '../../lib/stages.js'

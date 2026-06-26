@@ -1574,9 +1574,16 @@ export default function LegalDocumentWorkspacePage() {
     if (['sent', 'partially_signed', 'signed', 'archived'].includes(normalizeKey(existingStatus?.state))) {
       throw new Error('This document is already sent or signed. Open the current packet instead of generating a new draft.')
     }
+    const existingPacketSourceContext = existingStatus?.packet?.source_context_json && typeof existingStatus.packet.source_context_json === 'object'
+      ? existingStatus.packet.source_context_json
+      : {}
+    const isDeveloperAgentMandatePacket =
+      packetType === 'mandate' &&
+      (normalizeKey(existingPacketSourceContext.mandateType) === 'developer_agent_mandate' ||
+        normalizeKey(existingPacketSourceContext.contextType) === 'developer_agent_mandate')
 
     let effectiveLeadContext = leadContext
-    if (packetType === 'mandate') {
+    if (packetType === 'mandate' && !isDeveloperAgentMandatePacket) {
       effectiveLeadContext = await withLegalWorkspaceTimeout(
         hydrateLeadContextWithSellerOnboarding(leadContext),
         'Seller onboarding lookup is taking too long.',
@@ -1600,27 +1607,43 @@ export default function LegalDocumentWorkspacePage() {
       settings: workspaceSettings,
     })
     if (packetType === 'mandate') {
-      const mandateData = mapSellerOnboardingToMandateData({
-        onboardingSubmission: {
-          ...((generationContext?.lead?.sellerOnboarding?.formData && typeof generationContext.lead.sellerOnboarding.formData === 'object')
-            ? generationContext.lead.sellerOnboarding.formData
-            : {}),
-          status: normalizeText(generationContext?.lead?.sellerOnboardingStatus || generationContext?.lead?.sellerOnboarding?.status),
-        },
-        lead: generationContext?.lead || {},
-        privateListing: generationContext?.privateListing || {},
-        agency: generationContext?.agency || {},
-        organisation: generationContext?.organisation || {},
-        agent: generationContext?.agent || {},
-        contact: generationContext?.contact || {},
-        transaction: generationContext?.transaction || {},
-        mandateDraft: generationContext?.mandateDraft || {},
-      })
+      const mandateData = isDeveloperAgentMandatePacket && existingPacketSourceContext.generatedDataSnapshot && typeof existingPacketSourceContext.generatedDataSnapshot === 'object'
+        ? {
+            ...existingPacketSourceContext.generatedDataSnapshot,
+            sourceContext: {
+              ...(existingPacketSourceContext.generatedDataSnapshot.sourceContext || {}),
+              mandateType: 'developer_agent_mandate',
+              relationshipMode: 'developer_buyer',
+            },
+          }
+        : mapSellerOnboardingToMandateData({
+            onboardingSubmission: {
+              ...((generationContext?.lead?.sellerOnboarding?.formData && typeof generationContext.lead.sellerOnboarding.formData === 'object')
+                ? generationContext.lead.sellerOnboarding.formData
+                : {}),
+              status: normalizeText(generationContext?.lead?.sellerOnboardingStatus || generationContext?.lead?.sellerOnboarding?.status),
+            },
+            lead: generationContext?.lead || {},
+            privateListing: generationContext?.privateListing || {},
+            agency: generationContext?.agency || {},
+            organisation: generationContext?.organisation || {},
+            agent: generationContext?.agent || {},
+            contact: generationContext?.contact || {},
+            transaction: generationContext?.transaction || {},
+            mandateDraft: generationContext?.mandateDraft || {},
+          })
       const mandatePreflight = validateMandateGenerationData(mandateData, { action: 'generate' })
       generationContext.mandateData = mandateData
       generationContext.mandateValidation = mandatePreflight
       generationContext.generatedDataSnapshot = mandateData
-      generationContext.sourceContext = mandateData.sourceContext
+      generationContext.sourceContext = isDeveloperAgentMandatePacket
+        ? {
+            ...existingPacketSourceContext,
+            ...(mandateData.sourceContext || {}),
+            mandateType: 'developer_agent_mandate',
+            relationshipMode: 'developer_buyer',
+          }
+        : mandateData.sourceContext
       if (!mandatePreflight.canProceed) {
         console.warn('[MANDATE] legal workspace preflight found missing data; continuing with mandate generation.', {
           leadId: normalizeText(generationContext?.lead?.leadId || routeLeadId),

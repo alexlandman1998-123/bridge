@@ -92,4 +92,82 @@ import {
   assert.equal(model.topPerformers.hidden, true, 'agent scope should not show top performers')
 }
 
+{
+  const model = deriveResidentialDashboardMetrics({
+    scope: 'principal',
+    mode: 'sales',
+    source: {
+      activeTransactions: [
+        {
+          id: 'tx-dev-1',
+          development: { id: 'dev-1', name: 'Junoah Estate' },
+          unit: { id: 'unit-1', development_id: 'dev-1' },
+          buyer: { name: 'Client Buyer' },
+          transaction: {
+            id: 'tx-dev-1',
+            transaction_type: 'developer_sale',
+            reservation_required: true,
+            reservation_status: 'paid',
+            onboarding_status: 'Complete',
+          },
+        },
+      ],
+    },
+  })
+
+  assert.equal(model.activeTransactions.rows[0].nextAction, 'Review reservation proof of payment', 'developer dashboard rows should use developer readiness next actions')
+  assert.equal(model.activeTransactions.rows[0].health.key, 'waiting', 'developer reservation review should surface as waiting health')
+}
+
+{
+  const model = deriveResidentialDashboardMetrics({
+    scope: 'principal',
+    mode: 'sales',
+    source: {
+      activeTransactions: [
+        {
+          development: { id: 'dev-1', name: 'Junoah Estate' },
+          unit: { id: 'unit-1', development_id: 'dev-1', price: 2500000 },
+          buyer: { name: 'Buyer One' },
+          transaction: {
+            id: 'tx-dev-dep',
+            transaction_type: 'developer_sale',
+            current_main_stage: 'DEP',
+            purchase_price: 2500000,
+          },
+        },
+        {
+          development: { id: 'dev-1', name: 'Junoah Estate' },
+          unit: { id: 'unit-2', development_id: 'dev-1', price: 3000000 },
+          buyer: { name: 'Buyer Two' },
+          transaction: {
+            id: 'tx-dev-fin',
+            transaction_type: 'developer_sale',
+            current_main_stage: 'FIN',
+            purchase_price: 3000000,
+          },
+        },
+        {
+          development: { id: 'dev-1', name: 'Junoah Estate' },
+          unit: { id: 'unit-3', development_id: 'dev-1', price: 4000000 },
+          buyer: { name: 'Buyer Three' },
+          transaction: {
+            id: 'tx-dev-xfer',
+            transaction_type: 'developer_sale',
+            current_main_stage: 'XFER',
+            purchase_price: 4000000,
+          },
+        },
+      ],
+    },
+  })
+
+  assert.equal(model.transactionFlow.summaryLabel, 'Development Pipeline Overview', 'developer-heavy active rows should use development flow context')
+  assert.equal(model.transactionFlow.buyerOnboarding.label, 'Reservation / Buyer Setup', 'developer first flow stage should include reservation setup')
+  assert.equal(model.transactionFlow.buyerOnboarding.count, 1, 'developer DEP rows should bucket into reservation setup')
+  assert.equal(model.transactionFlow.finance.count, 1, 'developer FIN rows should bucket into finance')
+  assert.equal(model.transactionFlow.transfer.count, 1, 'developer XFER rows should bucket into transfer')
+  assert.equal(model.transactionFlow.pipelineValue, 9500000, 'developer flow should include nested transaction and unit values')
+}
+
 console.log('residentialDashboardService tests passed')

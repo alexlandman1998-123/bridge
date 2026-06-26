@@ -32,6 +32,7 @@ import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { getRoleNavItems } from '../lib/roles'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
+import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
 import { filterNavigationItems } from '../auth/permissions/permissionResolver'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
 
@@ -246,13 +247,47 @@ function Sidebar() {
   const { branding, loading: organisationLoading, membershipRole: organisationMembershipRole } = useOrganisation()
   const location = useLocation()
   const navigate = useNavigate()
+  const inferredRoleWorkspaceType = inferWorkspaceTypeFromAppRole(role)
+  const navWorkspaceType =
+    inferredRoleWorkspaceType && workspaceContext.currentWorkspace?.type !== inferredRoleWorkspaceType
+      ? inferredRoleWorkspaceType
+      : workspaceContext.currentWorkspace?.type || workspaceContext.workspaceType || inferredRoleWorkspaceType
   const membershipRole = normalizeOrganisationMembershipRole(organisationMembershipRole || 'viewer', {
     appRole: role,
-    workspaceType: workspaceContext.currentWorkspace?.type || workspaceContext.workspaceType,
+    workspaceType: navWorkspaceType,
   })
+  const navCurrentMembership = useMemo(() => {
+    const currentMembership = workspaceContext.currentMembership || null
+    if (!currentMembership || !navWorkspaceType) return currentMembership
+    const shouldPromotePrincipalForModuleNav = role === 'developer' && membershipRole === 'principal'
+    const workspaceRole = shouldPromotePrincipalForModuleNav ? 'owner' : currentMembership.workspaceRole || currentMembership.workspace_role || membershipRole
+    return {
+      ...currentMembership,
+      role: workspaceRole,
+      workspaceRole,
+      workspace_role: workspaceRole,
+      workspaceType: navWorkspaceType,
+      workspace_type: navWorkspaceType,
+      workspace: {
+        ...(currentMembership.workspace || {}),
+        id: currentMembership.workspace?.id || workspaceContext.currentWorkspace?.id || currentMembership.workspaceId || currentMembership.workspace_id || '',
+        type: navWorkspaceType,
+      },
+    }
+  }, [membershipRole, navWorkspaceType, role, workspaceContext.currentMembership, workspaceContext.currentWorkspace?.id])
+  const navPermissionContext = useMemo(() => ({
+    ...workspaceContext,
+    appRole: role,
+    role,
+    workspaceType: navWorkspaceType,
+    currentWorkspace: workspaceContext.currentWorkspace
+      ? { ...workspaceContext.currentWorkspace, type: navWorkspaceType }
+      : { id: workspace.id || '', name: workspace.name || 'Workspace', type: navWorkspaceType },
+    currentMembership: navCurrentMembership,
+  }), [navCurrentMembership, navWorkspaceType, role, workspace.id, workspace.name, workspaceContext])
   const roleNavItems = useMemo(
-    () => filterNavigationItems(getRoleNavItems(role, { baseRole, profile, membershipRole, currentMembership: workspaceContext.currentMembership }), workspaceContext),
-    [baseRole, membershipRole, profile, role, workspaceContext],
+    () => filterNavigationItems(getRoleNavItems(role, { baseRole, profile, membershipRole, currentMembership: navCurrentMembership }), navPermissionContext),
+    [baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role],
   )
   const isIntelligencePath =
     location.pathname.startsWith('/attorney/intelligence') ||
@@ -266,7 +301,7 @@ function Sidebar() {
     () =>
       filterNavigationItems(
         role === 'developer'
-          ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'organizations', label: 'Organizations', to: '/organizations' }, { key: 'settings', label: 'Settings', to: '/settings' }]
+          ? [{ key: 'team', label: 'Team', to: '/team' }, { key: 'settings', label: 'Settings', to: '/settings' }]
           : role === 'attorney'
             ? [{ key: 'settings', label: 'Settings', to: '/settings' }]
             : role === 'agent'

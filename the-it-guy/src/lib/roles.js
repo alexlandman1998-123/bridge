@@ -82,10 +82,9 @@ export const APP_NAV_BY_ROLE = {
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'developments', label: 'Developments', to: '/developments' },
     { key: 'transactions', label: 'Transactions', to: '/units' },
-    { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'developer_pipeline', label: 'Pipeline', to: '/pipeline' },
-    { key: 'partners', label: 'Partners', to: '/partners' },
     { key: 'developer_snags', label: 'Snags', to: '/snags' },
+    { key: 'clients', label: 'Clients', to: '/clients' },
     { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [

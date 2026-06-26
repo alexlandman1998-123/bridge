@@ -39,6 +39,7 @@ import {
   selectPortfolioMetrics,
   selectStageDistribution,
 } from '../core/transactions/developerSelectors'
+import { getReportNextAction } from '../core/transactions/reportNextAction'
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
@@ -1072,7 +1073,7 @@ function buildRecentActivity(rows = []) {
       buyer: row.buyer?.name || 'No buyer assigned',
       stage: row.transaction?.stage || 'Available',
       updatedAt: row.transaction?.updated_at || row.transaction?.created_at,
-      nextAction: row.report?.nextStep || row.transaction?.next_action || 'No next action captured',
+      nextAction: getReportNextAction(row) || 'No next action captured',
     }))
 }
 

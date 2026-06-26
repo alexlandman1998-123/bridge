@@ -1,5 +1,6 @@
-import { getMainStageFromDetailedStage } from './stageConfig'
-import { normalizeFinanceType } from './financeType'
+import { getMainStageFromDetailedStage } from './stageConfig.js'
+import { normalizeFinanceType } from './financeType.js'
+import { buildDeveloperTransactionReadinessProfileFromRow } from './developerTransactionReadinessProfile.js'
 
 export const DEVELOPER_FUNNEL_STAGES = [
   { key: 'AVAIL', label: 'Available' },
@@ -66,6 +67,15 @@ function getMonetaryValue(row) {
       row?.unit?.price,
   )
   return Number.isFinite(value) ? value : 0
+}
+
+function getDeveloperReadiness(row = {}) {
+  return buildDeveloperTransactionReadinessProfileFromRow(row)
+}
+
+function getDeveloperNextAction(row = {}, fallback = 'No next action set') {
+  const readiness = getDeveloperReadiness(row)
+  return String(readiness?.nextAction?.title || row?.report?.nextStep || row?.transaction?.next_action || fallback).trim() || fallback
 }
 
 function formatSource(value) {
@@ -296,6 +306,7 @@ export function selectBottlenecks(rows = [], thresholds = DEFAULT_BOTTLENECK_THR
       if (daysInStage <= limit) {
         return null
       }
+      const readiness = getDeveloperReadiness(row)
 
       return {
         transactionId: row?.transaction?.id || null,
@@ -307,7 +318,11 @@ export function selectBottlenecks(rows = [], thresholds = DEFAULT_BOTTLENECK_THR
         stageLabel: DEVELOPER_FUNNEL_STAGES.find((item) => item.key === main)?.label || main,
         daysInStage,
         thresholdDays: limit,
-        nextAction: row?.report?.nextStep || row?.transaction?.next_action || 'No next action set',
+        nextAction: getDeveloperNextAction(row),
+        readinessHealth: readiness?.healthLabel || '',
+        readinessTone: readiness?.healthTone || '',
+        nextActionTargetMenu: readiness?.nextAction?.targetMenu || '',
+        nextActionPriority: readiness?.nextAction?.priority || '',
       }
     })
     .filter(Boolean)
@@ -373,10 +388,14 @@ export function selectFinanceMix(rows = []) {
 
 export function selectDealBottleneckSummary(rows = []) {
   const counters = {
+    reservation_review: { key: 'reservation_review', label: 'Reservation Review', count: 0, severity: 'high' },
+    mandate_readiness: { key: 'mandate_readiness', label: 'Mandate Readiness', count: 0, severity: 'high' },
+    buyer_onboarding: { key: 'buyer_onboarding', label: 'Buyer Onboarding', count: 0, severity: 'medium' },
     missing_documents: { key: 'missing_documents', label: 'Missing Documents', count: 0, severity: 'warning' },
     awaiting_finance: { key: 'awaiting_finance', label: 'Awaiting Finance Approval', count: 0, severity: 'warning' },
     with_attorneys: { key: 'with_attorneys', label: 'With Attorneys', count: 0, severity: 'normal' },
     ready_for_lodgement: { key: 'ready_for_lodgement', label: 'Ready for Lodgement', count: 0, severity: 'positive' },
+    handover_readiness: { key: 'handover_readiness', label: 'Handover Readiness', count: 0, severity: 'high' },
     stale: { key: 'stale', label: 'Stale', count: 0, severity: 'critical' },
   }
 
@@ -388,6 +407,24 @@ export function selectDealBottleneckSummary(rows = []) {
     const stageKey = toMainStage(row)
     const daysInStage = getDaysInStage(row)
     const missingCount = Number(row?.documentSummary?.missingCount || 0)
+    const readiness = getDeveloperReadiness(row)
+    const readinessActionIds = new Set((readiness?.actionQueue || []).map((item) => item.id))
+
+    if (readinessActionIds.has('reservation_proof_review') || readinessActionIds.has('reservation_deposit_request')) {
+      counters.reservation_review.count += 1
+    }
+
+    if (readinessActionIds.has('developer_agent_mandate_signers') || readinessActionIds.has('developer_agent_mandate_prepare')) {
+      counters.mandate_readiness.count += 1
+    }
+
+    if (readinessActionIds.has('buyer_onboarding')) {
+      counters.buyer_onboarding.count += 1
+    }
+
+    if (readinessActionIds.has('handover_blockers')) {
+      counters.handover_readiness.count += 1
+    }
 
     if (missingCount > 0 && stageKey !== 'REG') {
       counters.missing_documents.count += 1
@@ -486,7 +523,8 @@ export function selectActiveTransactions(rows = []) {
       const stageIndex = stageIndexByKey[stageKey] ?? 0
       const progressPercent = Math.max(0, Math.min(100, Math.round((stageIndex / (DEVELOPER_FUNNEL_STAGES.length - 1)) * 100)))
       const buyerName = String(row?.buyer?.name || row?.transaction?.buyer_name || '').trim() || 'Buyer pending'
-      const nextAction = String(row?.report?.nextStep || row?.transaction?.next_action || '').trim() || 'No next action set'
+      const readiness = getDeveloperReadiness(row)
+      const nextAction = getDeveloperNextAction(row)
       const uploadedCount = Number(row?.documentSummary?.uploadedCount || 0)
       const totalRequired = Number(row?.documentSummary?.totalRequired || 0)
       const missingCount = Math.max(Number(row?.documentSummary?.missingCount ?? totalRequired - uploadedCount), 0)
@@ -530,6 +568,12 @@ export function selectActiveTransactions(rows = []) {
         stageLabel: stageLabelByKey[stageKey] || stageKey,
         progressPercent,
         nextAction,
+        nextActionPriority: readiness?.nextAction?.priority || '',
+        nextActionTargetMenu: readiness?.nextAction?.targetMenu || '',
+        readinessHealth: readiness?.healthLabel || '',
+        readinessTone: readiness?.healthTone || '',
+        readinessBlockersCount: Array.isArray(readiness?.blockers) ? readiness.blockers.length : 0,
+        readinessWarningsCount: Array.isArray(readiness?.warnings) ? readiness.warnings.length : 0,
         financeType,
         phaseLabel,
         blockLabel,
