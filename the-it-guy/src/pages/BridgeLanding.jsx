@@ -2,7 +2,10 @@ import Lenis from 'lenis'
 import {
   ArrowRight,
   BarChart3,
+  Bath,
+  BedDouble,
   Building2,
+  CarFront,
   CheckCircle2,
   ClipboardList,
   FileCheck2,
@@ -10,16 +13,20 @@ import {
   HandCoins,
   LayoutPanelTop,
   LineChart,
+  Loader2,
   Menu,
   MessageSquareMore,
+  MapPin,
+  Search,
   ShieldCheck,
+  SlidersHorizontal,
   UserRound,
   Users,
   Workflow,
 } from 'lucide-react'
 import { AnimatePresence, motion as Motion, useReducedMotion } from 'motion/react'
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useParams } from 'react-router-dom'
 import BridgeCommandPalette from '../components/bridge/BridgeCommandPalette'
 import { MotionCard, MotionSection, useBridgeMotion } from '../components/bridge/bridge-motion'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../components/ui/accordion'
@@ -42,7 +49,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { cn } from '../lib/utils'
 
 const navItems = [
-  { label: 'Buy', to: '/bridge/buy', dropdown: true },
+  { label: 'Buy', to: '/buy', dropdown: true },
   { label: 'Solutions', to: '/bridge/solutions' },
   { label: 'Tools', to: '/bridge/tools' },
   { label: 'Resources', to: '/bridge/resources' },
@@ -51,15 +58,128 @@ const navItems = [
 ]
 
 const buyNavItems = [
-  { label: 'Residential Properties', to: '/listings', copy: 'Browse homes and residential opportunities.' },
-  { label: 'Commercial Properties', to: '/commercial/listings', copy: 'Explore commercial stock and leasing opportunities.' },
-  { label: 'New Developments', to: '/developments', copy: 'Discover new estates, units and launches.' },
+  { label: 'Residential Properties', to: '/buy', copy: 'Browse published homes and residential opportunities.' },
+  { label: 'Commercial Properties', to: '/buy?type=commercial', copy: 'Explore commercial stock and leasing opportunities.' },
+  { label: 'New Developments', to: '/buy?type=development', copy: 'Discover new estates, units and launches.' },
   { label: 'Affordability Calculator', to: '/bridge/tools#affordability', copy: 'Estimate affordability before you enquire.' },
   { label: 'Bond Calculator', to: '/bridge/tools#bond-calculator', copy: 'Understand monthly repayment ranges.' },
   { label: 'Transfer Cost Calculator', to: '/bridge/tools#transfer-costs', copy: 'Plan once-off purchase costs.' },
   { label: 'Rental Yield Calculator', to: '/bridge/tools#rental-yield', copy: 'Model income and yield quickly.' },
   { label: 'Buyer Guides', to: '/bridge/resources#buyer-guides', copy: 'Learn the journey from search to registration.' },
 ]
+
+const publicListingTypeOptions = [
+  { value: '', label: 'Any listing type' },
+  { value: 'Sale', label: 'For sale' },
+  { value: 'Rental', label: 'To rent' },
+]
+
+const publicPropertyTypeOptions = [
+  { value: '', label: 'Any property type' },
+  { value: 'House', label: 'House' },
+  { value: 'Apartment', label: 'Apartment' },
+  { value: 'Townhouse', label: 'Townhouse' },
+  { value: 'Vacant Land', label: 'Vacant Land' },
+  { value: 'Commercial', label: 'Commercial' },
+  { value: 'Development', label: 'Development' },
+]
+
+const publicBedroomOptions = [
+  { value: '', label: 'Any beds' },
+  { value: '1', label: '1+ beds' },
+  { value: '2', label: '2+ beds' },
+  { value: '3', label: '3+ beds' },
+  { value: '4', label: '4+ beds' },
+  { value: '5', label: '5+ beds' },
+]
+
+const publicBudgetOptions = [
+  { value: '', label: 'Any budget' },
+  { value: '0-1500000', label: 'Up to R1.5m' },
+  { value: '1500000-3000000', label: 'R1.5m - R3m' },
+  { value: '3000000-6000000', label: 'R3m - R6m' },
+  { value: '6000000-12000000', label: 'R6m - R12m' },
+  { value: '12000000-', label: 'R12m+' },
+]
+
+const publicListingFormatter = new Intl.NumberFormat('en-ZA', {
+  style: 'currency',
+  currency: 'ZAR',
+  maximumFractionDigits: 0,
+})
+
+function formatPublicListingPrice(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return 'Price on request'
+  return publicListingFormatter.format(numeric).replace('ZAR', 'R')
+}
+
+function formatPublicListingLocation(listing = {}) {
+  return [listing.suburb, listing.city, listing.province].filter(Boolean).join(', ') || 'Location available on enquiry'
+}
+
+function formatPublicListingSize(value, suffix = 'm2') {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return ''
+  return `${numeric.toLocaleString('en-ZA')} ${suffix}`
+}
+
+function getPublicListingsPath(path = '') {
+  return path || '/buy'
+}
+
+function buildPublicListingUrl(filters = {}) {
+  const params = new URLSearchParams()
+  if (filters.q) params.set('q', filters.q)
+  if (filters.listingType) params.set('listingType', filters.listingType)
+  if (filters.propertyType) params.set('propertyType', filters.propertyType)
+  if (filters.suburb) params.set('suburb', filters.suburb)
+  if (filters.minPrice) params.set('minPrice', filters.minPrice)
+  if (filters.maxPrice) params.set('maxPrice', filters.maxPrice)
+  if (filters.bedrooms) params.set('bedrooms', filters.bedrooms)
+  params.set('limit', '24')
+  const query = params.toString()
+  return `/api/public/listings${query ? `?${query}` : ''}`
+}
+
+function splitBudgetRange(value = '') {
+  const [minPrice, maxPrice] = String(value || '').split('-')
+  return {
+    minPrice: minPrice || '',
+    maxPrice: maxPrice || '',
+  }
+}
+
+async function fetchPublicListings(filters = {}) {
+  const response = await fetch(buildPublicListingUrl(filters), {
+    headers: { Accept: 'application/json' },
+  })
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new Error('Public listings could not be loaded.')
+  }
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(payload?.message || 'Public listings could not be loaded.')
+  }
+  return payload
+}
+
+async function fetchPublicListingBySlug(slug = '') {
+  const params = new URLSearchParams({ slug })
+  const response = await fetch(`/api/public/listings?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+  })
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    throw new Error('This listing is not available.')
+  }
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(payload?.message || 'This listing is not available.')
+  }
+  return payload?.listing || null
+}
 
 const heroBenefits = [
   { title: 'End-to-end visibility', icon: LayoutPanelTop },
@@ -387,7 +507,7 @@ function BridgeHeader({ currentPath }) {
                   <NavigationMenuItem key={item.label}>
                     {item.dropdown ? (
                       <>
-                        <NavigationMenuTrigger className={currentPath.startsWith('/bridge/buy') ? 'bg-black/[0.05] text-marketing-ink' : ''}>
+                        <NavigationMenuTrigger className={currentPath.startsWith('/bridge/buy') || currentPath.startsWith('/buy') ? 'bg-black/[0.05] text-marketing-ink' : ''}>
                           {item.label}
                         </NavigationMenuTrigger>
                         <NavigationMenuContent className="w-[min(92vw,560px)]">
@@ -1699,20 +1819,522 @@ function GenericSubpage({ currentPath, eyebrow, title, copy, highlights, modules
   )
 }
 
-export function BridgeBuyPage() {
+function PublicListingFilters({ draftFilters, onChange, onSubmit, onReset, loading }) {
+  const selectedBudget = useMemo(() => {
+    if (!draftFilters.minPrice && !draftFilters.maxPrice) return ''
+    return `${draftFilters.minPrice || ''}-${draftFilters.maxPrice || ''}`
+  }, [draftFilters.maxPrice, draftFilters.minPrice])
+
+  function updateField(field, value) {
+    onChange((current) => ({ ...current, [field]: value }))
+  }
+
+  function updateBudget(value) {
+    const range = splitBudgetRange(value)
+    onChange((current) => ({ ...current, ...range }))
+  }
+
   return (
-    <GenericSubpage
-      currentPath="/bridge/buy"
-      eyebrow="Buy"
-      title="Property discovery, tools and resources in one place."
-      copy="Browse residential and commercial properties, new developments, calculators and buyer guides from the dedicated Buy area."
-      highlights={[
-        'Residential and commercial property pathways live under Buy.',
-        'New developments and buyer resources sit beside practical calculators.',
-        'Search begins here, then Arch9 carries the transaction through to registration.',
-      ]}
-      modules={buyNavItems.map((item) => ({ title: item.label, copy: item.copy }))}
-    />
+    <form onSubmit={onSubmit} className="rounded-[28px] border border-marketing-borderStrong bg-white/78 p-4 shadow-marketing-soft backdrop-blur-xl md:p-5">
+      <div className="grid gap-3 lg:grid-cols-[1.35fr,0.78fr,0.82fr,0.72fr,auto]">
+        <label className="relative">
+          <span className="sr-only">Search location or keyword</span>
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-marketing-subtle" />
+          <Input
+            value={draftFilters.q}
+            onChange={(event) => updateField('q', event.target.value)}
+            placeholder="Search suburb, city, feature..."
+            className="h-12 rounded-[18px] border-marketing-borderStrong bg-white pl-11"
+          />
+        </label>
+        <label>
+          <span className="sr-only">Listing type</span>
+          <select
+            value={draftFilters.listingType}
+            onChange={(event) => updateField('listingType', event.target.value)}
+            className="h-12 w-full rounded-[18px] border border-marketing-borderStrong bg-white px-4 text-sm font-medium text-marketing-ink outline-none transition focus:border-marketing-accent/45 focus:ring-4 focus:ring-marketing-accent/10"
+          >
+            {publicListingTypeOptions.map((option) => (
+              <option key={option.label} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Property type</span>
+          <select
+            value={draftFilters.propertyType}
+            onChange={(event) => updateField('propertyType', event.target.value)}
+            className="h-12 w-full rounded-[18px] border border-marketing-borderStrong bg-white px-4 text-sm font-medium text-marketing-ink outline-none transition focus:border-marketing-accent/45 focus:ring-4 focus:ring-marketing-accent/10"
+          >
+            {publicPropertyTypeOptions.map((option) => (
+              <option key={option.label} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Budget</span>
+          <select
+            value={selectedBudget}
+            onChange={(event) => updateBudget(event.target.value)}
+            className="h-12 w-full rounded-[18px] border border-marketing-borderStrong bg-white px-4 text-sm font-medium text-marketing-ink outline-none transition focus:border-marketing-accent/45 focus:ring-4 focus:ring-marketing-accent/10"
+          >
+            {publicBudgetOptions.map((option) => (
+              <option key={option.label} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <div className="grid grid-cols-[1fr,auto] gap-2">
+          <label>
+            <span className="sr-only">Bedrooms</span>
+            <select
+              value={draftFilters.bedrooms}
+              onChange={(event) => updateField('bedrooms', event.target.value)}
+              className="h-12 w-full rounded-[18px] border border-marketing-borderStrong bg-white px-4 text-sm font-medium text-marketing-ink outline-none transition focus:border-marketing-accent/45 focus:ring-4 focus:ring-marketing-accent/10"
+            >
+              {publicBedroomOptions.map((option) => (
+                <option key={option.label} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <Button type="submit" disabled={loading} className="h-12 rounded-[18px] px-5">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <SlidersHorizontal className="h-4 w-4" />}
+            Filter
+          </Button>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-marketing-muted">
+        <span>Published Arch9 listings only. Draft and internal stock stays private.</span>
+        <button type="button" onClick={onReset} className="font-semibold text-marketing-ink transition hover:text-marketing-accent">
+          Reset filters
+        </button>
+      </div>
+    </form>
+  )
+}
+
+function PublicListingMeta({ listing }) {
+  const facts = [
+    listing.bedrooms ? { icon: BedDouble, label: `${listing.bedrooms} bed${Number(listing.bedrooms) === 1 ? '' : 's'}` } : null,
+    listing.bathrooms ? { icon: Bath, label: `${listing.bathrooms} bath${Number(listing.bathrooms) === 1 ? '' : 's'}` } : null,
+    listing.garages || listing.parkingBays ? { icon: CarFront, label: `${Number(listing.garages || 0) + Number(listing.parkingBays || 0)} parking` } : null,
+    listing.floorSize ? { icon: Building2, label: formatPublicListingSize(listing.floorSize) } : null,
+  ].filter(Boolean)
+
+  if (!facts.length) return null
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {facts.map((fact) => {
+        const Icon = fact.icon
+        return (
+          <span key={fact.label} className="inline-flex min-h-9 items-center gap-2 rounded-full border border-marketing-border bg-white/80 px-3 text-xs font-semibold text-marketing-muted">
+            <Icon className="h-3.5 w-3.5 text-marketing-accent" />
+            {fact.label}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+function PublicListingCard({ listing }) {
+  return (
+    <Link
+      to={getPublicListingsPath(`/buy/${listing.slug}`)}
+      className="group overflow-hidden rounded-[28px] border border-marketing-borderStrong bg-white/88 shadow-marketing-soft transition duration-300 hover:-translate-y-1 hover:shadow-marketing-float"
+    >
+      <div className="relative aspect-[4/3] overflow-hidden bg-marketing-accentSoft">
+        {listing.coverImageUrl ? (
+          <img src={listing.coverImageUrl} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.035]" loading="lazy" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm font-semibold text-marketing-muted">Arch9 listing</div>
+        )}
+        <div className="absolute left-4 top-4 rounded-full border border-white/55 bg-white/84 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-marketing-ink backdrop-blur-md">
+          {listing.listingType || 'Sale'}
+        </div>
+      </div>
+      <div className="grid gap-4 p-5">
+        <div className="space-y-2">
+          <div className="text-[1.35rem] font-semibold leading-tight tracking-[-0.04em] text-marketing-ink">{formatPublicListingPrice(listing.askingPrice)}</div>
+          <div className="min-h-[3.25rem] text-[1.05rem] font-semibold leading-snug text-marketing-ink">{listing.title}</div>
+          <div className="flex items-start gap-2 text-sm leading-6 text-marketing-muted">
+            <MapPin className="mt-1 h-4 w-4 shrink-0 text-marketing-accent" />
+            <span>{formatPublicListingLocation(listing)}</span>
+          </div>
+        </div>
+        <PublicListingMeta listing={listing} />
+        <div className="flex items-center justify-between border-t border-marketing-border pt-4 text-sm">
+          <span className="font-medium text-marketing-muted">{listing.propertyType || 'Property'}</span>
+          <span className="inline-flex items-center gap-2 font-semibold text-marketing-ink">
+            View listing
+            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+          </span>
+        </div>
+      </div>
+    </Link>
+  )
+}
+
+function PublicListingsSkeleton() {
+  return (
+    <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      {[1, 2, 3, 4, 5, 6].map((item) => (
+        <div key={item} className="overflow-hidden rounded-[28px] border border-marketing-border bg-white/70 shadow-marketing-soft">
+          <div className="aspect-[4/3] animate-pulse bg-marketing-accentSoft" />
+          <div className="grid gap-4 p-5">
+            <div className="h-7 w-36 animate-pulse rounded-full bg-marketing-accentSoft" />
+            <div className="h-5 w-full animate-pulse rounded-full bg-marketing-accentSoft" />
+            <div className="h-5 w-3/4 animate-pulse rounded-full bg-marketing-accentSoft" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PublicListingsEmptyState({ error, onRetry }) {
+  return (
+    <div className="rounded-[30px] border border-marketing-borderStrong bg-white/80 px-6 py-12 text-center shadow-marketing-soft md:px-10">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-marketing-accentSoft text-marketing-accent">
+        <Building2 className="h-6 w-6" />
+      </div>
+      <h2 className="mx-auto mt-5 max-w-xl text-[clamp(1.8rem,3vw,2.7rem)] font-semibold leading-tight tracking-[-0.05em] text-marketing-ink">
+        {error ? 'Listings could not load.' : 'Published properties will appear here soon.'}
+      </h2>
+      <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-marketing-muted">
+        {error || 'Arch9 only shows listings that have been deliberately released for the public website. Internal, draft and incomplete stock remains private until the agency publishes it.'}
+      </p>
+      <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+        {error ? (
+          <Button type="button" onClick={onRetry}>
+            Try Again
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button asChild>
+            <Link to="/bridge/contact">
+              Ask About Availability
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        )}
+        <Button asChild variant="secondary">
+          <Link to="/bridge/tools">Explore Buyer Tools</Link>
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function PublicListingsBody() {
+  const initialFilters = useMemo(() => {
+    let propertyType = ''
+    if (typeof window !== 'undefined') {
+      const type = String(new URLSearchParams(window.location.search).get('type') || '').trim().toLowerCase()
+      if (type === 'commercial') propertyType = 'Commercial'
+      if (type === 'development') propertyType = 'Development'
+    }
+
+    return {
+      q: '',
+      listingType: '',
+      propertyType,
+      suburb: '',
+      minPrice: '',
+      maxPrice: '',
+      bedrooms: '',
+    }
+  }, [])
+  const [draftFilters, setDraftFilters] = useState(initialFilters)
+  const [appliedFilters, setAppliedFilters] = useState(initialFilters)
+  const [listings, setListings] = useState([])
+  const [count, setCount] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    fetchPublicListings(appliedFilters)
+      .then((payload) => {
+        if (cancelled) return
+        setListings(Array.isArray(payload.items) ? payload.items : [])
+        setCount(Number(payload.count || 0))
+      })
+      .catch((fetchError) => {
+        if (cancelled) return
+        setListings([])
+        setCount(0)
+        setError(fetchError?.message || 'Public listings could not be loaded.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [appliedFilters])
+
+  function handleSubmit(event) {
+    event.preventDefault()
+    setAppliedFilters(draftFilters)
+  }
+
+  function handleReset() {
+    setDraftFilters(initialFilters)
+    setAppliedFilters(initialFilters)
+  }
+
+  return (
+    <>
+      <MotionSection className="pt-8 md:pt-12">
+        <SectionWrap>
+          <div className="grid gap-7 xl:grid-cols-[1fr,0.72fr] xl:items-end">
+            <div className="max-w-4xl space-y-5">
+              <Badge variant="accent">Buy</Badge>
+              <h1 className="text-[clamp(2.9rem,6.2vw,5.9rem)] font-semibold leading-[0.9] tracking-[-0.06em] text-marketing-ink">
+                Find your next property with Arch9.
+              </h1>
+              <p className="max-w-2xl text-[16px] leading-8 text-marketing-muted">
+                Browse publicly released properties from Arch9 agencies, then move from enquiry to transaction with one connected experience.
+              </p>
+            </div>
+            <div className="grid gap-3 rounded-[28px] border border-marketing-borderStrong bg-marketing-panelElevated p-5 shadow-marketing-soft">
+              <MetricPill label="Public listings" value={loading ? 'Loading' : String(count)} />
+              <p className="text-sm leading-7 text-marketing-muted">
+                Every listing here comes from the agency workspace and passes the public publishing checks before appearing on the website.
+              </p>
+            </div>
+          </div>
+        </SectionWrap>
+      </MotionSection>
+
+      <MotionSection className="pt-8">
+        <SectionWrap>
+          <PublicListingFilters
+            draftFilters={draftFilters}
+            loading={loading}
+            onChange={setDraftFilters}
+            onReset={handleReset}
+            onSubmit={handleSubmit}
+          />
+        </SectionWrap>
+      </MotionSection>
+
+      <MotionSection className="pt-8 md:pt-10">
+        <SectionWrap>
+          {loading ? (
+            <PublicListingsSkeleton />
+          ) : listings.length ? (
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {listings.map((listing) => (
+                <PublicListingCard key={listing.id || listing.slug} listing={listing} />
+              ))}
+            </div>
+          ) : (
+            <PublicListingsEmptyState error={error} onRetry={() => setAppliedFilters({ ...appliedFilters })} />
+          )}
+        </SectionWrap>
+      </MotionSection>
+
+      <MotionSection className="pt-16">
+        <SectionWrap>
+          <div className="grid gap-4 md:grid-cols-3">
+            {buyerDiscoveryCards.slice(0, 3).map((card) => {
+              const Icon = card.icon
+              return (
+                <div key={card.title} className="rounded-[26px] border border-marketing-border bg-white/74 p-5 shadow-marketing-soft">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-marketing-accentSoft text-marketing-accent">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="mt-5 text-lg font-semibold tracking-[-0.04em] text-marketing-ink">{card.title}</div>
+                  <p className="mt-2 text-sm leading-7 text-marketing-muted">{card.copy}</p>
+                </div>
+              )
+            })}
+          </div>
+        </SectionWrap>
+      </MotionSection>
+    </>
+  )
+}
+
+function PublicListingDetailBody({ slug }) {
+  const [listing, setListing] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    fetchPublicListingBySlug(slug)
+      .then((payload) => {
+        if (cancelled) return
+        setListing(payload)
+      })
+      .catch((fetchError) => {
+        if (cancelled) return
+        setError(fetchError?.message || 'This listing is not available.')
+        setListing(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [slug])
+
+  useEffect(() => {
+    if (listing?.title) document.title = `${listing.title} | Arch9`
+  }, [listing?.title])
+
+  if (loading) {
+    return (
+      <MotionSection className="pt-8 md:pt-12">
+        <SectionWrap>
+          <div className="grid gap-6 lg:grid-cols-[1.08fr,0.92fr]">
+            <div className="aspect-[4/3] animate-pulse rounded-[30px] bg-marketing-accentSoft" />
+            <div className="grid content-start gap-4 rounded-[30px] border border-marketing-border bg-white/70 p-6">
+              <div className="h-8 w-40 animate-pulse rounded-full bg-marketing-accentSoft" />
+              <div className="h-12 w-full animate-pulse rounded-full bg-marketing-accentSoft" />
+              <div className="h-5 w-3/4 animate-pulse rounded-full bg-marketing-accentSoft" />
+            </div>
+          </div>
+        </SectionWrap>
+      </MotionSection>
+    )
+  }
+
+  if (error || !listing) {
+    return (
+      <MotionSection className="pt-8 md:pt-12">
+        <SectionWrap>
+          <PublicListingsEmptyState error={error || 'This listing is not available.'} onRetry={() => window.location.reload()} />
+        </SectionWrap>
+      </MotionSection>
+    )
+  }
+
+  const gallery = listing.galleryImages?.length ? listing.galleryImages : [{ url: listing.coverImageUrl, caption: listing.title }]
+  const supportingImages = gallery.filter((item) => item.url && item.url !== listing.coverImageUrl).slice(0, 4)
+  const featureList = [...(listing.features || []), ...(listing.amenities || [])].filter(Boolean).slice(0, 10)
+
+  return (
+    <>
+      <MotionSection className="pt-8 md:pt-12">
+        <SectionWrap>
+          <Link to="/buy" className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-marketing-muted transition hover:text-marketing-ink">
+            <ArrowRight className="h-4 w-4 rotate-180" />
+            Back to listings
+          </Link>
+          <div className="grid gap-6 lg:grid-cols-[1.1fr,0.9fr]">
+            <div className="overflow-hidden rounded-[32px] border border-marketing-borderStrong bg-marketing-accentSoft shadow-marketing-float">
+              <img src={listing.coverImageUrl} alt="" className="aspect-[4/3] h-full w-full object-cover" />
+            </div>
+            <div className="rounded-[32px] border border-marketing-borderStrong bg-marketing-panelElevated p-6 shadow-marketing-soft md:p-8">
+              <Badge variant="accent">{listing.listingType || 'Sale'}</Badge>
+              <h1 className="mt-5 text-[clamp(2.25rem,4.8vw,4.5rem)] font-semibold leading-[0.94] tracking-[-0.06em] text-marketing-ink">
+                {listing.title}
+              </h1>
+              <div className="mt-5 text-[clamp(1.7rem,3vw,2.7rem)] font-semibold tracking-[-0.05em] text-marketing-ink">
+                {formatPublicListingPrice(listing.askingPrice)}
+              </div>
+              <div className="mt-4 flex items-start gap-2 text-sm leading-7 text-marketing-muted">
+                <MapPin className="mt-1 h-4 w-4 shrink-0 text-marketing-accent" />
+                <span>{formatPublicListingLocation(listing)}</span>
+              </div>
+              <div className="mt-6">
+                <PublicListingMeta listing={listing} />
+              </div>
+              <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                <Button asChild size="lg">
+                  <Link to={`/bridge/contact?listing=${encodeURIComponent(listing.slug)}`}>
+                    Enquire
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="secondary">
+                  <Link to="/bridge/tools#affordability">Check Affordability</Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </SectionWrap>
+      </MotionSection>
+
+      <MotionSection className="pt-10">
+        <SectionWrap>
+          <div className="grid gap-6 lg:grid-cols-[0.9fr,1.1fr]">
+            <div className="rounded-[28px] border border-marketing-border bg-white/74 p-6 shadow-marketing-soft">
+              <h2 className="text-2xl font-semibold tracking-[-0.05em] text-marketing-ink">Property Details</h2>
+              <div className="mt-5 grid gap-3 text-sm text-marketing-muted">
+                {[
+                  ['Property type', listing.propertyType],
+                  ['Floor size', formatPublicListingSize(listing.floorSize)],
+                  ['Erf size', formatPublicListingSize(listing.erfSize)],
+                  ['Rates and taxes', listing.ratesTaxes ? formatPublicListingPrice(listing.ratesTaxes) : ''],
+                  ['Levies', listing.levies ? formatPublicListingPrice(listing.levies) : ''],
+                ].filter(([, value]) => value).map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between gap-4 border-b border-marketing-border py-3 last:border-b-0">
+                    <span>{label}</span>
+                    <span className="font-semibold text-marketing-ink">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-[28px] border border-marketing-border bg-white/74 p-6 shadow-marketing-soft">
+              <h2 className="text-2xl font-semibold tracking-[-0.05em] text-marketing-ink">Overview</h2>
+              <p className="mt-4 text-sm leading-7 text-marketing-muted">
+                {listing.description || 'Full listing details are available on enquiry. Arch9 keeps the transaction journey connected once you are ready to take the next step.'}
+              </p>
+              {featureList.length ? (
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {featureList.map((feature) => (
+                    <span key={feature} className="rounded-full border border-marketing-border bg-white/82 px-3 py-2 text-xs font-semibold text-marketing-muted">
+                      {feature}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </SectionWrap>
+      </MotionSection>
+
+      {supportingImages.length ? (
+        <MotionSection className="pt-10">
+          <SectionWrap>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {supportingImages.map((image) => (
+                <img key={image.url} src={image.url} alt="" className="aspect-[4/3] rounded-[24px] border border-marketing-borderStrong object-cover shadow-marketing-soft" loading="lazy" />
+              ))}
+            </div>
+          </SectionWrap>
+        </MotionSection>
+      ) : null}
+    </>
+  )
+}
+
+export function BridgeBuyPage() {
+  const params = useParams()
+  const slug = params.slug || ''
+  if (slug) {
+    return (
+      <BridgeShell currentPath="/buy" title="Arch9 | Property">
+        <PublicListingDetailBody slug={slug} />
+      </BridgeShell>
+    )
+  }
+
+  return (
+    <BridgeShell currentPath="/buy" title="Arch9 | Buy">
+      <PublicListingsBody />
+      <FinalCtaSection />
+    </BridgeShell>
   )
 }
 

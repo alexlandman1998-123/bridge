@@ -1198,12 +1198,12 @@ function Dashboard() {
       return
     }
 
-    if (role === 'agent' && organisationLoading) {
+    if ((role === 'agent' || role === 'developer') && organisationLoading) {
       setLoading(true)
       return
     }
 
-    if (role === 'agent' && !currentOrganisationId) {
+    if ((role === 'agent' || role === 'developer') && !currentOrganisationId) {
       setAgentPrivateListingRows([])
       setOverview({
         metrics: {
@@ -1322,6 +1322,7 @@ function Dashboard() {
         setAgentPrivateListingRows([])
         const data = await fetchDashboardOverview({
           developmentId: workspace.id === 'all' ? null : workspace.id,
+          organisationId: role === 'developer' ? currentOrganisationId : null,
         })
         setOverview(data)
       }

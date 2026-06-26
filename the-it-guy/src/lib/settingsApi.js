@@ -2159,12 +2159,13 @@ async function ensureOrganisationContext(client) {
         profile,
         persistPreference: false,
       })
+      const isOrganisationMembershipSource = (entry) => ['organisation_users', 'organization_members'].includes(normalizeText(entry?.source))
       const resolvedMembership =
-        workspaceResolution.currentMembership?.source === 'organisation_users'
+        isOrganisationMembershipSource(workspaceResolution.currentMembership)
           ? workspaceResolution.currentMembership
-          : (workspaceResolution.activeMemberships || []).find((entry) => entry?.source === 'organisation_users') || null
+          : (workspaceResolution.activeMemberships || []).find(isOrganisationMembershipSource) || null
       const pendingResolvedMembership = !resolvedMembership
-        ? (workspaceResolution.pendingMemberships || []).find((entry) => entry?.source === 'organisation_users') || null
+        ? (workspaceResolution.pendingMemberships || []).find(isOrganisationMembershipSource) || null
         : null
       const rawResolvedMembership = resolvedMembership?.raw && typeof resolvedMembership.raw === 'object'
         ? resolvedMembership.raw
@@ -2178,15 +2179,16 @@ async function ensureOrganisationContext(client) {
         ? {
             ...(rawResolvedMembership || {}),
             id: normalizeText(rawResolvedMembership?.id || selectedResolvedMembership.id),
-            organisation_id: normalizeText(rawResolvedMembership?.organisation_id || selectedResolvedMembership.workspaceId),
+            organisation_id: normalizeText(rawResolvedMembership?.organisation_id || rawResolvedMembership?.organization_id || selectedResolvedMembership.workspaceId),
             role: normalizeText(
               rawResolvedMembership?.workspace_role ||
                 rawResolvedMembership?.organisation_role ||
+                rawResolvedMembership?.organization_role ||
                 rawResolvedMembership?.role ||
                 selectedResolvedMembership.workspaceRole ||
                 selectedResolvedMembership.role,
             ),
-            status: normalizeText(rawResolvedMembership?.status || selectedResolvedMembership.status || 'active'),
+            status: normalizeText(rawResolvedMembership?.status || rawResolvedMembership?.membership_status || selectedResolvedMembership.status || 'active'),
             email: normalizeText(rawResolvedMembership?.email || user.email || profile?.email),
             branch_id: rawResolvedMembership?.branch_id || selectedResolvedMembership.branchId || null,
             primary_branch_id: rawResolvedMembership?.primary_branch_id || selectedResolvedMembership.primaryBranchId || selectedResolvedMembership.branchId || null,

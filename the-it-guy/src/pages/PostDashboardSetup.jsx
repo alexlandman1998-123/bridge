@@ -613,6 +613,9 @@ export default function PostDashboardSetup() {
     canCreateWorkspace &&
     intent?.workspace_type === WORKSPACE_TYPES.bondOriginator &&
     ['owner', 'director', 'manager'].includes(intendedRole)
+  const isDeveloperCompanySetup =
+    canCreateWorkspace &&
+    intent?.workspace_type === WORKSPACE_TYPES.developerCompany
   const setupDraftStorageKey = useMemo(
     () => buildSetupDraftStorageKey({ userId: authState.user?.id, profileId: profile?.id, intent }),
     [authState.user?.id, intent, profile?.id],
@@ -630,17 +633,20 @@ export default function PostDashboardSetup() {
     if (canClaimExistingWorkspace) return 'Claim your agency workspace'
     if (isAgencyPrincipalSetup) return getAgencySetupTitle(agencySetupType)
     if (isBondOwnerSetup) return 'Set up your bond originator business'
+    if (isDeveloperCompanySetup) return 'Set up your developer command centre'
     if (canCreateWorkspace) return `Create your ${workspaceNoun}`
     if (canAcceptInvite) return 'Accept your workspace invite'
     if (canJoinOrRequest) return `Join a ${workspaceNoun}`
     return 'Workspace setup'
-  }, [agencySetupType, canAcceptInvite, canClaimExistingWorkspace, canCreateWorkspace, canJoinOrRequest, isAgencyPrincipalSetup, isBondOwnerSetup, workspaceNoun])
+  }, [agencySetupType, canAcceptInvite, canClaimExistingWorkspace, canCreateWorkspace, canJoinOrRequest, isAgencyPrincipalSetup, isBondOwnerSetup, isDeveloperCompanySetup, workspaceNoun])
   const pageDescription = canClaimExistingWorkspace
     ? 'Confirm the profile details for the principal who is claiming an existing agency workspace.'
     : isAgencyPrincipalSetup
       ? getAgencySetupDescription(agencySetupType)
       : isBondOwnerSetup
         ? 'Choose the originator setup type, then capture the owner, operating, and launch-team details Arch9 needs to create a complete bond workspace.'
+        : isDeveloperCompanySetup
+          ? 'Create the developer workspace your sales team, agency partners, attorneys, and buyers will use to manage launches and unit sales.'
         : 'Arch9 has your profile and signup path. The last step is creating or joining a real backend workspace so dashboard access is tied to an active membership.'
 
   useEffect(() => {
@@ -1204,6 +1210,25 @@ export default function PostDashboardSetup() {
   const bondInviteCount = bondInvites.filter((invite) => normalizeText(invite.name || invite.email)).length
   const bondCurrentStepReady = resolveBondStepError(bondCurrentStep.key, bondDraft) ? 0 : 1
   const bondCompletedStepCount = Math.min(BOND_SETUP_STEPS.length, bondStepIndex + bondCurrentStepReady)
+  const developerSetupItems = [
+    {
+      label: 'Company identity',
+      complete: Boolean(normalizeText(form.name) && normalizeText(form.legalName)),
+    },
+    {
+      label: 'Contact route',
+      complete: Boolean(normalizeText(form.businessEmail) && normalizeText(form.contactNumber)),
+    },
+    {
+      label: 'Operating footprint',
+      complete: Boolean(normalizeText(form.province) || normalizeText(form.operatingArea)),
+    },
+    {
+      label: 'Launch workspace',
+      complete: Boolean(normalizeText(form.name) && normalizeText(form.businessEmail) && normalizeText(form.contactNumber)),
+    },
+  ]
+  const developerCompletedSectionCount = developerSetupItems.filter((item) => item.complete).length
 
   function renderBondStep() {
     if (bondCurrentStep.key === 'type') {
@@ -1712,6 +1737,123 @@ export default function PostDashboardSetup() {
     )
   }
 
+  function renderDeveloperSetup() {
+    return (
+      <form className="agency-setup-shell" onSubmit={handleCreateWorkspace}>
+        <aside className="agency-setup-command">
+          <div>
+            <p className="agency-setup-kicker">Developer setup</p>
+            <h2>{form.name || 'New developer workspace'}</h2>
+            <span>{APP_ROLE_LABELS[intent.app_role] || 'Developer'} · {intendedRole.replace(/_/g, ' ') || 'owner'}</span>
+          </div>
+          <div className="agency-setup-progress">
+            <strong>{developerCompletedSectionCount}/{developerSetupItems.length}</strong>
+            <span>launch sections ready</span>
+            <div><i style={{ width: `${Math.round((developerCompletedSectionCount / developerSetupItems.length) * 100)}%` }} /></div>
+          </div>
+          <nav className="agency-setup-nav" aria-label="Developer setup readiness">
+            {developerSetupItems.map((item, index) => (
+              <button
+                key={item.label}
+                type="button"
+                className={item.complete ? 'is-active' : ''}
+                aria-pressed={item.complete}
+              >
+                <span>{index + 1}</span>
+                <strong>{item.label}</strong>
+                {item.complete ? <CheckCircle2 size={15} /> : null}
+              </button>
+            ))}
+          </nav>
+          <div className="agency-setup-snapshot">
+            <p><Mail size={14} />{form.businessEmail || 'Business email missing'}</p>
+            <p><Phone size={14} />{form.contactNumber || 'Contact number missing'}</p>
+            <p><MapPin size={14} />{form.operatingArea || form.province || 'Operating area optional'}</p>
+          </div>
+        </aside>
+
+        <section className="agency-setup-main">
+          <div className="agency-setup-card">
+            <SetupSectionHeader
+              eyebrow="Workspace foundation"
+              title="Create the developer company profile"
+              copy="This becomes the command centre for developments, stock visibility, buyer demand, and shared transaction progress."
+              icon={Building2}
+            />
+            <div className="setup-field-grid">
+              <SetupField label="Developer company name">
+                <input className="setup-input" value={form.name} onChange={(event) => updateField('name', event.target.value)} />
+              </SetupField>
+              <SetupField label="Legal name">
+                <input className="setup-input" value={form.legalName} onChange={(event) => updateField('legalName', event.target.value)} />
+              </SetupField>
+              <SetupField label="Business email">
+                <input className="setup-input" type="email" value={form.businessEmail} onChange={(event) => updateField('businessEmail', event.target.value)} />
+              </SetupField>
+              <SetupField label="Contact number">
+                <input className="setup-input" value={form.contactNumber} onChange={(event) => updateField('contactNumber', event.target.value)} />
+              </SetupField>
+              <SetupField label="Registration number" hint="Optional, but useful for legal records and duplicate protection.">
+                <input className="setup-input" value={form.registrationNumber} onChange={(event) => updateField('registrationNumber', event.target.value)} />
+              </SetupField>
+              <SetupField label="Province">
+                <input className="setup-input" value={form.province} onChange={(event) => updateField('province', event.target.value)} />
+              </SetupField>
+              <SetupField label="Operating area" hint="Example: Johannesburg North, Cape Town Atlantic Seaboard, KZN North Coast.">
+                <input className="setup-input" value={form.operatingArea} onChange={(event) => updateField('operatingArea', event.target.value)} />
+              </SetupField>
+              <SetupField label="Primary contact">
+                <input className="setup-input" value={form.primaryContactName} onChange={(event) => updateField('primaryContactName', event.target.value)} />
+              </SetupField>
+            </div>
+          </div>
+
+          <div className="agency-setup-card">
+            <SetupSectionHeader
+              eyebrow="Launch workspace"
+              title="What Arch9 prepares next"
+              copy="Once created, this workspace can hold developments, unit inventory, agency partner activity, buyer leads, and transaction movement."
+              icon={CheckCircle2}
+            />
+            <div className="agency-review-grid">
+              <div>
+                <Building2 size={18} />
+                <span>Developments</span>
+                <strong>Project-ready</strong>
+                <small>Stock, units, pricing, and release status</small>
+              </div>
+              <div>
+                <Users size={18} />
+                <span>Sales network</span>
+                <strong>Partner visibility</strong>
+                <small>Agents, buyers, and launch activity</small>
+              </div>
+              <div>
+                <ShieldCheck size={18} />
+                <span>Transactions</span>
+                <strong>Controlled workspace</strong>
+                <small>Offers, finance, transfer, and registration</small>
+              </div>
+            </div>
+          </div>
+
+          {message ? <p className="setup-message success">{message}</p> : null}
+          {error ? <p className="setup-message error">{error}</p> : null}
+          <div className="agency-setup-actions">
+            <button type="submit" className="setup-primary-button" disabled={saving}>
+              {saving ? 'Creating developer workspace...' : (
+                <>
+                  Create developer company
+                  <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+          </div>
+        </section>
+      </form>
+    )
+  }
+
   return (
     <OnboardingProgressLayout
       title={pageTitle}
@@ -1869,6 +2011,8 @@ export default function PostDashboardSetup() {
             </div>
           </section>
         </form>
+      ) : isDeveloperCompanySetup ? (
+        renderDeveloperSetup()
       ) : (
         <>
           {intent ? (

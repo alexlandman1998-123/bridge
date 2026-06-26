@@ -20,6 +20,12 @@ import {
   settingsPageClass,
 } from './settingsUi'
 
+const WORKSPACE_TYPE_COPY_KEYS = {
+  agency: 'agency',
+  developer_company: 'developer',
+  bond_originator: 'bond',
+}
+
 const PERMISSION_SCOPE_OPTIONS = [
   { value: 'all', label: 'All Organisation Data' },
   { value: 'branch', label: 'Branch Scoped' },
@@ -131,6 +137,34 @@ const AGENCY_SETTINGS_COPY = {
   },
 }
 
+const DEVELOPER_SETTINGS_COPY = {
+  header: {
+    title: 'Developer company structure, governance, and branding',
+    description: 'Owner-managed setup used across portfolio identity, team access, developments, and transaction visibility.',
+  },
+  unavailable: 'Developer company settings are unavailable right now. Please retry from the dashboard setup guide.',
+  readOnly: 'Read-only for your role. Only owner-level administrators can edit developer company settings.',
+  saved: 'Developer company settings saved.',
+  organisationSection: {
+    title: 'Developer Company Information',
+    description: 'Core company details that drive workspace identity and operational ownership.',
+  },
+  adminSection: {
+    title: 'Owner Information',
+    description: 'Owner profile and control identity used for administration and reporting lineage.',
+  },
+  branchesSection: {
+    title: 'Teams',
+    description: 'Team entities drive scope, reporting visibility, and operational ownership.',
+    addLabel: 'Add Team',
+    rowLabel: 'Team',
+  },
+  permissionsSection: {
+    title: 'Permissions & Visibility',
+    description: 'Controls for workspace ownership, team visibility, and portfolio collaboration defaults.',
+  },
+}
+
 function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
   const value = String(sourceUrl || '').trim()
   if (!value) return ''
@@ -156,9 +190,12 @@ function normalizePartnerProfileContent(content = {}) {
 }
 
 export default function SettingsOrganisationPage() {
-  const { role } = useWorkspace()
-  const isBondOriginator = role === 'bond_originator'
-  const copy = isBondOriginator ? BOND_SETTINGS_COPY : AGENCY_SETTINGS_COPY
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
+  const copyKey = WORKSPACE_TYPE_COPY_KEYS[resolvedWorkspaceType] || (role === 'developer' ? 'developer' : role === 'bond_originator' ? 'bond' : 'agency')
+  const isBondOriginator = copyKey === 'bond'
+  const isDeveloperCompany = copyKey === 'developer'
+  const copy = isBondOriginator ? BOND_SETTINGS_COPY : isDeveloperCompany ? DEVELOPER_SETTINGS_COPY : AGENCY_SETTINGS_COPY
   const {
     state: organisationContextState,
     loading: organisationContextLoading,
@@ -219,10 +256,14 @@ export default function SettingsOrganisationPage() {
     () => normalizePartnerProfileContent(organisationSettingsJson.partnerProfileContent),
     [organisationSettingsJson.partnerProfileContent],
   )
-  const membershipRole = normalizeOrganisationMembershipRole(state?.membershipRole)
+  const membershipRole = normalizeOrganisationMembershipRole(state?.membershipRole, {
+    appRole: role,
+    workspaceType: resolvedWorkspaceType,
+  })
   const canEdit = canManageOrganisationSettings({
     appRole: role,
     membershipRole,
+    workspaceType: resolvedWorkspaceType,
   })
 
   function updateField(key, value) {
@@ -539,7 +580,7 @@ export default function SettingsOrganisationPage() {
         <SettingsSectionCard title={copy.organisationSection.title} description={copy.organisationSection.description}>
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Bond originator company name' : 'Agency name'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Bond originator company name' : isDeveloperCompany ? 'Developer company name' : 'Agency name'}</span>
               <Field
                 value={onboarding.agencyInformation?.agencyName || ''}
                 disabled={!canEdit}
@@ -563,7 +604,7 @@ export default function SettingsOrganisationPage() {
               />
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Originator operating model' : 'Agency type'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'Originator operating model' : isDeveloperCompany ? 'Company type' : 'Agency type'}</span>
               <Field
                 as="select"
                 value={onboarding.agencyInformation?.agencyType || (isBondOriginator ? 'national' : 'residential')}
@@ -716,11 +757,11 @@ export default function SettingsOrganisationPage() {
         <SettingsSectionCard title={copy.adminSection.title} description={copy.adminSection.description}>
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator full name' : 'Principal full name'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator full name' : isDeveloperCompany ? 'Owner full name' : 'Principal full name'}</span>
               <Field value={onboarding.principalInformation?.principalFullName || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('principalFullName', event.target.value)} />
             </label>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator email' : 'Principal email'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ administrator email' : isDeveloperCompany ? 'Owner email' : 'Principal email'}</span>
               <Field value={onboarding.principalInformation?.emailAddress || ''} disabled={!canEdit} onChange={(event) => updatePrincipalField('emailAddress', event.target.value)} />
             </label>
             <label className={settingsFieldClass}>
@@ -916,7 +957,7 @@ export default function SettingsOrganisationPage() {
         <SettingsSectionCard title={copy.permissionsSection.title} description={copy.permissionsSection.description}>
           <div className={settingsGridClass}>
             <label className={settingsFieldClass}>
-              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ scope' : 'Principal scope'}</span>
+              <span className="text-sm font-medium text-[#51657b]">{isBondOriginator ? 'HQ scope' : isDeveloperCompany ? 'Owner scope' : 'Principal scope'}</span>
               <Field as="select" value={onboarding.permissions?.principalScope || 'all'} disabled={!canEdit} onChange={(event) => updatePermissionField('principalScope', event.target.value)}>
                 {PERMISSION_SCOPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>

@@ -1399,8 +1399,11 @@ function AppRoutes() {
         <Suspense fallback={<PageSkeleton label="Loading Arch9" />}>
           <Routes>
           <Route path="/" element={<PublicAwareRootRoute />} />
+          <Route path="/buy" element={<BridgeBuyPage />} />
+          <Route path="/buy/:slug" element={<BridgeBuyPage />} />
           <Route path="/bridge" element={<BridgeLanding />} />
           <Route path="/bridge/buy" element={<BridgeBuyPage />} />
+          <Route path="/bridge/buy/:slug" element={<BridgeBuyPage />} />
           <Route path="/bridge/product" element={<BridgeProductPage />} />
           <Route path="/bridge/solutions" element={<BridgeSolutionsPage />} />
           <Route path="/bridge/tools" element={<BridgeToolsPage />} />

@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { createAdminMobileDashboardResponse } from './server/services/adminMobileDashboardApi.js'
 import { createMissionControlResponse, writeNodeJsonResponse } from './server/services/hqMissionControlApi.js'
+import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
 
 function missionControlApiPlugin() {
   return {
@@ -17,6 +18,14 @@ function missionControlApiPlugin() {
       server.middlewares.use('/api/admin/mobile-dashboard', async (request, response) => {
         const payload = await createAdminMobileDashboardResponse({
           method: request.method,
+          headers: request.headers,
+        })
+        writeNodeJsonResponse(response, payload)
+      })
+      server.middlewares.use('/api/public/listings', async (request, response) => {
+        const payload = await createPublicListingsResponse({
+          method: request.method,
+          url: request.url,
           headers: request.headers,
         })
         writeNodeJsonResponse(response, payload)

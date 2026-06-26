@@ -1059,11 +1059,13 @@ async function insertPrivateListingDocumentRow(client, payload = {}) {
   }
 }
 
-function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null, externalLinksByListingId = null) {
+function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByListingId = null, documentsByListingId = null, externalLinksByListingId = null, publicationByListingId = null) {
   if (!row) return null
   const onboarding = onboardingByListingId ? onboardingByListingId.get(String(row.id || '')) || null : null
   const requirementRows = requirementsByListingId ? requirementsByListingId.get(String(row.id || '')) || [] : []
   const documentRows = documentsByListingId ? documentsByListingId.get(String(row.id || '')) || [] : []
+  const publicationRow = publicationByListingId ? publicationByListingId.get(String(row.id || '')) || null : null
+  const publicationDraft = publicationRow ? mapPublicationRowToDraft(publicationRow) : null
   const listingStatus = mapLegacyListingStatusToCanonicalStatus(row.listing_status || row.status)
   const onboardingStatus = normalizeStatus(
     onboarding?.status || row.seller_onboarding_status,
@@ -1234,6 +1236,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     privatePropertyStatus: row.private_property_status || onboardingFormData.privatePropertyStatus || 'not_published',
     bridgeListingStatus: row.bridge_listing_status || onboardingFormData.bridgeListingStatus || 'not_published',
     bridgeListingPublicUrl: row.bridge_listing_public_url || onboardingFormData.bridgeListingPublicUrl || '',
+    publicationStatus: publicationDraft?.status || '',
+    listingPublicationData: publicationDraft,
     externalLinks: externalListingLinks,
     listingExternalLinks: externalListingLinks,
     listingPreviewDescription,
@@ -1308,6 +1312,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       privatePropertyStatus: row.private_property_status || onboardingFormData.privatePropertyStatus || privatePropertyExternalLink?.status || 'not_published',
       bridgeListingStatus: row.bridge_listing_status || onboardingFormData.bridgeListingStatus || 'not_published',
       bridgeListingPublicUrl: row.bridge_listing_public_url || onboardingFormData.bridgeListingPublicUrl || '',
+      publicationStatus: publicationDraft?.status || '',
+      listingPublicationData: publicationDraft,
       externalLinks: externalListingLinks,
       listingExternalLinks: externalListingLinks,
     },
@@ -1943,6 +1949,29 @@ async function fetchExternalLinkRowsForListings(client, listingIds = []) {
     const existing = map.get(listingId) || []
     existing.push(row)
     map.set(listingId, existing)
+  }
+  return map
+}
+
+async function fetchPublicationRowsForListings(client, listingIds = []) {
+  const ids = normalizeUuidList(listingIds)
+  if (!ids.length || hasMissingTableCache('listing_publication_data')) return new Map()
+  const query = await client
+    .from('listing_publication_data')
+    .select('listing_id, title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, features, amenities, status, created_at, updated_at')
+    .in('listing_id', ids)
+  if (query.error) {
+    if (isMissingTableError(query.error, 'listing_publication_data') || isMissingColumnError(query.error)) {
+      rememberMissingTable('listing_publication_data')
+      return new Map()
+    }
+    throw query.error
+  }
+  const map = new Map()
+  for (const row of query.data || []) {
+    const listingId = normalizeText(row.listing_id)
+    if (!listingId) continue
+    map.set(listingId, row)
   }
   return map
 }
@@ -2618,13 +2647,14 @@ async function getPrivateListingById(listingId, { includeRequirementsAndDocument
     throw query.error
   }
   if (!query.data || isDeletedPrivateListingRow(query.data)) return null
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [query.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [query.data.id]) : Promise.resolve(new Map()),
     fetchExternalLinkRowsForListings(client, [query.data.id]),
+    fetchPublicationRowsForListings(client, [query.data.id]),
   ])
-  return mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap)
+  return mapPrivateListingRow(query.data, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap)
 }
 
 export async function getOrganisationPrivateListings(organisationId, options = {}) {
@@ -2644,13 +2674,14 @@ export async function getOrganisationPrivateListings(organisationId, options = {
   }
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, listingIds) : Promise.resolve(new Map()),
     fetchExternalLinkRowsForListings(client, listingIds),
+    fetchPublicationRowsForListings(client, listingIds),
   ])
-  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap)).filter(Boolean)
+  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap)).filter(Boolean)
 }
 
 export async function getAgentPrivateListings(
@@ -2703,26 +2734,28 @@ export async function getAgentPrivateListings(
       }
       const retryRows = (Array.isArray(retryQuery.data) ? retryQuery.data : []).filter((row) => !isDeletedPrivateListingRow(row))
       const retryListingIds = retryRows.map((row) => row.id)
-      const [retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap] = await Promise.all([
+      const [retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap] = await Promise.all([
         fetchOnboardingRowsForListings(client, retryListingIds),
         fetchRequirementRowsForListings(client, retryListingIds),
         fetchDocumentRowsForListings(client, retryListingIds),
         fetchExternalLinkRowsForListings(client, retryListingIds),
+        fetchPublicationRowsForListings(client, retryListingIds),
       ])
-      return retryRows.map((row) => mapPrivateListingRow(row, retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap)).filter(Boolean)
+      return retryRows.map((row) => mapPrivateListingRow(row, retryOnboardingMap, retryRequirementsMap, retryDocumentsMap, retryExternalLinksMap, retryPublicationMap)).filter(Boolean)
     }
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
   const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
   const listingIds = rows.map((row) => row.id)
-  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap] = await Promise.all([
+  const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
     fetchRequirementRowsForListings(client, listingIds),
     fetchDocumentRowsForListings(client, listingIds),
     fetchExternalLinkRowsForListings(client, listingIds),
+    fetchPublicationRowsForListings(client, listingIds),
   ])
-  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap)).filter(Boolean)
+  return rows.map((row) => mapPrivateListingRow(row, onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap)).filter(Boolean)
 }
 
 export async function getAgentPrivateListingSummaries(

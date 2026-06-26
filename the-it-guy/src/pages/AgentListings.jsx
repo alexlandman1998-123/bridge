@@ -1,4 +1,4 @@
-import { ArrowRight, Building2, CheckCircle2, CircleAlert, FolderKanban, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowRight, Building2, CheckCircle2, CircleAlert, FolderKanban, Globe2, Loader2, MoreVertical, Plus, Search, Share2, Trash2, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -410,6 +410,123 @@ function getListingComplianceWarnings(listing = {}, completeness = null) {
   if (!hasPhotos || missingItems.has('property photos')) warnings.push('Photos missing')
   if (!hasListingExternalLink(listing, property)) warnings.push('External listing link missing')
   return [...new Set(warnings)]
+}
+
+function getListingPublicImageCount(listing = {}) {
+  const marketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
+  const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const publicationData = listing?.listingPublicationData && typeof listing.listingPublicationData === 'object' ? listing.listingPublicationData : {}
+  const sellerFormData = listing?.sellerOnboarding?.formData && typeof listing.sellerOnboarding.formData === 'object'
+    ? listing.sellerOnboarding.formData
+    : {}
+  const gallery = [
+    ...(Array.isArray(listing.galleryImages) ? listing.galleryImages : []),
+    ...(Array.isArray(marketing.imageGallery) ? marketing.imageGallery : []),
+    ...(Array.isArray(propertyDetails.galleryImages) ? propertyDetails.galleryImages : []),
+    ...(Array.isArray(sellerFormData.imageGallery) ? sellerFormData.imageGallery : []),
+    ...(Array.isArray(publicationData.galleryImages) ? publicationData.galleryImages : []),
+  ].filter((item) => normalizeText(item?.url || item?.signedUrl || item?.publicUrl || item?.fileUrl || item?.file_url))
+
+  if (gallery.length) return gallery.length
+  return normalizeText(marketing.mediaUrl || listing.coverImage?.url || listing.imageUrl || listing.image_url) ? 1 : 0
+}
+
+function getArch9BuyReadiness(listing = {}) {
+  const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const publicationData = listing?.listingPublicationData && typeof listing.listingPublicationData === 'object' ? listing.listingPublicationData : {}
+  const statusKey = normalizeKey(getPrivateListingStatus(listing))
+  const bridgeStatus = normalizeKey(listing.bridgeListingStatus || propertyDetails.bridgeListingStatus)
+  const publicationStatus = normalizeKey(listing.publicationStatus || propertyDetails.publicationStatus || publicationData.status)
+  const publicUrl = normalizeText(listing.bridgeListingPublicUrl || propertyDetails.bridgeListingPublicUrl)
+  const imageCount = getListingPublicImageCount(listing)
+  const title = normalizeText(publicationData.title || propertyDetails.headline || listing.listingTitle || listing.title)
+  const price = Number(publicationData.askingPrice || publicationData.asking_price || propertyDetails.price || listing.askingPrice || 0)
+  const description = normalizeText(
+    publicationData.description ||
+      propertyDetails.listingPreviewDescription ||
+      propertyDetails.description ||
+      listing.listingPreviewDescription ||
+      listing.marketing?.description,
+  )
+  const location = normalizeText(publicationData.suburb || propertyDetails.suburb || listing.suburb || propertyDetails.city || listing.city)
+  const lifecycleBlocked = ['sold', 'transaction_created', 'withdrawn', 'archived'].includes(statusKey)
+  const missingData = [
+    !title ? 'title' : '',
+    !Number.isFinite(price) || price <= 0 ? 'price' : '',
+    !description ? 'description' : '',
+    !location ? 'location' : '',
+  ].filter(Boolean)
+
+  if (lifecycleBlocked) {
+    return {
+      key: 'blocked',
+      label: 'Not public eligible',
+      description: 'Sold, archived, withdrawn, or transaction-created stock stays off Arch9 Buy.',
+      blockers: ['Lifecycle status blocks public publishing.'],
+      bridgeStatus,
+      publicationStatus,
+      publicUrl,
+      imageCount,
+    }
+  }
+
+  if (imageCount <= 0) {
+    return {
+      key: 'needs_media',
+      label: 'Needs media',
+      description: 'Add and select a cover image before publishing.',
+      blockers: ['Cover image missing.'],
+      bridgeStatus,
+      publicationStatus,
+      publicUrl,
+      imageCount,
+    }
+  }
+
+  if (missingData.length) {
+    return {
+      key: 'needs_data',
+      label: 'Needs listing data',
+      description: `Missing ${missingData.join(', ')}.`,
+      blockers: missingData.map((item) => `Missing ${item}.`),
+      bridgeStatus,
+      publicationStatus,
+      publicUrl,
+      imageCount,
+    }
+  }
+
+  if (bridgeStatus === 'published' && publicationStatus === 'published') {
+    return {
+      key: 'live',
+      label: 'Live on Arch9 Buy',
+      description: 'This listing meets the public catalogue requirements.',
+      blockers: [],
+      bridgeStatus,
+      publicationStatus,
+      publicUrl,
+      imageCount,
+    }
+  }
+
+  return {
+    key: 'ready',
+    label: 'Ready to publish',
+    description: 'Open the listing and publish from Listing Site Data.',
+    blockers: publicationStatus === 'published' ? [] : ['Publication data needs to be saved as Published.'],
+    bridgeStatus,
+    publicationStatus,
+    publicUrl,
+    imageCount,
+  }
+}
+
+function arch9BuyStatusClass(statusKey) {
+  if (statusKey === 'live') return 'border-[#bfe5ce] bg-[#effaf3] text-[#17623a]'
+  if (statusKey === 'ready') return 'border-[#bcd8f5] bg-[#f1f7ff] text-[#1f4f78]'
+  if (statusKey === 'needs_media') return 'border-[#f1d3a6] bg-[#fff8ea] text-[#8a5b16]'
+  if (statusKey === 'needs_data') return 'border-[#ded7f1] bg-[#f7f3ff] text-[#5a3d9c]'
+  return 'border-[#d7dee8] bg-[#f4f7fb] text-[#607387]'
 }
 
 function getInventoryStatus({ statusKey = '', lifecycleGroup = '', complianceWarnings = [], lifecycleBlockers = [], missingRequirementsCount = 0, readinessState = '' } = {}) {
@@ -891,6 +1008,7 @@ function AgentListings({ initialTab = null } = {}) {
   const [shareError, setShareError] = useState('')
   const [filters, setFilters] = useState({
     statusGroup: 'all',
+    publicStatus: 'all',
     search: '',
   })
   const [quickAddDuplicateMatches, setQuickAddDuplicateMatches] = useState([])
@@ -1703,6 +1821,7 @@ function AgentListings({ initialTab = null } = {}) {
       const lifecycleGroup = getPrivateListingStatusGroup(statusKey)
       const lifecycleNextAction = getPrivateListingLifecycleNextAction(listing)
       const completeness = getListingCompleteness(listing)
+      const arch9BuyReadiness = getArch9BuyReadiness(listing)
       const quickMetadata = parseQuickListingMetadata(listing?.internalListingNotes || listing?.internal_listing_notes || listing?.description)
       const complianceWarnings = getListingComplianceWarnings(listing, completeness)
       const lifecycleBlockers = evaluatePrivateListingTransitionGuards(
@@ -1761,6 +1880,14 @@ function AgentListings({ initialTab = null } = {}) {
         requirementCompletionPct: Number(listing?.readinessSummary?.requirementCompletionPct || 0),
         missingRequirementsCount: Number(listing?.readinessSummary?.missingRequirementsCount || 0),
         readinessState: String(listing?.readinessSummary?.readinessState || 'blocked'),
+        arch9BuyReadiness,
+        arch9BuyStatusKey: arch9BuyReadiness.key,
+        arch9BuyStatusLabel: arch9BuyReadiness.label,
+        arch9BuyDescription: arch9BuyReadiness.description,
+        arch9BuyPublicUrl: arch9BuyReadiness.publicUrl,
+        arch9BuyImageCount: arch9BuyReadiness.imageCount,
+        publicationStatusLabel: arch9BuyReadiness.publicationStatus ? arch9BuyReadiness.publicationStatus.replace(/_/g, ' ') : 'not saved',
+        bridgeListingStatusLabel: arch9BuyReadiness.bridgeStatus ? arch9BuyReadiness.bridgeStatus.replace(/_/g, ' ') : 'not published',
         onboardingStatusLabel: String(listing?.sellerOnboardingStatus || listing?.seller_onboarding_status || 'not_started')
           .replace(/_/g, ' '),
         listingVisibilityLabel: String(listing?.listingVisibility || listing?.listing_visibility || 'internal').replace(/_/g, ' '),
@@ -1791,6 +1918,18 @@ function AgentListings({ initialTab = null } = {}) {
     ]
   }, [residentialListingCards])
 
+  const arch9BuyFilterOptions = useMemo(() => {
+    const countFor = (key) => residentialListingCards.filter((card) => card.arch9BuyStatusKey === key).length
+    return [
+      { key: 'all', label: 'All', count: residentialListingCards.length },
+      { key: 'live', label: 'Live', count: countFor('live') },
+      { key: 'ready', label: 'Ready', count: countFor('ready') },
+      { key: 'needs_media', label: 'Needs Media', count: countFor('needs_media') },
+      { key: 'needs_data', label: 'Needs Data', count: countFor('needs_data') },
+      { key: 'blocked', label: 'Blocked', count: countFor('blocked') },
+    ]
+  }, [residentialListingCards])
+
   const categoryFilteredListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
     const tabCategoryMap = {
@@ -1801,12 +1940,13 @@ function AgentListings({ initialTab = null } = {}) {
     return privateListingCards.filter((card) => {
       const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
       const statusMatch = filters.statusGroup === 'all' ? true : card.inventoryFilterKey === filters.statusGroup
+      const publicStatusMatch = filters.publicStatus === 'all' ? true : card.arch9BuyStatusKey === filters.publicStatus
       const searchMatch = query
         ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel].join(' ').toLowerCase().includes(query)
         : true
-      return categoryMatch && statusMatch && searchMatch
+      return categoryMatch && statusMatch && publicStatusMatch && searchMatch
     })
-  }, [filters.search, filters.statusGroup, listingsTab, privateListingCards])
+  }, [filters.publicStatus, filters.search, filters.statusGroup, listingsTab, privateListingCards])
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
@@ -1971,11 +2111,25 @@ function AgentListings({ initialTab = null } = {}) {
     navigate(`/developments/${developmentId}`)
   }
 
+  function openArch9BuyWorkspace(card, event = null) {
+    if (event) event.stopPropagation()
+    if (!card?.id) return
+    navigate(`/agent/listings/${encodeURIComponent(card.id)}?tab=listing`)
+  }
+
+  function getArch9BuyActionLabel(card = {}) {
+    if (card.arch9BuyStatusKey === 'live') return 'Review'
+    if (card.arch9BuyStatusKey === 'ready') return 'Publish'
+    if (card.arch9BuyStatusKey === 'needs_media') return 'Fix Media'
+    if (card.arch9BuyStatusKey === 'needs_data') return 'Complete Data'
+    return 'Review'
+  }
+
   return (
     <section className="space-y-5">
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className={`grid flex-1 gap-3 ${listingsTab === 'developments' ? 'md:grid-cols-1 xl:grid-cols-2' : 'md:grid-cols-1 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)]'}`}>
+          <div className={`grid flex-1 gap-3 ${listingsTab === 'developments' ? 'md:grid-cols-1 xl:grid-cols-2' : 'md:grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1.15fr)_minmax(280px,0.8fr)]'}`}>
             {listingsTab !== 'developments' ? (
               <div className="grid gap-2">
                 <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Inventory Status</span>
@@ -1990,6 +2144,32 @@ function AgentListings({ initialTab = null } = {}) {
                         className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[0.78rem] font-semibold transition ${
                           active
                             ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_6px_14px_rgba(31,79,120,0.18)]'
+                            : 'border-[#d7e2ee] bg-white text-[#35546c] hover:border-[#b8c8db]'
+                        }`}
+                      >
+                        <span>{option.label}</span>
+                        <span className={active ? 'text-white/78' : 'text-[#7b8ca2]'}>({option.count})</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            {listingsTab !== 'developments' ? (
+              <div className="grid gap-2">
+                <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Arch9 Buy</span>
+                <div className="flex min-h-[44px] flex-wrap items-center gap-1.5 rounded-[14px] border border-[#dce6f2] bg-[#f7fbff] p-1.5">
+                  {arch9BuyFilterOptions.map((option) => {
+                    const active = filters.publicStatus === option.key
+                    return (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setFilters((prev) => ({ ...prev, publicStatus: option.key }))}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[0.78rem] font-semibold transition ${
+                          active
+                            ? 'border-[#123955] bg-[#123955] text-white shadow-[0_6px_14px_rgba(18,57,85,0.18)]'
                             : 'border-[#d7e2ee] bg-white text-[#35546c] hover:border-[#b8c8db]'
                         }`}
                       >
@@ -2046,7 +2226,7 @@ function AgentListings({ initialTab = null } = {}) {
               <div className="flex flex-wrap gap-2">
                 <Button type="button" size="sm" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Open Listing</Button>
                 <Button type="button" size="sm" variant="secondary" onClick={() => setWorkflowMessage('Mandate generation will be available from the listing workspace.')}>Generate Mandate</Button>
-                <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Add Photos</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}?tab=listing`)}>Add Photos</Button>
                 <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}`)}>Add Seller Documents</Button>
                 <Button type="button" size="sm" variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent('itg:open-new-transaction', { detail: { listingId: quickAddSuccess.id } }))}>Create Deal</Button>
               </div>
@@ -2206,6 +2386,31 @@ function AgentListings({ initialTab = null } = {}) {
                         <span>No attention required</span>
                       </div>
                     )}
+
+                    <div className={`rounded-[12px] border px-3 py-2 ${arch9BuyStatusClass(card.arch9BuyStatusKey)}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="inline-flex min-w-0 items-center gap-2 text-[0.78rem] font-semibold">
+                          <Globe2 size={14} className="shrink-0" />
+                          <span className="truncate">{card.arch9BuyStatusLabel}</span>
+                        </span>
+                        <span className="shrink-0 text-[0.68rem] font-semibold uppercase tracking-[0.08em] opacity-75">
+                          {card.arch9BuyImageCount} img
+                        </span>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-[0.74rem] leading-4 opacity-80">{card.arch9BuyDescription}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[0.66rem] font-semibold uppercase tracking-[0.08em] opacity-75">
+                        <span>Bridge: {card.bridgeListingStatusLabel}</span>
+                        <span>Publication: {card.publicationStatusLabel}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(event) => openArch9BuyWorkspace(card, event)}
+                        className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-full border border-current/25 bg-white/55 px-3 text-[0.74rem] font-semibold transition hover:bg-white"
+                      >
+                        {getArch9BuyActionLabel(card)}
+                        <ArrowRight size={13} />
+                      </button>
+                    </div>
 
                     <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-[#eef3f8] pt-3 text-[0.82rem] text-[#53687f]">
                       <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold">

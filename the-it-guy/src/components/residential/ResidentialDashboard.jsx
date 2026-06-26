@@ -198,7 +198,7 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
   const attentionCount = toNumber(data?.attentionRequired) + toNumber(data?.criticalDelays)
 
   return (
-    <section className={`${sectionClass} flex h-full min-h-[280px] flex-col p-4 sm:p-5`}>
+    <section className={`${sectionClass} p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || 'Transaction Health'}</h3>
@@ -209,7 +209,7 @@ export function ResidentialTransactionHealth({ data, scope = 'principal' }) {
         </span>
       </div>
 
-      <div className="mt-4 grid flex-1 gap-4 md:grid-cols-[142px_minmax(0,1fr)] md:items-center">
+      <div className="mt-4 grid gap-4 md:grid-cols-[142px_minmax(0,1fr)] md:items-start">
         <div className="mx-auto grid h-[136px] w-[136px] place-items-center rounded-full" style={{ background: gradient }}>
           <div className="grid h-[86px] w-[86px] place-items-center rounded-full bg-white text-center shadow-inner">
             <div>
@@ -283,7 +283,7 @@ export function ResidentialPerformanceChart({ data, scope = 'principal' }) {
   const currentValue = Number.isFinite(Number(data?.currentValue)) ? Math.round(Number(data.currentValue)) : null
 
   return (
-    <section className={`${sectionClass} flex h-full min-h-[280px] flex-col p-4 sm:p-5`}>
+    <section className={`${sectionClass} p-4 sm:p-5`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[1rem] font-semibold text-[#101828]">{data?.title || (scope === 'agent' ? 'My Performance' : 'Agency Performance')}</h3>
@@ -294,9 +294,9 @@ export function ResidentialPerformanceChart({ data, scope = 'principal' }) {
         </div>
       </div>
 
-      <div className="mt-4 flex min-h-0 flex-1 flex-col justify-between">
-        <div className="min-h-[128px] flex-1 rounded-[16px] border border-[#edf2f7] bg-[linear-gradient(180deg,#fbfdff_0%,#ffffff_100%)] px-3 py-3">
-          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-full min-h-[128px] w-full overflow-visible" role="img" aria-label="Performance trend">
+      <div className="mt-4">
+        <div className="h-[154px] rounded-[16px] border border-[#edf2f7] bg-[linear-gradient(180deg,#fbfdff_0%,#ffffff_100%)] px-3 py-3 sm:h-[168px]">
+          <svg viewBox="0 0 100 84" preserveAspectRatio="none" className="h-full w-full overflow-visible" role="img" aria-label="Performance trend">
             <defs>
               <linearGradient id="performanceGradient" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor="#4f86e8" stopOpacity="0.18" />
@@ -673,7 +673,7 @@ export function ResidentialCommandCenterGrid({
         })}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <ResidentialTransactionHealth data={model.transactionHealth} scope={scope} mode={mode} />
         <ResidentialPerformanceChart data={model.performance} scope={scope} mode={mode} />
       </div>

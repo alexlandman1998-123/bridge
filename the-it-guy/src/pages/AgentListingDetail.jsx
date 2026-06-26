@@ -31,7 +31,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
@@ -160,6 +160,11 @@ const SELLER_WORKSPACE_TABS = [
   { key: 'activity', label: 'Activity' },
 ]
 
+function getSellerWorkspaceTabFromSearch(search = '') {
+  const requestedTab = new URLSearchParams(String(search || '')).get('tab')
+  return SELLER_WORKSPACE_TABS.some((tab) => tab.key === requestedTab) ? requestedTab : ''
+}
+
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
 }
@@ -191,6 +196,8 @@ const AMENITY_OPTIONS = ['Security Estate', 'Clubhouse', 'Kids Play Area', 'Walk
 const EXTERNAL_LINK_PLATFORM_OPTIONS = ['Property24', 'Private Property', 'Agency Website', 'Facebook Marketplace', 'Instagram', 'Gumtree', 'Other']
 const EXTERNAL_LINK_STATUS_OPTIONS = ['Draft', 'Live', 'Removed', 'Expired']
 const PORTAL_STATUS_OPTIONS = ['not_published', 'draft', 'published', 'paused', 'removed']
+const ARCH9_PUBLIC_SITE_ORIGIN = 'https://www.arch9.co.za'
+const ARCH9_PUBLIC_LISTINGS_API_PATH = '/api/public/listings'
 
 function mergeListingRecord(existing = {}, incoming = {}) {
   return {
@@ -430,6 +437,77 @@ function buildListingSnapshotFormData(draft = {}) {
     bridgeListingStatus: String(draft.bridgeListingStatus || 'not_published').trim(),
     bridgeListingPublicUrl: String(draft.bridgeListingPublicUrl || '').trim(),
   }
+}
+
+function normalizePublicListingSlugPart(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .replace(/-+$/g, '')
+}
+
+function buildArch9PublicListingSlug(draft = {}, listing = {}) {
+  const base = [
+    draft.headline || listing.listingTitle || listing.title,
+    draft.suburb || listing.suburb,
+    draft.province || listing.province,
+  ]
+    .map(normalizePublicListingSlugPart)
+    .filter(Boolean)
+    .join('-')
+
+  const id = String(listing.id || '').trim()
+  const suffix = id ? id.replace(/-/g, '').slice(0, 8).toLowerCase() : ''
+
+  return [base || 'listing', suffix].filter(Boolean).join('-')
+}
+
+function buildArch9PublicListingUrl(draft = {}, listing = {}) {
+  const slug = buildArch9PublicListingSlug(draft, listing)
+  return slug ? `${ARCH9_PUBLIC_SITE_ORIGIN}/buy/${slug}` : ''
+}
+
+function getPublicListingSlugFromUrl(publicUrl = '') {
+  const value = String(publicUrl || '').trim()
+  if (!value) return ''
+  try {
+    const parsed = new URL(value, ARCH9_PUBLIC_SITE_ORIGIN)
+    const parts = parsed.pathname.split('/').map((part) => part.trim()).filter(Boolean)
+    const buyIndex = parts.indexOf('buy')
+    return buyIndex >= 0 ? parts[buyIndex + 1] || '' : parts.at(-1) || ''
+  } catch {
+    const parts = value.split(/[/?#]/).map((part) => part.trim()).filter(Boolean)
+    const buyIndex = parts.indexOf('buy')
+    return buyIndex >= 0 ? parts[buyIndex + 1] || '' : parts.at(-1) || ''
+  }
+}
+
+function getArch9PublicationBlockers(draft = {}, coverImage = null) {
+  const blockers = []
+  const listingStatus = normalizeKey(draft.listingStatus)
+  if (!String(draft.headline || '').trim()) blockers.push('Add a listing title.')
+  if (!Number(draft.price || 0)) blockers.push('Add an asking price.')
+  if (!String(draft.description || '').trim()) blockers.push('Add a public-facing description.')
+  if (!String(draft.suburb || draft.city || '').trim()) blockers.push('Add at least a suburb or city.')
+  if (!coverImage?.url) blockers.push('Upload and select a cover image.')
+  if (['sold', 'withdrawn', 'transaction_created'].includes(listingStatus)) {
+    blockers.push('Only active market listings can be published.')
+  }
+  return blockers
+}
+
+function arch9LiveCheckClass(status = '') {
+  if (status === 'live') return 'border-[#d8eddf] bg-[#f2fbf5] text-[#1f7d44]'
+  if (status === 'checking') return 'border-[#cfe0f4] bg-[#f5f9ff] text-[#1f4f78]'
+  if (status === 'paused') return 'border-[#dbe6f2] bg-white text-[#607387]'
+  if (['not_found', 'missing_url', 'error'].includes(status)) return 'border-[#f2dfbf] bg-[#fff8ea] text-[#8a5b16]'
+  return 'border-[#dbe6f2] bg-white text-[#607387]'
 }
 
 function formatCurrency(value) {
@@ -1327,6 +1405,7 @@ function mergeAddressIntoMarketingDraft(previous, value) {
 
 function AgentListingDetail() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { listingId: encodedListingId } = useParams()
   const { profile } = useWorkspace()
   const listingId = decodeURIComponent(String(encodedListingId || ''))
@@ -1355,6 +1434,9 @@ function AgentListingDetail() {
   const [detailError, setDetailError] = useState('')
   const [deletingListing, setDeletingListing] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
+  const [publicationSaving, setPublicationSaving] = useState(false)
+  const [arch9LiveChecking, setArch9LiveChecking] = useState(false)
+  const [arch9LiveCheck, setArch9LiveCheck] = useState({ status: 'idle', message: '' })
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [resettingSellerPortalPassword, setResettingSellerPortalPassword] = useState(false)
@@ -1366,7 +1448,7 @@ function AgentListingDetail() {
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const [externalLinkDraft, setExternalLinkDraft] = useState(() => createExternalLinkDraft())
-  const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState('overview')
+  const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
   const [commissionDraft, setCommissionDraft] = useState({
     percentage: '',
     amount: '',
@@ -1409,6 +1491,13 @@ function AgentListingDetail() {
     const developmentId = listingId.replace('development-', '')
     navigate(`/developments/${developmentId}`, { replace: true })
   }, [listingId, navigate])
+
+  useEffect(() => {
+    const requestedTab = getSellerWorkspaceTabFromSearch(location.search)
+    if (!requestedTab) return
+    setActiveTab('seller')
+    setSellerWorkspaceTab(requestedTab)
+  }, [location.search])
 
   const loadListingData = useCallback(async () => {
     setLoading(true)
@@ -1901,98 +1990,221 @@ function AgentListingDetail() {
     return localListing
   }
 
-  async function saveMarketingDraft() {
+  async function saveMarketingDraft(draftOverride = marketingDraft, options = {}) {
+    const draft = draftOverride || marketingDraft
     setDetailMessage('')
     setDetailError('')
-    const normalizedExternalLinks = normalizeExternalListingLinks(marketingDraft.externalLinks)
+    const normalizedExternalLinks = normalizeExternalListingLinks(draft.externalLinks)
     const property24ExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('property24')) || null
     const privatePropertyExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('private')) || null
-    const updatedListing = await persistListingSnapshot(marketingDraft, { persistCoreFields: true })
+    const updatedListing = await persistListingSnapshot(draft, { persistCoreFields: true })
     if (!updatedListing?.id || !isSupabaseConfigured) {
       setDetailMessage('Listing details saved locally.')
-      return
+      return { ok: true, localOnly: true }
     }
 
     try {
-      const savedListing = await updatePrivateListing(updatedListing.id, {
-        title: marketingDraft.headline.trim() || updatedListing.listingTitle || '',
-        propertyType: marketingDraft.propertyType || updatedListing.propertyType || '',
-        listingStatus: marketingDraft.listingStatus || updatedListing.listingStatus || updatedListing.status || 'mandate_signed',
-        listingSource: marketingDraft.source || updatedListing.listingSource || 'private_listing',
-        description: marketingDraft.description.trim(),
-        askingPrice: Number(marketingDraft.price || 0),
-        addressLine1: marketingDraft.addressLine1.trim(),
-        formattedAddress: marketingDraft.formattedAddress.trim(),
-        streetAddress: marketingDraft.streetAddress.trim(),
-        suburb: marketingDraft.suburb.trim(),
-        city: marketingDraft.city.trim(),
-        province: marketingDraft.province.trim(),
-        country: marketingDraft.country.trim() || 'South Africa',
-        postalCode: marketingDraft.postalCode.trim(),
-        latitude: marketingDraft.latitude ?? null,
-        longitude: marketingDraft.longitude ?? null,
-        googlePlaceId: marketingDraft.googlePlaceId.trim(),
-        isActive: String(marketingDraft.listingStatus || '').trim().toLowerCase() === 'active',
-        property24ListingUrl: marketingDraft.property24ListingUrl.trim() || property24ExternalLink?.url || '',
-        property24Reference: marketingDraft.property24Reference.trim(),
-        property24Status: marketingDraft.property24Status || property24ExternalLink?.status || 'not_published',
-        privatePropertyListingUrl: marketingDraft.privatePropertyListingUrl.trim() || privatePropertyExternalLink?.url || '',
-        privatePropertyReference: marketingDraft.privatePropertyReference.trim(),
-        privatePropertyStatus: marketingDraft.privatePropertyStatus || privatePropertyExternalLink?.status || 'not_published',
-        bridgeListingStatus: marketingDraft.bridgeListingStatus,
-        bridgeListingPublicUrl: marketingDraft.bridgeListingPublicUrl.trim(),
-        listingPreviewDescription: marketingDraft.listingPreviewDescription.trim(),
-        internalListingNotes: marketingDraft.notes.trim(),
-      })
+      const listingPatch = {
+        title: draft.headline.trim() || updatedListing.listingTitle || '',
+        propertyType: draft.propertyType || updatedListing.propertyType || '',
+        listingStatus: draft.listingStatus || updatedListing.listingStatus || updatedListing.status || 'mandate_signed',
+        listingSource: draft.source || updatedListing.listingSource || 'private_listing',
+        description: draft.description.trim(),
+        askingPrice: Number(draft.price || 0),
+        addressLine1: draft.addressLine1.trim(),
+        formattedAddress: draft.formattedAddress.trim(),
+        streetAddress: draft.streetAddress.trim(),
+        suburb: draft.suburb.trim(),
+        city: draft.city.trim(),
+        province: draft.province.trim(),
+        country: draft.country.trim() || 'South Africa',
+        postalCode: draft.postalCode.trim(),
+        latitude: draft.latitude ?? null,
+        longitude: draft.longitude ?? null,
+        googlePlaceId: draft.googlePlaceId.trim(),
+        isActive: String(draft.listingStatus || '').trim().toLowerCase() === 'active',
+        property24ListingUrl: draft.property24ListingUrl.trim() || property24ExternalLink?.url || '',
+        property24Reference: draft.property24Reference.trim(),
+        property24Status: draft.property24Status || property24ExternalLink?.status || 'not_published',
+        privatePropertyListingUrl: draft.privatePropertyListingUrl.trim() || privatePropertyExternalLink?.url || '',
+        privatePropertyReference: draft.privatePropertyReference.trim(),
+        privatePropertyStatus: draft.privatePropertyStatus || privatePropertyExternalLink?.status || 'not_published',
+        bridgeListingStatus: draft.bridgeListingStatus,
+        bridgeListingPublicUrl: draft.bridgeListingPublicUrl.trim(),
+        listingPreviewDescription: draft.listingPreviewDescription.trim(),
+        internalListingNotes: draft.notes.trim(),
+      }
+      if (options.listingVisibility) listingPatch.listingVisibility = options.listingVisibility
+      const savedListing = await updatePrivateListing(updatedListing.id, listingPatch)
       if (savedListing?.id) {
         setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(updatedListing, savedListing)))
       }
       const distributionSync = await syncPrivateListingDistributionData(updatedListing.id, {
         publicationData: {
-          title: marketingDraft.headline.trim(),
-          address: marketingDraft.addressLine1.trim(),
-          formattedAddress: marketingDraft.formattedAddress.trim(),
-          suburb: marketingDraft.suburb.trim(),
-          city: marketingDraft.city.trim(),
-          province: marketingDraft.province.trim(),
-          country: marketingDraft.country.trim() || 'South Africa',
-          postalCode: marketingDraft.postalCode.trim(),
-          latitude: marketingDraft.latitude ?? null,
-          longitude: marketingDraft.longitude ?? null,
-          googlePlaceId: marketingDraft.googlePlaceId.trim(),
-          propertyType: marketingDraft.propertyType,
-          listingType: marketingDraft.listingType,
-          askingPrice: Number(marketingDraft.price || 0),
-          bedrooms: marketingDraft.bedrooms,
-          bathrooms: marketingDraft.bathrooms,
-          garages: marketingDraft.garages,
-          parkingBays: marketingDraft.parkingBays,
-          floorSize: marketingDraft.floorSize,
-          erfSize: marketingDraft.erfSize,
-          ratesTaxes: marketingDraft.ratesTaxesNotApplicable ? null : marketingDraft.ratesTaxes,
-          levies: marketingDraft.leviesNotApplicable ? null : marketingDraft.levies,
-          description: marketingDraft.description.trim(),
-          features: marketingDraft.selectedFeatures,
-          amenities: marketingDraft.amenities,
-          status: marketingDraft.publicationStatus,
+          title: draft.headline.trim(),
+          address: draft.addressLine1.trim(),
+          formattedAddress: draft.formattedAddress.trim(),
+          suburb: draft.suburb.trim(),
+          city: draft.city.trim(),
+          province: draft.province.trim(),
+          country: draft.country.trim() || 'South Africa',
+          postalCode: draft.postalCode.trim(),
+          latitude: draft.latitude ?? null,
+          longitude: draft.longitude ?? null,
+          googlePlaceId: draft.googlePlaceId.trim(),
+          propertyType: draft.propertyType,
+          listingType: draft.listingType,
+          askingPrice: Number(draft.price || 0),
+          bedrooms: draft.bedrooms,
+          bathrooms: draft.bathrooms,
+          garages: draft.garages,
+          parkingBays: draft.parkingBays,
+          floorSize: draft.floorSize,
+          erfSize: draft.erfSize,
+          ratesTaxes: draft.ratesTaxesNotApplicable ? null : draft.ratesTaxes,
+          levies: draft.leviesNotApplicable ? null : draft.levies,
+          description: draft.description.trim(),
+          features: draft.selectedFeatures,
+          amenities: draft.amenities,
+          status: draft.publicationStatus,
         },
         media: {
-          coverImageId: marketingDraft.coverImageId,
-          galleryImages: marketingDraft.galleryImages,
-          floorplans: marketingDraft.floorplans,
-          videoLink: marketingDraft.videoLink,
-          virtualTourLink: marketingDraft.virtualTourLink,
+          coverImageId: draft.coverImageId,
+          galleryImages: draft.galleryImages,
+          floorplans: draft.floorplans,
+          videoLink: draft.videoLink,
+          virtualTourLink: draft.virtualTourLink,
         },
         externalLinks: normalizedExternalLinks,
       })
       if (distributionSync?.skipped) {
         console.warn('[AgentListingDetail] listing distribution sync skipped', distributionSync.reason)
       }
-      await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(marketingDraft), { incrementListingCount: false })
-      setDetailMessage('Listing details saved.')
+      await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(draft), { incrementListingCount: false })
+      setDetailMessage(options.successMessage || 'Listing details saved.')
+      return { ok: true, listing: savedListing || updatedListing }
     } catch (error) {
       console.error('[AgentListingDetail] Supabase listing save failed', error)
       setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')
+      return { ok: false, error }
+    }
+  }
+
+  async function verifyArch9PublicListing(publicUrlOverride = arch9PublicListingUrl, options = {}) {
+    const slug = getPublicListingSlugFromUrl(publicUrlOverride)
+    if (!slug) {
+      const nextCheck = { status: 'missing_url', message: 'Save listing data before checking the public page.' }
+      setArch9LiveCheck(nextCheck)
+      return nextCheck
+    }
+
+    setArch9LiveChecking(true)
+    if (!options.silent) setArch9LiveCheck({ status: 'checking', message: 'Checking the public catalogue...' })
+    try {
+      const response = await fetch(`${ARCH9_PUBLIC_LISTINGS_API_PATH}?slug=${encodeURIComponent(slug)}`, {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      })
+      const payload = await response.json().catch(() => null)
+      if (response.ok && payload?.listing?.slug) {
+        const nextCheck = { status: 'live', message: 'Confirmed live on Arch9 Buy.' }
+        setArch9LiveCheck(nextCheck)
+        if (!options.silent) {
+          setDetailError('')
+          setDetailMessage(nextCheck.message)
+        }
+        return nextCheck
+      }
+
+      const nextCheck = {
+        status: 'not_found',
+        message: payload?.message || 'Not visible on the public catalogue yet. Check readiness, save, then try again.',
+      }
+      setArch9LiveCheck(nextCheck)
+      return nextCheck
+    } catch (error) {
+      const nextCheck = {
+        status: 'error',
+        message: error?.message || 'The public catalogue could not be checked from this browser.',
+      }
+      setArch9LiveCheck(nextCheck)
+      return nextCheck
+    } finally {
+      setArch9LiveChecking(false)
+    }
+  }
+
+  async function publishToArch9Buy() {
+    const blockers = getArch9PublicationBlockers(marketingDraft, coverImage)
+    if (blockers.length) {
+      setDetailMessage('')
+      setDetailError(`Before publishing to Arch9 Buy: ${blockers.join(' ')}`)
+      return
+    }
+
+    const publicUrl = buildArch9PublicListingUrl(marketingDraft, listingRecord)
+    const currentListingStatus = normalizeKey(marketingDraft.listingStatus)
+    const nextDraft = {
+      ...marketingDraft,
+      publicationStatus: 'Published',
+      bridgeListingStatus: 'published',
+      bridgeListingPublicUrl: publicUrl,
+      listingStatus: ['sold', 'withdrawn', 'transaction_created'].includes(currentListingStatus)
+        ? marketingDraft.listingStatus
+        : 'active',
+    }
+
+    setPublicationSaving(true)
+    setMarketingDraft(nextDraft)
+    try {
+      const saveResult = await saveMarketingDraft(nextDraft, {
+        listingVisibility: 'active_market',
+        successMessage: 'Listing published to Arch9 Buy.',
+      })
+      if (saveResult?.ok && !saveResult.localOnly) {
+        const liveResult = await verifyArch9PublicListing(publicUrl, { silent: true })
+        if (liveResult.status === 'live') {
+          setDetailError('')
+          setDetailMessage('Listing published and confirmed live on Arch9 Buy.')
+        }
+      }
+    } finally {
+      setPublicationSaving(false)
+    }
+  }
+
+  async function pauseArch9BuyPublication() {
+    const publicUrl = buildArch9PublicListingUrl(marketingDraft, listingRecord)
+    const nextDraft = {
+      ...marketingDraft,
+      publicationStatus: 'Draft',
+      bridgeListingStatus: 'paused',
+      bridgeListingPublicUrl: publicUrl,
+    }
+
+    setPublicationSaving(true)
+    setMarketingDraft(nextDraft)
+    try {
+      const saveResult = await saveMarketingDraft(nextDraft, {
+        successMessage: 'Listing removed from Arch9 Buy.',
+      })
+      if (saveResult?.ok) {
+        setArch9LiveCheck({ status: 'paused', message: 'Publication paused. The public link should no longer resolve once cache refreshes.' })
+      }
+    } finally {
+      setPublicationSaving(false)
+    }
+  }
+
+  async function copyArch9PublicListingUrl() {
+    if (!arch9PublicListingUrl) return
+    try {
+      await navigator.clipboard.writeText(arch9PublicListingUrl)
+      setDetailError('')
+      setDetailMessage('Arch9 Buy link copied.')
+    } catch {
+      setDetailMessage('')
+      setDetailError('Unable to copy the Arch9 Buy link from this browser.')
     }
   }
 
@@ -2291,6 +2503,7 @@ function AgentListingDetail() {
   function openSellerWorkspaceSection(tab, message = '') {
     setActiveTab('seller')
     setSellerWorkspaceTab(tab)
+    navigate(`${location.pathname}?tab=${encodeURIComponent(tab)}`, { replace: true })
     setDetailError('')
     if (message) setDetailMessage(message)
     if (typeof window !== 'undefined') {
@@ -3680,6 +3893,20 @@ function AgentListingDetail() {
   const coverImage = useMemo(() => {
     return marketingDraft.galleryImages.find((image) => String(image?.id) === String(marketingDraft.coverImageId)) || marketingDraft.galleryImages[0] || null
   }, [marketingDraft.coverImageId, marketingDraft.galleryImages])
+  const arch9PublicListingUrl = useMemo(
+    () => buildArch9PublicListingUrl(marketingDraft, listingRecord),
+    [listingRecord, marketingDraft],
+  )
+  const arch9PublicationBlockers = useMemo(
+    () => getArch9PublicationBlockers(marketingDraft, coverImage),
+    [coverImage, marketingDraft],
+  )
+  const arch9CanPublish = arch9PublicationBlockers.length === 0
+  const arch9IsPublished = normalizeKey(marketingDraft.publicationStatus) === 'published' && normalizeKey(marketingDraft.bridgeListingStatus) === 'published'
+
+  useEffect(() => {
+    setArch9LiveCheck({ status: 'idle', message: '' })
+  }, [arch9PublicListingUrl])
 
   const sectionStatuses = useMemo(() => {
     const basicComplete = Boolean(marketingDraft.headline.trim() && marketingDraft.propertyType && marketingDraft.suburb.trim() && marketingDraft.city.trim())
@@ -6251,7 +6478,7 @@ function AgentListingDetail() {
                           ? 'bg-[#123955] text-white shadow-[0_10px_22px_rgba(18,57,85,0.16)]'
                           : 'text-[#5f7288] hover:bg-[#f7fbff] hover:text-[#263b4f]'
                       }`}
-                      onClick={() => setSellerWorkspaceTab(tab.key)}
+                      onClick={() => openSellerWorkspaceSection(tab.key)}
                     >
                       {tab.label}
                     </button>
@@ -6873,11 +7100,32 @@ function AgentListingDetail() {
                       <p className="mt-1 text-sm text-[#607387]">Canonical data for the future Arch9 listing site.</p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => setDetailMessage('Listing preview will open once the public Arch9 listing route is connected.')}>
-                        <Eye size={15} />
-                        Preview Listing
+                      <Button size="sm" variant="secondary" asChild>
+                        <a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer">
+                          <Eye size={15} />
+                          Preview Listing
+                        </a>
                       </Button>
-                      <Button size="sm" onClick={saveMarketingDraft}>
+                      <Button size="sm" variant="secondary" onClick={copyArch9PublicListingUrl} disabled={!arch9PublicListingUrl}>
+                        <Copy size={15} />
+                        Copy Link
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => verifyArch9PublicListing()} disabled={!arch9PublicListingUrl || arch9LiveChecking}>
+                        {arch9LiveChecking ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                        Check Live
+                      </Button>
+                      {arch9IsPublished ? (
+                        <Button size="sm" variant="secondary" onClick={pauseArch9BuyPublication} disabled={publicationSaving}>
+                          {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+                          Pause Arch9 Buy
+                        </Button>
+                      ) : (
+                        <Button size="sm" onClick={publishToArch9Buy} disabled={publicationSaving || !arch9CanPublish}>
+                          {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <ExternalLink size={15} />}
+                          Publish to Arch9 Buy
+                        </Button>
+                      )}
+                      <Button size="sm" variant="secondary" onClick={() => saveMarketingDraft()}>
                         <FileText size={15} />
                         Save Listing Data
                       </Button>
@@ -7043,6 +7291,56 @@ function AgentListingDetail() {
                         {item.complete ? <CheckCircle2 size={15} className="shrink-0 text-[#1f7d44]" /> : <CircleAlert size={15} className="shrink-0 text-[#9a5b13]" />}
                       </div>
                     ))}
+                  </div>
+                  <div className="mt-6 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-semibold text-[#142132]">Arch9 Buy</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#607387]">
+                          {arch9IsPublished ? 'Live on the public property catalogue.' : 'Ready listings can be published to www.arch9.co.za/buy.'}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${
+                        arch9IsPublished
+                          ? 'border-[#d8eddf] bg-[#f2fbf5] text-[#1f7d44]'
+                          : 'border-[#dbe6f2] bg-white text-[#607387]'
+                      }`}>
+                        {arch9IsPublished ? 'Published' : 'Not live'}
+                      </span>
+                    </div>
+                    {arch9PublicListingUrl ? (
+                      <div className="mt-3 flex min-w-0 items-center gap-2 rounded-[12px] border border-[#e1e9f2] bg-white px-3 py-2 text-xs text-[#425970]">
+                        <Link2 size={14} className="shrink-0 text-[#7b8ca2]" />
+                        <span className="truncate">{arch9PublicListingUrl}</span>
+                      </div>
+                    ) : null}
+                    {arch9LiveCheck.message ? (
+                      <div className={`mt-3 flex items-start gap-2 rounded-[12px] border px-3 py-2 text-xs font-semibold leading-5 ${arch9LiveCheckClass(arch9LiveCheck.status)}`}>
+                        {arch9LiveChecking || arch9LiveCheck.status === 'checking' ? (
+                          <Loader2 size={14} className="mt-0.5 shrink-0 animate-spin" />
+                        ) : arch9LiveCheck.status === 'live' ? (
+                          <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+                        ) : (
+                          <CircleAlert size={14} className="mt-0.5 shrink-0" />
+                        )}
+                        <span>{arch9LiveCheck.message}</span>
+                      </div>
+                    ) : null}
+                    {arch9PublicationBlockers.length ? (
+                      <div className="mt-4 space-y-2">
+                        {arch9PublicationBlockers.map((blocker) => (
+                          <div key={blocker} className="flex items-start gap-2 text-xs leading-5 text-[#7a5a1b]">
+                            <CircleAlert size={14} className="mt-0.5 shrink-0" />
+                            <span>{blocker}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-4 flex items-start gap-2 text-xs leading-5 text-[#1f7d44]">
+                        <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+                        <span>Meets the public listing requirements.</span>
+                      </div>
+                    )}
                   </div>
                 </aside>
               </section>

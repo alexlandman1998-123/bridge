@@ -19,6 +19,7 @@ import {
   MobileEmptyState,
 } from '../../components/mobile/ExecutiveMobileUi'
 import { selectBottlenecks } from '../../core/transactions/developerSelectors'
+import { useWorkspace } from '../../context/WorkspaceContext'
 import { fetchDevelopmentsData } from '../../lib/api'
 import {
   currencyFormatter,
@@ -40,6 +41,8 @@ function toneForDevelopmentCard(item) {
 }
 
 export default function MobileDevelopmentsPage() {
+  const { currentWorkspace } = useWorkspace()
+  const currentWorkspaceId = String(currentWorkspace?.id || '').trim()
   const [state, setState] = useState({
     loading: true,
     error: '',
@@ -61,7 +64,7 @@ export default function MobileDevelopmentsPage() {
     }
 
     try {
-      const response = await fetchDevelopmentsData()
+      const response = await fetchDevelopmentsData({ organisationId: currentWorkspaceId })
       setState({
         loading: false,
         error: '',
@@ -76,7 +79,7 @@ export default function MobileDevelopmentsPage() {
         error: error.message || 'Unable to load developments.',
       }))
     }
-  }, [])
+  }, [currentWorkspaceId])
 
   useEffect(() => {
     void load()

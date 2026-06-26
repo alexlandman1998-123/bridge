@@ -91,15 +91,30 @@ function readJson(key, fallback) {
   }
 }
 
+function readStoredJson(key, fallback) {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return fallback
+    return JSON.parse(raw)
+  } catch {
+    return fallback
+  }
+}
+
 function writeJson(key, value) {
   if (typeof window === 'undefined') return
   if (!isUnsafeFallbackAllowed()) return
   window.localStorage.setItem(key, JSON.stringify(value))
 }
 
-function clearJson(key) {
+function writeStoredJson(key, value) {
   if (typeof window === 'undefined') return
-  if (!isUnsafeFallbackAllowed()) return
+  window.localStorage.setItem(key, JSON.stringify(value))
+}
+
+function clearStoredJson(key) {
+  if (typeof window === 'undefined') return
   window.localStorage.removeItem(key)
 }
 
@@ -529,22 +544,22 @@ export function ensureAgentModuleDemoSeed({ profileEmail = '' } = {}) {
 export function clearLegacyAgentDemoSeedData() {
   if (typeof window === 'undefined') return false
 
-  const seededRows = readJson(KEY_AGENT_DEMO_TRANSACTIONS, [])
-  const privateListings = readJson(KEY_PRIVATE_LISTINGS, [])
-  const pipelineRows = readJson(KEY_PIPELINE, [])
-  const meta = readJson(KEY_META, null)
+  const seededRows = readStoredJson(KEY_AGENT_DEMO_TRANSACTIONS, [])
+  const privateListings = readStoredJson(KEY_PRIVATE_LISTINGS, [])
+  const pipelineRows = readStoredJson(KEY_PIPELINE, [])
+  const meta = readStoredJson(KEY_META, null)
 
   let didChange = false
 
   if (Array.isArray(seededRows) && seededRows.length) {
-    clearJson(KEY_AGENT_DEMO_TRANSACTIONS)
+    clearStoredJson(KEY_AGENT_DEMO_TRANSACTIONS)
     didChange = true
   }
 
   if (Array.isArray(privateListings) && privateListings.length) {
     const filteredListings = privateListings.filter((row) => !isSeededListingRecord(row))
     if (filteredListings.length !== privateListings.length) {
-      writeJson(KEY_PRIVATE_LISTINGS, filteredListings)
+      writeStoredJson(KEY_PRIVATE_LISTINGS, filteredListings)
       didChange = true
     }
   }
@@ -552,18 +567,18 @@ export function clearLegacyAgentDemoSeedData() {
   if (Array.isArray(pipelineRows) && pipelineRows.length) {
     const filteredPipeline = pipelineRows.filter((row) => !isSeededPipelineRecord(row))
     if (filteredPipeline.length !== pipelineRows.length) {
-      writeJson(KEY_PIPELINE, filteredPipeline)
+      writeStoredJson(KEY_PIPELINE, filteredPipeline)
       didChange = true
     }
   }
 
   if (meta) {
-    clearJson(KEY_META)
+    clearStoredJson(KEY_META)
     didChange = true
   }
 
-  if (readJson(KEY_AGENT_DIRECTORY, null)) {
-    clearJson(KEY_AGENT_DIRECTORY)
+  if (readStoredJson(KEY_AGENT_DIRECTORY, null)) {
+    clearStoredJson(KEY_AGENT_DIRECTORY)
     didChange = true
   }
 

@@ -405,14 +405,14 @@ export function buildWorkspaceResolution({
     const workspace = organisationById.get(row.organisation_id) || normalizeOrganisationRow(row.organisations, { appRole })
     return createMembershipRecord({
       id: row.id,
-      source: 'organisation_users',
+      source: row.source_table || 'organisation_users',
       userId: row.user_id || null,
       workspaceId: row.organisation_id || null,
       workspace,
       workspaceType: row.workspace_type || workspace?.type || inferWorkspaceTypeFromAppRole(appRole),
       appRole: row.app_role || appRole,
-      role: row.workspace_role || row.organisation_role || row.role,
-      status: row.status,
+      role: row.workspace_role || row.organisation_role || row.organization_role || row.role,
+      status: row.status || row.membership_status,
       branchId: row.branch_id || null,
       primaryBranchId: row.primary_branch_id || row.branch_id || null,
       branchScope: row.branch_scope || null,
@@ -647,6 +647,7 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
   const membershipSelect =
     'id, organisation_id, user_id, branch_id, primary_branch_id, branch_scope, region_id, workspace_unit_id, scope_level, scope_metadata, module_context, module_metadata, is_primary_owner, active_workspace_selected_at, department_id, team_id, first_name, last_name, email, role, workspace_role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
   const fallbackSelect = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, organisation_role, app_role, workspace_type, status, invited_by_user_id, invited_at, joined_at, accepted_at, last_active_at, created_at, updated_at'
+  const currentMembershipSelect = 'id, organization_id, user_id, organization_role, membership_status, created_at, updated_at'
   let byUserId = await client
     .from('organisation_users')
     .select(membershipSelect)
@@ -718,6 +719,35 @@ async function fetchOrganisationMembershipRows(client, user, profile) {
   for (const row of [...(byUserId.data || []), ...invitedRows]) {
     if (row?.id) rowsById.set(row.id, row)
   }
+
+  const currentSchemaRows = await client
+    .from('organization_members')
+    .select(currentMembershipSelect)
+    .eq('user_id', userId)
+
+  if (!currentSchemaRows.error) {
+    for (const row of currentSchemaRows.data || []) {
+      if (!row?.id || rowsById.has(row.id)) continue
+      rowsById.set(row.id, {
+        id: row.id,
+        organisation_id: row.organization_id,
+        organization_id: row.organization_id,
+        user_id: row.user_id,
+        role: row.organization_role,
+        organisation_role: row.organization_role,
+        organization_role: row.organization_role,
+        status: row.membership_status,
+        membership_status: row.membership_status,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        source_table: 'organization_members',
+        raw: row,
+      })
+    }
+  } else if (!isRecoverableSchemaError(currentSchemaRows.error, 'organization_members', 'organization_id')) {
+    throw currentSchemaRows.error
+  }
+
   return [...rowsById.values()]
 }
 

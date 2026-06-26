@@ -14,7 +14,7 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!assets/|brand/|favicon(?:-[^/]+)?\\.(?:png|svg|ico)|arch9-launch-preview\\.png|vite\\.svg).*)",
+      "source": "/((?!api/|assets/|brand/|favicon(?:-[^/]+)?\\.(?:png|svg|ico)|arch9-launch-preview\\.png|vite\\.svg).*)",
       "destination": "/index.html"
     }
   ]

@@ -19,6 +19,7 @@ import SectionHeader from '../components/ui/SectionHeader'
 import { selectBottlenecks, selectDevelopmentPerformance, selectPortfolioMetrics } from '../core/transactions/developerSelectors'
 import { fetchDevelopmentsData } from '../lib/api'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { useWorkspace } from '../context/WorkspaceContext'
 
 function formatRelativeDate(value) {
   if (!value) return 'No recent activity'
@@ -125,6 +126,8 @@ function getDevelopmentProgress(totalUnits, inProgressCount, completedCount) {
 
 function Developments() {
   const navigate = useNavigate()
+  const { currentWorkspace } = useWorkspace()
+  const currentWorkspaceId = String(currentWorkspace?.id || '').trim()
   const [data, setData] = useState({
     metrics: {
       totalDevelopments: 0,
@@ -152,14 +155,14 @@ function Developments() {
     try {
       setError('')
       setLoading(true)
-      const response = await fetchDevelopmentsData()
+      const response = await fetchDevelopmentsData({ organisationId: currentWorkspaceId })
       setData(response)
     } catch (loadError) {
       setError(loadError.message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [currentWorkspaceId])
 
   useEffect(() => {
     void loadData()

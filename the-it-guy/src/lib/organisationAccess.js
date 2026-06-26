@@ -2,19 +2,26 @@ import { normalizeAppRole } from './roles'
 import { FEATURE_FLAGS } from './featureFlags'
 import { can } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
-import { inferWorkspaceTypeFromAppRole } from '../constants/workspaceTypes'
+import { inferWorkspaceTypeFromAppRole, normalizeWorkspaceType } from '../constants/workspaceTypes'
 
-const ADMIN_MEMBERSHIP_ROLES = new Set(['super_admin', 'principal', 'admin', 'branch_manager'])
+const ADMIN_MEMBERSHIP_ROLES = new Set(['owner', 'super_admin', 'principal', 'admin', 'branch_manager'])
 
-export function normalizeOrganisationMembershipRole(value) {
+export function normalizeOrganisationMembershipRole(value, options = {}) {
   const normalized = String(value || '').trim().toLowerCase()
   if (!normalized) return 'viewer'
   if (normalized === 'administrator') return 'admin'
-  if (normalized === 'owner') return 'principal'
+  if (normalized === 'owner') return 'owner'
   if (normalized === 'superadmin') return 'super_admin'
   if (normalized === 'branch_admin') return 'branch_manager'
   if (normalized === 'branch manager') return 'branch_manager'
-  if (normalized === 'principal / owner') return 'principal'
+  if (normalized === 'principal / owner') {
+    const appRole = normalizeAppRole(options.appRole || options.app_role || '')
+    const workspaceType = normalizeWorkspaceType(
+      options.workspaceType || options.workspace_type,
+      inferWorkspaceTypeFromAppRole(appRole),
+    )
+    return workspaceType && workspaceType !== 'agency' ? 'owner' : 'principal'
+  }
   return normalized
 }
 
@@ -26,43 +33,43 @@ export function canViewOrganisationSettings({ appRole } = {}) {
   return normalizeAppRole(appRole) !== 'client'
 }
 
-export function canManageOrganisationSettings({ appRole, membershipRole } = {}) {
+export function canManageOrganisationSettings({ appRole, membershipRole, workspaceType } = {}) {
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
     return normalizeAppRole(appRole) !== 'client'
   }
   const normalizedAppRole = normalizeAppRole(appRole)
-  const workspaceType = inferWorkspaceTypeFromAppRole(normalizedAppRole)
+  const resolvedWorkspaceType = normalizeWorkspaceType(workspaceType, inferWorkspaceTypeFromAppRole(normalizedAppRole))
   return can(PERMISSIONS.manageWorkspaceSettings, {
     appRole: normalizedAppRole,
     organisationRole: membershipRole,
-    workspaceType,
+    workspaceType: resolvedWorkspaceType,
     membershipStatus: 'active',
     currentMembership: {
       id: 'legacy-access-check',
       role: membershipRole,
       status: 'active',
-      workspaceType,
+      workspaceType: resolvedWorkspaceType,
       workspaceId: 'legacy-access-check',
-      workspace: { id: 'legacy-access-check', type: workspaceType },
+      workspace: { id: 'legacy-access-check', type: resolvedWorkspaceType },
     },
   })
 }
 
-export function canManageOrganisationMembers({ appRole, membershipRole } = {}) {
+export function canManageOrganisationMembers({ appRole, membershipRole, workspaceType } = {}) {
   const normalizedAppRole = normalizeAppRole(appRole)
-  const workspaceType = inferWorkspaceTypeFromAppRole(normalizedAppRole)
+  const resolvedWorkspaceType = normalizeWorkspaceType(workspaceType, inferWorkspaceTypeFromAppRole(normalizedAppRole))
   return can(PERMISSIONS.manageUsers, {
     appRole: normalizedAppRole,
     organisationRole: membershipRole,
-    workspaceType,
+    workspaceType: resolvedWorkspaceType,
     membershipStatus: 'active',
     currentMembership: {
       id: 'legacy-access-check',
       role: membershipRole,
       status: 'active',
-      workspaceType,
+      workspaceType: resolvedWorkspaceType,
       workspaceId: 'legacy-access-check',
-      workspace: { id: 'legacy-access-check', type: workspaceType },
+      workspace: { id: 'legacy-access-check', type: resolvedWorkspaceType },
     },
   })
 }
