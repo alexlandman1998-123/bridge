@@ -26,6 +26,7 @@ import {
   getAgencyAuthorityLevel,
   normalizeAgencyAuthorityRole,
 } from '../../services/agencyAuthorityService'
+import { getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import {
   SettingsBanner,
   SettingsEmptyState,
@@ -171,9 +172,11 @@ function getCommercialAuditSubject(event = {}) {
 
 export default function SettingsUsersPage() {
   const location = useLocation()
-  const { can, currentMembership, currentWorkspace, workspaceRole, workspaceType, profile } = useWorkspace()
+  const { can, role, currentMembership, currentWorkspace, workspaceRole, workspaceType, profile } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
   const canEdit = can(PERMISSIONS.manageUsers)
+  const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const inviteSectionRef = useRef(null)
   const inviteNavigationState = readInviteNavigationState(location.state)
   const isPrincipalClaimInviteMode = inviteNavigationState.inviteIntent === 'residential_principal_manager'
@@ -246,7 +249,10 @@ export default function SettingsUsersPage() {
         listCommercialAccessManagementState().catch(() => ({ organisationModuleStatus: null, users: [], auditEvents: [] })),
       ])
       setUsers(response)
-      setMembershipRole(context.membershipRole || 'viewer')
+      setMembershipRole(normalizeOrganisationMembershipRole(context.membershipRole || 'viewer', {
+        appRole: role,
+        workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+      }))
       setCommissionStructures(Array.isArray(structureRows) ? structureRows : [])
       setCommissionProfiles(Array.isArray(profileRows) ? profileRows : [])
       const principalClaimInviteRows = (Array.isArray(principalClaimInvites) ? principalClaimInvites : [])
@@ -260,7 +266,7 @@ export default function SettingsUsersPage() {
     } finally {
       setLoading(false)
     }
-  }, [canEdit])
+  }, [canEdit, resolvedWorkspaceType, role])
 
   useEffect(() => {
     void loadUsers()
@@ -500,7 +506,7 @@ export default function SettingsUsersPage() {
       />
 
       {!canEdit ? (
-        <SettingsBanner tone="warning">Read-only for your role. Only Principal-level administrators can manage users and permissions.</SettingsBanner>
+        <SettingsBanner tone="warning">Read-only for your role. Only {administratorLabel} can manage users and permissions.</SettingsBanner>
       ) : null}
 
       <div ref={inviteSectionRef}>

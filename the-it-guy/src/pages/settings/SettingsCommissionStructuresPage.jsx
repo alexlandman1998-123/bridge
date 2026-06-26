@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import {
   assignOrganisationUserCommissionProfile,
   fetchOrganisationSettings,
@@ -55,11 +55,14 @@ function isAgentLikeRole(role) {
 }
 
 export default function SettingsCommissionStructuresPage() {
-  const { role } = useWorkspace()
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
+  const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({
     appRole: role,
-    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole, { appRole: role, workspaceType: resolvedWorkspaceType }),
+    workspaceType: resolvedWorkspaceType,
   })
 
   const [loading, setLoading] = useState(true)
@@ -80,9 +83,16 @@ export default function SettingsCommissionStructuresPage() {
       const nextMembershipRole = context?.membershipRole || 'viewer'
       const canManageCommissionSettings = canManageOrganisationSettings({
         appRole: role,
-        membershipRole: normalizeOrganisationMembershipRole(nextMembershipRole),
+        membershipRole: normalizeOrganisationMembershipRole(nextMembershipRole, {
+          appRole: role,
+          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+        }),
+        workspaceType: context?.organisation?.type || resolvedWorkspaceType,
       })
-      setMembershipRole(context?.membershipRole || 'viewer')
+      setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
+        appRole: role,
+        workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+      }))
       if (!canManageCommissionSettings) {
         setStructures([])
         setUsers([])
@@ -103,7 +113,7 @@ export default function SettingsCommissionStructuresPage() {
     } finally {
       setLoading(false)
     }
-  }, [role])
+  }, [role, resolvedWorkspaceType])
 
   useEffect(() => {
     void loadData()
@@ -243,10 +253,10 @@ export default function SettingsCommissionStructuresPage() {
         <SettingsPageHeader
           kicker="Commission Structures"
           title="Agency commission governance"
-          description="This area is restricted to Principal and Super Admin roles."
+          description={`This area is restricted to ${administratorLabel}.`}
         />
         <SettingsBanner tone="warning">
-          Access restricted. Only Principal-level administrators can view and manage commission structures.
+          Access restricted. Only {administratorLabel} can view and manage commission structures.
         </SettingsBanner>
       </div>
     )

@@ -74,6 +74,15 @@ export function canManageOrganisationMembers({ appRole, membershipRole, workspac
   })
 }
 
+export function getWorkspaceAdministratorLabel({ appRole, workspaceType } = {}) {
+  const normalizedAppRole = normalizeAppRole(appRole)
+  const resolvedWorkspaceType = normalizeWorkspaceType(workspaceType, inferWorkspaceTypeFromAppRole(normalizedAppRole))
+  if (resolvedWorkspaceType === 'developer_company') return 'owner-level administrators'
+  if (resolvedWorkspaceType === 'bond_originator') return 'HQ administrators'
+  if (resolvedWorkspaceType === 'attorney_firm') return 'firm administrators'
+  return 'Principal-level administrators'
+}
+
 export function canAccessPrincipalExperience({ appRole, membershipRole } = {}) {
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) {
     return normalizeAppRole(appRole) !== 'client'

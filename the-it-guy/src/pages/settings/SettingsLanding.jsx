@@ -131,7 +131,8 @@ const BOND_SETTINGS_CARDS = [
 ]
 
 export default function SettingsLanding() {
-  const { role } = useWorkspace()
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
 
   useEffect(() => {
@@ -140,7 +141,10 @@ export default function SettingsLanding() {
       try {
         const context = await fetchOrganisationSettings()
         if (!active) return
-        setMembershipRole(context?.membershipRole || 'viewer')
+        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
+          appRole: role,
+          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+        }))
       } catch {
         if (active) {
           setMembershipRole('viewer')
@@ -148,18 +152,19 @@ export default function SettingsLanding() {
       }
     }
 
-    if (role === 'agent' || role === 'developer') {
+    if (role !== 'client') {
       void loadMembershipRole()
     }
 
     return () => {
       active = false
     }
-  }, [role])
+  }, [role, resolvedWorkspaceType])
 
   const canManage = canManageOrganisationSettings({
     appRole: role,
-    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+    membershipRole,
+    workspaceType: resolvedWorkspaceType,
   })
   const cards = role === 'bond_originator' ? BOND_SETTINGS_CARDS : SETTINGS_CARDS
   const visibleCards = cards.filter((card) => {

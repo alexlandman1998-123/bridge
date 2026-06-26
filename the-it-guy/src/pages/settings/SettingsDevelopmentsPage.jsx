@@ -5,7 +5,7 @@ import AddDevelopmentModal from '../../components/AddDevelopmentModal'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { archiveDevelopmentSetting, fetchOrganisationSettings, listDevelopmentSettings, saveDevelopmentConfiguration } from '../../lib/settingsApi'
 import {
   SettingsBanner,
@@ -232,11 +232,14 @@ function DevelopmentEditor({ item, canEdit, onSave, onCancel, saving }) {
 
 export default function SettingsDevelopmentsPage() {
   const navigate = useNavigate()
-  const { role } = useWorkspace()
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
+  const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({
     appRole: role,
-    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole, { appRole: role, workspaceType: resolvedWorkspaceType }),
+    workspaceType: resolvedWorkspaceType,
   })
   const [items, setItems] = useState([])
   const [editingId, setEditingId] = useState(null)
@@ -269,7 +272,10 @@ export default function SettingsDevelopmentsPage() {
       try {
         const context = await fetchOrganisationSettings()
         if (!active) return
-        setMembershipRole(context?.membershipRole || 'viewer')
+        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
+          appRole: role,
+          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+        }))
       } catch {
         if (active) {
           setMembershipRole('viewer')
@@ -277,7 +283,7 @@ export default function SettingsDevelopmentsPage() {
       }
     }
 
-    if (role === 'agent' || role === 'developer') {
+    if (role !== 'client') {
       void loadMembershipRole()
     } else {
       setMembershipRole('viewer')
@@ -286,7 +292,7 @@ export default function SettingsDevelopmentsPage() {
     return () => {
       active = false
     }
-  }, [role])
+  }, [role, resolvedWorkspaceType])
 
   async function handleSave(item) {
     try {
@@ -338,7 +344,7 @@ export default function SettingsDevelopmentsPage() {
       />
 
       {!canEdit ? (
-        <SettingsBanner tone="warning">Read-only for your role. Principal-level administrators can edit development settings.</SettingsBanner>
+        <SettingsBanner tone="warning">Read-only for your role. {administratorLabel} can edit development settings.</SettingsBanner>
       ) : null}
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}

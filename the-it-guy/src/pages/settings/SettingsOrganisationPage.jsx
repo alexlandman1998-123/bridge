@@ -23,6 +23,7 @@ import {
 const WORKSPACE_TYPE_COPY_KEYS = {
   agency: 'agency',
   developer_company: 'developer',
+  attorney_firm: 'attorney',
   bond_originator: 'bond',
 }
 
@@ -165,6 +166,34 @@ const DEVELOPER_SETTINGS_COPY = {
   },
 }
 
+const ATTORNEY_SETTINGS_COPY = {
+  header: {
+    title: 'Firm structure, governance, and branding',
+    description: 'Firm-managed setup used across matter ownership, team access, transfer workflows, and client visibility.',
+  },
+  unavailable: 'Firm settings are unavailable right now. Please retry from the dashboard setup guide.',
+  readOnly: 'Read-only for your role. Only firm administrators can edit firm settings.',
+  saved: 'Firm settings saved.',
+  organisationSection: {
+    title: 'Firm Information',
+    description: 'Core firm details that drive workspace identity and operational ownership.',
+  },
+  adminSection: {
+    title: 'Firm Administrator',
+    description: 'Primary administrator identity used for firm control and reporting lineage.',
+  },
+  branchesSection: {
+    title: 'Departments',
+    description: 'Department entities drive scope, reporting visibility, and operational ownership.',
+    addLabel: 'Add Department',
+    rowLabel: 'Department',
+  },
+  permissionsSection: {
+    title: 'Permissions & Visibility',
+    description: 'Controls for matter ownership, department visibility, and firm collaboration defaults.',
+  },
+}
+
 function getLogoPreviewLabel(sourceUrl, fallbackLabel = 'Uploaded logo') {
   const value = String(sourceUrl || '').trim()
   if (!value) return ''
@@ -192,10 +221,11 @@ function normalizePartnerProfileContent(content = {}) {
 export default function SettingsOrganisationPage() {
   const { role, currentWorkspace, workspaceType } = useWorkspace()
   const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
-  const copyKey = WORKSPACE_TYPE_COPY_KEYS[resolvedWorkspaceType] || (role === 'developer' ? 'developer' : role === 'bond_originator' ? 'bond' : 'agency')
+  const copyKey = WORKSPACE_TYPE_COPY_KEYS[resolvedWorkspaceType] || (role === 'developer' ? 'developer' : role === 'bond_originator' ? 'bond' : role === 'attorney' ? 'attorney' : 'agency')
   const isBondOriginator = copyKey === 'bond'
   const isDeveloperCompany = copyKey === 'developer'
-  const copy = isBondOriginator ? BOND_SETTINGS_COPY : isDeveloperCompany ? DEVELOPER_SETTINGS_COPY : AGENCY_SETTINGS_COPY
+  const isAttorneyFirm = copyKey === 'attorney'
+  const copy = isBondOriginator ? BOND_SETTINGS_COPY : isDeveloperCompany ? DEVELOPER_SETTINGS_COPY : isAttorneyFirm ? ATTORNEY_SETTINGS_COPY : AGENCY_SETTINGS_COPY
   const {
     state: organisationContextState,
     loading: organisationContextLoading,

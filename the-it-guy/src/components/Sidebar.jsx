@@ -58,6 +58,8 @@ const ICON_BY_KEY = {
   marketing: Megaphone,
   new_transaction: PlusCircle,
   pipeline: KanbanSquare,
+  agency_pipeline: KanbanSquare,
+  developer_pipeline: KanbanSquare,
   leads: Users,
   enquiries: ClipboardList,
   pipeline_overview: KanbanSquare,
@@ -141,6 +143,8 @@ const ICON_BY_KEY = {
   bond_consultants: Users,
   audit_logs: FileText,
   snags: AlertTriangle,
+  client_snags: AlertTriangle,
+  developer_snags: AlertTriangle,
   team: ShieldUser,
   users: ShieldUser,
   settings: Settings,
@@ -242,7 +246,10 @@ function Sidebar() {
   const { branding, loading: organisationLoading, membershipRole: organisationMembershipRole } = useOrganisation()
   const location = useLocation()
   const navigate = useNavigate()
-  const membershipRole = normalizeOrganisationMembershipRole(organisationMembershipRole || 'viewer')
+  const membershipRole = normalizeOrganisationMembershipRole(organisationMembershipRole || 'viewer', {
+    appRole: role,
+    workspaceType: workspaceContext.currentWorkspace?.type || workspaceContext.workspaceType,
+  })
   const roleNavItems = useMemo(
     () => filterNavigationItems(getRoleNavItems(role, { baseRole, profile, membershipRole, currentMembership: workspaceContext.currentMembership }), workspaceContext),
     [baseRole, membershipRole, profile, role, workspaceContext],

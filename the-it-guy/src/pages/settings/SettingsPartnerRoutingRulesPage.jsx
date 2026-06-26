@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import {
   fetchOrganisationSettings,
   listDevelopmentSettings,
@@ -126,11 +126,14 @@ function formatRuleTarget(rule, contexts) {
 }
 
 export default function SettingsPartnerRoutingRulesPage() {
-  const { role, workspace } = useWorkspace()
+  const { role, workspace, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
+  const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({
     appRole: role,
-    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole, { appRole: role, workspaceType: resolvedWorkspaceType }),
+    workspaceType: resolvedWorkspaceType,
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -184,7 +187,10 @@ export default function SettingsPartnerRoutingRulesPage() {
         getWorkspaceHierarchy(workspace?.id || ''),
       ])
 
-      setMembershipRole(context?.membershipRole || 'viewer')
+      setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
+        appRole: role,
+        workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+      }))
       setRules(Array.isArray(nextRules) ? nextRules : [])
       setUsers(Array.isArray(nextUsers) ? nextUsers : [])
       setDevelopments(Array.isArray(nextDevelopments) ? nextDevelopments : [])
@@ -197,7 +203,7 @@ export default function SettingsPartnerRoutingRulesPage() {
     } finally {
       setLoading(false)
     }
-  }, [workspace?.id])
+  }, [role, resolvedWorkspaceType, workspace?.id])
 
   useEffect(() => {
     void loadRules()
@@ -364,7 +370,7 @@ export default function SettingsPartnerRoutingRulesPage() {
 
       {!canEdit ? (
         <SettingsBanner tone="warning">
-          Read-only for your role. Principal-level administrators can manage partner routing rules.
+          Read-only for your role. {administratorLabel} can manage partner routing rules.
         </SettingsBanner>
       ) : null}
 

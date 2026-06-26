@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import {
   fetchOrganisationSettings,
   listOrganisationPreferredPartners,
@@ -45,11 +45,14 @@ function createPartnerDraft() {
 }
 
 export default function SettingsPreferredPartnersPage() {
-  const { role } = useWorkspace()
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
+  const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({
     appRole: role,
-    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole, { appRole: role, workspaceType: resolvedWorkspaceType }),
+    workspaceType: resolvedWorkspaceType,
   })
   const [partners, setPartners] = useState([])
   const [loading, setLoading] = useState(true)
@@ -70,14 +73,17 @@ export default function SettingsPreferredPartnersPage() {
         fetchOrganisationSettings(),
         listOrganisationPreferredPartners(),
       ])
-      setMembershipRole(context?.membershipRole || 'viewer')
+      setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
+        appRole: role,
+        workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+      }))
       setPartners(rows || [])
     } catch (loadError) {
       setError(loadError.message || 'Unable to load preferred partners.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [role, resolvedWorkspaceType])
 
   useEffect(() => {
     void loadPartners()
@@ -208,7 +214,7 @@ export default function SettingsPreferredPartnersPage() {
       />
 
       {!canEdit ? (
-        <SettingsBanner tone="warning">Read-only for your role. Only organisation administrators can manage organisation preferred partners.</SettingsBanner>
+        <SettingsBanner tone="warning">Read-only for your role. Only {administratorLabel} can manage organisation preferred partners.</SettingsBanner>
       ) : null}
 
       <SettingsSectionCard title="Partner Directory" description="Search, filter, and maintain your approved organisation partner panel.">

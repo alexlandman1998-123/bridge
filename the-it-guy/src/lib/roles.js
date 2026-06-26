@@ -65,7 +65,7 @@ export const APP_ROLE_ONBOARDING_OPTIONS = [
 
 function createAgentPipelineNav() {
   return {
-    key: 'pipeline',
+    key: 'agency_pipeline',
     label: 'Pipeline',
     to: '/pipeline/leads',
     activeMatch: ['/pipeline', '/pipeline/leads', '/pipeline/enquiries', '/pipeline/canvassing', '/pipeline/calendar', '/calendar'],
@@ -83,9 +83,9 @@ export const APP_NAV_BY_ROLE = {
     { key: 'developments', label: 'Developments', to: '/developments' },
     { key: 'transactions', label: 'Transactions', to: '/units' },
     { key: 'clients', label: 'Clients', to: '/clients' },
-    { key: 'pipeline', label: 'Pipeline', to: '/pipeline' },
+    { key: 'developer_pipeline', label: 'Pipeline', to: '/pipeline' },
     { key: 'partners', label: 'Partners', to: '/partners' },
-    { key: 'snags', label: 'Snags', to: '/snags' },
+    { key: 'developer_snags', label: 'Snags', to: '/snags' },
     { key: 'reports', label: 'Reports', to: '/reports' },
     ...(SHOW_INTELLIGENCE_BETA
       ? [
@@ -202,7 +202,7 @@ export const APP_NAV_BY_ROLE = {
     { key: 'transactions', label: 'Transaction Progress', to: '/transactions' },
     { key: 'documents', label: 'Documents', to: '/documents' },
     { key: 'handover', label: 'Handover', to: '/handover' },
-    { key: 'snags', label: 'Snags', to: '/snags' },
+    { key: 'client_snags', label: 'Snags', to: '/snags' },
   ],
   viewer: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },

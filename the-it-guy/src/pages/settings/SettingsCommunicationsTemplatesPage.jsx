@@ -2,7 +2,7 @@ import { BellRing, MessageSquareText, Send } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { EMAIL_TEMPLATE_KEYS, getDefaultEmailTemplateSettings, sanitizeEmailTemplateSettings } from '../../lib/emailTemplateSettings'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchEmailTemplateSettings, updateEmailTemplateSettings } from '../../lib/settingsApi'
 import {
   SettingsBanner,
@@ -34,12 +34,14 @@ const TEMPLATE_LABELS = {
 }
 
 export default function SettingsCommunicationsTemplatesPage() {
-  const { role } = useWorkspace()
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [membershipRole, setMembershipRole] = useState('viewer')
+  const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const [templates, setTemplates] = useState(getDefaultEmailTemplateSettings())
   const [selectedTemplateKey, setSelectedTemplateKey] = useState(EMAIL_TEMPLATE_KEYS.CLIENT_ONBOARDING)
 
@@ -52,7 +54,10 @@ export default function SettingsCommunicationsTemplatesPage() {
         setError('')
         const response = await fetchEmailTemplateSettings()
         if (!active) return
-        setMembershipRole(normalizeOrganisationMembershipRole(response?.membershipRole))
+        setMembershipRole(normalizeOrganisationMembershipRole(response?.membershipRole, {
+          appRole: role,
+          workspaceType: response?.organisation?.type || resolvedWorkspaceType,
+        }))
         setTemplates(sanitizeEmailTemplateSettings(response?.templates || {}))
       } catch (loadError) {
         if (active) {
@@ -69,9 +74,9 @@ export default function SettingsCommunicationsTemplatesPage() {
     return () => {
       active = false
     }
-  }, [])
+  }, [role, resolvedWorkspaceType])
 
-  const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole })
+  const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole, workspaceType: resolvedWorkspaceType })
   const selectedTemplate = templates[selectedTemplateKey] || getDefaultEmailTemplateSettings()[selectedTemplateKey]
 
   const templateOptions = useMemo(
@@ -124,7 +129,7 @@ export default function SettingsCommunicationsTemplatesPage() {
 
       {!canEdit ? (
         <SettingsBanner tone="warning">
-          Read-only for your role. Only Principal-level administrators can edit communications templates.
+          Read-only for your role. Only {administratorLabel} can edit communications templates.
         </SettingsBanner>
       ) : null}
 

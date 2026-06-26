@@ -39,7 +39,7 @@ import {
   uploadDocumentPacketTemplateAsset,
   upsertDocumentPlaceholderDefinition,
 } from '../../lib/documentPacketsApi'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../../lib/settingsApi'
 import {
   SettingsBanner,
@@ -946,7 +946,8 @@ export default function SettingsSigningTemplatesPage({
   eyebrow = 'Settings / Legal Templates',
   description = 'Manage document templates, versions, merge fields, previews, and publishing.',
 } = {}) {
-  const { role } = useWorkspace()
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [cloning, setCloning] = useState(false)
@@ -982,7 +983,8 @@ export default function SettingsSigningTemplatesPage({
   const [showPublishConfirm, setShowPublishConfirm] = useState(false)
   const clauseTextareaRef = useRef(null)
 
-  const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole })
+  const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
+  const canEdit = canManageOrganisationSettings({ appRole: role, membershipRole, workspaceType: resolvedWorkspaceType })
   const visiblePacketTypes = useMemo(() => SUPPORTED_PACKET_TYPES.filter((item) => allowedPacketTypes.includes(item.key)), [allowedPacketTypes])
   const normalizedModuleType = normalizeText(templateModuleType || 'agency').toLowerCase() || 'agency'
 
@@ -1038,7 +1040,10 @@ export default function SettingsSigningTemplatesPage({
         setError('')
         const context = await fetchOrganisationSettings()
         if (!active) return
-        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
+        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole, {
+          appRole: role,
+          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+        }))
         await loadTemplatesAndRegistry({
           targetPacketType: allowedPacketTypes[0] || 'otp',
           preferredTemplateId: '',
@@ -1057,7 +1062,7 @@ export default function SettingsSigningTemplatesPage({
     return () => {
       active = false
     }
-  }, [allowedPacketTypes, loadTemplatesAndRegistry])
+  }, [allowedPacketTypes, loadTemplatesAndRegistry, resolvedWorkspaceType, role])
 
   useEffect(() => {
     const selectedList = templatesByType[packetType] || []
@@ -2045,7 +2050,7 @@ export default function SettingsSigningTemplatesPage({
 
         {!canEdit ? (
           <SettingsBanner tone="warning">
-            Read-only for your role. Principal-level administrators can edit legal templates and merge-field governance.
+            Read-only for your role. {administratorLabel} can edit legal templates and merge-field governance.
           </SettingsBanner>
         ) : null}
 

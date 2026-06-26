@@ -44,7 +44,8 @@ const BOND_SETTINGS_NAV = [
 ]
 
 export default function SettingsLayout() {
-  const { role } = useWorkspace()
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
 
   useEffect(() => {
@@ -54,7 +55,10 @@ export default function SettingsLayout() {
       try {
         const context = await fetchOrganisationSettings()
         if (!active) return
-        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole))
+        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole, {
+          appRole: role,
+          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+        }))
       } catch {
         if (active) {
           setMembershipRole('viewer')
@@ -62,18 +66,19 @@ export default function SettingsLayout() {
       }
     }
 
-    if (role === 'agent' || role === 'developer') {
+    if (role !== 'client') {
       void loadMembershipRole()
     }
 
     return () => {
       active = false
     }
-  }, [role])
+  }, [role, resolvedWorkspaceType])
 
   const canManage = canManageOrganisationSettings({
     appRole: role,
     membershipRole,
+    workspaceType: resolvedWorkspaceType,
   })
   const baseNavItems = role === 'bond_originator' ? BOND_SETTINGS_NAV : SETTINGS_NAV
   const navItems = baseNavItems.filter((item) => {

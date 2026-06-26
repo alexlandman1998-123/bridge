@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Button from '../../components/ui/Button'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchDocumentLabelMappingReport, fetchOrganisationSettings, fetchWorkflowSettings, updateWorkflowSettings } from '../../lib/settingsApi'
 import {
   SettingsBanner,
@@ -15,11 +15,14 @@ import {
 } from './settingsUi'
 
 export default function SettingsWorkflowsPage() {
-  const { role } = useWorkspace()
+  const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
+  const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canEdit = canManageOrganisationSettings({
     appRole: role,
-    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole, { appRole: role, workspaceType: resolvedWorkspaceType }),
+    workspaceType: resolvedWorkspaceType,
   })
   const [form, setForm] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -72,7 +75,10 @@ export default function SettingsWorkflowsPage() {
       try {
         const context = await fetchOrganisationSettings()
         if (!active) return
-        setMembershipRole(context?.membershipRole || 'viewer')
+        setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
+          appRole: role,
+          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+        }))
       } catch {
         if (active) {
           setMembershipRole('viewer')
@@ -80,7 +86,7 @@ export default function SettingsWorkflowsPage() {
       }
     }
 
-    if (role === 'agent' || role === 'developer') {
+    if (role !== 'client') {
       void loadMembershipRole()
     } else {
       setMembershipRole('viewer')
@@ -89,7 +95,7 @@ export default function SettingsWorkflowsPage() {
     return () => {
       active = false
     }
-  }, [role])
+  }, [role, resolvedWorkspaceType])
 
   function updateGroup(groupKey, fieldKey, value) {
     setForm((previous) => ({
@@ -148,7 +154,7 @@ export default function SettingsWorkflowsPage() {
         description="Control onboarding, document rules, workflow defaults, and automation behavior."
       />
 
-      {!canEdit ? <SettingsBanner tone="warning">Read-only for your role. Principal-level administrators can edit workflow defaults.</SettingsBanner> : null}
+      {!canEdit ? <SettingsBanner tone="warning">Read-only for your role. {administratorLabel} can edit workflow defaults.</SettingsBanner> : null}
 
       <form className="space-y-0" onSubmit={handleSave}>
         <SettingsSectionCard

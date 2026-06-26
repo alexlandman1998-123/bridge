@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import Button from '../../components/ui/Button'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { ENTITLEMENT_KEYS, formatEntitlementValue } from '../../constants/workspaceEntitlements'
-import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { canManageOrganisationSettings, getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchOrganisationSettings, listBillingInvoices } from '../../lib/settingsApi'
 import {
   buildBillingSummary,
@@ -42,10 +42,13 @@ function formatEventType(value = '') {
 
 export default function SettingsBillingPage() {
   const { role, currentWorkspace, workspaceType } = useWorkspace()
+  const resolvedWorkspaceType = currentWorkspace?.type || workspaceType || ''
   const [membershipRole, setMembershipRole] = useState('viewer')
+  const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const canView = canManageOrganisationSettings({
     appRole: role,
-    membershipRole: normalizeOrganisationMembershipRole(membershipRole),
+    membershipRole: normalizeOrganisationMembershipRole(membershipRole, { appRole: role, workspaceType: resolvedWorkspaceType }),
+    workspaceType: resolvedWorkspaceType,
   })
   const [subscription, setSubscription] = useState(null)
   const [entitlements, setEntitlements] = useState({})
@@ -70,9 +73,19 @@ export default function SettingsBillingPage() {
         setLoading(true)
         const context = await fetchOrganisationSettings()
         if (active) {
-          setMembershipRole(context?.membershipRole || 'viewer')
+          setMembershipRole(normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
+            appRole: role,
+            workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+          }))
         }
-        if (!canManageOrganisationSettings({ appRole: role, membershipRole: context?.membershipRole })) {
+        if (!canManageOrganisationSettings({
+          appRole: role,
+          membershipRole: normalizeOrganisationMembershipRole(context?.membershipRole || 'viewer', {
+            appRole: role,
+            workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+          }),
+          workspaceType: context?.organisation?.type || resolvedWorkspaceType,
+        })) {
           if (active) {
             setLoading(false)
           }
@@ -115,7 +128,7 @@ export default function SettingsBillingPage() {
     return () => {
       active = false
     }
-  }, [currentWorkspace?.id, currentWorkspace?.raw?.workspace_kind, reloadToken, role, workspaceType])
+  }, [currentWorkspace?.id, currentWorkspace?.raw?.workspace_kind, reloadToken, role, workspaceType, resolvedWorkspaceType])
 
   if (!canView) {
     return (
@@ -123,9 +136,9 @@ export default function SettingsBillingPage() {
         <SettingsPageHeader
           kicker="Billing"
           title="Subscription and invoice history"
-          description="Principal-level administrators and billing owners can access this section."
+          description={`${administratorLabel} and billing owners can access this section.`}
         />
-        <SettingsBanner tone="warning">Billing is restricted to Principal-level administrators in the current role model.</SettingsBanner>
+        <SettingsBanner tone="warning">Billing is restricted to {administratorLabel} in the current role model.</SettingsBanner>
       </div>
     )
   }
