@@ -328,6 +328,7 @@ const PlaceholderPage = lazy(() => import('./pages/PlaceholderPage'))
 const PartnerPortalPage = lazy(() => import('./pages/PartnerPortalPage'))
 const PartnersPage = lazy(() => import('./pages/PartnersPage'))
 const OrganizationWorkspacePage = lazy(() => import('./pages/OrganizationWorkspacePage'))
+const PlatformDemoEnquiriesPage = lazy(() => import('./pages/PlatformDemoEnquiriesPage'))
 const PlatformDiagnosticsPage = lazy(() => import('./pages/PlatformDiagnosticsPage'))
 const TransactionRoutingRolloutPage = lazy(() => import('./pages/TransactionRoutingRolloutPage'))
 const WorkflowMigrationValidationPage = lazy(() => import('./pages/WorkflowMigrationValidationPage'))
@@ -1579,6 +1580,16 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['platform_admin']}>
                     <PlatformDiagnosticsPage />
                   </RoleRoute>
+                }
+              />
+              <Route
+                path="/platform/demo-enquiries"
+                element={
+                  <HQRoute>
+                    <AppErrorBoundary scope="platform-demo-enquiries" title="Demo enquiries failed to render">
+                      <PlatformDemoEnquiriesPage />
+                    </AppErrorBoundary>
+                  </HQRoute>
                 }
               />
               <Route
