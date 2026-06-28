@@ -2179,6 +2179,22 @@ function normalizeDevelopmentDocumentRow(row = {}) {
   }
 }
 
+function hasDevelopmentFinancialInputs(input = {}) {
+  const normalized = normalizeDevelopmentFinancialsRow(input)
+  return [
+    normalized.landCost,
+    normalized.buildCost,
+    normalized.professionalFees,
+    normalized.marketingCost,
+    normalized.infrastructureCost,
+    normalized.otherCosts,
+    normalized.totalProjectedCost,
+    normalized.projectedGrossSalesValue,
+    normalized.projectedProfit,
+    normalized.targetMargin,
+  ].some((value) => value !== null && value !== 0) || Boolean(normalizeTextValue(normalized.notes))
+}
+
 function normalizeDevelopmentUnitRow(row = {}) {
   const rawFloorplanId = row.floorplan_id || row.floorplanId || null
   const normalizedFloorplanId =
@@ -40451,7 +40467,9 @@ export async function createDevelopmentWorkspace({
   const developmentId = created.id
 
   await saveDevelopmentDetails(developmentId, details)
-  await saveDevelopmentFinancials(developmentId, financials)
+  if (hasDevelopmentFinancialInputs(financials)) {
+    await saveDevelopmentFinancials(developmentId, financials)
+  }
   try {
     await updateDevelopmentSettings(developmentId, {
       ...DEFAULT_DEVELOPMENT_SETTINGS,

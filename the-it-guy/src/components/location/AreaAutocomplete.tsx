@@ -141,7 +141,7 @@ export default function AreaAutocomplete({
         </label>
       ) : null}
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8aa0b6]" />
+        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8aa0b6]" />
         <Input
           value={inputValue}
           onChange={(event) => handleInputChange(event.target.value)}
@@ -158,7 +158,7 @@ export default function AreaAutocomplete({
           aria-expanded={isOpen}
           aria-invalid={Boolean(error)}
           className={cn(
-            'h-12 rounded-[16px] border-[#dbe6f2] pl-10 pr-20 shadow-[0_10px_24px_rgba(15,23,42,0.06)]',
+            'h-12 rounded-[16px] border-[#dbe6f2] !pl-12 !pr-20 shadow-[0_10px_24px_rgba(15,23,42,0.06)]',
             error ? 'border-[#f1c8c8] focus:border-[#d92d20] focus:ring-[#fef3f2]' : '',
           )}
         />
