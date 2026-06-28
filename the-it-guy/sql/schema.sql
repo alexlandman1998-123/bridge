@@ -115,10 +115,17 @@ alter table if exists developments add column if not exists planned_units intege
 alter table if exists developments add column if not exists organisation_id uuid;
 alter table if exists developments add column if not exists code text;
 alter table if exists developments add column if not exists location text;
+alter table if exists developments add column if not exists address text;
+alter table if exists developments add column if not exists formatted_address text;
+alter table if exists developments add column if not exists street_address text;
 alter table if exists developments add column if not exists suburb text;
 alter table if exists developments add column if not exists city text;
 alter table if exists developments add column if not exists province text;
 alter table if exists developments add column if not exists country text not null default 'South Africa';
+alter table if exists developments add column if not exists postal_code text;
+alter table if exists developments add column if not exists latitude numeric;
+alter table if exists developments add column if not exists longitude numeric;
+alter table if exists developments add column if not exists google_place_id text;
 alter table if exists developments add column if not exists description text;
 alter table if exists developments add column if not exists status text not null default 'active';
 alter table if exists developments add column if not exists developer_company text;

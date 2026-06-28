@@ -40165,6 +40165,36 @@ export async function updateUserProfile({
   return normalizeProfileRow(updateResult.data, { id: userId })
 }
 
+const DEVELOPMENT_CREATE_OPTIONAL_COLUMNS = [
+  'code',
+  'location',
+  'address',
+  'formatted_address',
+  'street_address',
+  'suburb',
+  'city',
+  'province',
+  'country',
+  'postal_code',
+  'latitude',
+  'longitude',
+  'google_place_id',
+  'description',
+  'status',
+  'developer_company',
+  'total_units_expected',
+  'launch_date',
+  'expected_completion_date',
+  'handover_enabled',
+  'snag_tracking_enabled',
+  'alterations_enabled',
+  'onboarding_enabled',
+]
+
+function isDevelopmentCreateMissingColumnError(error) {
+  return DEVELOPMENT_CREATE_OPTIONAL_COLUMNS.some((columnName) => isMissingColumnError(error, columnName))
+}
+
 export async function createDevelopment({ name, plannedUnits, profile = {} }) {
   const client = requireClient()
   const trimmedName = name?.trim()
@@ -40218,7 +40248,7 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
     .select('id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled')
     .single()
 
-  if (result.error && result.error.code === '42703') {
+  if (result.error && isDevelopmentCreateMissingColumnError(result.error)) {
     result = await client
       .from('developments')
       .insert({ name: trimmedName, planned_units: Math.trunc(normalizedPlannedUnits) })
