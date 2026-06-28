@@ -173,6 +173,7 @@ export default function AddressAutocomplete({
   const placesServiceRef = useRef<any>(null)
   const placesLibraryRef = useRef<any>(null)
   const sessionTokenRef = useRef<any>(null)
+  const modernAutocompleteUnavailableRef = useRef(false)
   const requestIdRef = useRef(0)
   const lastTypedValueRef = useRef('')
   const suppressNextSearchRef = useRef(Boolean(value?.formattedAddress))
@@ -263,7 +264,65 @@ export default function AddressAutocomplete({
       const placesLibrary = placesLibraryRef.current
       const modernAutocomplete = placesLibrary?.AutocompleteSuggestion
 
-      if (modernAutocomplete?.fetchAutocompleteSuggestions) {
+      const fetchLegacyPredictions = (fallbackReason: any = null) => {
+        if (!autocompleteServiceRef.current) {
+          setIsFetching(false)
+          setPredictions([])
+          setIsOpen(false)
+          const message = fallbackReason
+            ? 'Address suggestions are temporarily unavailable. You can keep typing manually.'
+            : 'Address suggestions are unavailable because the Google Places autocomplete service is not available for this key.'
+          setLoadError(message)
+          if (fallbackReason) {
+            console.warn('[Google Maps] Address autocomplete unavailable after legacy fallback.', fallbackReason)
+          }
+          return
+        }
+
+        let completed = false
+        const timeout = window.setTimeout(() => {
+          if (completed || requestIdRef.current !== requestId) return
+          completed = true
+          setIsFetching(false)
+          setPredictions([])
+          setIsOpen(false)
+          setLoadError('Address suggestions timed out. You can keep typing manually, or check the Google Maps JavaScript API and Places API settings.')
+        }, PLACES_REQUEST_TIMEOUT_MS)
+
+        autocompleteServiceRef.current.getPlacePredictions(
+          {
+            input: inputValue.trim(),
+            componentRestrictions: { country: 'za' },
+            types: predictionTypes && predictionTypes.length ? predictionTypes : ['address'],
+          },
+          (results: Prediction[] | null, status: string) => {
+            if (completed) return
+            completed = true
+            window.clearTimeout(timeout)
+            if (requestIdRef.current !== requestId) return
+            setIsFetching(false)
+            const placesStatus = googleApi.maps.places.PlacesServiceStatus
+            if (status === placesStatus.OK && Array.isArray(results)) {
+              setLoadError('')
+              setPredictions(results.map((result) => ({ ...result, source: 'legacy' })))
+              setIsOpen(true)
+              setActiveIndex(-1)
+              return
+            }
+            if (status === placesStatus.ZERO_RESULTS) {
+              setLoadError('')
+              setPredictions([])
+              setIsOpen(true)
+              return
+            }
+            setPredictions([])
+            setIsOpen(false)
+            setLoadError(`Address suggestions are unavailable (${status || 'unknown status'}). You can keep typing manually.`)
+          },
+        )
+      }
+
+      if (modernAutocomplete?.fetchAutocompleteSuggestions && !modernAutocompleteUnavailableRef.current) {
         if (!sessionTokenRef.current && placesLibrary?.AutocompleteSessionToken) {
           sessionTokenRef.current = new placesLibrary.AutocompleteSessionToken()
         }
@@ -288,61 +347,14 @@ export default function AddressAutocomplete({
           })
           .catch((suggestionError: any) => {
             if (requestIdRef.current !== requestId) return
-            setIsFetching(false)
-            setPredictions([])
-            setIsOpen(false)
-            setLoadError(`Address suggestions are unavailable (${suggestionError?.message || 'Google Places request denied'}). You can keep typing manually.`)
+            modernAutocompleteUnavailableRef.current = true
+            console.warn('[Google Maps] Modern Places autocomplete failed; retrying with legacy Places service.', suggestionError)
+            fetchLegacyPredictions(suggestionError)
           })
         return
       }
 
-      if (!autocompleteServiceRef.current) {
-        setIsFetching(false)
-        setPredictions([])
-        setIsOpen(false)
-        setLoadError('Address suggestions are unavailable because the Google Places autocomplete service is not available for this key.')
-        return
-      }
-
-      let completed = false
-      const timeout = window.setTimeout(() => {
-        if (completed || requestIdRef.current !== requestId) return
-        completed = true
-        setIsFetching(false)
-        setPredictions([])
-        setIsOpen(false)
-        setLoadError('Address suggestions timed out. You can keep typing manually, or check the Google Maps JavaScript API and Places API settings.')
-      }, PLACES_REQUEST_TIMEOUT_MS)
-
-      autocompleteServiceRef.current.getPlacePredictions(
-        {
-          input: inputValue.trim(),
-          componentRestrictions: { country: 'za' },
-          types: predictionTypes && predictionTypes.length ? predictionTypes : ['address'],
-        },
-        (results: Prediction[] | null, status: string) => {
-          if (completed) return
-          completed = true
-          window.clearTimeout(timeout)
-          if (requestIdRef.current !== requestId) return
-          setIsFetching(false)
-          const placesStatus = googleApi.maps.places.PlacesServiceStatus
-          if (status === placesStatus.OK && Array.isArray(results)) {
-            setPredictions(results.map((result) => ({ ...result, source: 'legacy' })))
-            setIsOpen(true)
-            setActiveIndex(-1)
-            return
-          }
-          if (status === placesStatus.ZERO_RESULTS) {
-            setPredictions([])
-            setIsOpen(true)
-            return
-          }
-          setPredictions([])
-          setIsOpen(false)
-          setLoadError(`Address suggestions are unavailable (${status || 'unknown status'}). You can keep typing manually.`)
-        },
-      )
+      fetchLegacyPredictions()
     }, 300)
 
     return () => window.clearTimeout(timer)
@@ -365,6 +377,55 @@ export default function AddressAutocomplete({
     setIsFetching(false)
     sessionTokenRef.current = null
     onChange(null)
+  }
+
+  function fetchLegacyPlaceDetails(prediction: Prediction, onComplete?: () => void) {
+    if (!placesServiceRef.current) {
+      setIsFetching(false)
+      setLoadError('Selected address details could not be loaded because Google Places details are unavailable for this key.')
+      onComplete?.()
+      return
+    }
+
+    let completed = false
+    const timeout = window.setTimeout(() => {
+      if (completed) return
+      completed = true
+      setIsFetching(false)
+      setLoadError('Selected address details timed out. You can keep the typed address manually.')
+      onComplete?.()
+    }, PLACES_REQUEST_TIMEOUT_MS)
+
+    placesServiceRef.current.getDetails(
+      {
+        placeId: prediction.place_id,
+        fields: DETAIL_FIELDS,
+      },
+      (place: any, status: string) => {
+        if (completed) return
+        completed = true
+        window.clearTimeout(timeout)
+        setIsFetching(false)
+        const placesStatus = googleApi?.maps?.places?.PlacesServiceStatus
+        if (status !== placesStatus?.OK || !place) {
+          setLoadError(`Selected address details could not be loaded (${status || 'unknown status'}).`)
+          onComplete?.()
+          return
+        }
+        const mapped = mapPlaceToAddress(place)
+        requestIdRef.current += 1
+        lastTypedValueRef.current = ''
+        suppressNextSearchRef.current = true
+        setInputValue(mapped.formattedAddress)
+        setPredictions([])
+        setIsOpen(false)
+        setActiveIndex(-1)
+        sessionTokenRef.current = null
+        setLoadError('')
+        onChange(mapped)
+        onComplete?.()
+      },
+    )
   }
 
   function handleSelect(prediction: Prediction) {
@@ -394,53 +455,12 @@ export default function AddressAutocomplete({
           onChange(mapped)
         })
         .catch((detailError: any) => {
-          setLoadError(`Selected address details could not be loaded (${detailError?.message || 'Google Places request failed'}).`)
+          console.warn('[Google Maps] Modern place details failed; retrying with legacy Places details.', detailError)
+          fetchLegacyPlaceDetails(prediction)
         })
-        .finally(() => setIsFetching(false))
       return
     }
-
-    if (!placesServiceRef.current) {
-      setIsFetching(false)
-      setLoadError('Selected address details could not be loaded because Google Places details are unavailable for this key.')
-      return
-    }
-
-    let completed = false
-    const timeout = window.setTimeout(() => {
-      if (completed) return
-      completed = true
-      setIsFetching(false)
-      setLoadError('Selected address details timed out. You can keep the typed address manually.')
-    }, PLACES_REQUEST_TIMEOUT_MS)
-
-    placesServiceRef.current.getDetails(
-      {
-        placeId: prediction.place_id,
-        fields: DETAIL_FIELDS,
-      },
-      (place: any, status: string) => {
-        if (completed) return
-        completed = true
-        window.clearTimeout(timeout)
-        setIsFetching(false)
-        const placesStatus = googleApi?.maps?.places?.PlacesServiceStatus
-        if (status !== placesStatus?.OK || !place) {
-          setLoadError(`Selected address details could not be loaded (${status || 'unknown status'}).`)
-          return
-        }
-        const mapped = mapPlaceToAddress(place)
-        requestIdRef.current += 1
-        lastTypedValueRef.current = ''
-        suppressNextSearchRef.current = true
-        setInputValue(mapped.formattedAddress)
-        setPredictions([])
-        setIsOpen(false)
-        setActiveIndex(-1)
-        sessionTokenRef.current = null
-        onChange(mapped)
-      },
-    )
+    fetchLegacyPlaceDetails(prediction)
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
