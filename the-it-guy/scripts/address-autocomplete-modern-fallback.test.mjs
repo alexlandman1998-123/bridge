@@ -11,7 +11,7 @@ for (const requiredToken of [
   'fetchLegacyPredictions',
   'Modern Places autocomplete failed; retrying with legacy Places service.',
   'fetchLegacyPredictions(suggestionError)',
-  'Address suggestions are temporarily unavailable. You can keep typing manually.',
+  'Address suggestions are unavailable. You can keep typing manually.',
   'fetchLegacyPlaceDetails',
   'Modern place details failed; retrying with legacy Places details.',
 ]) {
@@ -20,8 +20,9 @@ for (const requiredToken of [
 
 assert(
   !component.includes('Address suggestions are unavailable (${suggestionError?.message') &&
-    !component.includes('Rpc failed due to xhr error'),
-  'AddressAutocomplete should not surface raw modern Places RPC errors to users.',
+    !component.includes('Rpc failed due to xhr error') &&
+    !component.includes('Google Places autocomplete service is not available for this key'),
+  'AddressAutocomplete should not surface provider/key-level Places failures to users.',
 )
 
 console.log('Address autocomplete modern fallback contract passed.')

@@ -258,6 +258,7 @@ const CommercialCanvassingPage = lazy(() => import('./modules/commercial/pages/C
 const CommercialCompanyWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialCompanyWorkspacePage'))
 const CommercialContactWorkspacePage = lazy(() => import('./modules/commercial/pages/CommercialContactWorkspacePage'))
 const CommercialClientsPage = lazy(() => import('./modules/commercial/pages/CommercialClientsPage'))
+const CommercialBulkUploadSettingsPage = lazy(() => import('./modules/commercial/pages/CommercialBulkUploadSettingsPage'))
 const CommercialDashboard = lazy(() => import('./modules/commercial/pages/CommercialDashboard'))
 const CommercialDealsPipelinePage = lazy(() => import('./modules/commercial/pages/CommercialDealsPipelinePage'))
 const CommercialDealsPage = lazy(() => import('./modules/commercial/pages/CommercialDealsPage'))
@@ -1558,6 +1559,7 @@ function AppRoutes() {
                 <Route path="document-generator" element={<CommercialDocumentGeneratorPage />} />
                 <Route path="activity" element={<CommercialActivityPage />} />
                 <Route path="settings" element={<CommercialSettingsPage />} />
+                <Route path="settings/bulk-upload" element={<CommercialManagerRouteGate><CommercialBulkUploadSettingsPage /></CommercialManagerRouteGate>} />
                 <Route
                   path="settings/document-templates"
                   element={

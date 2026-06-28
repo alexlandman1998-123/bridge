@@ -166,6 +166,8 @@ export default function AddressAutocomplete({
   const [isLoadingMaps, setIsLoadingMaps] = useState(false)
   const [isFetching, setIsFetching] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [noticeText, setNoticeText] = useState('')
+  const [isAutocompleteUnavailable, setIsAutocompleteUnavailable] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const [googleApi, setGoogleApi] = useState<any>(null)
@@ -179,7 +181,7 @@ export default function AddressAutocomplete({
   const suppressNextSearchRef = useRef(Boolean(value?.formattedAddress))
 
   const isApiKeyAvailable = hasGoogleMapsApiKey()
-  const canSearchGoogle = !disabled && isApiKeyAvailable && !loadError
+  const canSearchGoogle = !disabled && isApiKeyAvailable && !loadError && !isAutocompleteUnavailable
   const isDisabled = disabled
 
   useEffect(() => {
@@ -205,6 +207,8 @@ export default function AddressAutocomplete({
 
     let cancelled = false
     setIsLoadingMaps(true)
+    setIsAutocompleteUnavailable(false)
+    setNoticeText('')
     loadGoogleMaps()
       .then(async (google) => {
         if (cancelled) return
@@ -264,18 +268,22 @@ export default function AddressAutocomplete({
       const placesLibrary = placesLibraryRef.current
       const modernAutocomplete = placesLibrary?.AutocompleteSuggestion
 
+      const disableAddressSuggestions = (reason: any = null) => {
+        setIsFetching(false)
+        setPredictions([])
+        setIsOpen(false)
+        setActiveIndex(-1)
+        setLoadError('')
+        setNoticeText('Address suggestions are unavailable. You can keep typing manually.')
+        setIsAutocompleteUnavailable(true)
+        if (reason) {
+          console.warn('[Google Maps] Address autocomplete unavailable; manual entry remains enabled.', reason)
+        }
+      }
+
       const fetchLegacyPredictions = (fallbackReason: any = null) => {
         if (!autocompleteServiceRef.current) {
-          setIsFetching(false)
-          setPredictions([])
-          setIsOpen(false)
-          const message = fallbackReason
-            ? 'Address suggestions are temporarily unavailable. You can keep typing manually.'
-            : 'Address suggestions are unavailable because the Google Places autocomplete service is not available for this key.'
-          setLoadError(message)
-          if (fallbackReason) {
-            console.warn('[Google Maps] Address autocomplete unavailable after legacy fallback.', fallbackReason)
-          }
+          disableAddressSuggestions(fallbackReason)
           return
         }
 
@@ -286,7 +294,8 @@ export default function AddressAutocomplete({
           setIsFetching(false)
           setPredictions([])
           setIsOpen(false)
-          setLoadError('Address suggestions timed out. You can keep typing manually, or check the Google Maps JavaScript API and Places API settings.')
+          setLoadError('')
+          setNoticeText('Address suggestions timed out. You can keep typing manually.')
         }, PLACES_REQUEST_TIMEOUT_MS)
 
         autocompleteServiceRef.current.getPlacePredictions(
@@ -317,7 +326,8 @@ export default function AddressAutocomplete({
             }
             setPredictions([])
             setIsOpen(false)
-            setLoadError(`Address suggestions are unavailable (${status || 'unknown status'}). You can keep typing manually.`)
+            setLoadError('')
+            setNoticeText('Address suggestions are unavailable. You can keep typing manually.')
           },
         )
       }
@@ -364,8 +374,9 @@ export default function AddressAutocomplete({
     if (error) return error
     if (!isApiKeyAvailable) return 'Google Places is not configured for this environment.'
     if (loadError) return loadError
+    if (noticeText) return noticeText
     return description
-  }, [description, error, isApiKeyAvailable, loadError])
+  }, [description, error, isApiKeyAvailable, loadError, noticeText])
 
   function handleClear() {
     requestIdRef.current += 1
@@ -497,6 +508,7 @@ export default function AddressAutocomplete({
             suppressNextSearchRef.current = false
             setInputValue(nextValue)
             setLoadError('')
+            if (!isAutocompleteUnavailable) setNoticeText('')
             onInputValueChange?.(nextValue)
             if (!nextValue.trim()) {
               requestIdRef.current += 1
@@ -540,7 +552,7 @@ export default function AddressAutocomplete({
         </div>
       </div>
       {helperText ? (
-        <p className={cn('text-xs leading-5 text-[#607387]', error || loadError || !isApiKeyAvailable ? 'text-[#b42318]' : '')}>
+        <p className={cn('text-xs leading-5 text-[#607387]', error || loadError ? 'text-[#b42318]' : '')}>
           {helperText}
         </p>
       ) : null}

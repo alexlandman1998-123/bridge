@@ -1,4 +1,4 @@
-import { ArrowRight, FileText, Layers3, Settings, Wrench } from 'lucide-react'
+import { ArrowRight, DatabaseZap, FileText, Layers3, Settings, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { buildCommercialDocumentGeneratorPath } from '../../../services/documents/commercialDocumentAdapterService'
 
@@ -52,6 +52,18 @@ function CommercialSettingsPage() {
           <p className="mt-1 text-xs leading-5 text-slate-500">Review generated documents, requests, and compliance items across the portfolio.</p>
           <span className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-[#1b6f55]">
             Open document centre
+            <ArrowRight size={14} />
+          </span>
+        </Link>
+
+        <Link to="/commercial/settings/bulk-upload" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)] transition hover:border-blue-200 hover:bg-[#fbfcfe]">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#eef5fb] text-[#123b61]">
+            <DatabaseZap size={19} />
+          </span>
+          <h2 className="mt-4 text-sm font-semibold text-[#102236]">Bulk Upload & Imports</h2>
+          <p className="mt-1 text-xs leading-5 text-slate-500">Configure upload access for vacancies, leads, and commercial canvassing prospects.</p>
+          <span className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-[#1b6f55]">
+            Configure imports
             <ArrowRight size={14} />
           </span>
         </Link>

@@ -1355,13 +1355,20 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 <input value={details.code} onChange={(event) => setDetails((previous) => ({ ...previous, code: event.target.value }))} />
               </label>
               <div className="full-width">
-                <AddressAutocomplete
-                  label="Development Address"
-                  value={buildDevelopmentAddressValue(details)}
-                  onChange={(nextAddress) => setDetails((previous) => mergeDevelopmentAddress(previous, nextAddress))}
-                  placeholder="12 Main Road Bedfordview"
-                  description="Select the Google Places result to store clean suburb, city, province, and map data."
-                />
+	                <AddressAutocomplete
+	                  label="Development Address"
+	                  value={buildDevelopmentAddressValue(details)}
+	                  onChange={(nextAddress) => setDetails((previous) => mergeDevelopmentAddress(previous, nextAddress))}
+	                  onInputValueChange={(nextValue) => setDetails((previous) => ({
+	                    ...previous,
+	                    address: nextValue,
+	                    formattedAddress: nextValue,
+	                    streetAddress: nextValue,
+	                    googlePlaceId: '',
+	                  }))}
+	                  placeholder="12 Main Road Bedfordview"
+	                  description="Select the Google Places result to store clean suburb, city, province, and map data."
+	                />
               </div>
               <label>
                 Suburb
