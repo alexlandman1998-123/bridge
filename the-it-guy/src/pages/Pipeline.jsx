@@ -9,6 +9,7 @@ import Button from '../components/ui/Button'
 import DataTable, { DataTableInner } from '../components/ui/DataTable'
 import Field from '../components/ui/Field'
 import { ViewToggle } from '../components/ui/FilterBar'
+import Modal from '../components/ui/Modal'
 import { useWorkspace } from '../context/WorkspaceContext'
 import AgencyPipelinePage from './agency/AgencyPipelinePage'
 import { fetchDevelopmentOptions, fetchUnitsData } from '../lib/api'
@@ -1453,14 +1454,25 @@ function LegacyPipeline() {
         </div>
       ) : null}
 
-      {!loading && showForm && pipelineTab === 'buyers' ? (
-        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-          <div className="flex flex-col gap-2">
-            <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Add Buyer Lead</h3>
-            <p className="text-sm leading-7 text-[#6b7d93]">Capture a buyer lead and drop it directly into the active pipeline.</p>
+      <Modal
+        open={!loading && showForm && pipelineTab === 'buyers'}
+        onClose={() => setShowForm(false)}
+        title="Add Buyer Lead"
+        subtitle="Capture a buyer lead and drop it directly into the active pipeline."
+        className="max-w-3xl"
+        footer={(
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="developer-buyer-lead-form">
+              <Plus size={16} />
+              Save Buyer Lead
+            </Button>
           </div>
-
-          <form className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleCreateLead}>
+        )}
+      >
+        <form id="developer-buyer-lead-form" className="grid gap-4 md:grid-cols-2" onSubmit={handleCreateLead}>
             <label className="grid gap-2 xl:col-span-2">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Buyer Name</span>
               <Field value={form.name} onChange={(event) => updateForm('name', event.target.value)} placeholder="Client or entity name" />
@@ -1524,27 +1536,28 @@ function LegacyPipeline() {
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Notes</span>
               <Field as="textarea" rows={4} value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} placeholder="Context, timing, objections, or next step." />
             </label>
-            <div className="flex flex-wrap items-center gap-3 xl:col-span-4">
-              <Button type="submit">
-                <Plus size={16} />
-                Save Buyer Lead
-              </Button>
-              <Button variant="ghost" onClick={() => setShowForm(false)}>
-                Cancel
-              </Button>
-            </div>
           </form>
-        </section>
-      ) : null}
+      </Modal>
 
-      {!loading && showForm && pipelineTab === 'sellers' ? (
-        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-          <div className="flex flex-col gap-2">
-            <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">New Seller Lead</h3>
-            <p className="text-sm leading-7 text-[#6b7d93]">Capture the seller once, then push onboarding and mandate collection through the client portal.</p>
+      <Modal
+        open={!loading && showForm && pipelineTab === 'sellers'}
+        onClose={() => setShowForm(false)}
+        title="New Seller Lead"
+        subtitle="Capture the seller once, then push onboarding and mandate collection through the client portal."
+        className="max-w-3xl"
+        footer={(
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="developer-seller-lead-form">
+              <Plus size={16} />
+              Save Seller Lead
+            </Button>
           </div>
-
-          <form className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleCreateSellerLead}>
+        )}
+      >
+        <form id="developer-seller-lead-form" className="grid gap-4 md:grid-cols-2" onSubmit={handleCreateSellerLead}>
             <label className="grid gap-2">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Seller Name</span>
               <Field value={sellerForm.sellerName} onChange={(event) => updateSellerForm('sellerName', event.target.value)} />
@@ -1591,18 +1604,8 @@ function LegacyPipeline() {
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Notes</span>
               <Field as="textarea" rows={4} value={sellerForm.notes} onChange={(event) => updateSellerForm('notes', event.target.value)} />
             </label>
-            <div className="flex flex-wrap items-center gap-3 xl:col-span-4">
-              <Button type="submit">
-                <Plus size={16} />
-                Save Seller Lead
-              </Button>
-              <Button variant="ghost" onClick={() => setShowForm(false)}>
-                Cancel
-              </Button>
-            </div>
           </form>
-        </section>
-      ) : null}
+      </Modal>
 
       {!loading && pipelineTab === 'buyers' && viewMode === 'table' ? (
         <DataTable

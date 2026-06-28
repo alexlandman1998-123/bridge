@@ -259,9 +259,25 @@ export function LatestUpdatesCard({
                   >
                     {item.authorRole}
                   </span>
+                  {item.statusLabel ? (
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.66rem] font-semibold uppercase tracking-[0.1em] ${
+                        item.requiresAttention || item.dueStatus === 'overdue'
+                          ? 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]'
+                          : item.displayType === 'milestone'
+                            ? 'border-[#c6dfcf] bg-[#eef8f1] text-[#2b7a53]'
+                            : 'border-[#dbe5ef] bg-white text-[#64748b]'
+                      }`}
+                    >
+                      {item.statusLabel}
+                    </span>
+                  ) : null}
                 </div>
                 <p className="text-xs text-[#7b8ca2]">{item.timestampLabel}</p>
               </div>
+              {item.title ? (
+                <h4 className="mt-2 text-sm font-semibold text-[#142132]">{item.title}</h4>
+              ) : null}
               <p className="mt-2 text-sm leading-6 text-[#324559]">{item.message}</p>
               {item.actionLabel ? (
                 <div className="mt-3">

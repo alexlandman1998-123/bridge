@@ -231,7 +231,76 @@ function uniqueById(items = []) {
   })
 }
 
+function normalizeDocumentCentreItem(item = {}) {
+  const sourceId = toText(item?.sourceId || item?.source_id || item?.id || item?.title, 'document')
+  const sourceType = toText(item?.sourceType || item?.source_type || 'document')
+  const linkedDocument =
+    item?.linkedDocument && typeof item.linkedDocument === 'object'
+      ? item.linkedDocument
+      : item?.linked_document && typeof item.linked_document === 'object'
+        ? item.linked_document
+        : null
+  return {
+    ...item,
+    id: toText(item?.id, `${sourceType}_${sourceId}`),
+    sourceId,
+    sourceType,
+    title: toText(item?.title || item?.label || item?.document_name, 'Document'),
+    description: toText(item?.description || item?.notes, 'Supporting document required for your transaction.'),
+    group: toText(item?.group || item?.requirement_group || item?.category),
+    status: normalizeDocumentStatus(item?.status || 'required'),
+    rejectionReason: toText(item?.rejectionReason || item?.rejection_reason),
+    linkedDocument,
+    hasUploadedDocument: Boolean(item?.hasUploadedDocument || item?.has_uploaded_document || linkedDocument),
+    uploadKey: toText(item?.uploadKey || item?.upload_key),
+    uploadSpec: item?.uploadSpec || item?.upload_spec || null,
+    metaLine: toText(item?.metaLine || item?.meta_line),
+    isCoreRequirement: item?.isCoreRequirement ?? item?.is_core_requirement ?? sourceType === 'required_document',
+  }
+}
+
+function isSignedDocumentCentreItem(item = {}) {
+  const source = normalizeDocumentMatchKey([
+    item?.sourceType,
+    item?.group,
+    item?.title,
+    item?.description,
+    item?.linkedDocument?.document_type,
+    item?.linkedDocument?.category,
+  ].filter(Boolean).join(' '))
+  return source.includes('signed') || source.includes('signature') || source.includes('otp') || source.includes('mandate')
+}
+
 function buildDocumentCentreSections(documentCenter = {}, workspace = 'buying') {
+  const typedItems = uniqueById(
+    toArray(documentCenter?.items)
+      .filter((item) => isClientVisible(item))
+      .filter((item) => matchesWorkspace(item, workspace))
+      .map((item) => normalizeDocumentCentreItem(item)),
+  )
+
+  if (typedItems.length) {
+    const requirementItems = typedItems.filter((item) =>
+      ['required_document', 'additional_request'].includes(item.sourceType),
+    )
+    const additionalRequests = typedItems.filter((item) => item.sourceType === 'additional_request')
+    const requiredFromYou = requirementItems.filter((item) => ['required', 'requested'].includes(item.status))
+    const rejectedNeedsAttention = requirementItems.filter((item) => item.status === 'rejected')
+    const uploadedUnderReview = typedItems.filter((item) => ['uploaded', 'under_review'].includes(item.status))
+    const approvedCompleted = typedItems.filter((item) => ['approved', 'completed'].includes(item.status))
+    const signedDocuments = approvedCompleted.filter((item) => isSignedDocumentCentreItem(item))
+
+    return {
+      requiredFromYou: uniqueById(requiredFromYou),
+      allRequired: uniqueById(requirementItems),
+      additionalRequests: uniqueById(additionalRequests),
+      uploadedUnderReview: uniqueById(uploadedUnderReview),
+      rejectedNeedsAttention: uniqueById(rejectedNeedsAttention),
+      approvedCompleted: uniqueById(approvedCompleted),
+      signedDocuments: uniqueById(signedDocuments),
+    }
+  }
+
   const uploadedDocuments = toArray(documentCenter?.uploadedDocuments).filter((item) => isClientVisible(item))
   const uploadedDocumentsById = new Map()
   uploadedDocuments.forEach((item) => {

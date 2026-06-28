@@ -53,6 +53,7 @@ import {
   createWorkspaceAlteration,
   deleteTransactionEverywhere,
   resendTransactionDocumentRequest,
+  resolveBuyerAppointedBondOriginatorRequest,
   updateTransactionDocumentRequestStatus,
   buildWorkflowStepComment,
   finalizeSignedOtpWorkflow,
@@ -308,6 +309,29 @@ const SYSTEM_DISCUSSION_TYPE = 'system'
 
 function normalizeOnboardingMode(value) {
   return String(value || '').trim().toLowerCase() === 'manual' ? 'manual' : 'client_portal'
+}
+
+function resolveBuyerBondOriginatorRequestFromOnboarding(onboardingFormData = null) {
+  const formData =
+    onboardingFormData?.formData && typeof onboardingFormData.formData === 'object'
+      ? onboardingFormData.formData
+      : onboardingFormData && typeof onboardingFormData === 'object'
+        ? onboardingFormData
+        : {}
+  return (
+    formData.buyer_bond_originator_request ||
+    formData.buyerBondOriginatorRequest ||
+    null
+  )
+}
+
+function getBuyerBondOriginatorRequestStatusLabel(request = null) {
+  const status = String(request?.status || '').trim().toLowerCase()
+  if (status === 'pending_approval') return 'Pending approval'
+  if (status === 'approved') return 'Approved'
+  if (status === 'rejected') return 'Rejected'
+  if (status === 'not_allowed') return 'Not allowed'
+  return status ? toTitleLabel(status) : 'Not requested'
 }
 
 function parseSectionCompletion(rawValue) {
@@ -979,6 +1003,60 @@ function toTitleLabel(value) {
   return String(value || '')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (match) => match.toUpperCase())
+}
+
+function normalizeFinancialTermChoice(value, allowedValues, fallback) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return allowedValues.includes(normalized) ? normalized : fallback
+}
+
+function normalizeReservationAmountType(value) {
+  return normalizeFinancialTermChoice(value, ['fixed', 'percentage'], 'fixed')
+}
+
+function normalizeReservationTreatment(value) {
+  return normalizeFinancialTermChoice(
+    value,
+    ['credited_to_purchase_price', 'separate_invoice', 'refundable_hold'],
+    'credited_to_purchase_price',
+  )
+}
+
+function normalizeReservationPayableTo(value) {
+  return normalizeFinancialTermChoice(value, ['developer', 'agency_trust', 'attorney_trust'], 'developer')
+}
+
+function normalizeAlterationChargeTreatment(value) {
+  return normalizeFinancialTermChoice(
+    value,
+    ['included_in_purchase_price', 'separate_invoice', 'no_charge'],
+    'included_in_purchase_price',
+  )
+}
+
+function getReservationAmountTypeLabel(value) {
+  return normalizeReservationAmountType(value) === 'percentage' ? 'Percentage of purchase price' : 'Fixed amount'
+}
+
+function getReservationTreatmentLabel(value) {
+  const normalized = normalizeReservationTreatment(value)
+  if (normalized === 'separate_invoice') return 'Separate invoice'
+  if (normalized === 'refundable_hold') return 'Refundable hold'
+  return 'Credited to purchase price'
+}
+
+function getReservationPayableToLabel(value) {
+  const normalized = normalizeReservationPayableTo(value)
+  if (normalized === 'agency_trust') return 'Agency trust'
+  if (normalized === 'attorney_trust') return 'Attorney trust'
+  return 'Developer'
+}
+
+function getAlterationChargeTreatmentLabel(value) {
+  const normalized = normalizeAlterationChargeTreatment(value)
+  if (normalized === 'separate_invoice') return 'Separate invoice'
+  if (normalized === 'no_charge') return 'No charge'
+  return 'Included in purchase price'
 }
 
 function getAdditionalRequestStatusLabel(status) {
@@ -2779,6 +2857,7 @@ function UnitDetail() {
   const [transferActionLoading, setTransferActionLoading] = useState('')
   const [bondActionLoading, setBondActionLoading] = useState('')
   const [bondHybridFinanceActionLoading, setBondHybridFinanceActionLoading] = useState('')
+  const [buyerBondOriginatorRequestAction, setBuyerBondOriginatorRequestAction] = useState('')
   const [clientInfoSavedAt, setClientInfoSavedAt] = useState('')
   const purchaserTypeOptions = getPurchaserTypeOptions()
   const discussionPanelRef = useRef(null)
@@ -3353,6 +3432,45 @@ function UnitDetail() {
       setError(saveError.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleResolveBuyerBondOriginatorRequest(decision) {
+    if (!detail?.transaction?.id) {
+      return
+    }
+
+    const request = resolveBuyerBondOriginatorRequestFromOnboarding(detail.onboardingFormData)
+    const originatorName = request?.companyName || request?.company_name || 'the nominated bond originator'
+    const rejectionReason =
+      decision === 'rejected'
+        ? window.prompt('Reason for rejecting this buyer-appointed bond originator request?') || ''
+        : ''
+
+    if (decision === 'rejected' && !rejectionReason.trim()) {
+      return
+    }
+
+    try {
+      setBuyerBondOriginatorRequestAction(decision)
+      setError('')
+      await resolveBuyerAppointedBondOriginatorRequest({
+        transactionId: detail.transaction.id,
+        decision,
+        rejectionReason,
+        actorRole: effectiveEditorRole,
+      })
+      await postSystemDiscussionUpdates([
+        decision === 'approved'
+          ? `Buyer-appointed bond originator approved: ${originatorName}. Finance ownership has been updated.`
+          : `Buyer-appointed bond originator rejected: ${originatorName}. Reason: ${rejectionReason.trim()}.`,
+      ])
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      await loadDetail()
+    } catch (requestError) {
+      setError(requestError?.message || 'Unable to resolve buyer bond originator request.')
+    } finally {
+      setBuyerBondOriginatorRequestAction('')
     }
   }
 
@@ -5545,6 +5663,20 @@ function UnitDetail() {
       ? 'Onboarding sent'
       : 'Onboarding not sent'
   const alterationTotalAmount = (alterationRequests || []).reduce((sum, request) => sum + (Number(request.amount_inc_vat) || 0), 0)
+  const buyerBondOriginatorRequest = resolveBuyerBondOriginatorRequestFromOnboarding(onboardingFormData)
+  const buyerBondOriginatorRequestStatus = String(buyerBondOriginatorRequest?.status || '').trim().toLowerCase()
+  const buyerBondOriginatorRequestPending =
+    buyerBondOriginatorRequest?.requested === true && buyerBondOriginatorRequestStatus === 'pending_approval'
+  const buyerBondOriginatorRequestStatusLabel = getBuyerBondOriginatorRequestStatusLabel(buyerBondOriginatorRequest)
+  const buyerBondOriginatorRequestName =
+    buyerBondOriginatorRequest?.companyName ||
+    buyerBondOriginatorRequest?.company_name ||
+    'Buyer-appointed bond originator'
+  const buyerBondOriginatorRequestContact =
+    buyerBondOriginatorRequest?.contactDetails ||
+    buyerBondOriginatorRequest?.contact_details ||
+    buyerBondOriginatorRequest?.email ||
+    'No contact details supplied'
   const rollupLifecycleSummary = buildTransactionLifecycleSummaryFromRollup(transactionRollup, {
     transactionId: transaction?.id,
     fallbackUpdatedAt: transaction?.updated_at || transaction?.created_at || null,
@@ -5568,6 +5700,12 @@ function UnitDetail() {
         description: payload.description,
         category: payload.category,
         amountIncVat: payload.amountIncVat,
+        chargeTreatment:
+          payload.chargeTreatment ||
+          transaction?.alteration_charge_treatment ||
+          transaction?.alterationChargeTreatment ||
+          developmentSettings?.default_alteration_charge_treatment ||
+          'included_in_purchase_price',
         invoiceFile: payload.invoiceFile,
         proofFile: payload.proofFile,
       })
@@ -5606,6 +5744,8 @@ function UnitDetail() {
   const canRequestAdditionalDocuments =
     Boolean(actingPermissions.canRequestAdditionalDocuments) ||
     ['developer', 'agent', 'attorney', 'bond_originator', 'internal_admin'].includes(effectiveEditorRole)
+  const canResolveBuyerBondOriginatorRequest =
+    canEditCoreTransaction && ['agent', 'developer', 'internal_admin'].includes(effectiveEditorRole)
   const canRecordProxyUpdate =
     Boolean(transaction?.id) &&
     canCommentInWorkspace &&
@@ -5815,6 +5955,77 @@ function UnitDetail() {
     transaction?.reservation_payment_details && typeof transaction.reservation_payment_details === 'object'
       ? transaction.reservation_payment_details
       : {}
+  const reservationAmountType = normalizeReservationAmountType(
+    transaction?.reservation_amount_type || transaction?.reservationAmountType,
+  )
+  const reservationTreatment = normalizeReservationTreatment(
+    transaction?.reservation_treatment || transaction?.reservationTreatment,
+  )
+  const reservationPayableTo = normalizeReservationPayableTo(
+    transaction?.reservation_payable_to || transaction?.reservationPayableTo,
+  )
+  const defaultAlterationChargeTreatment = normalizeAlterationChargeTreatment(
+    transaction?.alteration_charge_treatment ||
+      transaction?.alterationChargeTreatment ||
+      developmentSettings?.default_alteration_charge_treatment ||
+      developmentSettings?.defaultAlterationChargeTreatment,
+  )
+  const alterationIncludedPurchasePriceAmount = (alterationRequests || [])
+    .filter((request) =>
+      normalizeAlterationChargeTreatment(
+        request?.charge_treatment || request?.chargeTreatment || defaultAlterationChargeTreatment,
+      ) === 'included_in_purchase_price',
+    )
+    .reduce((sum, request) => sum + (Number(request?.amount_inc_vat) || 0), 0)
+  const alterationSeparateInvoiceAmount = (alterationRequests || [])
+    .filter((request) =>
+      normalizeAlterationChargeTreatment(
+        request?.charge_treatment || request?.chargeTreatment || defaultAlterationChargeTreatment,
+      ) === 'separate_invoice',
+    )
+    .reduce((sum, request) => sum + (Number(request?.amount_inc_vat) || 0), 0)
+  const alterationNoChargeCount = (alterationRequests || []).filter(
+    (request) =>
+      normalizeAlterationChargeTreatment(
+        request?.charge_treatment || request?.chargeTreatment || defaultAlterationChargeTreatment,
+      ) === 'no_charge',
+  ).length
+  const reservationCreditedAmount =
+    reservationRequired && reservationTreatment === 'credited_to_purchase_price' && Number.isFinite(reservationAmountValue)
+      ? Number(reservationAmountValue || 0)
+      : 0
+  const developerGrossPurchasePrice = Number(
+    transaction?.purchase_price ||
+      transaction?.sales_price ||
+      unit?.price ||
+      0,
+  )
+  const developerContractValueWithIncludedAlterations =
+    developerGrossPurchasePrice + Number(alterationIncludedPurchasePriceAmount || 0)
+  const developerNetAfterReservationCredit = Math.max(
+    developerContractValueWithIncludedAlterations - reservationCreditedAmount,
+    0,
+  )
+  const developerFinancialActionItems = [
+    reservationRequired && reservationTreatment === 'credited_to_purchase_price'
+      ? `Credit ${currency.format(reservationCreditedAmount)} against the purchase price.`
+      : null,
+    reservationRequired && reservationTreatment === 'separate_invoice'
+      ? 'Keep the reservation payment outside the purchase price reconciliation.'
+      : null,
+    reservationRequired && reservationTreatment === 'refundable_hold'
+      ? 'Track the reservation payment as a refundable holding amount.'
+      : null,
+    alterationIncludedPurchasePriceAmount > 0
+      ? `Confirm ${currency.format(alterationIncludedPurchasePriceAmount)} of alterations in the sale agreement or addendum.`
+      : null,
+    alterationSeparateInvoiceAmount > 0
+      ? `Raise or track separate alteration invoices totalling ${currency.format(alterationSeparateInvoiceAmount)}.`
+      : null,
+    alterationNoChargeCount > 0
+      ? `${alterationNoChargeCount} alteration request${alterationNoChargeCount === 1 ? '' : 's'} marked no charge.`
+      : null,
+  ].filter(Boolean)
   const reservationRequirement =
     (requiredDocumentChecklist || []).find((item) => normalizeDocumentMatcher(item?.key) === 'reservation_deposit_proof') ||
     (requiredDocumentChecklist || []).find((item) =>
@@ -5909,6 +6120,88 @@ function UnitDetail() {
   const isBondOrHybridFinance = activeFinanceType === 'bond' || activeFinanceType === 'combination'
   const canViewBondWorkspaceTab = ['developer', 'agent'].includes(workspaceRole) && isBondOrHybridFinance
   const bondHybridFinanceSummary = transactionFinanceWorkflow?.summary || null
+  const developerFinancialTermsPanel = isDevelopmentTransaction ? (
+    <WorkspacePanel
+      title="Developer Financial Terms"
+      copy="Reservation deposit treatment, alteration costing, and contract-value impact for this transaction."
+      className="no-print"
+    >
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: 'Contract value',
+            value: currency.format(developerContractValueWithIncludedAlterations || 0),
+            subtext:
+              alterationIncludedPurchasePriceAmount > 0
+                ? `Includes ${currency.format(alterationIncludedPurchasePriceAmount)} alterations`
+                : 'Before separate invoices',
+          },
+          {
+            label: 'Reservation credit',
+            value: reservationRequired ? currency.format(reservationCreditedAmount || 0) : 'Not required',
+            subtext: reservationRequired
+              ? `${getReservationTreatmentLabel(reservationTreatment)} - ${getReservationPayableToLabel(reservationPayableTo)}`
+              : 'No reservation deposit',
+          },
+          {
+            label: 'Net after credit',
+            value: currency.format(developerNetAfterReservationCredit || 0),
+            subtext: reservationRequired ? 'Contract value less credited reservation' : 'No reservation credit applied',
+          },
+          {
+            label: 'Separate invoices',
+            value: currency.format(alterationSeparateInvoiceAmount || 0),
+            subtext: `${alterationRequests?.length || 0} alteration request${(alterationRequests?.length || 0) === 1 ? '' : 's'}`,
+          },
+        ].map((item) => (
+          <article key={item.label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
+            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.09em] text-[#8ca0b6]">{item.label}</span>
+            <strong className="mt-2 block text-base font-semibold text-[#142132]">{item.value}</strong>
+            <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{item.subtext}</p>
+          </article>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+        <section className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+          <h4 className="text-sm font-semibold text-[#142132]">Reservation Terms</h4>
+          <dl className="mt-3 grid gap-2 text-sm text-[#4f647a]">
+            {[
+              ['Amount type', getReservationAmountTypeLabel(reservationAmountType)],
+              ['Treatment', getReservationTreatmentLabel(reservationTreatment)],
+              ['Payable to', getReservationPayableToLabel(reservationPayableTo)],
+              ['Status', reservationStatusLabel],
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 border-b border-[#edf2f7] pb-2 last:border-b-0 last:pb-0">
+                <dt>{label}</dt>
+                <dd className="text-right font-semibold text-[#1f3448]">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <section className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+          <h4 className="text-sm font-semibold text-[#142132]">Operator Actions</h4>
+          <div className="mt-3 space-y-2">
+            {developerFinancialActionItems.length ? (
+              developerFinancialActionItems.map((item) => (
+                <p key={item} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-sm leading-5 text-[#35546c]">
+                  {item}
+                </p>
+              ))
+            ) : (
+              <p className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-2 text-sm leading-5 text-[#6b7d93]">
+                No reservation credit or alteration invoice actions are currently required.
+              </p>
+            )}
+          </div>
+          <p className="mt-3 text-xs leading-5 text-[#7b8ca2]">
+            Default alteration treatment: {getAlterationChargeTreatmentLabel(defaultAlterationChargeTreatment)}
+          </p>
+        </section>
+      </div>
+    </WorkspacePanel>
+  ) : null
   const financeCommandCenterPanel = (
     <TransactionFinanceCommandCenter
       transaction={transaction}
@@ -8163,6 +8456,48 @@ function UnitDetail() {
                       <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
                         <h4 className="text-sm font-semibold text-[#142132]">Finance ownership</h4>
                         <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Bond lane ownership and finance operator.</p>
+                        {buyerBondOriginatorRequest?.requested ? (
+                          <div className="mt-4 rounded-[16px] border border-[#d7eadf] bg-[#f4fbf7] p-4">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div>
+                                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#2f7a51]">
+                                  Buyer-appointed originator request
+                                </p>
+                                <h5 className="mt-1 text-sm font-semibold text-[#142132]">{buyerBondOriginatorRequestName}</h5>
+                                <p className="mt-1 text-xs leading-5 text-[#5f748b]">{buyerBondOriginatorRequestContact}</p>
+                                <p className="mt-2 text-xs font-semibold text-[#2f7a51]">
+                                  Status: {buyerBondOriginatorRequestStatusLabel}
+                                </p>
+                                {buyerBondOriginatorRequest?.rejectionReason ? (
+                                  <p className="mt-1 text-xs leading-5 text-[#9a3412]">
+                                    Rejection reason: {buyerBondOriginatorRequest.rejectionReason}
+                                  </p>
+                                ) : null}
+                              </div>
+                              {buyerBondOriginatorRequestPending && canResolveBuyerBondOriginatorRequest ? (
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={() => void handleResolveBuyerBondOriginatorRequest('approved')}
+                                    disabled={Boolean(buyerBondOriginatorRequestAction)}
+                                  >
+                                    {buyerBondOriginatorRequestAction === 'approved' ? 'Approving...' : 'Approve'}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => void handleResolveBuyerBondOriginatorRequest('rejected')}
+                                    disabled={Boolean(buyerBondOriginatorRequestAction)}
+                                  >
+                                    {buyerBondOriginatorRequestAction === 'rejected' ? 'Rejecting...' : 'Reject'}
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : null}
                         <div className="mt-4 grid gap-3">
                           {developmentModuleState.bond_originator && bondOriginatorOptions.length ? (
                             <label className="grid gap-2 text-sm font-medium text-[#35546c]">
@@ -8290,7 +8625,10 @@ function UnitDetail() {
         ) : null}
 
         {activeWorkspaceMenu === 'financials' ? (
-          financeCommandCenterPanel
+          <div className="space-y-4">
+            {developerFinancialTermsPanel}
+            {financeCommandCenterPanel}
+          </div>
         ) : null}
 
         {activeWorkspaceMenu === 'tasks' ? (
@@ -9370,6 +9708,12 @@ function UnitDetail() {
                 creationError={alterationCreationError}
                 createDisabled={!transaction?.id}
                 totalAmount={alterationTotalAmount}
+                defaultChargeTreatment={
+                  transaction?.alteration_charge_treatment ||
+                  transaction?.alterationChargeTreatment ||
+                  developmentSettings?.default_alteration_charge_treatment ||
+                  'included_in_purchase_price'
+                }
               />
             ) : (
               <div className="rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#6b7d93]">

@@ -235,20 +235,30 @@ const STRUCTURED_FINANCE_KEYS = [
 const COMPANY_VALIDATION_KEYS = [
   'company_name',
   'company_registration_number',
+  'company_registered_address',
+  'nature_of_business',
   'authorised_signatory_name',
   'authorised_signatory_identity_number',
   'authorised_signatory_email',
   'authorised_signatory_phone',
+  'authorised_signatory_capacity',
+  'board_resolution_available',
 ]
 
 const TRUST_VALIDATION_KEYS = [
   'trust_name',
   'trust_registration_number',
+  'trust_type',
+  'masters_office_reference',
+  'trust_registered_address',
   'authorised_trustee_name',
   'authorised_trustee_identity_number',
   'authorised_trustee_email',
   'authorised_trustee_phone',
+  'trust_deed_available',
+  'letters_of_authority_available',
   'trust_resolution_available',
+  'all_trustees_signing',
 ]
 
 function normalizePurchaserEntry(entry = {}) {
@@ -398,6 +408,21 @@ function isFilledValue(value) {
   return false
 }
 
+function firstFilledValue(values = []) {
+  const filled = values.find((value) => isFilledValue(value))
+  return filled === undefined ? '' : filled
+}
+
+function resolveEntityValue(formData = {}, entityKey = '', key = '', aliases = []) {
+  const entity = formData?.[entityKey] || {}
+  return firstFilledValue([
+    entity[key],
+    ...aliases.map((alias) => entity[alias]),
+    formData[key],
+    ...aliases.map((alias) => formData[alias]),
+  ])
+}
+
 function normalizeNumber(value) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? numeric : null
@@ -537,13 +562,15 @@ const TRUST_SECTIONS = [
     [
       textField('trust_name', 'Trust Name', { required: true }),
       textField('trust_registration_number', 'Trust Registration Number', { required: true }),
-      textField('trust_type', 'Trust Type'),
-      textField('masters_office_reference', 'Master’s Office Reference'),
+      textField('trust_type', 'Trust Type', { required: true }),
+      textField('masters_office_reference', 'Master’s Office Reference', { required: true }),
       textareaField('trust_registered_address', 'Registered Address', { required: true, fullWidth: true }),
       textField('trust_tax_number', 'Trust Tax Number'),
       textField('trust_contact_name', 'Primary Trust Contact', { required: true }),
       emailField('trust_contact_email', 'Primary Trust Contact Email', { required: true }),
       phoneField('trust_contact_phone', 'Primary Trust Contact Number', { required: true }),
+      yesNoField('trust_deed_available', 'Is the trust deed available?', { required: true }),
+      yesNoField('letters_of_authority_available', 'Are letters of authority available?', { required: true }),
       yesNoField('trust_resolution_available', 'Is a resolution to purchase available?', { required: true }),
       yesNoField('all_trustees_signing', 'Are all trustees signing?', { required: true }),
     ],
@@ -579,12 +606,12 @@ const COMPANY_SECTIONS = [
       textField('vat_number', 'VAT Number'),
       textareaField('company_registered_address', 'Registered Address', { required: true, fullWidth: true }),
       textareaField('company_business_address', 'Business Address (if different)', { fullWidth: true }),
-      textField('nature_of_business', 'Nature of Business'),
+      textField('nature_of_business', 'Nature of Business', { required: true }),
       textField('company_tax_number', 'Tax Number'),
       textField('company_contact_name', 'Primary Company Contact', { required: true }),
       emailField('company_contact_email', 'Primary Company Contact Email', { required: true }),
       phoneField('company_contact_phone', 'Primary Company Contact Number', { required: true }),
-      textField('authorised_signatory_capacity', 'Authorised Signatory Capacity'),
+      textField('authorised_signatory_capacity', 'Authorised Signatory Capacity', { required: true }),
       yesNoField('board_resolution_available', 'Is a board resolution available?', { required: true }),
     ],
     {
@@ -2166,7 +2193,13 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
   } else if (purchaserType === 'company') {
     const company = {}
     COMPANY_VALIDATION_KEYS.forEach((key) => {
-      company[key] = formData?.company?.[key] ?? formData[key] ?? ''
+      const aliases =
+        key === 'company_registered_address'
+          ? ['registered_address']
+          : key === 'board_resolution_available'
+            ? ['company_resolution_available']
+            : []
+      company[key] = resolveEntityValue(formData, 'company', key, aliases)
     })
     COMPANY_VALIDATION_KEYS.forEach((key) => {
       const label = key.replaceAll('_', ' ')
@@ -2175,9 +2208,14 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     validateEmailIfPresent(company.authorised_signatory_email, 'Authorised Signatory Email')
     validatePhoneIfPresent(company.authorised_signatory_phone, 'Authorised Signatory Phone')
     validateIdLike(company.authorised_signatory_identity_number, 'Authorised Signatory ID Number')
+    requireYesNo(company.board_resolution_available, 'Board Resolution Available')
     const companyDirectors = getStructuredCollectionEntries(formData, 'company.directors').length
       ? getStructuredCollectionEntries(formData, 'company.directors')
       : formData.directors || []
+    const populatedDirectors = companyDirectors.filter((director) => hasAssociatedPersonEntryData(director, 'Director'))
+    if (!populatedDirectors.length) {
+      throw new Error('At least one director or beneficial owner is required.')
+    }
     companyDirectors.forEach((director, directorIndex) => {
       if (!hasAssociatedPersonEntryData(director, 'Director')) {
         return
@@ -2193,7 +2231,13 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
   } else if (purchaserType === 'trust') {
     const trust = {}
     TRUST_VALIDATION_KEYS.forEach((key) => {
-      trust[key] = formData?.trust?.[key] ?? formData[key] ?? ''
+      const aliases =
+        key === 'trust_registered_address'
+          ? ['registered_address']
+          : key === 'trust_resolution_available'
+            ? ['resolution_available']
+            : []
+      trust[key] = resolveEntityValue(formData, 'trust', key, aliases)
     })
     TRUST_VALIDATION_KEYS.forEach((key) => {
       const label = key.replaceAll('_', ' ')
@@ -2202,10 +2246,17 @@ export function validateOnboardingSubmission(formData = {}, options = {}) {
     validateEmailIfPresent(trust.authorised_trustee_email, 'Authorised Trustee Email')
     validatePhoneIfPresent(trust.authorised_trustee_phone, 'Authorised Trustee Phone')
     validateIdLike(trust.authorised_trustee_identity_number, 'Authorised Trustee ID Number')
+    requireYesNo(trust.trust_deed_available, 'Trust Deed Available')
+    requireYesNo(trust.letters_of_authority_available, 'Letters of Authority Available')
     requireYesNo(trust.trust_resolution_available, 'Trust Resolution Available')
+    requireYesNo(trust.all_trustees_signing, 'All Trustees Signing')
     const trustTrustees = getStructuredCollectionEntries(formData, 'trust.trustees').length
       ? getStructuredCollectionEntries(formData, 'trust.trustees')
       : formData.trustees || []
+    const populatedTrustees = trustTrustees.filter((trustee) => hasAssociatedPersonEntryData(trustee, 'Trustee'))
+    if (!populatedTrustees.length) {
+      throw new Error('At least one trustee is required.')
+    }
     trustTrustees.forEach((trustee, trusteeIndex) => {
       if (!hasAssociatedPersonEntryData(trustee, 'Trustee')) {
         return

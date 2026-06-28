@@ -12,8 +12,27 @@ const initialCreationForm = {
   description: '',
   category: '',
   amount: '',
+  chargeTreatment: '',
   invoiceFile: null,
   proofFile: null,
+}
+
+const CHARGE_TREATMENT_OPTIONS = [
+  { value: 'included_in_purchase_price', label: 'Include in purchase price' },
+  { value: 'separate_invoice', label: 'Invoice separately' },
+  { value: 'no_charge', label: 'No charge by default' },
+]
+
+function normalizeChargeTreatment(value) {
+  const normalized = String(value || '').trim()
+  return CHARGE_TREATMENT_OPTIONS.some((option) => option.value === normalized)
+    ? normalized
+    : 'included_in_purchase_price'
+}
+
+function getChargeTreatmentLabel(value) {
+  const normalized = normalizeChargeTreatment(value)
+  return CHARGE_TREATMENT_OPTIONS.find((option) => option.value === normalized)?.label || 'Include in purchase price'
 }
 
 function formatStatusLabel(status) {
@@ -47,11 +66,19 @@ function AlterationRequestsPanel({
   createDisabled = false,
   creationError = '',
   totalAmount = 0,
+  defaultChargeTreatment = 'included_in_purchase_price',
 }) {
   const [error, setError] = useState('')
   const [formState, setFormState] = useState(initialCreationForm)
   const [localCreationError, setLocalCreationError] = useState('')
   const Wrapper = embedded ? 'div' : 'section'
+  const normalizedDefaultChargeTreatment = normalizeChargeTreatment(defaultChargeTreatment)
+  const includedAmount = requests
+    .filter((item) => normalizeChargeTreatment(item?.charge_treatment || item?.chargeTreatment) === 'included_in_purchase_price')
+    .reduce((sum, item) => sum + (Number(item?.amount_inc_vat) || 0), 0)
+  const separateInvoiceAmount = requests
+    .filter((item) => normalizeChargeTreatment(item?.charge_treatment || item?.chargeTreatment) === 'separate_invoice')
+    .reduce((sum, item) => sum + (Number(item?.amount_inc_vat) || 0), 0)
 
   async function handleStatusChange(requestId, status) {
     try {
@@ -83,6 +110,7 @@ function AlterationRequestsPanel({
         description: formState.description.trim(),
         category: formState.category.trim(),
         amountIncVat: Number(formState.amount) || 0,
+        chargeTreatment: normalizeChargeTreatment(formState.chargeTreatment || normalizedDefaultChargeTreatment),
         invoiceFile: formState.invoiceFile,
         proofFile: formState.proofFile,
       })
@@ -106,10 +134,12 @@ function AlterationRequestsPanel({
         </div>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
           ['Total requests', requests.length],
           ['Total amount (incl. VAT)', currencyFormatter.format(Number(totalAmount) || 0)],
+          ['Included in purchase price', currencyFormatter.format(includedAmount)],
+          ['Separate invoices', currencyFormatter.format(separateInvoiceAmount)],
           ['Awaiting action', requests.filter((item) => !['approved', 'completed', 'paid', 'declined', 'rejected', 'cancelled'].includes(String(item?.status || '').toLowerCase())).length],
         ].map(([label, value]) => (
           <article key={label} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
@@ -166,7 +196,7 @@ function AlterationRequestsPanel({
               />
             </label>
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
               <label className="grid gap-2 text-sm font-medium text-[#35546c]">
                 <span>Amount (incl. VAT)</span>
                 <input
@@ -178,6 +208,19 @@ function AlterationRequestsPanel({
                   placeholder="0.00"
                   className="w-full rounded-[14px] border border-[#dbe5ef] bg-white px-3.5 py-2.5 text-sm text-[#142132] outline-none transition focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
                 />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-[#35546c]">
+                <span>Cost Treatment</span>
+                <select
+                  value={formState.chargeTreatment || normalizedDefaultChargeTreatment}
+                  onChange={(event) => setFormState((previous) => ({ ...previous, chargeTreatment: event.target.value }))}
+                  className="w-full rounded-[14px] border border-[#dbe5ef] bg-white px-3.5 py-2.5 text-sm text-[#142132] outline-none transition focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]"
+                >
+                  {CHARGE_TREATMENT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </label>
 
               <label className="grid gap-2 text-sm font-medium text-[#35546c]">
@@ -258,6 +301,9 @@ function AlterationRequestsPanel({
                   </p>
                   <p className="mt-2 text-sm text-[#142132]">
                     Amount (incl. VAT): <strong>{currencyFormatter.format(Number(request.amount_inc_vat || 0))}</strong>
+                  </p>
+                  <p className="mt-1 text-sm text-[#35546c]">
+                    Cost treatment: <strong>{getChargeTreatmentLabel(request.charge_treatment || request.chargeTreatment)}</strong>
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2 text-sm">
                     {request.invoice_url ? (

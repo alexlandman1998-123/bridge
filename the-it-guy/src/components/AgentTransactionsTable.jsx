@@ -20,6 +20,7 @@ const MAIN_STAGE_PROGRESS = {
 
 const QUICK_FILTERS = [
   { key: 'all', label: 'All' },
+  { key: 'needs_review', label: 'Needs Review' },
   { key: 'development', label: 'Development' },
   { key: 'second_hand', label: 'Second-Hand' },
   { key: 'commercial', label: 'Commercial' },
@@ -122,6 +123,38 @@ function getHealth(row, mainStageKey = '') {
   return { label: 'On Track', className: 'transaction-health-track' }
 }
 
+function getBuyerBondOriginatorRequestSummary(row) {
+  const summary = row?.buyerBondOriginatorRequestSummary || row?.transaction?.buyerBondOriginatorRequestSummary || null
+  if (summary?.requested) return summary
+
+  const request =
+    row?.buyerBondOriginatorRequest ||
+    row?.transaction?.buyer_bond_originator_request ||
+    row?.transaction?.buyerBondOriginatorRequest ||
+    null
+  if (!request?.requested) return null
+
+  const status = String(request.status || '').trim().toLowerCase()
+  const companyName = String(request.companyName || request.company_name || 'buyer-appointed bond originator').trim()
+  const actionRequired =
+    row?.buyerBondOriginatorRequestActionRequired === true ||
+    row?.transaction?.buyer_bond_originator_request_action_required === true ||
+    status === 'pending_approval'
+
+  return {
+    requested: true,
+    status,
+    actionRequired,
+    label: actionRequired ? 'Buyer originator review' : 'Buyer originator request',
+    summary:
+      row?.transaction?.buyer_bond_originator_request_summary ||
+      (actionRequired
+        ? `Buyer nominated ${companyName}. Agent or developer approval is required.`
+        : `Buyer nominated ${companyName}.`),
+    companyName,
+  }
+}
+
 function getEmptyStateCopy(isPrincipalView) {
   if (isPrincipalView) {
     return 'Transactions will appear here once leads are converted, offers are accepted, or a deal is created directly.'
@@ -145,6 +178,7 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
   const health = getHealth(row, mainStage).label.toLowerCase()
   const developmentName = String(row?.development?.name || '').trim().toLowerCase()
   const buyerName = String(row?.buyer?.name || '').trim().toLowerCase()
+  const buyerBondOriginatorRequest = getBuyerBondOriginatorRequestSummary(row)
   const searchHaystack = [
     buyerName,
     row?.buyer?.email,
@@ -159,6 +193,9 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
     stage,
     mainStage,
     health,
+    buyerBondOriginatorRequest?.label,
+    buyerBondOriginatorRequest?.summary,
+    buyerBondOriginatorRequest?.companyName,
   ]
     .map((value) => String(value || '').trim().toLowerCase())
     .filter(Boolean)
@@ -167,6 +204,7 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
   const normalizedSearch = String(searchTerm || '').trim().toLowerCase()
   if (normalizedSearch && !searchHaystack.includes(normalizedSearch)) return false
 
+  if (filterKey === 'needs_review') return buyerBondOriginatorRequest?.actionRequired === true
   if (filterKey === 'development') return Boolean(row?.development?.id) || typeText.includes('development')
   if (filterKey === 'second_hand') return typeText.includes('second') || typeText.includes('private') || (!row?.development?.id && !typeText.includes('commercial'))
   if (filterKey === 'commercial') return typeText.includes('commercial')
@@ -347,6 +385,7 @@ function AgentTransactionsTable({
               const propertyLabel = getPropertyLabel(row)
               const developmentLabel = getDevelopmentLabel(row)
               const transactionReference = row?.transaction?.transaction_reference || row?.transaction?.reference || ''
+              const buyerBondOriginatorRequest = getBuyerBondOriginatorRequestSummary(row)
 
               return (
                 <tr
@@ -371,6 +410,16 @@ function AgentTransactionsTable({
                       <small className="transaction-cell-secondary" title={propertyLabel}>{propertyLabel}</small>
                       {transactionReference ? (
                         <small className="transaction-cell-meta" title={transactionReference}>Ref {transactionReference}</small>
+                      ) : null}
+                      {buyerBondOriginatorRequest?.requested ? (
+                        <StatusBadge
+                          className={`transaction-workflow-chip buyer-originator-request-chip ${
+                            buyerBondOriginatorRequest.actionRequired ? 'transaction-chip-watch' : 'transaction-chip-muted'
+                          }`.trim()}
+                          title={buyerBondOriginatorRequest.summary}
+                        >
+                          {buyerBondOriginatorRequest.actionRequired ? 'Buyer originator review' : buyerBondOriginatorRequest.label}
+                        </StatusBadge>
                       ) : null}
                     </div>
                   </td>

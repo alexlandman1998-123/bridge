@@ -270,6 +270,15 @@ const DEFAULT_DOCUMENT_EMAIL_FORM = {
 const DEFAULT_RESERVATION_SETTINGS_FORM = {
   enabledByDefault: false,
   defaultDepositAmount: '',
+  amountType: 'fixed',
+  depositTreatment: 'credited_to_purchase_price',
+  payableTo: 'developer',
+  alterationChargeTreatment: 'included_in_purchase_price',
+  defaultTransferAttorneySource: 'first_conveyancer',
+  defaultBondOriginatorSource: 'first_bond_originator',
+  buyerAppointedBondOriginatorAllowed: true,
+  buyerAppointedBondOriginatorRequiresApproval: true,
+  autoInviteSelectedBondOriginator: false,
   paymentReferenceFormat: '',
   accountHolderName: '',
   bankName: '',
@@ -357,6 +366,29 @@ function buildDocumentDownloadName(item = {}) {
     .toLowerCase()
   const extension = getFileExtensionFromUrl(item?.fileUrl)
   return extension ? `${safeTitle}.${extension}` : safeTitle
+}
+
+function buildCsvDownloadName(value, fallback = 'development-financial-reconciliation') {
+  const safeName = String(value || fallback)
+    .trim()
+    .replace(/[^a-zA-Z0-9-_ ]+/g, '')
+    .replace(/\s+/g, '-')
+    .toLowerCase()
+
+  return `${safeName || fallback}.csv`
+}
+
+function escapeCsvCell(value) {
+  const normalized = value === null || value === undefined ? '' : String(value)
+  if (/[",\n\r]/.test(normalized)) {
+    return `"${normalized.replaceAll('"', '""')}"`
+  }
+
+  return normalized
+}
+
+function buildCsvContent(rows = []) {
+  return `${rows.map((row) => row.map((cell) => escapeCsvCell(cell)).join(',')).join('\n')}\n`
 }
 
 function formatPercent(value) {
@@ -816,6 +848,41 @@ function toTitleLabel(value) {
     .replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
+function normalizeDeveloperFinancialChoice(value, allowedValues, fallback) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return allowedValues.includes(normalized) ? normalized : fallback
+}
+
+function normalizeReservationTreatment(value) {
+  return normalizeDeveloperFinancialChoice(
+    value,
+    ['credited_to_purchase_price', 'separate_invoice', 'refundable_hold'],
+    'credited_to_purchase_price',
+  )
+}
+
+function normalizeAlterationChargeTreatment(value) {
+  return normalizeDeveloperFinancialChoice(
+    value,
+    ['included_in_purchase_price', 'separate_invoice', 'no_charge'],
+    'included_in_purchase_price',
+  )
+}
+
+function getReservationTreatmentLabel(value) {
+  const normalized = normalizeReservationTreatment(value)
+  if (normalized === 'separate_invoice') return 'Separate invoice'
+  if (normalized === 'refundable_hold') return 'Refundable hold'
+  return 'Credited to purchase price'
+}
+
+function getAlterationChargeTreatmentLabel(value) {
+  const normalized = normalizeAlterationChargeTreatment(value)
+  if (normalized === 'separate_invoice') return 'Separate invoice'
+  if (normalized === 'no_charge') return 'No charge'
+  return 'Included in purchase price'
+}
+
 function buildTransactionReference(transactionId) {
   const normalized = String(transactionId || '').replaceAll('-', '').slice(0, 8).toUpperCase()
   return normalized ? `TRX-${normalized}` : 'Pending'
@@ -1017,6 +1084,19 @@ function buildReservationSettingsForm(settings = {}) {
     settings?.reservation_deposit_payment_details || settings?.reservationDepositPaymentDetails || {}
   const defaultAmount =
     settings?.reservation_deposit_amount ?? settings?.reservationDepositAmount ?? null
+  const rolePlayerDefaults =
+    settings?.rolePlayerDefaults ||
+    settings?.role_player_defaults ||
+    settings?.stakeholderTeams?.rolePlayerDefaults ||
+    settings?.stakeholderTeams?.role_player_defaults ||
+    settings?.stakeholder_teams?.rolePlayerDefaults ||
+    settings?.stakeholder_teams?.role_player_defaults ||
+    {}
+  const buyerAppointedBondOriginatorAllowed = Boolean(
+    rolePlayerDefaults?.buyerAppointedBondOriginatorAllowed ??
+      rolePlayerDefaults?.buyer_appointed_bond_originator_allowed ??
+      DEFAULT_RESERVATION_SETTINGS_FORM.buyerAppointedBondOriginatorAllowed,
+  )
 
   return {
     enabledByDefault: Boolean(
@@ -1026,6 +1106,43 @@ function buildReservationSettingsForm(settings = {}) {
       defaultAmount === null || defaultAmount === undefined || defaultAmount === ''
         ? ''
         : String(defaultAmount),
+    amountType:
+      settings?.reservation_deposit_amount_type ||
+      settings?.reservationDepositAmountType ||
+      'fixed',
+    depositTreatment:
+      settings?.reservation_deposit_treatment ||
+      settings?.reservationDepositTreatment ||
+      'credited_to_purchase_price',
+    payableTo:
+      settings?.reservation_deposit_payable_to ||
+      settings?.reservationDepositPayableTo ||
+      'developer',
+    alterationChargeTreatment:
+      settings?.default_alteration_charge_treatment ||
+      settings?.defaultAlterationChargeTreatment ||
+      DEFAULT_RESERVATION_SETTINGS_FORM.alterationChargeTreatment,
+    defaultTransferAttorneySource:
+      rolePlayerDefaults?.defaultTransferAttorneySource ||
+      rolePlayerDefaults?.default_transfer_attorney_source ||
+      DEFAULT_RESERVATION_SETTINGS_FORM.defaultTransferAttorneySource,
+    defaultBondOriginatorSource:
+      rolePlayerDefaults?.defaultBondOriginatorSource ||
+      rolePlayerDefaults?.default_bond_originator_source ||
+      DEFAULT_RESERVATION_SETTINGS_FORM.defaultBondOriginatorSource,
+    buyerAppointedBondOriginatorAllowed,
+    buyerAppointedBondOriginatorRequiresApproval:
+      buyerAppointedBondOriginatorAllowed &&
+      Boolean(
+        rolePlayerDefaults?.buyerAppointedBondOriginatorRequiresApproval ??
+          rolePlayerDefaults?.buyer_appointed_bond_originator_requires_approval ??
+          DEFAULT_RESERVATION_SETTINGS_FORM.buyerAppointedBondOriginatorRequiresApproval,
+      ),
+    autoInviteSelectedBondOriginator: Boolean(
+      rolePlayerDefaults?.autoInviteSelectedBondOriginator ??
+        rolePlayerDefaults?.auto_invite_selected_bond_originator ??
+        DEFAULT_RESERVATION_SETTINGS_FORM.autoInviteSelectedBondOriginator,
+    ),
     paymentReferenceFormat:
       paymentDetails?.payment_reference_format || paymentDetails?.paymentReferenceFormat || '',
     accountHolderName:
@@ -1219,6 +1336,7 @@ function DevelopmentDetail() {
 
   const rows = useMemo(() => data?.rows || [], [data?.rows])
   const documents = useMemo(() => data?.documents || [], [data?.documents])
+  const alterations = useMemo(() => data?.alterations || [], [data?.alterations])
   const bondEligibleRows = useMemo(
     () => rows.filter((row) => ['bond', 'combination'].includes(String(row?.transaction?.finance_type || '').toLowerCase())),
     [rows],
@@ -1900,6 +2018,339 @@ function DevelopmentDetail() {
     }))
   }, [effectiveProjectedCost, financialsForm])
 
+  const developerFinancialRollup = useMemo(() => {
+    const transactionRows = rows.filter((row) => row?.transaction?.id)
+    const reservation = transactionRows.reduce(
+      (summary, row) => {
+        const transaction = row.transaction || {}
+        if (!transaction.reservation_required) {
+          return summary
+        }
+
+        const amount = Number(transaction.reservation_amount || 0)
+        const hasExplicitTreatment = String(transaction.reservation_treatment || '').trim().length > 0
+        const hasPayableTo = String(transaction.reservation_payable_to || '').trim().length > 0
+        const treatment = normalizeReservationTreatment(transaction.reservation_treatment)
+        const status = String(transaction.reservation_status || '').trim().toLowerCase()
+
+        summary.requiredCount += 1
+        summary.totalAmount += Number.isFinite(amount) ? amount : 0
+        summary.byTreatment[treatment] = (summary.byTreatment[treatment] || 0) + (Number.isFinite(amount) ? amount : 0)
+        summary.statusCounts[status || 'unknown'] = (summary.statusCounts[status || 'unknown'] || 0) + 1
+
+        if (!['paid', 'verified'].includes(status)) {
+          summary.awaitingProofCount += 1
+        }
+        if (!Number.isFinite(amount) || amount <= 0) {
+          summary.missingAmountCount += 1
+        }
+        if (!hasExplicitTreatment) {
+          summary.missingTreatmentCount += 1
+        }
+        if (!hasPayableTo) {
+          summary.missingPayableToCount += 1
+        }
+
+        return summary
+      },
+      {
+        requiredCount: 0,
+        totalAmount: 0,
+        awaitingProofCount: 0,
+        missingAmountCount: 0,
+        missingTreatmentCount: 0,
+        missingPayableToCount: 0,
+        byTreatment: {
+          credited_to_purchase_price: 0,
+          separate_invoice: 0,
+          refundable_hold: 0,
+        },
+        statusCounts: {},
+      },
+    )
+
+    const defaultAlterationTreatment = normalizeAlterationChargeTreatment(
+      data?.settings?.default_alteration_charge_treatment || data?.settings?.defaultAlterationChargeTreatment,
+    )
+    const alteration = alterations.reduce(
+      (summary, item) => {
+        const hasExplicitTreatment = String(item?.charge_treatment || item?.chargeTreatment || '').trim().length > 0
+        const treatment = normalizeAlterationChargeTreatment(item?.charge_treatment || item?.chargeTreatment || defaultAlterationTreatment)
+        const amount = Number(item?.amount_inc_vat || 0)
+        const status = String(item?.status || '').trim().toLowerCase()
+
+        summary.totalCount += 1
+        summary.totalAmount += Number.isFinite(amount) ? amount : 0
+        summary.byTreatment[treatment] = (summary.byTreatment[treatment] || 0) + (Number.isFinite(amount) ? amount : 0)
+        summary.statusCounts[status || 'unknown'] = (summary.statusCounts[status || 'unknown'] || 0) + 1
+
+        if (!['approved', 'completed', 'paid', 'declined', 'rejected', 'cancelled'].includes(status)) {
+          summary.awaitingActionCount += 1
+        }
+        if (!hasExplicitTreatment) {
+          summary.missingTreatmentCount += 1
+        }
+        if (treatment !== 'no_charge' && (!Number.isFinite(amount) || amount <= 0)) {
+          summary.missingAmountCount += 1
+        }
+
+        return summary
+      },
+      {
+        totalCount: 0,
+        totalAmount: 0,
+        awaitingActionCount: 0,
+        missingAmountCount: 0,
+        missingTreatmentCount: 0,
+        byTreatment: {
+          included_in_purchase_price: 0,
+          separate_invoice: 0,
+          no_charge: 0,
+        },
+        statusCounts: {},
+      },
+    )
+
+    const actionItems = [
+      reservation.byTreatment.credited_to_purchase_price > 0
+        ? `Deduct ${currency.format(reservation.byTreatment.credited_to_purchase_price)} reservation deposits from purchase prices.`
+        : null,
+      reservation.byTreatment.separate_invoice > 0
+        ? `Keep ${currency.format(reservation.byTreatment.separate_invoice)} reservation deposits out of purchase price reconciliation.`
+        : null,
+      alteration.byTreatment.included_in_purchase_price > 0
+        ? `Confirm ${currency.format(alteration.byTreatment.included_in_purchase_price)} alterations in OTP addenda or sale agreements.`
+        : null,
+      alteration.byTreatment.separate_invoice > 0
+        ? `Track separate alteration invoices totalling ${currency.format(alteration.byTreatment.separate_invoice)}.`
+        : null,
+      reservation.awaitingProofCount > 0
+        ? `${formatNumber(reservation.awaitingProofCount)} reservation deposit${reservation.awaitingProofCount === 1 ? '' : 's'} still need proof or verification.`
+        : null,
+      alteration.awaitingActionCount > 0
+        ? `${formatNumber(alteration.awaitingActionCount)} alteration request${alteration.awaitingActionCount === 1 ? '' : 's'} still awaiting action.`
+        : null,
+    ].filter(Boolean)
+    const controlItems = [
+      reservation.missingAmountCount > 0
+        ? {
+            severity: 'critical',
+            label: 'Reservation amount missing',
+            detail: `${formatNumber(reservation.missingAmountCount)} reservation deposit${reservation.missingAmountCount === 1 ? '' : 's'} need an amount before handoff.`,
+          }
+        : null,
+      reservation.missingTreatmentCount > 0
+        ? {
+            severity: 'critical',
+            label: 'Reservation treatment missing',
+            detail: `${formatNumber(reservation.missingTreatmentCount)} reservation deposit${reservation.missingTreatmentCount === 1 ? '' : 's'} need a purchase price or invoice treatment.`,
+          }
+        : null,
+      reservation.missingPayableToCount > 0
+        ? {
+            severity: 'warning',
+            label: 'Deposit recipient missing',
+            detail: `${formatNumber(reservation.missingPayableToCount)} reservation deposit${reservation.missingPayableToCount === 1 ? '' : 's'} need payable-to allocation.`,
+          }
+        : null,
+      reservation.awaitingProofCount > 0
+        ? {
+            severity: 'warning',
+            label: 'Deposit proof outstanding',
+            detail: `${formatNumber(reservation.awaitingProofCount)} reservation deposit${reservation.awaitingProofCount === 1 ? '' : 's'} still need proof or verification.`,
+          }
+        : null,
+      alteration.missingAmountCount > 0
+        ? {
+            severity: 'critical',
+            label: 'Alteration amount missing',
+            detail: `${formatNumber(alteration.missingAmountCount)} billable alteration${alteration.missingAmountCount === 1 ? '' : 's'} need a cost before handoff.`,
+          }
+        : null,
+      alteration.missingTreatmentCount > 0
+        ? {
+            severity: 'warning',
+            label: 'Alteration treatment defaulted',
+            detail: `${formatNumber(alteration.missingTreatmentCount)} alteration request${alteration.missingTreatmentCount === 1 ? '' : 's'} are using the development default treatment.`,
+          }
+        : null,
+      alteration.awaitingActionCount > 0
+        ? {
+            severity: 'warning',
+            label: 'Alteration decision pending',
+            detail: `${formatNumber(alteration.awaitingActionCount)} alteration request${alteration.awaitingActionCount === 1 ? '' : 's'} still need an operational decision.`,
+          }
+        : null,
+    ].filter(Boolean)
+    const criticalControlCount = controlItems.filter((item) => item.severity === 'critical').length
+    const warningControlCount = controlItems.filter((item) => item.severity === 'warning').length
+    const controlStatus = criticalControlCount > 0
+      ? 'Needs cleanup'
+      : warningControlCount > 0
+        ? 'Ready with follow-up'
+        : 'Ready for handoff'
+
+    return {
+      reservation,
+      alteration,
+      defaultAlterationTreatment,
+      actionItems,
+      controlItems,
+      controlStatus,
+      criticalControlCount,
+      warningControlCount,
+    }
+  }, [alterations, data?.settings, rows])
+
+  function handleDownloadDeveloperFinancialReconciliation() {
+    try {
+      const developmentName = data?.development?.name || detailsForm.name || 'Development'
+      const rowByTransactionId = new Map(rows.filter((row) => row?.transaction?.id).map((row) => [row.transaction.id, row]))
+      const rowByUnitId = new Map(rows.filter((row) => row?.unit?.id).map((row) => [row.unit.id, row]))
+      const formatCsvAmount = (value) => {
+        const amount = Number(value || 0)
+        return Number.isFinite(amount) ? amount.toFixed(2) : '0.00'
+      }
+      const getReservationAction = (treatment, amount) => {
+        const normalized = normalizeReservationTreatment(treatment)
+        if (normalized === 'separate_invoice') {
+          return `Invoice separately and exclude ${currency.format(amount || 0)} from purchase price reconciliation`
+        }
+        if (normalized === 'refundable_hold') {
+          return `Hold as refundable deposit and confirm release or deduction instruction for ${currency.format(amount || 0)}`
+        }
+
+        return `Deduct ${currency.format(amount || 0)} from the purchase price balance`
+      }
+      const getAlterationAction = (treatment, amount) => {
+        const normalized = normalizeAlterationChargeTreatment(treatment)
+        if (normalized === 'separate_invoice') {
+          return `Raise or track separate alteration invoice for ${currency.format(amount || 0)}`
+        }
+        if (normalized === 'no_charge') {
+          return 'No buyer charge; keep as approved non-billable alteration'
+        }
+
+        return `Include ${currency.format(amount || 0)} in purchase price, OTP addendum, or sale agreement reconciliation`
+      }
+
+      const csvRows = [
+        ['Section', 'Development', 'Unit', 'Transaction', 'Buyer', 'Treatment', 'Status', 'Amount Inc VAT', 'Practical Action'],
+        [
+          'Summary',
+          developmentName,
+          '',
+          '',
+          '',
+          'Reservation exposure',
+          `${formatNumber(developerFinancialRollup.reservation.requiredCount)} transactions`,
+          formatCsvAmount(developerFinancialRollup.reservation.totalAmount),
+          'Confirm proof, allocation, and purchase price treatment',
+        ],
+        [
+          'Summary',
+          developmentName,
+          '',
+          '',
+          '',
+          getReservationTreatmentLabel('credited_to_purchase_price'),
+          '',
+          formatCsvAmount(developerFinancialRollup.reservation.byTreatment.credited_to_purchase_price),
+          'Deduct credited deposits from buyer purchase price balances',
+        ],
+        [
+          'Summary',
+          developmentName,
+          '',
+          '',
+          '',
+          getAlterationChargeTreatmentLabel('included_in_purchase_price'),
+          '',
+          formatCsvAmount(developerFinancialRollup.alteration.byTreatment.included_in_purchase_price),
+          'Confirm included alterations in sale documents',
+        ],
+        [
+          'Summary',
+          developmentName,
+          '',
+          '',
+          '',
+          getAlterationChargeTreatmentLabel('separate_invoice'),
+          '',
+          formatCsvAmount(developerFinancialRollup.alteration.byTreatment.separate_invoice),
+          'Track invoices outside the purchase price balance',
+        ],
+      ]
+
+      developerFinancialRollup.controlItems.forEach((item) => {
+        csvRows.push([
+          'Control Review',
+          developmentName,
+          '',
+          '',
+          '',
+          item.label,
+          item.severity === 'critical' ? 'Needs cleanup' : 'Follow-up',
+          '',
+          item.detail,
+        ])
+      })
+
+      rows
+        .filter((row) => row?.transaction?.id && row.transaction.reservation_required)
+        .forEach((row) => {
+          const transaction = row.transaction || {}
+          const amount = Number(transaction.reservation_amount || 0)
+          const treatment = normalizeReservationTreatment(transaction.reservation_treatment)
+          csvRows.push([
+            'Reservation Deposit',
+            developmentName,
+            row?.unit?.unit_number || row?.unit?.unitNumber || 'Unassigned',
+            buildTransactionReference(transaction.id),
+            row?.buyer?.name || 'No buyer assigned',
+            getReservationTreatmentLabel(treatment),
+            transaction.reservation_status || 'Not captured',
+            formatCsvAmount(amount),
+            getReservationAction(treatment, amount),
+          ])
+        })
+
+      alterations.forEach((item) => {
+        const linkedRow =
+          (item?.transaction_id ? rowByTransactionId.get(item.transaction_id) : null) ||
+          (item?.unit_id ? rowByUnitId.get(item.unit_id) : null) ||
+          null
+        const amount = Number(item?.amount_inc_vat || 0)
+        const treatment = normalizeAlterationChargeTreatment(item?.charge_treatment || item?.chargeTreatment || developerFinancialRollup.defaultAlterationTreatment)
+        csvRows.push([
+          'Alteration',
+          developmentName,
+          linkedRow?.unit?.unit_number || linkedRow?.unit?.unitNumber || item?.unit_id || 'Unassigned',
+          item?.transaction_id ? buildTransactionReference(item.transaction_id) : linkedRow?.transaction?.id ? buildTransactionReference(linkedRow.transaction.id) : 'Pending',
+          linkedRow?.buyer?.name || item?.buyer_name || item?.buyerName || 'No buyer assigned',
+          getAlterationChargeTreatmentLabel(treatment),
+          item?.status || 'Not captured',
+          formatCsvAmount(amount),
+          getAlterationAction(treatment, amount),
+        ])
+      })
+
+      const blob = new Blob([buildCsvContent(csvRows)], { type: 'text/csv;charset=utf-8' })
+      const objectUrl = window.URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = buildCsvDownloadName(`${developmentName}-financial-reconciliation`)
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+      window.URL.revokeObjectURL(objectUrl)
+      setError('')
+      setFeedback('Developer financial reconciliation exported.')
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Unable to export developer financial reconciliation.')
+    }
+  }
+
   const expectedBondCommissionPool = useMemo(() => {
     const commissionValue = Number(data?.bondConfig?.defaultCommissionAmount || 0)
     if (!Number.isFinite(commissionValue) || commissionValue <= 0) {
@@ -2242,6 +2693,21 @@ function DevelopmentDetail() {
         .replaceAll('{UNIT}', '{unit}')
         .replaceAll('{BUYER}', '{buyer}')
         .replaceAll('{TXN}', '{txn}')
+      const existingStakeholderTeams =
+        currentSettings.stakeholderTeams || currentSettings.stakeholder_teams || {}
+      const rolePlayerDefaults = {
+        defaultTransferAttorneySource: reservationSettingsForm.defaultTransferAttorneySource,
+        defaultBondOriginatorSource: reservationSettingsForm.defaultBondOriginatorSource,
+        buyerAppointedBondOriginatorAllowed: Boolean(
+          reservationSettingsForm.buyerAppointedBondOriginatorAllowed,
+        ),
+        buyerAppointedBondOriginatorRequiresApproval:
+          Boolean(reservationSettingsForm.buyerAppointedBondOriginatorAllowed) &&
+          Boolean(reservationSettingsForm.buyerAppointedBondOriginatorRequiresApproval),
+        autoInviteSelectedBondOriginator: Boolean(
+          reservationSettingsForm.autoInviteSelectedBondOriginator,
+        ),
+      }
 
       await updateDevelopmentSettings(data.development.id, {
         ...currentSettings,
@@ -2252,6 +2718,15 @@ function DevelopmentDetail() {
           reservationSettingsForm.defaultDepositAmount === ''
             ? null
             : reservationSettingsForm.defaultDepositAmount,
+        reservation_deposit_amount_type: reservationSettingsForm.amountType,
+        reservation_deposit_treatment: reservationSettingsForm.depositTreatment,
+        reservation_deposit_payable_to: reservationSettingsForm.payableTo,
+        default_alteration_charge_treatment: reservationSettingsForm.alterationChargeTreatment,
+        rolePlayerDefaults,
+        stakeholderTeams: {
+          ...existingStakeholderTeams,
+          rolePlayerDefaults,
+        },
         reservation_deposit_payment_details: {
           ...(currentSettings.reservation_deposit_payment_details ||
             currentSettings.reservationDepositPaymentDetails ||
@@ -2266,7 +2741,7 @@ function DevelopmentDetail() {
         },
       })
 
-      setFeedback('Reservation deposit settings updated.')
+      setFeedback('Transaction defaults updated.')
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
@@ -3424,6 +3899,140 @@ function DevelopmentDetail() {
                 )
               })}
             </div>
+
+            <section className="mt-5 rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
+              <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h4 className="text-[1rem] font-semibold tracking-[-0.025em] text-[#142132]">Developer Transaction Financial Roll-up</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                    Development-wide reservation deposits and alteration costing across active transactions.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full border border-[#dde4ee] bg-white px-3 py-1 text-[0.76rem] font-semibold text-[#66758b]">
+                    Default alterations: {getAlterationChargeTreatmentLabel(developerFinancialRollup.defaultAlterationTreatment)}
+                  </span>
+                  <Button type="button" variant="secondary" size="sm" onClick={handleDownloadDeveloperFinancialReconciliation}>
+                    <Download size={15} />
+                    Download reconciliation
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    label: 'Reservation exposure',
+                    value: currency.format(developerFinancialRollup.reservation.totalAmount || 0),
+                    meta: `${formatNumber(developerFinancialRollup.reservation.requiredCount)} transactions require deposits`,
+                  },
+                  {
+                    label: getReservationTreatmentLabel('credited_to_purchase_price'),
+                    value: currency.format(developerFinancialRollup.reservation.byTreatment.credited_to_purchase_price || 0),
+                    meta: 'Deduct from purchase price',
+                  },
+                  {
+                    label: getAlterationChargeTreatmentLabel('included_in_purchase_price'),
+                    value: currency.format(developerFinancialRollup.alteration.byTreatment.included_in_purchase_price || 0),
+                    meta: `${formatNumber(developerFinancialRollup.alteration.totalCount)} alteration requests logged`,
+                  },
+                  {
+                    label: getAlterationChargeTreatmentLabel('separate_invoice'),
+                    value: currency.format(developerFinancialRollup.alteration.byTreatment.separate_invoice || 0),
+                    meta: `${formatNumber(developerFinancialRollup.alteration.awaitingActionCount)} awaiting action`,
+                  },
+                ].map((item) => (
+                  <article key={item.label} className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3.5">
+                    <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{item.label}</span>
+                    <strong className="mt-2 block text-base font-semibold text-[#142132]">{item.value}</strong>
+                    <span className="mt-1.5 block text-xs leading-5 text-[#6b7d93]">{item.meta}</span>
+                  </article>
+                ))}
+              </div>
+
+              <article className="mt-4 rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3.5">
+                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h5 className="text-sm font-semibold text-[#142132]">Handoff Readiness</h5>
+                    <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                      Checks whether reservation deposits and alteration costs are clean enough for accounts, conveyancers, and the developer team.
+                    </p>
+                  </div>
+                  <span
+                    className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-[0.76rem] font-semibold ${
+                      developerFinancialRollup.criticalControlCount > 0
+                        ? 'border-[#fed7aa] bg-[#fff7ed] text-[#9a3412]'
+                        : developerFinancialRollup.warningControlCount > 0
+                          ? 'border-[#fde68a] bg-[#fffbeb] text-[#92400e]'
+                          : 'border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]'
+                    }`}
+                  >
+                    {developerFinancialRollup.controlStatus}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  {[
+                    ['Critical gaps', formatNumber(developerFinancialRollup.criticalControlCount)],
+                    ['Follow-ups', formatNumber(developerFinancialRollup.warningControlCount)],
+                    ['Control checks', formatNumber(developerFinancialRollup.controlItems.length)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-[12px] border border-[#edf2f7] bg-[#fbfdff] px-3 py-2">
+                      <span className="block text-[0.7rem] uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
+                      <strong className="mt-1 block text-sm font-semibold text-[#1f3448]">{value}</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 grid gap-2">
+                  {developerFinancialRollup.controlItems.length ? (
+                    developerFinancialRollup.controlItems.slice(0, 4).map((item) => (
+                      <p key={item.label} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-sm leading-5 text-[#35546c]">
+                        <strong className="font-semibold text-[#1f3448]">{item.label}:</strong> {item.detail}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-2 text-sm leading-5 text-[#6b7d93]">
+                      No reconciliation gaps detected from the current reservation and alteration data.
+                    </p>
+                  )}
+                </div>
+              </article>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+                <article className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3.5">
+                  <h5 className="text-sm font-semibold text-[#142132]">Outstanding Controls</h5>
+                  <dl className="mt-3 grid gap-2 text-sm text-[#4f647a]">
+                    {[
+                      ['Reservation proof / review', formatNumber(developerFinancialRollup.reservation.awaitingProofCount)],
+                      ['Alteration action', formatNumber(developerFinancialRollup.alteration.awaitingActionCount)],
+                      ['Refundable holds', currency.format(developerFinancialRollup.reservation.byTreatment.refundable_hold || 0)],
+                      ['No-charge alterations', currency.format(developerFinancialRollup.alteration.byTreatment.no_charge || 0)],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between gap-3 border-b border-[#edf2f7] pb-2 last:border-b-0 last:pb-0">
+                        <dt>{label}</dt>
+                        <dd className="text-right font-semibold text-[#1f3448]">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </article>
+
+                <article className="rounded-[16px] border border-[#e3ebf4] bg-white px-4 py-3.5">
+                  <h5 className="text-sm font-semibold text-[#142132]">Operator Actions</h5>
+                  <div className="mt-3 grid gap-2">
+                    {developerFinancialRollup.actionItems.length ? (
+                      developerFinancialRollup.actionItems.map((item) => (
+                        <p key={item} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-sm leading-5 text-[#35546c]">
+                          {item}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="rounded-[12px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-3 py-2 text-sm leading-5 text-[#6b7d93]">
+                        No reservation or alteration finance actions are currently flagged for this development.
+                      </p>
+                    )}
+                  </div>
+                </article>
+              </div>
+            </section>
 
             <div className="mt-5 grid gap-4 xl:grid-cols-2">
               <section className="rounded-[20px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
@@ -4942,10 +5551,10 @@ function DevelopmentDetail() {
               <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">
-                    Reservation Deposit Settings
+                    Transaction Defaults
                   </h3>
                   <p className="mt-1.5 max-w-[760px] text-sm leading-6 text-[#6b7d93]">
-                    Set the default reservation deposit amount and payment details for this development. These values will auto-fill when reservation deposit is enabled on a new transaction.
+                    Set the default reservation deposit, alteration cost, and role-player assignment rules for new transactions in this development.
                   </p>
                 </div>
 
@@ -4978,7 +5587,7 @@ function DevelopmentDetail() {
 
               {!reservationSettingsForm.enabledByDefault ? (
                 <div className="mt-4 rounded-[14px] border border-[#e4ebf3] bg-[#f8fafc] px-4 py-3 text-sm text-[#6b7d93]">
-                  Reservation deposits are currently disabled for this development. Enable the toggle to edit active defaults.
+                  Reservation deposits are currently disabled for this development. Deposit amounts and payment details stay locked, but alteration and role-player defaults can still be edited.
                 </div>
               ) : null}
 
@@ -5031,7 +5640,202 @@ function DevelopmentDetail() {
                     </p>
                   </div>
                 </DetailField>
+                <DetailField label="Deposit Amount Type">
+                  <Field
+                    as="select"
+                    value={reservationSettingsForm.amountType}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={
+                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                    }
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        amountType: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="fixed">Fixed rand amount</option>
+                    <option value="percentage">Percentage of purchase price</option>
+                  </Field>
+                </DetailField>
+                <DetailField label="Deposit Treatment">
+                  <Field
+                    as="select"
+                    value={reservationSettingsForm.depositTreatment}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={
+                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                    }
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        depositTreatment: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="credited_to_purchase_price">Deduct from purchase price</option>
+                    <option value="separate_invoice">Invoice separately</option>
+                    <option value="refundable_hold">Refundable holding deposit</option>
+                  </Field>
+                </DetailField>
+                <DetailField label="Payable To">
+                  <Field
+                    as="select"
+                    value={reservationSettingsForm.payableTo}
+                    disabled={
+                      !canManageDevelopment ||
+                      !reservationSettingsForm.enabledByDefault ||
+                      reservationSettingsSaving
+                    }
+                    className={
+                      !reservationSettingsForm.enabledByDefault ? READ_ONLY_FIELD_CLASS : ''
+                    }
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        payableTo: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="developer">Developer</option>
+                    <option value="agency_trust">Agency trust account</option>
+                    <option value="attorney_trust">Attorney trust account</option>
+                  </Field>
+                </DetailField>
+                <DetailField label="Alteration Cost Treatment">
+                  <Field
+                    as="select"
+                    value={reservationSettingsForm.alterationChargeTreatment}
+                    disabled={!canManageDevelopment || reservationSettingsSaving}
+                    onChange={(event) =>
+                      setReservationSettingsForm((previous) => ({
+                        ...previous,
+                        alterationChargeTreatment: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="included_in_purchase_price">Include in purchase price</option>
+                    <option value="separate_invoice">Invoice separately</option>
+                    <option value="no_charge">No charge by default</option>
+                  </Field>
+                </DetailField>
               </div>
+
+              <section className="mt-5 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                <div className="mb-4">
+                  <h4 className="text-sm font-semibold text-[#142132]">Role Player Assignment Defaults</h4>
+                  <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
+                    These defaults decide who is proposed when a new development transaction starts. Buyer-appointed bond originators can still be routed through approval.
+                  </p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <DetailField label="Default Transfer Attorney">
+                    <Field
+                      as="select"
+                      value={reservationSettingsForm.defaultTransferAttorneySource}
+                      disabled={!canManageDevelopment || reservationSettingsSaving}
+                      onChange={(event) =>
+                        setReservationSettingsForm((previous) => ({
+                          ...previous,
+                          defaultTransferAttorneySource: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="first_conveyancer">Use first conveyancer in team</option>
+                      <option value="none">Do not auto-assign</option>
+                    </Field>
+                  </DetailField>
+                  <DetailField label="Default Bond Originator">
+                    <Field
+                      as="select"
+                      value={reservationSettingsForm.defaultBondOriginatorSource}
+                      disabled={!canManageDevelopment || reservationSettingsSaving}
+                      onChange={(event) =>
+                        setReservationSettingsForm((previous) => ({
+                          ...previous,
+                          defaultBondOriginatorSource: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="first_bond_originator">Use first bond originator in team</option>
+                      <option value="none">Do not auto-assign</option>
+                    </Field>
+                  </DetailField>
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                  <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-white p-4 text-sm">
+                    <span>
+                      <strong className="block font-semibold text-[#142132]">Buyer may use own bond originator</strong>
+                      <span className="mt-1.5 block leading-5 text-[#6b7d93]">Allow buyers to nominate an originator during onboarding.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(reservationSettingsForm.buyerAppointedBondOriginatorAllowed)}
+                      disabled={!canManageDevelopment || reservationSettingsSaving}
+                      onChange={(event) =>
+                        setReservationSettingsForm((previous) => ({
+                          ...previous,
+                          buyerAppointedBondOriginatorAllowed: event.target.checked,
+                          buyerAppointedBondOriginatorRequiresApproval:
+                            event.target.checked &&
+                            previous.buyerAppointedBondOriginatorRequiresApproval,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-white p-4 text-sm">
+                    <span>
+                      <strong className="block font-semibold text-[#142132]">Approve buyer-appointed originators</strong>
+                      <span className="mt-1.5 block leading-5 text-[#6b7d93]">Keep buyer nominations pending until the agent or developer approves.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(
+                        reservationSettingsForm.buyerAppointedBondOriginatorRequiresApproval,
+                      )}
+                      disabled={
+                        !canManageDevelopment ||
+                        reservationSettingsSaving ||
+                        !reservationSettingsForm.buyerAppointedBondOriginatorAllowed
+                      }
+                      onChange={(event) =>
+                        setReservationSettingsForm((previous) => ({
+                          ...previous,
+                          buyerAppointedBondOriginatorRequiresApproval: event.target.checked,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-white p-4 text-sm">
+                    <span>
+                      <strong className="block font-semibold text-[#142132]">Auto-invite selected bond originator</strong>
+                      <span className="mt-1.5 block leading-5 text-[#6b7d93]">Send an invite once a transaction has a selected originator.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(reservationSettingsForm.autoInviteSelectedBondOriginator)}
+                      disabled={!canManageDevelopment || reservationSettingsSaving}
+                      onChange={(event) =>
+                        setReservationSettingsForm((previous) => ({
+                          ...previous,
+                          autoInviteSelectedBondOriginator: event.target.checked,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              </section>
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 <DetailField label="Account Holder Name">
@@ -5164,7 +5968,7 @@ function DevelopmentDetail() {
                 >
                   {reservationSettingsSaving
                     ? 'Saving…'
-                    : 'Save Reservation Deposit Settings'}
+                    : 'Save Transaction Defaults'}
                 </Button>
               </div>
             </form>

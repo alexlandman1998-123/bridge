@@ -224,6 +224,8 @@ function trustForm({ purchaseFinanceType = 'bond', bondHelpRequested = 'no' } = 
       authorised_trustee_identity_number: '9001015009183',
       authorised_trustee_email: 'trust@example.com',
       authorised_trustee_phone: '0841234567',
+      trust_deed_available: 'yes',
+      letters_of_authority_available: 'yes',
       resolution_available: 'yes',
       all_trustees_signing: 'no',
       trustees: [

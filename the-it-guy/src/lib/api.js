@@ -407,6 +407,9 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
   service_reviews_enabled: false,
   reservation_deposit_enabled_by_default: false,
   reservation_deposit_amount: null,
+  reservation_deposit_amount_type: 'fixed',
+  reservation_deposit_treatment: 'credited_to_purchase_price',
+  reservation_deposit_payable_to: 'developer',
   reservation_deposit_payment_details: {
     account_holder_name: '',
     bank_name: '',
@@ -417,6 +420,7 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
     payment_instructions: '',
   },
   reservation_deposit_notification_recipients: [],
+  default_alteration_charge_treatment: 'included_in_purchase_price',
   enabledModules: {
     agent: true,
     conveyancing: true,
@@ -427,6 +431,13 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
     conveyancers: [],
     bondOriginators: [],
     developers: [],
+    rolePlayerDefaults: {
+      defaultTransferAttorneySource: 'first_conveyancer',
+      defaultBondOriginatorSource: 'first_bond_originator',
+      buyerAppointedBondOriginatorAllowed: true,
+      buyerAppointedBondOriginatorRequiresApproval: true,
+      autoInviteSelectedBondOriginator: false,
+    },
   },
 }
 
@@ -823,9 +834,9 @@ function isMissingFunctionError(error, functionName = '') {
 
 const knownMissingSchemaColumns = new Set()
 const TRANSACTION_SUMMARY_SELECT_CLAUSE =
-  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, onboarding_status, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, assigned_bond_processor_user_id, assigned_bond_manager_user_id, assigned_bond_compliance_user_id, bond_assignment_status, bond_assignment_source, finance_status, compliance_status, compliance_review_required, application_prepared, submitted_to_banks, documents_complete, finance_documents_complete, documents_missing, required_documents_missing, finance_documents_missing, missing_documents_count, uploaded_documents_count, total_required_documents, bank_feedback_pending, bank_feedback_status, next_action_due_at, finance_due_at, attorney_stage, risk_status, operational_state, processor_name, assigned_bond_processor_name, compliance_name, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active'
+  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, alteration_charge_treatment, onboarding_status, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, assigned_bond_processor_user_id, assigned_bond_manager_user_id, assigned_bond_compliance_user_id, bond_assignment_status, bond_assignment_source, finance_status, compliance_status, compliance_review_required, application_prepared, submitted_to_banks, documents_complete, finance_documents_complete, documents_missing, required_documents_missing, finance_documents_missing, missing_documents_count, uploaded_documents_count, total_required_documents, bank_feedback_pending, bank_feedback_status, next_action_due_at, finance_due_at, attorney_stage, risk_status, operational_state, processor_name, assigned_bond_processor_name, compliance_name, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active'
 const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
-  'id, organisation_id, bond_workspace_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at'
+  'id, organisation_id, bond_workspace_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, alteration_charge_treatment, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
 function registerKnownMissingColumns(error, columnNames = []) {
   if (!error) {
@@ -3552,6 +3563,97 @@ function formatExternalRole(role) {
   return normalized
 }
 
+function normalizeDevelopmentSettingChoice(value, allowedValues, fallback) {
+  const normalized = String(value || '').trim()
+  return allowedValues.includes(normalized) ? normalized : fallback
+}
+
+function normalizeReservationAmountType(value) {
+  return normalizeDevelopmentSettingChoice(value, ['fixed', 'percentage'], 'fixed')
+}
+
+function normalizeReservationTreatment(value) {
+  return normalizeDevelopmentSettingChoice(
+    value,
+    ['credited_to_purchase_price', 'separate_invoice', 'refundable_hold'],
+    'credited_to_purchase_price',
+  )
+}
+
+function normalizeReservationPayableTo(value) {
+  return normalizeDevelopmentSettingChoice(value, ['developer', 'agency_trust', 'attorney_trust'], 'developer')
+}
+
+function normalizeAlterationChargeTreatment(value) {
+  return normalizeDevelopmentSettingChoice(
+    value,
+    ['included_in_purchase_price', 'separate_invoice', 'no_charge'],
+    'included_in_purchase_price',
+  )
+}
+
+function normalizeDevelopmentRolePlayerDefaults(value = {}) {
+  const source = value && typeof value === 'object' ? value : {}
+  const defaultTransferAttorneySource = normalizeDevelopmentSettingChoice(
+    source.defaultTransferAttorneySource || source.default_transfer_attorney_source,
+    ['first_conveyancer', 'none'],
+    DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.defaultTransferAttorneySource,
+  )
+  const defaultBondOriginatorSource = normalizeDevelopmentSettingChoice(
+    source.defaultBondOriginatorSource || source.default_bond_originator_source,
+    ['first_bond_originator', 'none'],
+    DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.defaultBondOriginatorSource,
+  )
+  const buyerAppointedBondOriginatorAllowed =
+    source.buyerAppointedBondOriginatorAllowed ??
+    source.buyer_appointed_bond_originator_allowed ??
+    DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.buyerAppointedBondOriginatorAllowed
+  const buyerAppointedBondOriginatorRequiresApproval =
+    source.buyerAppointedBondOriginatorRequiresApproval ??
+    source.buyer_appointed_bond_originator_requires_approval ??
+    DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.buyerAppointedBondOriginatorRequiresApproval
+  const autoInviteSelectedBondOriginator =
+    source.autoInviteSelectedBondOriginator ??
+    source.auto_invite_selected_bond_originator ??
+    DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.autoInviteSelectedBondOriginator
+
+  return {
+    defaultTransferAttorneySource,
+    defaultBondOriginatorSource,
+    buyerAppointedBondOriginatorAllowed: Boolean(buyerAppointedBondOriginatorAllowed),
+    buyerAppointedBondOriginatorRequiresApproval:
+      Boolean(buyerAppointedBondOriginatorAllowed) &&
+      Boolean(buyerAppointedBondOriginatorRequiresApproval),
+    autoInviteSelectedBondOriginator: Boolean(autoInviteSelectedBondOriginator),
+  }
+}
+
+function normalizeBuyerBondOriginatorPolicy(settings = {}) {
+  const defaults =
+    settings?.rolePlayerDefaults ||
+    settings?.role_player_defaults ||
+    settings?.stakeholderTeams?.rolePlayerDefaults ||
+    settings?.stakeholderTeams?.role_player_defaults ||
+    settings?.stakeholder_teams?.rolePlayerDefaults ||
+    settings?.stakeholder_teams?.role_player_defaults ||
+    {}
+  const normalized = normalizeDevelopmentRolePlayerDefaults(defaults)
+  return {
+    buyerAppointedBondOriginatorAllowed: Boolean(
+      normalized.buyerAppointedBondOriginatorAllowed,
+    ),
+    buyerAppointedBondOriginatorRequiresApproval:
+      Boolean(normalized.buyerAppointedBondOriginatorAllowed) &&
+      Boolean(normalized.buyerAppointedBondOriginatorRequiresApproval),
+    autoInviteSelectedBondOriginator: Boolean(normalized.autoInviteSelectedBondOriginator),
+  }
+}
+
+function extractEmailFromText(value = '') {
+  const match = String(value || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)
+  return match ? normalizeEmailAddress(match[0]) : ''
+}
+
 function normalizeDevelopmentSettingsRow(row) {
   const enabledModules = {
     ...DEFAULT_DEVELOPMENT_SETTINGS.enabledModules,
@@ -3566,6 +3668,9 @@ function normalizeDevelopmentSettingsRow(row) {
       ? rawTeams.bondOriginators || rawTeams.bond_originators
       : [],
     developers: Array.isArray(rawTeams.developers) ? rawTeams.developers : [],
+    rolePlayerDefaults: normalizeDevelopmentRolePlayerDefaults(
+      rawTeams.rolePlayerDefaults || rawTeams.role_player_defaults,
+    ),
   }
 
   const rawReservationDetails = row?.reservation_deposit_payment_details || row?.reservationDepositPaymentDetails || {}
@@ -3594,6 +3699,26 @@ function normalizeDevelopmentSettingsRow(row) {
   const reservationDepositAmount = normalizeOptionalNumber(
     row?.reservation_deposit_amount ?? row?.reservationDepositAmount,
   )
+  const reservationDepositAmountType = normalizeDevelopmentSettingChoice(
+    row?.reservation_deposit_amount_type ?? row?.reservationDepositAmountType,
+    ['fixed', 'percentage'],
+    DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_amount_type,
+  )
+  const reservationDepositTreatment = normalizeDevelopmentSettingChoice(
+    row?.reservation_deposit_treatment ?? row?.reservationDepositTreatment,
+    ['credited_to_purchase_price', 'separate_invoice', 'refundable_hold'],
+    DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_treatment,
+  )
+  const reservationDepositPayableTo = normalizeDevelopmentSettingChoice(
+    row?.reservation_deposit_payable_to ?? row?.reservationDepositPayableTo,
+    ['developer', 'agency_trust', 'attorney_trust'],
+    DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_payable_to,
+  )
+  const defaultAlterationChargeTreatment = normalizeDevelopmentSettingChoice(
+    row?.default_alteration_charge_treatment ?? row?.defaultAlterationChargeTreatment,
+    ['included_in_purchase_price', 'separate_invoice', 'no_charge'],
+    DEFAULT_DEVELOPMENT_SETTINGS.default_alteration_charge_treatment,
+  )
   const reservationDepositEnabledByDefault =
     row?.reservation_deposit_enabled_by_default === true ||
     row?.reservationDepositEnabledByDefault === true
@@ -3605,12 +3730,21 @@ function normalizeDevelopmentSettingsRow(row) {
     stakeholderTeams,
     reservation_deposit_enabled_by_default: reservationDepositEnabledByDefault,
     reservation_deposit_amount: reservationDepositAmount,
+    reservation_deposit_amount_type: reservationDepositAmountType,
+    reservation_deposit_treatment: reservationDepositTreatment,
+    reservation_deposit_payable_to: reservationDepositPayableTo,
     reservation_deposit_payment_details: reservationDepositPaymentDetails,
     reservation_deposit_notification_recipients: reservationDepositNotificationRecipients,
+    default_alteration_charge_treatment: defaultAlterationChargeTreatment,
+    rolePlayerDefaults: stakeholderTeams.rolePlayerDefaults,
     reservationDepositEnabledByDefault: reservationDepositEnabledByDefault,
     reservationDepositAmount: reservationDepositAmount,
+    reservationDepositAmountType: reservationDepositAmountType,
+    reservationDepositTreatment: reservationDepositTreatment,
+    reservationDepositPayableTo: reservationDepositPayableTo,
     reservationDepositPaymentDetails: reservationDepositPaymentDetails,
     reservationDepositNotificationRecipients: reservationDepositNotificationRecipients,
+    defaultAlterationChargeTreatment,
   }
 }
 
@@ -3934,7 +4068,7 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
   const { data, error } = await client
     .from('development_settings')
     .select(
-      'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_payment_details, reservation_deposit_notification_recipients, enabled_modules, stakeholder_teams',
+      'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, reservation_deposit_payment_details, reservation_deposit_notification_recipients, default_alteration_charge_treatment, enabled_modules, stakeholder_teams',
     )
     .eq('development_id', developmentId)
     .limit(1)
@@ -3946,8 +4080,12 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
       isMissingColumnError(error, 'enabled_modules') ||
       isMissingColumnError(error, 'reservation_deposit_enabled_by_default') ||
       isMissingColumnError(error, 'reservation_deposit_amount') ||
+      isMissingColumnError(error, 'reservation_deposit_amount_type') ||
+      isMissingColumnError(error, 'reservation_deposit_treatment') ||
+      isMissingColumnError(error, 'reservation_deposit_payable_to') ||
       isMissingColumnError(error, 'reservation_deposit_payment_details') ||
       isMissingColumnError(error, 'reservation_deposit_notification_recipients') ||
+      isMissingColumnError(error, 'default_alteration_charge_treatment') ||
       isPermissionDeniedError(error)
     ) {
       return {
@@ -4008,13 +4146,17 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
       service_reviews_enabled: DEFAULT_DEVELOPMENT_SETTINGS.service_reviews_enabled,
       reservation_deposit_enabled_by_default: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_enabled_by_default,
       reservation_deposit_amount: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_amount,
+      reservation_deposit_amount_type: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_amount_type,
+      reservation_deposit_treatment: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_treatment,
+      reservation_deposit_payable_to: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_payable_to,
       reservation_deposit_payment_details: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_payment_details,
       reservation_deposit_notification_recipients: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_notification_recipients,
+      default_alteration_charge_treatment: DEFAULT_DEVELOPMENT_SETTINGS.default_alteration_charge_treatment,
       enabled_modules: DEFAULT_DEVELOPMENT_SETTINGS.enabledModules,
       stakeholder_teams: DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams,
     })
     .select(
-      'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_payment_details, reservation_deposit_notification_recipients, enabled_modules, stakeholder_teams',
+      'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, reservation_deposit_payment_details, reservation_deposit_notification_recipients, default_alteration_charge_treatment, enabled_modules, stakeholder_teams',
     )
     .single()
 
@@ -4024,8 +4166,12 @@ async function ensureDevelopmentSettings(client, developmentId, { createIfMissin
       isMissingColumnError(insertError, 'enabled_modules') ||
       isMissingColumnError(insertError, 'reservation_deposit_enabled_by_default') ||
       isMissingColumnError(insertError, 'reservation_deposit_amount') ||
+      isMissingColumnError(insertError, 'reservation_deposit_amount_type') ||
+      isMissingColumnError(insertError, 'reservation_deposit_treatment') ||
+      isMissingColumnError(insertError, 'reservation_deposit_payable_to') ||
       isMissingColumnError(insertError, 'reservation_deposit_payment_details') ||
       isMissingColumnError(insertError, 'reservation_deposit_notification_recipients') ||
+      isMissingColumnError(insertError, 'default_alteration_charge_treatment') ||
       isPermissionDeniedError(insertError)
     ) {
       return {
@@ -4244,6 +4390,18 @@ export async function updateDevelopmentSettings(developmentId, settings) {
     reservation_deposit_amount: normalizeOptionalNumber(
       settings.reservation_deposit_amount ?? settings.reservationDepositAmount,
     ),
+    reservation_deposit_amount_type: normalizeDevelopmentSettingsRow({
+      reservation_deposit_amount_type:
+        settings.reservation_deposit_amount_type || settings.reservationDepositAmountType,
+    }).reservation_deposit_amount_type,
+    reservation_deposit_treatment: normalizeDevelopmentSettingsRow({
+      reservation_deposit_treatment:
+        settings.reservation_deposit_treatment || settings.reservationDepositTreatment,
+    }).reservation_deposit_treatment,
+    reservation_deposit_payable_to: normalizeDevelopmentSettingsRow({
+      reservation_deposit_payable_to:
+        settings.reservation_deposit_payable_to || settings.reservationDepositPayableTo,
+    }).reservation_deposit_payable_to,
     reservation_deposit_payment_details: normalizeDevelopmentSettingsRow({
       reservation_deposit_payment_details:
         settings.reservation_deposit_payment_details || settings.reservationDepositPaymentDetails,
@@ -4252,6 +4410,10 @@ export async function updateDevelopmentSettings(developmentId, settings) {
       reservation_deposit_notification_recipients:
         settings.reservation_deposit_notification_recipients || settings.reservationDepositNotificationRecipients,
     }).reservation_deposit_notification_recipients,
+    default_alteration_charge_treatment: normalizeDevelopmentSettingsRow({
+      default_alteration_charge_treatment:
+        settings.default_alteration_charge_treatment || settings.defaultAlterationChargeTreatment,
+    }).default_alteration_charge_treatment,
     enabled_modules: {
       ...DEFAULT_DEVELOPMENT_SETTINGS.enabledModules,
       ...(settings.enabledModules || settings.enabled_modules || {}),
@@ -4271,11 +4433,19 @@ export async function updateDevelopmentSettings(developmentId, settings) {
       developers: Array.isArray(settings.stakeholderTeams?.developers || settings.stakeholder_teams?.developers)
         ? settings.stakeholderTeams?.developers || settings.stakeholder_teams?.developers
         : [],
+      rolePlayerDefaults: normalizeDevelopmentRolePlayerDefaults(
+        settings.rolePlayerDefaults ||
+          settings.role_player_defaults ||
+          settings.stakeholderTeams?.rolePlayerDefaults ||
+          settings.stakeholderTeams?.role_player_defaults ||
+          settings.stakeholder_teams?.rolePlayerDefaults ||
+          settings.stakeholder_teams?.role_player_defaults,
+      ),
     },
   }
 
   const selectClause =
-    'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_payment_details, reservation_deposit_notification_recipients, enabled_modules, stakeholder_teams'
+    'development_id, client_portal_enabled, snag_reporting_enabled, alteration_requests_enabled, service_reviews_enabled, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, reservation_deposit_payment_details, reservation_deposit_notification_recipients, default_alteration_charge_treatment, enabled_modules, stakeholder_teams'
 
   const settingsResult = await upsertByDevelopmentIdWithFallback(client, {
     table: 'development_settings',
@@ -4292,8 +4462,12 @@ export async function updateDevelopmentSettings(developmentId, settings) {
       isMissingColumnError(error, 'enabled_modules') ||
       isMissingColumnError(error, 'reservation_deposit_enabled_by_default') ||
       isMissingColumnError(error, 'reservation_deposit_amount') ||
+      isMissingColumnError(error, 'reservation_deposit_amount_type') ||
+      isMissingColumnError(error, 'reservation_deposit_treatment') ||
+      isMissingColumnError(error, 'reservation_deposit_payable_to') ||
       isMissingColumnError(error, 'reservation_deposit_payment_details') ||
-      isMissingColumnError(error, 'reservation_deposit_notification_recipients')
+      isMissingColumnError(error, 'reservation_deposit_notification_recipients') ||
+      isMissingColumnError(error, 'default_alteration_charge_treatment')
     ) {
       throw new Error('development_settings table not found. Run sql/schema.sql first.')
     }
@@ -14512,6 +14686,24 @@ async function enrichRowsWithReadinessContext(client, rows = []) {
     return accumulator
   }, {})
 
+  let onboardingFormDataByTransactionId = {}
+  const onboardingFormDataQuery = await client
+    .from('onboarding_form_data')
+    .select('id, transaction_id, purchaser_type, form_data, created_at, updated_at')
+    .in('transaction_id', transactionIds)
+
+  if (onboardingFormDataQuery.error) {
+    if (!isMissingTableError(onboardingFormDataQuery.error, 'onboarding_form_data')) {
+      throw onboardingFormDataQuery.error
+    }
+  } else {
+    onboardingFormDataByTransactionId = (onboardingFormDataQuery.data || []).reduce((accumulator, row) => {
+      if (!row?.transaction_id) return accumulator
+      accumulator[row.transaction_id] = normalizeOnboardingFormDataRow(row) || null
+      return accumulator
+    }, {})
+  }
+
   const [documentRequestsByTransactionId, checklistItemsByTransactionId, issueOverridesByTransactionId] = await Promise.all([
     loadTransactionDocumentRequestsByIds(client, transactionIds),
     loadTransactionChecklistItemsByIds(client, transactionIds),
@@ -14536,9 +14728,24 @@ async function enrichRowsWithReadinessContext(client, rows = []) {
     const operationalStage = resolveAttorneyOperationalStageKey(row)
     const transactionChecklistItems = checklistItemsByTransactionId[transactionId] || []
     const issueOverrides = issueOverridesByTransactionId[transactionId] || []
+    const onboarding = onboardingByTransactionId[transactionId] || null
+    const onboardingFormData = onboardingFormDataByTransactionId[transactionId] || null
+    const buyerBondOriginatorRequest = resolveBuyerBondOriginatorRequestFromOnboardingData(onboardingFormData)
+    const buyerBondOriginatorRequestSummary = summarizeBuyerBondOriginatorRequestForOperations(buyerBondOriginatorRequest)
+    const enrichedTransaction = row.transaction
+      ? {
+          ...row.transaction,
+          buyer_bond_originator_request: buyerBondOriginatorRequest,
+          buyer_bond_originator_request_status: buyerBondOriginatorRequestSummary.status || null,
+          buyer_bond_originator_request_action_required: buyerBondOriginatorRequestSummary.actionRequired,
+          buyer_bond_originator_request_summary: buyerBondOriginatorRequestSummary.summary || null,
+          buyerBondOriginatorRequestSummary,
+        }
+      : row.transaction
 
     return {
       ...row,
+      transaction: enrichedTransaction,
       requiredDocumentChecklist: checklistResult.checklist,
       documentSummary: {
         uploadedCount,
@@ -14550,7 +14757,12 @@ async function enrichRowsWithReadinessContext(client, rows = []) {
       transactionChecklistItems,
       checklistSummary: summarizeChecklistItems(transactionChecklistItems, { stageKey: operationalStage }),
       issueOverrides,
-      onboarding: onboardingByTransactionId[transactionId] || null,
+      onboarding,
+      onboardingFormData,
+      buyerBondOriginatorRequest,
+      buyerBondOriginatorRequestSummary,
+      buyerBondOriginatorRequestStatus: buyerBondOriginatorRequestSummary.status || '',
+      buyerBondOriginatorRequestActionRequired: buyerBondOriginatorRequestSummary.actionRequired,
     }
   })
 }
@@ -14653,7 +14865,7 @@ async function fetchTransactionRowById(client, transactionId) {
     .from('transactions')
     .select(
       selectWithoutKnownMissingColumns(
-        'id, matter_number, transaction_reference, transaction_type, property_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, cancellation_required, vat_treatment, routing_profile_version, routing_profile_json, development_id, unit_id, listing_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, matter_number, transaction_reference, transaction_type, property_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, cancellation_required, vat_treatment, routing_profile_version, routing_profile_json, development_id, unit_id, listing_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, postal_code, property_description, matter_owner, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, finance_type, purchaser_type, finance_managed_by, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_proof_document, reservation_proof_uploaded_at, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_reviewed_at, reservation_reviewed_by, reservation_review_notes, alteration_charge_treatment, onboarding_status, onboarding_completed_at, external_onboarding_submitted_at, stage, current_main_stage, current_sub_stage_summary, risk_status, stage_date, sale_date, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, bank, expected_transfer_date, next_action, comment, owner_user_id, access_level, is_active, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registration_confirmation_document_id, registered_by_user_id, registered_at, registration_reversed_at, registration_reversed_by_user_id, registration_reversal_reason, completed_at, completed_by_user_id, archived_at, archived_by_user_id, archive_reason, cancelled_at, cancelled_by_user_id, cancelled_reason, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
       ),
     )
     .eq('id', transactionId)
@@ -14686,6 +14898,9 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'finance_managed_by') ||
       isMissingColumnError(query.error, 'reservation_required') ||
       isMissingColumnError(query.error, 'reservation_amount') ||
+      isMissingColumnError(query.error, 'reservation_amount_type') ||
+      isMissingColumnError(query.error, 'reservation_treatment') ||
+      isMissingColumnError(query.error, 'reservation_payable_to') ||
       isMissingColumnError(query.error, 'reservation_status') ||
       isMissingColumnError(query.error, 'reservation_paid_date') ||
       isMissingColumnError(query.error, 'reservation_proof_document') ||
@@ -14696,6 +14911,7 @@ async function fetchTransactionRowById(client, transactionId) {
       isMissingColumnError(query.error, 'reservation_reviewed_at') ||
       isMissingColumnError(query.error, 'reservation_reviewed_by') ||
       isMissingColumnError(query.error, 'reservation_review_notes') ||
+      isMissingColumnError(query.error, 'alteration_charge_treatment') ||
       isMissingColumnError(query.error, 'onboarding_status') ||
       isMissingColumnError(query.error, 'onboarding_completed_at') ||
       isMissingColumnError(query.error, 'external_onboarding_submitted_at') ||
@@ -14750,6 +14966,9 @@ async function fetchTransactionRowById(client, transactionId) {
       'finance_managed_by',
       'reservation_required',
       'reservation_amount',
+      'reservation_amount_type',
+      'reservation_treatment',
+      'reservation_payable_to',
       'reservation_status',
       'reservation_paid_date',
       'reservation_proof_document',
@@ -14760,6 +14979,7 @@ async function fetchTransactionRowById(client, transactionId) {
       'reservation_reviewed_at',
       'reservation_reviewed_by',
       'reservation_review_notes',
+      'alteration_charge_treatment',
       'onboarding_status',
       'onboarding_completed_at',
       'external_onboarding_submitted_at',
@@ -15205,14 +15425,18 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
 
       const settingsQuery = await client
         .from('development_settings')
-        .select('development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, stakeholder_teams')
+        .select('development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, default_alteration_charge_treatment, stakeholder_teams')
         .in('development_id', scopedIds)
 
       if (
         settingsQuery.error &&
         !isMissingTableError(settingsQuery.error, 'development_settings') &&
         !isMissingColumnError(settingsQuery.error, 'reservation_deposit_enabled_by_default') &&
-        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_amount')
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_amount') &&
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_amount_type') &&
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_treatment') &&
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_payable_to') &&
+        !isMissingColumnError(settingsQuery.error, 'default_alteration_charge_treatment')
       ) {
         throw settingsQuery.error
       }
@@ -15223,11 +15447,18 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
 
       return normalizedRows.map((row) => {
         const setting = settingsByDevelopmentId.get(row.id)
+        const normalizedSetting = normalizeDevelopmentSettingsRow(setting)
         return {
           ...row,
           reservation_deposit_enabled_by_default: Boolean(setting?.reservation_deposit_enabled_by_default),
           reservation_deposit_amount: normalizeOptionalNumber(setting?.reservation_deposit_amount),
-          stakeholder_teams: setting?.stakeholder_teams && typeof setting.stakeholder_teams === 'object' ? setting.stakeholder_teams : {},
+          reservation_deposit_amount_type: normalizedSetting.reservation_deposit_amount_type,
+          reservation_deposit_treatment: normalizedSetting.reservation_deposit_treatment,
+          reservation_deposit_payable_to: normalizedSetting.reservation_deposit_payable_to,
+          default_alteration_charge_treatment: normalizedSetting.default_alteration_charge_treatment,
+          stakeholder_teams: normalizedSetting.stakeholderTeams,
+          role_player_defaults: normalizedSetting.rolePlayerDefaults,
+          rolePlayerDefaults: normalizedSetting.rolePlayerDefaults,
         }
       })
     }
@@ -15289,14 +15520,18 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
 
       const settingsQuery = await client
         .from('development_settings')
-        .select('development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, stakeholder_teams')
+        .select('development_id, reservation_deposit_enabled_by_default, reservation_deposit_amount, reservation_deposit_amount_type, reservation_deposit_treatment, reservation_deposit_payable_to, default_alteration_charge_treatment, stakeholder_teams')
         .in('development_id', developmentIds)
 
       if (
         settingsQuery.error &&
         !isMissingTableError(settingsQuery.error, 'development_settings') &&
         !isMissingColumnError(settingsQuery.error, 'reservation_deposit_enabled_by_default') &&
-        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_amount')
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_amount') &&
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_amount_type') &&
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_treatment') &&
+        !isMissingColumnError(settingsQuery.error, 'reservation_deposit_payable_to') &&
+        !isMissingColumnError(settingsQuery.error, 'default_alteration_charge_treatment')
       ) {
         throw settingsQuery.error
       }
@@ -15307,11 +15542,18 @@ export async function fetchDevelopmentOptions({ developmentIds = [], organisatio
 
       return normalizedRows.map((row) => {
         const setting = settingsByDevelopmentId.get(row.id)
+        const normalizedSetting = normalizeDevelopmentSettingsRow(setting)
         return {
           ...row,
           reservation_deposit_enabled_by_default: Boolean(setting?.reservation_deposit_enabled_by_default),
           reservation_deposit_amount: normalizeOptionalNumber(setting?.reservation_deposit_amount),
-          stakeholder_teams: setting?.stakeholder_teams && typeof setting.stakeholder_teams === 'object' ? setting.stakeholder_teams : {},
+          reservation_deposit_amount_type: normalizedSetting.reservation_deposit_amount_type,
+          reservation_deposit_treatment: normalizedSetting.reservation_deposit_treatment,
+          reservation_deposit_payable_to: normalizedSetting.reservation_deposit_payable_to,
+          default_alteration_charge_treatment: normalizedSetting.default_alteration_charge_treatment,
+          stakeholder_teams: normalizedSetting.stakeholderTeams,
+          role_player_defaults: normalizedSetting.rolePlayerDefaults,
+          rolePlayerDefaults: normalizedSetting.rolePlayerDefaults,
         }
       })
     }
@@ -16143,6 +16385,29 @@ export async function fetchDevelopmentDetail(developmentId) {
   const documents = await fetchDevelopmentDocuments(developmentId)
   const attorneyConfig = await fetchDevelopmentAttorneyConfig(developmentId)
   const bondConfig = await fetchDevelopmentBondConfig(developmentId)
+  let alterations = []
+
+  let alterationsQuery = await client
+    .from('alteration_requests')
+    .select('id, development_id, unit_id, transaction_id, buyer_id, title, amount_inc_vat, charge_treatment, status, created_at, updated_at')
+    .eq('development_id', developmentId)
+    .order('created_at', { ascending: false })
+
+  if (alterationsQuery.error && isMissingColumnError(alterationsQuery.error, 'charge_treatment')) {
+    alterationsQuery = await client
+      .from('alteration_requests')
+      .select('id, development_id, unit_id, transaction_id, buyer_id, title, amount_inc_vat, status, created_at, updated_at')
+      .eq('development_id', developmentId)
+      .order('created_at', { ascending: false })
+  }
+
+  if (alterationsQuery.error) {
+    if (!isMissingTableError(alterationsQuery.error, 'alteration_requests') && !isPermissionDeniedError(alterationsQuery.error)) {
+      throw alterationsQuery.error
+    }
+  } else {
+    alterations = alterationsQuery.data || []
+  }
 
   const transactionIds = rows.map((row) => row.transaction?.id).filter(Boolean)
   let docsByTransactionId = {}
@@ -16202,6 +16467,7 @@ export async function fetchDevelopmentDetail(developmentId) {
     rows: rowsWithDocumentSummary.sort(byUnitNumber),
     stats: getSummaryStats(rowsWithDocumentSummary),
     settings,
+    alterations,
   }
 }
 
@@ -17258,6 +17524,9 @@ async function persistReservationStateIfPossible(
     amount = null,
     status = 'not_required',
     paymentDetails = {},
+    amountType = 'fixed',
+    treatment = 'credited_to_purchase_price',
+    payableTo = 'developer',
     paidDate = null,
   } = {},
 ) {
@@ -17265,6 +17534,9 @@ async function persistReservationStateIfPossible(
   const normalizedAmount = normalizedRequired ? normalizeOptionalNumber(amount) : null
   const normalizedStatus = normalizeReservationStatus(status, { required: normalizedRequired })
   const normalizedPaymentDetails = normalizedRequired ? normalizeReservationPaymentDetails(paymentDetails) : {}
+  const normalizedAmountType = normalizedRequired ? normalizeReservationAmountType(amountType) : null
+  const normalizedTreatment = normalizedRequired ? normalizeReservationTreatment(treatment) : null
+  const normalizedPayableTo = normalizedRequired ? normalizeReservationPayableTo(payableTo) : null
   const normalizedPaidDate =
     normalizedRequired && ['paid', 'verified'].includes(normalizedStatus)
       ? normalizeTextValue(paidDate) || new Date().toISOString().slice(0, 10)
@@ -17273,6 +17545,9 @@ async function persistReservationStateIfPossible(
   const updatePayload = {
     reservation_required: normalizedRequired,
     reservation_amount: normalizedAmount,
+    reservation_amount_type: normalizedAmountType,
+    reservation_treatment: normalizedTreatment,
+    reservation_payable_to: normalizedPayableTo,
     reservation_status: normalizedStatus,
     reservation_payment_details: normalizedPaymentDetails,
     reservation_paid_date: normalizedPaidDate,
@@ -17284,6 +17559,9 @@ async function persistReservationStateIfPossible(
     updateResult.error &&
     (isMissingColumnError(updateResult.error, 'reservation_required') ||
       isMissingColumnError(updateResult.error, 'reservation_amount') ||
+      isMissingColumnError(updateResult.error, 'reservation_amount_type') ||
+      isMissingColumnError(updateResult.error, 'reservation_treatment') ||
+      isMissingColumnError(updateResult.error, 'reservation_payable_to') ||
       isMissingColumnError(updateResult.error, 'reservation_status') ||
       isMissingColumnError(updateResult.error, 'reservation_payment_details') ||
       isMissingColumnError(updateResult.error, 'reservation_paid_date'))
@@ -17292,12 +17570,24 @@ async function persistReservationStateIfPossible(
     if (isMissingColumnError(updateResult.error, 'reservation_required')) {
       delete fallbackPayload.reservation_required
       delete fallbackPayload.reservation_amount
+      delete fallbackPayload.reservation_amount_type
+      delete fallbackPayload.reservation_treatment
+      delete fallbackPayload.reservation_payable_to
       delete fallbackPayload.reservation_status
       delete fallbackPayload.reservation_payment_details
       delete fallbackPayload.reservation_paid_date
     } else {
       if (isMissingColumnError(updateResult.error, 'reservation_amount')) {
         delete fallbackPayload.reservation_amount
+      }
+      if (isMissingColumnError(updateResult.error, 'reservation_amount_type')) {
+        delete fallbackPayload.reservation_amount_type
+      }
+      if (isMissingColumnError(updateResult.error, 'reservation_treatment')) {
+        delete fallbackPayload.reservation_treatment
+      }
+      if (isMissingColumnError(updateResult.error, 'reservation_payable_to')) {
+        delete fallbackPayload.reservation_payable_to
       }
       if (isMissingColumnError(updateResult.error, 'reservation_status')) {
         delete fallbackPayload.reservation_status
@@ -19651,6 +19941,7 @@ function normalizeTransactionRolePlayerInputs(rolePlayers = [], options = {}) {
     'buyer_appointed',
     'manual',
     'connected_partner',
+    'development_default',
     'preferred_partner',
     'partner_prospect',
     'invited_partner',
@@ -19773,6 +20064,7 @@ function resolveTransactionRoleplayerSelectionSource(item = {}, partner = {}, op
       'buyer_appointed',
       'manual',
       'connected_partner',
+      'development_default',
       'preferred_partner',
       'partner_prospect',
       'invited_partner',
@@ -21718,6 +22010,360 @@ async function createAgentBondOriginatorMissingNotification(client, { transactio
   return insertResult.data || null
 }
 
+function getBuyerAppointedBondOriginatorRequest({
+  formData = {},
+  transaction = {},
+  buyer = null,
+  policy = {},
+  now = new Date().toISOString(),
+} = {}) {
+  const finance = formData?.finance && typeof formData.finance === 'object' ? formData.finance : {}
+  const companyName = normalizeTextValue(
+    finance.bond_originator_name ||
+      formData.bond_originator_name ||
+      formData.bondOriginatorName ||
+      '',
+  )
+  const contactDetails = normalizeTextValue(
+    finance.bond_originator_contact ||
+      formData.bond_originator_contact ||
+      formData.bondOriginatorContact ||
+      '',
+  )
+  const requested =
+    isBondActivationRequestedForOnboarding({
+      financeType: normalizeFinanceType(formData.purchase_finance_type || transaction?.finance_type || ''),
+      formData,
+    }) && Boolean(companyName || contactDetails)
+  const allowed = policy?.buyerAppointedBondOriginatorAllowed !== false
+  const requiresApproval = Boolean(policy?.buyerAppointedBondOriginatorRequiresApproval)
+  let status = 'not_requested'
+  if (requested && !allowed) {
+    status = 'not_allowed'
+  } else if (requested && requiresApproval) {
+    status = 'pending_approval'
+  } else if (requested) {
+    status = 'approved'
+  }
+
+  return {
+    requested,
+    allowed,
+    requiresApproval,
+    status,
+    companyName,
+    contactDetails,
+    email: extractEmailFromText(contactDetails),
+    buyerName: normalizeTextValue(buyer?.name || formData.full_name || ''),
+    requestedAt: requested ? now : null,
+    source: 'buyer_onboarding',
+  }
+}
+
+function clearBuyerAppointedBondOriginatorFields(formData = {}) {
+  return {
+    ...formData,
+    bond_originator_name: '',
+    bond_originator_contact: '',
+    finance: {
+      ...(formData.finance && typeof formData.finance === 'object' ? formData.finance : {}),
+      bond_originator_name: '',
+      bond_originator_contact: '',
+    },
+  }
+}
+
+async function updateTransactionBondOriginatorFromBuyerRequest(
+  client,
+  { transaction, request = {}, actorProfile = null, actorRole = 'client' } = {},
+) {
+  const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
+  if (!transactionId || !request?.requested || !request?.companyName) return null
+  const now = new Date().toISOString()
+  const assignedEmail = normalizeEmailAddress(request.email || transaction?.assigned_bond_originator_email || '')
+  const buyerAppointedSelection = {
+    roleType: 'bond_originator',
+    selectionSource: 'buyer_appointed',
+    assignmentStatus: 'active',
+    activationTrigger: 'buyer_onboarding_approved_originator',
+    companyName: request.companyName,
+    partnerName: request.companyName,
+    contactPerson: request.companyName,
+    email: assignedEmail || null,
+    phone: request.contactDetails || null,
+    snapshot: {
+      source: 'buyer_onboarding',
+      buyerAppointed: true,
+      buyerName: request.buyerName || null,
+      requestedAt: request.requestedAt || now,
+      contactDetails: request.contactDetails || null,
+    },
+  }
+  await updateRecordByIdWithMissingColumnFallback(
+    client,
+    'transactions',
+    transactionId,
+    {
+      bond_originator: request.companyName,
+      assigned_bond_originator_email: assignedEmail || null,
+      bond_assignment_source: 'buyer_appointed',
+      finance_managed_by: 'bond_originator',
+      updated_at: now,
+    },
+    'id, bond_originator, assigned_bond_originator_email, bond_assignment_source, finance_managed_by, updated_at',
+  )
+
+  try {
+    await upsertTransactionRoleplayerSelection(client, {
+      transactionId,
+      actorProfile: actorProfile || { userId: null, role: actorRole || 'client' },
+      selection: buyerAppointedSelection,
+    })
+  } catch (roleplayerError) {
+    if (!isMissingSchemaError(roleplayerError) && !isPermissionDeniedError(roleplayerError)) {
+      throw roleplayerError
+    }
+  }
+
+  try {
+    await propagateTransactionRoleplayersIfPossible(client, {
+      transactionId,
+      transaction: {
+        ...transaction,
+        bond_originator: request.companyName,
+        assigned_bond_originator_email: assignedEmail || null,
+        finance_managed_by: 'bond_originator',
+      },
+      rolePlayers: [buyerAppointedSelection],
+      actorProfile: actorProfile || { userId: null, role: actorRole || 'client' },
+      actorRole,
+      buyerId: transaction?.buyer_id || transaction?.buyerId || null,
+      financeType: transaction?.finance_type || 'bond',
+    })
+  } catch (propagationError) {
+    if (!isMissingSchemaError(propagationError) && !isPermissionDeniedError(propagationError)) {
+      throw propagationError
+    }
+  }
+
+  return { applied: true, transactionId }
+}
+
+async function processBuyerAppointedBondOriginatorRequest(
+  client,
+  { transaction, buyer = null, formData = {}, policy = {}, request = null, source = 'buyer_onboarding_completed' } = {},
+) {
+  const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
+  if (!transactionId) return { processed: false, reason: 'missing_transaction' }
+  const resolvedRequest =
+    request ||
+    getBuyerAppointedBondOriginatorRequest({
+      formData,
+      transaction,
+      buyer,
+      policy,
+    })
+  if (!resolvedRequest.requested) return { processed: false, reason: 'not_requested', request: resolvedRequest }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId,
+    eventType: 'buyer_bond_originator_request',
+    createdByRole: 'client',
+    eventData: {
+      source,
+      status: resolvedRequest.status,
+      allowed: resolvedRequest.allowed,
+      requiresApproval: resolvedRequest.requiresApproval,
+      companyName: resolvedRequest.companyName || null,
+      contactDetails: resolvedRequest.contactDetails || null,
+      email: resolvedRequest.email || null,
+      buyerName: resolvedRequest.buyerName || buyer?.name || null,
+    },
+  })
+
+  if (resolvedRequest.status === 'approved') {
+    return updateTransactionBondOriginatorFromBuyerRequest(client, {
+      transaction,
+      request: resolvedRequest,
+      actorProfile: { userId: null, role: 'client' },
+      actorRole: 'client',
+    })
+  }
+
+  if (resolvedRequest.status === 'pending_approval') {
+    await notifyRolesForTransaction(client, {
+      transactionId,
+      roleTypes: ['agent', 'developer'],
+      title: 'Buyer bond originator request',
+      message: `${resolvedRequest.buyerName || 'Buyer'} nominated ${resolvedRequest.companyName || 'a bond originator'} for approval.`,
+      notificationType: 'roleplayer_change_requested',
+      eventType: 'buyer_bond_originator_request',
+      eventData: {
+        source,
+        requestedRoleType: 'bond_originator',
+        companyName: resolvedRequest.companyName || null,
+        contactDetails: resolvedRequest.contactDetails || null,
+        email: resolvedRequest.email || null,
+        requiresApproval: true,
+      },
+      dedupePrefix: 'buyer-bond-originator-request',
+    })
+  }
+
+  return { processed: true, status: resolvedRequest.status, request: resolvedRequest }
+}
+
+export async function resolveBuyerAppointedBondOriginatorRequest({
+  transactionId,
+  decision,
+  rejectionReason = '',
+  actorRole = null,
+} = {}) {
+  const normalizedTransactionId = normalizeNullableUuid(transactionId)
+  if (!normalizedTransactionId) throw new Error('Transaction is required.')
+  const normalizedDecision = String(decision || '').trim().toLowerCase()
+  if (!['approved', 'rejected'].includes(normalizedDecision)) {
+    throw new Error('Choose whether to approve or reject the buyer bond originator request.')
+  }
+
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'agent')
+  if (!['agent', 'agency_admin', 'developer', 'internal_admin', 'admin', 'platform_admin'].includes(normalizedActorRole)) {
+    throw new Error('Your role does not have permission to resolve buyer-appointed bond originator requests.')
+  }
+
+  const transaction = await fetchTransactionRowById(client, normalizedTransactionId)
+  if (!transaction?.id) {
+    throw new Error('Transaction not found.')
+  }
+
+  const onboardingFormRow = await fetchOnboardingFormDataForTransaction(
+    client,
+    normalizedTransactionId,
+    transaction.purchaser_type || 'individual',
+  )
+  const formData = onboardingFormRow?.formData || {}
+  const existingRequest =
+    formData.buyer_bond_originator_request ||
+    formData.buyerBondOriginatorRequest ||
+    null
+  if (!existingRequest?.requested) {
+    throw new Error('There is no buyer-appointed bond originator request on this transaction.')
+  }
+  if (String(existingRequest.status || '').trim().toLowerCase() !== 'pending_approval') {
+    throw new Error('This buyer-appointed bond originator request is not pending approval.')
+  }
+
+  const now = new Date().toISOString()
+  const nextRequest = {
+    ...existingRequest,
+    status: normalizedDecision,
+    resolvedAt: now,
+    reviewedAt: now,
+    resolvedBy: actorProfile.userId || null,
+    resolvedByRole: normalizedActorRole,
+    rejectionReason: normalizedDecision === 'rejected' ? normalizeNullableText(rejectionReason) : null,
+  }
+
+  if (normalizedDecision === 'approved') {
+    await updateTransactionBondOriginatorFromBuyerRequest(client, {
+      transaction,
+      request: {
+        ...existingRequest,
+        status: 'approved',
+        requested: true,
+      },
+      actorProfile,
+      actorRole: normalizedActorRole,
+    })
+  }
+
+  const nextFormData = {
+    ...formData,
+    buyer_bond_originator_request: nextRequest,
+    buyerBondOriginatorRequest: nextRequest,
+  }
+  const formUpsert = await client.from('onboarding_form_data').upsert(
+    {
+      transaction_id: normalizedTransactionId,
+      purchaser_type: normalizePurchaserType(transaction.purchaser_type || onboardingFormRow?.purchaserType || 'individual'),
+      form_data: nextFormData,
+      updated_at: now,
+    },
+    { onConflict: 'transaction_id' },
+  )
+  if (formUpsert.error) {
+    if (isMissingTableError(formUpsert.error, 'onboarding_form_data')) {
+      throw new Error('Onboarding form storage is not set up yet. Run sql/schema.sql first.')
+    }
+    throw formUpsert.error
+  }
+
+  await logTransactionEventIfPossible(client, {
+    transactionId: normalizedTransactionId,
+    eventType: 'buyer_bond_originator_request_resolved',
+    createdBy: actorProfile.userId || null,
+    createdByRole: normalizedActorRole,
+    eventData: {
+      source: 'transaction_workspace',
+      decision: normalizedDecision,
+      companyName: existingRequest.companyName || null,
+      contactDetails: existingRequest.contactDetails || null,
+      email: existingRequest.email || null,
+      rejectionReason: nextRequest.rejectionReason || null,
+      visibility: 'client_visible',
+      audience: 'buyer',
+      title:
+        normalizedDecision === 'approved'
+          ? 'Buyer-appointed bond originator approved'
+          : 'Buyer-appointed bond originator rejected',
+      description:
+        normalizedDecision === 'approved'
+          ? `${existingRequest.companyName || 'The nominated bond originator'} has been assigned to your transaction.`
+          : `${existingRequest.companyName || 'The nominated bond originator'} was not approved. Your transaction team will continue with the appointed finance process.`,
+      actionLabel: normalizedDecision === 'approved' ? 'View Team' : 'View Progress',
+      actionRoute: normalizedDecision === 'approved' ? 'team' : 'progress',
+    },
+  })
+
+  try {
+    let notificationUpdate = await client
+      .from('transaction_notifications')
+      .update({
+        is_read: true,
+        read_at: now,
+        updated_at: now,
+      })
+      .eq('transaction_id', normalizedTransactionId)
+      .eq('event_type', 'buyer_bond_originator_request')
+      .eq('notification_type', 'roleplayer_change_requested')
+
+    if (
+      notificationUpdate.error &&
+      (isMissingColumnError(notificationUpdate.error, 'event_type') ||
+        isMissingColumnError(notificationUpdate.error, 'notification_type') ||
+        isMissingColumnError(notificationUpdate.error, 'updated_at'))
+    ) {
+      notificationUpdate = await client
+        .from('transaction_notifications')
+        .update({ is_read: true, read_at: now })
+        .eq('transaction_id', normalizedTransactionId)
+    }
+    if (
+      notificationUpdate.error &&
+      !isMissingTableError(notificationUpdate.error, 'transaction_notifications') &&
+      !isPermissionDeniedError(notificationUpdate.error)
+    ) {
+      throw notificationUpdate.error
+    }
+  } catch (notificationError) {
+    console.warn('Buyer bond originator request notification resolution skipped', notificationError)
+  }
+
+  return fetchTransactionById(normalizedTransactionId)
+}
+
 async function activateSelectedAttorneyRoleplayersForOnboarding(client, { transaction, financeType, buyer = null, formData = {}, source = 'buyer_onboarding_completed', createdByRole = 'client' } = {}) {
   const transactionId = normalizeTextValue(transaction?.id || transaction?.transaction_id)
   if (!transactionId || !isBondActivationRequestedForOnboarding({ financeType, formData })) {
@@ -22273,6 +22919,30 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     developmentSettings?.reservation_deposit_amount ?? developmentSettings?.reservationDepositAmount,
   )
   const resolvedReservationAmount = reservationRequired ? reservationAmountInput ?? reservationAmountDefault : null
+  const reservationAmountType = normalizeReservationAmountType(
+    finance.reservationAmountType ||
+      finance.reservation_amount_type ||
+      developmentSettings?.reservation_deposit_amount_type ||
+      developmentSettings?.reservationDepositAmountType,
+  )
+  const reservationTreatment = normalizeReservationTreatment(
+    finance.reservationTreatment ||
+      finance.reservation_treatment ||
+      developmentSettings?.reservation_deposit_treatment ||
+      developmentSettings?.reservationDepositTreatment,
+  )
+  const reservationPayableTo = normalizeReservationPayableTo(
+    finance.reservationPayableTo ||
+      finance.reservation_payable_to ||
+      developmentSettings?.reservation_deposit_payable_to ||
+      developmentSettings?.reservationDepositPayableTo,
+  )
+  const alterationChargeTreatment = normalizeAlterationChargeTreatment(
+    finance.alterationChargeTreatment ||
+      finance.alteration_charge_treatment ||
+      developmentSettings?.default_alteration_charge_treatment ||
+      developmentSettings?.defaultAlterationChargeTreatment,
+  )
   const reservationStatus = normalizeReservationStatus(finance.reservationStatus, {
     required: reservationRequired,
   })
@@ -22331,8 +23001,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     deposit_amount: normalizeOptionalNumber(finance.depositAmount),
     reservation_required: reservationRequired,
     reservation_amount: resolvedReservationAmount,
+    reservation_amount_type: reservationRequired ? reservationAmountType : null,
+    reservation_treatment: reservationRequired ? reservationTreatment : null,
+    reservation_payable_to: reservationRequired ? reservationPayableTo : null,
     reservation_status: reservationStatus,
     reservation_payment_details: reservationRequired ? reservationPaymentDetails : {},
+    alteration_charge_treatment: transactionType === 'developer_sale' ? alterationChargeTreatment : null,
     reservation_paid_date:
       reservationRequired && ['paid', 'verified'].includes(reservationStatus) ? new Date().toISOString().slice(0, 10) : null,
     onboarding_status: 'awaiting_client_onboarding',
@@ -22408,6 +23082,14 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     assigned_branch_id: assignedBranchId || null,
     next_action: status.nextAction || finance.nextAction || null,
     comment: status.nextAction || finance.nextAction || null,
+    reservation_required: reservationRequired,
+    reservation_amount: resolvedReservationAmount,
+    reservation_amount_type: reservationRequired ? reservationAmountType : null,
+    reservation_treatment: reservationRequired ? reservationTreatment : null,
+    reservation_payable_to: reservationRequired ? reservationPayableTo : null,
+    reservation_status: reservationStatus,
+    reservation_payment_details: reservationRequired ? reservationPaymentDetails : {},
+    alteration_charge_treatment: transactionType === 'developer_sale' ? alterationChargeTreatment : null,
     gross_commission_percentage: snapshotGrossCommissionPercentage,
     gross_commission_amount: snapshotGrossCommissionAmount,
     agent_split_percentage_snapshot: snapshotAgentSplit,
@@ -22488,9 +23170,13 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'deposit_amount') ||
       isMissingColumnError(transactionResult.error, 'reservation_required') ||
       isMissingColumnError(transactionResult.error, 'reservation_amount') ||
+      isMissingColumnError(transactionResult.error, 'reservation_amount_type') ||
+      isMissingColumnError(transactionResult.error, 'reservation_treatment') ||
+      isMissingColumnError(transactionResult.error, 'reservation_payable_to') ||
       isMissingColumnError(transactionResult.error, 'reservation_status') ||
       isMissingColumnError(transactionResult.error, 'reservation_paid_date') ||
       isMissingColumnError(transactionResult.error, 'reservation_payment_details') ||
+      isMissingColumnError(transactionResult.error, 'alteration_charge_treatment') ||
       isMissingColumnError(transactionResult.error, 'onboarding_status') ||
       isMissingColumnError(transactionResult.error, 'onboarding_completed_at') ||
       isMissingColumnError(transactionResult.error, 'external_onboarding_submitted_at') ||
@@ -22535,6 +23221,18 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.seller_name
     delete fallbackPayload.seller_email
     delete fallbackPayload.seller_phone
+    if (isMissingColumnError(transactionResult.error, 'reservation_amount_type')) {
+      delete fallbackPayload.reservation_amount_type
+    }
+    if (isMissingColumnError(transactionResult.error, 'reservation_treatment')) {
+      delete fallbackPayload.reservation_treatment
+    }
+    if (isMissingColumnError(transactionResult.error, 'reservation_payable_to')) {
+      delete fallbackPayload.reservation_payable_to
+    }
+    if (isMissingColumnError(transactionResult.error, 'alteration_charge_treatment')) {
+      delete fallbackPayload.alteration_charge_treatment
+    }
     delete fallbackPayload.assigned_agent
     delete fallbackPayload.assigned_agent_email
     delete fallbackPayload.assigned_attorney_email
@@ -22621,9 +23319,13 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'deposit_amount') ||
         isMissingColumnError(transactionResult.error, 'reservation_required') ||
         isMissingColumnError(transactionResult.error, 'reservation_amount') ||
+        isMissingColumnError(transactionResult.error, 'reservation_amount_type') ||
+        isMissingColumnError(transactionResult.error, 'reservation_treatment') ||
+        isMissingColumnError(transactionResult.error, 'reservation_payable_to') ||
         isMissingColumnError(transactionResult.error, 'reservation_status') ||
         isMissingColumnError(transactionResult.error, 'reservation_paid_date') ||
         isMissingColumnError(transactionResult.error, 'reservation_payment_details') ||
+        isMissingColumnError(transactionResult.error, 'alteration_charge_treatment') ||
         isMissingColumnError(transactionResult.error, 'onboarding_status') ||
         isMissingColumnError(transactionResult.error, 'onboarding_completed_at') ||
         isMissingColumnError(transactionResult.error, 'external_onboarding_submitted_at') ||
@@ -22668,6 +23370,18 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.seller_name
       delete fallbackPayload.seller_email
       delete fallbackPayload.seller_phone
+      if (isMissingColumnError(transactionResult.error, 'reservation_amount_type')) {
+        delete fallbackPayload.reservation_amount_type
+      }
+      if (isMissingColumnError(transactionResult.error, 'reservation_treatment')) {
+        delete fallbackPayload.reservation_treatment
+      }
+      if (isMissingColumnError(transactionResult.error, 'reservation_payable_to')) {
+        delete fallbackPayload.reservation_payable_to
+      }
+      if (isMissingColumnError(transactionResult.error, 'alteration_charge_treatment')) {
+        delete fallbackPayload.alteration_charge_treatment
+      }
       delete fallbackPayload.assigned_agent
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
@@ -22708,9 +23422,13 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'deposit_amount') ||
         isMissingColumnError(transactionResult.error, 'reservation_required') ||
         isMissingColumnError(transactionResult.error, 'reservation_amount') ||
+        isMissingColumnError(transactionResult.error, 'reservation_amount_type') ||
+        isMissingColumnError(transactionResult.error, 'reservation_treatment') ||
+        isMissingColumnError(transactionResult.error, 'reservation_payable_to') ||
         isMissingColumnError(transactionResult.error, 'reservation_status') ||
         isMissingColumnError(transactionResult.error, 'reservation_paid_date') ||
         isMissingColumnError(transactionResult.error, 'reservation_payment_details') ||
+        isMissingColumnError(transactionResult.error, 'alteration_charge_treatment') ||
         isMissingColumnError(transactionResult.error, 'onboarding_status') ||
         isMissingColumnError(transactionResult.error, 'onboarding_completed_at') ||
         isMissingColumnError(transactionResult.error, 'external_onboarding_submitted_at') ||
@@ -22754,6 +23472,18 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.seller_name
       delete fallbackPayload.seller_email
       delete fallbackPayload.seller_phone
+      if (isMissingColumnError(transactionResult.error, 'reservation_amount_type')) {
+        delete fallbackPayload.reservation_amount_type
+      }
+      if (isMissingColumnError(transactionResult.error, 'reservation_treatment')) {
+        delete fallbackPayload.reservation_treatment
+      }
+      if (isMissingColumnError(transactionResult.error, 'reservation_payable_to')) {
+        delete fallbackPayload.reservation_payable_to
+      }
+      if (isMissingColumnError(transactionResult.error, 'alteration_charge_treatment')) {
+        delete fallbackPayload.alteration_charge_treatment
+      }
       delete fallbackPayload.assigned_agent
       delete fallbackPayload.assigned_agent_email
       delete fallbackPayload.assigned_attorney_email
@@ -22796,6 +23526,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       amount: transactionPayload.reservation_amount,
       status: transactionPayload.reservation_status,
       paymentDetails: transactionPayload.reservation_payment_details,
+      amountType: transactionPayload.reservation_amount_type,
+      treatment: transactionPayload.reservation_treatment,
+      payableTo: transactionPayload.reservation_payable_to,
       paidDate: transactionPayload.reservation_paid_date,
     })
 
@@ -22817,7 +23550,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       cashAmount: transactionPayload.cash_amount,
       bondAmount: transactionPayload.bond_amount,
       reservationRequired: transactionPayload.reservation_required,
+      reservationAmount: transactionPayload.reservation_amount,
+      reservationAmountType: transactionPayload.reservation_amount_type,
+      reservationTreatment: transactionPayload.reservation_treatment,
+      reservationPayableTo: transactionPayload.reservation_payable_to,
       reservationStatus: transactionPayload.reservation_status,
+      alterationChargeTreatment: transactionPayload.alteration_charge_treatment,
       purchaserType,
       buyerId: buyer?.id || null,
       unitId: setup.unitId || null,
@@ -23151,6 +23889,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     onboardingToken: onboardingRecord?.token || null,
     reservationRequired: persistedReservationRequired,
     reservationAmount: persistedReservationAmount,
+    reservationAmountType: transactionPayload.reservation_amount_type,
+    reservationTreatment: transactionPayload.reservation_treatment,
+    reservationPayableTo: transactionPayload.reservation_payable_to,
+    alterationChargeTreatment: transactionPayload.alteration_charge_treatment,
   }
 }
 
@@ -25322,6 +26064,12 @@ async function fetchTransactionSummaryRowsByIds(client, transactionIds = [], { o
       'transaction_reference',
       'transaction_type',
       'property_type',
+      'reservation_required',
+      'reservation_amount',
+      'reservation_amount_type',
+      'reservation_treatment',
+      'reservation_payable_to',
+      'alteration_charge_treatment',
       'current_main_stage',
       'current_sub_stage_summary',
       'assigned_agent',
@@ -25662,6 +26410,102 @@ function pickPrimaryBondApplicationScope(applicationRows = []) {
   })[0]
 }
 
+function resolveBuyerBondOriginatorRequestFromOnboardingData(onboardingFormData = null) {
+  const formData =
+    onboardingFormData?.formData && typeof onboardingFormData.formData === 'object'
+      ? onboardingFormData.formData
+      : onboardingFormData?.form_data && typeof onboardingFormData.form_data === 'object'
+        ? onboardingFormData.form_data
+        : onboardingFormData && typeof onboardingFormData === 'object'
+          ? onboardingFormData
+          : {}
+
+  return (
+    formData.buyer_bond_originator_request ||
+    formData.buyerBondOriginatorRequest ||
+    null
+  )
+}
+
+function summarizeBuyerBondOriginatorRequestForOperations(request = null) {
+  if (!request?.requested) {
+    return {
+      requested: false,
+      status: '',
+      actionRequired: false,
+      label: '',
+      summary: '',
+      companyName: '',
+      contactDetails: '',
+    }
+  }
+
+  const status = normalizeTextValue(request.status).toLowerCase()
+  const companyName = normalizeTextValue(request.companyName || request.company_name || 'buyer-appointed bond originator')
+  const contactDetails = normalizeTextValue(request.contactDetails || request.contact_details || request.email || '')
+  const rejectedReason = normalizeTextValue(request.rejectionReason || request.rejection_reason || '')
+
+  if (status === 'pending_approval') {
+    return {
+      requested: true,
+      status,
+      actionRequired: true,
+      label: 'Buyer originator review',
+      summary: `Buyer nominated ${companyName}. Agent or developer approval is required.`,
+      companyName,
+      contactDetails,
+    }
+  }
+
+  if (status === 'approved') {
+    return {
+      requested: true,
+      status,
+      actionRequired: false,
+      label: 'Buyer originator approved',
+      summary: `${companyName} is approved as the buyer-appointed bond originator.`,
+      companyName,
+      contactDetails,
+    }
+  }
+
+  if (status === 'rejected') {
+    return {
+      requested: true,
+      status,
+      actionRequired: false,
+      label: 'Buyer originator rejected',
+      summary: rejectedReason
+        ? `Buyer-appointed originator rejected: ${rejectedReason}`
+        : `${companyName} was not approved as the bond originator.`,
+      companyName,
+      contactDetails,
+    }
+  }
+
+  if (status === 'not_allowed') {
+    return {
+      requested: true,
+      status,
+      actionRequired: false,
+      label: 'Buyer originator restricted',
+      summary: 'This development does not allow buyer-appointed bond originators.',
+      companyName,
+      contactDetails,
+    }
+  }
+
+  return {
+    requested: true,
+    status,
+    actionRequired: false,
+    label: 'Buyer originator request',
+    summary: `Buyer nominated ${companyName}.`,
+    companyName,
+    contactDetails,
+  }
+}
+
 function mergeTransactionBondApplicationScope(transaction = {}, applicationScope = null) {
   if (!applicationScope) return transaction
   return {
@@ -25872,6 +26716,12 @@ export async function fetchTransactionsListSummary({
       'transaction_reference',
       'transaction_type',
       'property_type',
+      'reservation_required',
+      'reservation_amount',
+      'reservation_amount_type',
+      'reservation_treatment',
+      'reservation_payable_to',
+      'alteration_charge_treatment',
       'current_main_stage',
       'current_sub_stage_summary',
       'assigned_agent',
@@ -27449,12 +28299,16 @@ export async function fetchUnitDetail(unitId) {
     let alterationRequestsQuery = await client
       .from('alteration_requests')
       .select(
-        'id, development_id, unit_id, transaction_id, buyer_id, title, category, description, budget_range, preferred_timing, reference_image_path, amount_inc_vat, invoice_path, proof_of_payment_path, status, created_at, updated_at',
+        'id, development_id, unit_id, transaction_id, buyer_id, title, category, description, budget_range, preferred_timing, reference_image_path, amount_inc_vat, charge_treatment, invoice_path, proof_of_payment_path, status, created_at, updated_at',
       )
     .eq('unit_id', unit.id)
     .order('created_at', { ascending: false })
 
-  if (alterationRequestsQuery.error && isMissingColumnError(alterationRequestsQuery.error, 'transaction_id')) {
+  if (
+    alterationRequestsQuery.error &&
+    (isMissingColumnError(alterationRequestsQuery.error, 'transaction_id') ||
+      isMissingColumnError(alterationRequestsQuery.error, 'charge_treatment'))
+  ) {
     alterationRequestsQuery = await client
       .from('alteration_requests')
       .select(
@@ -31906,6 +32760,18 @@ export async function fetchClientOnboardingByToken(token) {
     transaction.id,
     transaction.purchaser_type || onboarding.purchaserType,
   )
+  const developmentId = unit?.development_id || transaction.development_id
+  let rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(DEFAULT_DEVELOPMENT_SETTINGS)
+  if (developmentId) {
+    try {
+      const developmentSettings = await ensureDevelopmentSettings(client, developmentId, { createIfMissing: false })
+      rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(developmentSettings)
+    } catch (settingsError) {
+      if (!isMissingSchemaError(settingsError) && !isPermissionDeniedError(settingsError)) {
+        throw settingsError
+      }
+    }
+  }
   const existingFormData = formDataRow?.formData || {}
   const financeSnapshot = getOnboardingFinanceSnapshot({ formData: existingFormData, transaction })
   const onboardingFlow = resolveBuyerOnboardingFlow(existingFormData, transaction, {
@@ -32028,6 +32894,7 @@ export async function fetchClientOnboardingByToken(token) {
     uploadedDocuments,
     fundingSources,
     onboardingFlow,
+    rolePlayerPolicy,
     clientPortalLink,
     clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
   }
@@ -32342,6 +33209,18 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
   const client = requireOnboardingTokenClient(token)
   const onboarding = await resolveOnboardingTokenContext(client, token)
   const { transaction, unit, buyer } = await resolveTransactionAndContext(client, onboarding.transactionId)
+  const developmentId = unit?.development_id || transaction.development_id
+  let rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(DEFAULT_DEVELOPMENT_SETTINGS)
+  if (developmentId) {
+    try {
+      const developmentSettings = await ensureDevelopmentSettings(client, developmentId, { createIfMissing: false })
+      rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(developmentSettings)
+    } catch (settingsError) {
+      if (!isMissingSchemaError(settingsError) && !isPermissionDeniedError(settingsError)) {
+        throw settingsError
+      }
+    }
+  }
   const purchaserType = normalizePurchaserType(formData.purchaser_type || transaction.purchaser_type || onboarding.purchaserType)
   const normalizedFormData = {
     ...formData,
@@ -32372,6 +33251,21 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
   }
 
   const now = new Date().toISOString()
+  const buyerBondOriginatorRequest = getBuyerAppointedBondOriginatorRequest({
+    formData: formDataForPersistence,
+    transaction,
+    buyer,
+    policy: rolePlayerPolicy,
+    now,
+  })
+  if (buyerBondOriginatorRequest.status === 'not_allowed') {
+    formDataForPersistence = clearBuyerAppointedBondOriginatorFields(formDataForPersistence)
+  }
+  formDataForPersistence = {
+    ...formDataForPersistence,
+    buyer_bond_originator_request: buyerBondOriginatorRequest,
+    buyerBondOriginatorRequest: buyerBondOriginatorRequest,
+  }
   const nextStatus = submit ? 'Submitted' : onboarding.status === 'Not Started' ? 'In Progress' : onboarding.status
   const lifecycleStatus = submit ? 'awaiting_signed_otp' : 'awaiting_client_onboarding'
 
@@ -32474,6 +33368,22 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
       !isMissingTableError(informationSheetUpdateError, 'transaction_required_documents')
     ) {
       throw informationSheetUpdateError
+    }
+
+    try {
+      await processBuyerAppointedBondOriginatorRequest(client, {
+        transaction,
+        buyer,
+        formData: formDataForPersistence,
+        policy: rolePlayerPolicy,
+        request: buyerBondOriginatorRequest,
+        source: 'buyer_onboarding_completed',
+      })
+    } catch (roleplayerRequestError) {
+      if (!isMissingSchemaError(roleplayerRequestError) && !isPermissionDeniedError(roleplayerRequestError)) {
+        throw roleplayerRequestError
+      }
+      console.warn('Buyer bond originator request processing failed', roleplayerRequestError)
     }
 
     await logTransactionEventIfPossible(client, {
@@ -34197,6 +35107,7 @@ export async function fetchClientPortalByToken(token) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
   const settings = await ensureDevelopmentSettings(client, link.development_id, { createIfMissing: false })
+  const rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(settings)
 
   if (!settings.client_portal_enabled) {
     throw new Error('Client portal is currently disabled for this development.')
@@ -34205,7 +35116,7 @@ export async function fetchClientPortalByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
@@ -34221,12 +35132,16 @@ export async function fetchClientPortalByToken(token) {
       isMissingColumnError(transactionQuery.error, 'deposit_amount') ||
       isMissingColumnError(transactionQuery.error, 'reservation_required') ||
       isMissingColumnError(transactionQuery.error, 'reservation_amount') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_amount_type') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_treatment') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_payable_to') ||
       isMissingColumnError(transactionQuery.error, 'reservation_status') ||
       isMissingColumnError(transactionQuery.error, 'reservation_paid_date') ||
       isMissingColumnError(transactionQuery.error, 'reservation_payment_details') ||
       isMissingColumnError(transactionQuery.error, 'reservation_requested_at') ||
       isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
       isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
+      isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
       isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
       isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
@@ -34235,7 +35150,7 @@ export async function fetchClientPortalByToken(token) {
     transactionQuery = await client
       .from('transactions')
       .select(
-        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
       )
       .eq('id', link.transaction_id)
       .maybeSingle()
@@ -34244,12 +35159,16 @@ export async function fetchClientPortalByToken(token) {
       transactionQuery.error &&
       (isMissingColumnError(transactionQuery.error, 'reservation_required') ||
         isMissingColumnError(transactionQuery.error, 'reservation_amount') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_amount_type') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_treatment') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_payable_to') ||
         isMissingColumnError(transactionQuery.error, 'reservation_status') ||
         isMissingColumnError(transactionQuery.error, 'reservation_paid_date') ||
         isMissingColumnError(transactionQuery.error, 'reservation_payment_details') ||
         isMissingColumnError(transactionQuery.error, 'reservation_requested_at') ||
         isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
         isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
+        isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
         isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
         isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
         isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
@@ -34400,15 +35319,29 @@ export async function fetchClientPortalByToken(token) {
 
   let alterations = []
   if (settings.alteration_requests_enabled && transaction.unit_id) {
-    const { data: alterationData, error: alterationError } = await client
+    let { data: alterationData, error: alterationError } = await client
       .from('alteration_requests')
       .select(
-        'id, title, category, description, budget_range, preferred_timing, reference_image_path, amount_inc_vat, invoice_path, proof_of_payment_path, status, created_at, updated_at',
+        'id, title, category, description, budget_range, preferred_timing, reference_image_path, amount_inc_vat, charge_treatment, invoice_path, proof_of_payment_path, status, created_at, updated_at',
       )
       .eq('unit_id', transaction.unit_id)
       .order('created_at', { ascending: false })
 
-    if (alterationError && alterationError.code !== '42P01') {
+    if (alterationError && isMissingColumnError(alterationError, 'charge_treatment')) {
+      const fallbackQuery = await client
+        .from('alteration_requests')
+        .select(
+          'id, title, category, description, budget_range, preferred_timing, reference_image_path, amount_inc_vat, invoice_path, proof_of_payment_path, status, created_at, updated_at',
+        )
+        .eq('unit_id', transaction.unit_id)
+        .order('created_at', { ascending: false })
+
+      if (fallbackQuery.error && fallbackQuery.error.code !== '42P01') {
+        throw fallbackQuery.error
+      }
+
+      alterationData = fallbackQuery.data || []
+    } else if (alterationError && alterationError.code !== '42P01') {
       throw alterationError
     }
 
@@ -34454,6 +35387,10 @@ export async function fetchClientPortalByToken(token) {
     transaction.purchaser_type,
   )
   const onboardingFormValues = onboardingFormData?.formData || {}
+  const buyerBondOriginatorRequest =
+    onboardingFormValues.buyer_bond_originator_request ||
+    onboardingFormValues.buyerBondOriginatorRequest ||
+    null
   const resolvedPurchaserType = normalizePurchaserType(
     onboardingFormValues.purchaser_type || transaction.purchaser_type,
   )
@@ -34557,6 +35494,7 @@ export async function fetchClientPortalByToken(token) {
   return {
     link,
     settings,
+    rolePlayerPolicy,
     unit,
     transaction,
     buyer,
@@ -34578,6 +35516,7 @@ export async function fetchClientPortalByToken(token) {
     homeownerDashboardEnabled,
     onboarding,
     onboardingFormData,
+    buyerBondOriginatorRequest,
     onboardingDerivedConfiguration,
     purchaserType: resolvedPurchaserType,
     purchaserTypeLabel: getPurchaserTypeLabel(resolvedPurchaserType),
@@ -34612,6 +35551,7 @@ export async function fetchClientPortalCoreByToken(token) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
   const settings = await ensureDevelopmentSettings(client, link.development_id, { createIfMissing: false })
+  const rolePlayerPolicy = normalizeBuyerBondOriginatorPolicy(settings)
 
   if (!settings.client_portal_enabled) {
     throw new Error('Client portal is currently disabled for this development.')
@@ -34620,7 +35560,7 @@ export async function fetchClientPortalCoreByToken(token) {
   let transactionQuery = await client
     .from('transactions')
     .select(
-      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+      'id, development_id, unit_id, buyer_id, sales_price, purchase_price, finance_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, purchaser_type, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
     )
     .eq('id', link.transaction_id)
     .maybeSingle()
@@ -34636,12 +35576,16 @@ export async function fetchClientPortalCoreByToken(token) {
       isMissingColumnError(transactionQuery.error, 'deposit_amount') ||
       isMissingColumnError(transactionQuery.error, 'reservation_required') ||
       isMissingColumnError(transactionQuery.error, 'reservation_amount') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_amount_type') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_treatment') ||
+      isMissingColumnError(transactionQuery.error, 'reservation_payable_to') ||
       isMissingColumnError(transactionQuery.error, 'reservation_status') ||
       isMissingColumnError(transactionQuery.error, 'reservation_paid_date') ||
       isMissingColumnError(transactionQuery.error, 'reservation_payment_details') ||
       isMissingColumnError(transactionQuery.error, 'reservation_requested_at') ||
       isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
       isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
+      isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
       isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
       isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
       isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
@@ -34650,7 +35594,7 @@ export async function fetchClientPortalCoreByToken(token) {
     transactionQuery = await client
       .from('transactions')
       .select(
-        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
+        'id, unit_id, buyer_id, sales_price, finance_type, purchaser_type, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, reservation_status, reservation_paid_date, reservation_payment_details, reservation_requested_at, reservation_email_sent_at, reservation_proof_document, alteration_charge_treatment, onboarding_status, stage, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, next_action, updated_at, created_at',
       )
       .eq('id', link.transaction_id)
       .maybeSingle()
@@ -34659,12 +35603,16 @@ export async function fetchClientPortalCoreByToken(token) {
       transactionQuery.error &&
       (isMissingColumnError(transactionQuery.error, 'reservation_required') ||
         isMissingColumnError(transactionQuery.error, 'reservation_amount') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_amount_type') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_treatment') ||
+        isMissingColumnError(transactionQuery.error, 'reservation_payable_to') ||
         isMissingColumnError(transactionQuery.error, 'reservation_status') ||
         isMissingColumnError(transactionQuery.error, 'reservation_paid_date') ||
         isMissingColumnError(transactionQuery.error, 'reservation_payment_details') ||
         isMissingColumnError(transactionQuery.error, 'reservation_requested_at') ||
         isMissingColumnError(transactionQuery.error, 'reservation_email_sent_at') ||
         isMissingColumnError(transactionQuery.error, 'reservation_proof_document') ||
+        isMissingColumnError(transactionQuery.error, 'alteration_charge_treatment') ||
         isMissingColumnError(transactionQuery.error, 'onboarding_status') ||
         isMissingColumnError(transactionQuery.error, 'purchaser_type') ||
         isMissingColumnError(transactionQuery.error, 'assigned_attorney_email') ||
@@ -34760,6 +35708,7 @@ export async function fetchClientPortalCoreByToken(token) {
   return {
     link,
     settings,
+    rolePlayerPolicy,
     unit: unitQuery.data || null,
     transaction,
     buyer: buyerQuery.data || null,
@@ -37652,26 +38601,56 @@ export async function submitAlterationRequest({
     throw new Error('Title and description are required.')
   }
 
-  const { data: created, error: createError } = await client
+  let defaultChargeTreatment = normalizeAlterationChargeTreatment(
+    settings.default_alteration_charge_treatment || settings.defaultAlterationChargeTreatment,
+  )
+  if (link.transaction_id) {
+    const transactionQuery = await client
+      .from('transactions')
+      .select('id, alteration_charge_treatment')
+      .eq('id', link.transaction_id)
+      .maybeSingle()
+
+    if (!transactionQuery.error && transactionQuery.data?.alteration_charge_treatment) {
+      defaultChargeTreatment = normalizeAlterationChargeTreatment(transactionQuery.data.alteration_charge_treatment)
+    }
+  }
+
+  const alterationPayload = {
+    development_id: link.development_id,
+    unit_id: link.unit_id,
+    transaction_id: link.transaction_id,
+    buyer_id: link.buyer_id || null,
+    title: title.trim(),
+    category: category?.trim() || null,
+    description: description.trim(),
+    budget_range: budgetRange?.trim() || null,
+    preferred_timing: preferredTiming?.trim() || null,
+    charge_treatment: defaultChargeTreatment,
+    status: 'Pending Review',
+  }
+
+  let createResult = await client
     .from('alteration_requests')
-    .insert({
-      development_id: link.development_id,
-      unit_id: link.unit_id,
-      transaction_id: link.transaction_id,
-      buyer_id: link.buyer_id || null,
-      title: title.trim(),
-      category: category?.trim() || null,
-      description: description.trim(),
-      budget_range: budgetRange?.trim() || null,
-      preferred_timing: preferredTiming?.trim() || null,
-      status: 'Pending Review',
-    })
+    .insert(alterationPayload)
     .select('id')
     .single()
 
-  if (createError) {
-    throw createError
+  if (createResult.error && isMissingColumnError(createResult.error, 'charge_treatment')) {
+    const fallbackPayload = { ...alterationPayload }
+    delete fallbackPayload.charge_treatment
+    createResult = await client
+      .from('alteration_requests')
+      .insert(fallbackPayload)
+      .select('id')
+      .single()
   }
+
+  if (createResult.error) {
+    throw createResult.error
+  }
+
+  const created = createResult.data
 
   if (referenceImageFile) {
     const safeName = referenceImageFile.name.replace(/[^a-zA-Z0-9.-]/g, '-')
@@ -37713,6 +38692,7 @@ export async function createWorkspaceAlteration({
   description,
   category = '',
   amountIncVat = 0,
+  chargeTreatment = 'included_in_purchase_price',
   invoiceFile = null,
   proofFile = null,
 }) {
@@ -37725,25 +38705,40 @@ export async function createWorkspaceAlteration({
   }
 
   const client = requireClient()
-  const { data: created, error: createError } = await client
+  const alterationPayload = {
+    development_id: developmentId,
+    unit_id: unitId,
+    transaction_id: transactionId,
+    buyer_id: buyerId || null,
+    title: title.trim(),
+    category: category?.trim() || null,
+    description: description.trim(),
+    amount_inc_vat: Number(amountIncVat) || 0,
+    charge_treatment: normalizeAlterationChargeTreatment(chargeTreatment),
+    status: 'Pending Review',
+  }
+
+  let createResult = await client
     .from('alteration_requests')
-    .insert({
-      development_id: developmentId,
-      unit_id: unitId,
-      transaction_id: transactionId,
-      buyer_id: buyerId || null,
-      title: title.trim(),
-      category: category?.trim() || null,
-      description: description.trim(),
-      amount_inc_vat: Number(amountIncVat) || 0,
-      status: 'Pending Review',
-    })
+    .insert(alterationPayload)
     .select('id')
     .single()
 
-  if (createError) {
-    throw createError
+  if (createResult.error && isMissingColumnError(createResult.error, 'charge_treatment')) {
+    const fallbackPayload = { ...alterationPayload }
+    delete fallbackPayload.charge_treatment
+    createResult = await client
+      .from('alteration_requests')
+      .insert(fallbackPayload)
+      .select('id')
+      .single()
   }
+
+  if (createResult.error) {
+    throw createResult.error
+  }
+
+  const created = createResult.data
 
   await uploadAlterationAsset({
     client,
@@ -39243,6 +40238,14 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
         snag_reporting_enabled: DEFAULT_DEVELOPMENT_SETTINGS.snag_reporting_enabled,
         alteration_requests_enabled: DEFAULT_DEVELOPMENT_SETTINGS.alteration_requests_enabled,
         service_reviews_enabled: DEFAULT_DEVELOPMENT_SETTINGS.service_reviews_enabled,
+        reservation_deposit_enabled_by_default: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_enabled_by_default,
+        reservation_deposit_amount: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_amount,
+        reservation_deposit_amount_type: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_amount_type,
+        reservation_deposit_treatment: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_treatment,
+        reservation_deposit_payable_to: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_payable_to,
+        reservation_deposit_payment_details: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_payment_details,
+        reservation_deposit_notification_recipients: DEFAULT_DEVELOPMENT_SETTINGS.reservation_deposit_notification_recipients,
+        default_alteration_charge_treatment: DEFAULT_DEVELOPMENT_SETTINGS.default_alteration_charge_treatment,
         enabled_modules: DEFAULT_DEVELOPMENT_SETTINGS.enabledModules,
         stakeholder_teams: DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams,
       },

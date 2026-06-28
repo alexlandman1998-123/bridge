@@ -6,8 +6,7 @@ import {
 } from '../lib/api'
 import { generateClientPortalNextActions } from '../lib/clientPortalNextActionsEngine'
 import {
-  getClientPortalActivityFeed,
-  groupClientActivityByDate,
+  buildClientPortalActivityFeedModel,
 } from './clientPortalActivityFeedService'
 import {
   getClientPortalNotifications,
@@ -843,18 +842,28 @@ function resolveWorkspaceMode({ requestedWorkspace = 'shared', hasBuyingContext 
 }
 
 function normalizeDocumentStatus(value = '') {
-  const normalized = String(value || '').trim().toLowerCase()
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
   if (['required', 'requested', 'uploaded', 'under_review', 'rejected', 'approved', 'completed', 'not_applicable', 'cancelled'].includes(normalized)) {
     return normalized
   }
   if (normalized === 'reviewed') return 'under_review'
   if (normalized === 'accepted') return 'approved'
   if (normalized === 'missing') return 'required'
+  if (normalized === 'reupload_required' || normalized === 'needs_reupload' || normalized === 'needs_re_upload') return 'rejected'
+  if (normalized === 'pending_review' || normalized === 'in_review' || normalized === 'awaiting_review') return 'under_review'
+  if (normalized === 'not_uploaded' || normalized === 'outstanding') return 'required'
   return 'required'
 }
 
 function normalizeAdditionalRequestAudience(request = {}) {
   const requestedFrom = String(request?.requestedFrom || request?.requested_from || '').trim().toLowerCase()
+  if (!requestedFrom) {
+    return { buyer: true, seller: false }
+  }
   return {
     buyer: requestedFrom === 'buyer' || requestedFrom === 'buyer_and_seller',
     seller: requestedFrom === 'seller' || requestedFrom === 'buyer_and_seller',
@@ -979,6 +988,208 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
 
 function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {
   return (uploadedDocuments || []).find((document) => documentMatchesRequirement(document, requirement)) || null
+}
+
+function toDisplayText(value = '', fallback = '') {
+  const normalized = String(value || '').trim()
+  return normalized || fallback
+}
+
+function getDocumentLookupKeys(document = {}) {
+  return [
+    document?.id,
+    document?.file_path,
+    document?.storage_path,
+    document?.url,
+    document?.file_url,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+}
+
+function getDocumentIdentity(document = {}, fallback = 'document') {
+  return toDisplayText(
+    document?.id ||
+      document?.file_path ||
+      document?.storage_path ||
+      document?.url ||
+      document?.file_url ||
+      document?.document_name ||
+      document?.name,
+    fallback,
+  )
+}
+
+function buildUploadedDocumentsLookup(uploadedDocuments = []) {
+  const lookup = new Map()
+  ;(uploadedDocuments || []).forEach((document) => {
+    getDocumentLookupKeys(document).forEach((key) => lookup.set(key, document))
+  })
+  return lookup
+}
+
+function findUploadedDocumentForAdditionalRequest(uploadedDocuments = [], request = {}, uploadedDocumentsById = new Map()) {
+  const linkedDocumentId = toDisplayText(
+    request?.requestedDocumentId ||
+      request?.requested_document_id ||
+      request?.uploadedDocumentId ||
+      request?.uploaded_document_id,
+  )
+  if (linkedDocumentId && uploadedDocumentsById.has(linkedDocumentId)) {
+    return uploadedDocumentsById.get(linkedDocumentId)
+  }
+
+  const requestKey = normalizeDocumentMatchKey(
+    request?.documentKey ||
+      request?.document_key ||
+      request?.documentName ||
+      request?.document_name ||
+      request?.title,
+  )
+  if (!requestKey) return null
+  return (uploadedDocuments || []).find((document) => {
+    const documentKey = normalizeDocumentMatchKey(
+      document?.requirementKey ||
+        document?.requirement_key ||
+        document?.document_type ||
+        document?.documentType ||
+        document?.category ||
+        document?.document_category ||
+        document?.name ||
+        document?.document_name,
+    )
+    return documentKey === requestKey
+  }) || null
+}
+
+function resolveStatusWithLinkedUpload(sourceStatus = '', linkedDocument = null) {
+  const normalizedStatus = normalizeDocumentStatus(sourceStatus)
+  if (!linkedDocument || !['required', 'requested'].includes(normalizedStatus)) {
+    return normalizedStatus
+  }
+  return normalizeDocumentStatus(linkedDocument?.status || 'uploaded')
+}
+
+function getDocumentEducationText(...values) {
+  const lookup = values.map((value) => String(value || '').trim()).find(Boolean)
+  if (!lookup) return ''
+  return getEducationalContentForDocument(lookup)?.shortExplanation || ''
+}
+
+function buildRequirementDocumentCenterItem(requirement = {}, uploadedDocumentsById = new Map(), uploadedDocuments = []) {
+  const key = toDisplayText(requirement?.key || requirement?.requirement_key || requirement?.id || requirement?.label, 'required-document')
+  const title = toDisplayText(requirement?.label || requirement?.requirement_name || requirement?.name, 'Required document')
+  const embeddedLinkedDocument =
+    requirement?.uploadedDocument && typeof requirement.uploadedDocument === 'object'
+      ? requirement.uploadedDocument
+      : requirement?.uploaded_document && typeof requirement.uploaded_document === 'object'
+        ? requirement.uploaded_document
+        : null
+  const uploadedDocumentId = toDisplayText(requirement?.uploadedDocumentId || requirement?.uploaded_document_id)
+  const linkedDocument =
+    embeddedLinkedDocument ||
+    (uploadedDocumentId ? uploadedDocumentsById.get(uploadedDocumentId) || null : findUploadedDocumentForRequirement(uploadedDocuments, requirement))
+  const status = resolveStatusWithLinkedUpload(requirement?.requiredDocumentStatus || requirement?.status, linkedDocument)
+  const uploadAllowed = !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
+
+  return {
+    id: `required_${key}`,
+    sourceId: key,
+    sourceType: 'required_document',
+    title,
+    description: toDisplayText(requirement?.description || requirement?.requirement_description, 'This document is needed before your transaction can move forward.'),
+    education: getDocumentEducationText(key, title),
+    group: toDisplayText(requirement?.requirement_group || requirement?.group || requirement?.groupKey),
+    status,
+    rejectionReason: toDisplayText(requirement?.rejectionReason || requirement?.rejection_reason || linkedDocument?.rejectionReason || linkedDocument?.rejection_reason),
+    linkedDocument,
+    hasUploadedDocument: Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.url),
+    uploadKey: key,
+    uploadSpec: uploadAllowed
+      ? {
+          type: 'requirement',
+          requirementKey: key,
+        }
+      : null,
+    openLabel: '',
+    metaLine: toDisplayText(requirement?.requestedBy || requirement?.requested_by_name),
+    dueDate: requirement?.dueDate || requirement?.due_date || null,
+    requestedBy: requirement?.requestedBy || requirement?.requested_by_name || '',
+    visibility: requirement?.visibility || requirement?.visibility_scope || 'client',
+    isCoreRequirement: true,
+  }
+}
+
+function buildAdditionalRequestDocumentCenterItem(request = {}, uploadedDocumentsById = new Map(), uploadedDocuments = []) {
+  const requestId = toDisplayText(request?.id || request?.request_id || request?.title, 'additional-request')
+  const linkedDocument = findUploadedDocumentForAdditionalRequest(uploadedDocuments, request, uploadedDocumentsById)
+  const status = resolveStatusWithLinkedUpload(request?.status || 'requested', linkedDocument)
+  const requester = toDisplayText(request?.requestedBy || request?.requested_by_name || request?.createdByName || request?.created_by_name, 'Transaction team')
+  const requesterRole = toDisplayText(request?.requestedByRole || request?.requested_by_role || request?.createdByRole || request?.created_by_role)
+  const dueDate = request?.dueDate || request?.due_date || null
+  const priority = toDisplayText(request?.priority || request?.additionalPriority)
+  const uploadAllowed = !['approved', 'completed', 'not_applicable', 'cancelled'].includes(status)
+  const title = toDisplayText(request?.documentName || request?.document_name || request?.title, 'Additional document request')
+
+  return {
+    id: `additional_${requestId}`,
+    sourceId: requestId,
+    sourceType: 'additional_request',
+    title,
+    description: toDisplayText(request?.notes || request?.description, 'An additional document has been requested for your transaction.'),
+    education: getDocumentEducationText(request?.documentKey || request?.document_key, title),
+    group: 'additional',
+    status,
+    rejectionReason: toDisplayText(request?.rejectionReason || request?.rejection_reason || linkedDocument?.rejectionReason || linkedDocument?.rejection_reason),
+    linkedDocument,
+    hasUploadedDocument: Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.url),
+    uploadKey: `additional_request_${requestId}`,
+    uploadSpec: uploadAllowed
+      ? {
+          type: 'additional_request',
+          requestId,
+        }
+      : null,
+    metaLine: `${requester}${requesterRole ? ` • ${requesterRole.replaceAll('_', ' ')}` : ''}${dueDate ? ` • Due ${dueDate}` : ''}${priority ? ` • ${priority}` : ''}`,
+    dueDate,
+    requestedBy: requester,
+    visibility: request?.visibility || request?.visibility_scope || 'client_visible',
+    isCoreRequirement: false,
+  }
+}
+
+function buildUploadedDocumentCenterItem(document = {}) {
+  const id = getDocumentIdentity(document, 'uploaded-document')
+  const title = toDisplayText(document?.name || document?.document_name, 'Uploaded document')
+  const category = toDisplayText(document?.category || document?.document_type)
+  return {
+    id: `uploaded_${id}`,
+    sourceId: id,
+    sourceType: 'uploaded_document',
+    title,
+    description: toDisplayText(document?.category || document?.document_type, 'Your uploaded document is waiting for review.'),
+    education: getDocumentEducationText(document?.requirementKey || document?.requirement_key || document?.document_type, title),
+    group: category,
+    status: normalizeDocumentStatus(document?.status || 'uploaded'),
+    rejectionReason: toDisplayText(document?.rejectionReason || document?.rejection_reason),
+    linkedDocument: document,
+    hasUploadedDocument: true,
+    uploadKey: '',
+    uploadSpec: null,
+    metaLine: document?.created_at ? `Uploaded ${new Date(document.created_at).toLocaleDateString('en-ZA')}` : '',
+    visibility: document?.visibility || document?.visibility_scope || 'client',
+    isCoreRequirement: false,
+  }
+}
+
+function dedupeDocumentCenterItems(items = []) {
+  const seen = new Set()
+  return (items || []).filter((item) => {
+    const key = String(item?.id || '').trim()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function getMandatePacketFinalSignedFilePath(mandatePacket = null) {
@@ -1119,13 +1330,14 @@ function buildSignedMandateDocumentFromPacket(portalData = {}, workspaceMode = '
   }
 }
 
-function buildDocumentCenter(portalData, workspaceMode = 'buying') {
+export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
   const requiredDocumentsRaw = Array.isArray(portalData?.requiredDocuments) ? portalData.requiredDocuments : []
   const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
   const uploadedDocuments = [
     ...(signedMandateDocument ? [signedMandateDocument] : []),
     ...(Array.isArray(portalData?.documents) ? portalData.documents : []),
   ]
+  const uploadedDocumentsById = buildUploadedDocumentsLookup(uploadedDocuments)
   const requiredDocuments = filterRequiredDocumentsByWorkspace(requiredDocumentsRaw, workspaceMode)
     .map((requirement) => {
       const uploadedDocument = findUploadedDocumentForRequirement(uploadedDocuments, requirement)
@@ -1149,11 +1361,20 @@ function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     Array.isArray(portalData?.additionalDocumentRequests) ? portalData.additionalDocumentRequests : [],
     workspaceMode,
   )
+  const requiredItems = requiredDocuments.map((requirement) =>
+    buildRequirementDocumentCenterItem(requirement, uploadedDocumentsById, uploadedDocuments),
+  )
+  const additionalItems = additionalRequests.map((request) =>
+    buildAdditionalRequestDocumentCenterItem(request, uploadedDocumentsById, uploadedDocuments),
+  )
   const linkedUploadedDocumentIds = new Set(
-    requiredDocuments
+    [...requiredDocuments, ...additionalItems]
       .map((item) => String(item?.uploadedDocumentId || item?.uploaded_document_id || '').trim())
       .filter(Boolean),
   )
+  additionalItems.forEach((item) => {
+    getDocumentLookupKeys(item?.linkedDocument || {}).forEach((key) => linkedUploadedDocumentIds.add(key))
+  })
 
   const statusFromDocument = (document = {}) =>
     normalizeDocumentStatus(document?.requiredDocumentStatus || document?.status || '')
@@ -1171,6 +1392,29 @@ function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     const source = `${document?.document_type || ''} ${document?.name || ''} ${document?.category || ''}`.toLowerCase()
     return /signed|signature|otp|mandate/.test(source)
   })
+  const linkedUploadedDocumentKeys = new Set(
+    [...requiredItems, ...additionalItems]
+      .flatMap((item) => getDocumentLookupKeys(item?.linkedDocument || {})),
+  )
+  const standaloneUploadedItems = uploadedDocuments
+    .filter((document) => !getDocumentLookupKeys(document).some((key) => linkedUploadedDocumentKeys.has(key)))
+    .map((document) => buildUploadedDocumentCenterItem(document))
+  const items = dedupeDocumentCenterItems([...requiredItems, ...additionalItems, ...standaloneUploadedItems])
+  const activeItems = items.filter((item) => !['cancelled', 'not_applicable'].includes(normalizeDocumentStatus(item?.status)))
+  const summary = activeItems.reduce(
+    (accumulator, item) => {
+      const status = normalizeDocumentStatus(item?.status)
+      accumulator.total += 1
+      if (status === 'rejected') accumulator.rejected += 1
+      else if (status === 'required' || status === 'requested') accumulator.outstanding += 1
+      else if (status === 'uploaded') accumulator.uploaded += 1
+      else if (status === 'under_review') accumulator.underReview += 1
+      else if (status === 'approved' || status === 'completed') accumulator.approved += 1
+      if (['required', 'requested', 'rejected'].includes(status)) accumulator.blocking += 1
+      return accumulator
+    },
+    { total: 0, outstanding: 0, uploaded: 0, underReview: 0, approved: 0, rejected: 0, blocking: 0 },
+  )
 
   return {
     requiredDocuments,
@@ -1179,6 +1423,8 @@ function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     approvedDocuments,
     rejectedDocuments,
     signedDocuments,
+    items,
+    summary,
     canonicalRequirements: Array.isArray(portalData?.canonicalRequirements) ? portalData.canonicalRequirements : [],
   }
 }
@@ -1415,14 +1661,15 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     nextActions: [],
   })
 
-  const activityFeed = getClientPortalActivityFeed({
+  const activityFeedModel = buildClientPortalActivityFeedModel({
     transactionId: portalData?.transaction?.id || null,
     portalData,
     workspaceMode,
     workflowSummary: provisionalWorkflowSummary,
     workflowReadModel,
   }, clientRole)
-  const groupedActivityFeed = groupClientActivityByDate(activityFeed)
+  const activityFeed = activityFeedModel.items
+  const groupedActivityFeed = activityFeedModel.grouped
   const rawNextActions = generateClientPortalNextActions({
     portalContext: {
       token,
@@ -1547,6 +1794,8 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     },
     workflowSummary,
     activityFeed,
+    groupedActivityFeed,
+    activityFeedSummary: activityFeedModel.summary,
     notifications,
     sellerJourney: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
     sellerPortalJourney,

@@ -58,6 +58,7 @@ function normalizeNotificationType(value = '') {
     'appointment_cancelled',
     'appointment_reminder_due',
     'appointment_documents_required',
+    'bond_application_required',
     'no_action_required',
   ])
   if (allowed.has(normalized)) return normalized
@@ -67,6 +68,7 @@ function normalizeNotificationType(value = '') {
   if (normalized.includes('document')) return 'document_requested'
   if (normalized.includes('mandate')) return 'mandate_signature_required'
   if (normalized.includes('otp')) return 'otp_signature_required'
+  if (normalized.includes('bond_application')) return 'bond_application_required'
   if (normalized.includes('onboarding')) return 'onboarding_required'
   if (normalized.includes('stage')) return 'stage_updated'
 
@@ -88,6 +90,7 @@ function mapNextActionTypeToNotificationType(actionType = '') {
   if (normalized === 'otp_signature_required') return 'otp_signature_required'
   if (normalized === 'document_reupload_required') return 'document_rejected'
   if (normalized === 'additional_document_requested') return 'additional_document_requested'
+  if (normalized === 'bond_application_required' || normalized === 'bond_application_attention_required') return 'bond_application_required'
   if (normalized === 'document_upload_required' || normalized === 'proof_of_funds_required') return 'document_requested'
   if (normalized === 'awaiting_internal_review' || normalized === 'awaiting_other_party') return 'message_shared'
   return 'action_required'
@@ -166,6 +169,9 @@ function deriveActionRoute(notification = {}) {
   if (type === 'appointment_documents_required') {
     return 'documents'
   }
+  if (type === 'bond_application_required') {
+    return 'bond_application'
+  }
   if (type === 'onboarding_required') {
     return 'details'
   }
@@ -188,6 +194,7 @@ function deriveActionLabel(notification = {}) {
   if (type === 'document_requested' || type === 'additional_document_requested') return 'Upload Document'
   if (type === 'otp_signature_required') return 'Sign OTP'
   if (type === 'mandate_signature_required') return 'Sign Mandate'
+  if (type === 'bond_application_required') return 'Open Bond Application'
   if (type === 'onboarding_required') return 'Complete Onboarding'
   if (type === 'stage_updated') return 'View Progress'
   if (type === 'appointment_documents_required') return 'Upload Documents'

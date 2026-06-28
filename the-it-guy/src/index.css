@@ -2422,6 +2422,13 @@
     line-height: 1;
   }
 
+  .ui-data-table .buyer-originator-request-chip {
+    justify-self: start;
+    max-width: min(100%, 14rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .transaction-chip-info {
     border: 1px solid #d5e7fb;
     background: #f0f7ff;

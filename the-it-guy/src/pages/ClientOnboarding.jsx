@@ -184,22 +184,44 @@ const FINANCE_DETAIL_KEYS = [
 const COMPANY_DETAIL_KEYS = [
   'company_name',
   'company_registration_number',
+  'company_registered_address',
+  'company_business_address',
+  'company_tax_number',
   'vat_number',
+  'nature_of_business',
   'authorised_signatory_name',
   'authorised_signatory_identity_number',
   'authorised_signatory_email',
   'authorised_signatory_phone',
+  'authorised_signatory_capacity',
+  'board_resolution_available',
 ]
 
 const TRUST_DETAIL_KEYS = [
   'trust_name',
   'trust_registration_number',
+  'trust_type',
+  'masters_office_reference',
+  'trust_registered_address',
+  'trust_tax_number',
   'authorised_trustee_name',
   'authorised_trustee_identity_number',
   'authorised_trustee_email',
   'authorised_trustee_phone',
+  'trust_deed_available',
+  'letters_of_authority_available',
   'trust_resolution_available',
+  'all_trustees_signing',
 ]
+
+function isMarriedPurchaser(purchaser = {}) {
+  return String(purchaser.marital_status || '').trim().toLowerCase() === 'married'
+}
+
+function isSpouseContactRequired(purchaser = {}) {
+  const maritalRegime = String(purchaser.marital_regime || '').trim().toLowerCase()
+  return maritalRegime === 'in_community' || normalizeYesNoChoice(purchaser.spouse_is_co_purchaser) === 'yes'
+}
 
 const NATURAL_PURCHASER_SECTIONS = [
   {
@@ -266,7 +288,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'select',
         required: true,
         options: MARITAL_REGIME_OPTIONS,
-        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+        visibleWhen: ({ purchaser }) => isMarriedPurchaser(purchaser),
       },
       {
         key: 'spouse_full_name',
@@ -274,7 +296,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'text',
         required: true,
         placeholder: 'e.g. Jamie Nkosi',
-        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+        visibleWhen: ({ purchaser }) => isMarriedPurchaser(purchaser),
       },
       {
         key: 'spouse_identity_number',
@@ -282,23 +304,7 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'text',
         required: true,
         placeholder: 'e.g. 9001015009087',
-        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
-      },
-      {
-        key: 'spouse_email',
-        label: 'Spouse Email Address',
-        type: 'email',
-        required: true,
-        placeholder: 'spouse@email.com',
-        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
-      },
-      {
-        key: 'spouse_phone',
-        label: 'Spouse Contact Number',
-        type: 'tel',
-        required: true,
-        placeholder: '+27 82 000 0000',
-        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+        visibleWhen: ({ purchaser }) => isMarriedPurchaser(purchaser),
       },
       {
         key: 'spouse_is_co_purchaser',
@@ -306,7 +312,25 @@ const NATURAL_PURCHASER_SECTIONS = [
         type: 'select',
         required: true,
         options: YES_NO_OPTIONS,
-        visibleWhen: ({ purchaser }) => String(purchaser.marital_status || '').trim().toLowerCase() === 'married',
+        visibleWhen: ({ purchaser }) => isMarriedPurchaser(purchaser),
+      },
+      {
+        key: 'spouse_email',
+        label: 'Spouse Email Address',
+        type: 'email',
+        required: false,
+        requiredWhen: ({ purchaser }) => isSpouseContactRequired(purchaser),
+        placeholder: 'spouse@email.com',
+        visibleWhen: ({ purchaser }) => isMarriedPurchaser(purchaser),
+      },
+      {
+        key: 'spouse_phone',
+        label: 'Spouse Contact Number',
+        type: 'tel',
+        required: false,
+        requiredWhen: ({ purchaser }) => isSpouseContactRequired(purchaser),
+        placeholder: '+27 82 000 0000',
+        visibleWhen: ({ purchaser }) => isMarriedPurchaser(purchaser),
       },
     ],
   },
@@ -482,7 +506,11 @@ const NATURAL_PURCHASER_SECTIONS = [
 const COMPANY_DETAIL_FIELDS = [
   { key: 'company_name', label: 'Company Name', type: 'text', required: true },
   { key: 'company_registration_number', label: 'Company Registration Number', type: 'text', required: true },
+  { key: 'company_registered_address', label: 'Registered Address', type: 'textarea', required: true },
+  { key: 'company_business_address', label: 'Business Address', type: 'textarea', required: false },
+  { key: 'company_tax_number', label: 'Tax Number', type: 'text', required: false },
   { key: 'vat_number', label: 'VAT Number', type: 'text', required: false },
+  { key: 'nature_of_business', label: 'Nature of Business', type: 'text', required: true },
   { key: 'authorised_signatory_name', label: 'Authorised Signatory Name', type: 'text', required: true },
   {
     key: 'authorised_signatory_identity_number',
@@ -492,11 +520,17 @@ const COMPANY_DETAIL_FIELDS = [
   },
   { key: 'authorised_signatory_email', label: 'Authorised Signatory Email', type: 'email', required: true },
   { key: 'authorised_signatory_phone', label: 'Authorised Signatory Phone', type: 'tel', required: true },
+  { key: 'authorised_signatory_capacity', label: 'Authorised Signatory Capacity', type: 'text', required: true },
+  { key: 'board_resolution_available', label: 'Board Resolution Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
 ]
 
 const TRUST_DETAIL_FIELDS = [
   { key: 'trust_name', label: 'Trust Name', type: 'text', required: true },
   { key: 'trust_registration_number', label: 'Trust Registration Number', type: 'text', required: true },
+  { key: 'trust_type', label: 'Trust Type', type: 'text', required: true },
+  { key: 'masters_office_reference', label: 'Master’s Office Reference', type: 'text', required: true },
+  { key: 'trust_registered_address', label: 'Registered Address', type: 'textarea', required: true },
+  { key: 'trust_tax_number', label: 'Trust Tax Number', type: 'text', required: false },
   { key: 'authorised_trustee_name', label: 'Authorised Trustee Name', type: 'text', required: true },
   {
     key: 'authorised_trustee_identity_number',
@@ -506,7 +540,10 @@ const TRUST_DETAIL_FIELDS = [
   },
   { key: 'authorised_trustee_email', label: 'Authorised Trustee Email', type: 'email', required: true },
   { key: 'authorised_trustee_phone', label: 'Authorised Trustee Phone', type: 'tel', required: true },
+  { key: 'trust_deed_available', label: 'Trust Deed Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
+  { key: 'letters_of_authority_available', label: 'Letters of Authority Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
   { key: 'trust_resolution_available', label: 'Trust Resolution Available?', type: 'select', required: true, options: YES_NO_OPTIONS },
+  { key: 'all_trustees_signing', label: 'Are All Trustees Signing?', type: 'select', required: true, options: YES_NO_OPTIONS },
 ]
 
 const ASSOCIATED_PERSON_FIELDS = [
@@ -752,11 +789,18 @@ function createEmptyCompany() {
   return {
     company_name: '',
     company_registration_number: '',
+    company_registered_address: '',
+    company_business_address: '',
+    company_tax_number: '',
     vat_number: '',
+    nature_of_business: '',
     authorised_signatory_name: '',
     authorised_signatory_identity_number: '',
     authorised_signatory_email: '',
     authorised_signatory_phone: '',
+    authorised_signatory_capacity: '',
+    board_resolution_available: '',
+    directors: [],
   }
 }
 
@@ -764,11 +808,19 @@ function createEmptyTrust() {
   return {
     trust_name: '',
     trust_registration_number: '',
+    trust_type: '',
+    masters_office_reference: '',
+    trust_registered_address: '',
+    trust_tax_number: '',
     authorised_trustee_name: '',
     authorised_trustee_identity_number: '',
     authorised_trustee_email: '',
     authorised_trustee_phone: '',
+    trust_deed_available: '',
+    letters_of_authority_available: '',
     trust_resolution_available: '',
+    all_trustees_signing: '',
+    trustees: [],
   }
 }
 
@@ -795,6 +847,16 @@ function normalizeRepeatablePeople(list = [], roleTitle = 'Director') {
     id_number: item?.id_number ?? item?.identity_number ?? item?.passport_number ?? '',
     signing_authority: normalizeYesNoChoice(item?.signing_authority),
   }))
+}
+
+function applyFirstFilled(target, key, values = []) {
+  if (normalizeInputValue(target[key]).length) {
+    return
+  }
+  const firstFilled = values.find((value) => normalizeInputValue(value).length)
+  if (firstFilled !== undefined) {
+    target[key] = firstFilled
+  }
 }
 
 function hasPurchaserData(entry = {}) {
@@ -1088,6 +1150,22 @@ function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType
       company[key] = formData[key]
     }
   })
+  applyFirstFilled(company, 'company_registered_address', [
+    company.registered_address,
+    formData.company_registered_address,
+    formData.registered_address,
+  ])
+  applyFirstFilled(company, 'company_business_address', [
+    company.business_address,
+    formData.company_business_address,
+    formData.business_address,
+  ])
+  applyFirstFilled(company, 'company_tax_number', [
+    company.tax_number,
+    formData.company_tax_number,
+    formData.tax_number,
+  ])
+  company.board_resolution_available = normalizeYesNoChoice(company.board_resolution_available || company.company_resolution_available)
   const companyDirectors = Array.isArray(company.directors)
     ? company.directors
     : Array.isArray(formData.directors)
@@ -1105,7 +1183,20 @@ function normalizeDetailsState(formData = {}, { purchaserEntityType, financeType
       trust[key] = formData[key]
     }
   })
-  trust.trust_resolution_available = normalizeYesNoChoice(trust.trust_resolution_available)
+  applyFirstFilled(trust, 'trust_registered_address', [
+    trust.registered_address,
+    formData.trust_registered_address,
+    formData.registered_address,
+  ])
+  applyFirstFilled(trust, 'trust_tax_number', [
+    trust.tax_number,
+    formData.trust_tax_number,
+    formData.tax_number,
+  ])
+  trust.trust_deed_available = normalizeYesNoChoice(trust.trust_deed_available)
+  trust.letters_of_authority_available = normalizeYesNoChoice(trust.letters_of_authority_available)
+  trust.trust_resolution_available = normalizeYesNoChoice(trust.trust_resolution_available || trust.resolution_available)
+  trust.all_trustees_signing = normalizeYesNoChoice(trust.all_trustees_signing)
   const trustTrustees = Array.isArray(trust.trustees)
     ? trust.trustees
     : Array.isArray(formData.trustees)
@@ -1431,6 +1522,11 @@ function ClientOnboarding() {
   const structuredFinance = detailsState.finance
   const structuredCompany = detailsState.company
   const structuredTrust = detailsState.trust
+  const rolePlayerPolicy = payload?.rolePlayerPolicy || {}
+  const buyerAppointedBondOriginatorAllowed = rolePlayerPolicy.buyerAppointedBondOriginatorAllowed !== false
+  const buyerAppointedBondOriginatorRequiresApproval = Boolean(
+    rolePlayerPolicy.buyerAppointedBondOriginatorRequiresApproval,
+  )
   const visibleFinanceSections = getVisibleFinanceSections(formData)
   const visibleFinanceFields = visibleFinanceSections.flatMap((section) => section.fields || [])
   const propertyAddressLine = String(
@@ -1609,10 +1705,35 @@ function ClientOnboarding() {
       finance: details.finance,
     }
 
-    return FINANCE_DETAIL_SECTIONS.filter((sectionConfig) => isDetailFieldVisible(sectionConfig, context)).map((sectionConfig) => ({
-      ...sectionConfig,
-      fields: getVisibleFields(sectionConfig.fields || [], context),
-    }))
+    return FINANCE_DETAIL_SECTIONS.filter((sectionConfig) => isDetailFieldVisible(sectionConfig, context))
+      .map((sectionConfig) => {
+        if (sectionConfig.key === 'bond_originator_support' && !buyerAppointedBondOriginatorAllowed) {
+          return null
+        }
+        const nextSection = { ...sectionConfig }
+        if (sectionConfig.key === 'bond_originator_support') {
+          nextSection.title = buyerAppointedBondOriginatorRequiresApproval
+            ? 'Nominate Bond Originator'
+            : 'Your Bond Originator'
+          nextSection.description = buyerAppointedBondOriginatorRequiresApproval
+            ? 'Share the bond originator you would like to use. Your agent/developer will review this before the assigned originator changes.'
+            : 'Share the bond originator you would like to use for this transaction.'
+          nextSection.notice = buyerAppointedBondOriginatorRequiresApproval
+            ? 'This request will be routed for approval before the assigned originator changes.'
+            : 'This originator can be applied immediately when you submit onboarding.'
+        }
+        nextSection.fields = getVisibleFields(nextSection.fields || [], context).map((fieldConfig) => {
+          if (fieldConfig.key !== 'bond_help_requested') return fieldConfig
+          return {
+            ...fieldConfig,
+            label: buyerAppointedBondOriginatorAllowed
+              ? 'Would you like to nominate your own bond originator?'
+              : 'Would you like help from the appointed bond originator?',
+          }
+        })
+        return nextSection
+      })
+      .filter(Boolean)
   }
 
   function getVisibleFinanceFields(values = formData) {
@@ -1780,6 +1901,10 @@ function ClientOnboarding() {
           required: fieldConfig.required,
         })
       })
+      const populatedDirectors = (details.company.directors || []).filter((director) => hasAssociatedPersonData(director, 'Director'))
+      if (!populatedDirectors.length) {
+        nextErrors['company.directors'] = 'Add at least one director or beneficial owner.'
+      }
       ;(details.company.directors || []).forEach((director, directorIndex) => {
         if (!hasAssociatedPersonData(director, 'Director')) {
           return
@@ -1810,6 +1935,10 @@ function ClientOnboarding() {
           required: fieldConfig.required,
         })
       })
+      const populatedTrustees = (details.trust.trustees || []).filter((trustee) => hasAssociatedPersonData(trustee, 'Trustee'))
+      if (!populatedTrustees.length) {
+        nextErrors['trust.trustees'] = 'Add at least one trustee.'
+      }
       ;(details.trust.trustees || []).forEach((trustee, trusteeIndex) => {
         if (!hasAssociatedPersonData(trustee, 'Trustee')) {
           return
@@ -1937,14 +2066,14 @@ function ClientOnboarding() {
       }
       if (fieldKey === 'bond_help_requested') {
         nextFinance.ooba_assist_requested = normalizeYesNoChoice(value)
-        if (normalizeYesNoChoice(value) !== 'yes') {
+        if (!buyerAppointedBondOriginatorAllowed || normalizeYesNoChoice(value) !== 'yes') {
           nextFinance.bond_originator_name = ''
           nextFinance.bond_originator_contact = ''
         }
       }
       if (fieldKey === 'ooba_assist_requested') {
         nextFinance.bond_help_requested = normalizeYesNoChoice(value)
-        if (normalizeYesNoChoice(value) !== 'yes') {
+        if (!buyerAppointedBondOriginatorAllowed || normalizeYesNoChoice(value) !== 'yes') {
           nextFinance.bond_originator_name = ''
           nextFinance.bond_originator_contact = ''
         }
@@ -2612,6 +2741,7 @@ function ClientOnboarding() {
     onChange,
   }) {
     const people = Array.isArray(items) ? items : []
+    const groupError = fieldErrors[collectionKey]
 
     return (
       <article className="rounded-[20px] border border-[#e2eaf3] bg-white p-4 shadow-[0_12px_26px_rgba(15,23,42,0.05)]">
@@ -2625,6 +2755,7 @@ function ClientOnboarding() {
               <Plus size={14} /> {addLabel}
             </Button>
           </div>
+          {groupError ? <p className="mt-3 text-xs font-medium text-[#d92d20]">{groupError}</p> : null}
         </header>
 
         {people.length ? (
@@ -2669,7 +2800,7 @@ function ClientOnboarding() {
           </div>
         ) : (
           <div className="rounded-[18px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-4 py-5 text-sm leading-6 text-[#6b7d93]">
-            No {itemLabel.toLowerCase()}s added yet. Use the button above if you need to capture additional people.
+            No {itemLabel.toLowerCase()}s added yet. Use the button above to capture the required people for this buyer.
           </div>
         )}
       </article>
@@ -2755,11 +2886,11 @@ function ClientOnboarding() {
 
         {purchaserEntityType === 'company'
           ? renderRepeatablePeopleCard({
-              title: 'Additional Directors',
+              title: 'Directors / Beneficial Owners',
               description:
-                'Add any other directors involved in the company. If the signatory is also a director, you can capture them here as well.',
+                'Capture the directors or beneficial owners involved in the company. Mark the people with signing authority.',
               items: structuredCompany.directors || [],
-              itemLabel: 'Director',
+              itemLabel: 'Director / Owner',
               addLabel: 'Add Director',
               collectionKey: 'company.directors',
               onAdd: addCompanyDirector,
@@ -2794,6 +2925,11 @@ function ClientOnboarding() {
             <header className="mb-5 border-b border-[#edf2f7] pb-4">
               <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{sectionConfig.title}</h4>
               {sectionConfig.description ? <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{sectionConfig.description}</p> : null}
+              {sectionConfig.notice ? (
+                <p className="mt-3 rounded-[14px] border border-[#d7eadf] bg-[#f3fbf7] px-3 py-2 text-sm leading-6 text-[#1f6f46]">
+                  {sectionConfig.notice}
+                </p>
+              ) : null}
             </header>
             <div className="grid gap-3 md:grid-cols-2">
               {(sectionConfig.fields || []).map((fieldConfig) => {

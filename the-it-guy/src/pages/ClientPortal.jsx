@@ -44,16 +44,12 @@ import {
   createClientPortalDocumentSignedUrl,
   respondToClientPortalAppointment,
   saveClientPortalOnboardingDraft,
-  saveClientHandoverDraft,
   submitClientPortalComment,
   uploadClientPortalDocument,
-  saveTrustInvestmentFormDraft,
   submitAlterationRequest,
-  submitClientHandover,
   submitClientIssue,
   submitClientSellerInterestRequest,
   submitServiceReview,
-  submitTrustInvestmentForm,
 } from '../lib/api'
 import { getClientPortalWorkspaceData } from '../services/clientPortalWorkspaceService'
 import {
@@ -87,12 +83,6 @@ const ISSUE_CATEGORIES = [
   'Kitchen / Cupboards',
   'Bathroom',
   'Other',
-]
-
-const HANDOVER_PHOTO_FIELDS = [
-  { key: 'electricity', label: 'Electricity meter photo', category: 'Handover / Electricity Meter' },
-  { key: 'water', label: 'Water meter photo', category: 'Handover / Water Meter' },
-  { key: 'gas', label: 'Gas meter photo', category: 'Handover / Gas Meter' },
 ]
 
 const SELLER_PORTAL_MENU = [
@@ -158,27 +148,6 @@ const SELLER_PROGRESS_STEPS = [
   { key: 'documents_complete', label: 'Documents Complete' },
 ]
 
-function formatPortalStepStatus(status) {
-  const normalized = String(status || '').trim().toLowerCase()
-  if (normalized === 'completed') return 'Completed'
-  if (normalized === 'in_progress') return 'In Progress'
-  if (normalized === 'blocked') return 'Blocked'
-  return 'Pending'
-}
-
-function formatPortalStepDate(value) {
-  if (!value) {
-    return '—'
-  }
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return '—'
-  }
-
-  return date.toLocaleDateString()
-}
-
 function toTitleLabel(value) {
   return String(value || '')
     .replaceAll('_', ' ')
@@ -208,6 +177,35 @@ function formatOnboardingFieldValue(value) {
   }
 
   return String(value)
+}
+
+function resolveBuyerBondOriginatorRequest(portal = {}) {
+  const formData = portal?.onboardingFormData?.formData || {}
+  return (
+    portal?.buyerBondOriginatorRequest ||
+    formData.buyer_bond_originator_request ||
+    formData.buyerBondOriginatorRequest ||
+    null
+  )
+}
+
+function getBuyerBondOriginatorRequestMessage(request = null) {
+  if (!request?.requested) return ''
+  const originatorName = request.companyName || request.company_name || 'your nominated bond originator'
+  const status = String(request.status || '').trim().toLowerCase()
+  if (status === 'pending_approval') {
+    return `Buyer request pending approval: ${originatorName}`
+  }
+  if (status === 'approved') {
+    return `Buyer-appointed originator approved: ${originatorName}`
+  }
+  if (status === 'rejected') {
+    return `Buyer-appointed originator not approved: ${originatorName}`
+  }
+  if (status === 'not_allowed') {
+    return 'This development uses the appointed bond originator.'
+  }
+  return ''
 }
 
 function getSellerPortalInitials(value = '', fallback = 'B9') {
@@ -1886,14 +1884,6 @@ function normalizePortalContextType(value = '') {
   return 'buying'
 }
 
-function hasActiveSellingContext(contexts = []) {
-  return (Array.isArray(contexts) ? contexts : []).some((context) => {
-    if (normalizePortalContextType(context?.contextType || context?.context_type) !== 'selling') return false
-    const status = String(context?.status || '').trim().toLowerCase()
-    return !status || status === 'active' || status === 'pending'
-  })
-}
-
 function normalizeSellerPortalKey(value = '') {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '_')
 }
@@ -1974,21 +1964,6 @@ function normalizeSellerOfferForDisplay(offer = {}, index = 0) {
   }
 }
 
-function enrichPortalWithContexts(portalData, portalContexts = null) {
-  if (!portalData) return portalData
-  const contexts = Array.isArray(portalContexts?.contexts) ? portalContexts.contexts : []
-  const sellingEnabled = Boolean(portalContexts?.hasSellingContext || hasActiveSellingContext(contexts))
-  const roles = sellingEnabled ? ['buyer', 'seller'] : ['buyer']
-  return {
-    ...portalData,
-    __portalType: 'buyer',
-    __workspaceRoles: roles,
-    __portalContexts: contexts,
-    __hasBuyingContext: portalContexts?.hasBuyingContext !== false,
-    __hasSellingContext: sellingEnabled,
-  }
-}
-
 const ZAR_CURRENCY = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
   currency: 'ZAR',
@@ -2002,7 +1977,7 @@ function cloneMyDetailsFormData(value) {
 
   try {
     return JSON.parse(JSON.stringify(value || {}))
-  } catch (_error) {
+  } catch {
     return { ...(value || {}) }
   }
 }
@@ -2225,6 +2200,74 @@ function isTruthyPortalValue(value) {
   if (value === false) return false
   const normalized = normalizePortalStatus(value)
   return normalized === 'true' || normalized === 'yes' || normalized === '1'
+}
+
+function normalizePortalFinancialChoice(value, allowedValues, fallback) {
+  const normalized = normalizePortalStatus(value)
+  return allowedValues.includes(normalized) ? normalized : fallback
+}
+
+function normalizePortalReservationAmountType(value) {
+  return normalizePortalFinancialChoice(value, ['fixed', 'percentage'], 'fixed')
+}
+
+function normalizePortalReservationTreatment(value) {
+  return normalizePortalFinancialChoice(
+    value,
+    ['credited_to_purchase_price', 'separate_invoice', 'refundable_hold'],
+    'credited_to_purchase_price',
+  )
+}
+
+function normalizePortalReservationPayableTo(value) {
+  return normalizePortalFinancialChoice(value, ['developer', 'agency_trust', 'attorney_trust'], 'developer')
+}
+
+function normalizePortalAlterationChargeTreatment(value) {
+  return normalizePortalFinancialChoice(
+    value,
+    ['included_in_purchase_price', 'separate_invoice', 'no_charge'],
+    'included_in_purchase_price',
+  )
+}
+
+function getReservationAmountTypeLabel(value) {
+  return normalizePortalReservationAmountType(value) === 'percentage' ? 'Percentage of purchase price' : 'Fixed amount'
+}
+
+function getReservationTreatmentLabel(value) {
+  const normalized = normalizePortalReservationTreatment(value)
+  if (normalized === 'separate_invoice') return 'Separate invoice'
+  if (normalized === 'refundable_hold') return 'Refundable holding deposit'
+  return 'Deducted from purchase price'
+}
+
+function getReservationTreatmentDescription(value) {
+  const normalized = normalizePortalReservationTreatment(value)
+  if (normalized === 'separate_invoice') return 'This reservation payment is handled separately from the purchase price.'
+  if (normalized === 'refundable_hold') return 'This reservation payment is held and may be refunded according to the agreement terms.'
+  return 'This reservation payment is credited towards the agreed purchase price.'
+}
+
+function getReservationPayableToLabel(value) {
+  const normalized = normalizePortalReservationPayableTo(value)
+  if (normalized === 'agency_trust') return 'Agency trust account'
+  if (normalized === 'attorney_trust') return 'Attorney trust account'
+  return 'Developer'
+}
+
+function getAlterationChargeTreatmentLabel(value) {
+  const normalized = normalizePortalAlterationChargeTreatment(value)
+  if (normalized === 'separate_invoice') return 'Invoiced separately'
+  if (normalized === 'no_charge') return 'No charge by default'
+  return 'Included in purchase price'
+}
+
+function getAlterationChargeTreatmentDescription(value) {
+  const normalized = normalizePortalAlterationChargeTreatment(value)
+  if (normalized === 'separate_invoice') return 'Approved alteration costs are expected to be billed separately.'
+  if (normalized === 'no_charge') return 'The team has marked this as no charge unless they advise otherwise.'
+  return 'Approved alteration costs are expected to form part of the purchase price.'
 }
 
 function getDaysInStageLabel(value) {
@@ -2490,11 +2533,15 @@ function buildClientJourneyFeedItem(item, index = 0) {
     id: item?.id || `update_${index}`,
     authorName,
     authorRole,
+    title: item?.title || formatted?.title || '',
     message: formatted?.summary || 'Your team posted a progress update.',
     timestampLabel,
     actionLabel: formatted?.actionLabel || '',
     actionRoute: formatted?.actionRoute || '',
     requiresAttention: formatted?.requiresAttention || false,
+    statusLabel: item?.statusLabel || item?.metadata?.statusLabel || '',
+    displayType: item?.displayType || item?.metadata?.displayType || 'update',
+    dueStatus: item?.dueStatus || item?.metadata?.dueStatus || '',
   }
 }
 
@@ -3197,27 +3244,6 @@ function ClientPortal() {
     improvements: '',
     allowMarketingUse: false,
   })
-  const [trustForm, setTrustForm] = useState({
-    attorneyFirmName: '',
-    purchaserFullName: '',
-    purchaserIdentityOrRegistrationNumber: '',
-    fullName: '',
-    identityOrRegistrationNumber: '',
-    incomeTaxNumber: '',
-    southAfricanResident: null,
-    physicalAddress: '',
-    postalAddress: '',
-    telephoneNumber: '',
-    faxNumber: '',
-    balanceTo: '',
-    bankName: '',
-    accountNumber: '',
-    branchNumber: '',
-    sourceOfFunds: '',
-    declarationAccepted: false,
-    signatureName: '',
-    signedDate: '',
-  })
   const [handoverForm, setHandoverForm] = useState({
     handoverDate: '',
     electricityMeterReading: '',
@@ -3230,12 +3256,7 @@ function ClientPortal() {
     notes: '',
     signatureName: '',
   })
-  const [handoverPhotoFiles, setHandoverPhotoFiles] = useState({
-    electricity: null,
-    water: null,
-    gas: null,
-  })
-  const [portalContexts, setPortalContexts] = useState({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
+  const portalContextsRef = useRef({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
   const [workspaceData, setWorkspaceData] = useState(null)
   const [sellerRequestForm, setSellerRequestForm] = useState({
     propertyAddress: '',
@@ -3301,11 +3322,11 @@ function ClientPortal() {
           mode: 'full',
           sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
         })
-        setPortalContexts({
+        portalContextsRef.current = {
           contexts: data?.portalContext?.contexts || [],
           hasBuyingContext: data?.portalContext?.hasBuyingContext !== false,
           hasSellingContext: Boolean(data?.portalContext?.hasSellingContext),
-        })
+        }
         setWorkspaceData(data)
         setPortal(data?.legacyPortalData || null)
         setSellerPortalAuth(null)
@@ -3337,11 +3358,11 @@ function ClientPortal() {
         mode: 'core',
         sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
       })
-      setPortalContexts({
+      portalContextsRef.current = {
         contexts: coreData?.portalContext?.contexts || [],
         hasBuyingContext: coreData?.portalContext?.hasBuyingContext !== false,
         hasSellingContext: Boolean(coreData?.portalContext?.hasSellingContext),
-      })
+      }
       setWorkspaceData(coreData)
       setPortal(coreData?.legacyPortalData || null)
       setSellerPortalAuth(null)
@@ -3370,11 +3391,11 @@ function ClientPortal() {
         mode: 'full',
         sellerPortalAccessToken: isSellerPortalToken ? sellerPortalAccessToken : '',
       })
-      setPortalContexts({
+      portalContextsRef.current = {
         contexts: fullData?.portalContext?.contexts || [],
         hasBuyingContext: fullData?.portalContext?.hasBuyingContext !== false,
         hasSellingContext: Boolean(fullData?.portalContext?.hasSellingContext),
-      })
+      }
       setWorkspaceData(fullData)
       setPortal(fullData?.legacyPortalData || null)
       setSellerPortalAuth(null)
@@ -4236,63 +4257,6 @@ function ClientPortal() {
     }
   }
 
-  async function handleUploadOccupationalRentProof(file) {
-    if (!file) {
-      return
-    }
-
-    try {
-      setSaving(true)
-      setError('')
-      const uploaded = await uploadClientPortalDocument({
-        token,
-        file,
-        category: 'Occupational Rent / Proof of Payment',
-      })
-      applyUploadedPortalDocument(uploaded)
-      await submitClientPortalComment({
-        token,
-        commentText: 'Uploaded occupational rent proof of payment.',
-      })
-      await loadPortal()
-    } catch (uploadError) {
-      setError(uploadError.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  useEffect(() => {
-    if (!portal?.trustInvestmentForm) {
-      return
-    }
-
-    setTrustForm({
-      attorneyFirmName: portal.trustInvestmentForm.attorneyFirmName || '',
-      purchaserFullName: portal.trustInvestmentForm.purchaserFullName || portal.buyer?.name || '',
-      purchaserIdentityOrRegistrationNumber: portal.trustInvestmentForm.purchaserIdentityOrRegistrationNumber || '',
-      fullName: portal.trustInvestmentForm.fullName || portal.buyer?.name || '',
-      identityOrRegistrationNumber: portal.trustInvestmentForm.identityOrRegistrationNumber || '',
-      incomeTaxNumber: portal.trustInvestmentForm.incomeTaxNumber || '',
-      southAfricanResident:
-        portal.trustInvestmentForm.southAfricanResident === true || portal.trustInvestmentForm.southAfricanResident === false
-          ? portal.trustInvestmentForm.southAfricanResident
-          : null,
-      physicalAddress: portal.trustInvestmentForm.physicalAddress || '',
-      postalAddress: portal.trustInvestmentForm.postalAddress || '',
-      telephoneNumber: portal.trustInvestmentForm.telephoneNumber || portal.buyer?.phone || '',
-      faxNumber: portal.trustInvestmentForm.faxNumber || '',
-      balanceTo: portal.trustInvestmentForm.balanceTo || '',
-      bankName: portal.trustInvestmentForm.bankName || '',
-      accountNumber: portal.trustInvestmentForm.accountNumber || '',
-      branchNumber: portal.trustInvestmentForm.branchNumber || '',
-      sourceOfFunds: portal.trustInvestmentForm.sourceOfFunds || '',
-      declarationAccepted: Boolean(portal.trustInvestmentForm.declarationAccepted),
-      signatureName: portal.trustInvestmentForm.signatureName || portal.buyer?.name || '',
-      signedDate: portal.trustInvestmentForm.signedDate || '',
-    })
-  }, [portal])
-
   useEffect(() => {
     if (!portal?.handover) {
       return
@@ -4311,108 +4275,6 @@ function ClientPortal() {
       signatureName: portal.handover.signatureName || portal.buyer?.name || '',
     })
   }, [portal])
-
-  function updateTrustField(field, value) {
-    setTrustForm((previous) => ({ ...previous, [field]: value }))
-  }
-
-  async function handleTrustFormSave() {
-    try {
-      setSaving(true)
-      setError('')
-      await saveTrustInvestmentFormDraft({
-        token,
-        form: trustForm,
-      })
-      await loadPortal()
-    } catch (saveError) {
-      setError(saveError.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleTrustFormSubmit() {
-    try {
-      setSaving(true)
-      setError('')
-      await submitTrustInvestmentForm({
-        token,
-        form: trustForm,
-      })
-      await loadPortal()
-    } catch (submitError) {
-      setError(submitError.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function updateHandoverField(field, value) {
-    setHandoverForm((previous) => ({ ...previous, [field]: value }))
-  }
-
-  async function handleHandoverSave() {
-    try {
-      setSaving(true)
-      setError('')
-      await saveClientHandoverDraft({
-        token,
-        handover: handoverForm,
-      })
-      for (const field of HANDOVER_PHOTO_FIELDS) {
-        const file = handoverPhotoFiles[field.key]
-        if (!file) continue
-        const uploaded = await uploadClientPortalDocument({
-          token,
-          file,
-          category: field.category,
-        })
-        applyUploadedPortalDocument(uploaded)
-      }
-      setHandoverPhotoFiles({
-        electricity: null,
-        water: null,
-        gas: null,
-      })
-      await loadPortal()
-    } catch (saveError) {
-      setError(saveError.message)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleHandoverComplete() {
-    try {
-      setSaving(true)
-      setError('')
-      await submitClientHandover({
-        token,
-        handover: handoverForm,
-      })
-      for (const field of HANDOVER_PHOTO_FIELDS) {
-        const file = handoverPhotoFiles[field.key]
-        if (!file) continue
-        const uploaded = await uploadClientPortalDocument({
-          token,
-          file,
-          category: field.category,
-        })
-        applyUploadedPortalDocument(uploaded)
-      }
-      setHandoverPhotoFiles({
-        electricity: null,
-        water: null,
-        gas: null,
-      })
-      await loadPortal()
-    } catch (submitError) {
-      setError(submitError.message)
-    } finally {
-      setSaving(false)
-    }
-  }
 
   async function handleSubmitSellerAssistanceRequest(event) {
     event.preventDefault()
@@ -4577,7 +4439,7 @@ function ClientPortal() {
     if (!sellerListingId || typeof window === 'undefined') return []
     try {
       return getOffersForListing(sellerListingId)
-    } catch (_error) {
+    } catch {
       return []
     }
   })()
@@ -4654,15 +4516,6 @@ function ClientPortal() {
   const isReview = workspaceSection === 'review'
   const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller' && ['overview', 'appointments', 'offers', 'documents', 'details'].includes(workspaceSection)
 
-  const trustFormStatus = portal?.trustInvestmentForm?.status || 'Not Started'
-  const trustFormSubmittedAt = portal?.trustInvestmentForm?.submittedAt || null
-  const trustFormActionLabel =
-    trustFormStatus === 'Not Started'
-      ? 'Complete Form'
-      : trustFormStatus === 'In Progress'
-        ? 'Continue Form'
-        : 'View Submitted Form'
-  const trustFormLocked = trustFormStatus === 'Approved'
   const handoverStatus = portal?.handover?.status || 'not_started'
   const handoverCompleted = handoverStatus === 'completed'
   const onboardingFieldEntries = Object.entries(portal?.onboardingFormData?.formData || {})
@@ -4762,6 +4615,33 @@ function ClientPortal() {
       ? 'Amount pending'
       : ZAR_CURRENCY.format(Number(portal.transaction.reservation_amount) || 0)
   const reservationStatus = normalizePortalStatus(portal?.transaction?.reservation_status || '')
+  const reservationAmountTypeLabel = getReservationAmountTypeLabel(
+    portal?.transaction?.reservation_amount_type || portal?.transaction?.reservationAmountType,
+  )
+  const reservationTreatmentLabel = getReservationTreatmentLabel(
+    portal?.transaction?.reservation_treatment || portal?.transaction?.reservationTreatment,
+  )
+  const reservationTreatmentDescription = getReservationTreatmentDescription(
+    portal?.transaction?.reservation_treatment || portal?.transaction?.reservationTreatment,
+  )
+  const reservationPayableToLabel = getReservationPayableToLabel(
+    portal?.transaction?.reservation_payable_to || portal?.transaction?.reservationPayableTo,
+  )
+  const defaultAlterationChargeTreatment = normalizePortalAlterationChargeTreatment(
+    portal?.transaction?.alteration_charge_treatment ||
+      portal?.transaction?.alterationChargeTreatment ||
+      portal?.settings?.default_alteration_charge_treatment ||
+      portal?.settings?.defaultAlterationChargeTreatment,
+  )
+  const defaultAlterationChargeTreatmentLabel = getAlterationChargeTreatmentLabel(defaultAlterationChargeTreatment)
+  const defaultAlterationChargeTreatmentDescription = getAlterationChargeTreatmentDescription(defaultAlterationChargeTreatment)
+  const alterationRequestItems = Array.isArray(portal?.alterations) ? portal.alterations : []
+  const alterationIncludedTotal = alterationRequestItems
+    .filter((item) => normalizePortalAlterationChargeTreatment(item?.charge_treatment || item?.chargeTreatment || defaultAlterationChargeTreatment) === 'included_in_purchase_price')
+    .reduce((sum, item) => sum + (Number(item?.amount_inc_vat) || 0), 0)
+  const alterationSeparateInvoiceTotal = alterationRequestItems
+    .filter((item) => normalizePortalAlterationChargeTreatment(item?.charge_treatment || item?.chargeTreatment || defaultAlterationChargeTreatment) === 'separate_invoice')
+    .reduce((sum, item) => sum + (Number(item?.amount_inc_vat) || 0), 0)
   const groupedPortalRequiredDocuments = groupPortalRequiredDocuments(visiblePortalRequiredDocuments)
   const sharedPortalDocuments = (portal?.documents || []).filter((document) => String(document.uploaded_by_role || '').toLowerCase() !== 'client')
   const portalDocumentLookupRows = [
@@ -5137,11 +5017,6 @@ function ClientPortal() {
     .map((tab) => ({ ...tab, count: Number(documentTabCountByKey[tab.key] || 0) }))
   const hasDocumentsTab = documentTabs.some((tab) => tab.key === activeDocumentsTab)
   const activeDocumentsTabKey = hasDocumentsTab ? activeDocumentsTab : (documentTabs[0]?.key || 'sales')
-  const handoverMeterDocuments = HANDOVER_PHOTO_FIELDS.map((field) => ({
-    ...field,
-    document:
-      (portal?.documents || []).find((item) => String(item.category || '').toLowerCase() === field.category.toLowerCase()) || null,
-  }))
   const occupationalRent = portal?.occupationalRent || null
   const occupationalRentProofDocument =
     (portal?.documents || []).find((item) =>
@@ -5154,6 +5029,16 @@ function ClientPortal() {
   const latestUpdates = Array.isArray(workspaceData?.activityFeed) && workspaceData.activityFeed.length
     ? workspaceData.activityFeed.slice(0, 8)
     : (portal?.discussion || []).slice(0, 5)
+  const activityFeedSummary = workspaceData?.activityFeedSummary || {}
+  const latestUpdatesSubtitle = (() => {
+    const actionRequired = Number(activityFeedSummary?.actionRequired || 0)
+    const overdue = Number(activityFeedSummary?.overdue || 0)
+    const dueSoon = Number(activityFeedSummary?.dueSoon || 0)
+    if (overdue > 0) return `${overdue} overdue item${overdue === 1 ? '' : 's'} need attention.`
+    if (actionRequired > 0) return `${actionRequired} update${actionRequired === 1 ? '' : 's'} need your attention.`
+    if (dueSoon > 0) return `${dueSoon} document reminder${dueSoon === 1 ? '' : 's'} due soon.`
+    return 'Latest progress from your transaction team.'
+  })()
   const latestJourneyUpdates = latestUpdates.map((item) => buildClientFacingUpdate(item))
   const latestJourneyFeedItems = latestUpdates.map((item, index) => buildClientJourneyFeedItem(item, index))
   const otpSignaturePending = portalRequiredDocuments.some((item) => {
@@ -5161,9 +5046,60 @@ function ClientPortal() {
     const haystack = `${item.key || ''} ${item.label || ''} ${item.description || ''}`.toLowerCase()
     return /otp|offer to purchase/.test(haystack) && /sign|signature|signed/.test(haystack)
   })
-  const totalRequiredDocuments = Number(portal.requiredDocumentSummary?.totalRequired || 0)
   const uploadedRequiredDocuments = Number(portal.requiredDocumentSummary?.uploadedCount || 0)
   const onboardingComplete = isClientOnboardingComplete(onboardingStatus)
+  const buyerPortalAccessMethod = 'Secure link'
+  const buyerPortalAccessDescription =
+    'This buyer portal opens from your private transaction link. You do not need to create a password for this buyer workspace.'
+  const buyerPortalStatusItems = [
+    {
+      key: 'access',
+      label: 'Portal access',
+      value: 'Link active',
+      detail: buyerPortalAccessMethod,
+      tone: 'complete',
+    },
+    {
+      key: 'onboarding',
+      label: 'Onboarding',
+      value: onboardingComplete ? 'Complete' : toTitleLabel(onboardingStatus || 'In progress'),
+      detail: onboardingComplete ? 'Buyer profile received' : 'Buyer details still need attention',
+      tone: onboardingComplete ? 'complete' : 'action',
+    },
+    {
+      key: 'documents',
+      label: 'Documents',
+      value: missingRequired > 0 ? `${missingRequired} outstanding` : 'Ready',
+      detail: missingRequired > 0 ? 'Uploads are still required' : 'No required uploads outstanding',
+      tone: missingRequired > 0 ? 'action' : 'complete',
+    },
+    isBondOrHybridTransaction
+      ? {
+          key: 'bond',
+          label: 'Bond application',
+          value: bondApplicationStatus,
+          detail:
+            bondApplicationStatus === 'Submitted'
+              ? 'Submitted to the transaction workspace'
+              : bondApplicationStatus === 'Not Started'
+                ? 'Available when ready'
+                : 'Progress saved in the portal',
+          tone: ['Submitted', 'Approved'].includes(bondApplicationStatus) ? 'complete' : 'info',
+        }
+      : {
+          key: 'bond',
+          label: 'Bond application',
+          value: 'Not required',
+          detail: 'This transaction is not bond-financed',
+          tone: 'neutral',
+        },
+  ]
+  const buyerPortalStatusToneClasses = {
+    complete: 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]',
+    action: 'border-[#f0d8ae] bg-[#fff6e7] text-[#9a5b0f]',
+    info: 'border-[#d6e3f1] bg-[#eef5fb] text-[#35546c]',
+    neutral: 'border-[#dde7f1] bg-white text-[#64748b]',
+  }
   const occupationalRentProofPending =
     occupationalRent?.enabled &&
     occupationalRent?.status &&
@@ -5601,6 +5537,8 @@ function ClientPortal() {
     bondAttorneyRolePlayer ? { key: 'bond', label: 'Bond Attorney', value: bondAttorneyRolePlayer } : null,
   ].filter(Boolean)
   const hasAttorneyRolePlayers = attorneyRolePlayerCards.length > 0
+  const buyerBondOriginatorRequest = resolveBuyerBondOriginatorRequest(portal)
+  const buyerBondOriginatorRequestMessage = getBuyerBondOriginatorRequestMessage(buyerBondOriginatorRequest)
 
   const teamMembers = [
     {
@@ -5621,6 +5559,7 @@ function ClientPortal() {
       title: 'Bond Originator',
       name: portal?.transaction?.bond_originator || 'Bond Originator',
       detail: portal?.transaction?.assigned_bond_originator_email || 'Supports finance approvals and lender feedback.',
+      extraDetail: buyerBondOriginatorRequestMessage,
     },
     {
       title: 'Arch9 Support',
@@ -6704,6 +6643,34 @@ function ClientPortal() {
                       })}
                     </div>
                   </article>
+
+                  <article className="rounded-[20px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <span className="text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Portal access</span>
+                        <h3 className="mt-1 text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Secure buyer link active</h3>
+                        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#566b82]">{buyerPortalAccessDescription}</p>
+                      </div>
+                      <Link
+                        to={getClientPortalPath(token, 'settings')}
+                        className="inline-flex min-h-[38px] items-center gap-2 rounded-[11px] border border-[#d1deeb] bg-white px-3 py-2 text-sm font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]"
+                      >
+                        <ShieldCheck size={14} />
+                        Access details
+                      </Link>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {buyerPortalStatusItems.map((item) => (
+                        <article key={item.key} className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                          <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">{item.label}</span>
+                          <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{item.value}</strong>
+                          <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-[0.66rem] font-semibold ${buyerPortalStatusToneClasses[item.tone] || buyerPortalStatusToneClasses.neutral}`}>
+                            {item.detail}
+                          </span>
+                        </article>
+                      ))}
+                    </div>
+                  </article>
                 </div>
               ) : isDocuments || isHandover || isBondApplication ? (
                 <div className="space-y-4">
@@ -6864,22 +6831,32 @@ function ClientPortal() {
                           Please pay the reservation deposit and upload proof of payment so your team can verify and continue.
                         </p>
 
-                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                           <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
                             <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Amount due</span>
                             <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationAmountLabel}</strong>
                           </article>
                           <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Amount type</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationAmountTypeLabel}</strong>
+                          </article>
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">How it is treated</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationTreatmentLabel}</strong>
+                          </article>
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
+                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Payable to</span>
+                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationPayableToLabel}</strong>
+                          </article>
+                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
                             <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Current status</span>
                             <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{reservationProofStatusLabel}</strong>
                           </article>
-                          <article className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3.5 py-3">
-                            <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Proof of payment</span>
-                            <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">
-                              {reservationProofStatusLabel}
-                            </strong>
-                          </article>
                         </div>
+
+                        <p className="mt-3 rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2 text-xs leading-5 text-[#5f7288]">
+                          {reservationTreatmentDescription}
+                        </p>
 
                         {reservationProofUploaded ? (
                           <div className="mt-3 space-y-1 text-xs text-[#6b7d93]">
@@ -7030,7 +7007,7 @@ function ClientPortal() {
                   onCommentSubmit={handleSubmitPortalComment}
                   onActionClick={handleActivityAction}
                   heading="Recent Updates"
-                  subtitle="Latest progress from your transaction team."
+                  subtitle={latestUpdatesSubtitle}
                 />
                 </section>
 
@@ -8313,6 +8290,8 @@ function ClientPortal() {
                           <p className="mt-2 text-xs leading-5 text-[#6b7d93]">{reservationPaymentInstructions}</p>
                         ) : null}
                         <p className="mt-2 text-xs font-medium text-[#7b8ca2]">Deposit amount: {reservationAmountLabel}</p>
+                        <p className="mt-1 text-xs font-medium text-[#7b8ca2]">Treatment: {reservationTreatmentLabel}</p>
+                        <p className="mt-1 text-xs font-medium text-[#7b8ca2]">Payable to: {reservationPayableToLabel}</p>
                         {reservationRejectedNote ? (
                           <p className="mt-2 text-xs font-medium text-[#b5472d]">Review note: {reservationRejectedNote}</p>
                         ) : null}
@@ -8387,6 +8366,8 @@ function ClientPortal() {
                           Payment received and captured for this transaction.
                         </p>
                         <p className="mt-2 text-xs font-medium text-[#5f7288]">Deposit amount: {reservationAmountLabel}</p>
+                        <p className="mt-1 text-xs font-medium text-[#5f7288]">Treatment: {reservationTreatmentLabel}</p>
+                        <p className="mt-1 text-xs font-medium text-[#5f7288]">Payable to: {reservationPayableToLabel}</p>
                         <div className="mt-2 space-y-1 text-xs text-[#5f7288]">
                           <p>
                             File:{' '}
@@ -9625,6 +9606,28 @@ function ClientPortal() {
             </span>
           </div>
 
+          <section className="mt-5 rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Portal access</h4>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[#5a6b80]">{buyerPortalAccessDescription}</p>
+              </div>
+              <span className="inline-flex w-fit items-center gap-2 rounded-full border border-[#cfe4d8] bg-[#eef9f2] px-4 py-2 text-sm font-semibold text-[#2f7a51]">
+                <ShieldCheck size={16} />
+                Link active
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {buyerPortalStatusItems.map((item) => (
+                <article key={`settings-${item.key}`} className="rounded-[18px] border border-[#e3ebf4] bg-white px-4 py-4">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{item.label}</span>
+                  <strong className="mt-3 block text-sm font-semibold text-[#142132]">{item.value}</strong>
+                  <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{item.detail}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <section className="rounded-[22px] border border-[#dbe5ef] bg-[#fbfdff] px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Workspace configuration</h4>
@@ -9647,6 +9650,7 @@ function ClientPortal() {
               <h4 className="text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">Support notes</h4>
               <div className="mt-4 space-y-3">
                 {[
+                  'Keep your buyer portal link private. Anyone who needs access should use the link sent by your transaction team.',
                   'Use Comments & Updates on the progress page when you want your team to respond inside the shared transaction record.',
                   'Document upload requests will appear automatically in your document workspace as different role players ask for additional items.',
                   'Handover scheduling and warranty information will only appear once your transaction is close enough to occupation or transfer.',
@@ -9716,6 +9720,11 @@ function ClientPortal() {
                     <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">{member.title}</span>
                     <h4 className="mt-3 text-[1.05rem] font-semibold tracking-[-0.03em] text-[#142132]">{member.name}</h4>
                     <p className="mt-2 text-sm leading-6 text-[#6b7d93]">{member.detail}</p>
+                    {member.extraDetail ? (
+                      <p className="mt-3 rounded-[14px] border border-[#d7eadf] bg-white px-3 py-2 text-sm leading-6 text-[#1f6f46]">
+                        {member.extraDetail}
+                      </p>
+                    ) : null}
                   </div>
                   <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#dde7f1] bg-white text-[#35546c]">
                     <Users size={18} />
@@ -9735,6 +9744,29 @@ function ClientPortal() {
               <p>Submit controlled changes for developer review and formal response.</p>
             </div>
           </div>
+
+          <section className="rounded-[18px] border border-[#dbe5ef] bg-[#fbfdff] px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Default cost treatment</p>
+                <h4 className="mt-1 text-[1rem] font-semibold text-[#142132]">{defaultAlterationChargeTreatmentLabel}</h4>
+                <p className="mt-1 text-sm leading-6 text-[#5f7288]">{defaultAlterationChargeTreatmentDescription}</p>
+              </div>
+              <span className="inline-flex items-center rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                Applied unless your team confirms otherwise
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Included in purchase price</span>
+                <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{ZAR_CURRENCY.format(alterationIncludedTotal)}</strong>
+              </article>
+              <article className="rounded-[14px] border border-[#e3ebf4] bg-white px-3.5 py-3">
+                <span className="block text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Separate invoices</span>
+                <strong className="mt-1.5 block text-sm font-semibold text-[#142132]">{ZAR_CURRENCY.format(alterationSeparateInvoiceTotal)}</strong>
+              </article>
+            </div>
+          </section>
 
           <form className="stack-form client-form" onSubmit={handleSubmitAlteration}>
             <label>
@@ -9799,25 +9831,35 @@ function ClientPortal() {
           </form>
 
           <ul className="request-list">
-            {portal.alterations.map((item) => (
-              <li key={item.id} className="request-row">
-                <div className="request-main">
-                  <strong>{item.title}</strong>
-                  <p>{item.description}</p>
-                  <span>
-                    {item.category || 'General'} • {item.budget_range || 'No budget supplied'} •{' '}
-                    {item.preferred_timing || 'No timing supplied'}
-                  </span>
-                  {item.reference_image_url ? (
-                    <a href={item.reference_image_url} target="_blank" rel="noreferrer" className="inline-link">
-                      View reference image
-                    </a>
-                  ) : null}
-                </div>
-                <span className="status-pill">{item.status}</span>
-              </li>
-            ))}
-            {!portal.alterations.length ? <li className="empty-text">No alteration requests submitted yet.</li> : null}
+            {alterationRequestItems.map((item) => {
+              const itemChargeTreatment = normalizePortalAlterationChargeTreatment(
+                item?.charge_treatment || item?.chargeTreatment || defaultAlterationChargeTreatment,
+              )
+              const itemAmount = Number(item?.amount_inc_vat) || 0
+              return (
+                <li key={item.id} className="request-row">
+                  <div className="request-main">
+                    <strong>{item.title}</strong>
+                    <p>{item.description}</p>
+                    <span>
+                      {item.category || 'General'} • {item.budget_range || 'No budget supplied'} •{' '}
+                      {item.preferred_timing || 'No timing supplied'}
+                    </span>
+                    <span>
+                      Cost treatment: {getAlterationChargeTreatmentLabel(itemChargeTreatment)}
+                      {itemAmount > 0 ? ` • Amount: ${ZAR_CURRENCY.format(itemAmount)}` : ''}
+                    </span>
+                    {item.reference_image_url ? (
+                      <a href={item.reference_image_url} target="_blank" rel="noreferrer" className="inline-link">
+                        View reference image
+                      </a>
+                    ) : null}
+                  </div>
+                  <span className="status-pill">{item.status}</span>
+                </li>
+              )
+            })}
+            {!alterationRequestItems.length ? <li className="empty-text">No alteration requests submitted yet.</li> : null}
           </ul>
         </section>
       ) : null}

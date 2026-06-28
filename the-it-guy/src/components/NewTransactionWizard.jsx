@@ -31,6 +31,33 @@ const STEP_DESCRIPTIONS = [
   'Capture the property and client basics. Purchaser structure, finance setup, and supporting details will be completed on the onboarding link.',
 ]
 
+const RESERVATION_AMOUNT_TYPE_OPTIONS = [
+  { value: 'fixed', label: 'Fixed rand amount' },
+  { value: 'percentage', label: 'Percentage of purchase price' },
+]
+
+const RESERVATION_TREATMENT_OPTIONS = [
+  { value: 'credited_to_purchase_price', label: 'Deduct from purchase price' },
+  { value: 'separate_invoice', label: 'Invoice separately' },
+  { value: 'refundable_hold', label: 'Refundable holding deposit' },
+]
+
+const RESERVATION_PAYABLE_TO_OPTIONS = [
+  { value: 'developer', label: 'Developer' },
+  { value: 'agency_trust', label: 'Agency trust account' },
+  { value: 'attorney_trust', label: 'Attorney trust account' },
+]
+
+const ALTERATION_CHARGE_TREATMENT_OPTIONS = [
+  { value: 'included_in_purchase_price', label: 'Include in purchase price' },
+  { value: 'separate_invoice', label: 'Invoice separately' },
+  { value: 'no_charge', label: 'No charge by default' },
+]
+
+function getOptionLabel(options, value, fallback = 'Not set') {
+  return options.find((option) => option.value === value)?.label || fallback
+}
+
 function isPrivateTransactionType(value) {
   const normalized = String(value || '')
     .trim()
@@ -82,7 +109,11 @@ function createInitialForm(initialDevelopmentId = '') {
       depositAmount: '',
       reservationRequired: null,
       reservationAmount: '',
+      reservationAmountType: 'fixed',
+      reservationTreatment: 'credited_to_purchase_price',
+      reservationPayableTo: 'developer',
       reservationStatus: 'not_required',
+      alterationChargeTreatment: 'included_in_purchase_price',
       bondOriginator: '',
       bondOriginatorEmail: '',
       bank: '',
@@ -208,6 +239,169 @@ function mergePartnerConnectionOptions(connectionOptions = [], legacyOptions = [
     }
   })
   return [...byKey.values()]
+}
+
+function normalizeSearchKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+}
+
+function getDevelopmentRolePlayerDefaults(development = {}) {
+  return (
+    development?.rolePlayerDefaults ||
+    development?.role_player_defaults ||
+    development?.stakeholderTeams?.rolePlayerDefaults ||
+    development?.stakeholderTeams?.role_player_defaults ||
+    development?.stakeholder_teams?.rolePlayerDefaults ||
+    development?.stakeholder_teams?.role_player_defaults ||
+    {}
+  )
+}
+
+function getDevelopmentStakeholderTeams(development = {}) {
+  return development?.stakeholderTeams || development?.stakeholder_teams || {}
+}
+
+function normalizeDevelopmentTeamMember(roleType, member = {}, index = 0) {
+  const companyName =
+    roleType === 'transfer_attorney'
+      ? pickFirstValue(member.companyName, member.company_name, member.firmName, member.firm_name, member.name)
+      : pickFirstValue(member.companyName, member.company_name, member.name, member.firmName, member.firm_name)
+  const contactPerson = pickFirstValue(
+    member.contactPerson,
+    member.contact_person,
+    member.contactName,
+    member.contact_name,
+    member.primaryContactName,
+    member.primary_contact_name,
+    companyName,
+  )
+  const email = pickFirstValue(
+    member.email,
+    member.emailAddress,
+    member.email_address,
+    member.contactEmail,
+    member.contact_email,
+    member.primaryContactEmail,
+    member.primary_contact_email,
+  )
+  const phone = pickFirstValue(
+    member.phone,
+    member.phoneNumber,
+    member.phone_number,
+    member.contactPhone,
+    member.contact_phone,
+    member.primaryContactPhone,
+    member.primary_contact_phone,
+  )
+  const organisationId = pickFirstValue(
+    member.organisationId,
+    member.organisation_id,
+    member.organizationId,
+    member.organization_id,
+    member.partnerOrganisationId,
+    member.partner_organisation_id,
+  )
+
+  if (!companyName && !contactPerson && !email && !organisationId) {
+    return null
+  }
+
+  return {
+    id: `development-default:${roleType}:${organisationId || email || companyName || index}`,
+    source: 'development_default',
+    roleType,
+    relationshipType: 'development_default',
+    companyName,
+    contactPerson,
+    email,
+    phone,
+    organisationId,
+    partnerOrganisationId: organisationId,
+    partnerOrganizationId: organisationId,
+    index,
+  }
+}
+
+function getDevelopmentTeamDefaultOption({ development, roleType, partnerOptions = [] }) {
+  const defaults = getDevelopmentRolePlayerDefaults(development)
+  const source =
+    roleType === 'transfer_attorney'
+      ? defaults.defaultTransferAttorneySource || defaults.default_transfer_attorney_source
+      : defaults.defaultBondOriginatorSource || defaults.default_bond_originator_source
+
+  if (source === 'none') {
+    return null
+  }
+
+  const teams = getDevelopmentStakeholderTeams(development)
+  const teamMembers =
+    roleType === 'transfer_attorney'
+      ? teams.conveyancers || teams.transferAttorneys || teams.transfer_attorneys || []
+      : teams.bondOriginators || teams.bond_originators || []
+  const defaultMember = (Array.isArray(teamMembers) ? teamMembers : [])
+    .map((member, index) => normalizeDevelopmentTeamMember(roleType, member, index))
+    .find(Boolean)
+
+  if (!defaultMember) {
+    return null
+  }
+
+  const defaultOrganisationId = normalizeSearchKey(defaultMember.organisationId)
+  const defaultEmail = normalizeSearchKey(defaultMember.email)
+  const defaultCompanyName = normalizeSearchKey(defaultMember.companyName)
+  const matchingConnectedPartner = partnerOptions.find((partner) => {
+    const partnerOrganisationId = normalizeSearchKey(
+      partner.organisationId || partner.partnerOrganisationId || partner.partnerOrganizationId,
+    )
+    const partnerEmail = normalizeSearchKey(partner.email)
+    const partnerCompanyName = normalizeSearchKey(partner.companyName)
+    return (
+      (defaultOrganisationId && partnerOrganisationId && defaultOrganisationId === partnerOrganisationId) ||
+      (defaultEmail && partnerEmail && defaultEmail === partnerEmail) ||
+      (defaultCompanyName && partnerCompanyName && defaultCompanyName === partnerCompanyName)
+    )
+  })
+
+  return matchingConnectedPartner
+    ? {
+        ...matchingConnectedPartner,
+        source: matchingConnectedPartner.source || 'connected_partner',
+        defaultSource: 'development_default',
+      }
+    : defaultMember
+}
+
+function partnerOptionToRolePlayerSelection(roleType, partner, selectionSource = '') {
+  if (!partner) return null
+  const resolvedSelectionSource =
+    selectionSource ||
+    (partner.source === 'development_default'
+      ? 'development_default'
+      : partner.preferredRoutingRuleId || partner.relationshipType === 'preferred'
+        ? 'preferred_partner'
+        : 'connected_partner')
+
+  return {
+    roleType,
+    source: resolvedSelectionSource,
+    selectionSource: resolvedSelectionSource,
+    preferredPartnerId: null,
+    partnerRelationshipId: partner.relationshipId || null,
+    partnerConnectionId: partner.connectionId || null,
+    partnerOrganisationId:
+      partner.organisationId || partner.partnerOrganisationId || partner.partnerOrganizationId || null,
+    userId: partner.userId || null,
+    partner: {
+      companyName: partner.companyName,
+      contactPerson: partner.contactPerson || partner.contactName || partner.companyName,
+      email: partner.email,
+      phone: partner.phone || '',
+      userId: partner.userId || null,
+      partnerConnectionId: partner.connectionId || null,
+    },
+  }
 }
 
 function getActivePartnerInvitationDrafts(modes, drafts) {
@@ -360,6 +554,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   const [loadingPartnerProspects, setLoadingPartnerProspects] = useState(false)
   const [partnerProspectQueries, setPartnerProspectQueries] = useState(createInitialPartnerProspectQueries)
   const [selectedPartnerProspects, setSelectedPartnerProspects] = useState(createInitialPartnerProspectState)
+  const [partnerDefaultsTouched, setPartnerDefaultsTouched] = useState({
+    transfer_attorney: false,
+    bond_originator: false,
+  })
 
   useEffect(() => {
     if (!open) {
@@ -377,6 +575,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     setPartnerProspects([])
     setPartnerProspectQueries(createInitialPartnerProspectQueries())
     setSelectedPartnerProspects(createInitialPartnerProspectState())
+    setPartnerDefaultsTouched({
+      transfer_attorney: false,
+      bond_originator: false,
+    })
 
     if (!isSupabaseConfigured) {
       return
@@ -608,6 +810,28 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     () => mergePartnerConnectionOptions(partnerConnectionOptions.bond_originator, legacyBondOriginatorPartnerOptions),
     [legacyBondOriginatorPartnerOptions, partnerConnectionOptions.bond_originator],
   )
+  const developmentRolePlayerDefaults = useMemo(
+    () => getDevelopmentRolePlayerDefaults(selectedDevelopment || {}),
+    [selectedDevelopment],
+  )
+  const developmentDefaultTransferAttorney = useMemo(
+    () =>
+      getDevelopmentTeamDefaultOption({
+        development: selectedDevelopment || {},
+        roleType: 'transfer_attorney',
+        partnerOptions: attorneyPartnerOptions,
+      }),
+    [attorneyPartnerOptions, selectedDevelopment],
+  )
+  const developmentDefaultBondOriginator = useMemo(
+    () =>
+      getDevelopmentTeamDefaultOption({
+        development: selectedDevelopment || {},
+        roleType: 'bond_originator',
+        partnerOptions: bondOriginatorPartnerOptions,
+      }),
+    [bondOriginatorPartnerOptions, selectedDevelopment],
+  )
   const selectedAttorneyPartner = useMemo(
     () => attorneyPartnerOptions.find((partner) => partner.id === form.finance.attorneyPartnerRelationshipId) || null,
     [attorneyPartnerOptions, form.finance.attorneyPartnerRelationshipId],
@@ -636,40 +860,59 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   )
 
   useEffect(() => {
-    if (!open || !partnerSnapshot) return
+    if (!open) return
     setForm((previous) => {
-      const defaultAttorney = attorneyPartnerOptions[0] || null
-      const defaultBondOriginator = bondOriginatorPartnerOptions[0] || null
+      const defaultAttorney =
+        !isPrivateMatter && previous.setup.developmentId && developmentDefaultTransferAttorney
+          ? developmentDefaultTransferAttorney
+          : attorneyPartnerOptions[0] || null
+      const defaultBondOriginator =
+        !isPrivateMatter && previous.setup.developmentId && developmentDefaultBondOriginator
+          ? developmentDefaultBondOriginator
+          : bondOriginatorPartnerOptions[0] || null
       const nextFinance = { ...previous.finance }
       let changed = false
 
       if (
         partnerInvitationModes.transfer_attorney === 'existing' &&
         defaultAttorney &&
-        !nextFinance.attorney &&
-        !nextFinance.attorneyPartnerRelationshipId
+        !partnerDefaultsTouched.transfer_attorney &&
+        previous.setup.transactionType === 'developer_sale'
       ) {
         nextFinance.attorney = defaultAttorney.companyName
         nextFinance.attorneyEmail = defaultAttorney.email || ''
-        nextFinance.attorneyPartnerRelationshipId = defaultAttorney.id
+        nextFinance.attorneyPartnerRelationshipId =
+          defaultAttorney.source === 'development_default' ? '' : defaultAttorney.id
         changed = true
       }
 
       if (
         partnerInvitationModes.bond_originator === 'existing' &&
         defaultBondOriginator &&
-        !nextFinance.bondOriginator &&
-        !nextFinance.bondOriginatorPartnerRelationshipId
+        !partnerDefaultsTouched.bond_originator &&
+        previous.setup.transactionType === 'developer_sale'
       ) {
         nextFinance.bondOriginator = defaultBondOriginator.companyName
         nextFinance.bondOriginatorEmail = defaultBondOriginator.email || ''
-        nextFinance.bondOriginatorPartnerRelationshipId = defaultBondOriginator.id
+        nextFinance.bondOriginatorPartnerRelationshipId =
+          defaultBondOriginator.source === 'development_default' ? '' : defaultBondOriginator.id
         changed = true
       }
 
       return changed ? { ...previous, finance: nextFinance } : previous
     })
-  }, [attorneyPartnerOptions, bondOriginatorPartnerOptions, open, partnerInvitationModes.bond_originator, partnerInvitationModes.transfer_attorney, partnerSnapshot])
+  }, [
+    attorneyPartnerOptions,
+    bondOriginatorPartnerOptions,
+    developmentDefaultBondOriginator,
+    developmentDefaultTransferAttorney,
+    isPrivateMatter,
+    open,
+    partnerDefaultsTouched.bond_originator,
+    partnerDefaultsTouched.transfer_attorney,
+    partnerInvitationModes.bond_originator,
+    partnerInvitationModes.transfer_attorney,
+  ])
 
   useEffect(() => {
     if (!open || !form.setup.developmentId || isPrivateMatter || reservationDecisionTouched) {
@@ -683,6 +926,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       selectedDevelopment?.reservation_deposit_amount === ''
         ? ''
         : String(selectedDevelopment.reservation_deposit_amount)
+    const defaultAmountType = selectedDevelopment?.reservation_deposit_amount_type || 'fixed'
+    const defaultTreatment = selectedDevelopment?.reservation_deposit_treatment || 'credited_to_purchase_price'
+    const defaultPayableTo = selectedDevelopment?.reservation_deposit_payable_to || 'developer'
+    const defaultAlterationChargeTreatment =
+      selectedDevelopment?.default_alteration_charge_treatment || 'included_in_purchase_price'
 
     setForm((previous) => {
       if (previous.setup.transactionType !== 'developer_sale') {
@@ -695,7 +943,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       if (
         Boolean(previous.finance.reservationRequired) === nextReservationRequired &&
         String(previous.finance.reservationAmount || '') === String(nextReservationAmount || '') &&
-        previous.finance.reservationStatus === nextReservationStatus
+        previous.finance.reservationStatus === nextReservationStatus &&
+        previous.finance.reservationAmountType === defaultAmountType &&
+        previous.finance.reservationTreatment === defaultTreatment &&
+        previous.finance.reservationPayableTo === defaultPayableTo &&
+        previous.finance.alterationChargeTreatment === defaultAlterationChargeTreatment
       ) {
         return previous
       }
@@ -706,7 +958,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           ...previous.finance,
           reservationRequired: nextReservationRequired,
           reservationAmount: nextReservationAmount,
+          reservationAmountType: defaultAmountType,
+          reservationTreatment: defaultTreatment,
+          reservationPayableTo: defaultPayableTo,
           reservationStatus: nextReservationStatus,
+          alterationChargeTreatment: defaultAlterationChargeTreatment,
         },
       }
     })
@@ -717,7 +973,11 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     isPrivateMatter,
     reservationDecisionTouched,
     selectedDevelopment?.reservation_deposit_amount,
+    selectedDevelopment?.reservation_deposit_amount_type,
     selectedDevelopment?.reservation_deposit_enabled_by_default,
+    selectedDevelopment?.reservation_deposit_payable_to,
+    selectedDevelopment?.reservation_deposit_treatment,
+    selectedDevelopment?.default_alteration_charge_treatment,
   ])
 
   const developmentStats = useMemo(() => {
@@ -762,6 +1022,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   function setSetupField(field, value) {
     if (field === 'developmentId') {
       setReservationDecisionTouched(false)
+      setPartnerDefaultsTouched({
+        transfer_attorney: false,
+        bond_originator: false,
+      })
+      setSelectedPartnerProspects(createInitialPartnerProspectState())
+      setPartnerInvitationModes(createInitialPartnerInvitationModes())
     }
     if (field === 'transactionType' && !isPrivateTransactionType(value)) {
       setReservationDecisionTouched(false)
@@ -792,6 +1058,15 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             ...previous.setup,
             developmentId: value,
             unitId: '',
+          },
+          finance: {
+            ...previous.finance,
+            attorney: '',
+            attorneyEmail: '',
+            attorneyPartnerRelationshipId: '',
+            bondOriginator: '',
+            bondOriginatorEmail: '',
+            bondOriginatorPartnerRelationshipId: '',
           },
         }
       }
@@ -840,6 +1115,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         ? attorneyPartnerOptions.find((item) => item.id === partnerId)
         : bondOriginatorPartnerOptions.find((item) => item.id === partnerId)
     const roleType = field === 'attorneyPartnerRelationshipId' ? 'transfer_attorney' : 'bond_originator'
+    setPartnerDefaultsTouched((previous) => ({
+      ...previous,
+      [roleType]: true,
+    }))
 
     setSelectedPartnerProspects((previous) => ({
       ...previous,
@@ -872,6 +1151,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   }
 
   function selectPartnerProspect(roleType, prospect) {
+    setPartnerDefaultsTouched((previous) => ({
+      ...previous,
+      [roleType]: true,
+    }))
     setSelectedPartnerProspects((previous) => ({
       ...previous,
       [roleType]: prospect,
@@ -895,6 +1178,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
 
   function setPartnerInvitationMode(roleType, mode) {
     const normalizedMode = mode === 'invite' ? 'invite' : 'existing'
+    setPartnerDefaultsTouched((previous) => ({
+      ...previous,
+      [roleType]: true,
+    }))
     setPartnerInvitationModes((previous) => ({
       ...previous,
       [roleType]: normalizedMode,
@@ -927,6 +1214,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   }
 
   function setPartnerInvitationDraftField(roleType, field, value) {
+    setPartnerDefaultsTouched((previous) => ({
+      ...previous,
+      [roleType]: true,
+    }))
     setPartnerInvitationDrafts((previous) => ({
       ...previous,
       [roleType]: {
@@ -1107,6 +1398,62 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         financeForSave.bondOriginatorEmail = prospectBondOriginator.email || ''
         financeForSave.bondOriginatorPartnerRelationshipId = ''
       }
+      const selectedAttorneyWasDevelopmentDefault =
+        !partnerDefaultsTouched.transfer_attorney &&
+        selectedAttorneyPartner &&
+        developmentDefaultTransferAttorney?.source !== 'development_default' &&
+        selectedAttorneyPartner.id === developmentDefaultTransferAttorney?.id
+      const selectedBondOriginatorWasDevelopmentDefault =
+        !partnerDefaultsTouched.bond_originator &&
+        selectedBondOriginatorPartner &&
+        developmentDefaultBondOriginator?.source !== 'development_default' &&
+        selectedBondOriginatorPartner.id === developmentDefaultBondOriginator?.id
+      const directDevelopmentDefaultTransferAttorney =
+        partnerInvitationModes.transfer_attorney === 'existing' &&
+        !selectedAttorneyPartner &&
+        developmentDefaultTransferAttorney?.source === 'development_default' &&
+        normalizeSearchKey(financeForSave.attorney) === normalizeSearchKey(developmentDefaultTransferAttorney.companyName)
+          ? developmentDefaultTransferAttorney
+          : null
+      const directDevelopmentDefaultBondOriginator =
+        partnerInvitationModes.bond_originator === 'existing' &&
+        !selectedBondOriginatorPartner &&
+        developmentDefaultBondOriginator?.source === 'development_default' &&
+        normalizeSearchKey(financeForSave.bondOriginator) === normalizeSearchKey(developmentDefaultBondOriginator.companyName)
+          ? developmentDefaultBondOriginator
+          : null
+      const transferAttorneyRolePlayerSelection =
+        partnerInvitationModes.transfer_attorney === 'existing' && selectedAttorneyPartner
+          ? partnerOptionToRolePlayerSelection(
+              'transfer_attorney',
+              selectedAttorneyPartner,
+              selectedAttorneyWasDevelopmentDefault ? 'development_default' : '',
+            )
+          : partnerOptionToRolePlayerSelection(
+              'transfer_attorney',
+              directDevelopmentDefaultTransferAttorney,
+              'development_default',
+            )
+      const bondOriginatorRolePlayerSelection =
+        partnerInvitationModes.bond_originator === 'existing' && selectedBondOriginatorPartner
+          ? partnerOptionToRolePlayerSelection(
+              'bond_originator',
+              selectedBondOriginatorPartner,
+              selectedBondOriginatorWasDevelopmentDefault ? 'development_default' : '',
+            )
+          : partnerOptionToRolePlayerSelection(
+              'bond_originator',
+              directDevelopmentDefaultBondOriginator,
+              'development_default',
+            )
+      const shouldAutoInviteDevelopmentDefaultBondOriginator =
+        Boolean(
+          developmentRolePlayerDefaults.autoInviteSelectedBondOriginator ||
+            developmentRolePlayerDefaults.auto_invite_selected_bond_originator,
+        ) &&
+        Boolean(directDevelopmentDefaultBondOriginator?.email) &&
+        !invitedBondOriginator &&
+        !prospectBondOriginator
       const hierarchyScope = {
         regionId: currentMembership?.regionId || currentMembership?.region_id || '',
         branchId:
@@ -1130,50 +1477,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           allowIncomplete: Boolean(form.setup.allowIncomplete),
           hierarchyScope,
           rolePlayers: [
-            partnerInvitationModes.transfer_attorney === 'existing' && selectedAttorneyPartner
-              ? {
-                  roleType: 'transfer_attorney',
-                  source: 'connected_partner',
-                  selectionSource:
-                    selectedAttorneyPartner.preferredRoutingRuleId || selectedAttorneyPartner.relationshipType === 'preferred'
-                      ? 'preferred_partner'
-                      : 'connected_partner',
-                  preferredPartnerId: null,
-                  partnerRelationshipId: selectedAttorneyPartner.relationshipId,
-                  partnerConnectionId: selectedAttorneyPartner.connectionId || null,
-                  partnerOrganisationId: selectedAttorneyPartner.organisationId,
-                  userId: selectedAttorneyPartner.userId || null,
-                  partner: {
-                    companyName: selectedAttorneyPartner.companyName,
-                    contactPerson: selectedAttorneyPartner.contactPerson || selectedAttorneyPartner.companyName,
-                    email: selectedAttorneyPartner.email,
-                    userId: selectedAttorneyPartner.userId || null,
-                    partnerConnectionId: selectedAttorneyPartner.connectionId || null,
-                  },
-                }
-              : null,
-            partnerInvitationModes.bond_originator === 'existing' && selectedBondOriginatorPartner
-              ? {
-                  roleType: 'bond_originator',
-                  source: 'connected_partner',
-                  selectionSource:
-                    selectedBondOriginatorPartner.preferredRoutingRuleId || selectedBondOriginatorPartner.relationshipType === 'preferred'
-                      ? 'preferred_partner'
-                      : 'connected_partner',
-                  preferredPartnerId: null,
-                  partnerRelationshipId: selectedBondOriginatorPartner.relationshipId,
-                  partnerConnectionId: selectedBondOriginatorPartner.connectionId || null,
-                  partnerOrganisationId: selectedBondOriginatorPartner.organisationId,
-                  userId: selectedBondOriginatorPartner.userId || null,
-                  partner: {
-                    companyName: selectedBondOriginatorPartner.companyName,
-                    contactPerson: selectedBondOriginatorPartner.contactPerson || selectedBondOriginatorPartner.companyName,
-                    email: selectedBondOriginatorPartner.email,
-                    userId: selectedBondOriginatorPartner.userId || null,
-                    partnerConnectionId: selectedBondOriginatorPartner.connectionId || null,
-                  },
-                }
-              : null,
+            transferAttorneyRolePlayerSelection,
+            bondOriginatorRolePlayerSelection,
           ].filter(Boolean),
         },
       })
@@ -1235,6 +1540,41 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         } catch (invitationError) {
           partnerInvitationWarnings.push(
             `${draft.companyName || draft.email}: ${invitationError.message || 'invitation could not be created.'}`,
+          )
+        }
+      }
+      if (shouldAutoInviteDevelopmentDefaultBondOriginator) {
+        try {
+          const invitationResult = await createTransactionPartnerInvitation({
+            transactionId: result.transactionId,
+            roleType: 'bond_originator',
+            companyName: directDevelopmentDefaultBondOriginator.companyName,
+            contactName:
+              directDevelopmentDefaultBondOriginator.contactPerson ||
+              directDevelopmentDefaultBondOriginator.companyName,
+            email: directDevelopmentDefaultBondOriginator.email,
+            phone: directDevelopmentDefaultBondOriginator.phone || '',
+            metadata: {
+              source: 'development_role_player_default',
+              buyerName,
+              developmentId: selectedDevelopment?.id || form.setup.developmentId || null,
+              defaultSource:
+                developmentRolePlayerDefaults.defaultBondOriginatorSource ||
+                developmentRolePlayerDefaults.default_bond_originator_source ||
+                'first_bond_originator',
+            },
+          })
+          partnerInvitationResults.push(invitationResult)
+          if (invitationResult.emailResult?.sent === false || invitationResult.emailResult?.error) {
+            partnerInvitationWarnings.push(
+              `${directDevelopmentDefaultBondOriginator.companyName}: default originator invitation saved, but email delivery needs attention.`,
+            )
+          }
+        } catch (invitationError) {
+          partnerInvitationWarnings.push(
+            `${directDevelopmentDefaultBondOriginator.companyName || directDevelopmentDefaultBondOriginator.email}: ${
+              invitationError.message || 'default originator invitation could not be created.'
+            }`,
           )
         }
       }
@@ -1865,6 +2205,56 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     </Field>
                   ) : null}
 
+                  {form.finance.reservationRequired ? (
+                    <>
+                      <Field label="Reservation Amount Type">
+                        <select
+                          value={form.finance.reservationAmountType}
+                          onChange={(event) => setFinanceField('reservationAmountType', event.target.value)}
+                        >
+                          {RESERVATION_AMOUNT_TYPE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </Field>
+
+                      <Field label="Reservation Treatment">
+                        <select
+                          value={form.finance.reservationTreatment}
+                          onChange={(event) => setFinanceField('reservationTreatment', event.target.value)}
+                        >
+                          {RESERVATION_TREATMENT_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </Field>
+
+                      <Field label="Reservation Payable To">
+                        <select
+                          value={form.finance.reservationPayableTo}
+                          onChange={(event) => setFinanceField('reservationPayableTo', event.target.value)}
+                        >
+                          {RESERVATION_PAYABLE_TO_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </Field>
+                    </>
+                  ) : null}
+
+                  {!isPrivateMatter && selectedDevelopment ? (
+                    <Field label="Alteration Cost Treatment">
+                      <select
+                        value={form.finance.alterationChargeTreatment}
+                        onChange={(event) => setFinanceField('alterationChargeTreatment', event.target.value)}
+                      >
+                        {ALTERATION_CHARGE_TREATMENT_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  ) : null}
+
                   {form.finance.reservationRequired && !isPrivateMatter && selectedDevelopment ? (
                     <div className="md:col-span-2 rounded-[14px] border border-[#dbe4ef] bg-[#f8fbff] px-4 py-3.5">
                       <p className="text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ba5]">
@@ -1900,6 +2290,22 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                                 : 'Override applied for this transaction.'}
                             </small>
                           ) : null}
+                        </div>
+                        <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                          <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ba5]">
+                            Deposit Treatment
+                          </span>
+                          <strong className="mt-1 block text-sm font-semibold text-[#142132]">
+                            {getOptionLabel(RESERVATION_TREATMENT_OPTIONS, form.finance.reservationTreatment)}
+                          </strong>
+                        </div>
+                        <div className="rounded-[12px] border border-[#e3ebf4] bg-white px-3 py-2.5">
+                          <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ba5]">
+                            Alteration Costs
+                          </span>
+                          <strong className="mt-1 block text-sm font-semibold text-[#142132]">
+                            {getOptionLabel(ALTERATION_CHARGE_TREATMENT_OPTIONS, form.finance.alterationChargeTreatment)}
+                          </strong>
                         </div>
                       </div>
 
@@ -1946,6 +2352,14 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                       </div>
                       {loadingPartners || loadingPartnerConnections ? <span className="text-xs font-semibold text-[#6b7d93]">Loading partners...</span> : null}
                     </div>
+                    {(developmentDefaultTransferAttorney || developmentDefaultBondOriginator) && !isPrivateMatter ? (
+                      <div className="mt-3 rounded-[14px] border border-[#d7e4ee] bg-white px-3 py-2 text-xs leading-5 text-[#5d7188]">
+                        Development defaults applied:
+                        {developmentDefaultTransferAttorney ? ` transfer attorney - ${developmentDefaultTransferAttorney.companyName}` : ''}
+                        {developmentDefaultTransferAttorney && developmentDefaultBondOriginator ? ';' : ''}
+                        {developmentDefaultBondOriginator ? ` bond originator - ${developmentDefaultBondOriginator.companyName}` : ''}
+                      </div>
+                    ) : null}
 
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div className="space-y-3 rounded-[16px] border border-[#dbe4ef] bg-white p-3">

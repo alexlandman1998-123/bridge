@@ -3,7 +3,7 @@ function normalizeValue(value = '') {
 }
 
 function normalizeDocumentStatus(status = '') {
-  const normalized = normalizeValue(status)
+  const normalized = normalizeValue(status).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   if (
     [
       'required',
@@ -22,6 +22,8 @@ function normalizeDocumentStatus(status = '') {
   if (normalized === 'reviewed') return 'under_review'
   if (normalized === 'accepted') return 'approved'
   if (normalized === 'missing') return 'required'
+  if (normalized === 'pending_review' || normalized === 'in_review' || normalized === 'awaiting_review') return 'under_review'
+  if (normalized === 'not_uploaded' || normalized === 'outstanding') return 'required'
   return 'required'
 }
 
@@ -43,6 +45,22 @@ function toDate(value) {
   if (!value) return null
   const parsed = Date.parse(value)
   return Number.isNaN(parsed) ? null : parsed
+}
+
+function normalizeFinanceType(value = '') {
+  const normalized = normalizeValue(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (['bond', 'bond_finance', 'mortgage'].includes(normalized)) return 'bond'
+  if (['cash', 'cash_sale'].includes(normalized)) return 'cash'
+  if (['hybrid', 'combination', 'cash_bond', 'cash_and_bond', 'cash_bond_combination'].includes(normalized)) return 'hybrid'
+  return normalized
+}
+
+function isBondFinanceType(value = '') {
+  return ['bond', 'hybrid'].includes(normalizeFinanceType(value))
+}
+
+function isCashFinanceType(value = '') {
+  return ['cash', 'hybrid'].includes(normalizeFinanceType(value))
 }
 
 function actionRouteFromCategory(category = '') {
@@ -79,6 +97,30 @@ function createAction(partial = {}) {
 
 function parseWorkspace(context = {}) {
   return normalizeValue(context?.workspaceMode || context?.portalContext?.workspace || 'shared')
+}
+
+function parseBondApplication(context = {}) {
+  const formData = context?.portalData?.onboardingFormData?.formData || context?.portalData?.formData || {}
+  const candidates = [
+    context?.bondApplication,
+    context?.portalData?.bondApplication,
+    context?.portalData?.bond_application,
+    formData?.bond_application,
+    context?.transaction?.bond_application,
+  ]
+  return candidates.find((candidate) => candidate && typeof candidate === 'object') || null
+}
+
+function normalizeBondApplicationStatus(value = '') {
+  const normalized = normalizeValue(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (!normalized) return 'not_started'
+  if (['not_started', 'new', 'draft'].includes(normalized)) return 'not_started'
+  if (['in_progress', 'started', 'saved'].includes(normalized)) return 'in_progress'
+  if (['submitted', 'sent', 'sent_to_originator', 'submitted_to_originator', 'submitted_to_banks'].includes(normalized)) return 'submitted'
+  if (['under_review', 'review', 'application_in_progress', 'feedback_received'].includes(normalized)) return 'under_review'
+  if (['approved', 'approval', 'buyer_approved', 'quote_received'].includes(normalized)) return 'approved'
+  if (['declined', 'rejected'].includes(normalized)) return 'declined'
+  return normalized
 }
 
 function parseRequirementLabel(requirement = {}) {
@@ -163,25 +205,7 @@ export function getDocumentRequirementActions(context = {}) {
     const description = parseRequirementDescription(requirement)
     const workspaceScope = workspace === 'selling' ? 'selling' : 'buying'
 
-    if (status === 'rejected') {
-      actions.push(
-        createAction({
-          id: `doc_reupload_${key}`,
-          type: 'document_reupload_required',
-          category: 'documents',
-          title: `Re-upload ${label}`,
-          description:
-            requirement?.rejectionReason || requirement?.rejection_reason || `${label} was rejected and needs an updated upload.`,
-          priority: 'high',
-          status: 'rejected',
-          blocking: isRequired,
-          actionLabel: 'Re-upload',
-          actionRoute: 'documents',
-          metadata: { requirementKey: key, workspaceScope },
-        }),
-      )
-      continue
-    }
+    if (status === 'rejected') continue
 
     if (status === 'required' || status === 'requested') {
       actions.push(
@@ -196,6 +220,7 @@ export function getDocumentRequirementActions(context = {}) {
           blocking: isRequired,
           actionLabel: 'Upload document',
           actionRoute: 'documents',
+          dueDate: requirement?.dueDate || requirement?.due_date || null,
           metadata: { requirementKey: key, workspaceScope },
         }),
       )
@@ -516,11 +541,105 @@ export function getOtpActions(context = {}) {
 const PROOF_OF_FUNDS_PATTERN = /(proof of funds|source of funds|deposit proof|deposit)/i
 const BOND_PATTERN = /(bond|mortgage|payslip|income|bank statement|bank statements|financial statement|application form)/i
 
+export function getBondApplicationActions(context = {}) {
+  const workspace = parseWorkspace(context)
+  if (workspace === 'selling') return []
+
+  const financeType = normalizeFinanceType(context?.finance?.type || context?.transaction?.finance_type || '')
+  if (!isBondFinanceType(financeType)) return []
+
+  const application = parseBondApplication(context)
+  const status = normalizeBondApplicationStatus(
+    application?.status ||
+      context?.transaction?.bond_application_status ||
+      context?.transaction?.finance_status ||
+      '',
+  )
+  const submittedAt = application?.submitted_at || application?.submittedAt || context?.transaction?.submitted_to_banks_at || null
+
+  if (!application || status === 'not_started') {
+    return [
+      createAction({
+        id: 'bond_application_required',
+        type: 'bond_application_required',
+        category: 'finance',
+        title: 'Complete your bond application',
+        description: 'Your bond application still needs to be completed before it can be shared with the bond originator or banks.',
+        priority: 'high',
+        status: 'pending',
+        blocking: true,
+        actionLabel: 'Open bond application',
+        actionRoute: 'bond_application',
+        metadata: { workspaceScope: 'buying', bondApplicationStatus: status },
+      }),
+    ]
+  }
+
+  if (status === 'in_progress') {
+    return [
+      createAction({
+        id: 'bond_application_in_progress',
+        type: 'bond_application_required',
+        category: 'finance',
+        title: 'Finish your bond application',
+        description: 'Your bond application has been started but still needs to be submitted.',
+        priority: 'high',
+        status: 'pending',
+        blocking: true,
+        actionLabel: 'Continue application',
+        actionRoute: 'bond_application',
+        metadata: { workspaceScope: 'buying', bondApplicationStatus: status },
+      }),
+    ]
+  }
+
+  if (status === 'declined') {
+    return [
+      createAction({
+        id: 'bond_application_declined',
+        type: 'bond_application_attention_required',
+        category: 'finance',
+        title: 'Bond application needs attention',
+        description: 'Your bond application has been marked declined. Review the finance section or contact your transaction team for next steps.',
+        priority: 'high',
+        status: 'pending',
+        blocking: false,
+        actionLabel: 'View application',
+        actionRoute: 'bond_application',
+        metadata: { workspaceScope: 'buying', bondApplicationStatus: status },
+      }),
+    ]
+  }
+
+  if (status === 'submitted' || status === 'under_review') {
+    return [
+      createAction({
+        id: 'bond_application_under_review',
+        type: 'awaiting_internal_review',
+        category: 'finance',
+        title: 'Bond application under review',
+        description: submittedAt
+          ? 'Your bond application has been submitted and is being reviewed.'
+          : 'Your bond application is with the finance team.',
+        priority: 'informational',
+        status: 'under_review',
+        blocking: false,
+        actionLabel: 'View application',
+        actionRoute: 'bond_application',
+        metadata: { workspaceScope: 'buying', bondApplicationStatus: status },
+        notificationEligible: false,
+      }),
+    ]
+  }
+
+  return []
+}
+
 export function getFinanceActions(context = {}) {
   const workspace = parseWorkspace(context)
   if (workspace === 'selling') return []
 
-  const financeType = normalizeValue(context?.finance?.type || context?.transaction?.finance_type || 'cash')
+  const financeType = normalizeFinanceType(context?.finance?.type || context?.transaction?.finance_type || 'cash')
   const requirements = toArray(context?.documentCenter?.requiredDocuments)
 
   const missingProofOfFunds = requirements.some((item) => {
@@ -536,7 +655,7 @@ export function getFinanceActions(context = {}) {
   })
 
   const actions = []
-  if ((financeType === 'cash' || financeType === 'hybrid') && missingProofOfFunds) {
+  if (isCashFinanceType(financeType) && missingProofOfFunds) {
     actions.push(
       createAction({
         id: 'proof_of_funds_required',
@@ -554,7 +673,7 @@ export function getFinanceActions(context = {}) {
     )
   }
 
-  if ((financeType === 'bond' || financeType === 'hybrid') && missingBondFinance) {
+  if (isBondFinanceType(financeType) && missingBondFinance) {
     actions.push(
       createAction({
         id: 'bond_finance_documents_required',
@@ -732,6 +851,7 @@ export function getBuyerNextActions(context = {}) {
     ...getAdditionalRequestActions({ ...context, workspaceMode: 'buying' }),
     ...getAppointmentActions({ ...context, workspaceMode: 'buying' }),
     ...getOtpActions({ ...context, workspaceMode: 'buying' }),
+    ...getBondApplicationActions({ ...context, workspaceMode: 'buying' }),
     ...getFinanceActions({ ...context, workspaceMode: 'buying' }),
   ]
 }

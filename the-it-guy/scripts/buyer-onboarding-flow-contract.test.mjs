@@ -107,10 +107,15 @@ test('captures company and trust authority data in the contract', () => {
     [
       'buyer.company.name',
       'buyer.company.registration_number',
+      'buyer.company.registered_address',
+      'buyer.company.nature_of_business',
       'buyer.company.authorised_signatory.name',
       'buyer.company.authorised_signatory.identity_number_or_passport_number',
       'buyer.company.authorised_signatory.email',
       'buyer.company.authorised_signatory.phone',
+      'buyer.company.authorised_signatory.capacity',
+      'buyer.company.directors',
+      'buyer.company.board_resolution_available',
       'finance.bond_process_started',
       'finance.bond_help_requested',
       'finance.affordability_confirmed',
@@ -119,7 +124,7 @@ test('captures company and trust authority data in the contract', () => {
   )
   assertIncludes(
     asSet(companyFlow.optional_fields),
-    ['buyer.company.directors', 'buyer.company.board_resolution_available', 'buyer.company.registered_address'],
+    ['buyer.company.business_address', 'buyer.company.tax_number', 'buyer.company.vat_number'],
     'company optional fields',
   )
   assertIncludes(asSet(companyFlow.document_triggers), ['cipc_registration', 'company_resolution', 'director_id'], 'company document triggers')
@@ -143,11 +148,18 @@ test('captures company and trust authority data in the contract', () => {
     [
       'buyer.trust.name',
       'buyer.trust.registration_number',
+      'buyer.trust.type',
+      'buyer.trust.masters_office_reference',
+      'buyer.trust.registered_address',
       'buyer.trust.authorised_trustee.name',
       'buyer.trust.authorised_trustee.identity_number_or_passport_number',
       'buyer.trust.authorised_trustee.email',
       'buyer.trust.authorised_trustee.phone',
+      'buyer.trust.trust_deed_available',
+      'buyer.trust.letters_of_authority_available',
       'buyer.trust.resolution_available',
+      'buyer.trust.all_trustees_signing',
+      'buyer.trust.trustees',
       'finance.bond_process_started',
       'finance.bond_help_requested',
       'finance.affordability_confirmed',
@@ -156,7 +168,7 @@ test('captures company and trust authority data in the contract', () => {
   )
   assertIncludes(
     asSet(trustFlow.optional_fields),
-    ['buyer.trust.trustees', 'buyer.trust.all_trustees_signing', 'buyer.trust.masters_office_reference'],
+    ['buyer.trust.tax_number', 'buyer.trust.contact.name', 'buyer.trust.contact.email'],
     'trust optional fields',
   )
   assertIncludes(asSet(trustFlow.document_triggers), ['trust_deed', 'letters_of_authority', 'trust_resolution'], 'trust document triggers')

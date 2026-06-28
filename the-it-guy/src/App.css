@@ -3461,6 +3461,13 @@
   padding-inline: 0.7rem;
 }
 
+.agent-transactions-table .buyer-originator-request-chip {
+  justify-self: start;
+  max-width: min(100%, 14rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .agent-transactions-table .transaction-chip-success {
   border-color: #cde8d8;
   background: #ecf8f1;

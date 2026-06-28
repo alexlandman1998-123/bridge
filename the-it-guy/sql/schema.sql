@@ -1105,6 +1105,9 @@ create table if not exists transactions (
   deposit_amount numeric(12, 2),
   reservation_required boolean not null default false,
   reservation_amount numeric(12, 2),
+  reservation_amount_type text,
+  reservation_treatment text,
+  reservation_payable_to text,
   reservation_status text not null default 'not_required',
   reservation_paid_date date,
   reservation_proof_document uuid,
@@ -1115,6 +1118,7 @@ create table if not exists transactions (
   reservation_reviewed_at timestamptz,
   reservation_reviewed_by uuid references profiles(id) on delete set null,
   reservation_review_notes text,
+  alteration_charge_treatment text,
   purchaser_type text not null default 'individual',
   stage text not null default 'Available',
   current_main_stage text not null default 'AVAIL',
@@ -1191,6 +1195,9 @@ alter table if exists transactions add column if not exists bond_amount numeric(
 alter table if exists transactions add column if not exists deposit_amount numeric(12, 2);
 alter table if exists transactions add column if not exists reservation_required boolean not null default false;
 alter table if exists transactions add column if not exists reservation_amount numeric(12, 2);
+alter table if exists transactions add column if not exists reservation_amount_type text;
+alter table if exists transactions add column if not exists reservation_treatment text;
+alter table if exists transactions add column if not exists reservation_payable_to text;
 alter table if exists transactions add column if not exists reservation_status text not null default 'not_required';
 alter table if exists transactions add column if not exists reservation_paid_date date;
 alter table if exists transactions add column if not exists reservation_proof_document uuid;
@@ -1201,6 +1208,7 @@ alter table if exists transactions add column if not exists reservation_email_se
 alter table if exists transactions add column if not exists reservation_reviewed_at timestamptz;
 alter table if exists transactions add column if not exists reservation_reviewed_by uuid references profiles(id) on delete set null;
 alter table if exists transactions add column if not exists reservation_review_notes text;
+alter table if exists transactions add column if not exists alteration_charge_treatment text;
 alter table if exists transactions add column if not exists purchaser_type text not null default 'individual';
 alter table if exists transactions add column if not exists current_main_stage text not null default 'AVAIL';
 alter table if exists transactions add column if not exists current_sub_stage_summary text;
@@ -1819,8 +1827,12 @@ create table if not exists development_settings (
   service_reviews_enabled boolean not null default false,
   reservation_deposit_enabled_by_default boolean not null default false,
   reservation_deposit_amount numeric(12, 2),
+  reservation_deposit_amount_type text not null default 'fixed',
+  reservation_deposit_treatment text not null default 'credited_to_purchase_price',
+  reservation_deposit_payable_to text not null default 'developer',
   reservation_deposit_payment_details jsonb not null default '{}'::jsonb,
   reservation_deposit_notification_recipients jsonb not null default '[]'::jsonb,
+  default_alteration_charge_treatment text not null default 'included_in_purchase_price',
   enabled_modules jsonb not null default '{"agent": true, "conveyancing": true, "bond_originator": true}'::jsonb,
   stakeholder_teams jsonb not null default '{"agents": [], "conveyancers": [], "bondOriginators": []}'::jsonb,
   created_at timestamptz not null default now(),
@@ -1829,8 +1841,12 @@ create table if not exists development_settings (
 
 alter table if exists development_settings add column if not exists reservation_deposit_enabled_by_default boolean not null default false;
 alter table if exists development_settings add column if not exists reservation_deposit_amount numeric(12, 2);
+alter table if exists development_settings add column if not exists reservation_deposit_amount_type text not null default 'fixed';
+alter table if exists development_settings add column if not exists reservation_deposit_treatment text not null default 'credited_to_purchase_price';
+alter table if exists development_settings add column if not exists reservation_deposit_payable_to text not null default 'developer';
 alter table if exists development_settings add column if not exists reservation_deposit_payment_details jsonb not null default '{}'::jsonb;
 alter table if exists development_settings add column if not exists reservation_deposit_notification_recipients jsonb not null default '[]'::jsonb;
+alter table if exists development_settings add column if not exists default_alteration_charge_treatment text not null default 'included_in_purchase_price';
 
 create table if not exists development_attorney_configs (
   id uuid primary key default gen_random_uuid(),
@@ -2071,6 +2087,7 @@ create table if not exists alteration_requests (
   preferred_timing text,
   reference_image_path text,
   amount_inc_vat numeric(12,2) default 0,
+  charge_treatment text not null default 'included_in_purchase_price',
   invoice_path text,
   proof_of_payment_path text,
   status text not null default 'Pending Review',
@@ -2983,6 +3000,10 @@ alter table if exists development_settings add column if not exists client_porta
 alter table if exists development_settings add column if not exists snag_reporting_enabled boolean not null default true;
 alter table if exists development_settings add column if not exists alteration_requests_enabled boolean not null default false;
 alter table if exists development_settings add column if not exists service_reviews_enabled boolean not null default false;
+alter table if exists development_settings add column if not exists reservation_deposit_amount_type text not null default 'fixed';
+alter table if exists development_settings add column if not exists reservation_deposit_treatment text not null default 'credited_to_purchase_price';
+alter table if exists development_settings add column if not exists reservation_deposit_payable_to text not null default 'developer';
+alter table if exists development_settings add column if not exists default_alteration_charge_treatment text not null default 'included_in_purchase_price';
 alter table if exists development_settings add column if not exists enabled_modules jsonb not null default '{"agent": true, "conveyancing": true, "bond_originator": true}'::jsonb;
 alter table if exists development_settings add column if not exists stakeholder_teams jsonb not null default '{"agents": [], "conveyancers": [], "bondOriginators": []}'::jsonb;
 alter table if exists development_settings add column if not exists updated_at timestamptz not null default now();
@@ -3241,6 +3262,7 @@ alter table alteration_requests
   check (status in ('Pending Review', 'Approved', 'Declined', 'Quote Sent', 'Accepted', 'In Progress', 'Completed'));
 
 alter table if exists alteration_requests add column if not exists amount_inc_vat numeric(12,2) default 0;
+alter table if exists alteration_requests add column if not exists charge_treatment text not null default 'included_in_purchase_price';
 alter table if exists alteration_requests add column if not exists invoice_path text;
 alter table if exists alteration_requests add column if not exists proof_of_payment_path text;
 

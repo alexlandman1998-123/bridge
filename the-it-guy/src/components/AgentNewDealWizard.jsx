@@ -730,6 +730,10 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
     saleDate: todayIso(),
     reservationRequired: false,
     reservationAmount: '',
+    reservationAmountType: 'fixed',
+    reservationTreatment: 'credited_to_purchase_price',
+    reservationPayableTo: 'developer',
+    alterationChargeTreatment: 'included_in_purchase_price',
     transferPartnerMode: PARTNER_MODE_AGENCY,
     transferPreferredPartnerId: '',
     transferBuyerCompanyName: '',
@@ -1233,6 +1237,10 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         ...previous,
         reservationRequired: false,
         reservationAmount: '',
+        reservationAmountType: 'fixed',
+        reservationTreatment: 'credited_to_purchase_price',
+        reservationPayableTo: 'developer',
+        alterationChargeTreatment: 'included_in_purchase_price',
         transferBuyerCompanyName:
           previous.transferPartnerMode === PARTNER_MODE_BUYER && !previous.transferBuyerCompanyName
             ? defaultAttorney?.name || ''
@@ -1257,6 +1265,11 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         ...previous,
         reservationRequired: reservationEnabled,
         reservationAmount,
+        reservationAmountType: selectedDevelopment?.reservation_deposit_amount_type || 'fixed',
+        reservationTreatment: selectedDevelopment?.reservation_deposit_treatment || 'credited_to_purchase_price',
+        reservationPayableTo: selectedDevelopment?.reservation_deposit_payable_to || 'developer',
+        alterationChargeTreatment:
+          selectedDevelopment?.default_alteration_charge_treatment || 'included_in_purchase_price',
         transferBuyerCompanyName:
           previous.transferPartnerMode === PARTNER_MODE_BUYER && !previous.transferBuyerCompanyName
             ? defaultAttorney?.name || ''
@@ -1271,7 +1284,19 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
             : previous.transferBuyerPhone,
       }))
     }
-  }, [selectedUnit, selectedDevelopment?.reservation_deposit_amount, selectedDevelopment?.reservation_deposit_enabled_by_default, defaultAttorney?.email, defaultAttorney?.name, defaultAttorney?.phone, form.propertyMode])
+  }, [
+    selectedUnit,
+    selectedDevelopment?.reservation_deposit_amount,
+    selectedDevelopment?.reservation_deposit_amount_type,
+    selectedDevelopment?.reservation_deposit_enabled_by_default,
+    selectedDevelopment?.reservation_deposit_payable_to,
+    selectedDevelopment?.reservation_deposit_treatment,
+    selectedDevelopment?.default_alteration_charge_treatment,
+    defaultAttorney?.email,
+    defaultAttorney?.name,
+    defaultAttorney?.phone,
+    form.propertyMode,
+  ])
 
   useEffect(() => {
     if (!open) return
@@ -1864,7 +1889,16 @@ function AgentNewDealWizard({ open, onClose, initialDevelopmentId = '', initialP
         finance: {
           reservationRequired: Boolean(form.reservationRequired),
           reservationAmount: form.reservationRequired ? form.reservationAmount : '',
+          reservationAmountType: form.reservationRequired ? form.reservationAmountType : 'fixed',
+          reservationTreatment: form.reservationRequired
+            ? form.reservationTreatment
+            : 'credited_to_purchase_price',
+          reservationPayableTo: form.reservationRequired ? form.reservationPayableTo : 'developer',
           reservationStatus: form.reservationRequired ? 'pending' : 'not_required',
+          alterationChargeTreatment:
+            propertyMode === PROPERTY_MODE_DEVELOPMENT
+              ? form.alterationChargeTreatment
+              : 'included_in_purchase_price',
           attorney: transferAttorneyLabel,
           attorneyEmail: transferAttorneyEmail,
           bondOriginator: bondOriginatorLabel,
