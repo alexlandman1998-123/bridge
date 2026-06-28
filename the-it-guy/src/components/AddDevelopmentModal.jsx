@@ -69,9 +69,10 @@ const DEFAULT_TRANSACTION_DEFAULTS = {
   reservationDepositEnabled: false,
   reservationDepositAmount: '',
   reservationDepositAmountType: 'fixed',
-  reservationDepositTreatment: 'credited_to_purchase_price',
   reservationDepositPayableTo: 'developer',
-  defaultAlterationChargeTreatment: 'included_in_purchase_price',
+  defaultAgentSource: 'first_agent',
+  multipleAgentsAllowed: true,
+  developerSellingDirectly: false,
   defaultTransferAttorneySource: 'first_conveyancer',
   defaultBondOriginatorSource: 'first_bond_originator',
   buyerAppointedBondOriginatorAllowed: true,
@@ -84,20 +85,14 @@ const TRANSACTION_DEFAULT_LABELS = {
     fixed: 'Fixed rand amount',
     percentage: 'Percentage of purchase price',
   },
-  reservationDepositTreatment: {
-    credited_to_purchase_price: 'Deduct from purchase price',
-    separate_invoice: 'Invoice separately',
-    refundable_hold: 'Refundable holding deposit',
-  },
   reservationDepositPayableTo: {
     developer: 'Developer',
     agency_trust: 'Agency trust account',
     attorney_trust: 'Attorney trust account',
   },
-  defaultAlterationChargeTreatment: {
-    included_in_purchase_price: 'Include in purchase price',
-    separate_invoice: 'Invoice separately',
-    no_charge: 'No charge by default',
+  defaultAgentSource: {
+    first_agent: 'Use first agent in team',
+    none: 'No automatic agent',
   },
   defaultTransferAttorneySource: {
     first_conveyancer: 'First conveyancer in team',
@@ -1211,10 +1206,11 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             ? normalizeOptionalNumber(transactionDefaults.reservationDepositAmount)
             : null,
           reservation_deposit_amount_type: transactionDefaults.reservationDepositAmountType,
-          reservation_deposit_treatment: transactionDefaults.reservationDepositTreatment,
           reservation_deposit_payable_to: transactionDefaults.reservationDepositPayableTo,
-          default_alteration_charge_treatment: transactionDefaults.defaultAlterationChargeTreatment,
           rolePlayerDefaults: {
+            defaultAgentSource: transactionDefaults.defaultAgentSource,
+            multipleAgentsAllowed: transactionDefaults.multipleAgentsAllowed,
+            developerSellingDirectly: transactionDefaults.developerSellingDirectly,
             defaultTransferAttorneySource: transactionDefaults.defaultTransferAttorneySource,
             defaultBondOriginatorSource: transactionDefaults.defaultBondOriginatorSource,
             buyerAppointedBondOriginatorAllowed: transactionDefaults.buyerAppointedBondOriginatorAllowed,
@@ -1229,6 +1225,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             bondOriginators: legal.bondOriginators.filter((item) => String(item.name || item.contactName || item.email || '').trim()),
             developers: developerTeam,
             rolePlayerDefaults: {
+              defaultAgentSource: transactionDefaults.defaultAgentSource,
+              multipleAgentsAllowed: transactionDefaults.multipleAgentsAllowed,
+              developerSellingDirectly: transactionDefaults.developerSellingDirectly,
               defaultTransferAttorneySource: transactionDefaults.defaultTransferAttorneySource,
               defaultBondOriginatorSource: transactionDefaults.defaultBondOriginatorSource,
               buyerAppointedBondOriginatorAllowed: transactionDefaults.buyerAppointedBondOriginatorAllowed,
@@ -1520,8 +1519,11 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             <>
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <div className="mb-4 space-y-1.5">
-                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Commercial Inputs</h4>
-                  <p className="text-sm leading-6 text-[#6b7d93]">Set the base commercial assumptions that seed the development workspace.</p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Commercial Inputs</h4>
+                    <span className="rounded-full border border-[#d8e3ef] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#6b7d93]">Optional</span>
+                  </div>
+                  <p className="text-sm leading-6 text-[#6b7d93]">Add commercial assumptions if you want development-level feasibility and margin reporting.</p>
                 </div>
                 <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                 <label>
@@ -1562,173 +1564,205 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <div className="mb-4 space-y-1.5">
                   <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Defaults</h4>
-                  <p className="text-sm leading-6 text-[#6b7d93]">Set the standard reservation deposit and alteration costing rules that new transactions should inherit.</p>
+                  <p className="text-sm leading-6 text-[#6b7d93]">Set only the defaults that genuinely carry across transactions. Deposit treatment and alteration costing are confirmed inside each transaction.</p>
                 </div>
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                    <span>
-                      <strong className="block text-sm font-semibold text-[#142132]">Reservation deposit applies</strong>
-                      <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">New transactions should ask for a reservation deposit by default.</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={transactionDefaults.reservationDepositEnabled}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          reservationDepositEnabled: event.target.checked,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Reservation Deposit Amount
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={transactionDefaults.reservationDepositAmount}
-                      disabled={!transactionDefaults.reservationDepositEnabled}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          reservationDepositAmount: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Amount Type
-                    <select
-                      value={transactionDefaults.reservationDepositAmountType}
-                      disabled={!transactionDefaults.reservationDepositEnabled}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          reservationDepositAmountType: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="fixed">Fixed rand amount</option>
-                      <option value="percentage">Percentage of purchase price</option>
-                    </select>
-                  </label>
-                  <label>
-                    Deposit Treatment
-                    <select
-                      value={transactionDefaults.reservationDepositTreatment}
-                      disabled={!transactionDefaults.reservationDepositEnabled}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          reservationDepositTreatment: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="credited_to_purchase_price">Deduct from purchase price</option>
-                      <option value="separate_invoice">Invoice separately</option>
-                      <option value="refundable_hold">Refundable holding deposit</option>
-                    </select>
-                  </label>
-                  <label>
-                    Payable To
-                    <select
-                      value={transactionDefaults.reservationDepositPayableTo}
-                      disabled={!transactionDefaults.reservationDepositEnabled}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          reservationDepositPayableTo: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="developer">Developer</option>
-                      <option value="agency_trust">Agency trust account</option>
-                      <option value="attorney_trust">Attorney trust account</option>
-                    </select>
-                  </label>
-                  <label>
-                    Alteration Cost Treatment
-                    <select
-                      value={transactionDefaults.defaultAlterationChargeTreatment}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          defaultAlterationChargeTreatment: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="included_in_purchase_price">Include in purchase price</option>
-                      <option value="separate_invoice">Invoice separately</option>
-                      <option value="no_charge">No charge by default</option>
-                    </select>
-                  </label>
-                  <label>
-                    Default Transfer Attorney
-                    <select
-                      value={transactionDefaults.defaultTransferAttorneySource}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          defaultTransferAttorneySource: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="first_conveyancer">Use first conveyancer in team</option>
-                      <option value="none">Do not auto-assign</option>
-                    </select>
-                  </label>
-                  <label>
-                    Default Bond Originator
-                    <select
-                      value={transactionDefaults.defaultBondOriginatorSource}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          defaultBondOriginatorSource: event.target.value,
-                        }))
-                      }
-                    >
-                      <option value="first_bond_originator">Use first bond originator in team</option>
-                      <option value="none">Do not auto-assign</option>
-                    </select>
-                  </label>
-                  <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                    <span>
-                      <strong className="block text-sm font-semibold text-[#142132]">Buyer may use own bond originator</strong>
-                      <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Allow buyers to nominate their own originator during onboarding.</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={transactionDefaults.buyerAppointedBondOriginatorAllowed}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          buyerAppointedBondOriginatorAllowed: event.target.checked,
-                          buyerAppointedBondOriginatorRequiresApproval:
-                            event.target.checked && previous.buyerAppointedBondOriginatorRequiresApproval,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
-                    <span>
-                      <strong className="block text-sm font-semibold text-[#142132]">Approve buyer-appointed originators</strong>
-                      <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Keep buyer nominations pending until the agent or developer approves them.</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={transactionDefaults.buyerAppointedBondOriginatorRequiresApproval}
-                      disabled={!transactionDefaults.buyerAppointedBondOriginatorAllowed}
-                      onChange={(event) =>
-                        setTransactionDefaults((previous) => ({
-                          ...previous,
-                          buyerAppointedBondOriginatorRequiresApproval: event.target.checked,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
+                  <div className="space-y-4 rounded-[22px] border border-[#dce6f1] bg-[#f8fbff] p-5">
+                    <label className="!flex-row !items-start !justify-between !gap-4">
+                      <span>
+                        <strong className="block text-sm font-semibold text-[#142132]">Reservation deposit applies</strong>
+                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">New transactions should ask whether a reservation deposit is payable.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={transactionDefaults.reservationDepositEnabled}
+                        onChange={(event) =>
+                          setTransactionDefaults((previous) => ({
+                            ...previous,
+                            reservationDepositEnabled: event.target.checked,
+                          }))
+                        }
+                      />
+                    </label>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label>
+                        Reservation Deposit Amount
+                        <span className="relative block">
+                          {transactionDefaults.reservationDepositAmountType === 'fixed' ? (
+                            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#6b7d93]">R</span>
+                          ) : null}
+                          <input
+                            className={transactionDefaults.reservationDepositAmountType === 'fixed' ? '!pl-9' : ''}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={transactionDefaults.reservationDepositAmount}
+                            disabled={!transactionDefaults.reservationDepositEnabled}
+                            onChange={(event) =>
+                              setTransactionDefaults((previous) => ({
+                                ...previous,
+                                reservationDepositAmount: event.target.value,
+                              }))
+                            }
+                          />
+                        </span>
+                      </label>
+                      <label>
+                        Amount Type
+                        <select
+                          value={transactionDefaults.reservationDepositAmountType}
+                          disabled={!transactionDefaults.reservationDepositEnabled}
+                          onChange={(event) =>
+                            setTransactionDefaults((previous) => ({
+                              ...previous,
+                              reservationDepositAmountType: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="fixed">Fixed rand amount</option>
+                          <option value="percentage">Percentage of purchase price</option>
+                        </select>
+                      </label>
+                      <label className="md:col-span-2">
+                        Payable To
+                        <select
+                          value={transactionDefaults.reservationDepositPayableTo}
+                          disabled={!transactionDefaults.reservationDepositEnabled}
+                          onChange={(event) =>
+                            setTransactionDefaults((previous) => ({
+                              ...previous,
+                              reservationDepositPayableTo: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="developer">Developer</option>
+                          <option value="agency_trust">Agency trust account</option>
+                          <option value="attorney_trust">Attorney trust account</option>
+                        </select>
+                      </label>
+                    </div>
+                    <p className="rounded-[16px] border border-[#dfe8f2] bg-white px-4 py-3 text-xs leading-5 text-[#6b7d93]">
+                      Deposit treatment and alteration cost treatment are set on each transaction because they depend on the signed deal terms.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label>
+                      Default Agent
+                      <select
+                        value={transactionDefaults.defaultAgentSource}
+                        disabled={transactionDefaults.developerSellingDirectly}
+                        onChange={(event) =>
+                          setTransactionDefaults((previous) => ({
+                            ...previous,
+                            defaultAgentSource: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="first_agent">Use first agent in team</option>
+                        <option value="none">Do not auto-assign</option>
+                      </select>
+                    </label>
+                    <label>
+                      Default Transfer Attorney
+                      <select
+                        value={transactionDefaults.defaultTransferAttorneySource}
+                        onChange={(event) =>
+                          setTransactionDefaults((previous) => ({
+                            ...previous,
+                            defaultTransferAttorneySource: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="first_conveyancer">Use first conveyancer in team</option>
+                        <option value="none">Do not auto-assign</option>
+                      </select>
+                    </label>
+                    <label>
+                      Default Bond Originator
+                      <select
+                        value={transactionDefaults.defaultBondOriginatorSource}
+                        onChange={(event) =>
+                          setTransactionDefaults((previous) => ({
+                            ...previous,
+                            defaultBondOriginatorSource: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="first_bond_originator">Use first bond originator in team</option>
+                        <option value="none">Do not auto-assign</option>
+                      </select>
+                    </label>
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                      <span>
+                        <strong className="block text-sm font-semibold text-[#142132]">Developer selling directly</strong>
+                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Do not auto-assign an agent to new development transactions.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={transactionDefaults.developerSellingDirectly}
+                        onChange={(event) =>
+                          setTransactionDefaults((previous) => ({
+                            ...previous,
+                            developerSellingDirectly: event.target.checked,
+                            defaultAgentSource: event.target.checked ? 'none' : previous.defaultAgentSource || 'first_agent',
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                      <span>
+                        <strong className="block text-sm font-semibold text-[#142132]">Multiple agents allowed</strong>
+                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Allow transactions to include co-agents from the agent team.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={transactionDefaults.multipleAgentsAllowed}
+                        disabled={transactionDefaults.developerSellingDirectly}
+                        onChange={(event) =>
+                          setTransactionDefaults((previous) => ({
+                            ...previous,
+                            multipleAgentsAllowed: event.target.checked,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                      <span>
+                        <strong className="block text-sm font-semibold text-[#142132]">Buyer may use own bond originator</strong>
+                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Allow buyers to nominate their own originator during onboarding.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={transactionDefaults.buyerAppointedBondOriginatorAllowed}
+                        onChange={(event) =>
+                          setTransactionDefaults((previous) => ({
+                            ...previous,
+                            buyerAppointedBondOriginatorAllowed: event.target.checked,
+                            buyerAppointedBondOriginatorRequiresApproval:
+                              event.target.checked && previous.buyerAppointedBondOriginatorRequiresApproval,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                      <span>
+                        <strong className="block text-sm font-semibold text-[#142132]">Approve buyer-appointed originators</strong>
+                        <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Keep buyer nominations pending until the agent or developer approves them.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={transactionDefaults.buyerAppointedBondOriginatorRequiresApproval}
+                        disabled={!transactionDefaults.buyerAppointedBondOriginatorAllowed}
+                        onChange={(event) =>
+                          setTransactionDefaults((previous) => ({
+                            ...previous,
+                            buyerAppointedBondOriginatorRequiresApproval: event.target.checked,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4 md:col-span-2">
                     <span>
                       <strong className="block text-sm font-semibold text-[#142132]">Auto-invite selected bond originator</strong>
                       <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Automatically send an invite once a transaction has a selected originator.</span>
@@ -1743,7 +1777,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }))
                       }
                     />
-                  </label>
+                    </label>
+                  </div>
                 </div>
               </section>
 
@@ -2604,11 +2639,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Transaction Defaults</span>
                 <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">
                   {transactionDefaults.reservationDepositEnabled
-                    ? `${transactionDefaults.reservationDepositAmount || '0'} - ${TRANSACTION_DEFAULT_LABELS.reservationDepositTreatment[transactionDefaults.reservationDepositTreatment]}`
+                    ? `${transactionDefaults.reservationDepositAmountType === 'fixed' ? 'R' : ''}${transactionDefaults.reservationDepositAmount || '0'} ${
+                        transactionDefaults.reservationDepositAmountType === 'percentage' ? '%' : ''
+                      } reservation deposit`
                     : 'No reservation deposit'}
                 </strong>
                 <em className="mt-2 block text-sm not-italic text-[#6b7d93]">
-                  Alterations: {TRANSACTION_DEFAULT_LABELS.defaultAlterationChargeTreatment[transactionDefaults.defaultAlterationChargeTreatment]}
+                  Agent default: {transactionDefaults.developerSellingDirectly ? 'Developer selling directly' : TRANSACTION_DEFAULT_LABELS.defaultAgentSource[transactionDefaults.defaultAgentSource]}
                 </em>
                 <em className="mt-2 block text-sm not-italic text-[#6b7d93]">
                   Role players: {TRANSACTION_DEFAULT_LABELS.defaultTransferAttorneySource[transactionDefaults.defaultTransferAttorneySource]} •{' '}

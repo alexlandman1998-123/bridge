@@ -432,6 +432,9 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
     bondOriginators: [],
     developers: [],
     rolePlayerDefaults: {
+      defaultAgentSource: 'first_agent',
+      multipleAgentsAllowed: true,
+      developerSellingDirectly: false,
       defaultTransferAttorneySource: 'first_conveyancer',
       defaultBondOriginatorSource: 'first_bond_originator',
       buyerAppointedBondOriginatorAllowed: true,
@@ -3594,6 +3597,21 @@ function normalizeAlterationChargeTreatment(value) {
 
 function normalizeDevelopmentRolePlayerDefaults(value = {}) {
   const source = value && typeof value === 'object' ? value : {}
+  const developerSellingDirectly =
+    source.developerSellingDirectly ??
+    source.developer_selling_directly ??
+    DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.developerSellingDirectly
+  const defaultAgentSource = normalizeDevelopmentSettingChoice(
+    source.defaultAgentSource || source.default_agent_source,
+    ['first_agent', 'none'],
+    developerSellingDirectly
+      ? 'none'
+      : DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.defaultAgentSource,
+  )
+  const multipleAgentsAllowed =
+    source.multipleAgentsAllowed ??
+    source.multiple_agents_allowed ??
+    DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.multipleAgentsAllowed
   const defaultTransferAttorneySource = normalizeDevelopmentSettingChoice(
     source.defaultTransferAttorneySource || source.default_transfer_attorney_source,
     ['first_conveyancer', 'none'],
@@ -3618,6 +3636,9 @@ function normalizeDevelopmentRolePlayerDefaults(value = {}) {
     DEFAULT_DEVELOPMENT_SETTINGS.stakeholderTeams.rolePlayerDefaults.autoInviteSelectedBondOriginator
 
   return {
+    defaultAgentSource: developerSellingDirectly ? 'none' : defaultAgentSource,
+    multipleAgentsAllowed: Boolean(multipleAgentsAllowed) && !developerSellingDirectly,
+    developerSellingDirectly: Boolean(developerSellingDirectly),
     defaultTransferAttorneySource,
     defaultBondOriginatorSource,
     buyerAppointedBondOriginatorAllowed: Boolean(buyerAppointedBondOriginatorAllowed),

@@ -327,17 +327,21 @@ function normalizeDevelopmentTeamMember(roleType, member = {}, index = 0) {
 function getDevelopmentTeamDefaultOption({ development, roleType, partnerOptions = [] }) {
   const defaults = getDevelopmentRolePlayerDefaults(development)
   const source =
-    roleType === 'transfer_attorney'
-      ? defaults.defaultTransferAttorneySource || defaults.default_transfer_attorney_source
-      : defaults.defaultBondOriginatorSource || defaults.default_bond_originator_source
+    roleType === 'agent'
+      ? defaults.defaultAgentSource || defaults.default_agent_source
+      : roleType === 'transfer_attorney'
+        ? defaults.defaultTransferAttorneySource || defaults.default_transfer_attorney_source
+        : defaults.defaultBondOriginatorSource || defaults.default_bond_originator_source
 
-  if (source === 'none') {
+  if (source === 'none' || (roleType === 'agent' && (defaults.developerSellingDirectly || defaults.developer_selling_directly))) {
     return null
   }
 
   const teams = getDevelopmentStakeholderTeams(development)
   const teamMembers =
-    roleType === 'transfer_attorney'
+    roleType === 'agent'
+      ? teams.agents || []
+      : roleType === 'transfer_attorney'
       ? teams.conveyancers || teams.transferAttorneys || teams.transfer_attorneys || []
       : teams.bondOriginators || teams.bond_originators || []
   const defaultMember = (Array.isArray(teamMembers) ? teamMembers : [])
@@ -814,6 +818,15 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     () => getDevelopmentRolePlayerDefaults(selectedDevelopment || {}),
     [selectedDevelopment],
   )
+  const developmentDefaultAgent = useMemo(
+    () =>
+      getDevelopmentTeamDefaultOption({
+        development: selectedDevelopment || {},
+        roleType: 'agent',
+        partnerOptions: [],
+      }),
+    [selectedDevelopment],
+  )
   const developmentDefaultTransferAttorney = useMemo(
     () =>
       getDevelopmentTeamDefaultOption({
@@ -871,7 +884,33 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           ? developmentDefaultBondOriginator
           : bondOriginatorPartnerOptions[0] || null
       const nextFinance = { ...previous.finance }
+      const nextSetup = { ...previous.setup }
       let changed = false
+
+      if (previous.setup.transactionType === 'developer_sale' && previous.setup.developmentId) {
+        const sellingDirectly = Boolean(
+          developmentRolePlayerDefaults.developerSellingDirectly ||
+            developmentRolePlayerDefaults.developer_selling_directly,
+        )
+        const shouldApplyAgentDefault =
+          !sellingDirectly &&
+          developmentDefaultAgent &&
+          !previous.setup.agentInvolved &&
+          !previous.setup.assignedAgent &&
+          !previous.setup.assignedAgentEmail
+
+        if (sellingDirectly && (previous.setup.agentInvolved || previous.setup.assignedAgent || previous.setup.assignedAgentEmail)) {
+          nextSetup.agentInvolved = false
+          nextSetup.assignedAgent = ''
+          nextSetup.assignedAgentEmail = ''
+          changed = true
+        } else if (shouldApplyAgentDefault) {
+          nextSetup.agentInvolved = true
+          nextSetup.assignedAgent = developmentDefaultAgent.contactPerson || developmentDefaultAgent.companyName || ''
+          nextSetup.assignedAgentEmail = developmentDefaultAgent.email || ''
+          changed = true
+        }
+      }
 
       if (
         partnerInvitationModes.transfer_attorney === 'existing' &&
@@ -899,13 +938,16 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         changed = true
       }
 
-      return changed ? { ...previous, finance: nextFinance } : previous
+      return changed ? { ...previous, setup: nextSetup, finance: nextFinance } : previous
     })
   }, [
     attorneyPartnerOptions,
     bondOriginatorPartnerOptions,
+    developmentDefaultAgent,
     developmentDefaultBondOriginator,
     developmentDefaultTransferAttorney,
+    developmentRolePlayerDefaults.developerSellingDirectly,
+    developmentRolePlayerDefaults.developer_selling_directly,
     isPrivateMatter,
     open,
     partnerDefaultsTouched.bond_originator,
@@ -927,10 +969,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         ? ''
         : String(selectedDevelopment.reservation_deposit_amount)
     const defaultAmountType = selectedDevelopment?.reservation_deposit_amount_type || 'fixed'
-    const defaultTreatment = selectedDevelopment?.reservation_deposit_treatment || 'credited_to_purchase_price'
     const defaultPayableTo = selectedDevelopment?.reservation_deposit_payable_to || 'developer'
-    const defaultAlterationChargeTreatment =
-      selectedDevelopment?.default_alteration_charge_treatment || 'included_in_purchase_price'
 
     setForm((previous) => {
       if (previous.setup.transactionType !== 'developer_sale') {
@@ -945,9 +984,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         String(previous.finance.reservationAmount || '') === String(nextReservationAmount || '') &&
         previous.finance.reservationStatus === nextReservationStatus &&
         previous.finance.reservationAmountType === defaultAmountType &&
-        previous.finance.reservationTreatment === defaultTreatment &&
-        previous.finance.reservationPayableTo === defaultPayableTo &&
-        previous.finance.alterationChargeTreatment === defaultAlterationChargeTreatment
+        previous.finance.reservationPayableTo === defaultPayableTo
       ) {
         return previous
       }
@@ -959,10 +996,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           reservationRequired: nextReservationRequired,
           reservationAmount: nextReservationAmount,
           reservationAmountType: defaultAmountType,
-          reservationTreatment: defaultTreatment,
           reservationPayableTo: defaultPayableTo,
           reservationStatus: nextReservationStatus,
-          alterationChargeTreatment: defaultAlterationChargeTreatment,
         },
       }
     })
@@ -976,8 +1011,6 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     selectedDevelopment?.reservation_deposit_amount_type,
     selectedDevelopment?.reservation_deposit_enabled_by_default,
     selectedDevelopment?.reservation_deposit_payable_to,
-    selectedDevelopment?.reservation_deposit_treatment,
-    selectedDevelopment?.default_alteration_charge_treatment,
   ])
 
   const developmentStats = useMemo(() => {
@@ -1058,6 +1091,9 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             ...previous.setup,
             developmentId: value,
             unitId: '',
+            agentInvolved: false,
+            assignedAgent: '',
+            assignedAgentEmail: '',
           },
           finance: {
             ...previous.finance,
