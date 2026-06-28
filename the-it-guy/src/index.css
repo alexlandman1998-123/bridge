@@ -619,6 +619,10 @@
     margin-top: 0.75rem;
   }
 
+  .ui-sidebar-workspace:empty {
+    display: none;
+  }
+
   .ui-workspace-switcher {
     position: relative;
     margin-top: 0.85rem;

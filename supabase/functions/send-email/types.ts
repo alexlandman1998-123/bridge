@@ -187,6 +187,12 @@ export type SendTransactionPartnerInvitationPayload = {
   role_type?: string;
   roleLabel?: string;
   role_label?: string;
+  transactionReference?: string;
+  transaction_reference?: string;
+  propertyLabel?: string;
+  property_label?: string;
+  buyerLabel?: string;
+  buyer_label?: string;
   companyName?: string;
   company_name?: string;
   contactName?: string;
@@ -199,6 +205,8 @@ export type SendTransactionPartnerInvitationPayload = {
   partner_prospect_id?: string | null;
   reusedProspect?: boolean;
   reused_prospect?: boolean;
+  deliveryKind?: string;
+  delivery_kind?: string;
 };
 
 export type SendSellerOnboardingPayload = {

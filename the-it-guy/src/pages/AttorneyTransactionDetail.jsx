@@ -113,6 +113,13 @@ import {
   getTransactionRoutingStatusLabel,
 } from '../services/transactionRoutingDiagnosticsService'
 import {
+  buildTransactionPartnerInvitationLink,
+  getTransactionPartnerRoleLabel,
+  listTransactionPartnerInvitations,
+  recordTransactionPartnerInvitationLinkCopied,
+  resendTransactionPartnerInvitation,
+} from '../services/transactionPartnerInvitationService'
+import {
   buildBondApplicationPdfHtml,
   buildBondApplicationViewModel,
   getBondApplicationPdfFilename,
@@ -1641,6 +1648,14 @@ const ACTIVITY_CATEGORY_META = {
     dot: 'bg-slate-400',
     Icon: MessageSquarePlus,
   },
+  invitations: {
+    label: 'Partner Invite',
+    badge: 'border-teal-200 bg-teal-50 text-teal-700',
+    icon: 'bg-teal-50 text-teal-700 ring-teal-100',
+    card: 'border-teal-100',
+    dot: 'bg-teal-500',
+    Icon: Send,
+  },
   internal: {
     label: 'Internal',
     badge: 'border-amber-200 bg-amber-50 text-amber-700',
@@ -1696,7 +1711,66 @@ function buildActivityFilterKeys(category, extra = []) {
   if (['transfer', 'bond', 'cancellation'].includes(category)) keys.add(category)
   if (category === 'documents') keys.add('documents')
   if (category === 'internal' || category === 'notes') keys.add('notes')
+  if (category === 'invitations') keys.add('roleplayers')
   return [...keys]
+}
+
+function getInvitationEventCopy(eventType = '', eventData = {}) {
+  const lowerType = String(eventType || '').toLowerCase()
+  const roleLabel = getTransactionPartnerRoleLabel(eventData.roleType || eventData.role_type)
+  const companyName = eventData.companyName || eventData.company_name || 'partner'
+  const contactName = eventData.contactName || eventData.contact_name || ''
+  const email = eventData.email || ''
+  const recipient = contactName || companyName
+  const destination = email ? `${recipient} (${email})` : recipient
+
+  if (lowerType.includes('accepted')) {
+    return {
+      title: `${roleLabel} invite accepted`,
+      detail: `${destination} accepted the invitation and now has transaction access.`,
+    }
+  }
+  if (lowerType.includes('viewed')) {
+    return {
+      title: `${roleLabel} invite viewed`,
+      detail: `${destination} opened the invitation link.`,
+    }
+  }
+  if (lowerType.includes('resent')) {
+    return {
+      title: `${roleLabel} invite resent`,
+      detail: `The invitation was resent to ${email || recipient}.`,
+    }
+  }
+  if (lowerType.includes('email delivered')) {
+    return {
+      title: `${roleLabel} invite email delivered`,
+      detail: `The invitation email was delivered to ${email || recipient}.`,
+    }
+  }
+  if (lowerType.includes('delivery failed')) {
+    return {
+      title: `${roleLabel} invite email failed`,
+      detail: `The invitation email to ${email || recipient} needs attention.`,
+    }
+  }
+  if (lowerType.includes('link copied')) {
+    return {
+      title: `${roleLabel} invite link copied`,
+      detail: `The invitation link for ${destination} was copied for manual sharing.`,
+    }
+  }
+  if (lowerType.includes('expired')) {
+    return {
+      title: `${roleLabel} invite expired`,
+      detail: `The invitation for ${destination} expired before it was accepted.`,
+    }
+  }
+
+  return {
+    title: `${roleLabel} invite updated`,
+    detail: `The invitation for ${destination} was updated.`,
+  }
 }
 
 function humanizeTransactionEvent(event = {}) {
@@ -1714,7 +1788,13 @@ function humanizeTransactionEvent(event = {}) {
   let attachmentName = eventData.fileName || eventData.documentName || eventData.title || ''
   const extraFilterKeys = []
 
-  if (lowerType.includes('document') || isAdditionalDocumentRequest) {
+  if (lowerType.includes('invitation')) {
+    category = 'invitations'
+    extraFilterKeys.push('roleplayers')
+    const inviteCopy = getInvitationEventCopy(eventType, eventData)
+    title = eventData.title || inviteCopy.title
+    detail = eventData.message || eventData.note || inviteCopy.detail
+  } else if (lowerType.includes('document') || isAdditionalDocumentRequest) {
     category = 'documents'
     title = eventData.title ? `${eventData.title} requested` : 'Document activity recorded'
     detail = eventData.requestedFrom ? `Requested from ${toTitle(eventData.requestedFrom)}` : detail || 'Document workflow updated.'
@@ -3528,6 +3608,168 @@ function OverviewSidePanel({ title, children }) {
   )
 }
 
+function getPartnerInviteStatusClass(status) {
+  const normalized = String(status || '').trim().toLowerCase()
+  if (normalized === 'accepted') return 'border-success/30 bg-successSoft text-success'
+  if (normalized === 'declined' || normalized === 'expired') return 'border-warning/30 bg-warningSoft text-warning'
+  return 'border-blue-100 bg-blue-50 text-blue-700'
+}
+
+function getPartnerInviteDeliveryText(invitation = {}) {
+  const delivery = invitation.lastEmailDelivery
+  if (delivery?.sent || delivery?.ok) {
+    return invitation.resentAt
+      ? `Resent ${formatDateTime(invitation.resentAt, 'recently')}`
+      : `Sent ${formatDateTime(invitation.createdAt, 'recently')}`
+  }
+  if (delivery && (delivery.sent === false || delivery.ok === false)) return 'Email delivery needs attention'
+  if (invitation.isExpired || invitation.status === 'expired') return 'Invite expired. Resend to issue a fresh link.'
+  if (invitation.expiresSoon) return `Invite expires in ${invitation.daysUntilExpiry || 1} day${invitation.daysUntilExpiry === 1 ? '' : 's'}`
+  if (invitation.resentAt) return `Resent ${formatDateTime(invitation.resentAt, 'recently')}`
+  return invitation.createdAt ? `Created ${formatDateTime(invitation.createdAt, 'recently')}` : 'Delivery not recorded yet'
+}
+
+function getPartnerInviteLifecycleRows(invitation = {}) {
+  return [
+    invitation.viewedAt ? ['Viewed', formatDateTime(invitation.viewedAt)] : null,
+    invitation.acceptedAt ? ['Accepted', formatDateTime(invitation.acceptedAt)] : null,
+    invitation.lastLinkCopiedAt ? ['Copied', formatDateTime(invitation.lastLinkCopiedAt)] : null,
+    invitation.expiresAt && invitation.status === 'pending' ? ['Expires', formatDate(invitation.expiresAt)] : null,
+  ].filter(Boolean)
+}
+
+function PartnerInvitesSidePanel({
+  invitations = [],
+  loading = false,
+  busyId = '',
+  message = '',
+  error = '',
+  onRefresh,
+  onResend,
+  onCopy,
+}) {
+  if (!loading && !invitations.length && !message && !error) return null
+
+  return (
+    <OverviewSidePanel title="Partner Invites">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs leading-5 text-textMuted">
+          Track invited attorneys, originators, developers, and collaborators.
+        </p>
+        <Button type="button" variant="ghost" size="sm" onClick={onRefresh} disabled={loading}>
+          {loading ? 'Loading' : 'Refresh'}
+        </Button>
+      </div>
+      {message ? (
+        <p className="mt-3 rounded-[12px] border border-success/25 bg-successSoft px-3 py-2 text-xs font-semibold text-success">
+          {message}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="mt-3 rounded-[12px] border border-warning/25 bg-warningSoft px-3 py-2 text-xs font-semibold text-warning">
+          {error}
+        </p>
+      ) : null}
+      <div className="mt-3 space-y-3">
+        {loading && !invitations.length ? (
+          <p className="rounded-[12px] border border-dashed border-borderSoft bg-surfaceAlt px-3 py-4 text-sm text-textMuted">
+            Loading partner invites...
+          </p>
+        ) : null}
+        {invitations.map((invitation) => {
+          const isAccepted = invitation.status === 'accepted'
+          const needsFreshInvite = invitation.status === 'expired' || invitation.status === 'declined'
+          const isBusy = busyId === invitation.id
+          const canCopy = Boolean(invitation.invitationLink || invitation.invitationToken)
+          const lifecycleRows = getPartnerInviteLifecycleRows(invitation)
+          return (
+            <article key={invitation.id} className="rounded-[14px] border border-borderSoft bg-surfaceAlt p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">
+                    {invitation.roleLabel}
+                  </span>
+                  <strong className="mt-1 block truncate text-sm text-textStrong">
+                    {invitation.companyName || invitation.contactName || invitation.email || 'Invited partner'}
+                  </strong>
+                  <p className="mt-0.5 truncate text-xs text-textMuted">
+                    {invitation.contactName && invitation.companyName ? `${invitation.contactName} • ` : ''}
+                    {invitation.email || 'No email captured'}
+                  </p>
+                </div>
+                <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getPartnerInviteStatusClass(invitation.status)}`}>
+                  {invitation.statusLabel}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-[0.72rem] text-textMuted">
+                {invitation.isExpired || invitation.expiresSoon ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
+                <span className="truncate">{getPartnerInviteDeliveryText(invitation)}</span>
+              </div>
+              {invitation.isExpired || invitation.expiresSoon ? (
+                <p className={`mt-2 rounded-[10px] border px-3 py-2 text-xs font-semibold ${
+                  invitation.isExpired
+                    ? 'border-warning/25 bg-warningSoft text-warning'
+                    : 'border-blue-100 bg-blue-50 text-blue-700'
+                }`}>
+                  {invitation.isExpired
+                    ? 'This invite is no longer valid. Resend it to create a new secure link.'
+                    : 'This invite is close to expiry. Resending will extend access by 30 days.'}
+                </p>
+              ) : null}
+              {lifecycleRows.length || invitation.emailDeliveryCount || invitation.linkCopyCount ? (
+                <div className="mt-3 grid gap-2 rounded-[12px] border border-borderSoft bg-white px-3 py-2">
+                  {lifecycleRows.map(([label, value]) => (
+                    <div key={label} className="flex items-center justify-between gap-3 text-[0.72rem]">
+                      <span className="font-semibold uppercase tracking-[0.08em] text-textMuted">{label}</span>
+                      <span className="truncate text-right text-textStrong">{value}</span>
+                    </div>
+                  ))}
+                  {invitation.emailDeliveryCount ? (
+                    <div className="flex items-center justify-between gap-3 text-[0.72rem]">
+                      <span className="font-semibold uppercase tracking-[0.08em] text-textMuted">Emails</span>
+                      <span className="text-textStrong">{invitation.emailDeliveryCount}</span>
+                    </div>
+                  ) : null}
+                  {invitation.linkCopyCount ? (
+                    <div className="flex items-center justify-between gap-3 text-[0.72rem]">
+                      <span className="font-semibold uppercase tracking-[0.08em] text-textMuted">Copied</span>
+                      <span className="text-textStrong">{invitation.linkCopyCount}</span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="justify-center"
+                  onClick={() => onResend(invitation)}
+                  disabled={isAccepted || isBusy}
+                >
+                  <Send size={13} />
+                  {isBusy ? 'Sending' : needsFreshInvite ? 'Refresh' : 'Resend'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="justify-center"
+                  onClick={() => onCopy(invitation)}
+                  disabled={!canCopy || isBusy}
+                >
+                  <Copy size={13} />
+                  Copy
+                </Button>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </OverviewSidePanel>
+  )
+}
+
 function TransactionRoutingSummaryCard({ diagnostics = null, canEdit = false, onEdit = null }) {
   if (!diagnostics) return null
   const statusClasses = diagnostics.status === 'needs_attention'
@@ -4015,6 +4257,11 @@ function AttorneyTransactionDetail() {
   const [_inviteLinkResult, setInviteLinkResult] = useState('')
   const [roleplayerIntroBusy, setRoleplayerIntroBusy] = useState(false)
   const [roleplayerHandoffBusy, setRoleplayerHandoffBusy] = useState(false)
+  const [partnerInvitations, setPartnerInvitations] = useState([])
+  const [partnerInvitationLoading, setPartnerInvitationLoading] = useState(false)
+  const [partnerInvitationBusyId, setPartnerInvitationBusyId] = useState('')
+  const [partnerInvitationMessage, setPartnerInvitationMessage] = useState('')
+  const [partnerInvitationError, setPartnerInvitationError] = useState('')
   const [roleplayerForm, setRoleplayerForm] = useState({
     buyerName: '',
     buyerEmail: '',
@@ -4353,6 +4600,80 @@ function AttorneyTransactionDetail() {
       ? AGENT_WORKSPACE_TABS
       : ATTORNEY_WORKSPACE_TABS
   const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) ? requestedWorkspaceMenu : 'overview'
+
+  const loadPartnerInvitations = useCallback(async () => {
+    if (!transaction?.id || !canManageTransactionRoleplayers) {
+      setPartnerInvitations([])
+      setPartnerInvitationLoading(false)
+      setPartnerInvitationError('')
+      return
+    }
+
+    try {
+      setPartnerInvitationLoading(true)
+      setPartnerInvitationError('')
+      const rows = await listTransactionPartnerInvitations(transaction.id)
+      setPartnerInvitations(rows)
+    } catch (loadError) {
+      setPartnerInvitations([])
+      setPartnerInvitationError(loadError?.message || 'Unable to load partner invitations.')
+    } finally {
+      setPartnerInvitationLoading(false)
+    }
+  }, [canManageTransactionRoleplayers, transaction?.id])
+
+  useEffect(() => {
+    setPartnerInvitationBusyId('')
+    setPartnerInvitationMessage('')
+    setPartnerInvitationError('')
+  }, [transaction?.id])
+
+  useEffect(() => {
+    void loadPartnerInvitations()
+  }, [loadPartnerInvitations])
+
+  async function handleResendPartnerInvitation(invitation) {
+    if (!invitation?.id) return
+    try {
+      setPartnerInvitationBusyId(invitation.id)
+      setPartnerInvitationMessage('')
+      setPartnerInvitationError('')
+      const result = await resendTransactionPartnerInvitation(invitation.id)
+      const sent = result?.emailResult?.sent === true || result?.emailResult?.ok === true
+      setPartnerInvitationMessage(
+        sent
+          ? `Invite resent to ${invitation.email || 'the partner'}.`
+          : 'Invite refreshed, but the email delivery needs attention.',
+      )
+      await loadPartnerInvitations()
+    } catch (resendError) {
+      setPartnerInvitationError(resendError?.message || 'Unable to resend this invitation.')
+    } finally {
+      setPartnerInvitationBusyId('')
+    }
+  }
+
+  async function handleCopyPartnerInvitation(invitation) {
+    const link = invitation?.invitationLink || buildTransactionPartnerInvitationLink(invitation?.invitationToken)
+    if (!link) {
+      setPartnerInvitationError('Invite link unavailable. Resend the invite to generate a fresh link.')
+      return
+    }
+    try {
+      setPartnerInvitationMessage('')
+      setPartnerInvitationError('')
+      await navigator.clipboard.writeText(link)
+      try {
+        await recordTransactionPartnerInvitationLinkCopied(invitation.id)
+      } catch {
+        // Copying is the user-facing action; audit logging should not block it.
+      }
+      setPartnerInvitationMessage('Invite link copied.')
+      await loadPartnerInvitations()
+    } catch {
+      setPartnerInvitationError('Unable to copy the invite link from this browser.')
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -8232,6 +8553,18 @@ function AttorneyTransactionDetail() {
                       ))}
                     </div>
                   </OverviewSidePanel>
+                  {canManageTransactionRoleplayers ? (
+                    <PartnerInvitesSidePanel
+                      invitations={partnerInvitations}
+                      loading={partnerInvitationLoading}
+                      busyId={partnerInvitationBusyId}
+                      message={partnerInvitationMessage}
+                      error={partnerInvitationError}
+                      onRefresh={loadPartnerInvitations}
+                      onResend={handleResendPartnerInvitation}
+                      onCopy={handleCopyPartnerInvitation}
+                    />
+                  ) : null}
                   <TransactionRoutingSummaryCard
                     diagnostics={routingDiagnostics}
                     canEdit={canEditRoutingProfile}

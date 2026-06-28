@@ -29,12 +29,22 @@ const PARTICIPANT_ROLE_SHAPE = Object.freeze({
 })
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const FALLBACK_TRANSACTION_INVITE_ORIGIN = 'https://app.arch9.co.za'
 const PROSPECT_STATUS_LABELS = Object.freeze({
   invited: 'Pending',
   joined: 'Joined',
   declined: 'Declined',
   inactive: 'Inactive',
 })
+
+const INVITATION_STATUS_LABELS = Object.freeze({
+  pending: 'Pending',
+  accepted: 'Accepted',
+  declined: 'Declined',
+  expired: 'Expired',
+})
+
+const INVITATION_EXPIRY_SOON_MS = 3 * 24 * 60 * 60 * 1000
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -102,6 +112,53 @@ export function normalizePartnerProspect(row = {}) {
   return toCamelProspect(row)
 }
 
+export function normalizeTransactionPartnerInvitation(row = {}) {
+  const roleType = normalizeTransactionPartnerInvitationRole(row.role_type || row.roleType)
+  const storedStatus = normalizeText(row.status).toLowerCase() || 'pending'
+  const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+  const lastEmailDelivery = metadata.lastEmailDelivery || metadata.last_email_delivery || null
+  const emailDeliveryCount = Number(metadata.emailDeliveryCount || metadata.email_delivery_count || 0)
+  const linkCopyCount = Number(metadata.linkCopyCount || metadata.link_copy_count || 0)
+  const invitationToken = normalizeText(row.invitation_token || row.invitationToken)
+  const expiresAt = row.expires_at || row.expiresAt || null
+  const expiryTime = expiresAt ? new Date(expiresAt).getTime() : NaN
+  const msUntilExpiry = Number.isNaN(expiryTime) ? null : expiryTime - Date.now()
+  const isExpired = storedStatus === 'expired' || (storedStatus === 'pending' && msUntilExpiry !== null && msUntilExpiry <= 0)
+  const status = isExpired ? 'expired' : storedStatus
+  return {
+    id: row.id || '',
+    transactionId: row.transaction_id || row.transactionId || '',
+    partnerProspectId: row.partner_prospect_id || row.partnerProspectId || null,
+    roleType,
+    roleLabel: getTransactionPartnerRoleLabel(roleType),
+    companyName: normalizeText(row.company_name || row.companyName),
+    contactName: normalizeText(row.contact_name || row.contactName),
+    email: normalizeText(row.email).toLowerCase(),
+    phone: normalizeText(row.phone),
+    status,
+    storedStatus,
+    statusLabel: INVITATION_STATUS_LABELS[status] || 'Pending',
+    isExpired,
+    expiresSoon: status === 'pending' && msUntilExpiry !== null && msUntilExpiry > 0 && msUntilExpiry <= INVITATION_EXPIRY_SOON_MS,
+    daysUntilExpiry: msUntilExpiry === null ? null : Math.max(0, Math.ceil(msUntilExpiry / (24 * 60 * 60 * 1000))),
+    invitationToken,
+    invitationLink: isExpired ? '' : invitationUrlForToken(invitationToken),
+    expiresAt,
+    viewedAt: row.viewed_at || row.viewedAt || null,
+    declinedAt: row.declined_at || row.declinedAt || null,
+    acceptedAt: row.accepted_at || row.acceptedAt || null,
+    acceptedUserId: row.accepted_user_id || row.acceptedUserId || null,
+    resentAt: row.resent_at || row.resentAt || null,
+    metadata,
+    lastEmailDelivery,
+    emailDeliveryCount,
+    lastLinkCopiedAt: metadata.lastLinkCopiedAt || metadata.last_link_copied_at || null,
+    linkCopyCount,
+    createdAt: row.created_at || row.createdAt || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
+  }
+}
+
 export function normalizeTransactionPartnerInvitationDraft(input = {}) {
   const roleType = normalizeTransactionPartnerInvitationRole(input.roleType || input.role_type)
   const companyName = normalizeText(input.companyName || input.company_name)
@@ -163,9 +220,132 @@ function getOrigin() {
   return window.location.origin
 }
 
+function getConfiguredInviteOrigin() {
+  const env = import.meta.env || {}
+  const explicitOrigin = normalizeText(env.VITE_APP_URL || env.VITE_APP_ORIGIN || env.VITE_PUBLIC_APP_URL)
+  if (explicitOrigin) return explicitOrigin.replace(/\/+$/, '')
+
+  const currentOrigin = normalizeText(getOrigin())
+  if (!currentOrigin) return FALLBACK_TRANSACTION_INVITE_ORIGIN
+
+  try {
+    const hostname = new URL(currentOrigin).hostname.toLowerCase()
+    const shouldForceAppArch9 =
+      hostname === 'admin.arch9.co.za' ||
+      hostname === 'www.arch9.co.za' ||
+      hostname.endsWith('bridgenine.co.za') ||
+      hostname.endsWith('bridge9.app')
+
+    if (shouldForceAppArch9) return FALLBACK_TRANSACTION_INVITE_ORIGIN
+  } catch {
+    return currentOrigin.replace(/\/+$/, '')
+  }
+
+  return currentOrigin.replace(/\/+$/, '')
+}
+
 function invitationUrlForToken(token) {
-  const origin = getOrigin()
+  const origin = getConfiguredInviteOrigin()
   return token ? `${origin}/transaction-invite/${token}` : ''
+}
+
+export function buildTransactionPartnerInvitationLink(token) {
+  return invitationUrlForToken(token)
+}
+
+function joinLabel(parts = []) {
+  return parts.map(normalizeText).filter(Boolean).join(', ')
+}
+
+function fallbackTransactionReference(transactionId) {
+  const compactId = normalizeText(transactionId).replace(/-/g, '').slice(0, 8).toUpperCase()
+  return compactId ? `TX-${compactId}` : 'Property Transaction'
+}
+
+function buildInvitationAcceptanceError(result = {}) {
+  const code = normalizeText(result.code || result.reason)
+  const messages = {
+    not_authenticated: 'Please sign in or create your Arch9 password before accepting this invitation.',
+    invalid_token: 'This invitation link is not valid.',
+    invitation_not_found: 'This invitation is no longer available.',
+    invitation_accepted: 'This invitation has already been accepted.',
+    invitation_declined: 'This invitation has already been declined.',
+    invitation_expired: 'This invitation has expired.',
+    email_mismatch: 'This invitation is locked to a different email address.',
+  }
+  const error = new Error(messages[code] || 'Unable to accept this invitation.')
+  error.code = code || 'acceptance_failed'
+  error.details = result
+  return error
+}
+
+function buildInvitationResendError(result = {}) {
+  const code = normalizeText(result.code || result.reason)
+  const messages = {
+    invitation_not_found: 'This invitation is no longer available.',
+    not_authorized: 'You do not have permission to resend this invitation.',
+    invitation_already_accepted: 'This invitation has already been accepted.',
+  }
+  const error = new Error(messages[code] || 'Unable to resend this invitation.')
+  error.code = code || 'resend_failed'
+  error.details = result
+  return error
+}
+
+async function maybeFetchSingle(client, table, select, column, value) {
+  if (!normalizeText(value)) return null
+  try {
+    const result = await client.from(table).select(select).eq(column, value).maybeSingle()
+    if (result.error) return null
+    return result.data || null
+  } catch {
+    return null
+  }
+}
+
+async function getTransactionPartnerInvitationEmailContext(client, transactionId) {
+  const context = {
+    invitedByOrganisation: 'Arch9',
+    transactionReference: fallbackTransactionReference(transactionId),
+    propertyLabel: 'Property transaction',
+    buyerLabel: '',
+  }
+
+  const transaction = await maybeFetchSingle(client, 'transactions', '*', 'id', transactionId)
+  if (!transaction) return context
+
+  const organisation = await maybeFetchSingle(client, 'organisations', 'id, name, display_name', 'id', transaction.organisation_id)
+  const unit = await maybeFetchSingle(client, 'units', '*', 'id', transaction.unit_id)
+  const development = await maybeFetchSingle(
+    client,
+    'developments',
+    '*',
+    'id',
+    transaction.development_id || unit?.development_id,
+  )
+  const buyer = await maybeFetchSingle(client, 'buyers', '*', 'id', transaction.buyer_id)
+
+  const unitLabel = unit ? joinLabel([development?.name || development?.development_name, unit.unit_number ? `Unit ${unit.unit_number}` : '']) : ''
+  const addressLabel = joinLabel([
+    transaction.property_address_line_1,
+    transaction.property_address_line_2,
+    transaction.suburb,
+    transaction.city,
+    transaction.province,
+  ])
+
+  return {
+    invitedByOrganisation: normalizeText(organisation?.display_name || organisation?.name) || context.invitedByOrganisation,
+    transactionReference:
+      normalizeText(transaction.transaction_reference || transaction.matter_number || transaction.reference) ||
+      context.transactionReference,
+    propertyLabel:
+      unitLabel ||
+      addressLabel ||
+      normalizeText(transaction.property_description || transaction.title || development?.name || development?.development_name) ||
+      context.propertyLabel,
+    buyerLabel: normalizeText(buyer?.name || buyer?.full_name || buyer?.email),
+  }
 }
 
 async function getCurrentUserId(client) {
@@ -314,21 +494,65 @@ async function upsertInvitedParticipant(client, { transactionId, invitation, act
   return result.data?.[0] || null
 }
 
-async function sendInvitationEmail({ transactionId, invitation, invitationUrl }) {
+function compactDeliveryResult(emailResult = {}, deliveryKind = 'initial') {
+  const sent = emailResult?.sent === true || emailResult?.ok === true
+  const providerResponse = emailResult?.providerResponse || emailResult?.provider_response || null
+  const providerMessageId = providerResponse?.id || providerResponse?.messageId || providerResponse?.message_id || null
+  const error = emailResult?.error
+  return {
+    deliveryKind,
+    sent,
+    ok: sent,
+    provider: normalizeText(emailResult?.provider) || null,
+    providerMessageId,
+    reason: normalizeText(emailResult?.reason) || null,
+    error: error ? normalizeText(error.message || error.name || error.code || error) : null,
+    status: emailResult?.status || error?.status || null,
+  }
+}
+
+async function recordInvitationDelivery(client, { invitationId, emailResult, deliveryKind = 'initial' } = {}) {
+  const safeInvitationId = normalizeText(invitationId)
+  if (!safeInvitationId) return null
+  try {
+    const payload = compactDeliveryResult(emailResult, deliveryKind)
+    const result = await client.rpc('bridge_record_transaction_partner_invitation_delivery', {
+      p_invitation_id: safeInvitationId,
+      p_delivery_event: payload.sent ? `${deliveryKind}_email_sent` : `${deliveryKind}_email_failed`,
+      p_delivery: payload,
+    })
+    if (result.error) {
+      const message = String(result.error.message || '').toLowerCase()
+      if (result.error.code === '42883' || message.includes('bridge_record_transaction_partner_invitation_delivery')) return null
+      throw result.error
+    }
+    return result.data || null
+  } catch {
+    return null
+  }
+}
+
+async function sendInvitationEmail({ transactionId, invitation, invitationUrl, deliveryKind = 'initial' }) {
   const email = normalizeText(invitation.email).toLowerCase()
   if (!email) return { sent: false, reason: 'missing_email' }
+  const emailContext = await getTransactionPartnerInvitationEmailContext(supabase, transactionId)
 
   const { data, error } = await invokeEdgeFunction('send-email', {
     body: {
       type: 'transaction_partner_invitation',
       transactionId,
+      transactionReference: emailContext.transactionReference,
+      propertyLabel: emailContext.propertyLabel,
+      buyerLabel: emailContext.buyerLabel,
       to: email,
       roleType: invitation.role_type || invitation.roleType,
       roleLabel: getTransactionPartnerRoleLabel(invitation.role_type || invitation.roleType),
       companyName: invitation.company_name || invitation.companyName,
       contactName: invitation.contact_name || invitation.contactName,
+      invitedByOrganisation: emailContext.invitedByOrganisation,
       partnerProspectId: invitation.partner_prospect_id || invitation.partnerProspectId || null,
       reusedProspect: Boolean(invitation.partner_prospect_id || invitation.partnerProspectId),
+      deliveryKind,
       invitationLink: invitationUrl,
     },
   })
@@ -414,12 +638,18 @@ export async function createTransactionPartnerInvitation(input = {}) {
 
   const invitationUrl = invitationUrlForToken(invitation.invitation_token || token)
   const emailResult = await sendInvitationEmail({ transactionId, invitation, invitationUrl })
+  const deliveryResult = await recordInvitationDelivery(client, {
+    invitationId: invitation.id,
+    emailResult,
+    deliveryKind: 'initial',
+  })
 
   return {
     invitation,
     partnerProspect,
     invitationUrl,
     emailResult,
+    deliveryResult,
   }
 }
 
@@ -471,6 +701,72 @@ export async function listPartnerProspects(options = {}) {
   return filterProspectRows(result.data || [], { roleType, limit })
 }
 
+export async function listTransactionPartnerInvitations(transactionId) {
+  const client = requireClient()
+  const safeTransactionId = normalizeText(transactionId)
+  if (!safeTransactionId) return []
+
+  await expireStaleTransactionPartnerInvitations(safeTransactionId)
+
+  const result = await client
+    .from('transaction_partner_invitations')
+    .select('id, transaction_id, partner_prospect_id, role_type, company_name, contact_name, email, phone, status, invitation_token, expires_at, viewed_at, declined_at, accepted_at, accepted_user_id, resent_at, metadata, created_at, updated_at')
+    .eq('transaction_id', safeTransactionId)
+    .order('created_at', { ascending: false })
+
+  if (result.error) {
+    if (result.error.code === '42P01' || result.error.code === '42501') return []
+    throw result.error
+  }
+  return (result.data || []).map(normalizeTransactionPartnerInvitation)
+}
+
+export async function expireStaleTransactionPartnerInvitations(transactionId) {
+  const client = requireClient()
+  const safeTransactionId = normalizeText(transactionId)
+  if (!safeTransactionId) return null
+
+  try {
+    const result = await client.rpc('bridge_expire_stale_transaction_partner_invitations', {
+      p_transaction_id: safeTransactionId,
+    })
+    if (result.error) {
+      const message = String(result.error.message || '').toLowerCase()
+      if (result.error.code === '42883' || message.includes('bridge_expire_stale_transaction_partner_invitations')) return null
+      throw result.error
+    }
+    return result.data || null
+  } catch (error) {
+    const message = String(error?.message || '').toLowerCase()
+    if (message.includes('bridge_expire_stale_transaction_partner_invitations')) return null
+    throw error
+  }
+}
+
+export async function recordTransactionPartnerInvitationLinkCopied(invitationId) {
+  const client = requireClient()
+  const safeInvitationId = normalizeText(invitationId)
+  if (!safeInvitationId) return null
+
+  try {
+    const result = await client.rpc('bridge_record_transaction_partner_invitation_action', {
+      p_invitation_id: safeInvitationId,
+      p_action: 'link_copied',
+      p_metadata: { source: 'transaction_detail_partner_invites_card' },
+    })
+    if (result.error) {
+      const message = String(result.error.message || '').toLowerCase()
+      if (result.error.code === '42883' || message.includes('bridge_record_transaction_partner_invitation_action')) return null
+      throw result.error
+    }
+    return result.data || null
+  } catch (error) {
+    const message = String(error?.message || '').toLowerCase()
+    if (message.includes('bridge_record_transaction_partner_invitation_action')) return null
+    throw error
+  }
+}
+
 export async function applyPartnerProspectToTransaction({ transactionId, partnerProspectId, roleType } = {}) {
   const client = requireClient()
   const safeTransactionId = normalizeText(transactionId)
@@ -503,7 +799,7 @@ export async function acceptTransactionPartnerInvitation({ token, profile = {} }
   })
   if (result.error) throw result.error
   if (!result.data?.success) {
-    throw new Error(result.data?.code || 'Unable to accept this invitation.')
+    throw buildInvitationAcceptanceError(result.data)
   }
   return result.data
 }
@@ -520,11 +816,39 @@ export async function resendTransactionPartnerInvitation(invitationId) {
   const client = requireClient()
   const result = await client.rpc('bridge_resend_transaction_partner_invitation', { p_invitation_id: invitationId })
   if (result.error) throw result.error
-  if (!result.data?.success) throw new Error(result.data?.code || 'Unable to resend this invitation.')
+  if (!result.data?.success) throw buildInvitationResendError(result.data)
 
   const invitationUrl = invitationUrlForToken(result.data.token)
+  const invitation = result.data.invitation || {
+    id: result.data.invitationId || invitationId,
+    transaction_id: result.data.transactionId,
+    transactionId: result.data.transactionId,
+    role_type: result.data.roleType,
+    roleType: result.data.roleType,
+    company_name: result.data.companyName,
+    companyName: result.data.companyName,
+    contact_name: result.data.contactName,
+    contactName: result.data.contactName,
+    email: result.data.email,
+    partner_prospect_id: result.data.partnerProspectId || null,
+    partnerProspectId: result.data.partnerProspectId || null,
+  }
+  const emailResult = await sendInvitationEmail({
+    transactionId: result.data.transactionId || invitation.transaction_id || invitation.transactionId,
+    invitation,
+    invitationUrl,
+    deliveryKind: 'resend',
+  })
+  const deliveryResult = await recordInvitationDelivery(client, {
+    invitationId: result.data.invitationId || invitation.id || invitationId,
+    emailResult,
+    deliveryKind: 'resend',
+  })
+
   return {
     ...result.data,
     invitationUrl,
+    emailResult,
+    deliveryResult,
   }
 }

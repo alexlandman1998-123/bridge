@@ -1313,36 +1313,38 @@ function LegacyPipeline() {
 
   return (
     <section className="space-y-5">
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className={`grid gap-2 ${isDeveloperPipeline ? '' : 'md:grid-cols-2'}`}>
-          {[
-            { key: 'buyers', label: isDeveloperPipeline ? 'Buyer Pipeline' : 'Buyers', copy: isDeveloperPipeline ? 'Buyer lead capture and unit conversion' : 'Lead capture and deal conversion' },
-            ...(!isDeveloperPipeline ? [{ key: 'sellers', label: 'Sellers', copy: 'Seller → onboarding → mandate → activation' }] : []),
-          ].map((tab) => {
-            const active = pipelineTab === tab.key
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => {
-                  setPipelineTab(tab.key)
-                  setShowForm(false)
-                  setWorkflowMessage('')
-                  if (tab.key !== 'sellers') {
-                    setSellerStageFilter(SELLER_PIPELINE_STAGE.ALL)
-                  }
-                }}
-                className={`rounded-[18px] border px-4 py-3 text-left transition ${
-                  active ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_10px_22px_rgba(31,79,120,0.18)]' : 'border-[#dbe6f2] bg-[#fbfcfe] text-[#35546c]'
-                }`}
-              >
-                <span className="block text-sm font-semibold">{tab.label}</span>
-                <span className={`mt-1 block text-xs ${active ? 'text-white/80' : 'text-[#7b8ca2]'}`}>{tab.copy}</span>
-              </button>
-            )
-          })}
-        </div>
-      </section>
+      {!isDeveloperPipeline ? (
+        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <div className="grid gap-2 md:grid-cols-2">
+            {[
+              { key: 'buyers', label: 'Buyers', copy: 'Lead capture and deal conversion' },
+              { key: 'sellers', label: 'Sellers', copy: 'Seller -> onboarding -> mandate -> activation' },
+            ].map((tab) => {
+              const active = pipelineTab === tab.key
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => {
+                    setPipelineTab(tab.key)
+                    setShowForm(false)
+                    setWorkflowMessage('')
+                    if (tab.key !== 'sellers') {
+                      setSellerStageFilter(SELLER_PIPELINE_STAGE.ALL)
+                    }
+                  }}
+                  className={`rounded-[18px] border px-4 py-3 text-left transition ${
+                    active ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_10px_22px_rgba(31,79,120,0.18)]' : 'border-[#dbe6f2] bg-[#fbfcfe] text-[#35546c]'
+                  }`}
+                >
+                  <span className="block text-sm font-semibold">{tab.label}</span>
+                  <span className={`mt-1 block text-xs ${active ? 'text-white/80' : 'text-[#7b8ca2]'}`}>{tab.copy}</span>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <div className={`grid gap-3 sm:grid-cols-2 ${pipelineTab === 'sellers' ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>

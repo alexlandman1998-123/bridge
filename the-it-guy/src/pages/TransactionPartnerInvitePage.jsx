@@ -1,4 +1,4 @@
-import { CheckCircle2, Mail, ShieldCheck } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Mail, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -185,9 +185,12 @@ function TransactionPartnerInvitePage() {
         return
       }
 
-      setMessage('Account created. Confirm your email, then reopen this invitation link to complete access.')
+      setMessage('Account created. Confirm your email, then reopen this secure invitation link to complete transaction access.')
     } catch (acceptError) {
-      setError(acceptError.message || 'Unable to accept this invitation.')
+      const acceptMessage = acceptError.code === 'email_mismatch'
+        ? `This invite is locked to ${invitation.email}. Sign out and accept it with that email address.`
+        : acceptError.message || 'Unable to accept this invitation.'
+      setError(acceptMessage)
     } finally {
       setBusy(false)
     }
@@ -216,14 +219,46 @@ function TransactionPartnerInvitePage() {
     )
   }
 
+  if (!invitation && error) {
+    const expired = context?.reason === 'expired' || error.toLowerCase().includes('expired')
+    return (
+      <main className="min-h-screen bg-[#f5f8fb] px-4 py-10">
+        <section className="mx-auto max-w-[760px] overflow-hidden rounded-[28px] border border-[#dbe4ef] bg-white shadow-[0_24px_70px_rgba(15,23,42,0.1)]">
+          <div className="border-b border-[#e6edf5] bg-[#fbfdff] px-6 py-5">
+            <span className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8395aa]">Secure Arch9 Transaction Invite</span>
+            <h1 className="mt-2 text-[1.85rem] font-semibold tracking-[-0.04em] text-[#142132]">
+              {expired ? 'This invite needs to be refreshed.' : 'This invite is not available.'}
+            </h1>
+          </div>
+          <div className="p-6">
+            <div className="rounded-[20px] border border-[#f4d7a1] bg-[#fff9ef] p-5">
+              <div className="flex items-center gap-2 text-[#9a6400]">
+                <AlertCircle size={18} />
+                <strong>{expired ? 'Invite expired' : 'Invite unavailable'}</strong>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[#6f5a33]">
+                {expired
+                  ? 'For security, transaction invite links expire after a set period. Please ask the transaction owner to resend the invitation from Arch9.'
+                  : error}
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-[#f5f8fb] px-4 py-10">
       <section className="mx-auto max-w-[820px] overflow-hidden rounded-[28px] border border-[#dbe4ef] bg-white shadow-[0_24px_70px_rgba(15,23,42,0.1)]">
         <div className="border-b border-[#e6edf5] bg-[#fbfdff] px-6 py-5">
-          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8395aa]">Arch9 Transaction Invitation</span>
+          <span className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8395aa]">Secure Arch9 Transaction Invite</span>
           <h1 className="mt-2 text-[1.9rem] font-semibold tracking-[-0.04em] text-[#142132]">
-            You have been invited to participate in a property transaction.
+            Open your secure transaction workspace.
           </h1>
+          <p className="mt-2 max-w-[620px] text-sm leading-6 text-[#60758d]">
+            Accepting this invite links the transaction to your Arch9 account, so you can work from one shared workspace with the parties involved.
+          </p>
         </div>
 
         {invitation ? (
@@ -249,7 +284,7 @@ function TransactionPartnerInvitePage() {
                 </div>
                 <p className="flex items-start gap-2 text-sm leading-6 text-[#60758d]">
                   <ShieldCheck className="mt-0.5 shrink-0 text-[#247857]" size={18} />
-                  Access is limited to this transaction only: documents, activity feed, parties, messages, and workflow stages.
+                  This link only grants access to this transaction. It will not expose the inviting organisation's wider workspace.
                 </p>
               </div>
             </aside>
@@ -259,21 +294,21 @@ function TransactionPartnerInvitePage() {
                 <div className="space-y-4 rounded-[20px] border border-[#cfe8d7] bg-[#f3fbf5] p-5">
                   <div className="flex items-center gap-2 text-[#247857]">
                     <CheckCircle2 size={18} />
-                    <strong>Account Created</strong>
+                    <strong>Transaction Access Confirmed</strong>
                   </div>
                   <p className="text-sm leading-6 text-[#4c6b59]">
-                    You now have access to {invitation.transactionReference} as {result.roleLabel || roleLabel}.
+                    This transaction is now linked to your Arch9 account. You have access to {invitation.transactionReference} as {result.roleLabel || roleLabel}.
                   </p>
                   <Link
-                    to={`/transactions/${result.transactionId}`}
+                    to={result.nextPath || `/transactions/${result.transactionId}`}
                     className="inline-flex rounded-[12px] bg-[#142132] px-4 py-2.5 text-sm font-semibold text-white"
                   >
                     Open Transaction
                   </Link>
                   <div className="rounded-[18px] border border-[#dbe4ef] bg-white p-4">
-                    <h3 className="text-sm font-semibold text-[#142132]">Do you belong to an organization?</h3>
+                    <h3 className="text-sm font-semibold text-[#142132]">Do you belong to an organisation?</h3>
                     <p className="mt-1 text-sm leading-6 text-[#60758d]">
-                      You can create or join a firm now, or skip this and keep working from this transaction.
+                      You can create or join a firm now, or skip this optional step and keep working from this transaction.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Link
@@ -289,7 +324,7 @@ function TransactionPartnerInvitePage() {
                         Create Organization
                       </Link>
                       <Link
-                        to={`/transactions/${result.transactionId}`}
+                        to={result.nextPath || `/transactions/${result.transactionId}`}
                         className="inline-flex rounded-[12px] border border-transparent px-3 py-2 text-sm font-semibold text-[#60758d]"
                       >
                         Skip For Now
@@ -300,9 +335,13 @@ function TransactionPartnerInvitePage() {
               ) : (
                 <form className="space-y-4" onSubmit={handleAcceptInvitation}>
                   <div>
-                    <h2 className="text-lg font-semibold text-[#142132]">Create Account</h2>
+                    <h2 className="text-lg font-semibold text-[#142132]">
+                      {sessionUser ? 'Accept With Current Account' : 'Create Your Arch9 Password'}
+                    </h2>
                     <p className="mt-1 text-sm leading-6 text-[#60758d]">
-                      This creates your Arch9 account and connects it to this transaction only.
+                      {sessionUser
+                        ? 'You are signed in. Accepting will link this transaction to your account.'
+                        : 'Create your password to accept the invitation. If email confirmation is required, confirm your email and reopen this link to complete access.'}
                     </p>
                   </div>
 
@@ -344,7 +383,7 @@ function TransactionPartnerInvitePage() {
                     </label>
                     {!sessionUser ? (
                       <label className="space-y-2 text-sm font-semibold text-[#233247] sm:col-span-2">
-                        <span>Password</span>
+                        <span>Create Password</span>
                         <input
                           className="w-full rounded-[14px] border border-[#dbe4ef] px-4 py-3 text-sm outline-none focus:border-[#86a6d8]"
                           type="password"
@@ -374,7 +413,7 @@ function TransactionPartnerInvitePage() {
 
                   <div className="flex flex-wrap gap-3">
                     <Button type="submit" disabled={busy}>
-                      {busy ? 'Accepting...' : 'Accept Invitation'}
+                      {busy ? 'Accepting...' : sessionUser ? 'Accept & Open Transaction' : 'Create Account & Accept'}
                     </Button>
                     <Button type="button" variant="secondary" onClick={() => void handleDeclineInvitation()} disabled={busy}>
                       Decline
@@ -394,7 +433,7 @@ function TransactionPartnerInvitePage() {
 
         <div className="flex items-center gap-2 border-t border-[#e6edf5] px-6 py-4 text-xs text-[#60758d]">
           <Mail size={14} />
-          Invitation links are one-time use and expire after 30 days.
+          Invitation links are secure, one-time-use links and expire after 30 days.
         </div>
       </section>
     </main>

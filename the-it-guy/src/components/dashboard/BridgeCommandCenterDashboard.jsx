@@ -31,16 +31,6 @@ const compactCurrency = new Intl.NumberFormat('en-ZA', {
 
 const integer = new Intl.NumberFormat('en-ZA')
 
-const DEMO_SERIES = [8, 11, 18, 16, 13, 20, 19, 15, 11, 19, 14, 25, 21, 29, 36, 25, 24, 29, 24, 36]
-
-const DEMO_BANKS = [
-  { key: 'standard_bank', label: 'Standard Bank', value: 42, color: '#1769e8' },
-  { key: 'nedbank', label: 'Nedbank', value: 38, color: '#2eb39a' },
-  { key: 'fnb', label: 'FNB', value: 29, color: '#ff9f1c' },
-  { key: 'absa', label: 'Absa', value: 17, color: '#9b5de5' },
-  { key: 'other', label: 'Other', value: 22, color: '#d7dce8' },
-]
-
 const DEMO_PIPELINE = [
   { key: 'leads', label: 'Buyer Leads', count: 56, conversion: 12, icon: Users, color: '#1d63ed', warning: '' },
   { key: 'otp', label: 'OTP Signed', count: 34, conversion: 8, icon: FileCheck2, color: '#1472d8', warning: '' },
@@ -50,29 +40,8 @@ const DEMO_PIPELINE = [
   { key: 'registered', label: 'Registered', count: 4, conversion: 1, icon: CheckCircle2, color: '#16a34a', warning: '' },
 ]
 
-const DEMO_ALERTS = [
-  { label: 'Transactions missing buyer docs', count: 5, tone: 'danger', icon: FileWarning },
-  { label: 'Bond applications stalled', count: 3, tone: 'danger', icon: TrendingUp },
-  { label: 'Transfers awaiting guarantees', count: 2, tone: 'warning', icon: LineChart },
-  { label: 'FICA verification pending', count: 4, tone: 'warning', icon: ShieldCheck },
-  { label: 'Conditions overdue', count: 3, tone: 'warning', icon: Clock3 },
-]
-
-const DEMO_ACTIVITY = [
-  { label: 'Bond approved by Nedbank', detail: 'Application #APP-1023', time: '3m ago', tone: 'success', icon: CheckCircle2 },
-  { label: 'Transfer documents signed', detail: '123 Oceanview Drive', time: '8m ago', tone: 'info', icon: FileCheck2 },
-  { label: 'Buyer uploaded FICA', detail: 'Application #APP-1045', time: '15m ago', tone: 'purple', icon: FileWarning },
-  { label: 'Documents sent to attorney', detail: 'Application #APP-1011', time: '32m ago', tone: 'info', icon: FileCheck2 },
-  { label: 'Registration completed', detail: 'Unit 45, Greenpark Estate', time: '1h ago', tone: 'success', icon: CheckCircle2 },
-]
-
-const DEMO_AGENTS = [
-  { name: 'Sarah Johnson', registrations: 12, trend: 24, initials: 'SJ' },
-  { name: 'Mike Williams', registrations: 9, trend: 18, initials: 'MW' },
-  { name: 'Lindiwe Mokoena', registrations: 8, trend: 12, initials: 'LM' },
-  { name: 'David Patel', registrations: 7, trend: -5, initials: 'DP' },
-  { name: 'Emma Brown', registrations: 6, trend: 8, initials: 'EB' },
-]
+const EMPTY_SERIES = Array.from({ length: 10 }, () => 0)
+const EMPTY_LONG_SERIES = Array.from({ length: 20 }, () => 0)
 
 const STAGE_KEYS = {
   AVAIL: 'leads',
@@ -165,7 +134,7 @@ function getBankName(row) {
 }
 
 function buildSeriesFromRows(rows) {
-  if (!rows.length) return DEMO_SERIES
+  if (!rows.length) return EMPTY_LONG_SERIES
   const buckets = Array.from({ length: 20 }, () => 0)
   for (const row of rows) {
     const date = new Date(getUpdatedAt(row) || 0)
@@ -173,11 +142,11 @@ function buildSeriesFromRows(rows) {
     const index = Math.min(19, Math.max(0, Math.floor((date.getDate() - 1) / 1.6)))
     buckets[index] += 1
   }
-  return buckets.some(Boolean) ? buckets.map((value, index) => value + Math.max(5, Math.round(DEMO_SERIES[index] * 0.35))) : DEMO_SERIES
+  return buckets
 }
 
 function buildBankBreakdown(rows) {
-  if (!rows.length) return DEMO_BANKS
+  if (!rows.length) return []
   const counts = new Map()
   for (const row of rows) {
     const bank = String(getBankName(row) || 'Other').trim()
@@ -189,12 +158,12 @@ function buildBankBreakdown(rows) {
     .sort((left, right) => right[1] - left[1])
     .slice(0, 5)
     .map(([label, value], index) => ({ key: label.toLowerCase().replace(/\W+/g, '_'), label, value, color: colors[index] || '#d7dce8' }))
-  return mapped.length ? mapped : DEMO_BANKS
+  return mapped
 }
 
 function buildPipeline(rows) {
-  if (!rows.length) return DEMO_PIPELINE
   const counts = new Map(DEMO_PIPELINE.map((stage) => [stage.key, 0]))
+  const waitingOnBankCount = rows.filter((row) => getMainStage(row) === 'FIN' && getDaysSince(getUpdatedAt(row)) > 7).length
   for (const row of rows) {
     const key = STAGE_KEYS[getMainStage(row)] || 'leads'
     counts.set(key, (counts.get(key) || 0) + 1)
@@ -204,14 +173,11 @@ function buildPipeline(rows) {
     ...stage,
     count: counts.get(stage.key) || 0,
     conversion: Math.round(((counts.get(stage.key) || 0) / total) * 100),
-    warning: stage.key === 'finance'
-      ? `${rows.filter((row) => getMainStage(row) === 'FIN' && getDaysSince(getUpdatedAt(row)) > 7).length || 1} waiting on bank`
-      : '',
+    warning: stage.key === 'finance' && waitingOnBankCount > 0 ? `${waitingOnBankCount} waiting on bank` : '',
   }))
 }
 
 function buildAlerts(rows) {
-  if (!rows.length) return DEMO_ALERTS
   const missingDocs = rows.filter((row) => safeNumber(row?.documentSummary?.missingCount) > 0).length
   const stalled = rows.filter((row) => getDaysSince(getUpdatedAt(row)) > 14).length
   const guarantees = rows.filter((row) => /guarantee/i.test(`${row?.transaction?.next_action || ''} ${row?.transaction?.current_sub_stage_summary || ''}`)).length
@@ -219,16 +185,16 @@ function buildAlerts(rows) {
   const overdue = rows.filter((row) => getDaysSince(getUpdatedAt(row)) > 21).length
 
   return [
-    { label: 'Transactions missing buyer docs', count: missingDocs || 5, tone: 'danger', icon: FileWarning },
-    { label: 'Bond applications stalled', count: stalled || 3, tone: 'danger', icon: TrendingUp },
-    { label: 'Transfers awaiting guarantees', count: guarantees || 2, tone: 'warning', icon: LineChart },
-    { label: 'FICA verification pending', count: fica || 4, tone: 'warning', icon: ShieldCheck },
-    { label: 'Conditions overdue', count: overdue || 3, tone: 'warning', icon: Clock3 },
+    { label: 'Transactions missing buyer docs', count: missingDocs, tone: 'danger', icon: FileWarning },
+    { label: 'Bond applications stalled', count: stalled, tone: 'danger', icon: TrendingUp },
+    { label: 'Transfers awaiting guarantees', count: guarantees, tone: 'warning', icon: LineChart },
+    { label: 'FICA verification pending', count: fica, tone: 'warning', icon: ShieldCheck },
+    { label: 'Conditions overdue', count: overdue, tone: 'warning', icon: Clock3 },
   ]
 }
 
 function buildActivity(rows) {
-  if (!rows.length) return DEMO_ACTIVITY
+  if (!rows.length) return []
   return rows
     .slice()
     .sort((left, right) => new Date(getUpdatedAt(right) || 0) - new Date(getUpdatedAt(left) || 0))
@@ -257,7 +223,7 @@ function buildActivity(rows) {
 }
 
 function buildLeaderboard(rows) {
-  if (!rows.length) return DEMO_AGENTS
+  if (!rows.length) return []
   const agents = new Map()
   for (const row of rows) {
     const name = String(row?.transaction?.assigned_agent || row?.transaction?.assigned_agent_name || row?.transaction?.agent_name || 'Unassigned').trim() || 'Unassigned'
@@ -269,13 +235,25 @@ function buildLeaderboard(rows) {
   const ranked = [...agents.values()]
     .sort((left, right) => (right.registrations || right.active) - (left.registrations || left.active))
     .slice(0, 5)
-    .map((agent, index) => ({
+    .map((agent) => ({
       name: agent.name,
       registrations: agent.registrations || agent.active,
-      trend: [24, 18, 12, -5, 8][index] || 6,
+      trend: 0,
       initials: agent.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'UA',
     }))
-  return ranked.length ? ranked : DEMO_AGENTS
+  return ranked
+}
+
+function buildMetricSeries(rows = [], selector = () => 1, { length = 10 } = {}) {
+  if (!rows.length) return Array.from({ length }, () => 0)
+  const buckets = Array.from({ length }, () => 0)
+  for (const row of rows) {
+    const date = new Date(getUpdatedAt(row) || 0)
+    if (Number.isNaN(date.getTime())) continue
+    const index = Math.min(length - 1, Math.max(0, Math.floor((date.getDate() - 1) / Math.max(1, 31 / length))))
+    buckets[index] += safeNumber(selector(row), 0)
+  }
+  return buckets
 }
 
 function buildDashboardModel(rows = [], profile = {}) {
@@ -288,12 +266,17 @@ function buildDashboardModel(rows = [], profile = {}) {
   const approvals = bondRows.filter((row) => ['ATTY', 'XFER', 'REG'].includes(getMainStage(row))).length
   const avgDays = sourceRows.length
     ? Math.round(sourceRows.reduce((sum, row) => sum + (getDaysSince(getUpdatedAt(row)) || 4), 0) / sourceRows.length)
-    : 67
+    : 0
 
-  const activeTransactions = activeRows.length || 148
-  const approvalRate = bondRows.length ? Math.round((approvals / bondRows.length) * 100) : 74
-  const pipelineValue = totalValue || 82000000
-  const docsCount = pendingDocs || 23
+  const activeTransactions = activeRows.length
+  const approvalRate = bondRows.length ? Math.round((approvals / bondRows.length) * 100) : 0
+  const pipelineValue = totalValue
+  const docsCount = pendingDocs
+  const activeSeries = buildMetricSeries(activeRows)
+  const docsSeries = buildMetricSeries(sourceRows.filter((row) => safeNumber(row?.documentSummary?.missingCount) > 0))
+  const approvalSeries = buildMetricSeries(bondRows.filter((row) => ['ATTY', 'XFER', 'REG'].includes(getMainStage(row))))
+  const valueSeries = buildMetricSeries(sourceRows, getDealValue)
+  const avgDaysSeries = sourceRows.length ? buildMetricSeries(sourceRows, (row) => getDaysSince(getUpdatedAt(row)) || 0) : EMPTY_SERIES
 
   return {
     profileName: profile?.fullName || profile?.name || profile?.displayName || 'John',
@@ -302,68 +285,68 @@ function buildDashboardModel(rows = [], profile = {}) {
       {
         label: 'Active Transactions',
         value: formatCount(activeTransactions),
-        trend: 18,
+        trend: 0,
         trendSuffix: '%',
         comparison: 'vs last month',
         icon: FileCheck2,
         color: '#1769e8',
-        series: [10, 13, 15, 19, 14, 17, 13, 16, 20, 23],
+        series: activeSeries,
       },
       {
         label: 'Pending Buyer Docs',
         value: formatCount(docsCount),
-        trend: -8,
+        trend: 0,
         trendSuffix: '%',
         comparison: 'docs queue improving',
         icon: FileWarning,
         color: '#ff8a00',
         inverse: true,
-        series: [28, 25, 26, 22, 21, 19, 23, 18, 17, 15],
+        series: docsSeries,
       },
       {
         label: 'Bond Approval Rate',
         value: `${approvalRate}%`,
-        trend: 12,
+        trend: 0,
         trendSuffix: '%',
         comparison: 'approval momentum',
         icon: ShieldCheck,
         color: '#14b87a',
-        series: [48, 52, 51, 57, 56, 62, 66, 65, 70, 74],
+        series: approvalSeries,
       },
       {
         label: 'Registration Pipeline Value',
         value: formatCompactCurrency(pipelineValue),
-        trend: 22,
+        trend: 0,
         trendSuffix: '%',
-        comparison: `${formatCount(sourceRows.length || 148)} files tracked`,
+        comparison: `${formatCount(sourceRows.length)} files tracked`,
         icon: Banknote,
         color: '#9b5de5',
-        series: [30, 34, 33, 36, 41, 40, 45, 49, 53, 58],
+        series: valueSeries,
       },
       {
         label: 'Avg Days To Registration',
         value: formatCount(avgDays),
-        trend: -5,
+        trend: 0,
         trendSuffix: ' days',
         comparison: 'cycle time reduction',
         icon: Clock3,
         color: '#245ee8',
         inverse: true,
-        series: [82, 80, 77, 78, 74, 72, 71, 69, 68, 67],
+        series: avgDaysSeries,
       },
     ],
     pipeline: buildPipeline(sourceRows),
-    conversion: sourceRows.length ? Math.round((registered / Math.max(1, sourceRows.length)) * 100) : 68,
+    conversion: sourceRows.length ? Math.round((registered / Math.max(1, sourceRows.length)) * 100) : 0,
     registrationsSeries: buildSeriesFromRows(sourceRows),
     bankBreakdown: buildBankBreakdown(sourceRows),
     alerts: buildAlerts(sourceRows),
     activity: buildActivity(sourceRows),
     leaderboard: buildLeaderboard(sourceRows),
     partnerCounts: [
-      { label: 'Banks', value: 12, icon: Landmark },
-      { label: 'Attorneys', value: 18, icon: Gavel },
-      { label: 'Agents', value: 42, icon: Users },
-      { label: 'Developers', value: 7, icon: Building2 },
+      { label: 'Banks', value: new Set(sourceRows.map((row) => getBankName(row)).filter((value) => value && value !== 'Bank pending')).size, icon: Landmark },
+      { label: 'Attorneys', value: new Set(sourceRows.map((row) => row?.transaction?.assigned_attorney_email || row?.transaction?.attorney).filter(Boolean)).size, icon: Gavel },
+      { label: 'Agents', value: new Set(sourceRows.map((row) => row?.transaction?.assigned_agent_email || row?.transaction?.assigned_agent || row?.transaction?.agent_name).filter(Boolean)).size, icon: Users },
+      { label: 'Developers', value: new Set(sourceRows.map((row) => row?.development?.developer_company || row?.development?.developerCompany || row?.development?.name).filter(Boolean)).size, icon: Building2 },
     ],
   }
 }

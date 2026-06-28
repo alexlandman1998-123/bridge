@@ -42,36 +42,53 @@ export async function handleTransactionPartnerInvitationEmail(
   const organisationName = normalizeText(payload.invitedByOrganisation ?? payload.invited_by_organisation) || "Arch9";
   const roleLabel = resolveRoleLabel(payload);
   const transactionId = normalizeText(payload.transactionId ?? payload.transaction_id);
+  const transactionReference = normalizeText(payload.transactionReference ?? payload.transaction_reference) ||
+    transactionId;
+  const propertyLabel = normalizeText(payload.propertyLabel ?? payload.property_label);
+  const buyerLabel = normalizeText(payload.buyerLabel ?? payload.buyer_label);
+  const deliveryKind = normalizeText(payload.deliveryKind ?? payload.delivery_kind).toLowerCase();
+  const isResend = deliveryKind === "resend";
   const reusedProspect = payload.reusedProspect === true || payload.reused_prospect === true ||
     Boolean(normalizeText(payload.partnerProspectId ?? payload.partner_prospect_id ?? ""));
   const from = normalizeText(Deno.env.get("RESEND_FROM_EMAIL")) ||
-    "Arch9 <no-reply@bridge9.app>";
-  const subject = reusedProspect
-    ? `${organisationName} has selected your firm for another property transaction`
-    : `${organisationName} has selected your firm for a property transaction`;
-  const message = reusedProspect
-    ? `${organisationName} has selected ${companyName} for another property transaction as ${roleLabel}.`
-    : `${organisationName} has selected ${companyName} to participate in a property transaction as ${roleLabel}.`;
+    "Arch9 <no-reply@arch9.co.za>";
+  const subject = isResend
+    ? `${organisationName} has resent your Arch9 transaction invite`
+    : reusedProspect
+    ? `${organisationName} has shared another Arch9 transaction with you`
+    : `${organisationName} has invited you into an Arch9 transaction`;
+  const message =
+    `${organisationName} has invited ${companyName} to collaborate on a secure Arch9 transaction workspace as ${roleLabel}.`;
+  const introParagraphs = [
+    message,
+    isResend
+      ? "A fresh secure invitation link has been issued. Use this link instead of any previous invite link for this transaction."
+      : "Use the secure invitation link to sign in or create your Arch9 password. Once accepted, this transaction will be linked to your account.",
+    "Your access is limited to this transaction and the workflow areas relevant to your role.",
+  ];
 
   const html = renderBridgeEmailLayout({
     preheader: message,
-    title: reusedProspect ? "Another transaction is waiting for your firm" : "You have been invited to a property transaction",
+    title: isResend
+      ? "Your secure invite has been resent"
+      : reusedProspect
+      ? "Another secure transaction is ready"
+      : "Your secure transaction invite",
     greeting: `Hi ${contactName},`,
     contentHtml: [
-      renderBridgeIntroParagraphs([
-        message,
-        "Accept the invitation to create your Arch9 account and access the transaction workspace.",
-      ]),
+      renderBridgeIntroParagraphs(introParagraphs),
       renderBridgeSummaryCard([
         { label: "Role", value: roleLabel },
         { label: "Company", value: companyName },
         { label: "Invited By", value: organisationName },
-        { label: "Transaction", value: transactionId },
+        { label: "Transaction", value: transactionReference },
+        { label: "Property", value: propertyLabel },
+        { label: "Buyer", value: buyerLabel },
       ].filter((field) => field.value), "Invitation Details"),
-      renderBridgeCta("Accept Invitation", invitationLink),
+      renderBridgeCta("Open Secure Invite", invitationLink),
     ].join(""),
     securityBody:
-      "This invitation grants access only to the transaction that generated the link. It does not grant agency, branch, or organisation visibility.",
+      "This invitation grants access only to the transaction that generated the link. It does not grant access to the inviting organisation's wider workspace.",
     helpBody:
       "If you were not expecting this invitation, contact the transaction owner before accepting.",
     organisationName,
@@ -81,8 +98,13 @@ export async function handleTransactionPartnerInvitationEmail(
     `Hi ${contactName},`,
     "",
     message,
-    transactionId ? `Transaction: ${transactionId}` : "",
-    `Accept Invitation: ${invitationLink}`,
+    isResend
+      ? "A fresh secure invitation link has been issued. Use this link instead of any previous invite link for this transaction."
+      : "Use this secure link to sign in or create your Arch9 password. Once accepted, this transaction will be linked to your account.",
+    transactionReference ? `Transaction: ${transactionReference}` : "",
+    propertyLabel ? `Property: ${propertyLabel}` : "",
+    buyerLabel ? `Buyer: ${buyerLabel}` : "",
+    `Open Secure Invite: ${invitationLink}`,
     "",
     "This invitation grants access only to the transaction that generated the link.",
   ].filter(Boolean).join("\n");

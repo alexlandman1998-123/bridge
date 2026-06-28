@@ -1,5 +1,7 @@
 import { BriefcaseBusiness, Check, ChevronDown, Home } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useWorkspace } from '../context/WorkspaceContext'
+import { hasCommercialAccessMarker } from '../modules/commercial/utils/resolveCommercialRole'
 
 const WORKSPACE_STORAGE_KEY = 'bridge:active-workspace'
 const RESIDENTIAL_ROUTE_STORAGE_KEY = 'bridge:last-residential-route'
@@ -50,10 +52,29 @@ function getWorkspacePath(workspaceKey) {
   return workspaceKey === 'commercial' ? '/commercial' : getStoredResidentialRoute()
 }
 
+function membershipHasCommercialAccess(membership = null) {
+  if (!membership || typeof membership !== 'object') return false
+  return (
+    hasCommercialAccessMarker(membership) ||
+    hasCommercialAccessMarker(membership.raw) ||
+    hasCommercialAccessMarker(membership.moduleMetadata) ||
+    hasCommercialAccessMarker(membership.module_metadata) ||
+    hasCommercialAccessMarker(membership.metadata)
+  )
+}
+
 function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace, variant = 'default' }) {
+  const { activeMemberships = [], currentMembership = null } = useWorkspace()
   const [open, setOpen] = useState(false)
   const menuRef = useRef(null)
   const activeWorkspace = currentPath.startsWith('/commercial') ? 'commercial' : 'residential'
+  const hasCommercialWorkspace = useMemo(
+    () =>
+      activeWorkspace === 'commercial' ||
+      membershipHasCommercialAccess(currentMembership) ||
+      activeMemberships.some((membership) => membershipHasCommercialAccess(membership)),
+    [activeMemberships, activeWorkspace, currentMembership],
+  )
   const selected = useMemo(
     () => WORKSPACES.find((workspace) => workspace.key === activeWorkspace) || WORKSPACES[0],
     [activeWorkspace],
@@ -67,6 +88,13 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace, variant = 'de
       writeStorage(RESIDENTIAL_ROUTE_STORAGE_KEY, currentPath)
     }
   }, [activeWorkspace, currentPath])
+
+  useEffect(() => {
+    if (hasCommercialWorkspace) return
+    if (readStorage(WORKSPACE_STORAGE_KEY) === 'commercial') {
+      writeStorage(WORKSPACE_STORAGE_KEY, 'residential')
+    }
+  }, [hasCommercialWorkspace])
 
   useEffect(() => {
     if (!open) return undefined
@@ -92,6 +120,10 @@ function WorkspaceSwitcher({ currentPath = '/', onSelectWorkspace, variant = 'de
     if (nextWorkspace === activeWorkspace) return
     writeStorage(WORKSPACE_STORAGE_KEY, nextWorkspace)
     onSelectWorkspace?.(getWorkspacePath(nextWorkspace))
+  }
+
+  if (!hasCommercialWorkspace) {
+    return null
   }
 
   return (

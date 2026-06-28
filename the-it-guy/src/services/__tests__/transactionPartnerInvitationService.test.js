@@ -16,6 +16,7 @@ try {
     getTransactionPartnerRoleLabel,
     filterPartnerProspectsForSearch,
     normalizePartnerProspect,
+    normalizeTransactionPartnerInvitation,
     normalizePartnerProspectRole,
     normalizeTransactionPartnerInvitationDraft,
     normalizeTransactionPartnerInvitationRole,
@@ -109,6 +110,62 @@ try {
     assert.equal(prospect.acceptanceRate, 25)
     assert.equal(prospect.possibleDuplicateOf, null)
     assert.equal(prospect.duplicateReviewStatus, 'possible_duplicate')
+  }
+
+  {
+    const invitation = normalizeTransactionPartnerInvitation({
+      id: 'invite-1',
+      transaction_id: 'transaction-1',
+      role_type: 'bond_originator',
+      company_name: 'BetterBond',
+      contact_name: 'Michael Naidoo',
+      email: ' MICHAEL@BETTERBOND.CO.ZA ',
+      status: 'pending',
+      metadata: {
+        emailDeliveryCount: 2,
+        linkCopyCount: 1,
+        lastLinkCopiedAt: '2026-06-26T08:00:00.000Z',
+      },
+    })
+
+    assert.equal(invitation.roleLabel, 'Bond Originator')
+    assert.equal(invitation.statusLabel, 'Pending')
+    assert.equal(invitation.email, 'michael@betterbond.co.za')
+    assert.equal(invitation.isExpired, false)
+    assert.equal(invitation.emailDeliveryCount, 2)
+    assert.equal(invitation.linkCopyCount, 1)
+    assert.equal(invitation.lastLinkCopiedAt, '2026-06-26T08:00:00.000Z')
+  }
+
+  {
+    const expired = normalizeTransactionPartnerInvitation({
+      id: 'invite-expired',
+      role_type: 'developer',
+      email: 'dev@example.com',
+      status: 'pending',
+      invitation_token: '00000000-0000-4000-8000-000000000000',
+      expires_at: new Date(Date.now() - 60_000).toISOString(),
+    })
+
+    assert.equal(expired.status, 'expired')
+    assert.equal(expired.storedStatus, 'pending')
+    assert.equal(expired.statusLabel, 'Expired')
+    assert.equal(expired.isExpired, true)
+    assert.equal(expired.invitationLink, '')
+  }
+
+  {
+    const expiringSoon = normalizeTransactionPartnerInvitation({
+      id: 'invite-soon',
+      role_type: 'developer',
+      email: 'dev@example.com',
+      status: 'pending',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    })
+
+    assert.equal(expiringSoon.status, 'pending')
+    assert.equal(expiringSoon.expiresSoon, true)
+    assert.equal(expiringSoon.daysUntilExpiry, 1)
   }
 
   {
