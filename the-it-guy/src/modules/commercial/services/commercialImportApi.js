@@ -1463,20 +1463,33 @@ export async function prepareCommercialImportRetry(batchId = '', options = {}) {
   const rows = rowsResult.data || []
   if (!rows.length) return { batch: mapImportBatchRow(batchResult.data), resetCount: 0 }
 
-  const resetRows = rows.map((row) => updateCommercialImportRow(row.id, {
-    status: row.validation_warnings?.length ? 'warning' : 'ready',
-    action: 'create',
-    targetTable: '',
-    targetRecordId: null,
-    errorMessage: '',
-    processedAt: null,
-    metadata: {
-      ...(row.metadata_json || {}),
-      retryPreparedAt: new Date().toISOString(),
-      retryPreparedBy: userId || null,
-      retrySourceStatus: row.status,
-    },
-  }))
+  const retryPreparedAt = new Date().toISOString()
+  const resetRows = rows.map((row) => {
+    const previousAction = normalizeAction(row.action)
+    const hasMatchedRecord = Boolean(toNullableUuid(row.duplicate_record_id))
+    const action = previousAction === 'update' && hasMatchedRecord
+      ? 'update'
+      : row.status === 'skipped' && hasMatchedRecord
+        ? 'review'
+        : 'create'
+
+    return updateCommercialImportRow(row.id, {
+      status: action === 'review' ? 'warning' : row.validation_warnings?.length && action !== 'update' ? 'warning' : 'ready',
+      action,
+      targetTable: '',
+      targetRecordId: null,
+      errorMessage: action === 'review' ? 'Skipped duplicate reset for manual review.' : '',
+      processedAt: null,
+      metadata: {
+        ...(row.metadata_json || {}),
+        retryPreparedAt,
+        retryPreparedBy: userId || null,
+        retrySourceStatus: row.status,
+        retrySourceAction: row.action,
+        retryIncludesSkipped: Boolean(options.includeSkipped),
+      },
+    })
+  })
   await Promise.all(resetRows)
 
   const batch = batchResult.data || {}
@@ -1484,12 +1497,14 @@ export async function prepareCommercialImportRetry(batchId = '', options = {}) {
   const updatedBatch = await updateCommercialImportBatch(id, {
     status: nextStatus,
     failedCount: 0,
+    skippedCount: options.includeSkipped ? 0 : undefined,
     importSummary: {
       ...(batch.import_summary || {}),
       phase: 'phase_8_recovery',
-      retryPreparedAt: new Date().toISOString(),
+      retryPreparedAt,
       retryPreparedBy: userId || null,
       retryResetCount: rows.length,
+      retryIncludedSkipped: Boolean(options.includeSkipped),
     },
   })
 

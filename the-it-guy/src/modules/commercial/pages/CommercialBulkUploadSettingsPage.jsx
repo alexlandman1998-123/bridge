@@ -608,6 +608,22 @@ function buildImportIssueCsvRows(rows = []) {
   return [header, ...body]
 }
 
+function buildImportOutcomeCsvRows(rows = []) {
+  const header = ['Row', 'Record', 'Status', 'Action', 'Issue', 'Duplicate Record', 'Target Table', 'Target Record ID', 'Processed At']
+  const body = rows.map((row) => [
+    row.rowNumber,
+    getImportRowTitle(row),
+    row.status,
+    row.action,
+    getImportRowIssueText(row),
+    getImportRowDuplicateMatch(row),
+    row.targetTable,
+    row.targetRecordId,
+    row.processedAt,
+  ])
+  return [header, ...body]
+}
+
 function summarizeImportReviewReadiness(rows = []) {
   return rows.reduce((summary, row) => {
     const status = String(row.status || '').toLowerCase()
@@ -1109,15 +1125,23 @@ function CommercialBulkUploadSettingsPage() {
     setSuccess(`Exported ${csvRows.length - 1} issue rows.`)
   }
 
-  async function handlePrepareRetry(batchId) {
-    setImportAction({ batchId, action: 'retry' })
+  function handleExportOutcomeReport() {
+    if (!reviewBatch) return
+    const csvRows = buildImportOutcomeCsvRows(reviewRows)
+    const csv = buildCsv(csvRows)
+    downloadBlob(csv, `commercial-import-${String(reviewBatch.id).slice(0, 8)}-outcome.csv`)
+    setSuccess(`Exported ${Math.max(0, csvRows.length - 1)} outcome rows.`)
+  }
+
+  async function handlePrepareRetry(batchId, options = {}) {
+    setImportAction({ batchId, action: options.includeSkipped ? 'retry_skipped' : 'retry' })
     setAuditError('')
     setSuccess('')
     try {
-      const result = await prepareCommercialImportRetry(batchId)
+      const result = await prepareCommercialImportRetry(batchId, options)
       await refreshImportBatches()
       if (reviewBatch?.id === batchId) await loadBatchReview(batchId)
-      setSuccess(`Retry prepared for ${result.resetCount} failed ${result.resetCount === 1 ? 'row' : 'rows'}.`)
+      setSuccess(`Retry prepared for ${result.resetCount} ${options.includeSkipped ? 'failed/skipped' : 'failed'} ${result.resetCount === 1 ? 'row' : 'rows'}.`)
     } catch (retryError) {
       setAuditError(retryError?.message || 'Failed rows could not be prepared for retry.')
     } finally {
@@ -1567,6 +1591,7 @@ function CommercialBulkUploadSettingsPage() {
             const canCommit = ['ready', 'approved', 'validated'].includes(batch.status) && (batch.validRows || batch.warningRows)
             const committed = ['committed', 'failed'].includes(batch.status)
             const canRetry = committed && batch.failedCount > 0
+            const canReworkSkipped = committed && batch.skippedCount > 0
             return (
               <article key={batch.id} className="grid gap-3 rounded-2xl border border-slate-200 bg-[#fbfcfe] p-4 lg:grid-cols-[minmax(0,1fr)_120px_180px_180px] lg:items-center">
                 <div className="min-w-0">
@@ -1590,7 +1615,7 @@ function CommercialBulkUploadSettingsPage() {
                   </button>
                   {committed ? (
                     <span className="inline-flex min-h-9 items-center rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-500">
-                      {batch.createdCount} created · {batch.importSummary?.relationshipsResolvedCount || 0} linked · {batch.failedCount} failed
+                      {batch.createdCount} created · {batch.updatedCount} updated · {batch.skippedCount} skipped · {batch.failedCount} failed
                     </span>
                   ) : null}
                   {canRetry ? (
@@ -1602,6 +1627,17 @@ function CommercialBulkUploadSettingsPage() {
                     >
                       <FileClock size={14} />
                       {busy && importAction.action === 'retry' ? 'Preparing...' : 'Retry Failed'}
+                    </button>
+                  ) : null}
+                  {canReworkSkipped ? (
+                    <button
+                      type="button"
+                      onClick={() => handlePrepareRetry(batch.id, { includeSkipped: true })}
+                      disabled={busy}
+                      className="inline-flex min-h-9 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-[#102236] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <FileClock size={14} />
+                      {busy && importAction.action === 'retry_skipped' ? 'Preparing...' : 'Rework Skipped'}
                     </button>
                   ) : null}
                   {canApprove ? (
@@ -1681,6 +1717,14 @@ function CommercialBulkUploadSettingsPage() {
                 </button>
                 <button
                   type="button"
+                  onClick={handleExportOutcomeReport}
+                  className="inline-flex min-h-9 w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-[#102236] transition hover:bg-slate-50"
+                >
+                  <Download size={14} />
+                  Export Outcome
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setReviewBatch(null)
                     setReviewRows([])
@@ -1693,13 +1737,15 @@ function CommercialBulkUploadSettingsPage() {
             </div>
 
             {!reviewLoading ? (
-              <div className="grid gap-2 border-b border-slate-100 bg-white p-4 sm:grid-cols-2 xl:grid-cols-6">
+              <div className="grid gap-2 border-b border-slate-100 bg-white p-4 sm:grid-cols-2 xl:grid-cols-8">
                 {[
                   { label: 'Create ready', value: reviewReadiness.createRows },
+                  { label: 'Update ready', value: reviewReadiness.updateRows },
                   { label: 'Need review', value: reviewReadiness.reviewRows },
-                  { label: 'Duplicates', value: reviewReadiness.duplicateRows },
-                  { label: 'Relationships', value: reviewReadiness.relationshipRows },
+                  { label: 'Created', value: reviewReadiness.createdRows },
+                  { label: 'Updated', value: reviewReadiness.updatedRows },
                   { label: 'Skipped', value: reviewReadiness.skipRows },
+                  { label: 'Failed', value: reviewReadiness.failedRows },
                   { label: 'Invalid', value: reviewReadiness.invalidRows },
                 ].map((item) => (
                   <div key={item.label} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
