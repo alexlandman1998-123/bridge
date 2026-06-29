@@ -604,10 +604,11 @@ function isMissingCommercialTableError(error) {
   if (!error) return false
   const code = normalizeText(error?.code).toUpperCase()
   const message = normalizeLower(error?.message)
+  if (code === '42703' || message.includes('column')) return false
   return (
     code === '42P01' ||
     code === 'PGRST205' ||
-    message.includes('does not exist') ||
+    (message.includes('relation') && message.includes('does not exist')) ||
     (message.includes('schema cache') && message.includes('commercial_'))
   )
 }
@@ -622,8 +623,8 @@ function isCommercialSchemaMismatchError(error) {
 function getMissingCommercialColumn(error) {
   const message = String(error?.message || '')
   const details = String(error?.details || '')
-  const dottedMatch = message.match(/column\s+["']?(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)["']?\s+does not exist/i) ||
-    details.match(/column\s+["']?(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)["']?\s+does not exist/i)
+  const dottedMatch = message.match(/column\s+["']?(?:[a-zA-Z0-9_]+\.)*([a-zA-Z0-9_]+)["']?\s+does not exist/i) ||
+    details.match(/column\s+["']?(?:[a-zA-Z0-9_]+\.)*([a-zA-Z0-9_]+)["']?\s+does not exist/i)
   const quotedMatch = message.match(/'([a-zA-Z0-9_]+)'/) || details.match(/column\s+"?([a-zA-Z0-9_]+)"?/i)
   return dottedMatch?.[1] || quotedMatch?.[1] || ''
 }

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import { createServer } from 'vite'
 
 const migrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290005_lead_email_capture_phase1.sql', import.meta.url), 'utf8')
+const onboardingMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290007_lead_capture_alias_onboarding_phase2.sql', import.meta.url), 'utf8')
 
 for (const tableName of [
   'lead_capture_aliases',
@@ -31,15 +32,27 @@ assert.match(migrationSql, /bridge_create_lead_capture_alias/i)
 assert.match(migrationSql, /bridge_normalize_lead_capture_email/i)
 assert.match(migrationSql, /bridge_is_active_member\(organisation_id\)/i)
 assert.match(migrationSql, /bridge_is_org_admin\(organisation_id\)/i)
+assert.match(onboardingMigrationSql, /bridge_auto_create_agent_lead_capture_aliases/i)
+assert.match(onboardingMigrationSql, /trg_bridge_auto_create_agent_lead_capture_aliases/i)
+assert.match(onboardingMigrationSql, /after insert or update/i)
+assert.match(onboardingMigrationSql, /phase2_backfill/i)
+for (const source of ['General', 'Property24', 'Private Property', 'Website', 'Facebook']) {
+  assert.match(onboardingMigrationSql, new RegExp(source), `onboarding migration should generate ${source} aliases`)
+}
 
 const serviceSource = await fs.readFile(new URL('../src/services/leadEmailCaptureService.js', import.meta.url), 'utf8')
 for (const method of [
+  'buildLeadCaptureStatusRows',
   'buildDefaultLeadCaptureAliasRequests',
   'buildLeadCaptureEmail',
   'createLeadCaptureAlias',
+  'ensureLeadCaptureAliasesForUsers',
   'ensureDefaultLeadCaptureAliases',
   'findLeadCaptureAliasByEmail',
+  'getLeadCaptureSetupStatus',
+  'listInboundLeadEmails',
   'listLeadCaptureAliases',
+  'listLeadParseFailures',
   'parseInboundLeadEmail',
   'processInboundLeadEmail',
 ]) {
@@ -65,6 +78,32 @@ for (const copy of [
 assert.match(functionSource, /No active lead capture alias matched recipient/)
 assert.match(functionSource, /Lead email capture needs a customer email or phone number/)
 
+const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
+assert.match(appSource, /SettingsLeadCapturePage/)
+assert.match(appSource, /path="lead-capture"/)
+
+const settingsLayoutSource = await fs.readFile(new URL('../src/pages/settings/SettingsLayout.jsx', import.meta.url), 'utf8')
+assert.match(settingsLayoutSource, /\/settings\/lead-capture/)
+assert.match(settingsLayoutSource, /Lead Capture/)
+
+const settingsLandingSource = await fs.readFile(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url), 'utf8')
+assert.match(settingsLandingSource, /\/settings\/lead-capture/)
+assert.match(settingsLandingSource, /Manage forwarding addresses, agent activation, and inbound enquiry health/)
+
+const leadCapturePageSource = await fs.readFile(new URL('../src/pages/settings/SettingsLeadCapturePage.jsx', import.meta.url), 'utf8')
+for (const copy of [
+  'Generate Agency Addresses',
+  'Generate My Addresses',
+  'Agency Activation',
+  'Recent Inbound Emails',
+  'My Capture Addresses',
+]) {
+  assert.match(leadCapturePageSource, new RegExp(copy), `lead capture page should render ${copy}`)
+}
+assert.match(leadCapturePageSource, /ensureLeadCaptureAliasesForUsers/)
+assert.match(leadCapturePageSource, /buildLeadCaptureStatusRows/)
+assert.match(leadCapturePageSource, /listInboundLeadEmails/)
+
 const server = await createServer({
   root: process.cwd(),
   logLevel: 'silent',
@@ -78,9 +117,11 @@ try {
     buildLeadCaptureEmail,
     buildLeadCaptureAliasLocalPart,
     extractListingReference,
+    getLeadCaptureSetupStatus,
     normalizeCaptureEmail,
     parseInboundLeadEmail,
     slugifyCapturePart,
+    buildLeadCaptureStatusRows,
   } = __leadEmailCaptureServiceTestUtils
 
   const organisationId = '11111111-1111-4111-8111-111111111111'
@@ -140,6 +181,37 @@ try {
   assert.equal(parsed.listingReference, 'P24-98765')
   assert.equal(parsed.listingId, '33333333-3333-4333-8333-333333333333')
   assert.equal(parsed.assignedAgent.userId, agentUserId)
+
+  assert.equal(getLeadCaptureSetupStatus({ aliases: [] }), 'not_started')
+  assert.equal(getLeadCaptureSetupStatus({ aliases: [{ status: 'active' }] }), 'addresses_generated')
+  assert.equal(getLeadCaptureSetupStatus({ aliases: [{ status: 'active' }], lastInboundEmail: { emailId: 'email-1' } }), 'test_received')
+  assert.equal(getLeadCaptureSetupStatus({ aliases: [{ status: 'active' }], lastInboundEmail: { emailId: 'email-1', leadId: 'lead-1' } }), 'active')
+
+  const statusRows = buildLeadCaptureStatusRows({
+    users: [{
+      userId: agentUserId,
+      fullName: 'Mary Agent',
+      email: 'mary@example.test',
+      role: 'agent',
+    }],
+    aliases: [{
+      aliasId: 'alias-1',
+      agentUserId,
+      source: 'General',
+      status: 'active',
+      emailAddress: aliasEmail,
+    }],
+    inboundEmails: [{
+      emailId: 'email-1',
+      captureAliasId: 'alias-1',
+      leadId: 'lead-1',
+      receivedAt: '2026-06-29T10:00:00Z',
+    }],
+  })
+  assert.equal(statusRows.length, 1)
+  assert.equal(statusRows[0].name, 'Mary Agent')
+  assert.equal(statusRows[0].status, 'active')
+  assert.equal(statusRows[0].lastInboundEmail.emailId, 'email-1')
 } finally {
   await server.close()
 }

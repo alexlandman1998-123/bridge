@@ -60,6 +60,12 @@ const SETTINGS_CARDS = [
     icon: Route,
   },
   {
+    to: '/settings/lead-capture',
+    title: 'Lead Capture',
+    description: 'Manage forwarding addresses, agent activation, and inbound enquiry health.',
+    icon: Mail,
+  },
+  {
     to: '/settings/commission-structures',
     title: 'Commission Structures',
     description: 'Define agency and agent commission splits, defaults, and member assignments.',

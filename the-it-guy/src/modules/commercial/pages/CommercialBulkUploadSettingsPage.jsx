@@ -699,6 +699,22 @@ function getReviewedRowPatch(action, row = {}) {
   }
 }
 
+function getUploadDisabledReason(settings = {}) {
+  if (!settings.enabled) return 'Bulk upload is disabled in Commercial settings.'
+  if (!settings.allowedRecordTypes?.length) return 'Select at least one enabled record type before uploading.'
+  return ''
+}
+
+function getCreateImportDisabledReason(importDraft = {}, settings = {}) {
+  if (importDraft.saving) return 'Creating the import batch.'
+  if (importDraft.validating) return 'Validation is still running.'
+  if (!settings.enabled) return 'Bulk upload is disabled in Commercial settings.'
+  if (!settings.allowedRecordTypes?.length) return 'Select at least one enabled record type first.'
+  if (!importDraft.rows.length) return 'Upload a CSV or XLSX file first.'
+  if (!importDraft.validation) return 'Validate the column mapping first.'
+  return ''
+}
+
 function CommercialBulkUploadSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -783,6 +799,8 @@ function CommercialBulkUploadSettingsPage() {
   const bulkCreateRows = useMemo(() => getBulkReviewActionRows(reviewRows, 'create'), [reviewRows])
   const bulkUpdateRows = useMemo(() => getBulkReviewActionRows(reviewRows, 'update'), [reviewRows])
   const bulkSkipRows = useMemo(() => getBulkReviewActionRows(reviewRows, 'skip'), [reviewRows])
+  const uploadDisabledReason = getUploadDisabledReason(settings)
+  const createImportDisabledReason = getCreateImportDisabledReason(importDraft, settings)
 
   function updateSetting(key, value) {
     setSuccess('')
@@ -894,20 +912,25 @@ function CommercialBulkUploadSettingsPage() {
     try {
       const validation = validateImportMapping(importDraft.recordType, importDraft.headers, importDraft.rows, importDraft.columnMapping)
       let nextValidation = validation
+      let validationNotice = ''
       if (!validation.mappingErrors.length && organisationId) {
-        const duplicateResult = await findCommercialImportExistingDuplicates({
-          organisationId,
-          recordType: importDraft.recordType,
-          rows: validation.rows,
-        })
-        nextValidation = mergeExistingDuplicateMatches(validation, duplicateResult.matchesByRowNumber || {}, settings.duplicateStrategy)
+        try {
+          const duplicateResult = await findCommercialImportExistingDuplicates({
+            organisationId,
+            recordType: importDraft.recordType,
+            rows: validation.rows,
+          })
+          nextValidation = mergeExistingDuplicateMatches(validation, duplicateResult.matchesByRowNumber || {}, settings.duplicateStrategy)
+        } catch (duplicateError) {
+          validationNotice = `Mapping validated, but existing-record duplicate checks could not be completed: ${duplicateError?.message || 'please review duplicates manually.'}`
+        }
       }
 
       setImportDraft((previous) => ({
         ...previous,
         validation: nextValidation,
         validating: false,
-        error: nextValidation.mappingErrors.length ? 'Required column mappings are missing.' : '',
+        error: nextValidation.mappingErrors.length ? 'Required column mappings are missing.' : validationNotice,
         summary: previous.summary
           ? {
               ...previous.summary,
@@ -1345,29 +1368,38 @@ function CommercialBulkUploadSettingsPage() {
               Download a record-specific template, upload a CSV or XLSX file, and stage rows into the import audit trail.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleDownloadTemplate}
-              disabled={!settings.enabled}
-              className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Download size={16} />
-              Download Template
-            </button>
-            <label className={`inline-flex min-h-10 items-center gap-2 rounded-2xl px-4 text-sm font-semibold transition ${
-              settings.enabled ? 'cursor-pointer bg-[#102b46] text-white hover:bg-[#163a5b]' : 'cursor-not-allowed bg-slate-200 text-slate-500'
-            }`}>
-              <UploadCloud size={16} />
-              Upload CSV/XLSX
-              <input
-                type="file"
-                accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                disabled={!settings.enabled}
-                onChange={handleImportFileChange}
-                className="hidden"
-              />
-            </label>
+          <div className="grid gap-2 justify-items-start lg:justify-items-end">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                disabled={Boolean(uploadDisabledReason)}
+                title={uploadDisabledReason || 'Download CSV template'}
+                className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Download size={16} />
+                Download Template
+              </button>
+              <label
+                title={uploadDisabledReason || 'Upload CSV or XLSX file'}
+                className={`inline-flex min-h-10 items-center gap-2 rounded-2xl px-4 text-sm font-semibold transition ${
+                  uploadDisabledReason ? 'cursor-not-allowed bg-slate-200 text-slate-500' : 'cursor-pointer bg-[#102b46] text-white hover:bg-[#163a5b]'
+                }`}
+              >
+                <UploadCloud size={16} />
+                Upload CSV/XLSX
+                <input
+                  type="file"
+                  accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                  disabled={Boolean(uploadDisabledReason)}
+                  onChange={handleImportFileChange}
+                  className="hidden"
+                />
+              </label>
+            </div>
+            {uploadDisabledReason ? (
+              <p className="max-w-sm text-xs font-semibold leading-5 text-amber-700">{uploadDisabledReason}</p>
+            ) : null}
           </div>
         </div>
 
@@ -1551,16 +1583,20 @@ function CommercialBulkUploadSettingsPage() {
               </div>
             ) : null}
 
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4 grid gap-2 justify-items-end">
               <button
                 type="button"
                 onClick={handleCreateImportBatch}
-                disabled={importDraft.saving || importDraft.validating || !importDraft.rows.length || !settings.enabled || !importDraft.validation}
+                disabled={Boolean(createImportDisabledReason)}
+                title={createImportDisabledReason || 'Create import batch'}
                 className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <FileClock size={16} />
                 {importDraft.saving ? 'Creating Batch...' : 'Create Import Batch'}
               </button>
+              {createImportDisabledReason ? (
+                <p className="max-w-md text-right text-xs font-semibold leading-5 text-slate-500">{createImportDisabledReason}</p>
+              ) : null}
             </div>
           </div>
         </div>

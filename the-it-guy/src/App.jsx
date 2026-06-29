@@ -345,6 +345,7 @@ const SettingsCommunicationsTemplatesPage = lazy(() => import('./pages/settings/
 const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDevelopmentsPage'))
 const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
+const SettingsLeadCapturePage = lazy(() => import('./pages/settings/SettingsLeadCapturePage'))
 const SettingsOrganisationPage = lazy(() => import('./pages/settings/SettingsOrganisationPage'))
 const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/SettingsPreferredPartnersPage'))
 const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
@@ -2728,6 +2729,14 @@ function AppRoutes() {
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                       <SettingsPartnerRoutingRulesPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="lead-capture"
+                  element={
+                    <RoleRoute allowedRoles={['agent']}>
+                      <SettingsLeadCapturePage />
                     </RoleRoute>
                   }
                 />

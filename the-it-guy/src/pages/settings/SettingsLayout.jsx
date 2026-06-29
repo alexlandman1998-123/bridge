@@ -27,6 +27,7 @@ const SETTINGS_NAV = [
   { to: '/settings/preferred-partners', label: 'Preferred Partners', icon: Handshake },
   { to: '/settings/partner-directory', label: 'Partner Directory', icon: Network },
   { to: '/settings/partner-routing-rules', label: 'Default Routing', icon: Route },
+  { to: '/settings/lead-capture', label: 'Lead Capture', icon: Mail },
   { to: '/settings/commission-structures', label: 'Commission Structures', icon: BadgePercent },
   { to: '/settings/developments', label: 'Developments', icon: Home },
   { to: '/settings/workflows', label: 'Workflows & Rules', icon: Workflow },
