@@ -4513,10 +4513,17 @@ export async function updateDevelopmentSettings(developmentId, settings) {
   }
 
   const normalized = normalizeDevelopmentSettingsRow(data)
-  await syncDevelopmentParticipantsFromSettings(client, {
-    developmentId,
-    stakeholderTeams: normalized.stakeholderTeams,
-  })
+  try {
+    await syncDevelopmentParticipantsFromSettings(client, {
+      developmentId,
+      stakeholderTeams: normalized.stakeholderTeams,
+    })
+  } catch (participantSyncError) {
+    if (!isPermissionDeniedError(participantSyncError)) {
+      throw participantSyncError
+    }
+    console.warn('[Developments] Participant defaults were not synced because development_participants RLS blocked the write.', participantSyncError)
+  }
 
   return normalized
 }
@@ -4743,12 +4750,19 @@ export async function saveDevelopmentAttorneyConfig(developmentId, input = {}) {
     Array.isArray(input.requiredDocuments) ? input.requiredDocuments : [],
   )
 
-  await syncPrimaryAttorneyDevelopmentParticipant(client, {
-    developmentId,
-    attorneyFirmName: payload.attorney_firm_name || '',
-    primaryContactName: payload.primary_contact_name || '',
-    primaryContactEmail: payload.primary_contact_email || '',
-  })
+  try {
+    await syncPrimaryAttorneyDevelopmentParticipant(client, {
+      developmentId,
+      attorneyFirmName: payload.attorney_firm_name || '',
+      primaryContactName: payload.primary_contact_name || '',
+      primaryContactEmail: payload.primary_contact_email || '',
+    })
+  } catch (participantSyncError) {
+    if (!isPermissionDeniedError(participantSyncError)) {
+      throw participantSyncError
+    }
+    console.warn('[Developments] Primary attorney participant was not synced because development_participants RLS blocked the write.', participantSyncError)
+  }
 
   return normalizeDevelopmentAttorneyConfigRow(data, requiredDocuments)
 }
@@ -16758,16 +16772,40 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
     payload: profilePayload,
   })
 
-  if (profileResult.error && isMissingColumnError(profileResult.error, 'marketing_content')) {
-    const { marketing_content: _marketingContent, ...legacyPayload } = profilePayload
+  const modernProfileColumns = [
+    'address',
+    'formatted_address',
+    'street_address',
+    'suburb',
+    'city',
+    'province',
+    'country',
+    'postal_code',
+    'latitude',
+    'longitude',
+    'google_place_id',
+    'marketing_content',
+  ]
+
+  if (profileResult.error && modernProfileColumns.some((column) => isMissingColumnError(profileResult.error, column))) {
+    const legacyPayload = { ...profilePayload }
+    for (const column of modernProfileColumns) {
+      delete legacyPayload[column]
+    }
     profileResult = await upsertByDevelopmentIdWithFallback(client, {
       table: 'development_profiles',
       payload: legacyPayload,
     })
   }
 
-  if (profileResult.error && !isMissingTableError(profileResult.error, 'development_profiles')) {
+  if (
+    profileResult.error &&
+    !isMissingTableError(profileResult.error, 'development_profiles') &&
+    !isPermissionDeniedError(profileResult.error)
+  ) {
     throw profileResult.error
+  } else if (profileResult.error && isPermissionDeniedError(profileResult.error)) {
+    console.warn('[Developments] Development profile was not saved because development_profiles RLS blocked the write.', profileResult.error)
   }
 
   // Keep development_settings feature toggles aligned with development-level module switches
@@ -40539,10 +40577,21 @@ export async function createDevelopmentWorkspace({
     if (!normalizeTextValue(document?.title)) {
       continue
     }
-    await saveDevelopmentDocument({
-      developmentId,
-      ...document,
-    })
+    try {
+      await saveDevelopmentDocument({
+        developmentId,
+        ...document,
+      })
+    } catch (documentError) {
+      if (!isPermissionDeniedError(documentError)) {
+        throw documentError
+      }
+      console.warn('[Developments] Development document was not saved because development_documents RLS blocked the write.', documentError)
+      warnings.push({
+        code: 'development_documents_rls_blocked',
+        message: 'One or more development documents were not saved because the database policy blocked this write.',
+      })
+    }
   }
 
   return {

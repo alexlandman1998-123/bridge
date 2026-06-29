@@ -103,6 +103,57 @@ async function main() {
     }))
 
     if (developmentId) {
+      results.push(await expectStep('upsert development_profiles', async () => {
+        const { data, error } = await anon
+          .from('development_profiles')
+          .upsert({
+            development_id: developmentId,
+            code: `DIAG-${stamp}`,
+            location: 'Diagnostic Location',
+            suburb: 'Diagnostic Suburb',
+            city: 'Cape Town',
+            province: 'Western Cape',
+            country: 'South Africa',
+            address: '1 Diagnostic Road',
+            formatted_address: '1 Diagnostic Road, Cape Town, South Africa',
+            street_address: '1 Diagnostic Road',
+            postal_code: '8001',
+            description: 'RLS diagnostic profile',
+            status: 'planning',
+            developer_company: 'Diagnostic Developer',
+            plans: [],
+            site_plans: [],
+            image_links: [],
+            supporting_documents: [],
+          }, { onConflict: 'development_id' })
+          .select('development_id')
+          .single()
+        if (error) throw error
+        return data
+      }))
+
+      results.push(await expectStep('insert development_participants', async () => {
+        const { data, error } = await anon
+          .from('development_participants')
+          .insert({
+            development_id: developmentId,
+            user_id: userId || null,
+            role_type: 'developer',
+            participant_name: 'Diagnostic Participant',
+            participant_email: `participant-${stamp}@example.com`,
+            organisation_name: 'Diagnostic Organisation',
+            is_primary: true,
+            can_view: true,
+            can_create_transactions: true,
+            assignment_source: 'development_default',
+            is_active: true,
+          })
+          .select('id, development_id, role_type')
+          .single()
+        if (error) throw error
+        return data
+      }))
+
       results.push(await expectStep('insert development_financials', async () => {
         const { data, error } = await anon
           .from('development_financials')
@@ -121,6 +172,38 @@ async function main() {
             notes: 'RLS diagnostic row',
           })
           .select('id, development_id')
+          .single()
+        if (error) throw error
+        return data
+      }))
+
+      results.push(await expectStep('insert development_documents', async () => {
+        const { data, error } = await anon
+          .from('development_documents')
+          .insert({
+            development_id: developmentId,
+            document_type: 'other',
+            title: 'Diagnostic Document',
+            description: 'RLS diagnostic document',
+            file_url: 'https://example.com/diagnostic.pdf',
+            uploaded_at: new Date().toISOString(),
+          })
+          .select('id, development_id, title')
+          .single()
+        if (error) throw error
+        return data
+      }))
+
+      results.push(await expectStep('insert document_requirements', async () => {
+        const { data, error } = await anon
+          .from('document_requirements')
+          .insert({
+            development_id: developmentId,
+            category_key: `diagnostic_${stamp}`,
+            label: 'Diagnostic Requirement',
+            sort_order: 999,
+          })
+          .select('id, development_id, category_key')
           .single()
         if (error) throw error
         return data
