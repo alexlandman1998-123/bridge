@@ -175,9 +175,11 @@ function Developments() {
 
     window.addEventListener('itg:transaction-created', refreshDevelopments)
     window.addEventListener('itg:transaction-updated', refreshDevelopments)
+    window.addEventListener('itg:developments-changed', refreshDevelopments)
     return () => {
       window.removeEventListener('itg:transaction-created', refreshDevelopments)
       window.removeEventListener('itg:transaction-updated', refreshDevelopments)
+      window.removeEventListener('itg:developments-changed', refreshDevelopments)
     }
   }, [loadData])
 

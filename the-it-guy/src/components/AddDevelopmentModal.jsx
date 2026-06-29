@@ -1166,6 +1166,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       const created = await createDevelopmentWorkspace({
         details: {
           ...details,
+          organisationId: workspace?.id || workspace?.organisation_id || workspace?.organisationId || null,
           developerCompany: resolvedDeveloperCompany,
           location: getResolvedDevelopmentLocation(details),
           totalUnitsExpected: normalizeOptionalNumber(details.totalUnitsExpected) ?? derivedTotals.unitCount,

@@ -16349,16 +16349,112 @@ export async function fetchExecutiveSnapshotByToken(token) {
 export async function fetchDevelopmentsData({ organisationId = null } = {}) {
   const overview = await fetchDashboardOverview({ organisationId })
   const client = requireClient()
+  const normalizedOrganisationId = String(organisationId || '').trim()
   const summaries = overview.developmentSummaries || []
+  const directDevelopmentRows = []
 
-  if (!summaries.length) {
+  let developmentsQuery = client
+    .from('developments')
+    .select('id, organisation_id, name, planned_units, total_units_expected, status, location, developer_company, updated_at, created_at')
+
+  if (normalizedOrganisationId) {
+    developmentsQuery = developmentsQuery.eq('organisation_id', normalizedOrganisationId)
+  }
+
+  let developmentsResult = await developmentsQuery
+
+  if (
+    developmentsResult.error &&
+    (isMissingColumnError(developmentsResult.error, 'organisation_id') ||
+      isMissingColumnError(developmentsResult.error, 'total_units_expected') ||
+      isMissingColumnError(developmentsResult.error, 'location') ||
+      isMissingColumnError(developmentsResult.error, 'developer_company') ||
+      isMissingColumnError(developmentsResult.error, 'status') ||
+      isMissingColumnError(developmentsResult.error, 'updated_at') ||
+      isMissingColumnError(developmentsResult.error, 'created_at'))
+  ) {
+    developmentsResult = await client
+      .from('developments')
+      .select('id, name, planned_units')
+  }
+
+  if (!developmentsResult.error) {
+    directDevelopmentRows.push(...(developmentsResult.data || []))
+  } else if (!isPermissionDeniedError(developmentsResult.error)) {
+    throw developmentsResult.error
+  }
+
+  if (normalizedOrganisationId && !directDevelopmentRows.length && !developmentsResult.error) {
+    let legacyDevelopmentsResult = await client
+      .from('developments')
+      .select('id, organisation_id, name, planned_units, total_units_expected, status, location, developer_company, updated_at, created_at')
+      .is('organisation_id', null)
+
+    if (
+      legacyDevelopmentsResult.error &&
+      (isMissingColumnError(legacyDevelopmentsResult.error, 'organisation_id') ||
+        isMissingColumnError(legacyDevelopmentsResult.error, 'total_units_expected') ||
+        isMissingColumnError(legacyDevelopmentsResult.error, 'location') ||
+        isMissingColumnError(legacyDevelopmentsResult.error, 'developer_company') ||
+        isMissingColumnError(legacyDevelopmentsResult.error, 'status') ||
+        isMissingColumnError(legacyDevelopmentsResult.error, 'updated_at') ||
+        isMissingColumnError(legacyDevelopmentsResult.error, 'created_at'))
+    ) {
+      legacyDevelopmentsResult = await client
+        .from('developments')
+        .select('id, name, planned_units')
+    }
+
+    if (!legacyDevelopmentsResult.error) {
+      directDevelopmentRows.push(...(legacyDevelopmentsResult.data || []))
+    } else if (!isPermissionDeniedError(legacyDevelopmentsResult.error)) {
+      throw legacyDevelopmentsResult.error
+    }
+  }
+
+  const summaryById = new Map(
+    summaries
+      .filter((item) => item?.id)
+      .map((item) => [String(item.id), item]),
+  )
+
+  for (const row of directDevelopmentRows) {
+    const id = String(row?.id || '').trim()
+    if (!id || summaryById.has(id)) {
+      continue
+    }
+
+    const plannedUnits = normalizeOptionalNumber(row?.total_units_expected ?? row?.planned_units) ?? 0
+    summaryById.set(id, {
+      id,
+      name: row?.name || 'Untitled development',
+      totalUnits: plannedUnits,
+      unitsSold: 0,
+      unitsInTransfer: 0,
+      unitsRegistered: 0,
+      lastActivity: row?.updated_at || row?.created_at || null,
+      location: row?.location || null,
+      phase: row?.status || null,
+      developerCompany: row?.developer_company || null,
+    })
+  }
+
+  const mergedSummaries = [...summaryById.values()].sort((left, right) =>
+    String(left.name || '').localeCompare(String(right.name || ''), undefined, { sensitivity: 'base' }),
+  )
+
+  if (!mergedSummaries.length) {
     return {
-      metrics: overview.metrics,
+      metrics: {
+        ...overview.metrics,
+        totalDevelopments: 0,
+      },
+      rows: overview.rows || [],
       developments: [],
     }
   }
 
-  const developmentIds = summaries.map((item) => item.id).filter(Boolean)
+  const developmentIds = mergedSummaries.map((item) => item.id).filter(Boolean)
   let profileByDevelopmentId = {}
 
   if (developmentIds.length) {
@@ -16378,16 +16474,19 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
   }
 
   return {
-    metrics: overview.metrics,
+    metrics: {
+      ...overview.metrics,
+      totalDevelopments: mergedSummaries.length,
+    },
     rows: overview.rows || [],
-    developments: summaries.map((item) => {
+    developments: mergedSummaries.map((item) => {
       const profile = profileByDevelopmentId[item.id] || null
       return {
         ...item,
         coverImageUrl: profile?.imageLinks?.[0] || null,
-        location: profile?.location || null,
-        phase: profile?.status || null,
-        developerCompany: profile?.developerCompany || null,
+        location: profile?.location || item.location || null,
+        phase: profile?.status || item.phase || null,
+        developerCompany: profile?.developerCompany || item.developerCompany || null,
       }
     }),
   }
@@ -40241,6 +40340,7 @@ export async function updateUserProfile({
 }
 
 const DEVELOPMENT_CREATE_OPTIONAL_COLUMNS = [
+  'organisation_id',
   'code',
   'location',
   'address',
@@ -40288,6 +40388,7 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
   const basePayload = {
     name: trimmedName,
     planned_units: Math.trunc(normalizedPlannedUnits),
+    organisation_id: normalizeNullableText(profile.organisationId || profile.organisation_id),
     code: normalizeNullableText(profile.code),
     location: normalizeNullableText(profile.location),
     address: normalizeNullableText(profile.address),
@@ -40320,7 +40421,7 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
   let result = await client
     .from('developments')
     .insert(basePayload)
-    .select('id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled')
+    .select('id, organisation_id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled')
     .single()
 
   if (result.error && isDevelopmentCreateMissingColumnError(result.error)) {
@@ -40480,6 +40581,7 @@ export async function createDevelopmentWorkspace({
     name: details.name,
     plannedUnits: details.totalUnitsExpected ?? details.plannedUnits ?? units.length,
     profile: {
+      organisationId: details.organisationId || details.organisation_id || null,
       code: details.code,
       location: details.location,
       suburb: details.suburb,

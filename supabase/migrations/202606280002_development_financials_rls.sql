@@ -1,6 +1,7 @@
 begin;
 
 alter table if exists public.developments
+  add column if not exists organisation_id uuid,
   add column if not exists postal_code text;
 
 alter table if exists public.development_profiles
@@ -20,6 +21,38 @@ alter table if exists public.development_financials enable row level security;
 alter table if exists public.development_participants enable row level security;
 alter table if exists public.development_profiles enable row level security;
 alter table if exists public.development_documents enable row level security;
+alter table if exists public.developments enable row level security;
+
+drop policy if exists developments_select_scoped on public.developments;
+create policy developments_select_scoped on public.developments
+for select to authenticated
+using (
+  public.bridge_is_admin()
+  or public.bridge_is_internal_user()
+  or public.bridge_has_development_access(id)
+);
+
+drop policy if exists developments_insert_scoped on public.developments;
+create policy developments_insert_scoped on public.developments
+for insert to authenticated
+with check (
+  public.bridge_is_admin()
+  or public.bridge_is_internal_user()
+);
+
+drop policy if exists developments_update_scoped on public.developments;
+create policy developments_update_scoped on public.developments
+for update to authenticated
+using (
+  public.bridge_is_admin()
+  or public.bridge_is_internal_user()
+  or public.bridge_has_development_access(id)
+)
+with check (
+  public.bridge_is_admin()
+  or public.bridge_is_internal_user()
+  or public.bridge_has_development_access(id)
+);
 
 drop policy if exists development_financials_select_scoped on public.development_financials;
 create policy development_financials_select_scoped on public.development_financials
