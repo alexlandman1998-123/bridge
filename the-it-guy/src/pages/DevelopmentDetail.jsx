@@ -3,11 +3,13 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Building2,
+  CheckCircle2,
   CircleDollarSign,
   Copy,
   Download,
   FolderKanban,
   HandCoins,
+  Home,
   Mail,
   LandPlot,
   MapPin,
@@ -20,6 +22,7 @@ import {
   TrendingUp,
   Upload,
   Workflow,
+  XCircle,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -33,6 +36,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import {
   DEVELOPER_FUNNEL_STAGES,
   selectActiveTransactions,
+  selectBottlenecks,
   selectDealBottleneckSummary,
   selectFinanceMix,
   selectDevelopmentPerformance,
@@ -61,12 +65,12 @@ const currency = new Intl.NumberFormat('en-ZA', {
 
 const DEVELOPMENT_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'marketing', label: 'Marketing' },
   { id: 'units', label: 'Units' },
   { id: 'transactions', label: 'Transactions' },
+  { id: 'performance', label: 'Performance' },
+  { id: 'marketing', label: 'Marketing' },
   { id: 'documents', label: 'Documents' },
-  { id: 'conveyancing', label: 'Conveyancing' },
-  { id: 'bond_originators', label: 'Bond Originators' },
+  { id: 'configuration', label: 'Configuration' },
 ]
 
 const DOCUMENT_TYPE_OPTIONS = [
@@ -1435,14 +1439,40 @@ function DevelopmentDetail() {
     }
 
     const totalUnits = allUnitIds.size || Number(data?.stats?.totalUnits || 0)
-    const soldPercent = totalUnits > 0 ? (registeredUnitIds.size / totalUnits) * 100 : 0
+    const soldThroughUnits = registeredUnitIds.size + inProgressUnitIds.size
+    const soldPercent = totalUnits > 0 ? (soldThroughUnits / totalUnits) * 100 : 0
 
     return [
-      { label: 'Available', value: formatNumber(availableUnitIds.size), icon: LandPlot },
-      { label: 'In Progress', value: formatNumber(inProgressUnitIds.size), icon: Workflow },
-      { label: 'Pipeline', value: currency.format(pipelineValue), icon: Receipt },
-      { label: 'Revenue Secured', value: currency.format(revenueSecuredValue), icon: CircleDollarSign },
-      { label: '% Sold', value: formatPercent(soldPercent), icon: TrendingUp },
+      {
+        label: 'Available Units',
+        value: formatNumber(availableUnitIds.size),
+        meta: `of ${formatNumber(totalUnits)} total`,
+        icon: Home,
+      },
+      {
+        label: 'Active Transactions',
+        value: formatNumber(inProgressUnitIds.size),
+        meta: 'in progress',
+        icon: Workflow,
+      },
+      {
+        label: 'Revenue Secured',
+        value: currency.format(revenueSecuredValue),
+        meta: `from ${formatNumber(registeredUnitIds.size)} unit${registeredUnitIds.size === 1 ? '' : 's'}`,
+        icon: CircleDollarSign,
+      },
+      {
+        label: 'Pipeline Value',
+        value: currency.format(pipelineValue),
+        meta: 'potential revenue',
+        icon: Receipt,
+      },
+      {
+        label: 'Sell Through',
+        value: formatPercent(soldPercent),
+        meta: `${formatNumber(soldThroughUnits)} of ${formatNumber(totalUnits)} units`,
+        icon: TrendingUp,
+      },
     ]
   }, [data?.stats?.totalUnits, rows])
 
@@ -2494,6 +2524,160 @@ function DevelopmentDetail() {
     financeMix.bondShare,
   ])
 
+  const overviewBottlenecks = useMemo(() => selectBottlenecks(rows).slice(0, 3), [rows])
+
+  const transactionPipelineItems = useMemo(() => {
+    const counts = developmentMetrics.stageCounts || {}
+    const reservedCount = Number(counts.DEP || 0)
+    const offerCount = Number(counts.OTP || 0) + Number(counts.FIN || 0)
+    const transferCount = Number(counts.ATTY || 0) + Number(counts.XFER || 0)
+    const registeredCount = Number(counts.REG || 0)
+    const availableCount = Number(counts.AVAIL || developmentMetrics.unitsAvailable || 0)
+    const max = Math.max(availableCount, reservedCount, offerCount, transferCount, registeredCount, 1)
+
+    return [
+      { key: 'available', label: 'Available', count: availableCount, tone: 'bg-[#1fa463]' },
+      { key: 'reserved', label: 'Reserved', count: reservedCount, tone: 'bg-[#eab308]' },
+      { key: 'offer', label: 'Offer to Purchase', count: offerCount, tone: 'bg-[#1d7fc2]' },
+      { key: 'transfer', label: 'Transfer', count: transferCount, tone: 'bg-[#8190a3]' },
+      { key: 'registered', label: 'Registered', count: registeredCount, tone: 'bg-[#6b7280]' },
+    ].map((item) => ({
+      ...item,
+      width: Math.max((item.count / max) * 100, item.count > 0 ? 8 : 3),
+    }))
+  }, [developmentMetrics.stageCounts, developmentMetrics.unitsAvailable])
+
+  const unitStatusItems = useMemo(() => {
+    const counts = {
+      available: 0,
+      reserved: 0,
+      sold: 0,
+      transferred: 0,
+      registered: 0,
+    }
+
+    rows.forEach((row) => {
+      const stageKey = resolveTransactionMainStage(row)
+      if (stageKey === 'REG') {
+        counts.registered += 1
+      } else if (stageKey === 'XFER') {
+        counts.transferred += 1
+      } else if (['OTP', 'FIN', 'ATTY'].includes(stageKey)) {
+        counts.sold += 1
+      } else if (stageKey === 'DEP') {
+        counts.reserved += 1
+      } else {
+        counts.available += 1
+      }
+    })
+
+    const total = rows.length || 0
+    const colors = {
+      available: '#22c55e',
+      reserved: '#eab308',
+      sold: '#1d7fc2',
+      transferred: '#7c3aed',
+      registered: '#9ca3af',
+    }
+    let cursor = 0
+    const gradientParts = Object.entries(counts)
+      .filter(([, count]) => count > 0)
+      .map(([key, count]) => {
+        const start = cursor
+        const end = cursor + (total ? (count / total) * 100 : 0)
+        cursor = end
+        return `${colors[key]} ${start}% ${end}%`
+      })
+
+    return {
+      total,
+      gradient: gradientParts.length ? `conic-gradient(${gradientParts.join(', ')})` : 'conic-gradient(#e2e8f0 0% 100%)',
+      items: [
+        { key: 'available', label: 'Available', color: colors.available },
+        { key: 'reserved', label: 'Reserved', color: colors.reserved },
+        { key: 'sold', label: 'Sold', color: colors.sold },
+        { key: 'transferred', label: 'Transferred', color: colors.transferred },
+        { key: 'registered', label: 'Registered', color: colors.registered },
+      ].map((item) => ({
+        ...item,
+        count: counts[item.key],
+        share: total ? (counts[item.key] / total) * 100 : 0,
+      })),
+    }
+  }, [rows])
+
+  const developmentHealthItems = useMemo(() => {
+    const unitsConfigured = unitRows.length > 0 && remainingPlannedUnits === 0
+    const hasLocation = Boolean(locationLine || detailsForm.address)
+    const attorneyConnected = Boolean(
+      data?.attorneyConfig?.attorneyFirmName ||
+        rows.some((row) => String(row?.transaction?.attorney || '').trim()),
+    )
+    const bondOriginatorConnected = Boolean(
+      data?.bondConfig?.bondOriginatorName ||
+        rows.some((row) => String(row?.transaction?.bond_originator || '').trim()),
+    )
+    const defaultsConfigured =
+      reservationSettingsForm.defaultTransferAttorneySource !== 'none' &&
+      reservationSettingsForm.defaultBondOriginatorSource !== 'none'
+    const onboardingAttentionCount = rows.filter((row) => {
+      if (!row?.transaction?.id) return false
+      const status = String(row?.transaction?.onboarding_status || row?.onboarding?.status || '')
+        .trim()
+        .toLowerCase()
+      return status && !['complete', 'completed', 'submitted', 'client_onboarding_complete'].includes(status)
+    }).length
+
+    return [
+      {
+        label: 'Units configured',
+        detail: unitsConfigured
+          ? `All ${formatNumber(unitRows.length)} units are configured`
+          : unitRows.length
+            ? `${formatNumber(remainingPlannedUnits)} planned units still need stock rows`
+            : 'No units configured yet',
+        tone: unitsConfigured ? 'success' : unitRows.length ? 'warning' : 'danger',
+      },
+      {
+        label: 'Transaction defaults',
+        detail: defaultsConfigured ? 'Default partner routing is set' : 'Partner routing needs confirmation',
+        tone: defaultsConfigured ? 'success' : 'warning',
+      },
+      {
+        label: 'Buyer onboarding',
+        detail: onboardingAttentionCount
+          ? `${formatNumber(onboardingAttentionCount)} onboarding ${onboardingAttentionCount === 1 ? 'item needs' : 'items need'} attention`
+          : 'No onboarding blockers flagged',
+        tone: onboardingAttentionCount ? 'warning' : 'success',
+      },
+      {
+        label: 'Attorneys connected',
+        detail: attorneyConnected ? 'Transfer and conveyancing setup is connected' : 'Attorney setup is not connected yet',
+        tone: attorneyConnected ? 'success' : 'danger',
+      },
+      {
+        label: 'Bond originator connected',
+        detail: bondOriginatorConnected ? 'Bond originator setup is connected' : 'No bond originator connected yet',
+        tone: bondOriginatorConnected ? 'success' : 'warning',
+      },
+      {
+        label: 'Location configured',
+        detail: hasLocation ? locationLine || detailsForm.address : 'Development location not set',
+        tone: hasLocation ? 'success' : 'danger',
+      },
+    ]
+  }, [
+    data?.attorneyConfig?.attorneyFirmName,
+    data?.bondConfig?.bondOriginatorName,
+    detailsForm.address,
+    locationLine,
+    remainingPlannedUnits,
+    reservationSettingsForm.defaultBondOriginatorSource,
+    reservationSettingsForm.defaultTransferAttorneySource,
+    rows,
+    unitRows.length,
+  ])
+
   function setMarketingField(sectionKey, fieldKey, value) {
     setDetailsForm((previous) => {
       const normalizedMarketing = normalizeMarketingContentForm(previous.marketing)
@@ -3167,77 +3351,68 @@ function DevelopmentDetail() {
       {error ? <p className="mt-4 rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p> : null}
       {feedback ? <p className="mt-4 rounded-[16px] border border-[#d6ece0] bg-[#edfdf3] px-5 py-4 text-sm text-[#1c7d45]">{feedback}</p> : null}
 
-      <section className="mt-5 rounded-[24px] border border-[#dde4ee] bg-white p-5 sm:p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="flex flex-col gap-5">
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+      <section className="mt-6">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
             <div className="min-w-0">
-              <h1 className="text-[2.25rem] font-semibold tracking-[-0.04em] text-[#142132]">{data.development.name}</h1>
-              <p className="mt-4 text-[1rem] text-[#6b7d93]">
-                {locationLine || 'Location pending'}
-                {detailsForm.address ? ` • ${detailsForm.address}` : ''}
-              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-[2.25rem] font-semibold tracking-[-0.035em] text-[#08172d] sm:text-[2.5rem]">{data.development.name}</h1>
+                <span className="inline-flex rounded-full border border-[#cfe8d8] bg-[#edf9f1] px-3 py-1 text-xs font-semibold text-[#09833d]">
+                  {toTitleLabel(detailsForm.status || 'active')} Development
+                </span>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium text-[#5d7087]">
+                <span className="inline-flex items-center gap-2">
+                  <MapPin size={15} className="text-[#607891]" />
+                  {locationLine || 'Location pending'}
+                </span>
+                <span>{formatNumber(overviewSalesProgress.totalUnits)} Units</span>
+                <span>{formatPercent(overviewSalesProgress.sellThroughPercent)} Sold Through</span>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 md:justify-end xl:justify-end">
-              <Button asChild variant="secondary">
-                <Link to={`/m/developments/${developmentId}`}>
-                  <ArrowUpRight size={15} />
-                  Mobile Executive View
-                </Link>
-              </Button>
+              {canManageDevelopment ? (
+                <Button variant="secondary" onClick={() => setActiveTab('configuration')}>
+                  <PencilLine size={15} />
+                  Edit Development
+                </Button>
+              ) : null}
               {canCreateTransactions ? (
                 <Button onClick={openDevelopmentTransactionWizard}>
-                  <HandCoins size={15} />
+                  <Plus size={15} />
                   Add Transaction
                 </Button>
               ) : null}
-              <Button onClick={() => setActiveTab('documents')}>
+              <Button variant="secondary" onClick={() => setActiveTab('documents')}>
                 <Upload size={15} />
                 Upload Asset
               </Button>
             </div>
-          </div>
-
-          {canManageDevelopment ? (
-            <div className="border-t border-[#e6edf5] pt-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="ghost" className="px-4" onClick={() => setActiveTab('overview')}>
-                    <PencilLine size={15} />
-                    Edit Development
-                  </Button>
-                  <Button variant="ghost" className="px-4" onClick={() => setActiveTab('units')}>
-                    <Plus size={15} />
-                    Add Unit
-                  </Button>
-                </div>
-                <div className="flex justify-start sm:justify-end">
-                  <Button variant="ghost" className="px-4 text-[#b42318] hover:bg-[#fff5f4]" onClick={() => setDeleteConfirmOpen(true)}>
-                    Delete Development
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
       </section>
 
-      <section className="mt-4 rounded-[24px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+      <section className="mt-6">
         <div className="grid gap-3 lg:grid-cols-5">
           {summaryItems.map((item) => {
             const Icon = item.icon
             return (
               <article
                 key={item.label}
-                className="rounded-[18px] border border-[#dde4ee] bg-white px-4 py-4 shadow-[0_4px_14px_rgba(15,23,42,0.05)]"
+                className="rounded-[18px] border border-[#dde4ee] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]"
               >
-                <div className="mb-2.5 flex items-start justify-between gap-3">
-                  <span className="text-[0.95rem] font-medium tracking-[-0.01em] text-[#3b4f65]">{item.label}</span>
-                  {Icon ? <Icon size={18} className="text-[#94a3b8]" aria-hidden="true" /> : null}
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  {Icon ? (
+                    <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#eaf7ef] text-[#159447]">
+                      <Icon size={18} aria-hidden="true" />
+                    </span>
+                  ) : null}
+                  <span className="sr-only">{item.label}</span>
                 </div>
+                <span className="block text-sm font-medium tracking-[-0.01em] text-[#61738a]">{item.label}</span>
                 <strong className="block text-[1.7rem] font-semibold leading-none tracking-[-0.035em] text-[#142132]">
                   {item.value}
                 </strong>
+                <span className="mt-3 block text-sm font-medium text-[#6b7d93]">{item.meta}</span>
               </article>
             )
           })}
@@ -3270,49 +3445,182 @@ function DevelopmentDetail() {
       </section>
 
       {activeTab === 'overview' ? (
-        <section className="mt-4 rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <h3 className="text-[1.1rem] font-semibold tracking-[-0.025em] text-[#142132]">Overall Sales Progress</h3>
-              <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Executive sell-through snapshot across available, in-progress, and registered units.</p>
-            </div>
-            <span className="inline-flex items-center rounded-full border border-[#d7e5f5] bg-[#f7fbff] px-3 py-1 text-[0.78rem] font-semibold text-[#35546c]">
-              {formatPercent(overviewSalesProgress.sellThroughPercent)} sell-through
-            </span>
+        <section className="mt-5 grid gap-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)_minmax(0,1.15fr)]">
+            <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <h3 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Development Health</h3>
+                <Button variant="ghost" size="sm" onClick={() => setActiveTab('configuration')}>
+                  View all
+                </Button>
+              </div>
+              {developmentHealthItems.length ? (
+                <ul className="grid gap-3">
+                  {developmentHealthItems.map((item) => {
+                    const isSuccess = item.tone === 'success'
+                    const isDanger = item.tone === 'danger'
+                    const StatusIcon = isSuccess ? CheckCircle2 : isDanger ? XCircle : AlertTriangle
+                    return (
+                      <li key={item.label} className="grid grid-cols-[24px_minmax(0,1fr)] gap-3">
+                        <StatusIcon
+                          size={18}
+                          className={isSuccess ? 'text-[#16a34a]' : isDanger ? 'text-[#ef4444]' : 'text-[#d99a12]'}
+                        />
+                        <div className="min-w-0">
+                          <strong className="block text-sm font-semibold text-[#142132]">{item.label}</strong>
+                          <span className="mt-0.5 block text-sm leading-5 text-[#61738a]">{item.detail}</span>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-5 text-sm text-[#6b7d93]">
+                  Complete the setup to start tracking development health.
+                </p>
+              )}
+            </article>
+
+            <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <h3 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Transaction Pipeline</h3>
+                <span className="text-xs font-semibold text-[#6b7d93]">{formatNumber(developmentMetrics.totalUnits || 0)} units</span>
+              </div>
+              <div className="grid gap-4">
+                {transactionPipelineItems.map((item) => (
+                  <div key={item.key} className="grid grid-cols-[minmax(110px,0.8fr)_minmax(90px,1fr)_36px] items-center gap-3">
+                    <span className="text-sm font-semibold text-[#1f3145]">{item.label}</span>
+                    <span className="h-2 overflow-hidden rounded-full bg-[#edf2f7]" aria-hidden="true">
+                      <span className={`block h-full rounded-full ${item.tone}`} style={{ width: `${item.width}%` }} />
+                    </span>
+                    <strong className="text-right text-sm font-semibold text-[#142132]">{formatNumber(item.count)}</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 rounded-[16px] border border-[#e3ebf4] bg-[#f8fafc] px-4 py-3">
+                <p className="text-sm font-semibold text-[#142132]">
+                  {formatNumber(developmentMetrics.dealsInProgress || 0)} {developmentMetrics.dealsInProgress === 1 ? 'unit is' : 'units are'} in active transactions
+                </p>
+                <Button variant="ghost" className="mt-2 w-full justify-between px-0" onClick={() => setActiveTab('transactions')}>
+                  View all transactions
+                  <ArrowUpRight size={14} />
+                </Button>
+              </div>
+            </article>
+
+            <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <h3 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Transactions Requiring Attention</h3>
+                <span
+                  className={[
+                    'inline-flex min-w-7 items-center justify-center rounded-full px-2 py-1 text-xs font-semibold',
+                    overviewBottlenecks.length ? 'bg-[#fee2e2] text-[#dc2626]' : 'bg-[#edf9f1] text-[#09833d]',
+                  ].join(' ')}
+                >
+                  {formatNumber(overviewBottlenecks.length)}
+                </span>
+              </div>
+              {overviewBottlenecks.length ? (
+                <div className="grid gap-3">
+                  {overviewBottlenecks.map((item) => (
+                    <article key={`${item.transactionId || item.unitId}-${item.stageKey}`} className="rounded-[16px] border border-[#f3d2cc] bg-[#fff8f7] p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <strong className="block text-sm font-semibold text-[#142132]">Unit {item.unitNumber || '-'}</strong>
+                          <span className="mt-1 block text-sm text-[#61738a]">{item.nextAction}</span>
+                          <span className="mt-1 block text-xs font-medium text-[#b42318]">
+                            {formatNumber(item.daysInStage)} days in {item.stageLabel}
+                          </span>
+                        </div>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() =>
+                            item.unitId
+                              ? navigate(`/units/${item.unitId}`, {
+                                  state: { headerTitle: `Unit ${item.unitNumber || 'Workspace'}` },
+                                })
+                              : setActiveTab('transactions')
+                          }
+                        >
+                          View
+                          <ArrowUpRight size={13} />
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-8 text-sm text-[#6b7d93]">
+                  No transactions need attention right now.
+                </p>
+              )}
+              <Button variant="ghost" className="mt-4 w-full justify-between px-0" onClick={() => setActiveTab('transactions')}>
+                View all transactions
+                <ArrowUpRight size={14} />
+              </Button>
+            </article>
           </div>
 
-          <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#e7eef6]" aria-hidden="true">
-            <div className="flex h-full w-full">
-              <div className="h-full bg-[#97a4b7]" style={{ width: `${overviewSalesProgress.availableWidth}%` }} />
-              <div className="h-full bg-[#e2af3f]" style={{ width: `${overviewSalesProgress.inProgressWidth}%` }} />
-              <div className="h-full bg-[#2f8f5c]" style={{ width: `${overviewSalesProgress.completedWidth}%` }} />
-            </div>
-          </div>
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <h3 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Unit Status</h3>
+              {unitStatusItems.total ? (
+                <div className="mt-5 grid gap-5 md:grid-cols-[160px_minmax(0,1fr)] md:items-center">
+                  <div className="mx-auto h-[150px] w-[150px] rounded-full p-[18px]" style={{ background: unitStatusItems.gradient }} aria-hidden="true">
+                    <div className="h-full w-full rounded-full bg-white" />
+                  </div>
+                  <div className="grid gap-3">
+                    {unitStatusItems.items.map((item) => (
+                      <div key={item.key} className="grid grid-cols-[auto_minmax(0,1fr)_48px_52px] items-center gap-3 text-sm">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: item.color }} />
+                        <span className="font-medium text-[#52687f]">{item.label}</span>
+                        <strong className="text-right font-semibold text-[#142132]">{formatNumber(item.count)}</strong>
+                        <span className="text-right font-medium text-[#6b7d93]">{formatPercent(item.share)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-5 rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-8 text-sm text-[#6b7d93]">
+                  No units configured yet.
+                </p>
+              )}
+              <Button variant="ghost" className="mt-5 w-full justify-between border-t border-[#e6edf5] px-0 pt-4" onClick={() => setActiveTab('units')}>
+                View units
+                <ArrowUpRight size={14} />
+              </Button>
+            </article>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
-              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Units Sold / Total</span>
-              <strong className="mt-1.5 block text-base font-semibold text-[#142132]">
-                {formatNumber(developmentMetrics.unitsSold || 0)} / {formatNumber(overviewSalesProgress.totalUnits)}
-              </strong>
-            </article>
-            <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
-              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Active Transactions</span>
-              <strong className="mt-1.5 block text-base font-semibold text-[#142132]">{formatNumber(overviewSalesProgress.inProgress)}</strong>
-            </article>
-            <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
-              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Registered Transactions</span>
-              <strong className="mt-1.5 block text-base font-semibold text-[#142132]">{formatNumber(overviewSalesProgress.completed)}</strong>
-            </article>
-            <article className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-3.5">
-              <span className="block text-[0.72rem] uppercase tracking-[0.1em] text-[#7b8ca2]">Available Units</span>
-              <strong className="mt-1.5 block text-base font-semibold text-[#142132]">{formatNumber(overviewSalesProgress.available)}</strong>
+            <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <h3 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Recent Activity</h3>
+              {recentActivity.length ? (
+                <ul className="mt-5 grid gap-4">
+                  {recentActivity.slice(0, 4).map((item) => (
+                    <li key={item.id} className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <strong className="block text-sm font-semibold text-[#142132]">Unit {item.unitNumber} {toTitleLabel(item.stage)}</strong>
+                        <span className="mt-1 block text-sm text-[#61738a]">{item.buyer}</span>
+                      </div>
+                      <span className="shrink-0 text-right text-xs font-semibold text-[#6b7d93]">{getRelativeUpdateLabel(item.updatedAt)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-5 rounded-[16px] border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-4 py-8 text-sm text-[#6b7d93]">
+                  No recent activity yet.
+                </p>
+              )}
+              <Button variant="ghost" className="mt-5 w-full justify-between border-t border-[#e6edf5] px-0 pt-4" onClick={() => setActiveTab('transactions')}>
+                View full activity feed
+                <ArrowUpRight size={14} />
+              </Button>
             </article>
           </div>
         </section>
       ) : null}
 
-      {activeTab === 'legacy_overview' ? (
+      {activeTab === 'performance' ? (
         <>
 
           <section className={`${CARD_SHELL} mt-4 p-4`}>
@@ -3608,9 +3916,10 @@ function DevelopmentDetail() {
         </>
       ) : null}
 
-      {activeTab === 'overview' ? (
+      {['configuration', 'performance'].includes(activeTab) ? (
         <section className="mt-4 grid gap-4">
-          <div className={`grid gap-4 ${canManageDevelopment ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : ''}`}>
+          <div className={`grid gap-4 ${activeTab === 'performance' && canManageDevelopment ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : ''}`}>
+            {activeTab === 'configuration' ? (
             <form className={CARD_SHELL} onSubmit={handleDetailsSave}>
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -3805,13 +4114,19 @@ function DevelopmentDetail() {
               ) : null}
 
               {!isEditingDetailsSection ? (
-                <div className="mt-5 border-t border-[#e6edf5] pt-4 text-xs font-medium text-[#7b8ca2]">
-                  Viewing mode. Use the pencil icon to edit this section.
+                <div className="mt-5 flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-xs font-medium text-[#7b8ca2]">Viewing mode. Use the pencil icon to edit this section.</span>
+                  {canManageDevelopment ? (
+                    <Button type="button" variant="ghost" className="w-fit px-0 text-[#b42318] hover:bg-transparent" onClick={() => setDeleteConfirmOpen(true)}>
+                      Delete Development
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </form>
+            ) : null}
 
-            {canManageDevelopment ? (
+            {activeTab === 'performance' && canManageDevelopment ? (
             <form className={CARD_SHELL} onSubmit={handleFinancialsSave}>
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -3880,7 +4195,7 @@ function DevelopmentDetail() {
             ) : null}
           </div>
 
-          {canManageDevelopment ? (
+          {activeTab === 'performance' && canManageDevelopment ? (
           <section className={CARD_SHELL}>
             <div className="mb-5">
               <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Commercial Dashboard</h3>
@@ -4149,6 +4464,7 @@ function DevelopmentDetail() {
           </section>
           ) : null}
 
+          {activeTab === 'performance' ? (
           <section className={CARD_SHELL}>
             <div className="mb-5">
               <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Development Progress Insights</h3>
@@ -4260,6 +4576,7 @@ function DevelopmentDetail() {
               </article>
             </div>
           </section>
+          ) : null}
         </section>
       ) : null}
 
