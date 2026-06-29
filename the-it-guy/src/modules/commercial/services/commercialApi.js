@@ -449,6 +449,12 @@ export function isCommercialMembershipRow(member = {}) {
   return hasCommercialAccessMarker(member)
 }
 
+function isLegacyCommercialAgencyMembership(member = {}, fallbackRole = '') {
+  if (!member?.id || !isActiveMembershipStatus(member?.status)) return false
+  const role = resolveCommercialMembershipRole(member, fallbackRole || member.workspace_role || member.organisation_role || member.role || 'viewer')
+  return Boolean(getCommercialScopeLevel(role))
+}
+
 function pickPreferredOrganisationMembership(rows = [], matcher = null) {
   const matchingRows = (Array.isArray(rows) ? rows : []).filter((row) => {
     if (!row) return false
@@ -2188,6 +2194,7 @@ export async function resolveCommercialAccessContext({ forceRefresh = false } = 
         (
           isPlatformAdmin ||
           canReviewCommercialAccess ||
+          isLegacyCommercialAgencyMembership(currentMembership, context.membershipRole) ||
           hasCommercialWorkspacePlannedAccess(context.organisationSettings, {
             organisationUserId: currentMembership?.id,
             userId,
@@ -2259,7 +2266,8 @@ function isMissingCommercialActivationColumn(error) {
 function buildCommercialActivationMetadata(member = {}, userId = '') {
   const safeMember = member && typeof member === 'object' ? member : {}
   const previousMetadata = parseJsonObject(safeMember.module_metadata || safeMember.moduleMetadata)
-  const commercialRole = resolveCommercialRole(safeMember) || COMMERCIAL_ROLES.broker
+  const fallbackRole = safeMember.organisation_role || safeMember.organisationRole || safeMember.role || safeMember.workspace_role || safeMember.workspaceRole || COMMERCIAL_ROLES.broker
+  const commercialRole = resolveCommercialMembershipRole(safeMember, fallbackRole)
   return {
     ...previousMetadata,
     module: 'commercial',
@@ -2309,7 +2317,8 @@ export async function activateCommercialWorkspaceForCurrentUser() {
         organisationUserId: member.id,
         userId,
         email: normalizeEmail(member.email || context.profile?.email),
-      }),
+      }) ||
+      isLegacyCommercialAgencyMembership(member, context.membershipRole),
   )
 
   if (!canSelfActivate) {
@@ -2322,10 +2331,14 @@ export async function activateCommercialWorkspaceForCurrentUser() {
     return resolveCommercialAccessContext({ forceRefresh: true })
   }
 
+  const activationCommercialRole = resolveCommercialMembershipRole(
+    member,
+    member.organisation_role || member.organisationRole || member.role || member.workspace_role || member.workspaceRole || context.membershipRole || COMMERCIAL_ROLES.broker,
+  )
   const fullPayload = {
     module_context: 'commercial',
     module_metadata: buildCommercialActivationMetadata(member, userId),
-    ...buildCommercialRolePatch(member, COMMERCIAL_ROLES.broker),
+    ...buildCommercialRolePatch({ ...member, commercial_role: activationCommercialRole }, activationCommercialRole),
   }
   const fullSelect = `id, organisation_id, user_id, branch_id, primary_branch_id, team_id, role, workspace_role, organisation_role, ${COMMERCIAL_ORGANISATION_USER_ROLE_COLUMNS}, module_context, workspace_type, module_metadata, status, email`
   const update = await supabase

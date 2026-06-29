@@ -1044,6 +1044,11 @@ function shouldCommitImportRow(row = {}, duplicateStrategy = 'review', seenDupli
   const requestedAction = normalizeAction(row.action)
   if (requestedAction === 'skip') return { commit: false, status: 'skipped', action: 'skip', message: 'Row skipped by import review.' }
   if (requestedAction === 'review') return { commit: false, status: 'warning', action: 'review', message: 'Row held for review.' }
+  if (requestedAction === 'update') {
+    const duplicateRecordId = toNullableUuid(row.duplicateRecordId || row.duplicate_record_id)
+    if (!duplicateRecordId) return { commit: false, status: 'warning', action: 'review', message: 'Update action requires a matched duplicate record.' }
+    return { commit: true, status: 'committing', action: 'update', operation: 'update', targetRecordId: duplicateRecordId, message: '' }
+  }
 
   const duplicateKey = normalizeText(row.duplicateKey || row.duplicate_key)
   const duplicateWarning = hasDuplicateWarning(row)
@@ -1055,6 +1060,18 @@ function shouldCommitImportRow(row = {}, duplicateStrategy = 'review', seenDupli
   if (duplicateWarning && duplicateStrategy === 'review' && requestedAction !== 'create') return { commit: false, status: 'warning', action: 'review', message: 'Duplicate warning left for review.' }
 
   return { commit: true, status: 'committing', action: 'create', message: '' }
+}
+
+function getImportUpdatePayload(payload = {}) {
+  const blockedKeys = new Set(['id', 'created_at', 'created_by', 'organisation_id'])
+  return Object.entries(payload).reduce((nextPayload, [key, value]) => {
+    if (blockedKeys.has(key)) return nextPayload
+    if (value === undefined || value === null || value === '') return nextPayload
+    if (Array.isArray(value) && !value.length) return nextPayload
+    if (typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length) return nextPayload
+    nextPayload[key] = value
+    return nextPayload
+  }, {})
 }
 
 async function fetchCommercialDuplicateRows(table, columns, organisationId, limit = 5000) {
@@ -1553,23 +1570,33 @@ export async function commitCommercialImportBatch(batchId = '') {
 
     try {
       const targetPayload = await buildImportTargetPayload(batch, row, userId, resolution)
-      const insert = await supabase
-        .from(targetTable)
-        .insert(targetPayload)
-        .select('id')
-        .single()
+      const isUpdate = decision.operation === 'update'
+      const mutation = isUpdate
+        ? await supabase
+            .from(targetTable)
+            .update(getImportUpdatePayload(targetPayload))
+            .eq('organisation_id', batch.organisation_id)
+            .eq('id', decision.targetRecordId)
+            .select('id')
+            .single()
+        : await supabase
+            .from(targetTable)
+            .insert(targetPayload)
+            .select('id')
+            .single()
 
-      if (insert.error) throw insert.error
+      if (mutation.error) throw mutation.error
 
-      summary.createdCount += 1
+      if (isUpdate) summary.updatedCount += 1
+      else summary.createdCount += 1
       if (targetPayload.property_id || targetPayload.landlord_id || targetPayload.company_id || targetPayload.contact_id) {
         summary.relationshipsResolvedCount += 1
       }
       await updateCommercialImportRow(row.id, {
-        status: 'created',
-        action: 'create',
+        status: isUpdate ? 'updated' : 'created',
+        action: isUpdate ? 'update' : 'create',
         targetTable,
-        targetRecordId: insert.data?.id,
+        targetRecordId: mutation.data?.id,
         normalizedPayload: {
           ...getRowNormalizedPayload(row),
           property_id: targetPayload.property_id || undefined,
@@ -1584,7 +1611,7 @@ export async function commitCommercialImportBatch(batchId = '') {
       summary.failedCount += 1
       await updateCommercialImportRow(row.id, {
         status: 'failed',
-        action: 'create',
+        action: decision.action || 'create',
         targetTable,
         errorMessage: commitError?.message || 'Row could not be committed.',
         processedAt: new Date().toISOString(),
@@ -1592,7 +1619,7 @@ export async function commitCommercialImportBatch(batchId = '') {
     }
   }
 
-  const status = summary.failedCount && !summary.createdCount ? 'failed' : 'committed'
+  const status = summary.failedCount && !summary.createdCount && !summary.updatedCount ? 'failed' : 'committed'
   const updatedBatch = await updateCommercialImportBatch(id, {
     status,
     committedBy: userId,

@@ -485,7 +485,7 @@ function validateImportMapping(recordType, headers = [], rows = [], mapping = {}
   const summary = rowResults.reduce((counts, result) => {
     counts.totalRows += 1
     if (result.status === 'valid') counts.validRows += 1
-    else if (result.status === 'warning') counts.warningRows += 1
+    else if (['warning', 'skipped'].includes(result.status)) counts.warningRows += 1
     else counts.invalidRows += 1
     return counts
   }, { totalRows: 0, validRows: 0, warningRows: 0, invalidRows: 0 })
@@ -504,7 +504,7 @@ function summarizeImportValidation(mappingErrors = [], rows = []) {
   const summary = rows.reduce((counts, result) => {
     counts.totalRows += 1
     if (result.status === 'valid') counts.validRows += 1
-    else if (result.status === 'warning') counts.warningRows += 1
+    else if (['warning', 'skipped'].includes(result.status)) counts.warningRows += 1
     else counts.invalidRows += 1
     return counts
   }, { totalRows: 0, validRows: 0, warningRows: 0, invalidRows: 0 })
@@ -519,11 +519,24 @@ function summarizeImportValidation(mappingErrors = [], rows = []) {
   }
 }
 
-function mergeExistingDuplicateMatches(validation = {}, matchesByRowNumber = {}) {
+function getDuplicateActionForStrategy(strategy = 'review') {
+  if (strategy === 'skip') return 'skip'
+  if (strategy === 'update') return 'update'
+  return 'review'
+}
+
+function getDuplicateStatusForAction(action = 'review', hasErrors = false) {
+  if (hasErrors) return 'invalid'
+  if (action === 'skip') return 'skipped'
+  return 'warning'
+}
+
+function mergeExistingDuplicateMatches(validation = {}, matchesByRowNumber = {}, duplicateStrategy = 'review') {
   const rows = (validation.rows || []).map((row) => {
     const match = matchesByRowNumber[row.rowNumber]
     if (!match?.recordId) return row
 
+    const duplicateAction = getDuplicateActionForStrategy(duplicateStrategy)
     const label = match.label ? ` (${match.label})` : ''
     const warning = `Possible existing ${match.recordType || 'commercial record'} match${label}: ${match.reason || 'matching record already exists'}.`
     const validationWarnings = row.validationWarnings.includes(warning)
@@ -535,8 +548,8 @@ function mergeExistingDuplicateMatches(validation = {}, matchesByRowNumber = {})
       validationWarnings,
       duplicateRecordType: match.recordType || '',
       duplicateRecordId: match.recordId || '',
-      status: row.validationErrors.length ? 'invalid' : 'warning',
-      action: 'review',
+      status: getDuplicateStatusForAction(duplicateAction, row.validationErrors.length),
+      action: row.validationErrors.length ? 'review' : duplicateAction,
     }
   })
 
@@ -635,9 +648,30 @@ function getImportReadinessLabel(summary = {}) {
   return 'Ready to commit'
 }
 
+function isImportRowLocked(row = {}) {
+  return ['created', 'updated', 'committing'].includes(String(row.status || '').toLowerCase())
+}
+
+function getBulkReviewActionRows(rows = [], action = '') {
+  return rows.filter((row) => {
+    if (isImportRowLocked(row)) return false
+    if (action === 'create') return !row.validationErrors?.length && !row.duplicateRecordId && row.action !== 'create'
+    if (action === 'update') return !row.validationErrors?.length && Boolean(row.duplicateRecordId) && row.action !== 'update'
+    if (action === 'skip') return Boolean(row.duplicateRecordId) && row.action !== 'skip'
+    return false
+  })
+}
+
 function getReviewedRowPatch(action, row = {}) {
   if (action === 'skip') {
     return { action: 'skip', status: 'skipped', errorMessage: 'Skipped by manager review.' }
+  }
+  if (action === 'update') {
+    return {
+      action: row.duplicateRecordId ? 'update' : 'review',
+      status: row.duplicateRecordId ? 'ready' : 'warning',
+      errorMessage: row.duplicateRecordId ? '' : 'Update requires an existing matched record.',
+    }
   }
   if (action === 'review') {
     return { action: 'review', status: 'warning', errorMessage: 'Held for manager review.' }
@@ -664,6 +698,7 @@ function CommercialBulkUploadSettingsPage() {
   const [reviewRows, setReviewRows] = useState([])
   const [reviewLoading, setReviewLoading] = useState(false)
   const [reviewRowAction, setReviewRowAction] = useState({ rowId: '', action: '' })
+  const [reviewBulkAction, setReviewBulkAction] = useState('')
   const [importDraft, setImportDraft] = useState({
     recordType: 'vacancies',
     file: null,
@@ -729,6 +764,9 @@ function CommercialBulkUploadSettingsPage() {
   const selectedFields = FIELD_DEFINITIONS[importDraft.recordType] || []
   const previewRows = importDraft.rows.slice(0, 5)
   const reviewReadiness = useMemo(() => summarizeImportReviewReadiness(reviewRows), [reviewRows])
+  const bulkCreateRows = useMemo(() => getBulkReviewActionRows(reviewRows, 'create'), [reviewRows])
+  const bulkUpdateRows = useMemo(() => getBulkReviewActionRows(reviewRows, 'update'), [reviewRows])
+  const bulkSkipRows = useMemo(() => getBulkReviewActionRows(reviewRows, 'skip'), [reviewRows])
 
   function updateSetting(key, value) {
     setSuccess('')
@@ -846,7 +884,7 @@ function CommercialBulkUploadSettingsPage() {
           recordType: importDraft.recordType,
           rows: validation.rows,
         })
-        nextValidation = mergeExistingDuplicateMatches(validation, duplicateResult.matchesByRowNumber || {})
+        nextValidation = mergeExistingDuplicateMatches(validation, duplicateResult.matchesByRowNumber || {}, settings.duplicateStrategy)
       }
 
       setImportDraft((previous) => ({
@@ -925,7 +963,8 @@ function CommercialBulkUploadSettingsPage() {
           readiness: readinessSummary,
         },
         metadata: {
-          source: 'commercial_bulk_upload_phase_6',
+          source: 'commercial_bulk_upload_phase_7',
+          reviewAutomationEnabled: true,
         },
       })
 
@@ -942,7 +981,7 @@ function CommercialBulkUploadSettingsPage() {
         duplicateRecordType: row.duplicateRecordType,
         duplicateRecordId: row.duplicateRecordId,
         metadata: {
-          source: 'commercial_bulk_upload_phase_6',
+          source: 'commercial_bulk_upload_phase_7',
           recordType: importDraft.recordType,
           readiness: {
             duplicateMatch: Boolean(row.duplicateRecordId),
@@ -1037,6 +1076,27 @@ function CommercialBulkUploadSettingsPage() {
     }
   }
 
+  async function handleBulkReviewAction(action) {
+    const rowsForAction = getBulkReviewActionRows(reviewRows, action)
+    if (!rowsForAction.length) {
+      setSuccess(`No eligible rows to mark ${action}.`)
+      return
+    }
+
+    setReviewBulkAction(action)
+    setAuditError('')
+    try {
+      const updatedRows = await Promise.all(rowsForAction.map((row) => updateCommercialImportRow(row.id, getReviewedRowPatch(action, row))))
+      const updatedById = new Map(updatedRows.map((row) => [row.id, row]))
+      setReviewRows((current) => current.map((row) => updatedById.get(row.id) || row))
+      setSuccess(`${updatedRows.length} ${updatedRows.length === 1 ? 'row' : 'rows'} marked ${action}.`)
+    } catch (bulkError) {
+      setAuditError(bulkError?.message || 'Bulk row action could not be applied.')
+    } finally {
+      setReviewBulkAction('')
+    }
+  }
+
   function handleExportIssueReport() {
     if (!reviewBatch) return
     const csvRows = buildImportIssueCsvRows(reviewRows)
@@ -1073,7 +1133,7 @@ function CommercialBulkUploadSettingsPage() {
       const result = await commitCommercialImportBatch(batchId)
       await refreshImportBatches()
       if (reviewBatch?.id === batchId) await loadBatchReview(batchId)
-      setSuccess(`Import committed: ${result.summary.createdCount} created, ${result.summary.relationshipsResolvedCount} linked, ${result.summary.skippedCount} skipped, ${result.summary.failedCount} failed.`)
+      setSuccess(`Import committed: ${result.summary.createdCount} created, ${result.summary.updatedCount} updated, ${result.summary.relationshipsResolvedCount} linked, ${result.summary.skippedCount} skipped, ${result.summary.failedCount} failed.`)
     } catch (commitError) {
       setAuditError(commitError?.message || 'Import batch could not be committed.')
     } finally {
@@ -1586,6 +1646,33 @@ function CommercialBulkUploadSettingsPage() {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
+                  onClick={() => handleBulkReviewAction('create')}
+                  disabled={reviewLoading || Boolean(reviewBulkAction) || !bulkCreateRows.length}
+                  className="inline-flex min-h-9 w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-[#102236] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <CheckCircle2 size={14} />
+                  {reviewBulkAction === 'create' ? 'Marking...' : `Create Clean (${bulkCreateRows.length})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkReviewAction('update')}
+                  disabled={reviewLoading || Boolean(reviewBulkAction) || !bulkUpdateRows.length}
+                  className="inline-flex min-h-9 w-fit items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <CheckCircle2 size={14} />
+                  {reviewBulkAction === 'update' ? 'Marking...' : `Update Matches (${bulkUpdateRows.length})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkReviewAction('skip')}
+                  disabled={reviewLoading || Boolean(reviewBulkAction) || !bulkSkipRows.length}
+                  className="inline-flex min-h-9 w-fit items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 text-xs font-semibold text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <AlertCircle size={14} />
+                  {reviewBulkAction === 'skip' ? 'Marking...' : `Skip Matches (${bulkSkipRows.length})`}
+                </button>
+                <button
+                  type="button"
                   onClick={handleExportIssueReport}
                   className="inline-flex min-h-9 w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-xs font-semibold text-[#102236] transition hover:bg-slate-50"
                 >
@@ -1664,6 +1751,14 @@ function CommercialBulkUploadSettingsPage() {
                                 className="inline-flex min-h-8 items-center rounded-xl bg-[#102b46] px-3 text-xs font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 {rowBusy && reviewRowAction.action === 'create' ? 'Saving...' : 'Create'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateRowAction(row, 'update')}
+                                disabled={rowBusy || locked || row.validationErrors.length || !row.duplicateRecordId}
+                                className="inline-flex min-h-8 items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {rowBusy && reviewRowAction.action === 'update' ? 'Saving...' : 'Update'}
                               </button>
                               <button
                                 type="button"

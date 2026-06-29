@@ -32,6 +32,7 @@ for (const marker of [
   'organisationSettingsCommercialEnabled',
   'canReviewCommercialAccess',
   'eligibleForCommercialSelfActivation',
+  'isLegacyCommercialAgencyMembership(currentMembership, context.membershipRole)',
   'hasCommercialWorkspacePlannedAccess',
   'syncCommercialWorkspaceTeamAccessEntries',
   'mergeCommercialWorkspaceBranchDrafts',
@@ -43,6 +44,7 @@ for (const marker of [
   'setCommercialOrganisationModuleEnabled(true, {',
   'export async function activateCommercialWorkspaceForCurrentUser',
   'COMMERCIAL_ACCESS_REVIEWER_ROLES.has(context.membershipRole)',
+  'isLegacyCommercialAgencyMembership(member, context.membershipRole)',
   "module_context: 'commercial'",
   "module: 'commercial'",
   "source: 'commercial_access_setup_prompt'",
@@ -124,7 +126,9 @@ for (const marker of [
   'activateCommercialOrganisationModuleForAgencySignup',
   'activateCommercialMembershipForAgencySignup',
   'const workspaceResolution = await resolveCurrentWorkspace(user.id, {',
-  "workspaceResolution.currentMembership?.source === 'organisation_users'",
+  'const isOrganisationMembershipSource = (entry) => [',
+  "'organisation_users', 'organization_members'",
+  'isOrganisationMembershipSource(workspaceResolution.currentMembership)',
 ]) {
   includes(settingsApi, marker, `Organisation settings save should synchronize mixed/commercial access setup: ${marker}`)
 }
