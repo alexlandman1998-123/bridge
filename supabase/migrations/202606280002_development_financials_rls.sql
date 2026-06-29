@@ -23,12 +23,31 @@ alter table if exists public.development_profiles enable row level security;
 alter table if exists public.development_documents enable row level security;
 alter table if exists public.developments enable row level security;
 
+create or replace function public.bridge_has_development_org_access(target_development_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.developments d
+    join public.organisation_users ou
+      on ou.organisation_id = d.organisation_id
+    where d.id = target_development_id
+      and d.organisation_id is not null
+      and ou.user_id = auth.uid()
+      and ou.status = 'active'
+  )
+$$;
+
 drop policy if exists developments_select_scoped on public.developments;
 create policy developments_select_scoped on public.developments
 for select to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(id)
   or public.bridge_has_development_access(id)
 );
 
@@ -45,12 +64,12 @@ create policy developments_update_scoped on public.developments
 for update to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(id)
   or public.bridge_has_development_access(id)
 )
 with check (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(id)
   or public.bridge_has_development_access(id)
 );
 
@@ -59,7 +78,7 @@ create policy development_financials_select_scoped on public.development_financi
 for select to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -69,7 +88,7 @@ create policy development_financials_insert_scoped on public.development_financi
 for insert to authenticated
 with check (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -78,12 +97,12 @@ create policy development_financials_update_scoped on public.development_financi
 for update to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 )
 with check (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -92,7 +111,7 @@ create policy development_financials_delete_scoped on public.development_financi
 for delete to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -103,7 +122,7 @@ create policy development_participants_select_scoped on public.development_parti
 for select to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -112,7 +131,7 @@ create policy development_participants_insert_scoped on public.development_parti
 for insert to authenticated
 with check (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -121,12 +140,12 @@ create policy development_participants_update_scoped on public.development_parti
 for update to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 )
 with check (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -135,7 +154,7 @@ create policy development_participants_delete_scoped on public.development_parti
 for delete to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -144,7 +163,7 @@ create policy development_profiles_select_scoped on public.development_profiles
 for select to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -153,12 +172,12 @@ create policy development_profiles_modify_scoped on public.development_profiles
 for all to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 )
 with check (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -167,7 +186,7 @@ create policy development_documents_select_scoped on public.development_document
 for select to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -176,7 +195,7 @@ create policy development_documents_insert_scoped on public.development_document
 for insert to authenticated
 with check (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -185,12 +204,12 @@ create policy development_documents_update_scoped on public.development_document
 for update to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 )
 with check (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 
@@ -199,7 +218,7 @@ create policy development_documents_delete_scoped on public.development_document
 for delete to authenticated
 using (
   public.bridge_is_admin()
-  or public.bridge_is_internal_user()
+  or public.bridge_has_development_org_access(development_id)
   or public.bridge_has_development_access(development_id)
 );
 

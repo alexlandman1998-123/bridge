@@ -16365,51 +16365,34 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
 
   if (
     developmentsResult.error &&
-    (isMissingColumnError(developmentsResult.error, 'organisation_id') ||
-      isMissingColumnError(developmentsResult.error, 'total_units_expected') ||
+    (isMissingColumnError(developmentsResult.error, 'total_units_expected') ||
       isMissingColumnError(developmentsResult.error, 'location') ||
       isMissingColumnError(developmentsResult.error, 'developer_company') ||
       isMissingColumnError(developmentsResult.error, 'status') ||
       isMissingColumnError(developmentsResult.error, 'updated_at') ||
       isMissingColumnError(developmentsResult.error, 'created_at'))
   ) {
-    developmentsResult = await client
-      .from('developments')
-      .select('id, name, planned_units')
+    if (normalizedOrganisationId && isMissingColumnError(developmentsResult.error, 'organisation_id')) {
+      developmentsResult = { data: [], error: null }
+    } else {
+      let fallbackDevelopmentsQuery = client
+        .from('developments')
+        .select(normalizedOrganisationId ? 'id, organisation_id, name, planned_units' : 'id, name, planned_units')
+
+      if (normalizedOrganisationId) {
+        fallbackDevelopmentsQuery = fallbackDevelopmentsQuery.eq('organisation_id', normalizedOrganisationId)
+      }
+
+      developmentsResult = await fallbackDevelopmentsQuery
+    }
+  } else if (developmentsResult.error && normalizedOrganisationId && isMissingColumnError(developmentsResult.error, 'organisation_id')) {
+    developmentsResult = { data: [], error: null }
   }
 
   if (!developmentsResult.error) {
     directDevelopmentRows.push(...(developmentsResult.data || []))
   } else if (!isPermissionDeniedError(developmentsResult.error)) {
     throw developmentsResult.error
-  }
-
-  if (normalizedOrganisationId && !directDevelopmentRows.length && !developmentsResult.error) {
-    let legacyDevelopmentsResult = await client
-      .from('developments')
-      .select('id, organisation_id, name, planned_units, total_units_expected, status, location, developer_company, updated_at, created_at')
-      .is('organisation_id', null)
-
-    if (
-      legacyDevelopmentsResult.error &&
-      (isMissingColumnError(legacyDevelopmentsResult.error, 'organisation_id') ||
-        isMissingColumnError(legacyDevelopmentsResult.error, 'total_units_expected') ||
-        isMissingColumnError(legacyDevelopmentsResult.error, 'location') ||
-        isMissingColumnError(legacyDevelopmentsResult.error, 'developer_company') ||
-        isMissingColumnError(legacyDevelopmentsResult.error, 'status') ||
-        isMissingColumnError(legacyDevelopmentsResult.error, 'updated_at') ||
-        isMissingColumnError(legacyDevelopmentsResult.error, 'created_at'))
-    ) {
-      legacyDevelopmentsResult = await client
-        .from('developments')
-        .select('id, name, planned_units')
-    }
-
-    if (!legacyDevelopmentsResult.error) {
-      directDevelopmentRows.push(...(legacyDevelopmentsResult.data || []))
-    } else if (!isPermissionDeniedError(legacyDevelopmentsResult.error)) {
-      throw legacyDevelopmentsResult.error
-    }
   }
 
   const summaryById = new Map(
