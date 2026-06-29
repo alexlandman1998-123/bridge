@@ -10,10 +10,10 @@ import Button from './ui/Button'
 import Modal from './ui/Modal'
 
 const STEPS = [
-  { id: 'basic', label: 'Basic Information', description: 'Step 1' },
-  { id: 'financials', label: 'Deal Setup', description: 'Step 2' },
-  { id: 'units', label: 'Units & Pricing', description: 'Step 3' },
-  { id: 'review', label: 'Review', description: 'Step 4' },
+  { id: 'basic', label: 'Development Setup', description: 'Step 1' },
+  { id: 'units', label: 'Units', description: 'Step 2' },
+  { id: 'financials', label: 'Defaults', description: 'Step 3' },
+  { id: 'review', label: 'Confirm', description: 'Step 4' },
 ]
 
 function getStepsForContext() {
@@ -672,6 +672,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   const [developerOptionsError, setDeveloperOptionsError] = useState('')
   const [units, setUnits] = useState([])
   const [documents, setDocuments] = useState([buildEmptyDocument()])
+  const [developmentType, setDevelopmentType] = useState('residential')
+  const [unitConfigurationMethod, setUnitConfigurationMethod] = useState('import_later')
+  const [summaryOpen, setSummaryOpen] = useState(false)
   const [stockPlan, setStockPlan] = useState({
     structureType: 'none',
     phases: [],
@@ -701,6 +704,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     setDeveloperOptionsError('')
     setUnits([])
     setDocuments([buildEmptyDocument()])
+    setDevelopmentType('residential')
+    setUnitConfigurationMethod('import_later')
+    setSummaryOpen(false)
     setStockPlan({
       structureType: 'none',
       phases: [],
@@ -1114,14 +1120,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     }
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault()
-
+  async function submitDevelopment(statusOverride = '') {
     try {
       setError('')
       validateCurrentStep()
       setSaving(true)
 
+      const effectiveDetails = statusOverride ? { ...details, status: statusOverride } : details
       const primaryConveyancer = legal.conveyancers.find((item) => String(item.firmName || item.contactName || item.email || '').trim())
       const primaryBondOriginator = legal.bondOriginators.find((item) => String(item.name || item.contactName || item.email || '').trim())
       const commissionType = primaryBondOriginator?.commission_type || legal.commission_type || 'purchase_price'
@@ -1130,16 +1135,16 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       const resolvedDeveloperCompany = isAgentContext
         ? (developerAccess.mode === 'invite'
             ? String(developerAccess.inviteCompanyName || '').trim()
-            : String(developerAccess.selectedDeveloperCompany || '').trim()) || details.developerCompany
-        : details.developerCompany
+            : String(developerAccess.selectedDeveloperCompany || '').trim()) || effectiveDetails.developerCompany
+        : effectiveDetails.developerCompany
 
       const created = await createDevelopmentWorkspace({
         details: {
-          ...details,
+          ...effectiveDetails,
           organisationId: workspace?.id || workspace?.organisation_id || workspace?.organisationId || null,
           developerCompany: resolvedDeveloperCompany,
-          location: getResolvedDevelopmentLocation(details),
-          totalUnitsExpected: normalizeOptionalNumber(details.totalUnitsExpected) ?? derivedTotals.unitCount,
+          location: getResolvedDevelopmentLocation(effectiveDetails),
+          totalUnitsExpected: normalizeOptionalNumber(effectiveDetails.totalUnitsExpected) ?? derivedTotals.unitCount,
         },
         financials: {
           ...financials,
@@ -1223,7 +1228,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           })),
       })
 
-      await upsertAreaFromAddress(buildDevelopmentAddressValue(details), { incrementListingCount: false })
+      await upsertAreaFromAddress(buildDevelopmentAddressValue(effectiveDetails), { incrementListingCount: false })
 
       if (isAgentContext && developerAccess.mode === 'invite') {
         const inviteEntry = developerTeam[0] || null
@@ -1247,55 +1252,122 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     }
   }
 
+  async function handleSubmit(event) {
+    event.preventDefault()
+    await submitDevelopment()
+  }
+
+  async function handleSaveDraft(event) {
+    event.preventDefault()
+    setDetails((previous) => ({ ...previous, status: 'draft' }))
+    await submitDevelopment('draft')
+  }
+
   if (!open) {
     return null
   }
+
+  const primaryConveyancer = legal.conveyancers.find((item) => String(item.firmName || item.contactName || item.email || '').trim())
+  const primaryBondOriginator = legal.bondOriginators.find((item) => String(item.name || item.contactName || item.email || '').trim())
+  const summaryLocation = getResolvedDevelopmentLocation(details) || 'Not added'
+  const plannedUnits = details.totalUnitsExpected || derivedTotals.unitCount || stockSummary.totalUnits || 0
+  const basicsComplete = Boolean(details.name.trim() && (details.address.trim() || details.suburb.trim() || details.city.trim()))
+  const unitsComplete = Boolean(Number(plannedUnits) > 0 || unitConfigurationMethod === 'import_later')
+  const defaultsComplete = Boolean(transactionDefaults.defaultTransferAttorneySource || transactionDefaults.defaultBondOriginatorSource)
+  const readyToCreate = basicsComplete && unitsComplete
+
+  const summaryPanel = (
+    <aside className="lg:sticky lg:top-4">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between rounded-[18px] border border-[#dde6ef] bg-white px-4 py-3 text-left text-sm font-semibold text-[#142132] shadow-[0_12px_30px_rgba(15,23,42,0.05)] lg:hidden"
+        onClick={() => setSummaryOpen((previous) => !previous)}
+      >
+        Development Summary
+        <span className="text-[#1f7a5a]">{summaryOpen ? 'Hide' : 'Show'}</span>
+      </button>
+      <div className={`${summaryOpen ? 'mt-3 block' : 'hidden'} rounded-[22px] border border-[#dde6ef] bg-white p-5 shadow-[0_18px_48px_rgba(15,23,42,0.07)] lg:block`}>
+        <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Development Summary</h4>
+        <div className="mt-5 space-y-4">
+          {[
+            ['Development', details.name || 'Not named yet'],
+            ['Developer', details.developerCompany || developerAccess.selectedDeveloperCompany || developerAccess.inviteCompanyName || 'Not selected'],
+            ['Location', summaryLocation],
+            ['Units', `${plannedUnits || 0} planned`],
+            ['Status', details.status || 'Draft'],
+          ].map(([label, value]) => (
+            <div key={label} className="border-b border-[#edf2f7] pb-3 last:border-b-0">
+              <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">{label}</span>
+              <strong className="mt-1 block text-sm font-semibold text-[#142132]">{value}</strong>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 rounded-[18px] border border-[#edf2f7] bg-[#f8fbff] p-4">
+          <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#8ba0b8]">Defaults</span>
+          <div className="mt-3 space-y-2 text-sm text-[#35546c]">
+            <p>Transfer Attorney <strong className="float-right text-[#142132]">{primaryConveyancer?.firmName || (transactionDefaults.defaultTransferAttorneySource === 'none' ? '-' : 'Preferred')}</strong></p>
+            <p>Bond Originator <strong className="float-right text-[#142132]">{primaryBondOriginator?.name || (transactionDefaults.defaultBondOriginatorSource === 'none' ? '-' : 'Preferred')}</strong></p>
+            <p>Cancellation Attorney <strong className="float-right text-[#142132]">{primaryConveyancer?.firmName || 'Preferred'}</strong></p>
+          </div>
+        </div>
+        <div className="mt-5 rounded-[18px] border border-[#d8e7dc] bg-[#f3fbf5] p-4">
+          <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#1f7a5a]">Completion</span>
+          <div className="mt-3 space-y-2 text-sm font-medium">
+            {[
+              ['Basics', basicsComplete],
+              ['Units', unitsComplete],
+              ['Defaults', defaultsComplete],
+              ['Ready to create', readyToCreate],
+            ].map(([label, complete]) => (
+              <p key={label} className={complete ? 'text-[#1f7a5a]' : 'text-[#6b7d93]'}>
+                {complete ? '✓' : '○'} {label}
+              </p>
+            ))}
+          </div>
+        </div>
+      </div>
+    </aside>
+  )
 
   return (
     <Modal
       open={open}
       onClose={saving ? undefined : onClose}
       title="New Development"
-      subtitle="Create the development record, unit stock, and shared settings in one simple flow."
-      className="max-w-[1180px]"
+      subtitle="Create the development shell. Units, team members and transaction defaults can be refined after setup."
+      className="max-w-[1400px]"
     >
-      <div className="space-y-4">
-        <div className="overflow-x-auto rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] p-2.5">
-          <ol className="flex min-w-max flex-nowrap gap-2">
+      <div className="space-y-5">
+        <div className="overflow-x-auto">
+          <ol className="flex min-w-max flex-nowrap items-center gap-3 px-1">
           {activeSteps.map((step, index) => {
             const status = index === stepIndex ? 'active' : index < stepIndex ? 'complete' : ''
             return (
               <li
                 key={step.id}
-                className={`flex min-w-[170px] items-center gap-2 rounded-[16px] border px-3 py-2.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] ${
+                className={`flex min-w-[160px] items-center gap-2 ${
                   status === 'active'
-                    ? 'border-[#b9cee6] bg-[#35546c] text-white'
+                    ? 'text-[#142132]'
                     : status === 'complete'
-                      ? 'border-[#d8e7dc] bg-[#f3fbf5] text-[#1f6d3c]'
-                      : 'border-[#d9e4f1] bg-white text-[#162334]'
+                      ? 'text-[#1f7a5a]'
+                      : 'text-[#6b7d93]'
                 }`}
               >
                 <span
-                  className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${
+                  className={`flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold ${
                     status === 'active'
-                      ? 'bg-white/20 text-white'
+                      ? 'border-[#102236] bg-[#102236] text-white'
                       : status === 'complete'
-                        ? 'bg-[#d8e7dc] text-[#1f6d3c]'
-                        : 'bg-[#eff4f8] text-[#35546c]'
+                        ? 'border-[#d8e7dc] bg-[#e8f6ef] text-[#1f7a5a]'
+                        : 'border-[#d9e4f1] bg-white text-[#6b7d93]'
                   }`}
                 >
                   {index + 1}
                 </span>
                 <div className="min-w-0">
-                  <small
-                    className={`block truncate text-[0.72rem] font-semibold uppercase tracking-[0.16em] ${
-                      status === 'active' ? 'text-white/75' : 'text-[#8ba0b8]'
-                    }`}
-                  >
-                    Step {index + 1}
-                  </small>
                   <strong className="block truncate text-sm font-semibold">{step.label}</strong>
                 </div>
+                {index < activeSteps.length - 1 ? <span className="ml-2 hidden h-px w-12 bg-[#dce5ef] sm:block" /> : null}
               </li>
             )
           })}
@@ -1310,11 +1382,12 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           onSubmit={handleSubmit}
           className="space-y-6 [&_.full-width]:md:col-span-2 [&_.full-width]:xl:col-span-3 [&_input:not([type='checkbox'])]:w-full [&_input:not([type='checkbox'])]:rounded-[14px] [&_input:not([type='checkbox'])]:border [&_input:not([type='checkbox'])]:border-[#dde4ee] [&_input:not([type='checkbox'])]:bg-white [&_input:not([type='checkbox'])]:px-4 [&_input:not([type='checkbox'])]:py-3 [&_input:not([type='checkbox'])]:text-sm [&_input:not([type='checkbox'])]:text-[#162334] [&_input:not([type='checkbox'])]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_input:not([type='checkbox'])]:outline-none [&_input:not([type='checkbox'])]:transition [&_input:not([type='checkbox'])]:duration-150 [&_input:not([type='checkbox'])]:ease-out [&_input:not([type='checkbox'])]:placeholder:text-slate-400 [&_input:not([type='checkbox'])]:focus:border-[rgba(29,78,216,0.35)] [&_input:not([type='checkbox'])]:focus:ring-4 [&_input:not([type='checkbox'])]:focus:ring-[rgba(29,78,216,0.1)] [&_input[type='checkbox']]:h-5 [&_input[type='checkbox']]:w-5 [&_input[type='checkbox']]:rounded-md [&_input[type='checkbox']]:border [&_input[type='checkbox']]:border-[#c9d5e3] [&_input[type='checkbox']]:text-[#35546c] [&_input[type='checkbox']]:shadow-none [&_input[type='checkbox']]:accent-[#35546c] [&_select]:w-full [&_select]:rounded-[14px] [&_select]:border [&_select]:border-[#dde4ee] [&_select]:bg-white [&_select]:px-4 [&_select]:py-3 [&_select]:text-sm [&_select]:text-[#162334] [&_select]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_select]:outline-none [&_select]:transition [&_select]:duration-150 [&_select]:ease-out [&_select]:focus:border-[rgba(29,78,216,0.35)] [&_select]:focus:ring-4 [&_select]:focus:ring-[rgba(29,78,216,0.1)] [&_textarea]:w-full [&_textarea]:rounded-[14px] [&_textarea]:border [&_textarea]:border-[#dde4ee] [&_textarea]:bg-white [&_textarea]:px-4 [&_textarea]:py-3 [&_textarea]:text-sm [&_textarea]:text-[#162334] [&_textarea]:shadow-[0_10px_24px_rgba(15,23,42,0.06)] [&_textarea]:outline-none [&_textarea]:transition [&_textarea]:duration-150 [&_textarea]:ease-out [&_textarea]:placeholder:text-slate-400 [&_textarea]:focus:border-[rgba(29,78,216,0.35)] [&_textarea]:focus:ring-4 [&_textarea]:focus:ring-[rgba(29,78,216,0.1)] [&_label]:flex [&_label]:min-w-0 [&_label]:flex-col [&_label]:gap-2 [&_label]:text-sm [&_label]:font-medium [&_label]:text-[#233247]"
         >
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="min-w-0 space-y-6">
           {currentStepId === 'basic' ? (
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
               <div className="mb-4 space-y-1.5">
-                <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Development Identity</h4>
-                <p className="text-sm leading-6 text-[#6b7d93]">Capture the location, developer record, and launch context for the workspace.</p>
+                <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Development Basics</h4>
               </div>
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               <label>
@@ -1322,12 +1395,21 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                 <input value={details.name} onChange={(event) => setDetails((previous) => ({ ...previous, name: event.target.value }))} />
               </label>
               <label>
-                Development Code
-                <input value={details.code} onChange={(event) => setDetails((previous) => ({ ...previous, code: event.target.value }))} />
+                Developer / Organisation
+                <input value={details.developerCompany} onChange={(event) => setDetails((previous) => ({ ...previous, developerCompany: event.target.value }))} />
+              </label>
+              <label>
+                Development Type
+                <select value={developmentType} onChange={(event) => setDevelopmentType(event.target.value)}>
+                  <option value="residential">Residential</option>
+                  <option value="mixed_use">Mixed-use</option>
+                  <option value="estate">Estate</option>
+                  <option value="sectional_title">Sectional title</option>
+                </select>
               </label>
               <div className="full-width">
 	                <AddressAutocomplete
-	                  label="Development Address"
+	                  label="Location / Address"
 	                  value={buildDevelopmentAddressValue(details)}
 	                  onChange={(nextAddress) => setDetails((previous) => mergeDevelopmentAddress(previous, nextAddress))}
 	                  onInputValueChange={(nextValue) => setDetails((previous) => ({
@@ -1338,24 +1420,11 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 	                    googlePlaceId: '',
 	                  }))}
 	                  placeholder="12 Main Road Bedfordview"
-	                  description="Select the Google Places result to store clean suburb, city, province, and map data."
 	                />
               </div>
               <label>
-                Suburb
-                <input value={details.suburb} onChange={(event) => setDetails((previous) => ({ ...previous, suburb: event.target.value }))} />
-              </label>
-              <label>
-                City
-                <input value={details.city} onChange={(event) => setDetails((previous) => ({ ...previous, city: event.target.value }))} />
-              </label>
-              <label>
                 Province
                 <input value={details.province} onChange={(event) => setDetails((previous) => ({ ...previous, province: event.target.value }))} />
-              </label>
-              <label>
-                Postal Code
-                <input value={details.postalCode} onChange={(event) => setDetails((previous) => ({ ...previous, postalCode: event.target.value }))} />
               </label>
               <label>
                 Status
@@ -1366,27 +1435,41 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   <option value="archived">Archived</option>
                 </select>
               </label>
-              <label>
-                Expected Units
-                <input type="number" min="0" value={details.totalUnitsExpected} onChange={(event) => setDetails((previous) => ({ ...previous, totalUnitsExpected: event.target.value }))} />
-              </label>
-              <label>
-                Developer Company
-                <input value={details.developerCompany} onChange={(event) => setDetails((previous) => ({ ...previous, developerCompany: event.target.value }))} />
-              </label>
-              <label>
-                Launch Date
-                <input type="date" value={details.launchDate} onChange={(event) => setDetails((previous) => ({ ...previous, launchDate: event.target.value }))} />
-              </label>
-              <label>
-                Expected Completion
-                <input type="date" value={details.expectedCompletionDate} onChange={(event) => setDetails((previous) => ({ ...previous, expectedCompletionDate: event.target.value }))} />
-              </label>
-              <label>
-                Country
-                <input value={details.country} onChange={(event) => setDetails((previous) => ({ ...previous, country: event.target.value }))} />
-              </label>
               </div>
+
+              <details className="mt-5 rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+                <summary className="cursor-pointer text-sm font-semibold text-[#142132]">Advanced Settings</summary>
+                <div className="mt-4 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  <label>
+                    Development Code
+                    <input value={details.code} onChange={(event) => setDetails((previous) => ({ ...previous, code: event.target.value }))} />
+                  </label>
+                  <label>
+                    Suburb
+                    <input value={details.suburb} onChange={(event) => setDetails((previous) => ({ ...previous, suburb: event.target.value }))} />
+                  </label>
+                  <label>
+                    City
+                    <input value={details.city} onChange={(event) => setDetails((previous) => ({ ...previous, city: event.target.value }))} />
+                  </label>
+                  <label>
+                    Postal Code
+                    <input value={details.postalCode} onChange={(event) => setDetails((previous) => ({ ...previous, postalCode: event.target.value }))} />
+                  </label>
+                  <label>
+                    Launch Date
+                    <input type="date" value={details.launchDate} onChange={(event) => setDetails((previous) => ({ ...previous, launchDate: event.target.value }))} />
+                  </label>
+                  <label>
+                    Expected Completion
+                    <input type="date" value={details.expectedCompletionDate} onChange={(event) => setDetails((previous) => ({ ...previous, expectedCompletionDate: event.target.value }))} />
+                  </label>
+                  <label>
+                    Country
+                    <input value={details.country} onChange={(event) => setDetails((previous) => ({ ...previous, country: event.target.value }))} />
+                  </label>
+                </div>
+              </details>
 
               {isAgentContext ? (
                 <div className="mt-5 space-y-4 rounded-[20px] border border-[#dbe6f2] bg-[#f8fbff] p-4">
@@ -1497,9 +1580,63 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             <>
               <section className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <div className="mb-4 space-y-1.5">
-                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Deal Setup</h4>
-                  <p className="text-sm leading-6 text-[#6b7d93]">Set the few defaults that shape new transactions. Partner assignments, commercial costing, and assets can be completed after creation.</p>
+                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Defaults</h4>
                 </div>
+                <div className="grid gap-4 lg:grid-cols-3">
+                  {[
+                    {
+                      title: 'Transfer Attorney',
+                      value: transactionDefaults.defaultTransferAttorneySource,
+                      preferredValue: 'first_conveyancer',
+                      emptyValue: 'none',
+                      partnerName: primaryConveyancer?.firmName || 'Preferred conveyancer',
+                      onChange: (value) => setTransactionDefaults((previous) => ({ ...previous, defaultTransferAttorneySource: value })),
+                    },
+                    {
+                      title: 'Bond Originator',
+                      value: transactionDefaults.defaultBondOriginatorSource,
+                      preferredValue: 'first_bond_originator',
+                      emptyValue: 'none',
+                      partnerName: primaryBondOriginator?.name || 'Preferred originator',
+                      onChange: (value) => setTransactionDefaults((previous) => ({ ...previous, defaultBondOriginatorSource: value })),
+                    },
+                    {
+                      title: 'Cancellation Attorney',
+                      value: transactionDefaults.defaultTransferAttorneySource,
+                      preferredValue: 'first_conveyancer',
+                      emptyValue: 'none',
+                      partnerName: primaryConveyancer?.firmName || 'Preferred conveyancer',
+                      onChange: (value) => setTransactionDefaults((previous) => ({ ...previous, defaultTransferAttorneySource: value })),
+                    },
+                  ].map((card) => (
+                    <article key={card.title} className="rounded-[18px] border border-[#dce5ef] bg-[#fbfdff] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h5 className="text-sm font-semibold text-[#142132]">{card.title}</h5>
+                          <p className="mt-1 text-sm text-[#6b7d93]">{card.value === card.emptyValue ? 'Not assigned' : card.partnerName}</p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-[0.68rem] font-semibold ${card.value === card.emptyValue ? 'bg-[#f1f5f9] text-[#64748b]' : 'bg-[#e8f6ef] text-[#1f7a5a]'}`}>
+                          {card.value === card.emptyValue ? 'Optional' : 'Preferred'}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-2">
+                        <button type="button" className={`rounded-[12px] border px-3 py-2 text-left text-sm font-semibold ${card.value !== card.emptyValue ? 'border-[#102236] bg-[#102236] text-white' : 'border-[#dce5ef] bg-white text-[#35546c]'}`} onClick={() => card.onChange(card.preferredValue)}>
+                          Use preferred
+                        </button>
+                        <button type="button" className="rounded-[12px] border border-[#dce5ef] bg-white px-3 py-2 text-left text-sm font-semibold text-[#35546c]" onClick={() => card.onChange(card.preferredValue)}>
+                          Choose another
+                        </button>
+                        <button type="button" className="rounded-[12px] border border-[#d8e7dc] bg-white px-3 py-2 text-left text-sm font-semibold text-[#1f7a5a]" onClick={() => card.onChange(card.preferredValue)}>
+                          Invite new
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <details className="mt-5 rounded-[18px] border border-[#edf2f7] bg-[#fbfdff] p-4">
+                  <summary className="cursor-pointer text-sm font-semibold text-[#142132]">Advanced Settings</summary>
+                  <div className="mt-4">
                 <div className="grid gap-5 lg:grid-cols-2">
                   <div className="space-y-4 rounded-[20px] border border-[#dce6f1] bg-[#f8fbff] p-5">
                     <div>
@@ -1678,6 +1815,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     </div>
                   </div>
                 </div>
+                  </div>
+                </details>
               </section>
 
             </>
@@ -1941,6 +2080,43 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
           {currentStepId === 'units' ? (
             <div className="space-y-5">
+              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                <div className="mb-4 space-y-1.5">
+                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Units</h4>
+                </div>
+                <div className="grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
+                  <label>
+                    Planned Units
+                    <input type="number" min="0" value={details.totalUnitsExpected} onChange={(event) => setDetails((previous) => ({ ...previous, totalUnitsExpected: event.target.value }))} />
+                  </label>
+                  <div>
+                    <span className="block text-sm font-medium text-[#233247]">Unit Configuration Method</span>
+                    <div className="mt-2 grid gap-3 md:grid-cols-3">
+                      {[
+                        { value: 'manual', label: 'Create units manually' },
+                        { value: 'import_later', label: 'Upload/import later' },
+                        { value: 'generate_range', label: 'Generate from range' },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setUnitConfigurationMethod(option.value)}
+                          className={`rounded-[16px] border px-4 py-3 text-left text-sm font-semibold transition ${
+                            unitConfigurationMethod === option.value
+                              ? 'border-[#102236] bg-[#102236] text-white shadow-[0_12px_28px_rgba(16,34,54,0.18)]'
+                              : 'border-[#dce5ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {unitConfigurationMethod === 'generate_range' ? (
+                <>
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <div className="space-y-2">
                   <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Stock Master</h4>
@@ -2428,6 +2604,8 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                   )}
                 </section>
               ) : null}
+                </>
+              ) : null}
             </div>
           ) : null}
 
@@ -2541,8 +2719,12 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
               </article>
             </div>
           ) : null}
+            </div>
 
-          <footer className="flex flex-col gap-3 border-t border-[#edf2f7] pt-4 sm:flex-row sm:items-center sm:justify-between">
+            {summaryPanel}
+          </div>
+
+          <footer className="sticky bottom-0 z-10 -mx-6 -mb-6 flex flex-col gap-3 border-t border-[#edf2f7] bg-white/95 px-6 py-4 shadow-[0_-18px_40px_rgba(15,23,42,0.08)] backdrop-blur sm:flex-row sm:items-center sm:justify-between">
             <Button
               type="button"
               variant="ghost"
@@ -2559,11 +2741,29 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             >
               {stepIndex === 0 ? 'Cancel' : 'Back'}
             </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={saving}
+              onClick={handleSaveDraft}
+            >
+              Save Draft
+            </Button>
             {stepIndex < maxStepIndex ? (
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
                 {currentStepId === 'units' ? (
-                  <Button type="button" onClick={stockStepIndex === 2 ? handleFinalizeStock : handleStockStepNext} disabled={saving}>
-                    {stockStepIndex === 2 ? 'Generate Units and Continue' : 'Next'}
+                  <Button
+                    type="button"
+                    onClick={
+                      unitConfigurationMethod === 'generate_range'
+                        ? stockStepIndex === 2
+                          ? handleFinalizeStock
+                          : handleStockStepNext
+                        : handleNext
+                    }
+                    disabled={saving}
+                  >
+                    {unitConfigurationMethod === 'generate_range' && stockStepIndex === 2 ? 'Generate Units' : 'Next'}
                   </Button>
                 ) : (
                   <Button type="button" onClick={handleNext} disabled={saving}>
@@ -2573,7 +2773,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
               </div>
             ) : (
               <Button type="submit" disabled={saving}>
-                {saving ? 'Creating…' : 'Create Development'}
+                {saving ? 'Creating…' : 'Create Development →'}
               </Button>
             )}
           </footer>

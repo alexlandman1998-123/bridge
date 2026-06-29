@@ -1,4 +1,16 @@
-import { ExternalLink, Copy } from 'lucide-react'
+import {
+  ArrowRight,
+  Building2,
+  CheckCircle2,
+  Circle,
+  Copy,
+  ExternalLink,
+  Home,
+  Save,
+  ShieldCheck,
+  UserRound,
+  UsersRound,
+} from 'lucide-react'
 import { cloneElement, isValidElement, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -26,10 +38,7 @@ import { listTransactionPartnerConnectionOptions } from '../services/partnerNetw
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
-const STEPS = ['Transaction Setup']
-const STEP_DESCRIPTIONS = [
-  'Capture the property and client basics. Purchaser structure, finance setup, and supporting details will be completed on the onboarding link.',
-]
+const PROGRESS_STEPS = ['Transaction Setup', 'Onboarding Link', 'Confirm & Create']
 
 const RESERVATION_AMOUNT_TYPE_OPTIONS = [
   { value: 'fixed', label: 'Fixed rand amount' },
@@ -1046,11 +1055,70 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     ],
     [developmentStats.activeTransactions, developmentStats.availableUnits, developmentStats.configuredUnits, selectedDevelopment?.planned_units],
   )
-
-  const hasContextSidebar = Boolean(
-    (selectedDevelopment && !isPrivateMatter) ||
-      (selectedUnit && !isPrivateMatter),
+  const buyerDisplayName = pickFirstValue(
+    [form.setup.buyerFirstName, form.setup.buyerLastName].filter(Boolean).join(' '),
+    'Not added yet',
   )
+  const propertySummaryLabel = isPrivateMatter
+    ? pickFirstValue(form.setup.propertyAddressLine1, form.setup.propertyDescription, 'Private property')
+    : pickFirstValue(selectedDevelopment?.name, 'Not selected')
+  const locationSummaryLabel = isPrivateMatter
+    ? [form.setup.suburb, form.setup.city, form.setup.province].filter(Boolean).join(', ') || 'Location not added'
+    : selectedDevelopment
+      ? `${developmentStats.availableUnits} available`
+      : 'Select a development'
+  const unitSummaryLabel = isPrivateMatter
+    ? getOptionLabel(
+        [
+          { value: 'residential', label: 'Residential' },
+          { value: 'commercial', label: 'Commercial' },
+          { value: 'farm', label: 'Farm' },
+        ],
+        form.setup.propertyType,
+        'Property category not set',
+      )
+    : selectedUnit
+      ? `Unit ${selectedUnit.unit_number}`
+      : 'Not selected'
+  const unitPriceSummary = selectedUnit?.price
+    ? toMoney(selectedUnit.price)
+    : form.setup.salesPrice
+      ? toMoney(form.setup.salesPrice)
+      : '-'
+  const buyerContactSummary = pickFirstValue(form.setup.buyerEmail, form.setup.buyerPhone, 'Contact not added')
+  const transferAttorneySummary = pickFirstValue(
+    partnerInvitationModes.transfer_attorney === 'invite' ? partnerInvitationDrafts.transfer_attorney.companyName : '',
+    selectedAttorneyPartner?.companyName,
+    selectedPartnerProspects.transfer_attorney?.companyName,
+    form.finance.attorney,
+    '-',
+  )
+  const bondOriginatorSummary = pickFirstValue(
+    partnerInvitationModes.bond_originator === 'invite' ? partnerInvitationDrafts.bond_originator.companyName : '',
+    selectedBondOriginatorPartner?.companyName,
+    selectedPartnerProspects.bond_originator?.companyName,
+    form.finance.bondOriginator,
+    '-',
+  )
+  const propertyComplete = isPrivateMatter
+    ? Boolean(form.setup.propertyType && form.setup.propertyAddressLine1.trim() && form.setup.city.trim())
+    : Boolean(form.setup.developmentId && form.setup.unitId)
+  const buyerComplete = Boolean(
+    form.setup.buyerFirstName.trim() &&
+      form.setup.buyerLastName.trim() &&
+      form.setup.buyerEmail.trim() &&
+      form.setup.buyerPhone.trim(),
+  )
+  const priceComplete = Boolean(Number(form.setup.salesPrice) > 0)
+  const defaultsComplete = transferAttorneySummary !== '-' || bondOriginatorSummary !== '-'
+  const readyComplete = propertyComplete && (form.setup.allowIncomplete || (buyerComplete && priceComplete))
+  const completionRows = [
+    { label: 'Property', complete: propertyComplete },
+    { label: 'Buyer', complete: form.setup.allowIncomplete || buyerComplete },
+    { label: 'Deal', complete: form.setup.allowIncomplete || priceComplete },
+    { label: 'Partners', complete: defaultsComplete },
+    { label: 'Ready to create', complete: readyComplete },
+  ]
 
   function setSetupField(field, value) {
     if (field === 'developmentId') {
@@ -1297,8 +1365,9 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     }))
   }
 
-  function validateStep(targetStep) {
+  function validateStep(targetStep, options = {}) {
     const nextErrors = {}
+    const allowIncomplete = options.allowIncomplete ?? Boolean(form.setup.allowIncomplete)
 
     if (targetStep === 0) {
       if (isPrivateMatter) {
@@ -1321,7 +1390,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         }
       }
 
-      if (!form.setup.allowIncomplete) {
+      if (!allowIncomplete) {
         if (!form.setup.buyerFirstName.trim()) {
           nextErrors.buyerFirstName = 'Client first name is required.'
         }
@@ -1348,13 +1417,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         }
       }
 
-      if (!form.setup.allowIncomplete && !form.setup.buyerEmail.trim()) {
+      if (!allowIncomplete && !form.setup.buyerEmail.trim()) {
         nextErrors.buyerEmail = 'Client email is required.'
       } else if (form.setup.buyerEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.setup.buyerEmail)) {
         nextErrors.buyerEmail = 'Enter a valid email address.'
       }
 
-      if (!form.setup.allowIncomplete && !form.setup.buyerPhone.trim()) {
+      if (!allowIncomplete && !form.setup.buyerPhone.trim()) {
         nextErrors.buyerPhone = 'Client phone is required.'
       }
 
@@ -1393,8 +1462,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
     })
   }
 
-  async function handleSave() {
-    if (!validateStep(0)) {
+  async function handleSave(options = {}) {
+    const allowIncomplete = options.allowIncomplete ?? Boolean(form.setup.allowIncomplete)
+
+    if (!validateStep(0, { allowIncomplete })) {
       return
     }
 
@@ -1502,15 +1573,16 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       const result = await createTransactionFromWizard({
         setup: {
           ...form.setup,
+          allowIncomplete,
           buyerName,
         },
         finance: financeForSave,
         status: {
           ...form.status,
-          nextAction: form.status.nextAction || (form.setup.allowIncomplete ? 'Complete stakeholder setup and assign legal roles.' : 'Send onboarding link to client.'),
+          nextAction: form.status.nextAction || (allowIncomplete ? 'Complete stakeholder setup and assign legal roles.' : 'Send onboarding link to client.'),
         },
         options: {
-          allowIncomplete: Boolean(form.setup.allowIncomplete),
+          allowIncomplete,
           hierarchyScope,
           rolePlayers: [
             transferAttorneyRolePlayerSelection,
@@ -1629,7 +1701,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
             purchaserType: form.setup.purchaserType,
           })
         } catch (onboardingError) {
-          if (!form.setup.allowIncomplete) {
+          if (!allowIncomplete) {
             throw onboardingError
           }
         }
@@ -1651,7 +1723,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         onboardingToken: onboarding.token,
         buyerName,
         buyerEmail: form.setup.buyerEmail.trim(),
-        allowIncomplete: Boolean(form.setup.allowIncomplete),
+        allowIncomplete,
         onboardingEmailSent: null,
         partnerInvitations: partnerInvitationResults,
         partnerProspects: partnerProspectResults,
@@ -1898,7 +1970,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
   }
 
   const footer = (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <Button variant="ghost" onClick={onClose} disabled={saving}>
         {createdTransaction ? 'Done' : 'Cancel'}
       </Button>
@@ -1931,9 +2003,16 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           Open Transaction
         </Button>
       ) : (
-        <Button onClick={handleSave} disabled={saving || loadingMeta}>
-          {form.setup.allowIncomplete ? 'Create Draft Transaction' : 'Create Transaction & Generate Link'}
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button variant="secondary" onClick={() => handleSave({ allowIncomplete: true })} disabled={saving || loadingMeta}>
+            <Save size={16} />
+            Save Draft
+          </Button>
+          <Button onClick={() => handleSave()} disabled={saving || loadingMeta}>
+            Create Transaction
+            <ArrowRight size={16} />
+          </Button>
+        </div>
       )}
     </div>
   )
@@ -1943,26 +2022,34 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
       open={open}
       onClose={saving ? undefined : onClose}
       title="New Transaction"
-      subtitle="Create the transaction shell, then hand the client the onboarding link."
-      className="max-w-[960px]"
+      subtitle="Create the transaction. The buyer onboarding link is generated automatically."
+      className="max-w-[1460px]"
       footer={footer}
     >
       <div className="space-y-4">
-        <section className="rounded-[20px] border border-[#e3ebf5] bg-white px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <div className="flex items-start gap-3.5">
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#c9d8ea] bg-[#edf4fb] text-sm font-semibold text-[#264563]">
-              1
-            </span>
-            <div className="space-y-1">
-              <small className="block text-[0.7rem] font-semibold uppercase tracking-[0.2em] text-[#7b8ba5]">Step 1</small>
-              <h3 className="text-[1.08rem] font-semibold tracking-[-0.02em] text-[#142132]">Transaction Setup</h3>
-              <p className="max-w-3xl text-sm leading-6 text-[#6b7d93]">
-                Capture the property and client basics here. Purchaser structure, finance setup, and supporting details
-                will be completed on the onboarding link.
-              </p>
-            </div>
+        <div className="px-1 py-2">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {PROGRESS_STEPS.map((step, index) => (
+              <div key={step} className="flex items-center gap-3">
+                <span
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                    index === 0
+                      ? 'bg-[#142132] text-white shadow-[0_10px_22px_rgba(20,33,50,0.18)]'
+                      : 'border border-[#cfd9e6] bg-white text-[#60758d]'
+                  }`}
+                >
+                  {index + 1}
+                </span>
+                <span className={`text-sm font-semibold ${index === 0 ? 'text-[#142132]' : 'text-[#60758d]'}`}>
+                  {step}
+                </span>
+                {index < PROGRESS_STEPS.length - 1 ? (
+                  <span className="hidden h-px flex-1 bg-[#d7e0ec] sm:block" aria-hidden="true" />
+                ) : null}
+              </div>
+            ))}
           </div>
-        </section>
+        </div>
 
         {!isSupabaseConfigured ? (
           <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">
@@ -1978,16 +2065,16 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         ) : null}
 
         {!createdTransaction ? (
-          <div className={hasContextSidebar ? 'grid items-start gap-5 xl:grid-cols-[minmax(0,1.66fr)_minmax(300px,0.9fr)]' : 'space-y-5'}>
+          <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="space-y-5">
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-                <div className="mb-4 space-y-1.5">
-                  <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Property Selection</h5>
-                  <p className="text-sm leading-6 text-[#6b7d93]">
-                    {isPrivateMatter
-                      ? 'Capture the property details for this standalone conveyancing matter.'
-                      : 'Choose the development and one of the units still marked as available for this deal.'}
-                  </p>
+              <section className="rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+                <div className="mb-5 flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e7f5ee] text-sm font-bold text-[#14804f]">
+                    1
+                  </span>
+                  <div>
+                    <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Property</h5>
+                  </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2092,14 +2179,14 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                 </div>
               </section>
 
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-                <div className="mb-4 space-y-1.5">
-                  <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Client Details</h5>
-                  <p className="text-sm leading-6 text-[#6b7d93]">
-                    {form.setup.allowIncomplete
-                      ? 'Client fields are optional in draft mode. Add or invite stakeholders later.'
-                      : 'Capture only the client basics here. The onboarding form will collect the rest.'}
-                  </p>
+              <section className="rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+                <div className="mb-5 flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e7f5ee] text-sm font-bold text-[#14804f]">
+                    2
+                  </span>
+                  <div>
+                    <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Buyer</h5>
+                  </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2165,10 +2252,14 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                 </div>
               </section>
 
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-                <div className="mb-4 space-y-1.5">
-                  <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Deal Terms</h5>
-                  <p className="text-sm leading-6 text-[#6b7d93]">Keep the transaction seed light. Purchaser and finance structure will come from onboarding.</p>
+              <section className="rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.045)]">
+                <div className="mb-5 flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e7f5ee] text-sm font-bold text-[#14804f]">
+                    3
+                  </span>
+                  <div>
+                    <h5 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Deal</h5>
+                  </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2378,13 +2469,13 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     </>
                   ) : null}
 
-                  <div className="md:col-span-2 rounded-[18px] border border-[#dbe4ef] bg-[#f8fbff] p-4">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-[#142132]">Connected Transaction Partners</p>
-                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                          Preferred and approved organisations are reusable defaults for transaction setup.
-                        </p>
+                  <div className="md:col-span-2 rounded-[18px] border border-[#dce5ef] bg-white p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e7f5ee] text-sm font-bold text-[#14804f]">
+                          4
+                        </span>
+                        <p className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Partners</p>
                       </div>
                       {loadingPartners || loadingPartnerConnections ? <span className="text-xs font-semibold text-[#6b7d93]">Loading partners...</span> : null}
                     </div>
@@ -2398,12 +2489,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                     ) : null}
 
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <div className="space-y-3 rounded-[16px] border border-[#dbe4ef] bg-white p-3">
+                      <div className="space-y-3 rounded-[16px] border border-[#dbe4ef] bg-[#fbfdff] p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-sm font-semibold text-[#142132]">Transfer Attorney</p>
                           <div className="inline-flex rounded-[12px] border border-[#dbe4ef] bg-[#f8fbff] p-1">
                             {[
-                              { key: 'existing', label: 'Existing' },
+                              { key: 'existing', label: 'Use / Choose' },
                               { key: 'invite', label: 'Invite New' },
                             ].map((option) => (
                               <button
@@ -2487,12 +2578,12 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
                         )}
                       </div>
 
-                      <div className="space-y-3 rounded-[16px] border border-[#dbe4ef] bg-white p-3">
+                      <div className="space-y-3 rounded-[16px] border border-[#dbe4ef] bg-[#fbfdff] p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-sm font-semibold text-[#142132]">Bond Originator</p>
                           <div className="inline-flex rounded-[12px] border border-[#dbe4ef] bg-[#f8fbff] p-1">
                             {[
-                              { key: 'existing', label: 'Existing' },
+                              { key: 'existing', label: 'Use / Choose' },
                               { key: 'invite', label: 'Invite New' },
                             ].map((option) => (
                               <button
@@ -2587,40 +2678,112 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
               ) : null}
             </div>
 
-            {hasContextSidebar ? <div className="self-start space-y-5 xl:sticky xl:top-4">
-              {selectedDevelopment && !isPrivateMatter ? (
-                <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-                  <div className="space-y-1.5">
-                    <p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development Snapshot</p>
-                    <h4 className="text-[1.08rem] font-semibold tracking-[-0.02em] text-[#142132]">{selectedDevelopment.name}</h4>
+            <aside className="self-start xl:sticky xl:top-4">
+              <section className="rounded-[20px] border border-[#dce5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
+                <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Summary</h4>
+
+                <div className="mt-5 space-y-5">
+                  <div className="flex gap-3">
+                    <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-[#14804f]" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#142132]">Development</p>
+                      <p className="mt-1 truncate text-sm text-[#516277]">{propertySummaryLabel}</p>
+                      <p className="mt-1 text-xs text-[#7b8ba5]">{locationSummaryLabel}</p>
+                    </div>
                   </div>
 
-                  <div className="mt-4 overflow-hidden rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff]">
-                    {developmentSnapshotRows.map((item, index) => (
-                      <div
-                        key={item.label}
-                        className={`flex items-center justify-between gap-4 px-4 py-3.5 ${
-                          index === developmentSnapshotRows.length - 1 ? '' : 'border-b border-[#e8eef5]'
-                        }`}
-                      >
-                        <span className="text-[0.78rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ba5]">{item.label}</span>
-                        <strong className="text-base font-semibold text-[#142132]">{item.value}</strong>
+                  <div className="border-t border-[#e3ebf4] pt-5">
+                    <div className="flex gap-3">
+                      <Home className="mt-0.5 h-5 w-5 shrink-0 text-[#14804f]" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-[#142132]">Selected Unit</p>
+                        <p className="mt-1 truncate text-sm font-semibold text-[#142132]">{unitSummaryLabel}</p>
+                        <p className="mt-1 text-sm text-[#516277]">{unitPriceSummary}</p>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                </section>
-              ) : null}
 
-              {selectedUnit && !isPrivateMatter ? (
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-                  <h4 className="text-base font-semibold text-[#142132]">Unit Context</h4>
-                  <p className="mt-2 text-sm leading-6 text-[#516277]">
-                    Unit {selectedUnit.unit_number} currently at <strong>{selectedUnit.status}</strong> with list price{' '}
-                    <strong>{toMoney(selectedUnit.price)}</strong>.
-                  </p>
-                </section>
-              ) : null}
-            </div> : null}
+                  <div className="border-t border-[#e3ebf4] pt-5">
+                    <div className="flex gap-3">
+                      <UserRound className="mt-0.5 h-5 w-5 shrink-0 text-[#14804f]" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-[#142132]">Buyer</p>
+                        <p className="mt-1 truncate text-sm text-[#516277]">{buyerDisplayName}</p>
+                        <p className="mt-1 truncate text-xs text-[#7b8ba5]">{buyerContactSummary}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-[#e3ebf4] pt-5">
+                    <div className="flex gap-3">
+                      <UsersRound className="mt-0.5 h-5 w-5 shrink-0 text-[#14804f]" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-[#142132]">Partners</p>
+                        <div className="mt-3 space-y-2 text-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[#516277]">Transfer Attorney</span>
+                            <strong className="truncate text-right font-semibold text-[#142132]">{transferAttorneySummary}</strong>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[#516277]">Bond Originator</span>
+                            <strong className="truncate text-right font-semibold text-[#142132]">{bondOriginatorSummary}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {!isPrivateMatter && selectedDevelopment ? (
+                    <div className="border-t border-[#e3ebf4] pt-5">
+                      <div className="grid grid-cols-2 gap-2">
+                        {developmentSnapshotRows.map((item) => (
+                          <div key={item.label} className="rounded-[12px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-2">
+                            <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ba5]">
+                              {item.label}
+                            </span>
+                            <strong className="mt-1 block text-sm font-semibold text-[#142132]">{item.value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="border-t border-[#e3ebf4] pt-5">
+                    <p className="text-sm font-semibold text-[#142132]">Completion</p>
+                    <div className="mt-3 space-y-2">
+                      {completionRows.map((row) => (
+                        <div key={row.label} className="flex items-center gap-2 text-sm">
+                          {row.complete ? (
+                            <CheckCircle2 className="h-4 w-4 text-[#14804f]" />
+                          ) : (
+                            <Circle className="h-4 w-4 text-[#8ba0b8]" />
+                          )}
+                          <span className={row.complete ? 'font-medium text-[#142132]' : 'text-[#60758d]'}>
+                            {row.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[16px] border border-[#d8eadf] bg-[#eef8f2] px-4 py-3">
+                    <div className="flex gap-3">
+                      <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#14804f]" />
+                      <div>
+                        <p className="text-sm font-semibold text-[#0f5132]">
+                          {readyComplete ? "You're ready to create" : "You're almost there"}
+                        </p>
+                        <p className="mt-1 text-sm leading-5 text-[#355e49]">
+                          {readyComplete
+                            ? 'Create the transaction and send the buyer into onboarding.'
+                            : 'Complete the required property, buyer and deal details to create the transaction.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </aside>
           </div>
         ) : null}
 
