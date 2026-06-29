@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle2, DatabaseZap, Download, FileClock, Save, Settings2, UploadCloud } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { fetchOrganisationSettings, updateWorkflowSettings } from '../../../lib/settingsApi'
-import { approveCommercialImportBatch, commitCommercialImportBatch, createCommercialImportBatch, createCommercialImportRows, getCommercialImportBatch, listCommercialImportBatches, prepareCommercialImportRetry, updateCommercialImportBatch, updateCommercialImportRow } from '../services/commercialImportApi'
+import { approveCommercialImportBatch, commitCommercialImportBatch, createCommercialImportBatch, createCommercialImportRows, findCommercialImportExistingDuplicates, getCommercialImportBatch, listCommercialImportBatches, prepareCommercialImportRetry, updateCommercialImportBatch, updateCommercialImportRow } from '../services/commercialImportApi'
 
 const RECORD_TYPE_OPTIONS = [
   { value: 'vacancies', label: 'Vacancies', description: 'Commercial vacancy schedules and unit availability.' },
@@ -15,6 +15,18 @@ const RECORD_TYPE_OPTIONS = [
   { value: 'listings', label: 'Listings', description: 'Market-ready commercial sale or lease opportunities.' },
 ]
 
+const COMMIT_ENABLED_RECORD_TYPES = new Set([
+  'vacancies',
+  'leads',
+  'canvassing_landlord_prospects',
+  'canvassing_tenant_prospects',
+  'properties',
+  'landlords',
+  'companies',
+  'contacts',
+  'listings',
+])
+
 const DEFAULT_BULK_UPLOAD_SETTINGS = {
   enabled: true,
   allowedRecordTypes: [
@@ -22,6 +34,11 @@ const DEFAULT_BULK_UPLOAD_SETTINGS = {
     'leads',
     'canvassing_landlord_prospects',
     'canvassing_tenant_prospects',
+    'properties',
+    'landlords',
+    'companies',
+    'contacts',
+    'listings',
   ],
   requireManagerApproval: true,
   duplicateStrategy: 'review',
@@ -197,7 +214,7 @@ const FIELD_DEFINITIONS = {
   ],
   listings: [
     { key: 'title', label: 'Listing Title', type: 'text', required: true, aliases: ['listing title', 'title', 'listing'] },
-    { key: 'listing_type', label: 'Listing Type', type: 'enum', options: ['lease', 'sale'], aliases: ['listing type', 'deal type'] },
+    { key: 'listing_type', label: 'Listing Type', type: 'enum', options: ['lease', 'sale', 'investment', 'development'], aliases: ['listing type', 'deal type'] },
     { key: 'listing_category', label: 'Listing Category', type: 'text', aliases: ['listing category', 'category'] },
     { key: 'property_name', label: 'Property Name', type: 'text', relationship: true, aliases: ['property name', 'property'] },
     { key: 'vacancy_name', label: 'Vacancy Name', type: 'text', relationship: true, aliases: ['vacancy name', 'vacancy'] },
@@ -215,7 +232,10 @@ FIELD_DEFINITIONS.requirements = FIELD_DEFINITIONS.leads
 function normalizeBulkUploadSettings(value = {}) {
   const source = value && typeof value === 'object' ? value : {}
   const allowedRecordTypes = Array.isArray(source.allowedRecordTypes)
-    ? source.allowedRecordTypes.filter((recordType) => RECORD_TYPE_OPTIONS.some((option) => option.value === recordType))
+    ? source.allowedRecordTypes.filter((recordType) => (
+        COMMIT_ENABLED_RECORD_TYPES.has(recordType) &&
+        RECORD_TYPE_OPTIONS.some((option) => option.value === recordType)
+      ))
     : DEFAULT_BULK_UPLOAD_SETTINGS.allowedRecordTypes
 
   return {
@@ -237,6 +257,10 @@ function normalizeBulkUploadSettings(value = {}) {
 
 function normalizeRecordTypeLabel(value = '') {
   return RECORD_TYPE_OPTIONS.find((option) => option.value === value)?.label || value
+}
+
+function isCommitEnabledRecordType(recordType = '') {
+  return COMMIT_ENABLED_RECORD_TYPES.has(recordType)
 }
 
 function csvEscape(value) {
@@ -476,12 +500,56 @@ function validateImportMapping(recordType, headers = [], rows = [], mapping = {}
   }
 }
 
+function summarizeImportValidation(mappingErrors = [], rows = []) {
+  const summary = rows.reduce((counts, result) => {
+    counts.totalRows += 1
+    if (result.status === 'valid') counts.validRows += 1
+    else if (result.status === 'warning') counts.warningRows += 1
+    else counts.invalidRows += 1
+    return counts
+  }, { totalRows: 0, validRows: 0, warningRows: 0, invalidRows: 0 })
+
+  return {
+    ...summary,
+    mappingErrors,
+    rows,
+    issues: rows
+      .filter((result) => result.validationErrors.length || result.validationWarnings.length)
+      .slice(0, 25),
+  }
+}
+
+function mergeExistingDuplicateMatches(validation = {}, matchesByRowNumber = {}) {
+  const rows = (validation.rows || []).map((row) => {
+    const match = matchesByRowNumber[row.rowNumber]
+    if (!match?.recordId) return row
+
+    const label = match.label ? ` (${match.label})` : ''
+    const warning = `Possible existing ${match.recordType || 'commercial record'} match${label}: ${match.reason || 'matching record already exists'}.`
+    const validationWarnings = row.validationWarnings.includes(warning)
+      ? row.validationWarnings
+      : [...row.validationWarnings, warning]
+
+    return {
+      ...row,
+      validationWarnings,
+      duplicateRecordType: match.recordType || '',
+      duplicateRecordId: match.recordId || '',
+      status: row.validationErrors.length ? 'invalid' : 'warning',
+      action: 'review',
+    }
+  })
+
+  return summarizeImportValidation(validation.mappingErrors || [], rows)
+}
+
 function getImportRowTitle(row = {}) {
   const payload = row.normalizedPayload || row.mappedPayload || {}
   return (
     payload.vacancy_name ||
     payload.requirement_name ||
     payload.company_name ||
+    payload.name ||
     payload.property_name ||
     payload.title ||
     `Row ${row.rowNumber || row.row_number || '-'}`
@@ -493,12 +561,25 @@ function getImportRowIssueText(row = {}) {
   return issues.length ? issues.join(' ') : row.errorMessage || 'Ready to commit.'
 }
 
+function getImportRowDuplicateMatch(row = {}) {
+  const duplicateRecordId = row.duplicateRecordId || row.duplicate_record_id || ''
+  if (!duplicateRecordId) return ''
+  const duplicateRecordType = row.duplicateRecordType || row.duplicate_record_type || 'commercial record'
+  return `${duplicateRecordType} · ${String(duplicateRecordId).slice(0, 8)}`
+}
+
+function hasRelationshipResolutionWarning(row = {}) {
+  return (row.validationWarnings || row.validation_warnings || []).some((warning) => (
+    String(warning || '').toLowerCase().includes('matching or creation during commit')
+  ))
+}
+
 function isImportIssueRow(row = {}) {
   return ['failed', 'invalid', 'warning', 'skipped'].includes(String(row.status || '').toLowerCase()) || Boolean(row.errorMessage)
 }
 
 function buildImportIssueCsvRows(rows = []) {
-  const header = ['Row', 'Record', 'Status', 'Action', 'Issue', 'Duplicate Key', 'Target Table', 'Target Record ID']
+  const header = ['Row', 'Record', 'Status', 'Action', 'Issue', 'Duplicate Key', 'Duplicate Record Type', 'Duplicate Record ID', 'Target Table', 'Target Record ID']
   const body = rows.filter(isImportIssueRow).map((row) => [
     row.rowNumber,
     getImportRowTitle(row),
@@ -506,10 +587,52 @@ function buildImportIssueCsvRows(rows = []) {
     row.action,
     getImportRowIssueText(row),
     row.duplicateKey,
+    row.duplicateRecordType,
+    row.duplicateRecordId,
     row.targetTable,
     row.targetRecordId,
   ])
   return [header, ...body]
+}
+
+function summarizeImportReviewReadiness(rows = []) {
+  return rows.reduce((summary, row) => {
+    const status = String(row.status || '').toLowerCase()
+    const action = String(row.action || '').toLowerCase()
+    const hasErrors = Boolean(row.validationErrors?.length)
+    summary.totalRows += 1
+    if (status === 'created') summary.createdRows += 1
+    if (status === 'updated') summary.updatedRows += 1
+    if (status === 'failed') summary.failedRows += 1
+    if (status === 'skipped' || action === 'skip') summary.skipRows += 1
+    if (action === 'create' && !hasErrors && !['created', 'updated', 'skipped'].includes(status)) summary.createRows += 1
+    if (action === 'update' && !hasErrors && !['created', 'updated', 'skipped'].includes(status)) summary.updateRows += 1
+    if (action === 'review' && !['created', 'updated', 'skipped'].includes(status)) summary.reviewRows += 1
+    if (hasErrors || status === 'invalid') summary.invalidRows += 1
+    if (getImportRowDuplicateMatch(row)) summary.duplicateRows += 1
+    if (hasRelationshipResolutionWarning(row)) summary.relationshipRows += 1
+    return summary
+  }, {
+    totalRows: 0,
+    createRows: 0,
+    updateRows: 0,
+    reviewRows: 0,
+    skipRows: 0,
+    invalidRows: 0,
+    duplicateRows: 0,
+    relationshipRows: 0,
+    createdRows: 0,
+    updatedRows: 0,
+    failedRows: 0,
+  })
+}
+
+function getImportReadinessLabel(summary = {}) {
+  if (!summary.totalRows) return 'No rows loaded'
+  if (summary.invalidRows) return `${summary.invalidRows} invalid ${summary.invalidRows === 1 ? 'row' : 'rows'}`
+  if (summary.reviewRows) return `${summary.reviewRows} ${summary.reviewRows === 1 ? 'row needs' : 'rows need'} review`
+  if (summary.failedRows) return `${summary.failedRows} failed ${summary.failedRows === 1 ? 'row' : 'rows'}`
+  return 'Ready to commit'
 }
 
 function getReviewedRowPatch(action, row = {}) {
@@ -550,6 +673,7 @@ function CommercialBulkUploadSettingsPage() {
     validation: null,
     error: '',
     saving: false,
+    validating: false,
     summary: null,
   })
 
@@ -604,6 +728,7 @@ function CommercialBulkUploadSettingsPage() {
   const selectedTemplate = TEMPLATE_DEFINITIONS[importDraft.recordType] || TEMPLATE_DEFINITIONS.vacancies
   const selectedFields = FIELD_DEFINITIONS[importDraft.recordType] || []
   const previewRows = importDraft.rows.slice(0, 5)
+  const reviewReadiness = useMemo(() => summarizeImportReviewReadiness(reviewRows), [reviewRows])
 
   function updateSetting(key, value) {
     setSuccess('')
@@ -611,6 +736,11 @@ function CommercialBulkUploadSettingsPage() {
   }
 
   function toggleRecordType(recordType) {
+    if (!isCommitEnabledRecordType(recordType)) {
+      setSuccess('')
+      return
+    }
+
     setSuccess('')
     setSettings((previous) => {
       const selected = new Set(previous.allowedRecordTypes || [])
@@ -705,21 +835,42 @@ function CommercialBulkUploadSettingsPage() {
     }))
   }
 
-  function handleValidateMapping() {
-    const validation = validateImportMapping(importDraft.recordType, importDraft.headers, importDraft.rows, importDraft.columnMapping)
-    setImportDraft((previous) => ({
-      ...previous,
-      validation,
-      error: validation.mappingErrors.length ? 'Required column mappings are missing.' : '',
-      summary: previous.summary
-        ? {
-            ...previous.summary,
-            validRows: validation.validRows,
-            warningRows: validation.warningRows,
-            invalidRows: validation.invalidRows,
-          }
-        : previous.summary,
-    }))
+  async function handleValidateMapping() {
+    setImportDraft((previous) => ({ ...previous, validating: true, error: '' }))
+    try {
+      const validation = validateImportMapping(importDraft.recordType, importDraft.headers, importDraft.rows, importDraft.columnMapping)
+      let nextValidation = validation
+      if (!validation.mappingErrors.length && organisationId) {
+        const duplicateResult = await findCommercialImportExistingDuplicates({
+          organisationId,
+          recordType: importDraft.recordType,
+          rows: validation.rows,
+        })
+        nextValidation = mergeExistingDuplicateMatches(validation, duplicateResult.matchesByRowNumber || {})
+      }
+
+      setImportDraft((previous) => ({
+        ...previous,
+        validation: nextValidation,
+        validating: false,
+        error: nextValidation.mappingErrors.length ? 'Required column mappings are missing.' : '',
+        summary: previous.summary
+          ? {
+              ...previous.summary,
+              validRows: nextValidation.validRows,
+              warningRows: nextValidation.warningRows,
+              invalidRows: nextValidation.invalidRows,
+            }
+          : previous.summary,
+      }))
+    } catch (validationError) {
+      setImportDraft((previous) => ({
+        ...previous,
+        validation: null,
+        validating: false,
+        error: validationError?.message || 'Existing-record duplicate checks could not be completed.',
+      }))
+    }
   }
 
   async function refreshImportBatches() {
@@ -737,6 +888,7 @@ function CommercialBulkUploadSettingsPage() {
       if (!importDraft.file || !importDraft.rows.length) throw new Error('Upload a CSV or XLSX file with at least one data row.')
       if (!importDraft.validation) throw new Error('Validate the column mapping before creating an import batch.')
 
+      const readinessSummary = summarizeImportReviewReadiness(importDraft.validation.rows)
       const batch = await createCommercialImportBatch({
         organisationId,
         recordType: importDraft.recordType,
@@ -751,22 +903,29 @@ function CommercialBulkUploadSettingsPage() {
         settingsSnapshot: settings,
         columnMapping: importDraft.columnMapping,
         validationSummary: {
-          phase: 'phase_4_mapping_validation',
+          phase: 'phase_6_readiness_diagnostics',
           headers: importDraft.headers,
           parsedRows: importDraft.summary?.parsedRows || importDraft.rows.length,
           stagedRows: importDraft.rows.length,
           validRows: importDraft.validation.validRows,
           warningRows: importDraft.validation.warningRows,
           invalidRows: importDraft.validation.invalidRows,
+          duplicateRows: readinessSummary.duplicateRows,
+          relationshipRows: readinessSummary.relationshipRows,
+          reviewRows: readinessSummary.reviewRows,
+          createRows: readinessSummary.createRows,
+          updateRows: readinessSummary.updateRows,
+          skipRows: readinessSummary.skipRows,
           mappingErrors: importDraft.validation.mappingErrors,
         },
         importSummary: {
           fileName: importDraft.file.name,
           recordType: importDraft.recordType,
           status: 'validated_for_review',
+          readiness: readinessSummary,
         },
         metadata: {
-          source: 'commercial_bulk_upload_phase_4',
+          source: 'commercial_bulk_upload_phase_6',
         },
       })
 
@@ -780,9 +939,15 @@ function CommercialBulkUploadSettingsPage() {
         validationErrors: row.validationErrors,
         validationWarnings: row.validationWarnings,
         duplicateKey: row.duplicateKey,
+        duplicateRecordType: row.duplicateRecordType,
+        duplicateRecordId: row.duplicateRecordId,
         metadata: {
-          source: 'commercial_bulk_upload_phase_4',
+          source: 'commercial_bulk_upload_phase_6',
           recordType: importDraft.recordType,
+          readiness: {
+            duplicateMatch: Boolean(row.duplicateRecordId),
+            relationshipResolution: hasRelationshipResolutionWarning(row),
+          },
         },
       }))
       const chunkSize = 250
@@ -798,6 +963,7 @@ function CommercialBulkUploadSettingsPage() {
         importSummary: {
           ...batch.importSummary,
           stagedRows: rowPayloads.length,
+          readiness: readinessSummary,
           message: importDraft.validation.invalidRows ? 'Rows staged with validation issues for review.' : 'Rows validated and ready for review.',
         },
       })
@@ -978,21 +1144,32 @@ function CommercialBulkUploadSettingsPage() {
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {RECORD_TYPE_OPTIONS.map((option) => {
                   const selected = settings.allowedRecordTypes.includes(option.value)
+                  const commitEnabled = isCommitEnabledRecordType(option.value)
                   return (
                     <label
                       key={option.value}
-                      className={`flex min-h-[112px] cursor-pointer gap-3 rounded-2xl border p-4 transition ${
-                        selected ? 'border-[#9fb9d1] bg-[#eef5fb]' : 'border-slate-200 bg-[#fbfcfe] hover:bg-white'
+                      className={`flex min-h-[112px] gap-3 rounded-2xl border p-4 transition ${
+                        commitEnabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+                      } ${
+                        selected ? 'border-[#9fb9d1] bg-[#eef5fb]' : commitEnabled ? 'border-slate-200 bg-[#fbfcfe] hover:bg-white' : 'border-slate-200 bg-slate-50'
                       }`}
                     >
                       <input
                         type="checkbox"
-                        checked={selected}
+                        checked={selected && commitEnabled}
+                        disabled={!commitEnabled}
                         onChange={() => toggleRecordType(option.value)}
                         className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-[#1267a3] focus:ring-[#9fb9d1]"
                       />
                       <span>
-                        <span className="block text-sm font-semibold text-[#102236]">{option.label}</span>
+                        <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#102236]">
+                          {option.label}
+                          {!commitEnabled ? (
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                              Coming next
+                            </span>
+                          ) : null}
+                        </span>
                         <span className="mt-1 block text-xs leading-5 text-slate-500">{option.description}</span>
                       </span>
                     </label>
@@ -1201,11 +1378,11 @@ function CommercialBulkUploadSettingsPage() {
                   <button
                     type="button"
                     onClick={handleValidateMapping}
-                    disabled={!importDraft.rows.length}
+                    disabled={!importDraft.rows.length || importDraft.validating}
                     className="inline-flex min-h-10 w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#102236] transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <CheckCircle2 size={16} />
-                    Validate Mapping
+                    {importDraft.validating ? 'Checking Records...' : 'Validate Mapping'}
                   </button>
                 </div>
 
@@ -1294,7 +1471,7 @@ function CommercialBulkUploadSettingsPage() {
               <button
                 type="button"
                 onClick={handleCreateImportBatch}
-                disabled={importDraft.saving || !importDraft.rows.length || !settings.enabled || !importDraft.validation}
+                disabled={importDraft.saving || importDraft.validating || !importDraft.rows.length || !settings.enabled || !importDraft.validation}
                 className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-[#102b46] px-5 text-sm font-semibold text-white transition hover:bg-[#163a5b] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <FileClock size={16} />
@@ -1404,7 +1581,7 @@ function CommercialBulkUploadSettingsPage() {
             <div className="flex flex-col gap-3 border-b border-slate-100 bg-[#fbfcfe] p-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-semibold text-[#102236]">Review Rows: {reviewBatch.fileName || 'Commercial import batch'}</h3>
-                <p className="mt-1 text-xs text-slate-500">{reviewBatch.recordType} · {reviewRows.length} rows loaded · {reviewBatch.status}</p>
+                <p className="mt-1 text-xs text-slate-500">{reviewBatch.recordType} · {reviewRows.length} rows loaded · {reviewBatch.status} · {getImportReadinessLabel(reviewReadiness)}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -1428,6 +1605,24 @@ function CommercialBulkUploadSettingsPage() {
               </div>
             </div>
 
+            {!reviewLoading ? (
+              <div className="grid gap-2 border-b border-slate-100 bg-white p-4 sm:grid-cols-2 xl:grid-cols-6">
+                {[
+                  { label: 'Create ready', value: reviewReadiness.createRows },
+                  { label: 'Need review', value: reviewReadiness.reviewRows },
+                  { label: 'Duplicates', value: reviewReadiness.duplicateRows },
+                  { label: 'Relationships', value: reviewReadiness.relationshipRows },
+                  { label: 'Skipped', value: reviewReadiness.skipRows },
+                  { label: 'Invalid', value: reviewReadiness.invalidRows },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-2xl border border-slate-200 bg-[#fbfcfe] px-3 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400">{item.label}</p>
+                    <p className="mt-1 text-lg font-semibold text-[#102236]">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             {reviewLoading ? (
               <div className="grid gap-2 p-4">
                 <div className="h-10 animate-pulse rounded-xl bg-slate-100" />
@@ -1443,6 +1638,7 @@ function CommercialBulkUploadSettingsPage() {
                       <th className="min-w-[220px] px-3 py-3">Record</th>
                       <th className="whitespace-nowrap px-3 py-3">Status</th>
                       <th className="whitespace-nowrap px-3 py-3">Action</th>
+                      <th className="min-w-[180px] px-3 py-3">Match</th>
                       <th className="min-w-[300px] px-3 py-3">Notes</th>
                       <th className="whitespace-nowrap px-3 py-3">Review Action</th>
                     </tr>
@@ -1457,6 +1653,7 @@ function CommercialBulkUploadSettingsPage() {
                           <td className="max-w-[260px] truncate px-3 py-3 text-slate-700">{getImportRowTitle(row)}</td>
                           <td className="whitespace-nowrap px-3 py-3 text-slate-600">{row.status || '-'}</td>
                           <td className="whitespace-nowrap px-3 py-3 text-slate-600">{row.action || '-'}</td>
+                          <td className="whitespace-nowrap px-3 py-3 text-slate-600">{getImportRowDuplicateMatch(row) || '-'}</td>
                           <td className="px-3 py-3 text-slate-600">{getImportRowIssueText(row)}</td>
                           <td className="px-3 py-3">
                             <div className="flex flex-wrap gap-2">

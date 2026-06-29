@@ -9,6 +9,11 @@ const IMPORT_TARGET_TABLES = Object.freeze({
   requirements: 'commercial_requirements',
   canvassing_landlord_prospects: 'commercial_canvassing_prospects',
   canvassing_tenant_prospects: 'commercial_canvassing_prospects',
+  properties: 'commercial_properties',
+  landlords: 'commercial_landlords',
+  companies: 'commercial_companies',
+  contacts: 'commercial_contacts',
+  listings: 'commercial_listings',
 })
 
 const IMPORT_BATCH_SELECT = [
@@ -136,6 +141,14 @@ function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function normalizeDuplicateText(value) {
+  return normalizeLower(value).replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function normalizeDuplicatePhone(value) {
+  return normalizeText(value).replace(/\D/g, '')
+}
+
 function normalizeInteger(value, fallback = 0) {
   const next = Number.parseInt(value, 10)
   return Number.isFinite(next) && next >= 0 ? next : fallback
@@ -160,12 +173,29 @@ function normalizeDateText(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null
 }
 
+function normalizeBooleanValue(value) {
+  if (typeof value === 'boolean') return value
+  const normalized = normalizeLower(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (['yes', 'y', 'true', '1'].includes(normalized)) return true
+  if (['no', 'n', 'false', '0'].includes(normalized)) return false
+  return false
+}
+
 function getRowNumber(row = {}) {
   return normalizeInteger(row.rowNumber || row.row_number, 0)
 }
 
 function getRowNormalizedPayload(row = {}) {
   return normalizeJsonObject(row.normalizedPayload || row.normalized_payload)
+}
+
+function createExistingDuplicateMatch(recordType, recordId, reason, label = '') {
+  return {
+    recordType,
+    recordId,
+    reason,
+    label: label || reason,
+  }
 }
 
 function isUuidLike(value) {
@@ -468,6 +498,29 @@ function normalizePropertyCategory(value) {
   return normalized ? 'commercial' : null
 }
 
+function normalizeListingType(value) {
+  const normalized = normalizeLower(value).replace(/\s+/g, '_').replace(/-/g, '_')
+  if (['lease', 'sale', 'investment', 'development'].includes(normalized)) return normalized
+  return 'lease'
+}
+
+function normalizeListingCategory(value) {
+  const normalized = normalizeLower(value).replace(/\s+/g, '_').replace(/-/g, '_')
+  if (['office', 'industrial', 'retail', 'agricultural', 'mixed_use', 'development_land'].includes(normalized)) return normalized
+  if (['warehouse', 'logistics'].includes(normalized)) return 'industrial'
+  if (['farm'].includes(normalized)) return 'agricultural'
+  if (['land', 'development'].includes(normalized)) return 'development_land'
+  return 'office'
+}
+
+function normalizePricingValue(value) {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const cleaned = normalizeText(value).replace(/[^\d.-]/g, '')
+  const parsed = Number(cleaned)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 function hasDuplicateWarning(row = {}) {
   return normalizeJsonArray(row.validationWarnings || row.validation_warnings).some((warning) => normalizeLower(warning).includes('duplicate'))
 }
@@ -606,11 +659,45 @@ async function findOrCreateProperty(batch = {}, row = {}, payload = {}, userId =
   return property
 }
 
+async function findVacancy(batch = {}, payload = {}) {
+  const vacancyName = normalizeText(payload.vacancy_name)
+  if (!vacancyName) return null
+  const result = await supabase
+    .from('commercial_vacancies')
+    .select('*')
+    .eq('organisation_id', batch.organisation_id)
+    .ilike('vacancy_name', vacancyName)
+    .limit(1)
+    .maybeSingle()
+  if (result.error) throw result.error
+  return result.data || null
+}
+
 function normalizeCompanyType(value) {
   const normalized = normalizeLower(value)
   if (['tenant', 'landlord', 'investor', 'developer', 'property_fund', 'brokerage', 'corporate', 'other'].includes(normalized)) return normalized
   if (normalized === 'buyer' || normalized === 'seller') return 'corporate'
   return 'other'
+}
+
+function buildCompanyPayloadFromImportPayload(base = {}, payload = {}, typeHint = '') {
+  return {
+    ...base,
+    company_name: normalizeText(payload.company_name) || 'Imported company',
+    company_type: normalizeCompanyType(payload.company_type || typeHint),
+    industry: normalizeText(payload.industry) || null,
+    website: normalizeText(payload.website) || null,
+    registration_number: normalizeText(payload.registration_number) || null,
+    vat_number: normalizeText(payload.vat_number) || null,
+    phone: normalizeText(payload.phone) || null,
+    email: normalizeLower(payload.email) || null,
+    address: normalizeText(payload.address) || null,
+    city: normalizeText(payload.city) || null,
+    province: normalizeText(payload.province) || null,
+    country: normalizeText(payload.country) || 'South Africa',
+    notes: normalizeText(payload.notes) || null,
+    status: 'active',
+  }
 }
 
 async function findOrCreateCompany(batch = {}, row = {}, payload = {}, userId = '', resolution = createResolutionContext(), typeHint = '') {
@@ -822,11 +909,131 @@ async function buildProspectTargetPayload(batch = {}, row = {}, userId = '', res
   }
 }
 
+async function buildLandlordTargetPayload(batch = {}, row = {}, userId = '') {
+  const payload = getRowNormalizedPayload(row)
+  const base = buildTargetBasePayload(batch, row, userId)
+  const name = normalizeText(payload.name || payload.landlord_name || payload.legal_name)
+  return {
+    organisation_id: base.organisation_id,
+    branch_id: base.branch_id,
+    team_id: base.team_id,
+    broker_id: base.broker_id,
+    name: name || `Imported landlord row ${getRowNumber(row)}`,
+    contact_person: normalizeText(payload.contact_name || payload.contact_person) || null,
+    email: normalizeLower(payload.email || payload.main_email) || null,
+    phone: normalizeText(payload.phone || payload.main_phone) || null,
+    website: normalizeText(payload.website) || null,
+    landlord_type: normalizeText(payload.entity_type || payload.portfolio_type) || null,
+    portfolio_notes: normalizeText(payload.portfolio_type || payload.notes) || null,
+    notes: normalizeText(payload.notes) || null,
+    status: 'active',
+    created_by: base.created_by,
+    updated_by: base.updated_by,
+  }
+}
+
+async function buildCompanyTargetPayload(batch = {}, row = {}, userId = '') {
+  const payload = getRowNormalizedPayload(row)
+  const base = buildTargetBasePayload(batch, row, userId)
+  return buildCompanyPayloadFromImportPayload(base, payload)
+}
+
+async function buildContactTargetPayload(batch = {}, row = {}, userId = '', resolution = createResolutionContext()) {
+  const payload = getRowNormalizedPayload(row)
+  const base = buildTargetBasePayload(batch, row, userId)
+  const company = await findOrCreateCompany(batch, row, payload, userId, resolution, payload.company_type || 'tenant')
+  if (!company?.id) {
+    throw new Error(`Row ${getRowNumber(row)} could not resolve a company for this contact.`)
+  }
+  const contactName = normalizeText(payload.contact_name || `${payload.first_name || ''} ${payload.last_name || ''}`)
+  const names = splitContactName(contactName)
+  return {
+    ...base,
+    company_id: company.id,
+    first_name: normalizeText(payload.first_name) || names.firstName || null,
+    last_name: normalizeText(payload.last_name) || names.lastName || null,
+    job_title: normalizeText(payload.job_title) || null,
+    email: normalizeLower(payload.email) || null,
+    phone: normalizeText(payload.phone) || null,
+    mobile: normalizeText(payload.mobile) || null,
+    decision_maker: normalizeBooleanValue(payload.decision_maker),
+    is_primary: normalizeBooleanValue(payload.is_primary),
+    notes: normalizeText(payload.notes) || null,
+    status: 'active',
+  }
+}
+
+async function buildPropertyTargetPayload(batch = {}, row = {}, userId = '', resolution = createResolutionContext()) {
+  const payload = getRowNormalizedPayload(row)
+  const landlord = await findOrCreateLandlord(batch, row, payload, userId, resolution)
+  const base = buildTargetBasePayload(batch, row, userId)
+  return {
+    ...base,
+    landlord_id: toNullableUuid(landlord?.id),
+    property_name: normalizeText(payload.property_name) || `Imported property row ${getRowNumber(row)}`,
+    property_type: normalizeText(payload.property_type) || 'commercial',
+    address: normalizeText(payload.address) || null,
+    suburb: normalizeText(payload.suburb) || null,
+    city: normalizeText(payload.city) || null,
+    province: normalizeText(payload.province) || null,
+    country: normalizeText(payload.country) || 'South Africa',
+    gla_m2: normalizeNumber(payload.gla_m2),
+    available_space_m2: normalizeNumber(payload.available_space_m2),
+    asking_rental_per_m2: normalizeNumber(payload.asking_rental_per_m2),
+    asking_sale_price: normalizeNumber(payload.asking_sale_price),
+    notes: normalizeText(payload.notes) || null,
+    status: 'active',
+  }
+}
+
+async function buildListingTargetPayload(batch = {}, row = {}, userId = '', resolution = createResolutionContext()) {
+  const payload = getRowNormalizedPayload(row)
+  const landlord = await findOrCreateLandlord(batch, row, payload, userId, resolution)
+  const property = await findOrCreateProperty(batch, row, payload, userId, resolution, landlord)
+  const vacancy = await findVacancy(batch, payload)
+  const base = buildTargetBasePayload(batch, row, userId)
+  const listingType = normalizeListingType(payload.listing_type)
+  const listingCategory = normalizeListingCategory(payload.listing_category || payload.property_type || property?.property_type)
+  const pricing = normalizePricingValue(payload.pricing)
+  return {
+    ...base,
+    landlord_id: toNullableUuid(landlord?.id || property?.landlord_id || vacancy?.landlord_id),
+    property_id: toNullableUuid(property?.id || vacancy?.property_id),
+    vacancy_id: toNullableUuid(vacancy?.id),
+    listing_type: listingType,
+    listing_category: listingCategory,
+    listing_status: 'draft',
+    status: 'active',
+    title: normalizeText(payload.title) || normalizeText(payload.listing_title) || `Imported listing row ${getRowNumber(row)}`,
+    description: normalizeText(payload.description) || null,
+    pricing,
+    pricing_notes: pricing === null ? normalizeText(payload.pricing) || null : null,
+    available_from: normalizeDateText(payload.available_from || vacancy?.availability_date),
+    metadata_json: {
+      source: 'commercial_bulk_upload_phase_3',
+      importBatchId: batch.id,
+      importRowId: row.id,
+      propertyName: normalizeText(payload.property_name) || null,
+      vacancyName: normalizeText(payload.vacancy_name) || null,
+      landlordName: normalizeText(payload.landlord_name) || null,
+    },
+    marketing_json: {},
+    media_json: {},
+    performance_json: {},
+    notes: normalizeText(payload.notes) || null,
+  }
+}
+
 async function buildImportTargetPayload(batch = {}, row = {}, userId = '', resolution = createResolutionContext()) {
   const recordType = normalizeRecordType(batch.record_type)
   if (recordType === 'vacancies') return buildVacancyTargetPayload(batch, row, userId, resolution)
   if (recordType === 'leads' || recordType === 'requirements') return buildRequirementTargetPayload(batch, row, userId, resolution)
   if (recordType === 'canvassing_landlord_prospects' || recordType === 'canvassing_tenant_prospects') return buildProspectTargetPayload(batch, row, userId, resolution)
+  if (recordType === 'landlords') return buildLandlordTargetPayload(batch, row, userId, resolution)
+  if (recordType === 'companies') return buildCompanyTargetPayload(batch, row, userId, resolution)
+  if (recordType === 'contacts') return buildContactTargetPayload(batch, row, userId, resolution)
+  if (recordType === 'properties') return buildPropertyTargetPayload(batch, row, userId, resolution)
+  if (recordType === 'listings') return buildListingTargetPayload(batch, row, userId, resolution)
   throw new Error(`Committing ${recordType} imports is not enabled yet.`)
 }
 
@@ -848,6 +1055,203 @@ function shouldCommitImportRow(row = {}, duplicateStrategy = 'review', seenDupli
   if (duplicateWarning && duplicateStrategy === 'review' && requestedAction !== 'create') return { commit: false, status: 'warning', action: 'review', message: 'Duplicate warning left for review.' }
 
   return { commit: true, status: 'committing', action: 'create', message: '' }
+}
+
+async function fetchCommercialDuplicateRows(table, columns, organisationId, limit = 5000) {
+  const query = await supabase
+    .from(table)
+    .select(columns)
+    .eq('organisation_id', organisationId)
+    .limit(limit)
+
+  if (query.error) throw query.error
+  return query.data || []
+}
+
+function mapCommercialPropertiesByName(properties = []) {
+  return properties.reduce((map, property) => {
+    const name = normalizeDuplicateText(property.property_name)
+    if (name && !map.has(name)) map.set(name, property.id)
+    return map
+  }, new Map())
+}
+
+function mapCommercialCompaniesByName(companies = []) {
+  return companies.reduce((map, company) => {
+    const name = normalizeDuplicateText(company.company_name)
+    if (name && !map.has(name)) map.set(name, company.id)
+    return map
+  }, new Map())
+}
+
+export async function findCommercialImportExistingDuplicates({ organisationId = '', recordType = '', rows = [] } = {}) {
+  const type = normalizeRecordType(recordType)
+  if (!Array.isArray(rows) || !rows.length) return { matchesByRowNumber: {} }
+
+  const scope = await resolveImportScope(organisationId)
+  const importRows = rows.map((row) => ({ row, rowNumber: getRowNumber(row), payload: getRowNormalizedPayload(row) }))
+  const matchesByRowNumber = {}
+  const setMatch = (entry, match) => {
+    if (!entry?.rowNumber || !match?.recordId || matchesByRowNumber[entry.rowNumber]) return
+    matchesByRowNumber[entry.rowNumber] = match
+  }
+
+  if (type === 'companies') {
+    const companies = await fetchCommercialDuplicateRows('commercial_companies', 'id, company_name, registration_number, email', scope.organisationId)
+    importRows.forEach((entry) => {
+      const payload = entry.payload
+      const registration = normalizeDuplicateText(payload.registration_number)
+      const email = normalizeLower(payload.email)
+      const name = normalizeDuplicateText(payload.company_name)
+      const match = companies.find((company) => (
+        (registration && registration === normalizeDuplicateText(company.registration_number)) ||
+        (email && email === normalizeLower(company.email)) ||
+        (name && name === normalizeDuplicateText(company.company_name))
+      ))
+      if (match) setMatch(entry, createExistingDuplicateMatch('commercial_companies', match.id, 'company name, registration number, or email already exists', match.company_name))
+    })
+    return { matchesByRowNumber }
+  }
+
+  if (type === 'contacts') {
+    const [companies, contacts] = await Promise.all([
+      fetchCommercialDuplicateRows('commercial_companies', 'id, company_name', scope.organisationId),
+      fetchCommercialDuplicateRows('commercial_contacts', 'id, company_id, first_name, last_name, email, phone, mobile', scope.organisationId),
+    ])
+    const companyIdByName = mapCommercialCompaniesByName(companies)
+    importRows.forEach((entry) => {
+      const payload = entry.payload
+      const email = normalizeLower(payload.email)
+      const phone = normalizeDuplicatePhone(payload.mobile || payload.phone)
+      const companyId = companyIdByName.get(normalizeDuplicateText(payload.company_name))
+      const fullName = normalizeDuplicateText(`${payload.first_name || ''} ${payload.last_name || ''}`)
+      const match = contacts.find((contact) => {
+        const contactPhone = normalizeDuplicatePhone(contact.mobile || contact.phone)
+        const contactName = normalizeDuplicateText(`${contact.first_name || ''} ${contact.last_name || ''}`)
+        return (
+          (email && email === normalizeLower(contact.email)) ||
+          (phone && phone === contactPhone) ||
+          (companyId && contact.company_id === companyId && fullName && fullName === contactName)
+        )
+      })
+      if (match) setMatch(entry, createExistingDuplicateMatch('commercial_contacts', match.id, 'contact email, phone, or company/name combination already exists', `${match.first_name || ''} ${match.last_name || ''}`.trim()))
+    })
+    return { matchesByRowNumber }
+  }
+
+  if (type === 'landlords') {
+    const landlords = await fetchCommercialDuplicateRows('commercial_landlords', 'id, name, email, phone', scope.organisationId)
+    importRows.forEach((entry) => {
+      const payload = entry.payload
+      const name = normalizeDuplicateText(payload.name || payload.landlord_name || payload.legal_name)
+      const email = normalizeLower(payload.email)
+      const phone = normalizeDuplicatePhone(payload.phone)
+      const match = landlords.find((landlord) => (
+        (email && email === normalizeLower(landlord.email)) ||
+        (phone && phone === normalizeDuplicatePhone(landlord.phone)) ||
+        (name && name === normalizeDuplicateText(landlord.name))
+      ))
+      if (match) setMatch(entry, createExistingDuplicateMatch('commercial_landlords', match.id, 'landlord name, email, or phone already exists', match.name))
+    })
+    return { matchesByRowNumber }
+  }
+
+  if (type === 'properties') {
+    const properties = await fetchCommercialDuplicateRows('commercial_properties', 'id, property_name, address', scope.organisationId)
+    importRows.forEach((entry) => {
+      const payload = entry.payload
+      const name = normalizeDuplicateText(payload.property_name)
+      const address = normalizeDuplicateText(payload.address)
+      const match = properties.find((property) => {
+        const sameName = name && name === normalizeDuplicateText(property.property_name)
+        if (!sameName) return false
+        return !address || address === normalizeDuplicateText(property.address)
+      })
+      if (match) setMatch(entry, createExistingDuplicateMatch('commercial_properties', match.id, 'property name and address already exist', match.property_name))
+    })
+    return { matchesByRowNumber }
+  }
+
+  if (type === 'listings') {
+    const [properties, listings] = await Promise.all([
+      fetchCommercialDuplicateRows('commercial_properties', 'id, property_name', scope.organisationId),
+      fetchCommercialDuplicateRows('commercial_listings', 'id, title, property_id', scope.organisationId),
+    ])
+    const propertyIdByName = mapCommercialPropertiesByName(properties)
+    importRows.forEach((entry) => {
+      const payload = entry.payload
+      const title = normalizeDuplicateText(payload.title)
+      const propertyId = propertyIdByName.get(normalizeDuplicateText(payload.property_name))
+      const match = listings.find((listing) => {
+        const sameTitle = title && title === normalizeDuplicateText(listing.title)
+        if (!sameTitle) return false
+        return !propertyId || listing.property_id === propertyId
+      })
+      if (match) setMatch(entry, createExistingDuplicateMatch('commercial_listings', match.id, 'listing title and property already exist', match.title))
+    })
+    return { matchesByRowNumber }
+  }
+
+  if (type === 'vacancies') {
+    const [properties, vacancies] = await Promise.all([
+      fetchCommercialDuplicateRows('commercial_properties', 'id, property_name', scope.organisationId),
+      fetchCommercialDuplicateRows('commercial_vacancies', 'id, vacancy_name, property_id, unit_or_floor', scope.organisationId),
+    ])
+    const propertyIdByName = mapCommercialPropertiesByName(properties)
+    importRows.forEach((entry) => {
+      const payload = entry.payload
+      const vacancyName = normalizeDuplicateText(payload.vacancy_name)
+      const unitOrFloor = normalizeDuplicateText(payload.unit_or_floor)
+      const propertyId = propertyIdByName.get(normalizeDuplicateText(payload.property_name))
+      const match = vacancies.find((vacancy) => {
+        const sameVacancy = vacancyName && vacancyName === normalizeDuplicateText(vacancy.vacancy_name)
+        const sameUnit = unitOrFloor && unitOrFloor === normalizeDuplicateText(vacancy.unit_or_floor)
+        if (propertyId) return vacancy.property_id === propertyId && (sameVacancy || sameUnit)
+        return sameVacancy && (!unitOrFloor || sameUnit)
+      })
+      if (match) setMatch(entry, createExistingDuplicateMatch('commercial_vacancies', match.id, 'vacancy name/unit and property already exist', match.vacancy_name))
+    })
+    return { matchesByRowNumber }
+  }
+
+  if (type === 'leads' || type === 'requirements') {
+    const requirements = await fetchCommercialDuplicateRows('commercial_requirements', 'id, requirement_name, client_type', scope.organisationId)
+    importRows.forEach((entry) => {
+      const payload = entry.payload
+      const name = normalizeDuplicateText(payload.requirement_name)
+      const clientType = normalizeDuplicateText(payload.client_type || payload.lead_type)
+      const match = requirements.find((requirement) => {
+        const sameName = name && name === normalizeDuplicateText(requirement.requirement_name)
+        if (!sameName) return false
+        return !clientType || clientType === normalizeDuplicateText(requirement.client_type)
+      })
+      if (match) setMatch(entry, createExistingDuplicateMatch('commercial_requirements', match.id, 'requirement name and client type already exist', match.requirement_name))
+    })
+    return { matchesByRowNumber }
+  }
+
+  if (type === 'canvassing_landlord_prospects' || type === 'canvassing_tenant_prospects') {
+    const prospects = await fetchCommercialDuplicateRows('commercial_canvassing_prospects', 'id, company_name, email, phone, prospect_role', scope.organisationId)
+    const expectedRole = type === 'canvassing_landlord_prospects' ? 'landlord' : 'tenant'
+    importRows.forEach((entry) => {
+      const payload = entry.payload
+      const companyName = normalizeDuplicateText(payload.company_name)
+      const email = normalizeLower(payload.email)
+      const phone = normalizeDuplicatePhone(payload.phone)
+      const match = prospects.find((prospect) => {
+        const sameRole = normalizeDuplicateText(prospect.prospect_role) === expectedRole
+        return (
+          ((email && email === normalizeLower(prospect.email)) ||
+          (phone && phone === normalizeDuplicatePhone(prospect.phone)) ||
+          (companyName && companyName === normalizeDuplicateText(prospect.company_name))) &&
+          sameRole
+        )
+      })
+      if (match) setMatch(entry, createExistingDuplicateMatch('commercial_canvassing_prospects', match.id, 'prospect company, email, or phone already exists', match.company_name))
+    })
+  }
+
+  return { matchesByRowNumber }
 }
 
 export async function createCommercialImportBatch(payload = {}) {

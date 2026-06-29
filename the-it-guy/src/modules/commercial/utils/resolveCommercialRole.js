@@ -259,6 +259,10 @@ export function isCommercialManager(userOrMembership = null) {
   return ['organisation', 'branch', 'team'].includes(getCommercialScopeLevel(userOrMembership))
 }
 
+export function isCommercialProfessionalMember(userOrMembership = null) {
+  return hasCommercialAccessMarker(userOrMembership) && (isCommercialBroker(userOrMembership) || isCommercialManager(userOrMembership))
+}
+
 export function canManageCommercialBrokerage(userOrMembership = null) {
   return isCommercialManager(userOrMembership)
 }

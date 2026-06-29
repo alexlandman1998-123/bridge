@@ -27,6 +27,7 @@ import { PERMISSIONS } from './auth/permissions/permissionRegistry'
 import { createRoutePerformanceMarker } from './services/observability/performanceMetrics'
 import { reportError } from './services/observability/errorTracking'
 import { trackPermissionMetric } from './services/observability/monitoring'
+import { isCommercialProfessionalMember } from './modules/commercial/utils/resolveCommercialRole'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 const INACTIVITY_TIMEOUT_MINUTES = 15
@@ -1025,7 +1026,15 @@ function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceTyp
     return children
   }
 
-  if (!allowedRoles.includes(role)) {
+  const commercialMembershipAccess =
+    location.pathname.startsWith('/commercial') &&
+    allowedRoles.some((allowedRole) => String(allowedRole || '').startsWith('commercial_')) &&
+    (
+      isCommercialProfessionalMember(workspaceContext.currentMembership) ||
+      activeMemberships.some((membership) => isCommercialProfessionalMember(membership))
+    )
+
+  if (!allowedRoles.includes(role) && !commercialMembershipAccess) {
     return <AccessDenied message="Your Arch9 role does not include access to this module." />
   }
 
@@ -2918,11 +2927,12 @@ function ClientAwareDashboard() {
     activeMemberships.some((membership) => hasCommercialMembershipMarker(membership))
   const hasCommercialBrokerAccess =
     isCommercialBrokerMembership(currentMembership) ||
-    activeMemberships.some((membership) => isCommercialBrokerMembership(membership))
+    isCommercialProfessionalMember(currentMembership) ||
+    activeMemberships.some((membership) => isCommercialBrokerMembership(membership) || isCommercialProfessionalMember(membership))
   if (
     (preferredWorkspaceMode === 'commercial' || (!preferredWorkspaceMode && hasCommercialBrokerAccess)) &&
     hasCommercialAccess &&
-    ['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal'].includes(role)
+    (role === 'agent' || hasCommercialBrokerAccess)
   ) {
     return <Navigate to="/commercial" replace />
   }
