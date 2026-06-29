@@ -51,6 +51,8 @@ for (const marker of [
   "return 'team'",
   'team_id.eq.',
   'created_by.eq.',
+  'COMMERCIAL_BROKER_SHARED_DIRECTORY_KINDS',
+  'broker_id.is.null',
   'branch_id.is.null',
   'assigned_broker.eq.',
   'broker_assignment.eq.',

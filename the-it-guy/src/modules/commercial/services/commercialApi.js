@@ -89,6 +89,7 @@ const COMMERCIAL_SCHEMA_RETRY_LIMIT = 32
 const COMMERCIAL_SCOPE_CACHE_TTL_MS = 60 * 1000
 const COMMERCIAL_PLATFORM_INSTALL_CACHE_TTL_MS = 5 * 60 * 1000
 const COMMERCIAL_MODULE_KEY = 'commercial'
+const COMMERCIAL_BROKER_SHARED_DIRECTORY_KINDS = new Set(['landlords'])
 export const COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE = 'Commercial is not installed on this environment. Contact platform support.'
 const COMMERCIAL_PLATFORM_MIGRATION_GUIDE = Object.freeze({
   'commercial organisation module entitlement': '202606100002_commercial_organisation_modules_phase3.sql',
@@ -2391,6 +2392,12 @@ function applyCommercialScope(query, kind, scope = {}) {
   if (scope.scopeLevel === 'broker' && scope.userId) {
     if (kind === 'requirements' || kind === 'deals') return query.or(`assigned_broker.eq.${scope.userId},broker_id.eq.${scope.userId},created_by.eq.${scope.userId}`)
     if (kind === 'vacancies') return query.or(`broker_assignment.eq.${scope.userId},broker_id.eq.${scope.userId},created_by.eq.${scope.userId}`)
+    if (COMMERCIAL_BROKER_SHARED_DIRECTORY_KINDS.has(kind)) {
+      const unassignedClause = scope.branchId
+        ? `and(broker_id.is.null,or(branch_id.is.null,branch_id.eq.${scope.branchId}))`
+        : 'broker_id.is.null'
+      return query.or(`broker_id.eq.${scope.userId},created_by.eq.${scope.userId},${unassignedClause}`)
+    }
     return query.or(`broker_id.eq.${scope.userId},created_by.eq.${scope.userId}`)
   }
 
