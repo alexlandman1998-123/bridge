@@ -110,17 +110,29 @@ function pickFirstMatch(text: string, patterns: RegExp[]) {
   return "";
 }
 
+function normalizeBodyText(value: unknown) {
+  return normalizeText(value)
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+function readLabelValue(text: string, labels: string[]) {
+  const safeLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (!safeLabels.length) return "";
+  const pattern = new RegExp(`(?:^|\\n)\\s*(?:${safeLabels.join("|")})\\s*[:\\-]\\s*([^\\n\\r]+)`, "i");
+  return normalizeText(text.match(pattern)?.[1] || "");
+}
+
 function extractEmailAddress(text: string) {
-  return normalizeEmail(pickFirstMatch(text, [
+  return normalizeEmail(readLabelValue(text, ["email address", "email", "e-mail"]) || pickFirstMatch(text, [
     /(?:email|e-mail)\s*[:\-]\s*([^\s<>,;]+@[^\s<>,;]+)/i,
     /([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/i,
   ]));
 }
 
 function extractPhone(text: string) {
-  const labelled = pickFirstMatch(text, [
-    /(?:phone|mobile|cell|telephone|contact number)\s*[:\-]\s*([+()0-9\s.-]{7,})/i,
-  ]);
+  const labelled = readLabelValue(text, ["phone", "mobile", "cell", "cellphone", "telephone", "contact number"]);
   const fallback = labelled || pickFirstMatch(text, [
     /(\+?27[\s.-]?\d{2}[\s.-]?\d{3}[\s.-]?\d{4})/i,
     /(\b0\d{2}[\s.-]?\d{3}[\s.-]?\d{4}\b)/i,
@@ -129,16 +141,47 @@ function extractPhone(text: string) {
 }
 
 function extractName(text: string, fromName = "") {
-  return normalizeText(pickFirstMatch(text, [
-    /(?:name|contact name|customer|enquirer|sender)\s*[:\-]\s*([^\n\r<]+)/i,
-  ]) || fromName).replace(/\s*<[^>]+>\s*/g, "");
+  return normalizeText(readLabelValue(text, ["name", "full name", "contact name", "customer", "customer name", "enquirer", "sender"]) || fromName).replace(/\s*<[^>]+>\s*/g, "");
 }
 
 function extractListingReference(text: string) {
-  return pickFirstMatch(text, [
+  return readLabelValue(text, [
+    "listing reference",
+    "listing ref",
+    "listing id",
+    "listing number",
+    "property reference",
+    "property ref",
+    "property id",
+    "property number",
+    "web reference",
+    "web ref",
+    "web id",
+    "property24 reference",
+    "property24 listing id",
+    "private property reference",
+    "private property listing id",
+  ]) || pickFirstMatch(text, [
     /(?:listing|property|web)\s*(?:id|ref|reference|number)\s*[:#\-]\s*([a-z0-9/_-]+)/i,
     /(?:property24|private property)\s*(?:id|ref|reference)\s*[:#\-]\s*([a-z0-9/_-]+)/i,
+    /property24\.com\/(?:[^/\s]+\/)*(\d{5,})/i,
+    /privateproperty\.co\.za\/(?:[^/\s]+\/)*([a-z0-9-]*\d{5,}[a-z0-9-]*)/i,
   ]);
+}
+
+function extractMessage(text: string) {
+  const labelled = readLabelValue(text, ["message", "comments", "comment", "enquiry", "enquiry message", "buyer message", "notes"]);
+  if (labelled) return labelled;
+  const lines = normalizeBodyText(text).split("\n").map((line) => normalizeText(line)).filter(Boolean);
+  const messageStart = lines.findIndex((line) => /^(message|comments|comment|enquiry|notes)\s*[:\-]?$/i.test(line));
+  if (messageStart >= 0) return lines.slice(messageStart + 1, messageStart + 4).join("\n");
+  return "";
+}
+
+function extractBudget(text: string) {
+  const raw = readLabelValue(text, ["budget", "max budget", "price", "asking price"]);
+  const amount = Number(String(raw).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
 function normalizeLeadSource(value: unknown) {
@@ -161,6 +204,139 @@ function inferSource(alias: JsonRecord, fromEmail: string, subject: string, body
   if (haystack.includes("facebook")) return "Facebook";
   if (haystack.includes("website") || haystack.includes("web enquiry")) return "Website";
   return "Other";
+}
+
+function calculateParseConfidence(fields: JsonRecord, warnings: string[]) {
+  let score = 0;
+  if (fields.source && fields.source !== "Other") score += 0.15;
+  if (fields.name) score += 0.15;
+  if (fields.email) score += 0.2;
+  if (fields.phone) score += 0.2;
+  if (fields.listingReference || fields.listingId) score += 0.15;
+  if (fields.message) score += 0.1;
+  if (fields.parserName && fields.parserName !== "generic_email") score += 0.05;
+  score -= Math.min(warnings.length * 0.08, 0.24);
+  return Math.max(0, Math.min(1, Number(score.toFixed(2))));
+}
+
+function buildParseResult({
+  parserName = "generic_email",
+  source = "Other",
+  subject = "",
+  body = "",
+  fromName = "",
+  fromEmail = "",
+  alias = {},
+  input = {},
+  fields = {},
+}: {
+  parserName?: string;
+  source?: string;
+  subject?: string;
+  body?: string;
+  fromName?: string;
+  fromEmail?: string;
+  alias?: JsonRecord;
+  input?: JsonRecord;
+  fields?: JsonRecord;
+}) {
+  const base = {
+    name: extractName(body, fromName),
+    email: extractEmailAddress(body) || fromEmail,
+    phone: extractPhone(body),
+    listingReference: extractListingReference(`${subject}\n${body}`),
+    message: extractMessage(body) || body || subject,
+    budget: extractBudget(body),
+    areaInterest: readLabelValue(body, ["area", "suburb", "location"]),
+    propertyInterest: readLabelValue(body, ["property type", "property interest"]),
+  };
+  const cleanFields = Object.fromEntries(Object.entries(fields).filter(([, value]) => {
+    if (typeof value === "number") return value > 0;
+    return normalizeText(value);
+  }));
+  const matchedFields = { ...base, ...cleanFields, parserName, source };
+  const warnings = [];
+  if (!matchedFields.email && !matchedFields.phone) warnings.push("missing_contact_details");
+  if (!matchedFields.name) warnings.push("missing_contact_name");
+  if (!matchedFields.listingReference && !alias.listing_id) warnings.push("missing_listing_reference");
+  return {
+    parserName,
+    source,
+    fields: matchedFields,
+    confidence: calculateParseConfidence(matchedFields, warnings),
+    warnings,
+    raw: input,
+  };
+}
+
+function parseLeadEmailBySource(context: {
+  alias: JsonRecord;
+  fromEmail: string;
+  fromName: string;
+  subject: string;
+  body: string;
+  source: string;
+  input: JsonRecord;
+}) {
+  const source = normalizeLeadSource(context.source || inferSource(context.alias, context.fromEmail, context.subject, context.body));
+  const common = {
+    ...context,
+    source,
+  };
+  if (source === "Property24") {
+    return buildParseResult({
+      ...common,
+      parserName: "property24_email",
+      source: "Property24",
+      fields: {
+        name: readLabelValue(context.body, ["name", "contact name", "customer name"]) || extractName(context.body, context.fromName),
+        email: normalizeEmail(readLabelValue(context.body, ["email", "email address"])),
+        phone: (readLabelValue(context.body, ["telephone", "phone", "mobile", "contact number"]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
+        listingReference: extractListingReference(`${context.subject}\n${context.body}`),
+        message: readLabelValue(context.body, ["message", "comments", "enquiry"]) || extractMessage(context.body),
+        areaInterest: readLabelValue(context.body, ["suburb", "area"]),
+        propertyInterest: readLabelValue(context.body, ["property type"]),
+        budget: extractBudget(context.body),
+      },
+    });
+  }
+  if (source === "Private Property") {
+    return buildParseResult({
+      ...common,
+      parserName: "private_property_email",
+      source: "Private Property",
+      fields: {
+        name: readLabelValue(context.body, ["name", "contact name", "customer name", "enquirer"]) || extractName(context.body, context.fromName),
+        email: normalizeEmail(readLabelValue(context.body, ["email", "email address"])),
+        phone: (readLabelValue(context.body, ["cellphone", "cell", "phone", "mobile", "contact number"]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
+        listingReference: extractListingReference(`${context.subject}\n${context.body}`),
+        message: readLabelValue(context.body, ["message", "enquiry", "comment"]) || extractMessage(context.body),
+        areaInterest: readLabelValue(context.body, ["suburb", "area"]),
+        propertyInterest: readLabelValue(context.body, ["property type"]),
+        budget: extractBudget(context.body),
+      },
+    });
+  }
+  if (source === "Website") {
+    const firstName = readLabelValue(context.body, ["first name"]);
+    const lastName = readLabelValue(context.body, ["last name", "surname"]);
+    return buildParseResult({
+      ...common,
+      parserName: "website_email",
+      source: "Website",
+      fields: {
+        name: [firstName, lastName].filter(Boolean).join(" ") || extractName(context.body, context.fromName),
+        email: normalizeEmail(readLabelValue(context.body, ["email", "email address"])),
+        phone: (readLabelValue(context.body, ["phone", "mobile", "cell", "contact number"]) || extractPhone(context.body)).replace(/[^\d+]/g, ""),
+        listingReference: extractListingReference(`${context.subject}\n${context.body}`),
+        message: readLabelValue(context.body, ["message", "comments", "enquiry", "notes"]) || extractMessage(context.body),
+        areaInterest: readLabelValue(context.body, ["area", "suburb", "location"]),
+        propertyInterest: readLabelValue(context.body, ["property type", "property interest"]),
+        budget: extractBudget(context.body),
+      },
+    });
+  }
+  return buildParseResult({ ...common, parserName: "generic_email", source });
 }
 
 async function parseRequestPayload(req: Request) {
@@ -219,27 +395,46 @@ function normalizeInboundPayload(payload: JsonRecord) {
 }
 
 function buildCanonicalPayload(inbound: ReturnType<typeof normalizeInboundPayload>, alias: JsonRecord) {
-  const body = normalizeText(inbound.textBody || stripHtml(inbound.htmlBody));
+  const body = normalizeBodyText(inbound.textBody || stripHtml(inbound.htmlBody));
   const source = inferSource(alias, inbound.fromEmail, inbound.subject, body);
-  const name = extractName(body, inbound.fromName);
-  const email = extractEmailAddress(body) || inbound.replyToEmail || inbound.fromEmail;
-  const phone = extractPhone(body);
-  const listingReference = extractListingReference(`${inbound.subject}\n${body}`);
+  const parseResult = parseLeadEmailBySource({
+    alias,
+    fromEmail: inbound.fromEmail,
+    fromName: inbound.fromName,
+    subject: inbound.subject,
+    body,
+    source,
+    input: inbound as unknown as JsonRecord,
+  });
+  const parsedFields = parseResult.fields || {};
   return {
     organisationId: normalizeText(alias.organisation_id),
-    source,
+    source: normalizeText(parseResult.source) || source,
     externalReference: inbound.providerMessageId,
-    name,
-    email,
-    phone,
-    message: body || inbound.subject,
+    name: normalizeText(parsedFields.name),
+    email: normalizeEmail(parsedFields.email || inbound.replyToEmail || inbound.fromEmail),
+    phone: normalizeText(parsedFields.phone),
+    message: normalizeText(parsedFields.message) || body || inbound.subject,
     listingId: normalizeText(alias.listing_id),
-    listingReference,
+    listingReference: normalizeText(parsedFields.listingReference),
+    budget: Number(parsedFields.budget || 0) || 0,
+    areaInterest: normalizeText(parsedFields.areaInterest),
+    propertyInterest: normalizeText(parsedFields.propertyInterest),
     assignedAgentId: normalizeText(alias.agent_user_id),
     branchId: normalizeText(alias.branch_id),
+    parserName: parseResult.parserName,
+    parseConfidence: parseResult.confidence,
+    parseWarnings: parseResult.warnings,
+    matchedFields: parsedFields,
     rawPayload: {
       inboundEmail: inbound,
       captureAlias: alias,
+      parser: {
+        name: parseResult.parserName,
+        confidence: parseResult.confidence,
+        warnings: parseResult.warnings,
+        matchedFields: parsedFields,
+      },
     },
   };
 }
@@ -338,9 +533,9 @@ async function createLeadFromEmail(client: SupabaseClientLike, canonical: JsonRe
     stage: "New Lead",
     status: "New Lead",
     priority: "High",
-    budget: 0,
-    area_interest: null,
-    property_interest: null,
+    budget: Number(canonical.budget || 0) || 0,
+    area_interest: normalizeText(canonical.areaInterest) || null,
+    property_interest: normalizeText(canonical.propertyInterest) || null,
     listing_id: isUuidLike(canonical.listingId) ? canonical.listingId : null,
     source_reference_id: normalizeText(canonical.externalReference) || null,
     raw_enquiry_payload: canonical.rawPayload || {},
@@ -360,9 +555,12 @@ async function createLeadFromEmail(client: SupabaseClientLike, canonical: JsonRe
     contact_id: contactId,
     listing_id: isUuidLike(canonical.listingId) ? canonical.listingId : null,
     assigned_agent_id: isUuidLike(canonical.assignedAgentId) ? canonical.assignedAgentId : null,
-    review_status: canonical.listingReference && !canonical.listingId ? "needs_review" : null,
+    review_status: (Number(canonical.parseConfidence || 0) < 0.65 || canonical.listingReference && !canonical.listingId) ? "needs_review" : null,
     processed_at: now,
-    error: canonical.listingReference && !canonical.listingId ? "Unknown listing: original enquiry listing could not be resolved." : null,
+    error: [
+      canonical.listingReference && !canonical.listingId ? "Unknown listing: original enquiry listing could not be resolved." : "",
+      Number(canonical.parseConfidence || 0) < 0.65 ? "Low parser confidence." : "",
+    ].filter(Boolean).join(" ") || null,
   };
   await insertWithColumnFallback(client, "lead_ingestion_logs", logPayload, OPTIONAL_LOG_COLUMNS);
 
@@ -378,6 +576,9 @@ async function recordFailure(client: SupabaseClientLike, patch: JsonRecord) {
     reason: normalizeText(patch.reason) || "Inbound lead email failed.",
     status: "open",
     payload: patch.payload || {},
+    parser_name: patch.parserName || null,
+    parse_confidence: patch.parseConfidence || null,
+    parse_warnings: Array.isArray(patch.parseWarnings) ? patch.parseWarnings : [],
   });
 }
 
@@ -455,6 +656,10 @@ Deno.serve(async (req) => {
           source: canonical.source,
           lead_id: result.leadId,
           contact_id: result.contactId,
+          parser_name: canonical.parserName,
+          parse_confidence: canonical.parseConfidence,
+          parse_warnings: Array.isArray(canonical.parseWarnings) ? canonical.parseWarnings : [],
+          matched_fields: canonical.matchedFields || {},
           parsed_at: new Date().toISOString(),
           processed_at: new Date().toISOString(),
         })
@@ -471,13 +676,24 @@ Deno.serve(async (req) => {
       const reason = error instanceof Error ? error.message : "Inbound lead email failed.";
       await client
         .from("inbound_lead_emails")
-        .update({ status: "failed", error: reason, parsed_at: new Date().toISOString() })
+        .update({
+          status: "failed",
+          error: reason,
+          parser_name: canonical.parserName,
+          parse_confidence: canonical.parseConfidence,
+          parse_warnings: Array.isArray(canonical.parseWarnings) ? canonical.parseWarnings : [],
+          matched_fields: canonical.matchedFields || {},
+          parsed_at: new Date().toISOString(),
+        })
         .eq("email_id", inboundEmail.email_id);
       await recordFailure(client, {
         inboundEmailId: inboundEmail.email_id,
         organisationId: alias.organisation_id,
         captureAliasId: alias.alias_id,
         source: canonical.source,
+        parserName: canonical.parserName,
+        parseConfidence: canonical.parseConfidence,
+        parseWarnings: canonical.parseWarnings,
         reason,
         payload: canonical,
       });

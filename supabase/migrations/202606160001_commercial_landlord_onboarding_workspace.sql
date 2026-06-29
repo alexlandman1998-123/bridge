@@ -131,12 +131,21 @@ create table if not exists public.commercial_landlord_onboarding_responses (
 );
 
 alter table if exists public.commercial_properties
+  drop constraint if exists commercial_properties_asset_manager_id_fkey;
+
+alter table if exists public.commercial_properties
   add constraint commercial_properties_asset_manager_id_fkey
   foreign key (asset_manager_id) references public.commercial_landlord_contacts(id) on delete set null not valid;
 
 alter table if exists public.commercial_properties
+  drop constraint if exists commercial_properties_property_manager_id_fkey;
+
+alter table if exists public.commercial_properties
   add constraint commercial_properties_property_manager_id_fkey
   foreign key (property_manager_id) references public.commercial_landlord_contacts(id) on delete set null not valid;
+
+alter table if exists public.commercial_vacancies
+  drop constraint if exists commercial_vacancies_property_manager_id_fkey;
 
 alter table if exists public.commercial_vacancies
   add constraint commercial_vacancies_property_manager_id_fkey
@@ -320,5 +329,7 @@ comment on table public.commercial_landlord_onboarding
 
 comment on table public.commercial_mandates
   is 'Leasing and sales mandate records linked to commercial landlords, properties, and optional vacancies.';
+
+notify pgrst, 'reload schema';
 
 commit;

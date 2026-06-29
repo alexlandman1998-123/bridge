@@ -14,6 +14,7 @@ function excludes(source, marker, message) {
 }
 
 const commercialApi = await read('../src/modules/commercial/services/commercialApi.js')
+const commercialLandlordService = await read('../src/modules/commercial/services/commercialLandlordService.js')
 for (const marker of [
   'export async function getCommercialPlatformInstallStatus',
   'COMMERCIAL_PLATFORM_INSTALL_ERROR_MESSAGE',
@@ -72,6 +73,22 @@ excludes(
   "workspace_role: 'commercial_hq_admin'",
   'Commercial activation must not silently rewrite the existing workspace role.',
 )
+
+for (const marker of [
+  'function isMissingOptionalCommercialTable',
+  "code === 'PGRST205'",
+  "message.includes('could not find the table')",
+  'async function listOptionalLandlordContacts',
+  'async function listOptionalLandlordMandates',
+  'async function listOptionalLandlordOnboardings',
+  'isMissingOptionalCommercialTable(query.error, LANDLORD_CONTACTS_TABLE)',
+  'isMissingOptionalCommercialTable(query.error, COMMERCIAL_MANDATES_TABLE)',
+  'isMissingOptionalCommercialTable(query.error, LANDLORD_ONBOARDING_TABLE)',
+  'return listOptionalLandlordContacts(client, landlordId)',
+  'return listOptionalLandlordMandates(client, landlordId)',
+]) {
+  includes(commercialLandlordService, marker, `Commercial landlord workspace should tolerate optional schema-lagging landlord tables: ${marker}`)
+}
 
 const commercialLayout = await read('../src/modules/commercial/components/CommercialLayout.jsx')
 for (const marker of [

@@ -2,25 +2,35 @@ import {
   AlertCircle,
   CheckCircle2,
   Copy,
+  ExternalLink,
   Inbox,
   Mail,
   RefreshCw,
   UserRound,
   UsersRound,
+  Wrench,
+  X,
+  XCircle,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
 import {
+  buildLeadCaptureReviewQueueRows,
+  buildLeadCaptureRepairDraft,
   buildLeadCaptureStatusRows,
   ensureDefaultLeadCaptureAliases,
   ensureLeadCaptureAliasesForUsers,
   getLeadCaptureSetupStatus,
+  ignoreLeadCaptureReviewItem,
   LEAD_CAPTURE_SOURCES,
   listInboundLeadEmails,
   listLeadCaptureAliases,
   listLeadParseFailures,
+  linkLeadCaptureReviewItem,
+  repairLeadCaptureReviewItem,
+  resolveLeadCaptureReviewItem,
 } from '../../services/leadEmailCaptureService'
 import {
   SettingsBanner,
@@ -51,6 +61,11 @@ function formatDateTime(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date)
+}
+
+function formatConfidence(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'Not scored'
+  return `${Math.round(Number(value) * 100)}%`
 }
 
 function statusToneClass(tone = 'slate') {
@@ -180,15 +195,165 @@ function MetricCard({ label, value, icon: Icon }) {
   )
 }
 
+function formatMatchedFields(fields = {}) {
+  return Object.entries(fields || {})
+    .filter(([, value]) => value !== null && value !== undefined && String(value).trim())
+    .slice(0, 6)
+}
+
+function ReviewQueueItem({ item, onRepair, onResolve, onIgnore, saving = false }) {
+  const matchedFields = formatMatchedFields(item.matchedFields)
+  return (
+    <div className="rounded-[14px] border border-[#f3d9a8] bg-[#fffaf1] p-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[#f0d492] bg-white px-2.5 py-1 text-xs font-semibold text-[#7a5a1b]">{item.source || 'Unknown source'}</span>
+            <span className="rounded-full border border-[#f0d492] bg-white px-2.5 py-1 text-xs font-semibold text-[#7a5a1b]">{formatConfidence(item.parseConfidence)}</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#9a7a35]">{item.kind === 'failure' ? 'Parse Failure' : 'Low Confidence'}</span>
+          </div>
+          <p className="mt-3 font-semibold text-[#162334]">{item.reason || 'Parser review required'}</p>
+          <p className="mt-1 text-sm text-[#7a5a1b]">
+            {item.subject || item.fromEmail || 'Inbound lead email'} · {item.parserName || 'parser pending'} · {formatDateTime(item.receivedAt)}
+          </p>
+          {item.parseWarnings?.length ? <p className="mt-2 text-xs text-[#9a6408]">{item.parseWarnings.join(', ')}</p> : null}
+          {matchedFields.length ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {matchedFields.map(([field, value]) => (
+                <div key={field} className="min-w-0 rounded-[10px] border border-[#f0dfb5] bg-white px-3 py-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9a7a35]">{field}</p>
+                  <p className="mt-1 truncate text-sm text-[#35546c]">{String(value)}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2 lg:justify-end">
+          <SecondaryButton icon={Wrench} onClick={() => onRepair(item)} disabled={saving}>Repair</SecondaryButton>
+          <SecondaryButton icon={CheckCircle2} onClick={() => onResolve(item)} disabled={saving}>Resolve</SecondaryButton>
+          <SecondaryButton icon={XCircle} onClick={() => onIgnore(item)} disabled={saving}>Ignore</SecondaryButton>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RepairField({ label, value, onChange, placeholder = '', type = 'text' }) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">{label}</span>
+      <input
+        type={type}
+        value={value || ''}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"
+      />
+    </label>
+  )
+}
+
+function RepairDrawer({ item, draft, onChange, onClose, onCreateLead, onLinkLead, saving = false }) {
+  if (!item) return null
+  const matchedFields = formatMatchedFields(item.matchedFields)
+  const rawPreview = JSON.stringify(item.raw?.payload || item.raw || {}, null, 2)
+  const update = (field) => (value) => onChange({ ...draft, [field]: value })
+  return (
+    <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-3xl flex-col border-l border-[#d7e2ee] bg-white shadow-2xl">
+      <header className="flex items-start justify-between gap-4 border-b border-[#e3ebf3] p-5">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#7b8da6]">Lead Capture Repair</p>
+          <h2 className="mt-1 text-2xl font-semibold text-[#162334]">{item.source || 'Inbound'} review</h2>
+          <p className="mt-2 text-sm text-[#6b7d93]">{item.reason || 'Review required'} · {formatConfidence(item.parseConfidence)}</p>
+        </div>
+        <IconButton label="Close repair drawer" icon={X} onClick={onClose} disabled={saving} />
+      </header>
+      <div className="flex-1 space-y-5 overflow-y-auto p-5">
+        <section className="grid gap-3 rounded-[14px] border border-[#e3ebf3] bg-[#f8fbfe] p-4 sm:grid-cols-2">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Parser</p>
+            <p className="mt-1 text-sm text-[#35546c]">{item.parserName || 'parser pending'}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Received</p>
+            <p className="mt-1 text-sm text-[#35546c]">{formatDateTime(item.receivedAt)}</p>
+          </div>
+          <div className="sm:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Original Email</p>
+            <p className="mt-1 break-words text-sm text-[#35546c]">{item.subject || item.fromEmail || 'No subject captured'}</p>
+          </div>
+        </section>
+
+        {matchedFields.length ? (
+          <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {matchedFields.map(([field, value]) => (
+              <div key={field} className="min-w-0 rounded-[10px] border border-[#e3ebf3] bg-white px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">{field}</p>
+                <p className="mt-1 truncate text-sm text-[#35546c]">{String(value)}</p>
+              </div>
+            ))}
+          </section>
+        ) : null}
+
+        <section className="space-y-3 rounded-[14px] border border-[#e3ebf3] p-4">
+          <h3 className="text-sm font-semibold text-[#162334]">Create Lead From Repaired Fields</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <RepairField label="Name" value={draft.name} onChange={update('name')} placeholder="Lead name" />
+            <RepairField label="Email" value={draft.email} onChange={update('email')} placeholder="lead@example.com" />
+            <RepairField label="Phone" value={draft.phone} onChange={update('phone')} placeholder="+27..." />
+            <RepairField label="Source" value={draft.source} onChange={update('source')} placeholder="Property24" />
+            <RepairField label="Listing Id" value={draft.listingId} onChange={update('listingId')} placeholder="Optional listing UUID" />
+            <RepairField label="Listing Reference" value={draft.listingReference} onChange={update('listingReference')} placeholder="Portal reference" />
+            <RepairField label="Budget" value={draft.budget} onChange={update('budget')} type="number" placeholder="0" />
+            <RepairField label="Area" value={draft.areaInterest} onChange={update('areaInterest')} placeholder="Suburb or area" />
+            <RepairField label="Property Type" value={draft.propertyType} onChange={update('propertyType')} placeholder="Apartment, house..." />
+            <RepairField label="Assigned Agent Id" value={draft.assignedAgentId} onChange={update('assignedAgentId')} placeholder="Optional user UUID" />
+            <RepairField label="External Reference" value={draft.externalReference} onChange={update('externalReference')} placeholder="Provider message/reference" />
+            <RepairField label="Review Note" value={draft.reviewNote} onChange={update('reviewNote')} placeholder="What was repaired" />
+          </div>
+          <label className="grid gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Message</span>
+            <textarea
+              value={draft.message || ''}
+              onChange={(event) => update('message')(event.target.value)}
+              className="min-h-28 rounded-[12px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"
+              placeholder="Lead message"
+            />
+          </label>
+          <PrimaryButton icon={ExternalLink} onClick={onCreateLead} disabled={saving || (!draft.email && !draft.phone && !draft.name)}>
+            Create Lead
+          </PrimaryButton>
+        </section>
+
+        <section className="space-y-3 rounded-[14px] border border-[#e3ebf3] p-4">
+          <h3 className="text-sm font-semibold text-[#162334]">Link Existing Lead</h3>
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <RepairField label="Lead Id" value={draft.leadId} onChange={update('leadId')} placeholder="Existing lead UUID" />
+            <RepairField label="Contact Id" value={draft.contactId} onChange={update('contactId')} placeholder="Optional contact UUID" />
+            <SecondaryButton icon={ExternalLink} onClick={onLinkLead} disabled={saving || !draft.leadId}>Link Lead</SecondaryButton>
+          </div>
+        </section>
+
+        <details className="rounded-[14px] border border-[#e3ebf3] bg-[#f8fbfe] p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-[#162334]">Raw review payload</summary>
+          <pre className="mt-3 max-h-72 overflow-auto rounded-[12px] bg-[#162334] p-3 text-xs text-white">{rawPreview}</pre>
+        </details>
+      </div>
+    </aside>
+  )
+}
+
 export default function SettingsLeadCapturePage() {
   const { profile, role, currentWorkspace, workspaceType } = useWorkspace()
   const [context, setContext] = useState(null)
   const [users, setUsers] = useState([])
   const [aliases, setAliases] = useState([])
   const [inboundEmails, setInboundEmails] = useState([])
-  const [failures, setFailures] = useState([])
+  const [reviewItems, setReviewItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [selectedRepairItem, setSelectedRepairItem] = useState(null)
+  const [repairDraft, setRepairDraft] = useState({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -203,7 +368,7 @@ export default function SettingsLeadCapturePage() {
         setUsers([])
         setAliases([])
         setInboundEmails([])
-        setFailures([])
+        setReviewItems([])
         return
       }
       const [nextUsers, nextAliases, nextInboundEmails, nextFailures] = await Promise.all([
@@ -216,8 +381,9 @@ export default function SettingsLeadCapturePage() {
           if (String(emailError?.message || '').toLowerCase().includes('inbound_lead_emails')) return []
           throw emailError
         }),
-        listLeadParseFailures(organisationId, { limit: 50 }).catch((failureError) => {
+        listLeadParseFailures(organisationId, { limit: 100, status: 'open' }).catch((failureError) => {
           if (String(failureError?.message || '').toLowerCase().includes('lead_parse_failures')) return []
+          if (String(failureError?.message || '').toLowerCase().includes('review_status')) return []
           throw failureError
         }),
       ])
@@ -225,7 +391,11 @@ export default function SettingsLeadCapturePage() {
       setUsers(nextUsers)
       setAliases(nextAliases)
       setInboundEmails(nextInboundEmails)
-      setFailures(nextFailures)
+      setReviewItems(buildLeadCaptureReviewQueueRows({
+        failures: nextFailures,
+        inboundEmails: nextInboundEmails,
+        status: 'open',
+      }))
     } catch (loadError) {
       setError(loadError?.message || 'Lead capture settings could not be loaded.')
     } finally {
@@ -269,7 +439,7 @@ export default function SettingsLeadCapturePage() {
   const generatedCount = aliases.filter((alias) => alias.status === 'active').length
   const activeAgentCount = rows.filter((row) => row.status === 'active').length
   const receivedCount = inboundEmails.length
-  const failureCount = failures.filter((failure) => failure.status === 'open').length
+  const failureCount = reviewItems.filter((item) => item.status === 'open').length
 
   async function copyAddress(value) {
     try {
@@ -318,6 +488,69 @@ export default function SettingsLeadCapturePage() {
       await load()
     } catch (generateError) {
       setError(generateError?.message || 'Agency lead capture addresses could not be generated.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function updateReviewItem(item, action) {
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      if (action === 'ignore') {
+        await ignoreLeadCaptureReviewItem(item, { actor: profile })
+        setNotice('Lead capture review ignored.')
+      } else {
+        await resolveLeadCaptureReviewItem(item, { actor: profile })
+        setNotice('Lead capture review resolved.')
+      }
+      await load()
+    } catch (reviewError) {
+      setError(reviewError?.message || 'Lead capture review could not be updated.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openRepairItem(item) {
+    setError('')
+    setNotice('')
+    setSelectedRepairItem(item)
+    setRepairDraft(buildLeadCaptureRepairDraft(item))
+  }
+
+  async function createLeadFromRepair() {
+    if (!selectedRepairItem) return
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await repairLeadCaptureReviewItem(selectedRepairItem, repairDraft, { actor: profile })
+      setSelectedRepairItem(null)
+      setRepairDraft({})
+      setNotice(result?.result?.reusedLead ? 'Existing lead updated from repaired capture.' : 'Lead created from repaired capture.')
+      await load()
+    } catch (repairError) {
+      setError(repairError?.message || 'Lead capture repair could not create a lead.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function linkExistingLeadFromRepair() {
+    if (!selectedRepairItem) return
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      await linkLeadCaptureReviewItem(selectedRepairItem, repairDraft, { actor: profile })
+      setSelectedRepairItem(null)
+      setRepairDraft({})
+      setNotice('Lead capture review linked to existing lead.')
+      await load()
+    } catch (repairError) {
+      setError(repairError?.message || 'Lead capture review could not be linked.')
     } finally {
       setSaving(false)
     }
@@ -417,6 +650,12 @@ export default function SettingsLeadCapturePage() {
                     <span className="text-sm font-semibold text-[#162334]">{email.subject || 'Inbound lead email'}</span>
                   </div>
                   <p className="mt-1 truncate text-sm text-[#6b7d93]">{email.fromEmail || 'Unknown sender'} · {formatDateTime(email.receivedAt)}</p>
+                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a9aab]">
+                    {email.parserName || 'parser pending'} · {formatConfidence(email.parseConfidence)}
+                  </p>
+                  {email.parseWarnings?.length ? (
+                    <p className="mt-1 text-xs text-[#9a6408]">{email.parseWarnings.join(', ')}</p>
+                  ) : null}
                 </div>
                 {email.leadId ? (
                   <span className="inline-flex items-center gap-2 text-sm font-semibold text-[#1f7a45]">
@@ -435,6 +674,41 @@ export default function SettingsLeadCapturePage() {
           />
         )}
       </SettingsSectionCard>
+
+      <SettingsSectionCard title="Lead Capture Review Queue" description="Open parse failures and low-confidence inbound lead emails.">
+        {reviewItems.length ? (
+          <div className="grid gap-3">
+            {reviewItems.slice(0, 12).map((item) => (
+              <ReviewQueueItem
+                key={item.id}
+                item={item}
+                saving={saving}
+                onRepair={openRepairItem}
+                onResolve={(reviewItem) => updateReviewItem(reviewItem, 'resolve')}
+                onIgnore={(reviewItem) => updateReviewItem(reviewItem, 'ignore')}
+              />
+            ))}
+          </div>
+        ) : (
+          <SettingsEmptyState
+            title="No lead capture reviews open"
+            description="Failed or low-confidence inbound email parses will appear here."
+          />
+        )}
+      </SettingsSectionCard>
+
+      <RepairDrawer
+        item={selectedRepairItem}
+        draft={repairDraft}
+        onChange={setRepairDraft}
+        onClose={() => {
+          setSelectedRepairItem(null)
+          setRepairDraft({})
+        }}
+        onCreateLead={createLeadFromRepair}
+        onLinkLead={linkExistingLeadFromRepair}
+        saving={saving}
+      />
     </div>
   )
 }

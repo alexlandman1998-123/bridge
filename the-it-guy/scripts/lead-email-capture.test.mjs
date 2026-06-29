@@ -4,6 +4,9 @@ import { createServer } from 'vite'
 
 const migrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290005_lead_email_capture_phase1.sql', import.meta.url), 'utf8')
 const onboardingMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290007_lead_capture_alias_onboarding_phase2.sql', import.meta.url), 'utf8')
+const parserMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290008_lead_capture_parser_phase3.sql', import.meta.url), 'utf8')
+const reviewQueueMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290009_lead_capture_review_queue_phase4a.sql', import.meta.url), 'utf8')
+const repairWorkflowMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290011_lead_capture_repair_workflow_phase4b.sql', import.meta.url), 'utf8')
 
 for (const tableName of [
   'lead_capture_aliases',
@@ -39,10 +42,25 @@ assert.match(onboardingMigrationSql, /phase2_backfill/i)
 for (const source of ['General', 'Property24', 'Private Property', 'Website', 'Facebook']) {
   assert.match(onboardingMigrationSql, new RegExp(source), `onboarding migration should generate ${source} aliases`)
 }
+for (const field of ['parser_name', 'parse_confidence', 'parse_warnings', 'matched_fields']) {
+  assert.match(parserMigrationSql, new RegExp(field), `parser migration should add ${field}`)
+}
+for (const field of ['review_status', 'reviewed_by', 'reviewed_at', 'resolved_at', 'ignored_at', 'review_note']) {
+  assert.match(reviewQueueMigrationSql, new RegExp(field), `review queue migration should add ${field}`)
+}
+assert.match(reviewQueueMigrationSql, /inbound_lead_emails_review_queue_idx/)
+assert.match(reviewQueueMigrationSql, /lead_parse_failures_review_queue_idx/)
+for (const field of ['repaired_payload', 'repaired_by', 'repaired_at', 'lead_ingestion_log_id']) {
+  assert.match(repairWorkflowMigrationSql, new RegExp(field), `repair workflow migration should add ${field}`)
+}
+assert.match(repairWorkflowMigrationSql, /inbound_lead_emails_repaired_idx/)
+assert.match(repairWorkflowMigrationSql, /lead_parse_failures_repaired_idx/)
 
 const serviceSource = await fs.readFile(new URL('../src/services/leadEmailCaptureService.js', import.meta.url), 'utf8')
 for (const method of [
   'buildLeadCaptureStatusRows',
+  'buildLeadCaptureReviewQueueRows',
+  'buildLeadCaptureRepairDraft',
   'buildDefaultLeadCaptureAliasRequests',
   'buildLeadCaptureEmail',
   'createLeadCaptureAlias',
@@ -53,8 +71,14 @@ for (const method of [
   'listInboundLeadEmails',
   'listLeadCaptureAliases',
   'listLeadParseFailures',
+  'listLeadCaptureReviewQueue',
+  'parseLeadEmailBySource',
   'parseInboundLeadEmail',
   'processInboundLeadEmail',
+  'resolveLeadCaptureReviewItem',
+  'ignoreLeadCaptureReviewItem',
+  'repairLeadCaptureReviewItem',
+  'linkLeadCaptureReviewItem',
 ]) {
   assert.match(serviceSource, new RegExp(`export .*${method}`), `service should export ${method}`)
 }
@@ -77,6 +101,12 @@ for (const copy of [
 }
 assert.match(functionSource, /No active lead capture alias matched recipient/)
 assert.match(functionSource, /Lead email capture needs a customer email or phone number/)
+assert.match(functionSource, /property24_email/)
+assert.match(functionSource, /private_property_email/)
+assert.match(functionSource, /website_email/)
+assert.match(functionSource, /parser_name/)
+assert.match(functionSource, /parse_confidence/)
+assert.match(functionSource, /matched_fields/)
 
 const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
 assert.match(appSource, /SettingsLeadCapturePage/)
@@ -96,13 +126,26 @@ for (const copy of [
   'Generate My Addresses',
   'Agency Activation',
   'Recent Inbound Emails',
+  'Lead Capture Review Queue',
   'My Capture Addresses',
+  'Lead Capture Repair',
+  'Create Lead',
+  'Link Existing Lead',
+  'Repair',
+  'Resolve',
+  'Ignore',
 ]) {
   assert.match(leadCapturePageSource, new RegExp(copy), `lead capture page should render ${copy}`)
 }
 assert.match(leadCapturePageSource, /ensureLeadCaptureAliasesForUsers/)
 assert.match(leadCapturePageSource, /buildLeadCaptureStatusRows/)
+assert.match(leadCapturePageSource, /buildLeadCaptureReviewQueueRows/)
 assert.match(leadCapturePageSource, /listInboundLeadEmails/)
+assert.match(leadCapturePageSource, /listLeadParseFailures/)
+assert.match(leadCapturePageSource, /resolveLeadCaptureReviewItem/)
+assert.match(leadCapturePageSource, /ignoreLeadCaptureReviewItem/)
+assert.match(leadCapturePageSource, /repairLeadCaptureReviewItem/)
+assert.match(leadCapturePageSource, /linkLeadCaptureReviewItem/)
 
 const server = await createServer({
   root: process.cwd(),
@@ -119,8 +162,11 @@ try {
     extractListingReference,
     getLeadCaptureSetupStatus,
     normalizeCaptureEmail,
+    parseLeadEmailBySource,
     parseInboundLeadEmail,
     slugifyCapturePart,
+    buildLeadCaptureReviewQueueRows,
+    buildLeadCaptureRepairDraft,
     buildLeadCaptureStatusRows,
   } = __leadEmailCaptureServiceTestUtils
 
@@ -181,6 +227,75 @@ try {
   assert.equal(parsed.listingReference, 'P24-98765')
   assert.equal(parsed.listingId, '33333333-3333-4333-8333-333333333333')
   assert.equal(parsed.assignedAgent.userId, agentUserId)
+  assert.equal(parsed.rawPayload.parser.name, 'property24_email')
+  assert.ok(parsed.rawPayload.parser.confidence >= 0.8)
+
+  const privatePropertyParsed = parseInboundLeadEmail({
+    providerMessageId: 'pp-msg-1',
+    from: 'Private Property <leads@privateproperty.co.za>',
+    subject: 'Private Property enquiry - Web Ref: PP-778899',
+    textBody: `
+      Contact Name: Peter Private
+      Cellphone: 083 111 2222
+      Email Address: peter@example.test
+      Property Ref: PP-778899
+      Enquiry: I would like to arrange a viewing.
+    `,
+  }, {
+    organisationId,
+    agentUserId,
+    source: 'Private Property',
+  })
+  assert.equal(privatePropertyParsed.source, 'Private Property')
+  assert.equal(privatePropertyParsed.name, 'Peter Private')
+  assert.equal(privatePropertyParsed.email, 'peter@example.test')
+  assert.equal(privatePropertyParsed.phone, '0831112222')
+  assert.equal(privatePropertyParsed.listingReference, 'PP-778899')
+  assert.equal(privatePropertyParsed.rawPayload.parser.name, 'private_property_email')
+  assert.ok(privatePropertyParsed.rawPayload.parser.confidence >= 0.75)
+
+  const websiteParsed = parseInboundLeadEmail({
+    providerMessageId: 'web-msg-1',
+    from: 'Website <forms@arch9.co.za>',
+    subject: 'Website enquiry - Listing Reference: WEB-1234',
+    textBody: `
+      First Name: Wanda
+      Last Name: Website
+      Email: wanda@example.test
+      Phone: 084 222 3333
+      Area: Bedfordview
+      Property Type: Apartment
+      Budget: R 1 850 000
+      Message: Please send me more information.
+    `,
+  }, {
+    organisationId,
+    agentUserId,
+    source: 'Website',
+  })
+  assert.equal(websiteParsed.source, 'Website')
+  assert.equal(websiteParsed.name, 'Wanda Website')
+  assert.equal(websiteParsed.email, 'wanda@example.test')
+  assert.equal(websiteParsed.phone, '0842223333')
+  assert.equal(websiteParsed.listingReference, 'WEB-1234')
+  assert.equal(websiteParsed.areaInterest, 'Bedfordview')
+  assert.equal(websiteParsed.propertyType, 'Apartment')
+  assert.equal(websiteParsed.budget, 1850000)
+  assert.equal(websiteParsed.rawPayload.parser.name, 'website_email')
+  assert.ok(websiteParsed.rawPayload.parser.confidence >= 0.8)
+
+  const genericResult = parseLeadEmailBySource({
+    alias: {},
+    fromEmail: 'sender@example.test',
+    fromName: 'Sender Name',
+    subject: 'Manual forwarded enquiry',
+    body: 'Please call me on 082 999 0000',
+    source: 'Other',
+    input: {},
+  })
+  assert.equal(genericResult.parserName, 'generic_email')
+  assert.equal(genericResult.source, 'Other')
+  assert.deepEqual(genericResult.warnings.includes('missing_listing_reference'), true)
 
   assert.equal(getLeadCaptureSetupStatus({ aliases: [] }), 'not_started')
   assert.equal(getLeadCaptureSetupStatus({ aliases: [{ status: 'active' }] }), 'addresses_generated')
@@ -212,6 +327,55 @@ try {
   assert.equal(statusRows[0].name, 'Mary Agent')
   assert.equal(statusRows[0].status, 'active')
   assert.equal(statusRows[0].lastInboundEmail.emailId, 'email-1')
+
+  const reviewRows = buildLeadCaptureReviewQueueRows({
+    failures: [{
+      failureId: 'failure-1',
+      inboundEmailId: 'email-2',
+      organisationId,
+      source: 'Property24',
+      reason: 'Lead email capture needs a customer email or phone number.',
+      status: 'open',
+      parserName: 'property24_email',
+      parseConfidence: 0.42,
+      parseWarnings: ['missing_contact_details'],
+      payload: {
+        matchedFields: {
+          name: 'No Contact',
+          listingReference: 'P24-123',
+        },
+      },
+      createdAt: '2026-06-29T11:00:00Z',
+    }],
+    inboundEmails: [{
+      emailId: 'email-2',
+      organisationId,
+      source: 'Property24',
+      status: 'failed',
+      parseConfidence: 0.42,
+      receivedAt: '2026-06-29T11:00:00Z',
+    }, {
+      emailId: 'email-3',
+      organisationId,
+      source: 'Website',
+      subject: 'Website enquiry',
+      status: 'processed',
+      parseConfidence: 0.5,
+      matchedFields: { email: 'low@example.test' },
+      receivedAt: '2026-06-29T12:00:00Z',
+    }],
+  })
+  assert.equal(reviewRows.length, 2)
+  assert.equal(reviewRows[0].kind, 'email')
+  assert.equal(reviewRows[0].reason, 'Low parser confidence.')
+  assert.equal(reviewRows[1].kind, 'failure')
+  assert.equal(reviewRows[1].matchedFields.listingReference, 'P24-123')
+
+  const repairDraft = buildLeadCaptureRepairDraft(reviewRows[1])
+  assert.equal(repairDraft.organisationId, organisationId)
+  assert.equal(repairDraft.source, 'Property24')
+  assert.equal(repairDraft.name, 'No Contact')
+  assert.equal(repairDraft.listingReference, 'P24-123')
 } finally {
   await server.close()
 }

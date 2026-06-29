@@ -28,4 +28,6 @@ create index if not exists commercial_canvassing_prospects_landlord_journey_idx
   on public.commercial_canvassing_prospects (organisation_id, landlord_journey_stage, created_at desc)
   where prospect_role = 'landlord';
 
+notify pgrst, 'reload schema';
+
 commit;

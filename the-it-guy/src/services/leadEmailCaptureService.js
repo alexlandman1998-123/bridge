@@ -3,6 +3,7 @@ import { createOrUpdateLeadFromEnquiry, normalizeLeadSource } from './leadIngest
 
 export const DEFAULT_LEAD_CAPTURE_DOMAIN = 'leads.arch9.co.za'
 export const LEAD_CAPTURE_SOURCES = ['General', 'Property24', 'Private Property', 'Website', 'Facebook']
+export const LOW_CONFIDENCE_REVIEW_THRESHOLD = 0.65
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -140,6 +141,20 @@ function mapInboundEmailRow(row = {}) {
     leadId: normalizeText(row.lead_id || row.leadId),
     contactId: normalizeText(row.contact_id || row.contactId),
     error: normalizeText(row.error),
+    parserName: normalizeText(row.parser_name || row.parserName),
+    parseConfidence: row.parse_confidence === null || row.parse_confidence === undefined ? null : Number(row.parse_confidence),
+    parseWarnings: Array.isArray(row.parse_warnings || row.parseWarnings) ? row.parse_warnings || row.parseWarnings : [],
+    matchedFields: row.matched_fields || row.matchedFields || {},
+    reviewStatus: normalizeText(row.review_status || row.reviewStatus),
+    reviewedBy: normalizeText(row.reviewed_by || row.reviewedBy),
+    reviewedAt: row.reviewed_at || row.reviewedAt,
+    resolvedAt: row.resolved_at || row.resolvedAt,
+    ignoredAt: row.ignored_at || row.ignoredAt,
+    reviewNote: normalizeText(row.review_note || row.reviewNote),
+    repairedPayload: row.repaired_payload || row.repairedPayload || {},
+    repairedBy: normalizeText(row.repaired_by || row.repairedBy),
+    repairedAt: row.repaired_at || row.repairedAt,
+    leadIngestionLogId: normalizeText(row.lead_ingestion_log_id || row.leadIngestionLogId),
     receivedAt: row.received_at || row.receivedAt,
     processedAt: row.processed_at || row.processedAt,
     parsedAt: row.parsed_at || row.parsedAt,
@@ -155,6 +170,19 @@ function mapParseFailureRow(row = {}) {
     source: normalizeText(row.source) || 'Other',
     reason: normalizeText(row.reason),
     status: normalizeText(row.status) || 'open',
+    parserName: normalizeText(row.parser_name || row.parserName),
+    parseConfidence: row.parse_confidence === null || row.parse_confidence === undefined ? null : Number(row.parse_confidence),
+    parseWarnings: Array.isArray(row.parse_warnings || row.parseWarnings) ? row.parse_warnings || row.parseWarnings : [],
+    payload: row.payload || {},
+    resolvedBy: normalizeText(row.resolved_by || row.resolvedBy),
+    resolvedAt: row.resolved_at || row.resolvedAt,
+    ignoredBy: normalizeText(row.ignored_by || row.ignoredBy),
+    ignoredAt: row.ignored_at || row.ignoredAt,
+    reviewNote: normalizeText(row.review_note || row.reviewNote),
+    repairedPayload: row.repaired_payload || row.repairedPayload || {},
+    repairedBy: normalizeText(row.repaired_by || row.repairedBy),
+    repairedAt: row.repaired_at || row.repairedAt,
+    leadIngestionLogId: normalizeText(row.lead_ingestion_log_id || row.leadIngestionLogId),
     createdAt: row.created_at || row.createdAt,
   }
 }
@@ -182,7 +210,7 @@ export async function listInboundLeadEmails(organisationId, { limit = 50 } = {})
   const client = requireClient()
   const { data, error } = await client
     .from('inbound_lead_emails')
-    .select('email_id, organisation_id, capture_alias_id, provider, provider_message_id, from_email, from_name, subject, source, external_reference, status, lead_id, contact_id, error, received_at, parsed_at, processed_at')
+    .select('email_id, organisation_id, capture_alias_id, provider, provider_message_id, from_email, from_name, subject, source, external_reference, status, lead_id, contact_id, error, parser_name, parse_confidence, parse_warnings, matched_fields, review_status, reviewed_by, reviewed_at, resolved_at, ignored_at, review_note, repaired_payload, repaired_by, repaired_at, lead_ingestion_log_id, received_at, parsed_at, processed_at')
     .eq('organisation_id', normalizedOrganisationId)
     .order('received_at', { ascending: false })
     .limit(Math.max(1, Math.min(Number(limit) || 50, 200)))
@@ -198,7 +226,7 @@ export async function listLeadParseFailures(organisationId, { limit = 50, status
   const client = requireClient()
   let query = client
     .from('lead_parse_failures')
-    .select('failure_id, inbound_email_id, organisation_id, capture_alias_id, source, reason, status, created_at')
+    .select('failure_id, inbound_email_id, organisation_id, capture_alias_id, source, reason, status, payload, parser_name, parse_confidence, parse_warnings, resolved_by, resolved_at, ignored_by, ignored_at, review_note, repaired_payload, repaired_by, repaired_at, lead_ingestion_log_id, created_at')
     .eq('organisation_id', normalizedOrganisationId)
     .order('created_at', { ascending: false })
     .limit(Math.max(1, Math.min(Number(limit) || 50, 200)))
@@ -314,6 +342,402 @@ export function buildLeadCaptureStatusRows({ aliases = [], inboundEmails = [], u
   }
 
   return rows
+}
+
+function getActorId(actor = null) {
+  return normalizeText(actor?.id || actor?.userId || actor?.user_id || actor)
+}
+
+function getFailureMatchedFields(failure = {}) {
+  return failure.matchedFields
+    || failure.payload?.matchedFields
+    || failure.payload?.rawPayload?.parser?.matchedFields
+    || failure.payload?.raw_payload?.parser?.matchedFields
+    || {}
+}
+
+function getReviewRawInbound(item = {}) {
+  return item.raw?.rawPayload?.inboundEmail
+    || item.raw?.raw_payload?.inboundEmail
+    || item.raw?.payload?.rawPayload?.inboundEmail
+    || item.raw?.payload?.raw_payload?.inboundEmail
+    || item.raw?.payload?.inboundEmail
+    || item.raw
+    || {}
+}
+
+function getMatchedField(fields = {}, keys = []) {
+  for (const key of keys) {
+    const value = normalizeText(fields?.[key])
+    if (value) return value
+  }
+  return ''
+}
+
+function shouldReviewInboundEmail(email = {}) {
+  const reviewStatus = normalizeText(email.reviewStatus || email.review_status)
+  if (reviewStatus) return true
+  if (['failed', 'unmatched'].includes(normalizeText(email.status))) return true
+  if (email.parseConfidence === null || email.parseConfidence === undefined) return false
+  return Number(email.parseConfidence) < LOW_CONFIDENCE_REVIEW_THRESHOLD
+}
+
+function getInboundReviewReason(email = {}) {
+  if (normalizeText(email.error)) return normalizeText(email.error)
+  if (['failed', 'unmatched'].includes(normalizeText(email.status))) return 'Inbound email could not be processed.'
+  if (email.parseConfidence !== null && email.parseConfidence !== undefined && Number(email.parseConfidence) < LOW_CONFIDENCE_REVIEW_THRESHOLD) {
+    return 'Low parser confidence.'
+  }
+  return 'Review required.'
+}
+
+function matchesReviewFilter(row = {}, { status = 'open', source = '', search = '' } = {}) {
+  const normalizedStatus = normalizeText(status)
+  const normalizedSource = normalizeLower(source)
+  const normalizedSearch = normalizeLower(search)
+  if (normalizedStatus && normalizedStatus !== 'all' && row.status !== normalizedStatus) return false
+  if (normalizedSource && normalizedSource !== 'all' && normalizeLower(row.source) !== normalizedSource) return false
+  if (!normalizedSearch) return true
+  return [
+    row.reason,
+    row.source,
+    row.subject,
+    row.fromEmail,
+    row.parserName,
+    row.inboundEmailId,
+    row.failureId,
+    ...Object.values(row.matchedFields || {}),
+  ].some((value) => normalizeLower(value).includes(normalizedSearch))
+}
+
+export function buildLeadCaptureReviewQueueRows({
+  failures = [],
+  inboundEmails = [],
+  status = 'open',
+  source = '',
+  search = '',
+} = {}) {
+  const rows = []
+  const failureInboundIds = new Set()
+
+  for (const failure of Array.isArray(failures) ? failures : []) {
+    if (failure.inboundEmailId) failureInboundIds.add(failure.inboundEmailId)
+    rows.push({
+      id: `failure:${failure.failureId}`,
+      kind: 'failure',
+      failureId: failure.failureId,
+      inboundEmailId: failure.inboundEmailId,
+      organisationId: failure.organisationId,
+      captureAliasId: failure.captureAliasId,
+      source: failure.source || 'Other',
+      subject: normalizeText(failure.payload?.subject || failure.payload?.rawPayload?.inboundEmail?.subject),
+      fromEmail: normalizeCaptureEmail(failure.payload?.fromEmail || failure.payload?.email || failure.payload?.rawPayload?.inboundEmail?.fromEmail),
+      reason: failure.reason || 'Parser review required.',
+      status: failure.status || 'open',
+      parserName: failure.parserName,
+      parseConfidence: failure.parseConfidence,
+      parseWarnings: failure.parseWarnings || [],
+      matchedFields: getFailureMatchedFields(failure),
+      reviewNote: failure.reviewNote,
+      repairedPayload: failure.repairedPayload,
+      repairedAt: failure.repairedAt,
+      leadIngestionLogId: failure.leadIngestionLogId,
+      receivedAt: failure.createdAt,
+      createdAt: failure.createdAt,
+      raw: failure,
+    })
+  }
+
+  for (const email of Array.isArray(inboundEmails) ? inboundEmails : []) {
+    if (!shouldReviewInboundEmail(email) || failureInboundIds.has(email.emailId)) continue
+    rows.push({
+      id: `email:${email.emailId}`,
+      kind: 'email',
+      failureId: '',
+      inboundEmailId: email.emailId,
+      organisationId: email.organisationId,
+      captureAliasId: email.captureAliasId,
+      source: email.source || 'Other',
+      subject: email.subject,
+      fromEmail: email.fromEmail,
+      reason: getInboundReviewReason(email),
+      status: email.reviewStatus || 'open',
+      parserName: email.parserName,
+      parseConfidence: email.parseConfidence,
+      parseWarnings: email.parseWarnings || [],
+      matchedFields: email.matchedFields || {},
+      reviewNote: email.reviewNote,
+      repairedPayload: email.repairedPayload,
+      repairedAt: email.repairedAt,
+      leadIngestionLogId: email.leadIngestionLogId,
+      receivedAt: email.receivedAt,
+      createdAt: email.receivedAt,
+      raw: email,
+    })
+  }
+
+  return rows
+    .filter((row) => matchesReviewFilter(row, { status, source, search }))
+    .sort((a, b) => new Date(b.receivedAt || b.createdAt || 0).getTime() - new Date(a.receivedAt || a.createdAt || 0).getTime())
+}
+
+export async function listLeadCaptureReviewQueue(organisationId, {
+  limit = 100,
+  status = 'open',
+  source = '',
+  search = '',
+} = {}) {
+  const normalizedStatus = normalizeText(status)
+  const [failures, inboundEmails] = await Promise.all([
+    listLeadParseFailures(organisationId, {
+      limit,
+      status: normalizedStatus && normalizedStatus !== 'all' ? normalizedStatus : '',
+    }),
+    listInboundLeadEmails(organisationId, { limit }),
+  ])
+  return buildLeadCaptureReviewQueueRows({ failures, inboundEmails, status, source, search })
+}
+
+async function updateLeadCaptureReviewItem(item = {}, {
+  status = 'resolved',
+  actor = null,
+  note = '',
+} = {}) {
+  const client = requireClient()
+  const actorId = getActorId(actor)
+  const now = new Date().toISOString()
+  const failureId = normalizeText(item.failureId || item.failure_id || (String(item.id || '').startsWith('failure:') ? String(item.id).slice(8) : ''))
+  const inboundEmailId = normalizeText(item.inboundEmailId || item.inbound_email_id || item.emailId || item.email_id || (String(item.id || '').startsWith('email:') ? String(item.id).slice(6) : ''))
+  const reviewNote = normalizeText(note || item.reviewNote || item.review_note)
+  const reviewerPatch = isUuidLike(actorId) ? { reviewed_by: actorId } : {}
+  const resolverPatch = isUuidLike(actorId) ? { resolved_by: actorId } : {}
+  const ignorerPatch = isUuidLike(actorId) ? { ignored_by: actorId } : {}
+  let failure = null
+  let inboundEmail = null
+
+  if (isUuidLike(failureId)) {
+    const failurePatch = status === 'ignored'
+      ? {
+        status: 'ignored',
+        ...ignorerPatch,
+        ignored_at: now,
+        review_note: reviewNote || null,
+      }
+      : {
+        status: 'resolved',
+        ...resolverPatch,
+        resolved_at: now,
+        review_note: reviewNote || null,
+      }
+    const { data, error } = await client
+      .from('lead_parse_failures')
+      .update(failurePatch)
+      .eq('failure_id', failureId)
+      .select('failure_id, inbound_email_id, organisation_id, capture_alias_id, source, reason, status, payload, parser_name, parse_confidence, parse_warnings, resolved_by, resolved_at, ignored_by, ignored_at, review_note, repaired_payload, repaired_by, repaired_at, lead_ingestion_log_id, created_at')
+      .maybeSingle()
+    if (error) throw error
+    failure = data ? mapParseFailureRow(data) : null
+  }
+
+  if (isUuidLike(inboundEmailId)) {
+    const emailPatch = status === 'ignored'
+      ? {
+        review_status: 'ignored',
+        ...reviewerPatch,
+        reviewed_at: now,
+        ignored_at: now,
+        review_note: reviewNote || null,
+      }
+      : {
+        review_status: 'resolved',
+        ...reviewerPatch,
+        reviewed_at: now,
+        resolved_at: now,
+        review_note: reviewNote || null,
+      }
+    const { data, error } = await client
+      .from('inbound_lead_emails')
+      .update(emailPatch)
+      .eq('email_id', inboundEmailId)
+      .select('email_id, organisation_id, capture_alias_id, provider, provider_message_id, from_email, from_name, subject, source, external_reference, status, lead_id, contact_id, error, parser_name, parse_confidence, parse_warnings, matched_fields, review_status, reviewed_by, reviewed_at, resolved_at, ignored_at, review_note, repaired_payload, repaired_by, repaired_at, lead_ingestion_log_id, received_at, parsed_at, processed_at')
+      .maybeSingle()
+    if (error) throw error
+    inboundEmail = data ? mapInboundEmailRow(data) : null
+  }
+
+  return { failure, inboundEmail }
+}
+
+export function resolveLeadCaptureReviewItem(item = {}, options = {}) {
+  return updateLeadCaptureReviewItem(item, { ...options, status: 'resolved' })
+}
+
+export function ignoreLeadCaptureReviewItem(item = {}, options = {}) {
+  return updateLeadCaptureReviewItem(item, { ...options, status: 'ignored' })
+}
+
+export function buildLeadCaptureRepairDraft(item = {}) {
+  const matchedFields = item.matchedFields || getFailureMatchedFields(item.raw || item) || {}
+  const rawInbound = getReviewRawInbound(item)
+  const repairedPayload = item.repairedPayload && Object.keys(item.repairedPayload).length ? item.repairedPayload : {}
+  return {
+    organisationId: normalizeText(item.organisationId || item.raw?.organisationId || item.raw?.organisation_id),
+    source: normalizeLeadSource(repairedPayload.source || item.source || matchedFields.source || item.raw?.source || 'Other'),
+    name: normalizeText(repairedPayload.name || getMatchedField(matchedFields, ['name', 'fullName', 'contactName']) || item.raw?.fromName || rawInbound.fromName),
+    email: normalizeCaptureEmail(repairedPayload.email || getMatchedField(matchedFields, ['email', 'emailAddress']) || item.fromEmail || rawInbound.fromEmail),
+    phone: normalizeText(repairedPayload.phone || getMatchedField(matchedFields, ['phone', 'mobile', 'cellphone'])),
+    message: normalizeText(repairedPayload.message || getMatchedField(matchedFields, ['message', 'notes', 'comment']) || item.raw?.payload?.message || rawInbound.textBody || rawInbound.body || item.subject),
+    listingId: normalizeText(repairedPayload.listingId || item.raw?.listingId || item.raw?.listing_id || item.raw?.payload?.listingId || item.raw?.payload?.listing_id),
+    listingReference: normalizeText(repairedPayload.listingReference || getMatchedField(matchedFields, ['listingReference', 'listingId', 'propertyReference']) || item.raw?.payload?.listingReference || item.raw?.payload?.listing_reference),
+    budget: Number(repairedPayload.budget || matchedFields.budget || 0) || 0,
+    areaInterest: normalizeText(repairedPayload.areaInterest || matchedFields.areaInterest || matchedFields.area),
+    propertyType: normalizeText(repairedPayload.propertyType || matchedFields.propertyInterest || matchedFields.propertyType),
+    externalReference: normalizeText(repairedPayload.externalReference || item.raw?.externalReference || item.raw?.external_reference || rawInbound.providerMessageId || item.inboundEmailId || item.failureId),
+    assignedAgentId: normalizeText(repairedPayload.assignedAgentId || item.raw?.payload?.assignedAgent?.id || item.raw?.payload?.assignedAgent?.userId || item.raw?.payload?.assigned_agent_id),
+    reviewNote: normalizeText(repairedPayload.reviewNote || item.reviewNote),
+    leadId: normalizeText(repairedPayload.leadId || item.raw?.leadId || item.raw?.lead_id),
+    contactId: normalizeText(repairedPayload.contactId || item.raw?.contactId || item.raw?.contact_id),
+  }
+}
+
+function buildRepairedEnquiryPayload(item = {}, draft = {}) {
+  const repairDraft = {
+    ...buildLeadCaptureRepairDraft(item),
+    ...draft,
+  }
+  return {
+    organisationId: repairDraft.organisationId || item.organisationId,
+    source: normalizeLeadSource(repairDraft.source || item.source),
+    externalReference: repairDraft.externalReference || item.inboundEmailId || item.failureId,
+    name: repairDraft.name,
+    email: repairDraft.email,
+    phone: repairDraft.phone,
+    message: repairDraft.message,
+    listingId: repairDraft.listingId,
+    listingReference: repairDraft.listingReference,
+    budget: Number(repairDraft.budget || 0) || 0,
+    areaInterest: repairDraft.areaInterest,
+    propertyType: repairDraft.propertyType,
+    assignedAgent: repairDraft.assignedAgentId ? { id: repairDraft.assignedAgentId, userId: repairDraft.assignedAgentId } : null,
+    rawPayload: {
+      leadCaptureRepair: {
+        itemId: item.id,
+        failureId: item.failureId,
+        inboundEmailId: item.inboundEmailId,
+        previousMatchedFields: item.matchedFields || {},
+        repairedFields: repairDraft,
+      },
+    },
+  }
+}
+
+function compactPatch(patch = {}) {
+  return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined))
+}
+
+async function markLeadCaptureItemRepaired(item = {}, {
+  actor = null,
+  repairedPayload = {},
+  leadId = '',
+  contactId = '',
+  leadIngestionLogId = '',
+  note = '',
+} = {}) {
+  const client = requireClient()
+  const actorId = getActorId(actor)
+  const now = new Date().toISOString()
+  const failureId = normalizeText(item.failureId || item.failure_id || (String(item.id || '').startsWith('failure:') ? String(item.id).slice(8) : ''))
+  const inboundEmailId = normalizeText(item.inboundEmailId || item.inbound_email_id || item.emailId || item.email_id || (String(item.id || '').startsWith('email:') ? String(item.id).slice(6) : ''))
+  const reviewerPatch = isUuidLike(actorId) ? { reviewed_by: actorId, repaired_by: actorId } : {}
+  const resolvedByPatch = isUuidLike(actorId) ? { resolved_by: actorId, repaired_by: actorId } : {}
+  const normalizedLeadId = isUuidLike(leadId) ? leadId : null
+  const normalizedContactId = isUuidLike(contactId) ? contactId : null
+  const normalizedLogId = isUuidLike(leadIngestionLogId) ? leadIngestionLogId : null
+  const reviewNote = normalizeText(note || repairedPayload.reviewNote || item.reviewNote) || null
+  let failure = null
+  let inboundEmail = null
+
+  if (isUuidLike(failureId)) {
+    const { data, error } = await client
+      .from('lead_parse_failures')
+      .update({
+        status: 'resolved',
+        ...resolvedByPatch,
+        resolved_at: now,
+        repaired_at: now,
+        repaired_payload: repairedPayload,
+        lead_ingestion_log_id: normalizedLogId,
+        review_note: reviewNote,
+      })
+      .eq('failure_id', failureId)
+      .select('failure_id, inbound_email_id, organisation_id, capture_alias_id, source, reason, status, payload, parser_name, parse_confidence, parse_warnings, resolved_by, resolved_at, ignored_by, ignored_at, review_note, repaired_payload, repaired_by, repaired_at, lead_ingestion_log_id, created_at')
+      .maybeSingle()
+    if (error) throw error
+    failure = data ? mapParseFailureRow(data) : null
+  }
+
+  if (isUuidLike(inboundEmailId)) {
+    const { data, error } = await client
+      .from('inbound_lead_emails')
+      .update(compactPatch({
+        status: normalizedLeadId ? 'processed' : undefined,
+        lead_id: normalizedLeadId,
+        contact_id: normalizedContactId,
+        review_status: 'resolved',
+        ...reviewerPatch,
+        reviewed_at: now,
+        resolved_at: now,
+        repaired_at: now,
+        processed_at: normalizedLeadId ? now : undefined,
+        repaired_payload: repairedPayload,
+        lead_ingestion_log_id: normalizedLogId,
+        review_note: reviewNote,
+      }))
+      .eq('email_id', inboundEmailId)
+      .select('email_id, organisation_id, capture_alias_id, provider, provider_message_id, from_email, from_name, subject, source, external_reference, status, lead_id, contact_id, error, parser_name, parse_confidence, parse_warnings, matched_fields, review_status, reviewed_by, reviewed_at, resolved_at, ignored_at, review_note, repaired_payload, repaired_by, repaired_at, lead_ingestion_log_id, received_at, parsed_at, processed_at')
+      .maybeSingle()
+    if (error) throw error
+    inboundEmail = data ? mapInboundEmailRow(data) : null
+  }
+
+  return { failure, inboundEmail }
+}
+
+export async function repairLeadCaptureReviewItem(item = {}, draft = {}, { actor = null } = {}) {
+  const repairedPayload = buildRepairedEnquiryPayload(item, draft)
+  const result = await createOrUpdateLeadFromEnquiry(repairedPayload, { actor })
+  if (!result?.ok) {
+    throw new Error(result?.error || 'Lead capture repair could not create a lead.')
+  }
+  const repair = await markLeadCaptureItemRepaired(item, {
+    actor,
+    repairedPayload,
+    leadId: result.leadId,
+    contactId: result.contactId,
+    leadIngestionLogId: result.log?.log_id,
+    note: draft.reviewNote || 'Lead created from lead capture review.',
+  })
+  return { ...repair, result }
+}
+
+export async function linkLeadCaptureReviewItem(item = {}, draft = {}, { actor = null } = {}) {
+  const leadId = normalizeText(draft.leadId || draft.lead_id)
+  if (!isUuidLike(leadId)) throw new Error('A valid lead id is required before linking this review item.')
+  const contactId = normalizeText(draft.contactId || draft.contact_id)
+  const repairedPayload = {
+    ...buildLeadCaptureRepairDraft(item),
+    ...draft,
+    leadId,
+    contactId,
+    linkOnly: true,
+  }
+  return markLeadCaptureItemRepaired(item, {
+    actor,
+    repairedPayload,
+    leadId,
+    contactId,
+    note: draft.reviewNote || 'Linked to an existing lead from lead capture review.',
+  })
 }
 
 function stripHtml(value = '') {
@@ -459,9 +883,13 @@ function buildParseResult({
     areaInterest: readLabelValue(body, ['area', 'suburb', 'location']),
     propertyInterest: readLabelValue(body, ['property type', 'property interest']),
   }
+  const cleanFields = Object.fromEntries(Object.entries(fields).filter(([, value]) => {
+    if (typeof value === 'number') return value > 0
+    return normalizeText(value)
+  }))
   const matchedFields = {
     ...base,
-    ...fields,
+    ...cleanFields,
     parserName,
     source,
   }
@@ -618,6 +1046,8 @@ export async function processInboundLeadEmail(input = {}, { actor = null } = {})
 
 export const __leadEmailCaptureServiceTestUtils = {
   buildLeadCaptureStatusRows,
+  buildLeadCaptureReviewQueueRows,
+  buildLeadCaptureRepairDraft,
   buildDefaultLeadCaptureAliasRequests,
   buildLeadCaptureAliasLocalPart,
   buildLeadCaptureEmail,

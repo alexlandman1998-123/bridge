@@ -55,6 +55,21 @@ function normalizeLower(value) {
   return normalizeText(value).toLowerCase()
 }
 
+function isMissingOptionalCommercialTable(error, tableName = '') {
+  if (!error) return false
+  const code = normalizeText(error.code).toUpperCase()
+  const message = normalizeLower(`${error.message || ''} ${error.details || ''} ${error.hint || ''}`)
+  const table = normalizeLower(tableName)
+  const referencesTable = !table || message.includes(table) || message.includes(`public.${table}`)
+  const isMissingTable =
+    code === '42P01' ||
+    code === 'PGRST205' ||
+    message.includes('could not find the table') ||
+    (message.includes('relation') && message.includes('does not exist')) ||
+    message.includes('schema cache')
+  return isMissingTable && referencesTable
+}
+
 function parseJsonObject(value) {
   if (!value) return {}
   if (typeof value === 'object' && !Array.isArray(value)) return value
@@ -266,14 +281,12 @@ async function fetchOnboardingByToken(token) {
   if (landlordQuery.error) throw landlordQuery.error
   if (onboardingQuery.error) throw onboardingQuery.error
   if (!landlordQuery.data || !onboardingQuery.data) throw new Error('The landlord onboarding record could not be loaded.')
-  const [contactsQuery, mandatesQuery, propertiesQuery, documentsBundle] = await Promise.all([
-    client.from(LANDLORD_CONTACTS_TABLE).select('*').eq('landlord_id', access.landlord_id).order('created_at', { ascending: true }),
-    client.from(COMMERCIAL_MANDATES_TABLE).select('*').eq('landlord_id', access.landlord_id).order('created_at', { ascending: false }),
+  const [contacts, mandates, propertiesQuery, documentsBundle] = await Promise.all([
+    listOptionalLandlordContacts(client, access.landlord_id),
+    listOptionalLandlordMandates(client, access.landlord_id),
     client.from('commercial_properties').select('*').eq('landlord_id', access.landlord_id).order('created_at', { ascending: true }),
     fetchLandlordDocumentsForToken(client, access.organisation_id, access.landlord_id),
   ])
-  if (contactsQuery.error) throw contactsQuery.error
-  if (mandatesQuery.error) throw mandatesQuery.error
   if (propertiesQuery.error) throw propertiesQuery.error
 
   const propertyIds = (propertiesQuery.data || []).map((row) => row.id)
@@ -287,8 +300,8 @@ async function fetchOnboardingByToken(token) {
     access,
     landlord: landlordQuery.data,
     onboarding: onboardingQuery.data,
-    contacts: contactsQuery.data || [],
-    mandates: mandatesQuery.data || [],
+    contacts,
+    mandates,
     properties: (propertiesQuery.data || []).map((property) => ({
       ...property,
       vacancies: (vacanciesQuery.data || []).filter((vacancy) => vacancy.property_id === property.id),
@@ -584,6 +597,36 @@ async function upsertMandateRows(client, { landlord = {}, mandates = [], propert
   return saved
 }
 
+async function listOptionalLandlordContacts(client, landlordId) {
+  if (!normalizeText(landlordId)) return []
+  const query = await client.from(LANDLORD_CONTACTS_TABLE).select('*').eq('landlord_id', landlordId).order('created_at', { ascending: true })
+  if (query.error) {
+    if (isMissingOptionalCommercialTable(query.error, LANDLORD_CONTACTS_TABLE)) return []
+    throw query.error
+  }
+  return query.data || []
+}
+
+async function listOptionalLandlordMandates(client, landlordId) {
+  if (!normalizeText(landlordId)) return []
+  const query = await client.from(COMMERCIAL_MANDATES_TABLE).select('*').eq('landlord_id', landlordId).order('created_at', { ascending: false })
+  if (query.error) {
+    if (isMissingOptionalCommercialTable(query.error, COMMERCIAL_MANDATES_TABLE)) return []
+    throw query.error
+  }
+  return query.data || []
+}
+
+async function listOptionalLandlordOnboardings(client, landlordId) {
+  if (!normalizeText(landlordId)) return []
+  const query = await client.from(LANDLORD_ONBOARDING_TABLE).select('*').eq('landlord_id', landlordId).order('created_at', { ascending: false })
+  if (query.error) {
+    if (isMissingOptionalCommercialTable(query.error, LANDLORD_ONBOARDING_TABLE)) return []
+    throw query.error
+  }
+  return query.data || []
+}
+
 function summarizeLandlordWorkspace({ landlord = {}, contacts = [], properties = [], vacancies = [], mandates = [], deals = [], leases = [], onboardings = [] } = {}) {
   const primaryAssetManager = contacts.find((row) => row.contact_type === 'asset_manager' && row.is_primary) || contacts.find((row) => row.contact_type === 'asset_manager') || null
   const primaryPropertyManager = contacts.find((row) => row.contact_type === 'property_manager' && row.is_primary) || contacts.find((row) => row.contact_type === 'property_manager') || null
@@ -607,9 +650,7 @@ function summarizeLandlordWorkspace({ landlord = {}, contacts = [], properties =
 
 export async function listCommercialLandlordContacts(landlordId) {
   const client = requireInternalClient()
-  const query = await client.from(LANDLORD_CONTACTS_TABLE).select('*').eq('landlord_id', landlordId).order('created_at', { ascending: true })
-  if (query.error) throw query.error
-  return query.data || []
+  return listOptionalLandlordContacts(client, landlordId)
 }
 
 export async function saveCommercialLandlordContact(landlordId, payload = {}) {
@@ -625,9 +666,7 @@ export async function saveCommercialLandlordContact(landlordId, payload = {}) {
 
 export async function listCommercialLandlordMandates(landlordId) {
   const client = requireInternalClient()
-  const query = await client.from(COMMERCIAL_MANDATES_TABLE).select('*').eq('landlord_id', landlordId).order('created_at', { ascending: false })
-  if (query.error) throw query.error
-  return query.data || []
+  return listOptionalLandlordMandates(client, landlordId)
 }
 
 export async function saveCommercialLandlordMandate(landlordId, payload = {}) {
@@ -649,12 +688,9 @@ export async function getCommercialLandlordWorkspaceData(organisationId, landlor
   const landlord = (lookups.landlords || []).find((row) => row.id === landlordId) || null
   if (!landlord) return { landlord: null }
   const [contacts, mandates, onboardings, activity, documents, requests] = await Promise.all([
-    listCommercialLandlordContacts(landlordId),
-    listCommercialLandlordMandates(landlordId),
-    client.from(LANDLORD_ONBOARDING_TABLE).select('*').eq('landlord_id', landlordId).order('created_at', { ascending: false }).then((result) => {
-      if (result.error) throw result.error
-      return result.data || []
-    }),
+    listOptionalLandlordContacts(client, landlordId),
+    listOptionalLandlordMandates(client, landlordId),
+    listOptionalLandlordOnboardings(client, landlordId),
     getCommercialActivity({ organisationId, entityType: 'commercial_landlord', entityId: landlordId }),
     getCommercialDocuments('commercial_landlord', landlordId, organisationId),
     getCommercialDocumentRequests('commercial_landlord', landlordId, organisationId),
