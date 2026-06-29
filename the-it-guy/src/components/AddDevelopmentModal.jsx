@@ -11,15 +11,13 @@ import Modal from './ui/Modal'
 
 const STEPS = [
   { id: 'basic', label: 'Basic Information', description: 'Step 1' },
-  { id: 'financials', label: 'Basic Costings', description: 'Step 2' },
-  { id: 'legal', label: 'Deal Setup', description: 'Step 3' },
-  { id: 'units', label: 'Units & Pricing', description: 'Step 4' },
-  { id: 'documents', label: 'Assets', description: 'Step 5' },
-  { id: 'review', label: 'Review', description: 'Step 6' },
+  { id: 'financials', label: 'Deal Setup', description: 'Step 2' },
+  { id: 'units', label: 'Units & Pricing', description: 'Step 3' },
+  { id: 'review', label: 'Review', description: 'Step 4' },
 ]
 
-function getStepsForContext(isAgentContext) {
-  return isAgentContext ? STEPS.filter((step) => step.id !== 'financials') : STEPS
+function getStepsForContext() {
+  return STEPS
 }
 
 const STOCK_STEPS = [
@@ -78,30 +76,6 @@ const DEFAULT_TRANSACTION_DEFAULTS = {
   buyerAppointedBondOriginatorAllowed: true,
   buyerAppointedBondOriginatorRequiresApproval: true,
   autoInviteSelectedBondOriginator: false,
-}
-
-const TRANSACTION_DEFAULT_LABELS = {
-  reservationDepositAmountType: {
-    fixed: 'Fixed rand amount',
-    percentage: 'Percentage of purchase price',
-  },
-  reservationDepositPayableTo: {
-    developer: 'Developer',
-    agency_trust: 'Agency trust account',
-    attorney_trust: 'Attorney trust account',
-  },
-  defaultAgentSource: {
-    first_agent: 'Use first agent in team',
-    none: 'No automatic agent',
-  },
-  defaultTransferAttorneySource: {
-    first_conveyancer: 'First conveyancer in team',
-    none: 'No automatic transfer attorney',
-  },
-  defaultBondOriginatorSource: {
-    first_bond_originator: 'First bond originator in team',
-    none: 'No automatic bond originator',
-  },
 }
 
 const DEFAULT_LEGAL = {
@@ -270,6 +244,25 @@ function normalizeOptionalNumber(value) {
   if (value === '' || value === null || value === undefined) return null
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function formatCurrency(value) {
+  const amount = normalizeOptionalNumber(value)
+  if (amount === null) return 'R0'
+  return `R${amount.toLocaleString('en-ZA')}`
+}
+
+function buildUnitPriceRange(unitTypes = []) {
+  const prices = unitTypes
+    .flatMap((unitType) => unitType.floorplans || [])
+    .map((floorplan) => normalizeOptionalNumber(floorplan.listPrice))
+    .filter((price) => price !== null && price > 0)
+
+  if (!prices.length) return 'Not set'
+
+  const min = Math.min(...prices)
+  const max = Math.max(...prices)
+  return min === max ? formatCurrency(min) : `${formatCurrency(min)} - ${formatCurrency(max)}`
 }
 
 function createInviteToken(prefix = 'dev') {
@@ -689,13 +682,9 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const activeSteps = useMemo(() => getStepsForContext(isAgentContext), [isAgentContext])
+  const activeSteps = useMemo(() => getStepsForContext(), [])
   const currentStepId = activeSteps[stepIndex]?.id || activeSteps[0]?.id || 'basic'
   const maxStepIndex = Math.max(activeSteps.length - 1, 0)
-  const documentsStepIndex = activeSteps.findIndex((step) => step.id === 'documents')
-  const canSkipFinancials = currentStepId === 'financials'
-  const canSkipLegal = currentStepId === 'legal'
-  const canSkipDocuments = currentStepId === 'documents'
 
   useEffect(() => {
     if (!open) return
@@ -835,10 +824,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           : unitType,
       ),
     }))
-  }
-
-  function updateFloorplanFile(unitTypeIndex, floorplanIndex, file) {
-    updateFloorplan(unitTypeIndex, floorplanIndex, 'fileName', file?.name || '')
   }
 
   function setStructureType(value) {
@@ -1085,21 +1070,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
     }
   }
 
-  function handleSkipFinancials() {
-    setError('')
-    setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
-  }
-
-  function handleSkipLegal() {
-    setError('')
-    setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
-  }
-
-  function handleSkipDocuments() {
-    setError('')
-    setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
-  }
-
   function handleStockStepNext() {
     try {
       setError('')
@@ -1138,7 +1108,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
         })
         return merged.length ? merged : [buildEmptyDocument()]
       })
-      setStepIndex(documentsStepIndex >= 0 ? documentsStepIndex : stepIndex)
+      setStepIndex((previous) => Math.min(previous + 1, maxStepIndex))
     } catch (stockError) {
       setError(stockError.message)
     }
@@ -1286,11 +1256,11 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
       open={open}
       onClose={saving ? undefined : onClose}
       title="New Development"
-      subtitle="Create the development record, unit stock, legal defaults, and shared assets in one setup flow."
+      subtitle="Create the development record, unit stock, and shared settings in one simple flow."
       className="max-w-[1180px]"
     >
-      <div className="space-y-5">
-        <div className="overflow-x-auto rounded-[24px] border border-[#e3ebf5] bg-[#f8fbff] p-3">
+      <div className="space-y-4">
+        <div className="overflow-x-auto rounded-[18px] border border-[#e3ebf5] bg-[#f8fbff] p-2.5">
           <ol className="flex min-w-max flex-nowrap gap-2">
           {activeSteps.map((step, index) => {
             const status = index === stepIndex ? 'active' : index < stepIndex ? 'complete' : ''
@@ -1525,58 +1495,18 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
 
           {currentStepId === 'financials' ? (
             <>
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+              <section className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
                 <div className="mb-4 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Commercial Inputs</h4>
-                    <span className="rounded-full border border-[#d8e3ef] bg-[#f8fbff] px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#6b7d93]">Optional</span>
-                  </div>
-                  <p className="text-sm leading-6 text-[#6b7d93]">Add commercial assumptions if you want development-level feasibility and margin reporting.</p>
+                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Deal Setup</h4>
+                  <p className="text-sm leading-6 text-[#6b7d93]">Set the few defaults that shape new transactions. Partner assignments, commercial costing, and assets can be completed after creation.</p>
                 </div>
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-                <label>
-                  Land Cost
-                  <input type="number" min="0" value={financials.landCost} onChange={(event) => setFinancials((previous) => ({ ...previous, landCost: event.target.value }))} />
-                </label>
-                <label>
-                  Build Cost
-                  <input type="number" min="0" value={financials.buildCost} onChange={(event) => setFinancials((previous) => ({ ...previous, buildCost: event.target.value }))} />
-                </label>
-                <label>
-                  Professional Fees
-                  <input type="number" min="0" value={financials.professionalFees} onChange={(event) => setFinancials((previous) => ({ ...previous, professionalFees: event.target.value }))} />
-                </label>
-                <label>
-                  Marketing Cost
-                  <input type="number" min="0" value={financials.marketingCost} onChange={(event) => setFinancials((previous) => ({ ...previous, marketingCost: event.target.value }))} />
-                </label>
-                <label>
-                  Infrastructure Cost
-                  <input type="number" min="0" value={financials.infrastructureCost} onChange={(event) => setFinancials((previous) => ({ ...previous, infrastructureCost: event.target.value }))} />
-                </label>
-                <label>
-                  Other Costs
-                  <input type="number" min="0" value={financials.otherCosts} onChange={(event) => setFinancials((previous) => ({ ...previous, otherCosts: event.target.value }))} />
-                </label>
-                <label>
-                  Projected Gross Sales Value
-                  <input type="number" min="0" value={financials.projectedGrossSalesValue} onChange={(event) => setFinancials((previous) => ({ ...previous, projectedGrossSalesValue: event.target.value }))} />
-                </label>
-                <label className="full-width">
-                  Financial Notes
-                  <textarea rows={4} value={financials.notes} onChange={(event) => setFinancials((previous) => ({ ...previous, notes: event.target.value }))} />
-                </label>
-                </div>
-              </section>
-
-              <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <div className="mb-4 space-y-1.5">
-                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Transaction Defaults</h4>
-                  <p className="text-sm leading-6 text-[#6b7d93]">Set only the defaults that genuinely carry across transactions. Deposit treatment and alteration costing are confirmed inside each transaction.</p>
-                </div>
-                <div className="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
-                  <div className="space-y-4 rounded-[22px] border border-[#dce6f1] bg-[#f8fbff] p-5">
-                    <label className="!flex-row !items-start !justify-between !gap-4">
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <div className="space-y-4 rounded-[20px] border border-[#dce6f1] bg-[#f8fbff] p-5">
+                    <div>
+                      <h5 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">Reservation Settings</h5>
+                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Capture the standard reservation deposit prompt for new transactions.</p>
+                    </div>
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Reservation deposit applies</strong>
                         <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">New transactions should ask whether a reservation deposit is payable.</span>
@@ -1654,54 +1584,13 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     </p>
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label>
-                      Default Agent
-                      <select
-                        value={transactionDefaults.defaultAgentSource}
-                        disabled={transactionDefaults.developerSellingDirectly}
-                        onChange={(event) =>
-                          setTransactionDefaults((previous) => ({
-                            ...previous,
-                            defaultAgentSource: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="first_agent">Use first agent in team</option>
-                        <option value="none">Do not auto-assign</option>
-                      </select>
-                    </label>
-                    <label>
-                      Default Transfer Attorney
-                      <select
-                        value={transactionDefaults.defaultTransferAttorneySource}
-                        onChange={(event) =>
-                          setTransactionDefaults((previous) => ({
-                            ...previous,
-                            defaultTransferAttorneySource: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="first_conveyancer">Use first conveyancer in team</option>
-                        <option value="none">Do not auto-assign</option>
-                      </select>
-                    </label>
-                    <label>
-                      Default Bond Originator
-                      <select
-                        value={transactionDefaults.defaultBondOriginatorSource}
-                        onChange={(event) =>
-                          setTransactionDefaults((previous) => ({
-                            ...previous,
-                            defaultBondOriginatorSource: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="first_bond_originator">Use first bond originator in team</option>
-                        <option value="none">Do not auto-assign</option>
-                      </select>
-                    </label>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                  <div className="space-y-4 rounded-[20px] border border-[#dce6f1] bg-[#f8fbff] p-5">
+                    <div>
+                      <h5 className="text-base font-semibold tracking-[-0.02em] text-[#142132]">Transaction Behaviour</h5>
+                      <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Decide how buyer, agent, and bond workflows should behave by default.</p>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Developer selling directly</strong>
                         <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Do not auto-assign an agent to new development transactions.</span>
@@ -1718,7 +1607,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }
                       />
                     </label>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Multiple agents allowed</strong>
                         <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Allow transactions to include co-agents from the agent team.</span>
@@ -1735,7 +1624,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }
                       />
                     </label>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Buyer may use own bond originator</strong>
                         <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Allow buyers to nominate their own originator during onboarding.</span>
@@ -1753,7 +1642,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }
                       />
                     </label>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4">
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4">
                       <span>
                         <strong className="block text-sm font-semibold text-[#142132]">Approve buyer-appointed originators</strong>
                         <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Keep buyer nominations pending until the agent or developer approves them.</span>
@@ -1770,7 +1659,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                         }
                       />
                     </label>
-                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[18px] border border-[#dde4ee] bg-[#f8fbff] p-4 md:col-span-2">
+                    <label className="!flex-row !items-start !justify-between !gap-4 rounded-[16px] border border-[#dde4ee] bg-white p-4 md:col-span-2">
                     <span>
                       <strong className="block text-sm font-semibold text-[#142132]">Auto-invite selected bond originator</strong>
                       <span className="mt-2 block text-sm leading-6 text-[#6b7d93]">Automatically send an invite once a transaction has a selected originator.</span>
@@ -1786,24 +1675,11 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                       }
                     />
                     </label>
+                    </div>
                   </div>
                 </div>
               </section>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Derived Projected Cost</span>
-                  <strong className="mt-3 block text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{derivedTotals.totalProjectedCost.toLocaleString('en-ZA')}</strong>
-                </article>
-                <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Derived Projected Profit</span>
-                  <strong className="mt-3 block text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{derivedTotals.projectedProfit.toLocaleString('en-ZA')}</strong>
-                </article>
-                <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Derived Margin</span>
-                  <strong className="mt-3 block text-2xl font-semibold tracking-[-0.03em] text-[#142132]">{derivedTotals.targetMargin.toFixed(1)}%</strong>
-                </article>
-              </div>
             </>
           ) : null}
 
@@ -2345,19 +2221,20 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                                   </label>
                                   <label>
                                     List Price
-                                    <input type="number" min="0" value={floorplan.listPrice} onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'listPrice', event.target.value)} />
+                                    <span className="relative block">
+                                      <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#6b7d93]">R</span>
+                                      <input
+                                        className="!pl-9"
+                                        type="number"
+                                        min="0"
+                                        value={floorplan.listPrice}
+                                        onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'listPrice', event.target.value)}
+                                      />
+                                    </span>
                                   </label>
                                   <label>
                                     Quantity
                                     <input type="number" min="1" value={floorplan.quantity} onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'quantity', event.target.value)} />
-                                  </label>
-                                  <label>
-                                    Floorplan File / Link
-                                    <input value={floorplan.fileUrl} onChange={(event) => updateFloorplan(unitTypeIndex, floorplanIndex, 'fileUrl', event.target.value)} placeholder="Paste a file URL or reference" />
-                                  </label>
-                                  <label>
-                                    Upload Floorplan
-                                    <input type="file" onChange={(event) => updateFloorplanFile(unitTypeIndex, floorplanIndex, event.target.files?.[0] || null)} />
                                   </label>
                                   <label>
                                     Distribution Mode
@@ -2366,12 +2243,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                                       {stockTargets.length > 1 ? <option value="custom">Assign quantities by phase / block</option> : null}
                                     </select>
                                   </label>
-                                  <div className="rounded-[16px] border border-[#e3ebf5] bg-[#f8fbff] px-4 py-3">
-                                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Upload status</span>
-                                    <strong className="mt-2 block text-sm font-semibold text-[#142132]">
-                                      {floorplan.fileName || floorplan.fileUrl || 'Upload later'}
-                                    </strong>
-                                  </div>
                                 </div>
 
                                 {floorplan.distributionMode === 'custom' && stockTargets.length > 0 ? (
@@ -2552,7 +2423,7 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
                     </div>
                   ) : (
                     <div className="rounded-[20px] border border-[#d8e7dc] bg-[#f3fbf5] p-4 text-sm leading-6 text-[#1f6d3c]">
-                      Stock plan looks good. Arch9 will create the generated units and carry floorplan references into the documents step.
+                      Stock plan looks good. Arch9 will create the generated units and keep floorplan references ready for post-creation assets.
                     </div>
                   )}
                 </section>
@@ -2614,61 +2485,59 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
           ) : null}
 
           {currentStepId === 'review' ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development</span>
-                <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{details.name || 'Not set'}</strong>
-                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">{getResolvedDevelopmentLocation(details) || 'Location pending'}</em>
-              </article>
-              <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Status</span>
-                <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{details.status || 'active'}</strong>
-                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">{details.totalUnitsExpected || derivedTotals.unitCount} expected units</em>
-              </article>
-              <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Projected Cost</span>
-                <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{derivedTotals.totalProjectedCost.toLocaleString('en-ZA')}</strong>
-                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">Projected profit {derivedTotals.projectedProfit.toLocaleString('en-ZA')}</em>
-              </article>
-              <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Modules Enabled</span>
-                <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">
-                  {Object.entries(legal.enabledModules)
-                    .filter(([, enabled]) => enabled)
-                    .map(([key]) => key.replaceAll('_', ' '))
-                    .join(', ') || 'None selected'}
-                </strong>
-                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">
-                  {legal.agents.filter((item) => item.name).length} agents • {legal.conveyancers.filter((item) => item.firmName).length} conveyancers •{' '}
-                  {legal.bondOriginators.filter((item) => item.name).length} bond originators
-                </em>
-              </article>
-              <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Transaction Defaults</span>
-                <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">
-                  {transactionDefaults.reservationDepositEnabled
-                    ? `${transactionDefaults.reservationDepositAmountType === 'fixed' ? 'R' : ''}${transactionDefaults.reservationDepositAmount || '0'} ${
-                        transactionDefaults.reservationDepositAmountType === 'percentage' ? '%' : ''
-                      } reservation deposit`
-                    : 'No reservation deposit'}
-                </strong>
-                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">
-                  Agent default: {transactionDefaults.developerSellingDirectly ? 'Developer selling directly' : TRANSACTION_DEFAULT_LABELS.defaultAgentSource[transactionDefaults.defaultAgentSource]}
-                </em>
-                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">
-                  Role players: {TRANSACTION_DEFAULT_LABELS.defaultTransferAttorneySource[transactionDefaults.defaultTransferAttorneySource]} •{' '}
-                  {TRANSACTION_DEFAULT_LABELS.defaultBondOriginatorSource[transactionDefaults.defaultBondOriginatorSource]}
-                </em>
-              </article>
-              <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Units Added</span>
-                <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{derivedTotals.unitCount}</strong>
-                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">Transactions will pull from this stock list</em>
-              </article>
-              <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
-                <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Assets Added</span>
-                <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{derivedTotals.documentCount}</strong>
-                <em className="mt-2 block text-sm not-italic text-[#6b7d93]">Floorplans and shared development documents</em>
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Development Summary</span>
+                  <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{details.name || 'Not set'}</strong>
+                  <em className="mt-2 block text-sm not-italic text-[#6b7d93]">{getResolvedDevelopmentLocation(details) || 'Location pending'}</em>
+                </article>
+                <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Deal Setup Summary</span>
+                  <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">
+                    {transactionDefaults.reservationDepositEnabled
+                      ? `${transactionDefaults.reservationDepositAmountType === 'fixed' ? 'R' : ''}${transactionDefaults.reservationDepositAmount || '0'} ${
+                          transactionDefaults.reservationDepositAmountType === 'percentage' ? '%' : ''
+                        } deposit`
+                      : 'No reservation deposit'}
+                  </strong>
+                  <em className="mt-2 block text-sm not-italic text-[#6b7d93]">
+                    {transactionDefaults.developerSellingDirectly ? 'Developer selling directly' : 'Agent-assisted sales'}
+                  </em>
+                </article>
+                <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Expected Units</span>
+                  <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{details.totalUnitsExpected || derivedTotals.unitCount || stockSummary.totalUnits}</strong>
+                  <em className="mt-2 block text-sm not-italic text-[#6b7d93]">{derivedTotals.unitCount || stockSummary.totalUnits} generated from stock templates</em>
+                </article>
+                <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                  <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Price Range</span>
+                  <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{buildUnitPriceRange(stockPlan.unitTypes)}</strong>
+                  <em className="mt-2 block text-sm not-italic text-[#6b7d93]">Based on list prices entered for floorplans</em>
+                </article>
+              </div>
+
+              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.05)]">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Unit Types</span>
+                    <strong className="mt-3 block text-lg font-semibold tracking-[-0.02em] text-[#142132]">{stockPlan.unitTypes.length} configured</strong>
+                  </div>
+                  <p className="max-w-xl text-sm leading-6 text-[#6b7d93]">
+                    You can upload floorplans, brochures, pricing sheets and development documents after creating the development.
+                  </p>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {stockPlan.unitTypes.map((unitType) => (
+                    <div key={unitType.id} className="rounded-[16px] border border-[#edf2f7] bg-[#f8fbff] px-4 py-3">
+                      <strong className="block text-sm font-semibold text-[#142132]">{unitType.name || 'Unnamed unit type'}</strong>
+                      <span className="mt-1 block text-sm text-[#6b7d93]">
+                        {(unitType.floorplans || []).length} floorplans •{' '}
+                        {(unitType.floorplans || []).reduce((sum, floorplan) => sum + Number(floorplan.quantity || 0), 0)} units
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </article>
             </div>
           ) : null}
@@ -2692,21 +2561,6 @@ function AddDevelopmentModal({ open, onClose, onCreated, contextRole = 'develope
             </Button>
             {stepIndex < maxStepIndex ? (
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
-                {canSkipFinancials ? (
-                  <Button type="button" variant="secondary" onClick={handleSkipFinancials} disabled={saving}>
-                    Skip for Now
-                  </Button>
-                ) : null}
-                {canSkipLegal ? (
-                  <Button type="button" variant="secondary" onClick={handleSkipLegal} disabled={saving}>
-                    Skip for Now
-                  </Button>
-                ) : null}
-                {canSkipDocuments ? (
-                  <Button type="button" variant="secondary" onClick={handleSkipDocuments} disabled={saving}>
-                    Skip for Now
-                  </Button>
-                ) : null}
                 {currentStepId === 'units' ? (
                   <Button type="button" onClick={stockStepIndex === 2 ? handleFinalizeStock : handleStockStepNext} disabled={saving}>
                     {stockStepIndex === 2 ? 'Generate Units and Continue' : 'Next'}

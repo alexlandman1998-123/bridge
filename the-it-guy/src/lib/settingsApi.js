@@ -4890,6 +4890,7 @@ export async function saveDevelopmentConfiguration(input = {}) {
       name: input.name,
       plannedUnits: input.plannedUnits,
       profile: {
+        organisationId: context.organisation?.id || context.membership?.organisation_id || null,
         location: input.location,
         address: input.address,
         description: input.description,

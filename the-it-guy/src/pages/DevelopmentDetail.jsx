@@ -1047,7 +1047,14 @@ function buildDetailsForm(data) {
     city: profile.city || development.city || '',
     province: profile.province || development.province || '',
     country: profile.country || development.country || 'South Africa',
-    address: profile.address || '',
+    address:
+      profile.address ||
+      profile.streetAddress ||
+      profile.formattedAddress ||
+      development.address ||
+      development.street_address ||
+      development.formatted_address ||
+      '',
     status: profile.status || development.status || 'active',
     developerCompany: profile.developerCompany || development.developer_company || '',
     totalUnitsExpected:

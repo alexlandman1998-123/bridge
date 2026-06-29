@@ -2699,12 +2699,21 @@ async function fetchDevelopmentProfile(client, developmentId) {
   let profileQuery = await client
     .from('development_profiles')
     .select(
-      'development_id, code, location, suburb, city, province, country, address, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, marketing_content',
+      'development_id, code, location, suburb, city, province, country, address, formatted_address, street_address, postal_code, latitude, longitude, google_place_id, description, status, developer_company, launch_date, expected_completion_date, plans, site_plans, image_links, supporting_documents, marketing_content',
     )
     .eq('development_id', developmentId)
     .maybeSingle()
 
-  if (profileQuery.error && isMissingColumnError(profileQuery.error, 'marketing_content')) {
+  if (
+    profileQuery.error &&
+    (isMissingColumnError(profileQuery.error, 'marketing_content') ||
+      isMissingColumnError(profileQuery.error, 'formatted_address') ||
+      isMissingColumnError(profileQuery.error, 'street_address') ||
+      isMissingColumnError(profileQuery.error, 'postal_code') ||
+      isMissingColumnError(profileQuery.error, 'latitude') ||
+      isMissingColumnError(profileQuery.error, 'longitude') ||
+      isMissingColumnError(profileQuery.error, 'google_place_id'))
+  ) {
     profileQuery = await client
       .from('development_profiles')
       .select(
@@ -16486,12 +16495,22 @@ export async function fetchDevelopmentDetail(developmentId) {
   let developmentQuery = await client
     .from('developments')
     .select(
-      'id, name, planned_units, code, location, suburb, city, province, country, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, assigned_attorney_id, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled',
+      'id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, assigned_attorney_id, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled',
     )
     .eq('id', developmentId)
     .maybeSingle()
 
-  if (developmentQuery.error && isMissingColumnError(developmentQuery.error, 'code')) {
+  if (
+    developmentQuery.error &&
+    (isMissingColumnError(developmentQuery.error, 'code') ||
+      isMissingColumnError(developmentQuery.error, 'address') ||
+      isMissingColumnError(developmentQuery.error, 'formatted_address') ||
+      isMissingColumnError(developmentQuery.error, 'street_address') ||
+      isMissingColumnError(developmentQuery.error, 'postal_code') ||
+      isMissingColumnError(developmentQuery.error, 'latitude') ||
+      isMissingColumnError(developmentQuery.error, 'longitude') ||
+      isMissingColumnError(developmentQuery.error, 'google_place_id'))
+  ) {
     developmentQuery = await client
       .from('developments')
       .select('id, name, planned_units')
@@ -16758,7 +16777,7 @@ export async function deleteDevelopmentDocument(documentId) {
   }
 }
 
-export async function saveDevelopmentDetails(developmentId, input = {}) {
+export async function saveDevelopmentDetails(developmentId, input = {}, { allowNoopUpdate = false } = {}) {
   const client = requireClient()
 
   if (!developmentId) {
@@ -16793,30 +16812,33 @@ export async function saveDevelopmentDetails(developmentId, input = {}) {
     onboarding_enabled: input.onboardingEnabled === undefined ? true : Boolean(input.onboardingEnabled),
   }
 
-  let updateResult = await client.from('developments').update(developmentPayload).eq('id', developmentId)
-
-  if (
-    updateResult.error &&
-    (isMissingColumnError(updateResult.error, 'code') ||
-      isMissingColumnError(updateResult.error, 'address') ||
-      isMissingColumnError(updateResult.error, 'formatted_address') ||
-      isMissingColumnError(updateResult.error, 'street_address') ||
-      isMissingColumnError(updateResult.error, 'postal_code') ||
-      isMissingColumnError(updateResult.error, 'latitude') ||
-      isMissingColumnError(updateResult.error, 'longitude') ||
-      isMissingColumnError(updateResult.error, 'google_place_id'))
-  ) {
+  let updatePayload = { ...developmentPayload }
+  let updateResult = null
+  for (let attempt = 0; attempt <= DEVELOPMENT_CREATE_OPTIONAL_COLUMNS.length; attempt += 1) {
     updateResult = await client
       .from('developments')
-      .update({
-        name: developmentPayload.name,
-        planned_units: developmentPayload.planned_units,
-      })
+      .update(updatePayload)
       .eq('id', developmentId)
+      .select('id')
+      .maybeSingle()
+
+    if (!updateResult.error || !isDevelopmentCreateMissingColumnError(updateResult.error)) {
+      break
+    }
+
+    const missingColumnName = getMissingColumnNameFromError(updateResult.error, DEVELOPMENT_CREATE_OPTIONAL_COLUMNS)
+    if (!missingColumnName || !Object.prototype.hasOwnProperty.call(updatePayload, missingColumnName)) {
+      break
+    }
+    delete updatePayload[missingColumnName]
   }
 
   if (updateResult.error) {
     throw updateResult.error
+  }
+
+  if (!updateResult.data && !allowNoopUpdate) {
+    throw new Error('Development details were not saved because this workspace does not have update access to the development.')
   }
 
   const profilePayload = {
@@ -40353,6 +40375,57 @@ function isDevelopmentCreateMissingColumnError(error) {
   return DEVELOPMENT_CREATE_OPTIONAL_COLUMNS.some((columnName) => isMissingColumnError(error, columnName))
 }
 
+function getMissingColumnNameFromError(error, candidateColumns = []) {
+  if (!error) return ''
+
+  for (const columnName of candidateColumns) {
+    if (isMissingColumnError(error, columnName)) {
+      return columnName
+    }
+  }
+
+  const sources = [error.message, error.details, error.hint].map((source) => String(source || ''))
+  const patterns = [
+    /column\s+(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)\s+does not exist/i,
+    /could not find the ['"]([a-zA-Z0-9_]+)['"] column/i,
+    /['"]([a-zA-Z0-9_]+)['"]\s+column/i,
+  ]
+
+  for (const source of sources) {
+    for (const pattern of patterns) {
+      const match = pattern.exec(source)
+      const columnName = String(match?.[1] || '').trim()
+      if (columnName && candidateColumns.includes(columnName)) {
+        return columnName
+      }
+    }
+  }
+
+  return ''
+}
+
+function buildDevelopmentSelectColumns(payload = {}) {
+  const columns = ['id', 'name', 'planned_units']
+  for (const columnName of DEVELOPMENT_CREATE_OPTIONAL_COLUMNS) {
+    if (Object.prototype.hasOwnProperty.call(payload, columnName)) {
+      columns.push(columnName)
+    }
+  }
+  return columns.join(', ')
+}
+
+function createClientUuid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const value = Math.floor(Math.random() * 16)
+    const resolvedValue = character === 'x' ? value : (value & 0x3) | 0x8
+    return resolvedValue.toString(16)
+  })
+}
+
 export async function createDevelopment({ name, plannedUnits, profile = {} }) {
   const client = requireClient()
   const trimmedName = name?.trim()
@@ -40369,6 +40442,7 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
   }
 
   const basePayload = {
+    id: createClientUuid(),
     name: trimmedName,
     planned_units: Math.trunc(normalizedPlannedUnits),
     organisation_id: normalizeNullableText(profile.organisationId || profile.organisation_id),
@@ -40401,18 +40475,45 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
       profile.onboardingEnabled === undefined ? true : Boolean(profile.onboardingEnabled),
   }
 
-  let result = await client
-    .from('developments')
-    .insert(basePayload)
-    .select('id, organisation_id, name, planned_units, code, location, address, formatted_address, street_address, suburb, city, province, country, postal_code, latitude, longitude, google_place_id, description, status, developer_company, total_units_expected, launch_date, expected_completion_date, handover_enabled, snag_tracking_enabled, alterations_enabled, onboarding_enabled')
-    .single()
-
-  if (result.error && isDevelopmentCreateMissingColumnError(result.error)) {
+  let insertPayload = { ...basePayload }
+  let result = null
+  for (let attempt = 0; attempt <= DEVELOPMENT_CREATE_OPTIONAL_COLUMNS.length; attempt += 1) {
     result = await client
       .from('developments')
-      .insert({ name: trimmedName, planned_units: Math.trunc(normalizedPlannedUnits) })
-      .select('id, name, planned_units')
+      .insert(insertPayload)
+
+    if (!result.error || !isDevelopmentCreateMissingColumnError(result.error)) {
+      break
+    }
+
+    const missingColumnName = getMissingColumnNameFromError(result.error, DEVELOPMENT_CREATE_OPTIONAL_COLUMNS)
+    if (!missingColumnName || !Object.prototype.hasOwnProperty.call(insertPayload, missingColumnName)) {
+      break
+    }
+    delete insertPayload[missingColumnName]
+  }
+
+  if (result.error) {
+    throw result.error
+  }
+
+  let selectPayload = { ...insertPayload }
+  for (let attempt = 0; attempt <= DEVELOPMENT_CREATE_OPTIONAL_COLUMNS.length; attempt += 1) {
+    result = await client
+      .from('developments')
+      .select(buildDevelopmentSelectColumns(selectPayload))
+      .eq('id', insertPayload.id)
       .single()
+
+    if (!result.error || !isDevelopmentCreateMissingColumnError(result.error)) {
+      break
+    }
+
+    const missingColumnName = getMissingColumnNameFromError(result.error, DEVELOPMENT_CREATE_OPTIONAL_COLUMNS)
+    if (!missingColumnName || !Object.prototype.hasOwnProperty.call(selectPayload, missingColumnName)) {
+      break
+    }
+    delete selectPayload[missingColumnName]
   }
 
   if (result.error) {
@@ -40590,7 +40691,7 @@ export async function createDevelopmentWorkspace({
 
   const developmentId = created.id
 
-  await saveDevelopmentDetails(developmentId, details)
+  await saveDevelopmentDetails(developmentId, details, { allowNoopUpdate: true })
   if (hasDevelopmentFinancialInputs(financials)) {
     try {
       await saveDevelopmentFinancials(developmentId, financials)
