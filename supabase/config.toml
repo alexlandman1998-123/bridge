@@ -64,6 +64,12 @@ verify_jwt = true
 import_map = "./functions/send-whatsapp/deno.json"
 entrypoint = "./functions/send-whatsapp/index.ts"
 
+[functions.inbound-lead-email]
+enabled = true
+verify_jwt = false
+import_map = "./functions/inbound-lead-email/deno.json"
+entrypoint = "./functions/inbound-lead-email/index.ts"
+
 [functions.generate-mandate]
 enabled = true
 verify_jwt = true

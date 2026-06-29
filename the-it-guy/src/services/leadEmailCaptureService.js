@@ -4,6 +4,52 @@ import { createOrUpdateLeadFromEnquiry, normalizeLeadSource } from './leadIngest
 export const DEFAULT_LEAD_CAPTURE_DOMAIN = 'leads.arch9.co.za'
 export const LEAD_CAPTURE_SOURCES = ['General', 'Property24', 'Private Property', 'Website', 'Facebook']
 export const LOW_CONFIDENCE_REVIEW_THRESHOLD = 0.65
+export const LEAD_CAPTURE_REVIEW_STATUSES = ['open', 'resolved', 'ignored']
+export const LEAD_CAPTURE_CONFIDENCE_FILTERS = ['all', 'low', 'medium', 'high', 'unscored']
+export const LEAD_CAPTURE_PRODUCTION_CHECKLIST = [
+  {
+    id: 'domain',
+    label: 'Inbound domain verified',
+    description: 'The capture domain is owned by Arch9 and ready to receive forwarded portal lead emails.',
+  },
+  {
+    id: 'mx',
+    label: 'MX routed to inbound provider',
+    description: 'MX records point the lead capture domain to the chosen inbound email provider.',
+  },
+  {
+    id: 'webhook',
+    label: 'Webhook connected',
+    description: 'The provider posts normalized inbound messages to the inbound-lead-email Edge Function.',
+  },
+  {
+    id: 'secret',
+    label: 'Webhook secret configured',
+    description: 'INBOUND_LEAD_EMAIL_WEBHOOK_SECRET is set in Supabase and provider requests include it.',
+  },
+  {
+    id: 'monitoring',
+    label: 'Delivery monitoring live',
+    description: 'Failed, unmatched, and low-confidence inbound emails are visible in the review queue.',
+  },
+]
+export const LEAD_CAPTURE_PRODUCTION_ENV_VARS = [
+  {
+    name: 'INBOUND_LEAD_EMAIL_WEBHOOK_SECRET',
+    required: true,
+    purpose: 'Shared secret that every inbound email provider webhook must send as x-arch9-inbound-secret.',
+  },
+  {
+    name: 'INBOUND_LEAD_EMAIL_REQUIRE_SECRET',
+    required: true,
+    purpose: 'Set to true in production so the Edge Function refuses unsigned webhook traffic.',
+  },
+  {
+    name: 'INBOUND_LEAD_EMAIL_ALLOWED_PROVIDERS',
+    required: false,
+    purpose: 'Comma-separated allowlist such as mailgun,sendgrid,postmark,resend,amazon-ses.',
+  },
+]
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -404,10 +450,34 @@ function matchesReviewFilter(row = {}, { status = 'open', source = '', search = 
     row.subject,
     row.fromEmail,
     row.parserName,
+    row.assignedAgentId,
     row.inboundEmailId,
     row.failureId,
     ...Object.values(row.matchedFields || {}),
   ].some((value) => normalizeLower(value).includes(normalizedSearch))
+}
+
+function matchesConfidenceFilter(row = {}, confidence = 'all') {
+  const normalizedConfidence = normalizeLower(confidence || 'all')
+  const score = row.parseConfidence === null || row.parseConfidence === undefined ? null : Number(row.parseConfidence)
+  if (normalizedConfidence === 'all') return true
+  if (normalizedConfidence === 'unscored') return score === null || Number.isNaN(score)
+  if (score === null || Number.isNaN(score)) return false
+  if (normalizedConfidence === 'low') return score < LOW_CONFIDENCE_REVIEW_THRESHOLD
+  if (normalizedConfidence === 'medium') return score >= LOW_CONFIDENCE_REVIEW_THRESHOLD && score < 0.85
+  if (normalizedConfidence === 'high') return score >= 0.85
+  return true
+}
+
+export function filterLeadCaptureReviewQueueRows(rows = [], filters = {}) {
+  const assignedAgentId = normalizeText(filters.assignedAgentId || filters.assigned_agent_id)
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    if (!matchesReviewFilter(row, filters)) return false
+    if (!matchesConfidenceFilter(row, filters.confidence || 'all')) return false
+    if (assignedAgentId === 'unassigned' && normalizeText(row.assignedAgentId)) return false
+    if (assignedAgentId && !['all', 'unassigned'].includes(assignedAgentId) && normalizeText(row.assignedAgentId) !== assignedAgentId) return false
+    return true
+  })
 }
 
 export function buildLeadCaptureReviewQueueRows({
@@ -416,6 +486,8 @@ export function buildLeadCaptureReviewQueueRows({
   status = 'open',
   source = '',
   search = '',
+  confidence = 'all',
+  assignedAgentId = '',
 } = {}) {
   const rows = []
   const failureInboundIds = new Set()
@@ -438,6 +510,7 @@ export function buildLeadCaptureReviewQueueRows({
       parseConfidence: failure.parseConfidence,
       parseWarnings: failure.parseWarnings || [],
       matchedFields: getFailureMatchedFields(failure),
+      assignedAgentId: normalizeText(failure.repairedPayload?.assignedAgentId || failure.payload?.assignedAgent?.id || failure.payload?.assignedAgent?.userId),
       reviewNote: failure.reviewNote,
       repairedPayload: failure.repairedPayload,
       repairedAt: failure.repairedAt,
@@ -466,6 +539,7 @@ export function buildLeadCaptureReviewQueueRows({
       parseConfidence: email.parseConfidence,
       parseWarnings: email.parseWarnings || [],
       matchedFields: email.matchedFields || {},
+      assignedAgentId: normalizeText(email.repairedPayload?.assignedAgentId),
       reviewNote: email.reviewNote,
       repairedPayload: email.repairedPayload,
       repairedAt: email.repairedAt,
@@ -477,7 +551,7 @@ export function buildLeadCaptureReviewQueueRows({
   }
 
   return rows
-    .filter((row) => matchesReviewFilter(row, { status, source, search }))
+    .filter((row) => filterLeadCaptureReviewQueueRows([row], { status, source, search, confidence, assignedAgentId }).length > 0)
     .sort((a, b) => new Date(b.receivedAt || b.createdAt || 0).getTime() - new Date(a.receivedAt || a.createdAt || 0).getTime())
 }
 
@@ -486,6 +560,8 @@ export async function listLeadCaptureReviewQueue(organisationId, {
   status = 'open',
   source = '',
   search = '',
+  confidence = 'all',
+  assignedAgentId = '',
 } = {}) {
   const normalizedStatus = normalizeText(status)
   const [failures, inboundEmails] = await Promise.all([
@@ -495,7 +571,56 @@ export async function listLeadCaptureReviewQueue(organisationId, {
     }),
     listInboundLeadEmails(organisationId, { limit }),
   ])
-  return buildLeadCaptureReviewQueueRows({ failures, inboundEmails, status, source, search })
+  return buildLeadCaptureReviewQueueRows({ failures, inboundEmails, status, source, search, confidence, assignedAgentId })
+}
+
+export function buildLeadCaptureWebhookUrl({
+  supabaseProjectRef = '',
+  supabaseFunctionsUrl = '',
+  functionName = 'inbound-lead-email',
+} = {}) {
+  const directUrl = normalizeText(supabaseFunctionsUrl).replace(/\/+$/, '')
+  if (directUrl) return `${directUrl}/${functionName}`
+  const projectRef = normalizeText(supabaseProjectRef)
+  if (projectRef) return `https://${projectRef}.functions.supabase.co/${functionName}`
+  return `https://<supabase-project-ref>.functions.supabase.co/${functionName}`
+}
+
+export function buildLeadCaptureDnsChecklist({
+  domain = DEFAULT_LEAD_CAPTURE_DOMAIN,
+  provider = 'Inbound Provider',
+} = {}) {
+  const normalizedDomain = normalizeLower(domain || DEFAULT_LEAD_CAPTURE_DOMAIN)
+  return [
+    {
+      type: 'MX',
+      host: normalizedDomain,
+      value: '<provider inbound MX host>',
+      priority: '10',
+      purpose: `${provider} receives lead emails for generated Arch9 aliases.`,
+    },
+    {
+      type: 'TXT',
+      host: normalizedDomain,
+      value: '<provider SPF or domain verification token>',
+      priority: '',
+      purpose: 'Authorizes the provider and verifies the capture domain.',
+    },
+    {
+      type: 'CNAME/TXT',
+      host: `selector._domainkey.${normalizedDomain}`,
+      value: '<provider DKIM target or token>',
+      priority: '',
+      purpose: 'Enables DKIM signing where the provider requires it.',
+    },
+    {
+      type: 'TXT',
+      host: `_dmarc.${normalizedDomain}`,
+      value: 'v=DMARC1; p=none; rua=mailto:dmarc@arch9.co.za',
+      priority: '',
+      purpose: 'Starts DMARC reporting without blocking delivery during rollout.',
+    },
+  ]
 }
 
 async function updateLeadCaptureReviewItem(item = {}, {
@@ -1048,6 +1173,9 @@ export const __leadEmailCaptureServiceTestUtils = {
   buildLeadCaptureStatusRows,
   buildLeadCaptureReviewQueueRows,
   buildLeadCaptureRepairDraft,
+  buildLeadCaptureDnsChecklist,
+  buildLeadCaptureWebhookUrl,
+  filterLeadCaptureReviewQueueRows,
   buildDefaultLeadCaptureAliasRequests,
   buildLeadCaptureAliasLocalPart,
   buildLeadCaptureEmail,

@@ -7,6 +7,9 @@ const onboardingMigrationSql = await fs.readFile(new URL('../../supabase/migrati
 const parserMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290008_lead_capture_parser_phase3.sql', import.meta.url), 'utf8')
 const reviewQueueMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290009_lead_capture_review_queue_phase4a.sql', import.meta.url), 'utf8')
 const repairWorkflowMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290011_lead_capture_repair_workflow_phase4b.sql', import.meta.url), 'utf8')
+const providerWebhookMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290012_lead_capture_provider_webhook_phase5.sql', import.meta.url), 'utf8')
+const aliasBackfillRepairMigrationSql = await fs.readFile(new URL('../../supabase/migrations/202606290013_lead_capture_alias_backfill_repair.sql', import.meta.url), 'utf8')
+const phase5Runbook = await fs.readFile(new URL('../../docs/lead-capture-production-email-phase5.md', import.meta.url), 'utf8')
 
 for (const tableName of [
   'lead_capture_aliases',
@@ -55,12 +58,24 @@ for (const field of ['repaired_payload', 'repaired_by', 'repaired_at', 'lead_ing
 }
 assert.match(repairWorkflowMigrationSql, /inbound_lead_emails_repaired_idx/)
 assert.match(repairWorkflowMigrationSql, /lead_parse_failures_repaired_idx/)
+for (const field of ['provider_event_id', 'provider_received_at', 'webhook_received_at', 'webhook_signature_status', 'webhook_user_agent', 'normalized_payload']) {
+  assert.match(providerWebhookMigrationSql, new RegExp(field), `provider webhook migration should add ${field}`)
+}
+assert.match(providerWebhookMigrationSql, /inbound_lead_emails_provider_event_idx/)
+assert.match(providerWebhookMigrationSql, /inbound_lead_emails_webhook_received_idx/)
+assert.match(aliasBackfillRepairMigrationSql, /phase2_backfill_repair/)
+assert.match(aliasBackfillRepairMigrationSql, /organisation_users/)
+assert.match(aliasBackfillRepairMigrationSql, /lead_capture_aliases/)
+assert.match(aliasBackfillRepairMigrationSql, /on conflict \(lower\(email_address\)\) do nothing/i)
 
 const serviceSource = await fs.readFile(new URL('../src/services/leadEmailCaptureService.js', import.meta.url), 'utf8')
 for (const method of [
   'buildLeadCaptureStatusRows',
   'buildLeadCaptureReviewQueueRows',
   'buildLeadCaptureRepairDraft',
+  'buildLeadCaptureDnsChecklist',
+  'buildLeadCaptureWebhookUrl',
+  'filterLeadCaptureReviewQueueRows',
   'buildDefaultLeadCaptureAliasRequests',
   'buildLeadCaptureEmail',
   'createLeadCaptureAlias',
@@ -86,6 +101,8 @@ assert.match(serviceSource, /bridge_create_lead_capture_alias/)
 assert.match(serviceSource, /createOrUpdateLeadFromEnquiry/)
 assert.match(serviceSource, /Property24/)
 assert.match(serviceSource, /Private Property/)
+assert.match(serviceSource, /LEAD_CAPTURE_PRODUCTION_ENV_VARS/)
+assert.match(serviceSource, /INBOUND_LEAD_EMAIL_REQUIRE_SECRET/)
 
 const functionSource = await fs.readFile(new URL('../../supabase/functions/inbound-lead-email/index.ts', import.meta.url), 'utf8')
 for (const copy of [
@@ -107,6 +124,24 @@ assert.match(functionSource, /website_email/)
 assert.match(functionSource, /parser_name/)
 assert.match(functionSource, /parse_confidence/)
 assert.match(functionSource, /matched_fields/)
+assert.match(functionSource, /INBOUND_LEAD_EMAIL_REQUIRE_SECRET/)
+assert.match(functionSource, /INBOUND_LEAD_EMAIL_ALLOWED_PROVIDERS/)
+assert.match(functionSource, /normalizeProviderPayload/)
+for (const provider of ['mailgun', 'sendgrid', 'postmark', 'resend', 'amazon-ses']) {
+  assert.match(functionSource, new RegExp(provider), `edge function should normalize ${provider}`)
+}
+assert.match(functionSource, /webhook_signature_status/)
+assert.match(functionSource, /normalized_payload/)
+
+for (const copy of [
+  'INBOUND_LEAD_EMAIL_WEBHOOK_SECRET',
+  'INBOUND_LEAD_EMAIL_REQUIRE_SECRET',
+  'INBOUND_LEAD_EMAIL_ALLOWED_PROVIDERS',
+  'leads.arch9.co.za',
+  'Mailgun-style inbound routes',
+]) {
+  assert.match(phase5Runbook, new RegExp(copy), `phase 5 runbook should include ${copy}`)
+}
 
 const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
 assert.match(appSource, /SettingsLeadCapturePage/)
@@ -131,6 +166,12 @@ for (const copy of [
   'Lead Capture Repair',
   'Create Lead',
   'Link Existing Lead',
+  'Production Email Setup',
+  'Inbound Webhook',
+  'Environment Variable',
+  'All statuses',
+  'All confidence',
+  'All agents',
   'Repair',
   'Resolve',
   'Ignore',
@@ -146,6 +187,8 @@ assert.match(leadCapturePageSource, /resolveLeadCaptureReviewItem/)
 assert.match(leadCapturePageSource, /ignoreLeadCaptureReviewItem/)
 assert.match(leadCapturePageSource, /repairLeadCaptureReviewItem/)
 assert.match(leadCapturePageSource, /linkLeadCaptureReviewItem/)
+assert.match(leadCapturePageSource, /ReviewQueueFilters/)
+assert.match(leadCapturePageSource, /ProductionSetupSection/)
 
 const server = await createServer({
   root: process.cwd(),
@@ -167,6 +210,9 @@ try {
     slugifyCapturePart,
     buildLeadCaptureReviewQueueRows,
     buildLeadCaptureRepairDraft,
+    buildLeadCaptureDnsChecklist,
+    buildLeadCaptureWebhookUrl,
+    filterLeadCaptureReviewQueueRows,
     buildLeadCaptureStatusRows,
   } = __leadEmailCaptureServiceTestUtils
 
@@ -370,12 +416,21 @@ try {
   assert.equal(reviewRows[0].reason, 'Low parser confidence.')
   assert.equal(reviewRows[1].kind, 'failure')
   assert.equal(reviewRows[1].matchedFields.listingReference, 'P24-123')
+  assert.equal(filterLeadCaptureReviewQueueRows(reviewRows, { source: 'Website' }).length, 1)
+  assert.equal(filterLeadCaptureReviewQueueRows(reviewRows, { confidence: 'low' }).length, 2)
+  assert.equal(filterLeadCaptureReviewQueueRows(reviewRows, { search: 'P24-123' }).length, 1)
 
   const repairDraft = buildLeadCaptureRepairDraft(reviewRows[1])
   assert.equal(repairDraft.organisationId, organisationId)
   assert.equal(repairDraft.source, 'Property24')
   assert.equal(repairDraft.name, 'No Contact')
   assert.equal(repairDraft.listingReference, 'P24-123')
+
+  const webhookUrl = buildLeadCaptureWebhookUrl({ supabaseProjectRef: 'arch9-test' })
+  assert.equal(webhookUrl, 'https://arch9-test.functions.supabase.co/inbound-lead-email')
+  const dnsRows = buildLeadCaptureDnsChecklist({ domain: 'leads.arch9.co.za' })
+  assert.ok(dnsRows.some((row) => row.type === 'MX' && row.host === 'leads.arch9.co.za'))
+  assert.ok(dnsRows.some((row) => row.host === '_dmarc.leads.arch9.co.za'))
 } finally {
   await server.close()
 }

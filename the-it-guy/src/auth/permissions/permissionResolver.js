@@ -478,6 +478,12 @@ export function evaluateAccessRequirement(requirement = null, context = {}) {
   const resolved = resolvePermissionContext(context)
   if (!requirement) return { ok: true, reason: '', message: '' }
   if (FEATURE_FLAGS.disableRoleRestrictions && !import.meta.env.PROD) return { ok: true, reason: '', message: '' }
+  if (Array.isArray(requirement.anyOf) && requirement.anyOf.length) {
+    const results = requirement.anyOf.map((entry) => evaluateAccessRequirement(entry, context))
+    const allowed = results.find((result) => result.ok)
+    if (allowed) return allowed
+    return results.find((result) => !['wrong_app_role', 'wrong_workspace_type'].includes(result.reason)) || results[0] || { ok: false, reason: 'missing_permission', message: 'You do not have permission to access this area.' }
+  }
   if (
     requirement.appRole &&
     resolved.appRole !== normalizeCanonicalAppRole(requirement.appRole, '') &&

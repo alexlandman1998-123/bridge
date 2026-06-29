@@ -2053,7 +2053,7 @@ function AppRoutes() {
               <Route
                 path="/new-transaction"
                 element={
-                  <RoleRoute allowedRoles={['agent', 'attorney']}>
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney']}>
                     <NewTransactionPage />
                   </RoleRoute>
                 }

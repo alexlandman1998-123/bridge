@@ -35,7 +35,7 @@ function visibleKeys(items = []) {
 try {
   const { getRoleNavItems } = await server.ssrLoadModule('/src/lib/roles.js')
   const { PERMISSIONS, navPermissionByKey } = await server.ssrLoadModule('/src/auth/permissions/permissionRegistry.js')
-  const { can, filterNavigationItems, getRouteAccessRequirement } = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
+  const { can, evaluateAccessRequirement, filterNavigationItems, getRouteAccessRequirement } = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
   const { isCommercialProfessionalMember } = await server.ssrLoadModule('/src/modules/commercial/utils/resolveCommercialRole.js')
 
   assert.equal(navPermissionByKey.agency_pipeline, PERMISSIONS.viewLeads)
@@ -71,6 +71,11 @@ try {
   assert.equal(getRouteAccessRequirement('/pipeline'), null)
   assert.equal(getRouteAccessRequirement('/pipeline/leads')?.workspaceType, 'agency')
   assert.equal(getRouteAccessRequirement('/pipeline/canvassing')?.permission, PERMISSIONS.createLeads)
+  const newTransactionRequirement = getRouteAccessRequirement('/new-transaction')
+  assert.equal(evaluateAccessRequirement(newTransactionRequirement, agencyContext).ok, true)
+  assert.equal(evaluateAccessRequirement(newTransactionRequirement, developerContext).ok, true)
+  assert.equal(evaluateAccessRequirement(newTransactionRequirement, context({ appRole: 'attorney', workspaceType: 'attorney_firm', workspaceRole: 'owner' })).ok, true)
+  assert.equal(evaluateAccessRequirement(newTransactionRequirement, context({ appRole: 'developer', workspaceType: 'developer_company', workspaceRole: 'sales_agent' })).ok, false)
   assert.equal(isCommercialProfessionalMember({ module_context: 'commercial', commercial_role: 'commercial_principal' }), true)
   assert.equal(isCommercialProfessionalMember({ module_context: 'commercial', commercial_role: 'commercial_broker' }), true)
   assert.equal(isCommercialProfessionalMember({ module_context: 'commercial', commercial_role: 'landlord' }), false)

@@ -30,6 +30,29 @@ const OPTIONAL_LOG_COLUMNS = [
   "duplicate_of_log_id",
 ];
 
+const OPTIONAL_INBOUND_EMAIL_COLUMNS = [
+  "provider_event_id",
+  "provider_received_at",
+  "webhook_received_at",
+  "webhook_signature_status",
+  "webhook_user_agent",
+  "normalized_payload",
+  "parser_name",
+  "parse_confidence",
+  "parse_warnings",
+  "matched_fields",
+  "review_status",
+  "reviewed_by",
+  "reviewed_at",
+  "resolved_at",
+  "ignored_at",
+  "review_note",
+  "repaired_payload",
+  "repaired_by",
+  "repaired_at",
+  "lead_ingestion_log_id",
+];
+
 function jsonResponse(status: number, body: JsonRecord) {
   return new Response(JSON.stringify(body), {
     status,
@@ -83,23 +106,146 @@ function readPath(source: JsonRecord, path: string): unknown {
   }, source);
 }
 
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  if (!text || !/^[\[{]/.test(text)) return value;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return value;
+  }
+}
+
 function pickFirst(source: JsonRecord, paths: string[]) {
   for (const path of paths) {
-    const value = readPath(source, path);
+    const value = parseMaybeJson(readPath(source, path));
     if (Array.isArray(value) && value.length) return value[0];
     if (normalizeText(value)) return value;
   }
   return "";
 }
 
+function pickFirstArray(source: JsonRecord, paths: string[]) {
+  for (const path of paths) {
+    const value = parseMaybeJson(readPath(source, path));
+    if (Array.isArray(value)) return value;
+    if (normalizeText(value)) return [value];
+  }
+  return [];
+}
+
 function parseAddressList(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.flatMap((item) => parseAddressList(item));
+  }
+  if (value && typeof value === "object") {
+    const record = value as JsonRecord;
+    return parseAddressList(record.email || record.Email || record.address || record.Address || record.To || record.to || Object.values(record));
   }
   return normalizeText(value)
     .split(/[,;]/)
     .map(normalizeEmail)
     .filter((item) => item.includes("@"));
+}
+
+function normalizeProviderName(value: unknown) {
+  const key = normalizeLower(value).replace(/[^a-z0-9]+/g, "");
+  if (key.includes("mailgun")) return "mailgun";
+  if (key.includes("sendgrid")) return "sendgrid";
+  if (key.includes("postmark")) return "postmark";
+  if (key.includes("resend")) return "resend";
+  if (key.includes("ses") || key.includes("amazonses")) return "amazon-ses";
+  return normalizeText(value) || "inbound-email";
+}
+
+function inferProvider(payload: JsonRecord, headers: Headers) {
+  const explicit = normalizeText(payload.provider || payload.Provider || headers.get("x-arch9-inbound-provider"));
+  if (explicit) return normalizeProviderName(explicit);
+  if (payload["body-plain"] || payload["body-html"] || payload["stripped-text"] || payload["Message-Id"]) return "mailgun";
+  if (payload.envelope || payload.charsets || payload.spf || headers.get("x-twilio-email-event-webhook-signature")) return "sendgrid";
+  if (payload.MessageID || payload.FromFull || payload.ToFull || payload.TextBody || payload.HtmlBody) return "postmark";
+  if (payload.headers && payload.attachments && payload.to) return "resend";
+  if (payload.mail || payload.Records || payload.Type === "Notification") return "amazon-ses";
+  return "inbound-email";
+}
+
+function firstAddressFromFull(value: unknown) {
+  const rows = pickFirstArray({ value }, ["value"]);
+  return parseAddressList(rows.map((row) => {
+    if (row && typeof row === "object") {
+      const record = row as JsonRecord;
+      return record.Email || record.email || record.Address || record.address;
+    }
+    return row;
+  }));
+}
+
+function firstSesRecord(payload: JsonRecord) {
+  const records = pickFirstArray(payload, ["Records"]);
+  const first = records[0];
+  if (first && typeof first === "object") return first as JsonRecord;
+  return payload;
+}
+
+function normalizeProviderPayload(payload: JsonRecord, headers: Headers) {
+  const provider = inferProvider(payload, headers);
+  const sesRecord = provider === "amazon-ses" ? firstSesRecord(payload) : payload;
+  const sesMail = (sesRecord.mail || payload.mail || {}) as JsonRecord;
+  const sesCommonHeaders = (sesMail.commonHeaders || {}) as JsonRecord;
+  const sendgridEnvelope = parseMaybeJson(payload.envelope) as JsonRecord;
+  const postmarkFromFull = (payload.FromFull || payload.fromFull || {}) as JsonRecord;
+  const normalized: JsonRecord = { ...payload, provider };
+
+  if (provider === "mailgun") {
+    normalized.to = pickFirst(payload, ["recipient", "to", "To"]);
+    normalized.from = pickFirst(payload, ["sender", "from", "From"]);
+    normalized.subject = pickFirst(payload, ["subject", "Subject"]);
+    normalized.text = pickFirst(payload, ["body-plain", "stripped-text", "text", "TextBody"]);
+    normalized.html = pickFirst(payload, ["body-html", "stripped-html", "html", "HtmlBody"]);
+    normalized.messageId = pickFirst(payload, ["Message-Id", "message-id", "message_id", "MessageID"]);
+    normalized.providerEventId = pickFirst(payload, ["event", "event-data.id", "signature.token", "Message-Id", "message-id"]);
+    normalized.receivedAt = pickFirst(payload, ["timestamp", "event-data.timestamp", "Date", "date"]);
+  } else if (provider === "sendgrid") {
+    normalized.to = parseAddressList(sendgridEnvelope?.to || payload.to || payload.To);
+    normalized.from = pickFirst(payload, ["from", "From", "email"]);
+    normalized.subject = pickFirst(payload, ["subject", "Subject"]);
+    normalized.text = pickFirst(payload, ["text", "TextBody", "body"]);
+    normalized.html = pickFirst(payload, ["html", "HtmlBody"]);
+    normalized.messageId = pickFirst(payload, ["headers.Message-ID", "headers.message-id", "message_id", "messageId"]);
+    normalized.providerEventId = pickFirst(payload, ["sg_message_id", "smtp-id", "message_id", "messageId"]);
+    normalized.receivedAt = pickFirst(payload, ["timestamp", "date", "Date"]);
+  } else if (provider === "postmark") {
+    normalized.to = firstAddressFromFull(payload.ToFull || payload.toFull) || parseAddressList(payload.To || payload.to);
+    normalized.from = postmarkFromFull.Email || postmarkFromFull.email || payload.From || payload.from;
+    normalized.from_name = postmarkFromFull.Name || postmarkFromFull.name || payload.FromName || payload.fromName;
+    normalized.subject = payload.Subject || payload.subject;
+    normalized.text = payload.TextBody || payload.textBody;
+    normalized.html = payload.HtmlBody || payload.htmlBody;
+    normalized.messageId = payload.MessageID || payload.MessageId || payload.messageId;
+    normalized.providerEventId = payload.MessageID || payload.MessageId || payload.messageId;
+    normalized.receivedAt = payload.Date || payload.date;
+  } else if (provider === "resend") {
+    normalized.to = payload.to || readPath(payload, "email.to");
+    normalized.from = payload.from || readPath(payload, "email.from");
+    normalized.subject = payload.subject || readPath(payload, "email.subject");
+    normalized.text = payload.text || payload.textBody || readPath(payload, "email.text");
+    normalized.html = payload.html || payload.htmlBody || readPath(payload, "email.html");
+    normalized.messageId = payload.email_id || payload.emailId || payload.message_id || payload.messageId || readPath(payload, "email.id");
+    normalized.providerEventId = payload.id || payload.email_id || payload.emailId || readPath(payload, "data.id");
+    normalized.receivedAt = payload.created_at || payload.createdAt || readPath(payload, "created_at");
+  } else if (provider === "amazon-ses") {
+    normalized.to = sesMail.destination || sesCommonHeaders.to;
+    normalized.from = sesMail.source || sesCommonHeaders.from;
+    normalized.subject = sesCommonHeaders.subject || payload.subject;
+    normalized.text = payload.content || payload.text || payload.body;
+    normalized.html = payload.html;
+    normalized.messageId = sesMail.messageId || payload.messageId;
+    normalized.providerEventId = sesMail.messageId || payload.messageId;
+    normalized.receivedAt = sesMail.timestamp || payload.Timestamp || payload.timestamp;
+  }
+
+  return normalized;
 }
 
 function pickFirstMatch(text: string, patterns: RegExp[]) {
@@ -353,7 +499,8 @@ async function parseRequestPayload(req: Request) {
   return { raw: await req.text() };
 }
 
-function normalizeInboundPayload(payload: JsonRecord) {
+function normalizeInboundPayload(payload: JsonRecord, headers: Headers, webhookReceivedAt: string, signatureStatus: string) {
+  const normalizedPayload = normalizeProviderPayload(payload, headers);
   const toAddresses = parseAddressList(pickFirst(payload, [
     "to",
     "To",
@@ -363,14 +510,15 @@ function normalizeInboundPayload(payload: JsonRecord) {
     "envelope.to",
     "Envelope.To",
   ]));
-  const ccAddresses = parseAddressList(pickFirst(payload, ["cc", "Cc"]));
-  const fromRaw = pickFirst(payload, ["from", "From", "sender", "Sender"]);
-  const fromEmail = normalizeEmail(pickFirst(payload, ["from_email", "fromEmail", "sender.email"]) || fromRaw);
-  const fromName = normalizeText(pickFirst(payload, ["from_name", "fromName", "sender.name"]));
-  const subject = normalizeText(pickFirst(payload, ["subject", "Subject"]));
-  const textBody = normalizeText(pickFirst(payload, ["text", "TextBody", "text_body", "textBody", "body", "stripped-text"]));
-  const htmlBody = normalizeText(pickFirst(payload, ["html", "HtmlBody", "html_body", "htmlBody", "body-html", "stripped-html"]));
-  const providerMessageId = normalizeText(pickFirst(payload, [
+  const normalizedToAddresses = parseAddressList(normalizedPayload.to);
+  const ccAddresses = parseAddressList(pickFirst(normalizedPayload, ["cc", "Cc"]));
+  const fromRaw = pickFirst(normalizedPayload, ["from", "From", "sender", "Sender"]);
+  const fromEmail = normalizeEmail(pickFirst(normalizedPayload, ["from_email", "fromEmail", "sender.email"]) || fromRaw);
+  const fromName = normalizeText(pickFirst(normalizedPayload, ["from_name", "fromName", "sender.name"]));
+  const subject = normalizeText(pickFirst(normalizedPayload, ["subject", "Subject"]));
+  const textBody = normalizeText(pickFirst(normalizedPayload, ["text", "TextBody", "text_body", "textBody", "body", "stripped-text"]));
+  const htmlBody = normalizeText(pickFirst(normalizedPayload, ["html", "HtmlBody", "html_body", "htmlBody", "body-html", "stripped-html"]));
+  const providerMessageId = normalizeText(pickFirst(normalizedPayload, [
     "message_id",
     "messageId",
     "MessageID",
@@ -378,19 +526,27 @@ function normalizeInboundPayload(payload: JsonRecord) {
     "MessageID",
     "id",
   ]));
+  const providerEventId = normalizeText(pickFirst(normalizedPayload, ["providerEventId", "eventId", "event_id", "id"]));
+  const providerReceivedAt = normalizeText(pickFirst(normalizedPayload, ["receivedAt", "received_at", "Date", "date", "timestamp"]));
 
   return {
-    provider: normalizeText(payload.provider) || "inbound-email",
+    provider: normalizeProviderName(normalizedPayload.provider || payload.provider),
     providerMessageId: providerMessageId || createUuid(),
+    providerEventId,
     fromEmail,
     fromName,
-    replyToEmail: normalizeEmail(pickFirst(payload, ["reply_to", "replyTo", "Reply-To"])),
-    toAddresses,
+    replyToEmail: normalizeEmail(pickFirst(normalizedPayload, ["reply_to", "replyTo", "Reply-To"])),
+    toAddresses: normalizedToAddresses.length ? normalizedToAddresses : toAddresses,
     ccAddresses,
     subject,
     textBody,
     htmlBody,
-    receivedAt: normalizeText(pickFirst(payload, ["received_at", "receivedAt", "Date", "date"])) || new Date().toISOString(),
+    providerReceivedAt: providerReceivedAt || null,
+    receivedAt: providerReceivedAt || webhookReceivedAt,
+    webhookReceivedAt,
+    webhookSignatureStatus: signatureStatus,
+    webhookUserAgent: normalizeText(headers.get("user-agent")),
+    normalizedPayload,
   };
 }
 
@@ -587,10 +743,15 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return jsonResponse(405, { success: false, error: "Method not allowed." });
 
   const configuredSecret = normalizeText(Deno.env.get("INBOUND_LEAD_EMAIL_WEBHOOK_SECRET"));
+  const requireSecret = normalizeLower(Deno.env.get("INBOUND_LEAD_EMAIL_REQUIRE_SECRET")) === "true";
   const providedSecret = normalizeText(req.headers.get("x-arch9-inbound-secret") || new URL(req.url).searchParams.get("secret"));
+  if (requireSecret && !configuredSecret) {
+    return jsonResponse(500, { success: false, error: "Inbound email webhook secret is required but not configured." });
+  }
   if (configuredSecret && configuredSecret !== providedSecret) {
     return jsonResponse(401, { success: false, error: "Invalid inbound email webhook secret." });
   }
+  const signatureStatus = configuredSecret ? "shared_secret_valid" : "shared_secret_disabled";
 
   const supabaseUrl = normalizeText(Deno.env.get("SUPABASE_URL"));
   const serviceRoleKey = normalizeText(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
@@ -601,8 +762,16 @@ Deno.serve(async (req) => {
   const client = createClient(supabaseUrl, serviceRoleKey);
 
   try {
+    const webhookReceivedAt = new Date().toISOString();
     const payload = await parseRequestPayload(req);
-    const inbound = normalizeInboundPayload(payload);
+    const inbound = normalizeInboundPayload(payload, req.headers, webhookReceivedAt, signatureStatus);
+    const allowedProviders = normalizeText(Deno.env.get("INBOUND_LEAD_EMAIL_ALLOWED_PROVIDERS"))
+      .split(",")
+      .map((provider) => normalizeProviderName(provider))
+      .filter(Boolean);
+    if (allowedProviders.length && !allowedProviders.includes(inbound.provider)) {
+      return jsonResponse(400, { success: false, error: `Inbound provider ${inbound.provider} is not allowed.` });
+    }
     const recipient = inbound.toAddresses.find((address) => address.includes("@")) || "";
     const aliasResult = await client
       .from("lead_capture_aliases")
@@ -619,6 +788,11 @@ Deno.serve(async (req) => {
       capture_alias_id: alias?.alias_id || null,
       provider: inbound.provider,
       provider_message_id: inbound.providerMessageId,
+      provider_event_id: inbound.providerEventId || null,
+      provider_received_at: inbound.providerReceivedAt || null,
+      webhook_received_at: inbound.webhookReceivedAt,
+      webhook_signature_status: inbound.webhookSignatureStatus,
+      webhook_user_agent: inbound.webhookUserAgent || null,
       from_email: inbound.fromEmail || null,
       from_name: inbound.fromName || null,
       reply_to_email: inbound.replyToEmail || null,
@@ -631,11 +805,10 @@ Deno.serve(async (req) => {
       external_reference: inbound.providerMessageId,
       status: alias ? "received" : "unmatched",
       raw_payload: payload,
+      normalized_payload: inbound.normalizedPayload,
       received_at: inbound.receivedAt,
     };
-    const rawEmailResult = await client.from("inbound_lead_emails").insert(rawEmailPayload).select("*").single();
-    if (rawEmailResult.error) throw rawEmailResult.error;
-    const inboundEmail = rawEmailResult.data as JsonRecord;
+    const inboundEmail = await insertWithColumnFallback(client, "inbound_lead_emails", rawEmailPayload, OPTIONAL_INBOUND_EMAIL_COLUMNS);
 
     if (!alias) {
       await recordFailure(client, {

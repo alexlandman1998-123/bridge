@@ -6,6 +6,7 @@ import {
   Inbox,
   Mail,
   RefreshCw,
+  Search,
   UserRound,
   UsersRound,
   Wrench,
@@ -17,13 +18,20 @@ import { useWorkspace } from '../../context/WorkspaceContext'
 import { canManageOrganisationSettings, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../../lib/settingsApi'
 import {
+  buildLeadCaptureDnsChecklist,
   buildLeadCaptureReviewQueueRows,
   buildLeadCaptureRepairDraft,
+  buildLeadCaptureWebhookUrl,
   buildLeadCaptureStatusRows,
   ensureDefaultLeadCaptureAliases,
   ensureLeadCaptureAliasesForUsers,
+  filterLeadCaptureReviewQueueRows,
   getLeadCaptureSetupStatus,
   ignoreLeadCaptureReviewItem,
+  LEAD_CAPTURE_CONFIDENCE_FILTERS,
+  LEAD_CAPTURE_PRODUCTION_CHECKLIST,
+  LEAD_CAPTURE_PRODUCTION_ENV_VARS,
+  LEAD_CAPTURE_REVIEW_STATUSES,
   LEAD_CAPTURE_SOURCES,
   listInboundLeadEmails,
   listLeadCaptureAliases,
@@ -253,11 +261,38 @@ function RepairField({ label, value, onChange, placeholder = '', type = 'text' }
   )
 }
 
-function RepairDrawer({ item, draft, onChange, onClose, onCreateLead, onLinkLead, saving = false }) {
+function RepairSelect({ label, value, onChange, options = [] }) {
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">{label}</span>
+      <select
+        value={value || ''}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function RepairDrawer({ item, draft, users = [], onChange, onClose, onCreateLead, onLinkLead, saving = false }) {
   if (!item) return null
   const matchedFields = formatMatchedFields(item.matchedFields)
   const rawPreview = JSON.stringify(item.raw?.payload || item.raw || {}, null, 2)
   const update = (field) => (value) => onChange({ ...draft, [field]: value })
+  const agentOptions = [
+    { value: '', label: 'No assigned agent' },
+    ...users.map((user) => {
+      const userId = normalizeText(user.userId || user.id)
+      return {
+        value: userId,
+        label: normalizeText(user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ')) || user.email || userId,
+      }
+    }).filter((option) => option.value),
+  ]
   return (
     <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-3xl flex-col border-l border-[#d7e2ee] bg-white shadow-2xl">
       <header className="flex items-start justify-between gap-4 border-b border-[#e3ebf3] p-5">
@@ -307,7 +342,7 @@ function RepairDrawer({ item, draft, onChange, onClose, onCreateLead, onLinkLead
             <RepairField label="Budget" value={draft.budget} onChange={update('budget')} type="number" placeholder="0" />
             <RepairField label="Area" value={draft.areaInterest} onChange={update('areaInterest')} placeholder="Suburb or area" />
             <RepairField label="Property Type" value={draft.propertyType} onChange={update('propertyType')} placeholder="Apartment, house..." />
-            <RepairField label="Assigned Agent Id" value={draft.assignedAgentId} onChange={update('assignedAgentId')} placeholder="Optional user UUID" />
+            <RepairSelect label="Assigned Agent" value={draft.assignedAgentId} onChange={update('assignedAgentId')} options={agentOptions} />
             <RepairField label="External Reference" value={draft.externalReference} onChange={update('externalReference')} placeholder="Provider message/reference" />
             <RepairField label="Review Note" value={draft.reviewNote} onChange={update('reviewNote')} placeholder="What was repaired" />
           </div>
@@ -343,6 +378,117 @@ function RepairDrawer({ item, draft, onChange, onClose, onCreateLead, onLinkLead
   )
 }
 
+function ReviewQueueFilters({ filters, setFilters, sources = [], users = [], total = 0, visible = 0 }) {
+  const sourceOptions = ['all', ...new Set([...sources, 'Other'].filter(Boolean))]
+  const agentOptions = [
+    { value: 'all', label: 'All agents' },
+    { value: 'unassigned', label: 'Unassigned' },
+    ...users.map((user) => {
+      const userId = normalizeText(user.userId || user.id)
+      return {
+        value: userId,
+        label: normalizeText(user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ')) || user.email || userId,
+      }
+    }).filter((option) => option.value),
+  ]
+  const update = (field) => (value) => setFilters((previous) => ({ ...previous, [field]: value }))
+  return (
+    <div className="grid gap-3 rounded-[14px] border border-[#e3ebf3] bg-[#f8fbfe] p-4">
+      <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.5fr)_repeat(4,minmax(150px,1fr))]">
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8da6]" size={15} />
+          <input
+            value={filters.search}
+            onChange={(event) => update('search')(event.target.value)}
+            className="min-h-10 w-full rounded-[12px] border border-[#d7e2ee] bg-white pl-9 pr-3 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"
+            placeholder="Search review queue"
+          />
+        </label>
+        <select value={filters.status} onChange={(event) => update('status')(event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]">
+          <option value="all">All statuses</option>
+          {LEAD_CAPTURE_REVIEW_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+        </select>
+        <select value={filters.source} onChange={(event) => update('source')(event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]">
+          {sourceOptions.map((source) => <option key={source} value={source}>{source === 'all' ? 'All sources' : source}</option>)}
+        </select>
+        <select value={filters.confidence} onChange={(event) => update('confidence')(event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]">
+          {LEAD_CAPTURE_CONFIDENCE_FILTERS.map((confidence) => <option key={confidence} value={confidence}>{confidence === 'all' ? 'All confidence' : confidence}</option>)}
+        </select>
+        <select value={filters.assignedAgentId} onChange={(event) => update('assignedAgentId')(event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]">
+          {agentOptions.map((option) => <option key={option.value || 'unassigned'} value={option.value}>{option.label}</option>)}
+        </select>
+      </div>
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">{visible} of {total} reviews shown</p>
+    </div>
+  )
+}
+
+function ProductionSetupSection({ domain, webhookUrl, dnsRows, onCopy }) {
+  return (
+    <SettingsSectionCard title="Production Email Setup" description="Provider, MX, webhook, and monitoring readiness for the capture domain.">
+      <div className="grid gap-4">
+        <div className="grid gap-3 rounded-[14px] border border-[#e3ebf3] bg-white p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Inbound Webhook</p>
+            <p className="mt-1 break-all font-mono text-sm text-[#35546c]">{webhookUrl}</p>
+          </div>
+          <IconButton label="Copy inbound webhook" icon={Copy} onClick={() => onCopy(webhookUrl)} />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {LEAD_CAPTURE_PRODUCTION_CHECKLIST.map((item) => (
+            <div key={item.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4">
+              <p className="font-semibold text-[#162334]">{item.label}</p>
+              <p className="mt-2 text-sm text-[#6b7d93]">{item.description}</p>
+            </div>
+          ))}
+        </div>
+        <div className="overflow-hidden rounded-[14px] border border-[#e3ebf3] bg-white">
+          <table className="min-w-full text-left">
+            <thead className="bg-[#f8fbfe] text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">
+              <tr>
+                <th className="px-4 py-3">Environment Variable</th>
+                <th className="px-4 py-3">Required</th>
+                <th className="px-4 py-3">Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              {LEAD_CAPTURE_PRODUCTION_ENV_VARS.map((row) => (
+                <tr key={row.name} className="border-t border-[#e8eef5] align-top">
+                  <td className="px-4 py-3 font-mono text-xs text-[#35546c]">{row.name}</td>
+                  <td className="px-4 py-3 text-sm font-semibold text-[#162334]">{row.required ? 'Yes' : 'Optional'}</td>
+                  <td className="px-4 py-3 text-sm text-[#6b7d93]">{row.purpose}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="overflow-hidden rounded-[14px] border border-[#e3ebf3] bg-white">
+          <table className="min-w-full text-left">
+            <thead className="bg-[#f8fbfe] text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">
+              <tr>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Host</th>
+                <th className="px-4 py-3">Value</th>
+                <th className="px-4 py-3">Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dnsRows.map((row) => (
+                <tr key={`${row.type}-${row.host}`} className="border-t border-[#e8eef5] align-top">
+                  <td className="px-4 py-3 font-semibold text-[#162334]">{row.type}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-[#35546c]">{row.host || domain}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-[#35546c]">{row.priority ? `${row.priority} ${row.value}` : row.value}</td>
+                  <td className="px-4 py-3 text-sm text-[#6b7d93]">{row.purpose}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </SettingsSectionCard>
+  )
+}
+
 export default function SettingsLeadCapturePage() {
   const { profile, role, currentWorkspace, workspaceType } = useWorkspace()
   const [context, setContext] = useState(null)
@@ -354,6 +500,13 @@ export default function SettingsLeadCapturePage() {
   const [saving, setSaving] = useState(false)
   const [selectedRepairItem, setSelectedRepairItem] = useState(null)
   const [repairDraft, setRepairDraft] = useState({})
+  const [reviewFilters, setReviewFilters] = useState({
+    search: '',
+    status: 'open',
+    source: 'all',
+    confidence: 'all',
+    assignedAgentId: 'all',
+  })
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -377,11 +530,11 @@ export default function SettingsLeadCapturePage() {
           if (String(aliasError?.message || '').toLowerCase().includes('lead_capture_aliases')) return []
           throw aliasError
         }),
-        listInboundLeadEmails(organisationId, { limit: 80 }).catch((emailError) => {
+        listInboundLeadEmails(organisationId, { limit: 200 }).catch((emailError) => {
           if (String(emailError?.message || '').toLowerCase().includes('inbound_lead_emails')) return []
           throw emailError
         }),
-        listLeadParseFailures(organisationId, { limit: 100, status: 'open' }).catch((failureError) => {
+        listLeadParseFailures(organisationId, { limit: 200, status: '' }).catch((failureError) => {
           if (String(failureError?.message || '').toLowerCase().includes('lead_parse_failures')) return []
           if (String(failureError?.message || '').toLowerCase().includes('review_status')) return []
           throw failureError
@@ -394,7 +547,7 @@ export default function SettingsLeadCapturePage() {
       setReviewItems(buildLeadCaptureReviewQueueRows({
         failures: nextFailures,
         inboundEmails: nextInboundEmails,
-        status: 'open',
+        status: 'all',
       }))
     } catch (loadError) {
       setError(loadError?.message || 'Lead capture settings could not be loaded.')
@@ -432,6 +585,20 @@ export default function SettingsLeadCapturePage() {
     () => buildLeadCaptureStatusRows({ aliases, inboundEmails, users }),
     [aliases, inboundEmails, users],
   )
+  const reviewItemsWithAssignment = useMemo(() => {
+    const aliasesById = new Map(aliases.map((alias) => [alias.aliasId, alias]))
+    return reviewItems.map((item) => {
+      const alias = aliasesById.get(item.captureAliasId)
+      return {
+        ...item,
+        assignedAgentId: item.assignedAgentId || alias?.agentUserId || '',
+      }
+    })
+  }, [aliases, reviewItems])
+  const filteredReviewItems = useMemo(
+    () => filterLeadCaptureReviewQueueRows(reviewItemsWithAssignment, reviewFilters),
+    [reviewFilters, reviewItemsWithAssignment],
+  )
   const currentUserAliases = aliases.filter((alias) => alias.agentUserId === profileId || (!alias.agentUserId && !canManage))
   const currentUserLatestEmail = inboundEmails.find((email) => currentUserAliases.some((alias) => alias.aliasId === email.captureAliasId)) || null
   const currentUserStatus = getLeadCaptureSetupStatus({ aliases: currentUserAliases, lastInboundEmail: currentUserLatestEmail })
@@ -439,7 +606,13 @@ export default function SettingsLeadCapturePage() {
   const generatedCount = aliases.filter((alias) => alias.status === 'active').length
   const activeAgentCount = rows.filter((row) => row.status === 'active').length
   const receivedCount = inboundEmails.length
-  const failureCount = reviewItems.filter((item) => item.status === 'open').length
+  const failureCount = reviewItemsWithAssignment.filter((item) => item.status === 'open').length
+  const leadCaptureDomain = aliases[0]?.aliasDomain || 'leads.arch9.co.za'
+  const webhookUrl = buildLeadCaptureWebhookUrl({
+    supabaseFunctionsUrl: import.meta.env.VITE_SUPABASE_FUNCTIONS_URL,
+    supabaseProjectRef: import.meta.env.VITE_SUPABASE_PROJECT_REF,
+  })
+  const dnsRows = buildLeadCaptureDnsChecklist({ domain: leadCaptureDomain })
 
   async function copyAddress(value) {
     try {
@@ -639,6 +812,15 @@ export default function SettingsLeadCapturePage() {
         </SettingsSectionCard>
       ) : null}
 
+      {canManage ? (
+        <ProductionSetupSection
+          domain={leadCaptureDomain}
+          webhookUrl={webhookUrl}
+          dnsRows={dnsRows}
+          onCopy={copyAddress}
+        />
+      ) : null}
+
       <SettingsSectionCard title="Recent Inbound Emails" description="Latest raw email events received through capture addresses.">
         {inboundEmails.length ? (
           <div className="grid gap-3">
@@ -676,9 +858,17 @@ export default function SettingsLeadCapturePage() {
       </SettingsSectionCard>
 
       <SettingsSectionCard title="Lead Capture Review Queue" description="Open parse failures and low-confidence inbound lead emails.">
-        {reviewItems.length ? (
+        <ReviewQueueFilters
+          filters={reviewFilters}
+          setFilters={setReviewFilters}
+          sources={LEAD_CAPTURE_SOURCES}
+          users={users}
+          total={reviewItemsWithAssignment.length}
+          visible={filteredReviewItems.length}
+        />
+        {filteredReviewItems.length ? (
           <div className="grid gap-3">
-            {reviewItems.slice(0, 12).map((item) => (
+            {filteredReviewItems.slice(0, 24).map((item) => (
               <ReviewQueueItem
                 key={item.id}
                 item={item}
@@ -692,7 +882,7 @@ export default function SettingsLeadCapturePage() {
         ) : (
           <SettingsEmptyState
             title="No lead capture reviews open"
-            description="Failed or low-confidence inbound email parses will appear here."
+            description="Try a broader source, status, confidence, agent, or text search."
           />
         )}
       </SettingsSectionCard>
@@ -700,6 +890,7 @@ export default function SettingsLeadCapturePage() {
       <RepairDrawer
         item={selectedRepairItem}
         draft={repairDraft}
+        users={users}
         onChange={setRepairDraft}
         onClose={() => {
           setSelectedRepairItem(null)
