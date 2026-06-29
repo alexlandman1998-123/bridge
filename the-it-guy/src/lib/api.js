@@ -40437,6 +40437,7 @@ export async function createDevelopmentWorkspace({
   units = [],
   documents = [],
 } = {}) {
+  const warnings = []
   const created = await createDevelopment({
     name: details.name,
     plannedUnits: details.totalUnitsExpected ?? details.plannedUnits ?? units.length,
@@ -40468,7 +40469,18 @@ export async function createDevelopmentWorkspace({
 
   await saveDevelopmentDetails(developmentId, details)
   if (hasDevelopmentFinancialInputs(financials)) {
-    await saveDevelopmentFinancials(developmentId, financials)
+    try {
+      await saveDevelopmentFinancials(developmentId, financials)
+    } catch (financialsError) {
+      if (!isPermissionDeniedError(financialsError)) {
+        throw financialsError
+      }
+      console.warn('[Developments] Financials were not saved because development_financials RLS blocked the write.', financialsError)
+      warnings.push({
+        code: 'development_financials_rls_blocked',
+        message: 'Development financials were not saved because the database policy blocked this write.',
+      })
+    }
   }
   try {
     await updateDevelopmentSettings(developmentId, {
@@ -40533,7 +40545,10 @@ export async function createDevelopmentWorkspace({
     })
   }
 
-  return created
+  return {
+    ...created,
+    warnings,
+  }
 }
 
 export const EMPTY_STATE = {
