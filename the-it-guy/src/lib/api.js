@@ -23036,6 +23036,14 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const deferFinanceType = Boolean(options?.deferFinanceType)
   const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [], { transactionType })
   const sourceContext = options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {}
+  const resolvedOrganisationId = normalizeNullableUuid(
+    sourceContext.organisationId ||
+      sourceContext.organisation_id ||
+      sourceContext.workspaceId ||
+      sourceContext.workspace_id ||
+      setup.organisationId ||
+      setup.organisation_id,
+  )
   const shouldAutoResolveRolePlayers = options?.disableAutoPartnerRouting !== true
   const autoRoutingRoleTypes = shouldAutoResolveRolePlayers
     ? (
@@ -23155,6 +23163,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   )
 
   const transactionPayload = {
+    organisation_id: resolvedOrganisationId,
     development_id: transactionType === 'developer_sale' ? setup.developmentId : null,
     unit_id: transactionType === 'developer_sale' ? setup.unitId : null,
     buyer_id: buyer?.id || null,
@@ -23226,6 +23235,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   }
 
   const minimalTransactionPayload = {
+    organisation_id: resolvedOrganisationId,
     development_id: transactionType === 'developer_sale' ? setup.developmentId : null,
     unit_id: transactionType === 'developer_sale' ? setup.unitId : null,
     buyer_id: buyer?.id || null,
@@ -23360,6 +23370,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       isMissingColumnError(transactionResult.error, 'onboarding_completed_at') ||
       isMissingColumnError(transactionResult.error, 'external_onboarding_submitted_at') ||
       isMissingColumnError(transactionResult.error, 'purchase_price') ||
+      isMissingColumnError(transactionResult.error, 'organisation_id') ||
       isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
       isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
@@ -23430,6 +23441,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     delete fallbackPayload.agency_commission_amount
     delete fallbackPayload.owner_user_id
     delete fallbackPayload.access_level
+    if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
+      delete fallbackPayload.organisation_id
+    }
 
     transactionResult = await client
       .from('transactions')
@@ -23509,6 +23523,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'onboarding_completed_at') ||
         isMissingColumnError(transactionResult.error, 'external_onboarding_submitted_at') ||
         isMissingColumnError(transactionResult.error, 'purchase_price') ||
+        isMissingColumnError(transactionResult.error, 'organisation_id') ||
         isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
@@ -23577,6 +23592,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agency_commission_amount
       delete fallbackPayload.owner_user_id
       delete fallbackPayload.access_level
+      if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
+        delete fallbackPayload.organisation_id
+      }
 
       transactionResult = await client
         .from('transactions')
@@ -23612,6 +23630,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         isMissingColumnError(transactionResult.error, 'onboarding_completed_at') ||
         isMissingColumnError(transactionResult.error, 'external_onboarding_submitted_at') ||
         isMissingColumnError(transactionResult.error, 'purchase_price') ||
+        isMissingColumnError(transactionResult.error, 'organisation_id') ||
         isMissingColumnError(transactionResult.error, 'assigned_agent_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_attorney_email') ||
         isMissingColumnError(transactionResult.error, 'assigned_bond_originator_email') ||
@@ -23679,6 +23698,9 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       delete fallbackPayload.agency_commission_amount
       delete fallbackPayload.owner_user_id
       delete fallbackPayload.access_level
+      if (isMissingColumnError(transactionResult.error, 'organisation_id')) {
+        delete fallbackPayload.organisation_id
+      }
 
       transactionResult = await client
         .from('transactions')
@@ -26871,6 +26893,11 @@ export async function fetchTransactionsListSummary({
     activeTransactionsOnly,
   })
   const client = requireClient()
+  const scopedDevelopmentIds = normalizedOrganisationId
+    ? await fetchDevelopmentIdsForOrganisation(client, normalizedOrganisationId)
+    : []
+  const scopedDevelopmentIdSet = new Set(scopedDevelopmentIds)
+  const canScopeByDevelopmentIds = normalizedOrganisationId && scopedDevelopmentIds.length > 0
 
   let transactionsQuery = client
     .from('transactions')
@@ -26878,8 +26905,9 @@ export async function fetchTransactionsListSummary({
 
   if (developmentId) {
     transactionsQuery = transactionsQuery.eq('development_id', developmentId)
-  }
-  if (normalizedOrganisationId) {
+  } else if (canScopeByDevelopmentIds) {
+    transactionsQuery = transactionsQuery.in('development_id', scopedDevelopmentIds)
+  } else if (normalizedOrganisationId) {
     transactionsQuery = transactionsQuery.eq('organisation_id', normalizedOrganisationId)
   }
 
@@ -26969,8 +26997,9 @@ export async function fetchTransactionsListSummary({
       .select(selectWithoutKnownMissingColumns(TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE))
     if (developmentId) {
       fallbackQuery = fallbackQuery.eq('development_id', developmentId)
-    }
-    if (normalizedOrganisationId) {
+    } else if (canScopeByDevelopmentIds) {
+      fallbackQuery = fallbackQuery.in('development_id', scopedDevelopmentIds)
+    } else if (normalizedOrganisationId) {
       fallbackQuery = fallbackQuery.eq('organisation_id', normalizedOrganisationId)
     }
     query = await fallbackQuery
@@ -26988,7 +27017,11 @@ export async function fetchTransactionsListSummary({
     if (activeTransactionsOnly && row?.is_active === false) {
       return false
     }
-    if (normalizedOrganisationId && String(row?.organisation_id || '').trim() !== normalizedOrganisationId) {
+    if (
+      normalizedOrganisationId &&
+      String(row?.organisation_id || '').trim() !== normalizedOrganisationId &&
+      !scopedDevelopmentIdSet.has(String(row?.development_id || '').trim())
+    ) {
       return false
     }
     return true

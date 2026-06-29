@@ -1570,6 +1570,15 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
           currentMembership?.branch_id ||
           '',
       }
+      const sourceContext = {
+        organisationId:
+          organisation?.id ||
+          workspace?.id ||
+          currentMembership?.organisationId ||
+          currentMembership?.organisation_id ||
+          '',
+        workspaceId: workspace?.id || organisation?.id || '',
+      }
       const result = await createTransactionFromWizard({
         setup: {
           ...form.setup,
@@ -1584,6 +1593,7 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', onSave
         options: {
           allowIncomplete,
           hierarchyScope,
+          sourceContext,
           rolePlayers: [
             transferAttorneyRolePlayerSelection,
             bondOriginatorRolePlayerSelection,
