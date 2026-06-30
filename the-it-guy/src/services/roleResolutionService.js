@@ -20,6 +20,21 @@ export const TRANSACTION_ROLES = Object.freeze({
 
 export const TRANSACTION_ROLE_VALUES = Object.freeze(Object.values(TRANSACTION_ROLES))
 
+const AGENCY_AGENT_ROLE_ALIASES = new Set([
+  'agent',
+  'agency_agent',
+  'estate_agent',
+  'real_estate_agent',
+  'sales_agent',
+  'salesperson',
+  'sales_person',
+  'sales_consultant',
+  'property_practitioner',
+  'property_consultant',
+  'broker',
+  'agent_member',
+])
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -63,7 +78,7 @@ export function resolveWorkspaceRole(membership = {}, options = {}) {
       membership?.role ||
       membership?.rawRole
   const normalizedRawRole = normalizeKey(rawRole)
-  if (workspaceType === 'agency' && normalizedRawRole === 'sales_agent') return ORG_ROLES.agent
+  if (workspaceType === 'agency' && AGENCY_AGENT_ROLE_ALIASES.has(normalizedRawRole)) return ORG_ROLES.agent
   return normalizeOrgRole(rawRole, { appRole, workspaceType })
 }
 

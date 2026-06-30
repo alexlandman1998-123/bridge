@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import process from 'node:process'
 import { createServer } from 'vite'
 
 const server = await createServer({
@@ -49,6 +50,16 @@ try {
   assert.equal(agencyKeys.includes('developer_pipeline'), false)
   assert.equal(can(PERMISSIONS.viewLeads, agencyContext), true)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, agencyContext), false)
+
+  for (const workspaceRole of ['agent', 'agency_agent', 'estate agent', 'property_practitioner', 'broker']) {
+    const agentContext = context({ appRole: 'agent', workspaceType: 'agency', workspaceRole })
+    const agentKeys = visibleKeys(filterNavigationItems(getRoleNavItems('agent'), agentContext))
+    assert.equal(agentKeys.includes('agency_pipeline'), true, `${workspaceRole} should see agency pipeline navigation`)
+    assert.equal(can(PERMISSIONS.viewLeads, agentContext), true, `${workspaceRole} should view residential leads`)
+    assert.equal(can(PERMISSIONS.createLeads, agentContext), true, `${workspaceRole} should create residential leads`)
+    assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/leads'), agentContext).ok, true, `${workspaceRole} should access residential leads`)
+    assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/canvassing'), agentContext).ok, true, `${workspaceRole} should access residential canvassing`)
+  }
 
   const developerContext = context({ appRole: 'developer', workspaceType: 'developer_company', workspaceRole: 'owner' })
   const developerKeys = visibleKeys(filterNavigationItems(getRoleNavItems('developer'), developerContext))
