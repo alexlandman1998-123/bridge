@@ -841,12 +841,7 @@ export default function AgentEnquiriesPage() {
     if (searchParams.get('import') !== '1') return
     setImportLeadCategory(getLockedImportCategory(searchParams.get('leadCategory') || searchParams.get('category')))
     setImportOpen(true)
-    const nextParams = new URLSearchParams(searchParams)
-    nextParams.delete('import')
-    nextParams.delete('leadCategory')
-    nextParams.delete('category')
-    setSearchParams(nextParams, { replace: true })
-  }, [searchParams, setSearchParams])
+  }, [searchParams])
 
   const summary = useMemo(() => ({
     newCount: rows.filter((row) => row.status === 'new' || row.status === 'assigned').length,
@@ -859,6 +854,18 @@ export default function AgentEnquiriesPage() {
   function handleUpdated(updated) {
     if (updated?.logId) setSelected(updated)
     void loadRows()
+  }
+
+  function closeLeadImport() {
+    setImportOpen(false)
+    setImportLeadCategory('')
+    if (searchParams.get('import') === '1') {
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('import')
+      nextParams.delete('leadCategory')
+      nextParams.delete('category')
+      setSearchParams(nextParams, { replace: true })
+    }
   }
 
   return (
@@ -906,7 +913,7 @@ export default function AgentEnquiriesPage() {
         organisationId={organisationId}
         actor={actor}
         defaultLeadCategory={importLeadCategory}
-        onClose={() => setImportOpen(false)}
+        onClose={closeLeadImport}
         onImported={loadRows}
       />
     </main>
