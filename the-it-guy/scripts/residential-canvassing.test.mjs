@@ -12,5 +12,11 @@ assert.match(canvassingPageSource, /canAccessPrincipalExperience/, 'residential 
 assert.match(canvassingPageSource, /if \(isPrincipalAgentView\) return Array\.isArray\(prospects\) \? prospects : \[\]/, 'principal canvassing view should not hide prospects behind agent-only scoping')
 assert.match(canvassingPageSource, /assignedAgentId: currentAgentIdentity/, 'new residential canvassing prospects should default to the current agent assignment')
 assert.doesNotMatch(canvassingPageSource, /BRIDGE9_PRINCIPAL_DEMO_AGENT_EMAIL/, 'residential canvassing should not silently default prospect assignment to the demo principal agent')
+assert.match(canvassingPageSource, /CanvassingImportModal/, 'residential canvassing should expose a standalone bulk upload module')
+assert.match(canvassingPageSource, /audience=\{prospectView\}/, 'canvassing import should lock to the selected buyer or seller prospect view')
+assert.match(canvassingPageSource, /buildCanvassingImportPayload/, 'canvassing import should map CSV rows into canvassing prospect payloads')
+assert.match(canvassingPageSource, /createCanvassingProspect\(organisationId, payload\)/, 'canvassing import should create canvassing prospects directly')
+assert.match(canvassingPageSource, /normalizedAudience === 'buyer' \? 'Buyer' : 'Seller'/, 'canvassing bulk upload should support buyer and seller-specific import copy')
+assert.match(canvassingPageSource, /Import \$\{audienceLabel\} Prospects/, 'canvassing bulk upload should label the selected import mode')
 
 console.log('residential canvassing checks passed')

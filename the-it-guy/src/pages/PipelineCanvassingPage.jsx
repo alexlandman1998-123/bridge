@@ -5,6 +5,8 @@ import {
   CheckCircle2,
   ClipboardList,
   Clock3,
+  Download,
+  FileUp,
   Mail,
   MapPin,
   MessageCircle,
@@ -215,6 +217,35 @@ const CANVASSING_SOURCE_PILL_STYLES = {
 const CANVASSING_SOURCE_PILL_FALLBACK = CANVASSING_SOURCE_PILL_STYLES.unknown
 const CANVASSING_SOURCE_PILL_ORDER = ['coldCall', 'doorKnock', 'referral', 'socialMedia', 'website', 'walkIn', 'previousClient', 'expiredListing', 'areaFarming', 'other', 'property24', 'privateProperty', 'whatsapp', 'unknown']
 const CANVASSING_PROSPECT_VIEW_STORAGE_KEY = 'itg:canvassing:prospectView'
+const CANVASSING_FILTER_SELECT_CLASS = 'min-h-11 min-w-0 py-2.5 text-sm leading-5'
+const CANVASSING_IMPORT_TEMPLATE_COLUMNS = [
+  'Name',
+  'First Name',
+  'Last Name',
+  'Phone',
+  'Email',
+  'Source',
+  'Area',
+  'Street Address',
+  'Property Type',
+  'Budget Range',
+  'Bedrooms',
+  'Finance Status',
+  'Timeframe',
+  'Selling Intent',
+  'Last Contact Outcome',
+  'Estimated Value',
+  'Next Follow Up',
+  'Notes',
+]
+const CANVASSING_IMPORT_TEMPLATE_ROWS = {
+  buyer: [
+    ['Lerato Mokoena', 'Lerato', 'Mokoena', '082 555 0181', 'lerato@example.com', 'Website', 'Waterkloof Glen', '', 'Apartment', 'R1m - R2m', '2', 'Needs Bond', '0-3 Months', '', '', '', '2026-07-10', 'Looking for a secure apartment close to schools.'],
+  ],
+  seller: [
+    ['Pieter Botha', 'Pieter', 'Botha', '083 555 0182', 'pieter@example.com', 'Cold Call', 'Boksburg', '12 Park Street, Boksburg', 'House', '', '', '', '', 'Ready For Valuation', 'Interested', '2200000', '2026-07-12', 'Owner requested a valuation follow-up.'],
+  ],
+}
 
 const CANVASSING_SOURCE_TONE_STYLES = {
   slate: 'border-slate-200 bg-slate-50 text-slate-600',
@@ -241,6 +272,175 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function csvEscape(value = '') {
+  const text = normalizeText(value)
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+function parseCsvText(text = '') {
+  const rows = []
+  let current = []
+  let cell = ''
+  let quoted = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    const next = text[index + 1]
+
+    if (char === '"') {
+      if (quoted && next === '"') {
+        cell += '"'
+        index += 1
+      } else {
+        quoted = !quoted
+      }
+      continue
+    }
+
+    if (char === ',' && !quoted) {
+      current.push(cell)
+      cell = ''
+      continue
+    }
+
+    if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') index += 1
+      current.push(cell)
+      if (current.some((entry) => normalizeText(entry))) rows.push(current)
+      current = []
+      cell = ''
+      continue
+    }
+
+    cell += char
+  }
+
+  current.push(cell)
+  if (current.some((entry) => normalizeText(entry))) rows.push(current)
+  return rows
+}
+
+function mapCsvRowsToCanvassingRows(csvRows = []) {
+  const [headers = [], ...bodyRows] = csvRows
+  const cleanHeaders = headers.map(normalizeText)
+  if (!cleanHeaders.some(Boolean)) throw new Error('The CSV needs a header row.')
+
+  return bodyRows
+    .map((cells, index) => {
+      const row = {}
+      cleanHeaders.forEach((header, cellIndex) => {
+        if (header) row[header] = normalizeText(cells[cellIndex])
+      })
+      return {
+        ...row,
+        __rowNumber: index + 2,
+      }
+    })
+    .filter((row) => Object.entries(row).some(([key, value]) => key !== '__rowNumber' && normalizeText(value)))
+}
+
+function buildCanvassingImportTemplateCsv(audience = 'seller') {
+  const key = audience === 'buyer' ? 'buyer' : 'seller'
+  return [CANVASSING_IMPORT_TEMPLATE_COLUMNS, ...(CANVASSING_IMPORT_TEMPLATE_ROWS[key] || [])]
+    .map((row) => row.map(csvEscape).join(','))
+    .join('\n')
+}
+
+function downloadTextFile(fileName, text) {
+  if (typeof document === 'undefined') return
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+function pickImportValue(row = {}, keys = []) {
+  for (const key of keys) {
+    const value = row[key]
+    if (normalizeText(value)) return normalizeText(value)
+  }
+  return ''
+}
+
+function splitImportName(row = {}) {
+  const explicitFirst = pickImportValue(row, ['First Name', 'first_name', 'firstName'])
+  const explicitLast = pickImportValue(row, ['Last Name', 'last_name', 'lastName', 'Surname', 'surname'])
+  if (explicitFirst || explicitLast) {
+    return { firstName: explicitFirst || 'Prospect', lastName: explicitLast }
+  }
+  const fullName = pickImportValue(row, ['Name', 'name', 'Full Name', 'full_name', 'fullName'])
+  const parts = fullName.split(/\s+/).filter(Boolean)
+  if (!parts.length) return { firstName: '', lastName: '' }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  }
+}
+
+function buildCanvassingImportPayload(row = {}, { audience = 'seller', assignedAgent = {}, currentAgentForWrites = {}, currentAgent = {}, organisationId = '' } = {}) {
+  const normalizedAudience = audience === 'buyer' ? 'buyer' : 'seller'
+  const { firstName, lastName } = splitImportName(row)
+  const phone = pickImportValue(row, ['Phone', 'phone', 'Mobile', 'mobile'])
+  const email = pickImportValue(row, ['Email', 'email']).toLowerCase()
+  const source = pickImportValue(row, ['Source', 'source', 'Canvassing Method', 'canvassingMethod', 'Method', 'method']) || (normalizedAudience === 'buyer' ? 'Website' : 'Cold Call')
+  const area = pickImportValue(row, ['Area', 'area', 'Suburb', 'suburb', 'Area Of Interest', 'areaOfInterest'])
+  const streetAddress = pickImportValue(row, ['Street Address', 'streetAddress', 'Address', 'address', 'Property Address', 'propertyAddress'])
+  const propertyType = pickImportValue(row, ['Property Type', 'propertyType', 'Preferred Property Type', 'preferredPropertyType'])
+  const budgetRange = pickImportValue(row, ['Budget Range', 'budgetRange', 'Budget', 'budget'])
+  const estimatedValue = Number(pickImportValue(row, ['Estimated Value', 'estimatedValue', 'Value', 'value']) || 0) || 0
+  const nextFollowUpDate = pickImportValue(row, ['Next Follow Up', 'nextFollowUpDate', 'Follow Up Date', 'followUpDate'])
+  const notes = pickImportValue(row, ['Notes', 'notes', 'Message', 'message'])
+
+  return {
+    organisationId,
+    assignedAgentId: assignedAgent.id || null,
+    assignedUserId: assignedAgent.userId || assignedAgent.id || null,
+    assignedAgentName: assignedAgent.name || currentAgent.fullName || null,
+    assignedAgentEmail: assignedAgent.email || currentAgent.email || null,
+    branchId: assignedAgent.branchId || currentAgent.branchId || null,
+    firstName: normalizeText(firstName),
+    lastName: normalizeText(lastName),
+    phone,
+    email,
+    prospectType: normalizedAudience === 'buyer' ? 'Buyer Prospect' : 'Seller Prospect',
+    area,
+    areaSuburb: area,
+    streetAddress: normalizedAudience === 'seller' ? streetAddress : '',
+    formattedAddress: normalizedAudience === 'seller' ? streetAddress : '',
+    propertyType,
+    buyerStatus: normalizedAudience === 'buyer' ? pickImportValue(row, ['Buyer Status', 'buyerStatus', 'Status', 'status']) || 'New' : '',
+    areaOfInterest: normalizedAudience === 'buyer' ? area : '',
+    preferredPropertyType: normalizedAudience === 'buyer' ? propertyType : '',
+    budgetRange: normalizedAudience === 'buyer' ? budgetRange : '',
+    bedrooms: normalizedAudience === 'buyer' ? pickImportValue(row, ['Bedrooms', 'bedrooms']) : '',
+    financeStatus: normalizedAudience === 'buyer' ? pickImportValue(row, ['Finance Status', 'financeStatus']) : '',
+    timeframe: normalizedAudience === 'buyer' ? pickImportValue(row, ['Timeframe', 'timeframe']) : '',
+    subjectToSale: normalizedAudience === 'buyer' ? pickImportValue(row, ['Subject To Sale', 'subjectToSale']) : '',
+    source,
+    canvassingMethod: source,
+    status: normalizedAudience === 'buyer'
+      ? pickImportValue(row, ['Buyer Status', 'buyerStatus', 'Status', 'status']) || 'New'
+      : pickImportValue(row, ['Status', 'status']) || 'New',
+    nextFollowUpDate,
+    followUpPriority: pickImportValue(row, ['Follow Up Priority', 'followUpPriority', 'Priority', 'priority']) || 'Medium',
+    followUpNote: pickImportValue(row, ['Follow Up Note', 'followUpNote']),
+    estimatedValue,
+    estimatedPropertyValue: normalizedAudience === 'buyer'
+      ? budgetRange
+      : pickImportValue(row, ['Estimated Property Value', 'estimatedPropertyValue', 'Estimated Value', 'estimatedValue']),
+    sellingIntent: normalizedAudience === 'seller' ? pickImportValue(row, ['Selling Intent', 'sellingIntent']) : '',
+    lastContactOutcome: normalizedAudience === 'seller' ? pickImportValue(row, ['Last Contact Outcome', 'lastContactOutcome']) : '',
+    propertyOccupancy: normalizedAudience === 'seller' ? pickImportValue(row, ['Property Occupancy', 'propertyOccupancy']) : '',
+    notes,
+    convertedLeadId: null,
+    createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
 }
 
 function isAuthSessionMissingError(error) {
@@ -698,6 +898,158 @@ function buildLeadPayloadFromProspect(prospect = {}, leadCategory = 'buyer', cur
   }
 }
 
+function CanvassingImportModal({ open, audience = 'seller', importing = false, result = null, error = '', onClose, onImport }) {
+  const normalizedAudience = audience === 'buyer' ? 'buyer' : 'seller'
+  const audienceLabel = normalizedAudience === 'buyer' ? 'Buyer' : 'Seller'
+  const [fileName, setFileName] = useState('')
+  const [rows, setRows] = useState([])
+  const [fileError, setFileError] = useState('')
+
+  useEffect(() => {
+    if (!open) {
+      setFileName('')
+      setRows([])
+      setFileError('')
+    }
+  }, [open])
+
+  if (!open) return null
+
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    try {
+      setFileError('')
+      const text = await file.text()
+      const parsedRows = mapCsvRowsToCanvassingRows(parseCsvText(text))
+      if (!parsedRows.length) throw new Error('No prospect rows found in this CSV.')
+      setFileName(file.name)
+      setRows(parsedRows)
+    } catch (readError) {
+      setFileName(file.name || '')
+      setRows([])
+      setFileError(readError?.message || 'Could not read this CSV.')
+    }
+  }
+
+  const previewRows = rows.slice(0, 5)
+  const failedRows = Array.isArray(result?.failedRows) ? result.failedRows : []
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Import ${audienceLabel} Prospects`}
+      subtitle={`Bulk upload ${audienceLabel.toLowerCase()} canvassing prospects directly into this workspace.`}
+      className="max-w-5xl overflow-hidden"
+    >
+      <div className="flex max-h-[calc(100dvh-13rem)] min-h-0 flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Bulk Upload</p>
+            <h3 className="mt-1 text-xl font-semibold tracking-[-0.04em] text-slate-950">{audienceLabel} Prospect Import</h3>
+            <p className="mt-2 max-w-2xl text-sm text-slate-500">
+              Rows in this upload will be imported as {audienceLabel.toLowerCase()} prospects. Use the template for the cleanest mapping.
+            </p>
+          </div>
+
+          {fileError || error ? (
+            <p className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">{fileError || error}</p>
+          ) : null}
+
+          {result ? (
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+              <p className="font-semibold">{result.imported || 0} imported · {result.failed || 0} failed</p>
+              {failedRows.length ? <p className="mt-1 text-emerald-700">Failed rows can be corrected and uploaded again.</p> : null}
+            </div>
+          ) : null}
+
+          <section className="grid gap-3 lg:grid-cols-[1fr_auto_auto] lg:items-center">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <p className="text-sm font-semibold text-slate-950">{fileName || 'No CSV selected'}</p>
+              <p className="mt-1 text-xs text-slate-500">{rows.length ? `${rows.length} ${audienceLabel.toLowerCase()} prospect rows ready to import` : 'CSV format only'}</p>
+            </div>
+            <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+              <FileUp size={16} />
+              Choose CSV
+              <input type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => void handleFileChange(event)} />
+            </label>
+            <button
+              type="button"
+              onClick={() => downloadTextFile(`arch9-canvassing-${normalizedAudience}-prospects-template.csv`, buildCanvassingImportTemplateCsv(normalizedAudience))}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              <Download size={16} />
+              Template
+            </button>
+          </section>
+
+          {previewRows.length ? (
+            <section className="overflow-hidden rounded-2xl border border-slate-200">
+              <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm font-semibold text-slate-950">Preview</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-white text-xs uppercase tracking-[0.08em] text-slate-400">
+                    <tr>
+                      {['Row', 'Name', 'Phone', 'Email', 'Source', normalizedAudience === 'buyer' ? 'Area Interest' : 'Property / Area', normalizedAudience === 'buyer' ? 'Budget' : 'Selling Intent'].map((header) => (
+                        <th key={header} className="px-4 py-3 font-semibold">{header}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {previewRows.map((row) => (
+                      <tr key={row.__rowNumber}>
+                        <td className="px-4 py-3 text-slate-500">{row.__rowNumber}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-950">{pickImportValue(row, ['Name', 'name']) || [pickImportValue(row, ['First Name', 'firstName']), pickImportValue(row, ['Last Name', 'lastName'])].filter(Boolean).join(' ') || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Phone', 'phone', 'Mobile', 'mobile']) || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Email', 'email']) || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Source', 'source']) || (normalizedAudience === 'buyer' ? 'Website' : 'Cold Call')}</td>
+                        <td className="px-4 py-3 text-slate-600">{pickImportValue(row, ['Area', 'area', 'Street Address', 'streetAddress']) || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{normalizedAudience === 'buyer' ? pickImportValue(row, ['Budget Range', 'budgetRange', 'Budget', 'budget']) || '—' : pickImportValue(row, ['Selling Intent', 'sellingIntent']) || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
+          {failedRows.length ? (
+            <section className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+              <p className="text-sm font-semibold text-amber-800">Failed rows</p>
+              <div className="mt-2 max-h-36 overflow-auto text-xs text-amber-700">
+                {failedRows.slice(0, 8).map((row, index) => (
+                  <p key={`${row.rowNumber}-${index}`}>Row {row.rowNumber || index + 2}: {row.error || 'Import failed'}</p>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+
+        <footer className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-slate-500">{rows.length ? `${rows.length} rows loaded` : `Upload ${audienceLabel.toLowerCase()} prospects from CSV.`}</p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={onClose} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+            <button
+              type="button"
+              onClick={() => onImport?.(rows)}
+              disabled={!rows.length || importing}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:bg-slate-300"
+            >
+              <FileUp size={16} />
+              {importing ? 'Importing...' : `Import ${audienceLabel} Prospects`}
+            </button>
+          </div>
+        </footer>
+      </div>
+    </Modal>
+  )
+}
+
 function PipelineCanvassingPage() {
   const navigate = useNavigate()
   const { profile, currentWorkspace, role, currentMembership, workspaceRole } = useWorkspace()
@@ -710,6 +1062,9 @@ function PipelineCanvassingPage() {
   const [agentUsers, setAgentUsers] = useState([])
   const [listingOptions, setListingOptions] = useState([])
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [importingProspects, setImportingProspects] = useState(false)
+  const [importResult, setImportResult] = useState(null)
   const [selectedProspectId, setSelectedProspectId] = useState('')
   const [detailOpen, setDetailOpen] = useState(false)
   const [prospectView, setProspectView] = useState(() => {
@@ -1581,6 +1936,88 @@ function PipelineCanvassingPage() {
     }
   }
 
+  async function handleImportProspects(rows = []) {
+    if (!organisationId) {
+      setError('A resolved workspace is required before importing canvassing prospects.')
+      return
+    }
+    if (!Array.isArray(rows) || !rows.length) {
+      setError('Choose a CSV file before importing prospects.')
+      return
+    }
+
+    setImportingProspects(true)
+    setError('')
+    setMessage('')
+
+    const imported = []
+    const importedActivities = []
+    const failedRows = []
+    const audience = prospectView === 'buyer' ? 'buyer' : 'seller'
+    const assignedAgent = resolveAgentById(currentAgentIdentity)
+
+    for (const row of rows) {
+      const rowNumber = row?.__rowNumber || imported.length + failedRows.length + 2
+      try {
+        const payload = buildCanvassingImportPayload(row, {
+          audience,
+          assignedAgent,
+          currentAgentForWrites,
+          currentAgent,
+          organisationId,
+        })
+
+        if (!normalizeText(payload.firstName) && !normalizeText(payload.lastName)) {
+          throw new Error('Name is required.')
+        }
+        if (!normalizeText(payload.phone) && !normalizeText(payload.email)) {
+          throw new Error('Phone or email is required.')
+        }
+
+        const created = await createCanvassingProspect(organisationId, payload)
+        const createdActivity = await createCanvassingActivity(organisationId, {
+          organisationId,
+          prospectId: created.id,
+          agentId: currentAgentForWrites.id || null,
+          agentName: currentAgent.fullName || null,
+          activityType: 'Prospect Created',
+          activityNote: audience === 'seller' ? 'Seller prospect imported from CSV' : 'Buyer prospect imported from CSV',
+          outcome: payload.lastContactOutcome || payload.status,
+          metadata: {
+            source: payload.source,
+            areaSuburb: payload.areaSuburb,
+            areaOfInterest: payload.areaOfInterest,
+            budgetRange: payload.budgetRange,
+            financeStatus: payload.financeStatus,
+            timeframe: payload.timeframe,
+            sellingIntent: payload.sellingIntent,
+            importRowNumber: rowNumber,
+          },
+          activityDate: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          createdBy: currentAgentForWrites.id || currentAgentForWrites.label,
+        }).catch(() => null)
+
+        imported.push(created)
+        if (createdActivity) importedActivities.push(createdActivity)
+      } catch (importError) {
+        failedRows.push({
+          rowNumber,
+          error: importError?.message || 'Import failed.',
+        })
+      }
+    }
+
+    setProspects((previous) => {
+      const importedIds = new Set(imported.map((row) => normalizeText(row?.id)).filter(Boolean))
+      return [...imported, ...previous.filter((row) => !importedIds.has(normalizeText(row?.id)))]
+    })
+    setActivities((previous) => [...importedActivities.filter(Boolean), ...previous])
+    setImportResult({ imported: imported.length, failed: failedRows.length, failedRows })
+    setMessage(imported.length ? `${imported.length} ${audience} prospect${imported.length === 1 ? '' : 's'} imported.` : '')
+    setImportingProspects(false)
+  }
+
   async function handleSaveProspectDetail(event) {
     event.preventDefault()
     if (!organisationId || !selectedProspect) return
@@ -2056,11 +2493,22 @@ function PipelineCanvassingPage() {
                 <Plus size={14} />
                 Prospect
               </Button>
+              <Button
+                type="button"
+                className="h-10 min-h-10 w-full justify-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50 md:w-auto"
+                onClick={() => {
+                  setImportResult(null)
+                  setShowImportModal(true)
+                }}
+              >
+                <FileUp size={14} />
+                Import
+              </Button>
             </div>
             <div className="grid w-full grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
               <Field
                 as="select"
-                className="h-10 min-w-0 text-sm"
+                className={CANVASSING_FILTER_SELECT_CLASS}
                 value={filters.method}
                 onChange={(event) => setFilters((previous) => ({ ...previous, method: event.target.value }))}
               >
@@ -2073,7 +2521,7 @@ function PipelineCanvassingPage() {
               </Field>
               <Field
                 as="select"
-                className="h-10 min-w-0 text-sm"
+                className={CANVASSING_FILTER_SELECT_CLASS}
                 value={filters.area}
                 onChange={(event) => setFilters((previous) => ({ ...previous, area: event.target.value }))}
               >
@@ -2088,7 +2536,7 @@ function PipelineCanvassingPage() {
                 <>
                   <Field
                     as="select"
-                    className="h-10 min-w-0 text-sm"
+                    className={CANVASSING_FILTER_SELECT_CLASS}
                     value={filters.buyerBudget}
                     onChange={(event) => setFilters((previous) => ({ ...previous, buyerBudget: event.target.value }))}
                   >
@@ -2101,7 +2549,7 @@ function PipelineCanvassingPage() {
                   </Field>
                   <Field
                     as="select"
-                    className="h-10 min-w-0 text-sm"
+                    className={CANVASSING_FILTER_SELECT_CLASS}
                     value={filters.buyerStatus}
                     onChange={(event) => setFilters((previous) => ({ ...previous, buyerStatus: event.target.value }))}
                   >
@@ -2114,7 +2562,7 @@ function PipelineCanvassingPage() {
                   </Field>
                   <Field
                     as="select"
-                    className="h-10 min-w-0 text-sm"
+                    className={CANVASSING_FILTER_SELECT_CLASS}
                     value={filters.financeStatus}
                     onChange={(event) => setFilters((previous) => ({ ...previous, financeStatus: event.target.value }))}
                   >
@@ -2130,7 +2578,7 @@ function PipelineCanvassingPage() {
                 <>
                   <Field
                     as="select"
-                    className="h-10 min-w-0 text-sm"
+                    className={CANVASSING_FILTER_SELECT_CLASS}
                     value={filters.sellingIntent}
                     onChange={(event) => setFilters((previous) => ({ ...previous, sellingIntent: event.target.value }))}
                   >
@@ -2143,7 +2591,7 @@ function PipelineCanvassingPage() {
                   </Field>
                   <Field
                     as="select"
-                    className="h-10 min-w-0 text-sm"
+                    className={CANVASSING_FILTER_SELECT_CLASS}
                     value={filters.lastContactOutcome}
                     onChange={(event) => setFilters((previous) => ({ ...previous, lastContactOutcome: event.target.value }))}
                   >
@@ -2158,7 +2606,7 @@ function PipelineCanvassingPage() {
               )}
               <Field
                 as="select"
-                className="h-10 min-w-0 text-sm"
+                className={CANVASSING_FILTER_SELECT_CLASS}
                 value={filters.status}
                 onChange={(event) => setFilters((previous) => ({ ...previous, status: event.target.value }))}
               >
@@ -2171,7 +2619,7 @@ function PipelineCanvassingPage() {
               </Field>
               <Field
                 as="select"
-                className="h-10 min-w-0 text-sm"
+                className={CANVASSING_FILTER_SELECT_CLASS}
                 value={filters.assigned}
                 onChange={(event) => setFilters((previous) => ({ ...previous, assigned: event.target.value }))}
               >
@@ -2185,7 +2633,7 @@ function PipelineCanvassingPage() {
               </Field>
               <Field
                 as="select"
-                className="h-10 min-w-0 text-sm"
+                className={CANVASSING_FILTER_SELECT_CLASS}
                 value={filters.sort}
                 onChange={(event) => setFilters((previous) => ({ ...previous, sort: event.target.value }))}
               >
@@ -2449,6 +2897,20 @@ function PipelineCanvassingPage() {
           document.body,
         )
         : null}
+
+      <CanvassingImportModal
+        open={showImportModal}
+        audience={prospectView}
+        importing={importingProspects}
+        result={importResult}
+        error={error}
+        onClose={() => {
+          if (importingProspects) return
+          setShowImportModal(false)
+          setImportResult(null)
+        }}
+        onImport={handleImportProspects}
+      />
 
       <Modal
         open={showCreateModal}
