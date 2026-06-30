@@ -4233,7 +4233,7 @@ function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
 
   return (
     <div className="overflow-x-auto">
-      <div className="flex min-h-11 items-center gap-2 border-b border-slate-200 pb-2" role="tablist" aria-label="Lead category tabs">
+      <div className="flex min-h-11 items-center gap-2" role="tablist" aria-label="Lead category tabs">
         {LEAD_CATEGORY_FILTERS.map((option) => {
           const active = activeCategory === option.key
           return (
@@ -4249,7 +4249,7 @@ function LeadTypeTabs({ activeCategory = 'buyer', rows = [], onChange }) {
               <span className={`inline-flex min-h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs ${active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
                 {option.key === 'archived' ? counts.archived : (option.key === 'other' ? counts.other : counts[option.key] || 0)}
               </span>
-              {active ? <span className="absolute inset-x-2 -bottom-2 h-0.5 rounded-full bg-blue-500" aria-hidden="true" /> : null}
+              {active ? <span className="absolute inset-x-2 -bottom-3 h-0.5 rounded-full bg-blue-500" aria-hidden="true" /> : null}
             </button>
           )
         })}
@@ -6136,25 +6136,7 @@ function AgentLeadList() {
 
   return (
     <main className={leadListShell}>
-      <header className="flex flex-col gap-3">
-        <h1 className="sr-only">Leads</h1>
-        <div className="grid w-full gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          <CreateLeadDropdown
-            activeCategory={filters.category}
-            onCreate={openCreateLead}
-            onImport={() => navigate('/pipeline/enquiries')}
-            className="w-full"
-            buttonClassName="w-full"
-          />
-          <button type="button" onClick={() => navigate('/pipeline/enquiries')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-            Import
-          </button>
-          <button type="button" onClick={loadRows} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
-            <RefreshCw size={15} />
-            Refresh
-          </button>
-        </div>
-      </header>
+      <h1 className="sr-only">Leads</h1>
 
       <section className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
         <CompactMetric label="Unassigned" value={assignmentMetrics.unassigned || 0} icon={UserRound} />
@@ -6164,8 +6146,26 @@ function AgentLeadList() {
       </section>
 
       <section className={`${panelClass} p-4`}>
-        <div className="grid gap-3">
-          <LeadTypeTabs activeCategory={filters.category} rows={rows} onChange={setFilters} />
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="min-w-0">
+            <LeadTypeTabs activeCategory={filters.category} rows={rows} onChange={setFilters} />
+          </div>
+          <div className="grid w-full gap-2 sm:grid-cols-3 xl:w-auto xl:min-w-[620px]">
+            <CreateLeadDropdown
+              activeCategory={filters.category}
+              onCreate={openCreateLead}
+              onImport={() => navigate('/pipeline/enquiries')}
+              className="w-full"
+              buttonClassName="w-full"
+            />
+            <button type="button" onClick={() => navigate('/pipeline/enquiries')} className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+              Import
+            </button>
+            <button type="button" onClick={loadRows} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+              <RefreshCw size={15} />
+              Refresh
+            </button>
+          </div>
         </div>
         <div className="mt-4 grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(130px,1fr))]">
           <label className="relative block md:col-span-2 lg:col-span-1">

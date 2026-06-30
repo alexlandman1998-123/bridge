@@ -7,6 +7,8 @@ const IMPORT_TARGET_TABLES = Object.freeze({
   vacancies: 'commercial_vacancies',
   leads: 'commercial_requirements',
   requirements: 'commercial_requirements',
+  canvassing_seller_prospects: 'commercial_canvassing_prospects',
+  canvassing_buyer_prospects: 'commercial_canvassing_prospects',
   canvassing_landlord_prospects: 'commercial_canvassing_prospects',
   canvassing_tenant_prospects: 'commercial_canvassing_prospects',
   properties: 'commercial_properties',
@@ -92,6 +94,8 @@ export const COMMERCIAL_IMPORT_RECORD_TYPES = Object.freeze([
   'vacancies',
   'leads',
   'requirements',
+  'canvassing_seller_prospects',
+  'canvassing_buyer_prospects',
   'canvassing_landlord_prospects',
   'canvassing_tenant_prospects',
   'properties',
@@ -132,6 +136,12 @@ const COMMERCIAL_IMPORT_ROW_STATUSES = new Set([
 const DUPLICATE_STRATEGIES = new Set(['review', 'skip', 'update'])
 const OWNER_MODES = new Set(['uploading_broker', 'selected_broker', 'unassigned'])
 const ROW_ACTIONS = new Set(['none', 'create', 'update', 'skip', 'review'])
+const CANVASSING_PROSPECT_RECORD_TYPES = new Set([
+  'canvassing_seller_prospects',
+  'canvassing_buyer_prospects',
+  'canvassing_landlord_prospects',
+  'canvassing_tenant_prospects',
+])
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -179,6 +189,20 @@ function normalizeBooleanValue(value) {
   if (['yes', 'y', 'true', '1'].includes(normalized)) return true
   if (['no', 'n', 'false', '0'].includes(normalized)) return false
   return false
+}
+
+function getProspectRoleFromRecordType(recordType = '') {
+  const normalized = normalizeRecordType(recordType)
+  if (normalized === 'canvassing_seller_prospects') return 'seller'
+  if (normalized === 'canvassing_buyer_prospects') return 'buyer'
+  if (normalized === 'canvassing_landlord_prospects') return 'landlord'
+  if (normalized === 'canvassing_tenant_prospects') return 'tenant'
+  return ''
+}
+
+function titleizeText(value = '') {
+  const normalized = normalizeLower(value).replace(/[_-]+/g, ' ')
+  return normalized.replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function getRowNumber(row = {}) {
@@ -813,9 +837,9 @@ async function resolveImportRelationships(batch = {}, row = {}, userId = '', res
     if (contact?.id) resolved.contact_id = contact.id
   }
 
-  if (recordType === 'canvassing_landlord_prospects' || recordType === 'canvassing_tenant_prospects') {
-    const companyType = recordType === 'canvassing_landlord_prospects' ? 'landlord' : 'tenant'
-    const company = await findOrCreateCompany(batch, row, payload, userId, resolution, companyType)
+  if (CANVASSING_PROSPECT_RECORD_TYPES.has(recordType)) {
+    const prospectRole = getProspectRoleFromRecordType(recordType)
+    const company = await findOrCreateCompany(batch, row, payload, userId, resolution, prospectRole)
     const contact = await findOrCreateContact(batch, row, payload, userId, resolution, company)
     if (company?.id) resolved.company_id = company.id
     if (contact?.id) resolved.contact_id = contact.id
@@ -873,7 +897,8 @@ async function buildProspectTargetPayload(batch = {}, row = {}, userId = '', res
   const resolved = await resolveImportRelationships(batch, row, userId, resolution)
   const base = buildTargetBasePayload(batch, row, userId)
   const recordType = normalizeRecordType(batch.record_type)
-  const isLandlord = recordType === 'canvassing_landlord_prospects'
+  const prospectRole = getProspectRoleFromRecordType(recordType) || 'tenant'
+  const defaultDealType = prospectRole === 'seller' || prospectRole === 'buyer' ? 'sale' : 'lease'
   return {
     organisation_id: base.organisation_id,
     branch_id: base.branch_id,
@@ -885,9 +910,9 @@ async function buildProspectTargetPayload(batch = {}, row = {}, userId = '', res
     contact_name: normalizeText(payload.contact_name) || null,
     phone: normalizeText(payload.phone) || null,
     email: normalizeLower(payload.email) || null,
-    prospect_type: isLandlord ? 'Landlord Prospect' : 'Tenant Prospect',
-    prospect_role: isLandlord ? 'landlord' : 'tenant',
-    deal_type: normalizeLower(payload.deal_type) || 'lease',
+    prospect_type: `${titleizeText(prospectRole)} Prospect`,
+    prospect_role: prospectRole,
+    deal_type: normalizeLower(payload.deal_type) || defaultDealType,
     property_category: normalizePropertyCategory(payload.property_type),
     canvassing_method: normalizeText(payload.canvassing_method) || 'Bulk Upload',
     property_type: normalizeText(payload.property_type) || null,
@@ -1028,7 +1053,7 @@ async function buildImportTargetPayload(batch = {}, row = {}, userId = '', resol
   const recordType = normalizeRecordType(batch.record_type)
   if (recordType === 'vacancies') return buildVacancyTargetPayload(batch, row, userId, resolution)
   if (recordType === 'leads' || recordType === 'requirements') return buildRequirementTargetPayload(batch, row, userId, resolution)
-  if (recordType === 'canvassing_landlord_prospects' || recordType === 'canvassing_tenant_prospects') return buildProspectTargetPayload(batch, row, userId, resolution)
+  if (CANVASSING_PROSPECT_RECORD_TYPES.has(recordType)) return buildProspectTargetPayload(batch, row, userId, resolution)
   if (recordType === 'landlords') return buildLandlordTargetPayload(batch, row, userId, resolution)
   if (recordType === 'companies') return buildCompanyTargetPayload(batch, row, userId, resolution)
   if (recordType === 'contacts') return buildContactTargetPayload(batch, row, userId, resolution)
@@ -1247,9 +1272,9 @@ export async function findCommercialImportExistingDuplicates({ organisationId = 
     return { matchesByRowNumber }
   }
 
-  if (type === 'canvassing_landlord_prospects' || type === 'canvassing_tenant_prospects') {
+  if (CANVASSING_PROSPECT_RECORD_TYPES.has(type)) {
     const prospects = await fetchCommercialDuplicateRows('commercial_canvassing_prospects', 'id, company_name, email, phone, prospect_role', scope.organisationId)
-    const expectedRole = type === 'canvassing_landlord_prospects' ? 'landlord' : 'tenant'
+    const expectedRole = getProspectRoleFromRecordType(type)
     importRows.forEach((entry) => {
       const payload = entry.payload
       const companyName = normalizeDuplicateText(payload.company_name)

@@ -12,6 +12,7 @@ import {
   Download,
   DollarSign,
   Factory,
+  FileClock,
   Mail,
   MapPin,
   MessageCircle,
@@ -30,6 +31,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { fetchOrganisationSettings } from '../../../lib/settingsApi'
 import CommercialEmptyState from '../components/CommercialEmptyState'
 import { formatDate, titleize } from '../commercialFormatters'
 import { toLookupOptions } from '../commercialPipelineHelpers'
@@ -61,6 +63,15 @@ import {
   getCommercialLookupData,
 } from '../services/commercialApi'
 import { getCommercialCanvassingContext, listCommercialCanvassingWorkspace, createCommercialCanvassingActivity, createCommercialCanvassingProspect, deleteCommercialCanvassingProspect, updateCommercialCanvassingProspect } from '../services/commercialCanvassingApi'
+import {
+  approveCommercialImportBatch,
+  commitCommercialImportBatch,
+  createCommercialImportBatch,
+  createCommercialImportRows,
+  listCommercialImportBatches,
+  updateCommercialImportBatch,
+  updateCommercialImportRow,
+} from '../services/commercialImportApi'
 
 const CARD_CLASS = 'rounded-[24px] border border-[#e6edf4] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.06)]'
 const FOLLOW_UP_PRIORITIES = COMMERCIAL_PRIORITY_OPTIONS
@@ -120,6 +131,25 @@ const SORT_OPTIONS = [
   { value: 'value:desc', label: 'Highest Value' },
   { value: 'value:asc', label: 'Lowest Value' },
 ]
+const PROSPECT_IMPORT_AUDIT_RECORD_TYPES = new Set([
+  'canvassing_seller_prospects',
+  'canvassing_buyer_prospects',
+  'canvassing_landlord_prospects',
+  'canvassing_tenant_prospects',
+])
+const DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS = {
+  enabled: true,
+  allowedRecordTypes: [
+    'canvassing_seller_prospects',
+    'canvassing_buyer_prospects',
+    'canvassing_landlord_prospects',
+    'canvassing_tenant_prospects',
+  ],
+  requireManagerApproval: true,
+  duplicateStrategy: 'review',
+  defaultOwnerMode: 'uploading_broker',
+  maxRowsPerUpload: 1000,
+}
 
 function isFollowUpDue(prospect = {}) {
   const due = new Date(prospect.nextFollowUpDate || prospect.followUpDate || prospect.next_follow_up_date || prospect.follow_up_date || '')
@@ -288,6 +318,325 @@ function getProspectAreaAddress(prospect = {}) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function normalizeImportHeader(value = '') {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+function normalizeImportPhone(value = '') {
+  return normalizeText(value).replace(/\D/g, '')
+}
+
+function normalizeImportDate(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+  const slashMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
+  if (slashMatch) {
+    const [, day, month, year] = slashMatch
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+  return ''
+}
+
+function csvEscape(value = '') {
+  const text = normalizeText(value)
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+function parseCsvText(text = '') {
+  const rows = []
+  let current = []
+  let cell = ''
+  let quoted = false
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    const next = text[index + 1]
+
+    if (char === '"') {
+      if (quoted && next === '"') {
+        cell += '"'
+        index += 1
+      } else {
+        quoted = !quoted
+      }
+      continue
+    }
+
+    if (char === ',' && !quoted) {
+      current.push(cell)
+      cell = ''
+      continue
+    }
+
+    if ((char === '\n' || char === '\r') && !quoted) {
+      if (char === '\r' && next === '\n') index += 1
+      current.push(cell)
+      if (current.some((entry) => normalizeText(entry))) rows.push(current)
+      current = []
+      cell = ''
+      continue
+    }
+
+    cell += char
+  }
+
+  current.push(cell)
+  if (current.some((entry) => normalizeText(entry))) rows.push(current)
+  return rows
+}
+
+const PROSPECT_IMPORT_COLUMNS = [
+  'Company Name',
+  'Contact Name',
+  'Phone',
+  'Email',
+  'Prospect Role',
+  'Property Category',
+  'Area',
+  'Status',
+  'Source',
+  'Assigned Broker',
+  'Next Follow Up Date',
+  'Notes',
+]
+
+const PROSPECT_IMPORT_TEMPLATE_ROWS = [
+  ['ABC Properties', 'John Smith', '082 123 4567', 'john@example.com', 'Landlord', 'Retail', 'Rosebank', 'New', 'Existing Database', '', '2026-07-15', 'Owns a retail building near the mall'],
+  ['Bright Logistics', 'Sarah Mokoena', '083 555 1212', 'sarah@example.com', 'Tenant', 'Industrial', 'Midrand', 'New', 'Referral', '', '', 'Needs 800 sqm warehouse space'],
+  ['Urban Owner Co', 'Anele Dlamini', '084 555 1212', 'anele@example.com', 'Seller', 'Office', 'Cape Town CBD', 'New', 'Cold Call', '', '2026-07-20', 'Potential disposal mandate'],
+  ['Prime Capital', 'Michael Naidoo', '081 555 1212', 'michael@example.com', 'Buyer', 'Industrial', 'Edenvale', 'New', 'Email', '', '2026-07-22', 'Looking for income-producing assets'],
+]
+
+function buildProspectImportTemplateCsv() {
+  return [PROSPECT_IMPORT_COLUMNS, ...PROSPECT_IMPORT_TEMPLATE_ROWS]
+    .map((row) => row.map(csvEscape).join(','))
+    .join('\n')
+}
+
+function buildProspectRejectedRowsCsv(rows = []) {
+  const header = [...PROSPECT_IMPORT_COLUMNS, 'Import Status', 'Import Reason']
+  const body = rows.map((row) => [
+    row.payload?.companyName || '',
+    row.payload?.contactName || '',
+    row.payload?.phone || '',
+    row.payload?.email || '',
+    row.payload?.prospectRole ? getRoleLabel(row.payload.prospectRole) : '',
+    row.payload?.propertyType || row.payload?.propertyCategory || '',
+    row.payload?.area || '',
+    row.payload?.status || '',
+    row.payload?.canvassingMethod || '',
+    row.payload?.assignedBrokerName || row.payload?.assignedBrokerId || '',
+    row.payload?.nextFollowUpDate || '',
+    row.payload?.notes || '',
+    row.status || '',
+    row.reason || [...(row.errors || []), ...(row.warnings || [])].join('; '),
+  ])
+  return [header, ...body].map((csvRow) => csvRow.map(csvEscape).join(',')).join('\n')
+}
+
+function getProspectImportAuditRecordType(row = {}) {
+  const role = normalizeImportRole(row.payload?.prospectRole)
+  if (role === 'seller') return 'canvassing_seller_prospects'
+  if (role === 'buyer') return 'canvassing_buyer_prospects'
+  if (role === 'landlord') return 'canvassing_landlord_prospects'
+  if (role === 'tenant') return 'canvassing_tenant_prospects'
+  return ''
+}
+
+function normalizeProspectBulkUploadSettings(value = {}) {
+  const source = value && typeof value === 'object' ? value : {}
+  const allowedRecordTypes = Array.isArray(source.allowedRecordTypes)
+    ? source.allowedRecordTypes.filter((recordType) => PROSPECT_IMPORT_AUDIT_RECORD_TYPES.has(recordType))
+    : DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS.allowedRecordTypes
+
+  return {
+    ...DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS,
+    ...source,
+    enabled: source.enabled !== false,
+    allowedRecordTypes,
+    requireManagerApproval: source.requireManagerApproval !== false,
+    duplicateStrategy: ['review', 'skip', 'update'].includes(source.duplicateStrategy) ? source.duplicateStrategy : DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS.duplicateStrategy,
+    defaultOwnerMode: ['uploading_broker', 'selected_broker', 'unassigned'].includes(source.defaultOwnerMode) ? source.defaultOwnerMode : DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS.defaultOwnerMode,
+    maxRowsPerUpload: Math.max(1, Math.min(10000, Number(source.maxRowsPerUpload) || DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS.maxRowsPerUpload)),
+  }
+}
+
+function getProspectImportRecordTypeForRole(role = '') {
+  const normalizedRole = normalizeImportRole(role)
+  if (normalizedRole === 'seller') return 'canvassing_seller_prospects'
+  if (normalizedRole === 'buyer') return 'canvassing_buyer_prospects'
+  if (normalizedRole === 'landlord') return 'canvassing_landlord_prospects'
+  if (normalizedRole === 'tenant') return 'canvassing_tenant_prospects'
+  return ''
+}
+
+function isProspectImportRoleAllowed(role = '', settings = DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS) {
+  const recordType = getProspectImportRecordTypeForRole(role)
+  if (!recordType) return true
+  return (settings.allowedRecordTypes || []).includes(recordType)
+}
+
+function getProspectImportAuditStatus(status = '') {
+  if (status === 'ready') return 'ready'
+  if (status === 'warning') return 'warning'
+  if (status === 'skipped') return 'skipped'
+  if (status === 'invalid') return 'invalid'
+  if (status === 'created') return 'created'
+  if (status === 'failed') return 'failed'
+  return 'pending'
+}
+
+function getProspectImportAuditAction(row = {}) {
+  if (row.status === 'skipped') return 'skip'
+  if (row.status === 'invalid') return 'review'
+  return 'create'
+}
+
+function buildProspectImportDuplicateKey(row = {}) {
+  const role = normalizeImportRole(row.payload?.prospectRole) || normalizeKey(row.payload?.prospectRole)
+  const email = normalizeText(row.payload?.email).toLowerCase()
+  const phone = normalizeImportPhone(row.payload?.phone)
+  const company = normalizeKey(row.payload?.companyName)
+  if (role && email) return `email:${role}:${email}`
+  if (role && phone) return `phone:${role}:${phone}`
+  if (role && company) return `company:${role}:${company}`
+  return ''
+}
+
+function buildProspectImportNormalizedPayload(row = {}) {
+  const payload = row.payload || {}
+  return {
+    company_name: normalizeText(payload.companyName),
+    contact_name: normalizeText(payload.contactName),
+    phone: normalizeText(payload.phone),
+    email: normalizeText(payload.email).toLowerCase(),
+    prospect_type: normalizeText(payload.prospectType),
+    prospect_role: normalizeImportRole(payload.prospectRole) || normalizeText(payload.prospectRole),
+    deal_type: normalizeText(payload.dealType),
+    property_category: normalizeText(payload.propertyCategory),
+    property_type: normalizeText(payload.propertyType),
+    area: normalizeText(payload.area),
+    status: normalizeText(payload.status) || 'New',
+    canvassing_method: normalizeText(payload.canvassingMethod) || 'Existing Database',
+    assigned_broker_id: normalizeText(payload.assignedBrokerId),
+    assigned_broker_name: normalizeText(payload.assignedBrokerName),
+    next_follow_up_date: normalizeImportDate(payload.nextFollowUpDate),
+    follow_up_priority: normalizeImportPriority(payload.followUpPriority),
+    notes: normalizeText(payload.notes),
+  }
+}
+
+function buildProspectImportAuditRowPayload(row = {}) {
+  const validationErrors = row.errors || []
+  const validationWarnings = row.warnings || []
+  return {
+    rowNumber: row.rowNumber,
+    sourceRow: row.source || {},
+    mappedPayload: row.payload || {},
+    normalizedPayload: buildProspectImportNormalizedPayload(row),
+    status: getProspectImportAuditStatus(row.status),
+    action: getProspectImportAuditAction(row),
+    validationErrors,
+    validationWarnings,
+    duplicateKey: buildProspectImportDuplicateKey(row),
+    duplicateRecordType: row.status === 'skipped' ? 'commercial_canvassing_prospects' : '',
+    errorMessage: row.status === 'invalid' || row.status === 'skipped' ? row.reason : '',
+    metadata: {
+      source: 'commercial_canvassing_prospect_import_phase_3',
+      importRowId: row.id,
+      importFileName: row.payload?.metadata?.importFileName || '',
+    },
+  }
+}
+
+function summarizeProspectImportRows(rows = []) {
+  return rows.reduce((summary, row) => {
+    summary.totalRows += 1
+    if (row.status === 'ready' || row.status === 'created' || row.status === 'failed') summary.validRows += 1
+    if (row.status === 'warning' || row.warnings?.length) summary.warningRows += 1
+    if (row.status === 'invalid' || row.errors?.length) summary.invalidRows += 1
+    if (row.status === 'skipped') summary.skippedRows += 1
+    if (row.status === 'created') summary.createdRows += 1
+    if (row.status === 'failed') summary.failedRows += 1
+    return summary
+  }, {
+    totalRows: 0,
+    validRows: 0,
+    warningRows: 0,
+    invalidRows: 0,
+    skippedRows: 0,
+    createdRows: 0,
+    failedRows: 0,
+  })
+}
+
+function isProspectImportAuditBatch(batch = {}) {
+  return PROSPECT_IMPORT_AUDIT_RECORD_TYPES.has(normalizeText(batch.recordType || batch.record_type))
+}
+
+function getProspectImportAuditBatchLabel(batch = {}) {
+  const recordType = normalizeText(batch.recordType || batch.record_type)
+  if (recordType === 'canvassing_seller_prospects') return 'Seller prospects'
+  if (recordType === 'canvassing_buyer_prospects') return 'Buyer prospects'
+  if (recordType === 'canvassing_landlord_prospects') return 'Landlord prospects'
+  if (recordType === 'canvassing_tenant_prospects') return 'Tenant prospects'
+  return 'Prospect import'
+}
+
+function getImportBatchStatusTone(status = '') {
+  const normalized = normalizeKey(status)
+  if (['committed', 'ready', 'approved'].includes(normalized)) return 'emerald'
+  if (['failed', 'rejected', 'cancelled'].includes(normalized)) return 'rose'
+  if (['approvalpending', 'validated', 'uploaded', 'committing'].includes(normalized)) return 'amber'
+  return 'slate'
+}
+
+function getProspectImportBatchIssueCount(batch = {}) {
+  return Number(batch.invalidRows || 0) + Number(batch.warningRows || 0) + Number(batch.failedCount || 0) + Number(batch.skippedCount || 0)
+}
+
+function downloadTextFile(fileName, text) {
+  if (typeof document === 'undefined') return
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+function getImportValue(row = {}, aliases = []) {
+  for (const alias of aliases) {
+    const value = row[normalizeImportHeader(alias)]
+    if (normalizeText(value)) return normalizeText(value)
+  }
+  return ''
+}
+
+function normalizeImportRole(value = '') {
+  const key = normalizeImportHeader(value)
+  if (['seller', 'sellerprospect', 'owner', 'propertyowner'].includes(key)) return 'seller'
+  if (['buyer', 'buyerprospect', 'purchaser'].includes(key)) return 'buyer'
+  if (['landlord', 'landlordprospect', 'lessor'].includes(key)) return 'landlord'
+  if (['tenant', 'tenantprospect', 'occupier', 'lessee'].includes(key)) return 'tenant'
+  return ''
+}
+
+function normalizeImportStatus(value = '') {
+  const text = normalizeText(value)
+  if (!text) return 'New'
+  const match = PROSPECT_STATUSES.find((status) => normalizeKey(status) === normalizeKey(text))
+  return match || 'New'
+}
+
+function normalizeImportPriority(value = '') {
+  const text = normalizeText(value)
+  if (!text) return 'Medium'
+  const match = FOLLOW_UP_PRIORITIES.find((priority) => normalizeKey(priority) === normalizeKey(text))
+  return match || 'Medium'
 }
 
 function splitContactName(value = '') {
@@ -1461,6 +1810,17 @@ function CommercialCanvassingPage({ dealType = '' }) {
   const [selectedProspectId, setSelectedProspectId] = useState('')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importFileName, setImportFileName] = useState('')
+  const [importRows, setImportRows] = useState([])
+  const [importError, setImportError] = useState('')
+  const [importAudit, setImportAudit] = useState({ batches: [], warning: '', unsupportedRows: 0 })
+  const [recentImportBatches, setRecentImportBatches] = useState([])
+  const [recentImportError, setRecentImportError] = useState('')
+  const [recentImportsLoading, setRecentImportsLoading] = useState(false)
+  const [recentImportAction, setRecentImportAction] = useState({ batchId: '', action: '' })
+  const [prospectImportSettings, setProspectImportSettings] = useState(DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS)
+  const [prospectImportSettingsError, setProspectImportSettingsError] = useState('')
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [createStep, setCreateStep] = useState(2)
   const [createErrors, setCreateErrors] = useState({})
@@ -1470,9 +1830,66 @@ function CommercialCanvassingPage({ dealType = '' }) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [busyAction, setBusyAction] = useState('')
   const [openActionMenuId, setOpenActionMenuId] = useState('')
+  const importFileInputRef = useRef(null)
   const createPrefillAppliedRef = useRef('')
   const createPrefillKey = searchParams.toString()
   const hasCreatePrefillParams = hasCreatePrefill(searchParams)
+
+  const loadRecentProspectImportBatches = useCallback(async (nextOrganisationId = organisationId, { showLoading = true } = {}) => {
+    const resolvedOrganisationId = normalizeText(nextOrganisationId)
+    if (!resolvedOrganisationId) {
+      setRecentImportBatches([])
+      setRecentImportError('')
+      return
+    }
+
+    if (showLoading) setRecentImportsLoading(true)
+    setRecentImportError('')
+    try {
+      const batches = await listCommercialImportBatches(resolvedOrganisationId, { limit: 20 })
+      setRecentImportBatches((batches || []).filter(isProspectImportAuditBatch).slice(0, 5))
+    } catch (batchError) {
+      setRecentImportBatches([])
+      setRecentImportError(batchError?.message || 'Recent prospect imports could not be loaded.')
+    } finally {
+      if (showLoading) setRecentImportsLoading(false)
+    }
+  }, [organisationId])
+
+  async function handleApproveRecentProspectImport(batch = {}) {
+    const batchId = normalizeText(batch.id)
+    if (!batchId) return
+    setRecentImportAction({ batchId, action: 'approve' })
+    setRecentImportError('')
+    setMessage('')
+    try {
+      await approveCommercialImportBatch(batchId)
+      setMessage('Prospect import approved for commit.')
+      await loadRecentProspectImportBatches(organisationId, { showLoading: false })
+    } catch (approveError) {
+      setRecentImportError(approveError?.message || 'Prospect import could not be approved.')
+    } finally {
+      setRecentImportAction({ batchId: '', action: '' })
+    }
+  }
+
+  async function handleCommitRecentProspectImport(batch = {}) {
+    const batchId = normalizeText(batch.id)
+    if (!batchId) return
+    setRecentImportAction({ batchId, action: 'commit' })
+    setRecentImportError('')
+    setMessage('')
+    try {
+      const result = await commitCommercialImportBatch(batchId)
+      setMessage(`Prospect import committed: ${result.summary.createdCount} created, ${result.summary.updatedCount} updated, ${result.summary.skippedCount} skipped, ${result.summary.failedCount} failed.`)
+      await loadData({ showLoading: false, preserveOnError: true })
+      await loadRecentProspectImportBatches(organisationId, { showLoading: false })
+    } catch (commitError) {
+      setRecentImportError(commitError?.message || 'Prospect import could not be committed.')
+    } finally {
+      setRecentImportAction({ batchId: '', action: '' })
+    }
+  }
 
   const loadData = useCallback(async ({ showLoading = true, preserveOnError = false } = {}) => {
     if (showLoading) setLoading(true)
@@ -1487,27 +1904,46 @@ function CommercialCanvassingPage({ dealType = '' }) {
         setProspects([])
         setActivities([])
         setLookups({})
+        setRecentImportBatches([])
         return
       }
-      const [workspace, nextLookups] = await Promise.all([
+      const importSettingsPromise = fetchOrganisationSettings({ forceRefresh: true })
+        .then((response) => {
+          const nextOrganisationSettings = response?.organisationSettings || response || {}
+          return {
+            settings: normalizeProspectBulkUploadSettings(nextOrganisationSettings.commercialWorkspace?.bulkUpload),
+            error: '',
+          }
+        })
+        .catch((settingsError) => ({
+          settings: DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS,
+          error: settingsError?.message || 'Prospect import settings could not be loaded.',
+        }))
+      const [workspace, nextLookups, nextImportSettings] = await Promise.all([
         nextOrganisationId ? listCommercialCanvassingWorkspace(nextOrganisationId) : Promise.resolve({ prospects: [], activities: [] }),
         nextOrganisationId ? getCommercialLookupData(nextOrganisationId) : Promise.resolve({}),
+        importSettingsPromise,
       ])
       setOrganisationId(nextOrganisationId)
       setProspects(Array.isArray(workspace?.prospects) ? workspace.prospects : [])
       setActivities(Array.isArray(workspace?.activities) ? workspace.activities : [])
       setLookups(nextLookups || {})
+      setProspectImportSettings(nextImportSettings.settings)
+      setProspectImportSettingsError(nextImportSettings.error)
+      void loadRecentProspectImportBatches(nextOrganisationId, { showLoading: false })
     } catch (loadError) {
       if (!preserveOnError) {
         setError(loadError?.message || 'Commercial canvassing could not be loaded.')
         setProspects([])
         setActivities([])
         setLookups({})
+        setRecentImportBatches([])
+        setProspectImportSettings(DEFAULT_PROSPECT_BULK_UPLOAD_SETTINGS)
       }
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [])
+  }, [loadRecentProspectImportBatches])
 
   useEffect(() => {
     void loadData()
@@ -1758,6 +2194,515 @@ function CommercialCanvassingPage({ dealType = '' }) {
   function openCreateModal(nextRole = pageView.defaultCreateRole) {
     resetCreateDraft(nextRole)
     setCreateOpen(true)
+  }
+
+  const importSummary = useMemo(() => {
+    return importRows.reduce((summary, row) => {
+      summary.total += 1
+      summary[row.status] = (summary[row.status] || 0) + 1
+      return summary
+    }, { total: 0, ready: 0, warning: 0, skipped: 0, invalid: 0, created: 0, failed: 0, staged: 0 })
+  }, [importRows])
+
+  const rejectedImportRows = useMemo(
+    () => importRows.filter((row) => ['skipped', 'invalid', 'failed'].includes(row.status)),
+    [importRows],
+  )
+
+  const duplicateImportRows = useMemo(
+    () => importRows.filter((row) => row.status === 'skipped'),
+    [importRows],
+  )
+
+  function resetImportState() {
+    setImportFileName('')
+    setImportRows([])
+    setImportError('')
+    setImportAudit({ batches: [], warning: '', unsupportedRows: 0 })
+    if (importFileInputRef.current) importFileInputRef.current.value = ''
+  }
+
+  function openImportModal() {
+    resetImportState()
+    setImportOpen(true)
+  }
+
+  function handleDownloadProspectTemplate() {
+    downloadTextFile('arch9-prospect-import-template.csv', buildProspectImportTemplateCsv())
+  }
+
+  function buildExistingImportKeys() {
+    const keys = new Set()
+    normalizedProspects.forEach((prospect) => {
+      const role = normalizeImportRole(prospect.prospectRole) || normalizeKey(prospect.prospectRole)
+      const email = normalizeText(prospect.email).toLowerCase()
+      const phone = normalizeImportPhone(prospect.phone)
+      const company = normalizeKey(prospect.companyName)
+      if (role && email) keys.add(`email:${role}:${email}`)
+      if (role && phone) keys.add(`phone:${role}:${phone}`)
+      if (role && company) keys.add(`company:${role}:${company}`)
+    })
+    return keys
+  }
+
+  function getImportDuplicateKeys(payload = {}) {
+    const role = normalizeImportRole(payload.prospectRole) || normalizeKey(payload.prospectRole)
+    const email = normalizeText(payload.email).toLowerCase()
+    const phone = normalizeImportPhone(payload.phone)
+    const company = normalizeKey(payload.companyName)
+    return [
+      role && email ? `email:${role}:${email}` : '',
+      role && phone ? `phone:${role}:${phone}` : '',
+      role && company ? `company:${role}:${company}` : '',
+    ].filter(Boolean)
+  }
+
+  function getBrokerFromImport(value = '') {
+    const text = normalizeText(value)
+    if (!text) return null
+    const key = normalizeKey(text)
+    return brokerOptions.find((option) => (
+      normalizeText(option.value) === text ||
+      normalizeKey(option.label) === key ||
+      normalizeKey(option.email) === key
+    )) || null
+  }
+
+  function validateImportPayload(payload = {}, settings = prospectImportSettings) {
+    const errors = []
+    const warnings = []
+    const role = normalizeImportRole(payload.prospectRole) || normalizeKey(payload.prospectRole)
+    const email = normalizeText(payload.email)
+    const followUpDate = normalizeText(payload.nextFollowUpDate)
+    const recordType = getProspectImportRecordTypeForRole(role)
+
+    if (!settings.enabled) errors.push('Bulk uploads are disabled in Commercial settings')
+    if (!normalizeText(payload.companyName) && !normalizeText(payload.contactName)) errors.push('Missing company or contact name')
+    if (!normalizeText(payload.phone) && !email) errors.push('Missing phone or email')
+    if (!role) errors.push('Missing valid prospect role')
+    if (recordType && !isProspectImportRoleAllowed(role, settings)) errors.push(`${getRoleLabel(role)} prospect imports are disabled in Bulk Upload settings`)
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push('Invalid email format')
+    if (followUpDate && !normalizeImportDate(followUpDate)) errors.push('Invalid follow-up date')
+
+    if (!normalizeText(payload.area)) warnings.push('Area is blank')
+    if (!normalizeText(payload.propertyType) && !normalizeText(payload.propertyCategory)) warnings.push('Property category is blank')
+    if (settings.defaultOwnerMode !== 'unassigned' && !normalizeText(payload.assignedBrokerId)) warnings.push('No broker assigned')
+    if (!normalizeText(payload.nextFollowUpDate)) warnings.push('No follow-up date')
+
+    return { errors, warnings }
+  }
+
+  function decorateImportRows(rows = [], settings = prospectImportSettings) {
+    const existingKeys = buildExistingImportKeys()
+    const seenKeys = new Set()
+
+    return rows.map((row) => {
+      const payload = row.payload || {}
+      const { errors, warnings } = validateImportPayload(payload, settings)
+      const duplicateKeys = getImportDuplicateKeys(payload)
+      const duplicate = duplicateKeys.some((key) => existingKeys.has(key) || seenKeys.has(key))
+      const status = errors.length ? 'invalid' : duplicate ? 'skipped' : warnings.length ? 'warning' : 'ready'
+      if (status === 'ready' || status === 'warning') duplicateKeys.forEach((key) => seenKeys.add(key))
+      return {
+        ...row,
+        status,
+        errors,
+        warnings,
+        reason: errors.join(', ') || (duplicate ? 'Duplicate email, phone, or company for this role' : warnings.join(', ')),
+      }
+    })
+  }
+
+  function mapCsvRowsToImportRows(csvRows = [], fileName = '') {
+    const [headers = [], ...bodyRows] = csvRows
+    const headerKeys = headers.map(normalizeImportHeader)
+    if (!headerKeys.some(Boolean)) throw new Error('The CSV needs a header row.')
+
+    const mappedRows = bodyRows.map((cells, index) => {
+      const source = {}
+      headerKeys.forEach((key, cellIndex) => {
+        if (key) source[key] = normalizeText(cells[cellIndex])
+      })
+
+      const companyName = getImportValue(source, ['Company Name', 'Company', 'Owner / Company Name', 'Business Name'])
+      const contactName = getImportValue(source, ['Contact Name', 'Contact', 'Contact Person', 'Decision Maker'])
+      const phone = getImportValue(source, ['Phone', 'Mobile', 'Cell', 'Cell Number', 'Contact Number'])
+      const email = getImportValue(source, ['Email', 'Email Address', 'Contact Email'])
+      const role = normalizeImportRole(getImportValue(source, ['Prospect Role', 'Role', 'Prospect Type', 'Lead Type']))
+      const categoryRaw = getImportValue(source, ['Property Category', 'Property Type', 'Asset Class', 'Category'])
+      const categoryKey = categoryRaw ? normalizeKey(categoryRaw).replace(/[^a-z0-9]+/g, '_') : ''
+      const brokerMatch = getBrokerFromImport(getImportValue(source, ['Assigned Broker', 'Broker', 'Agent', 'Assigned Agent']))
+      const payload = {
+        companyName,
+        contactName,
+        phone,
+        email,
+        prospectType: role ? `${getRoleLabel(role)} Prospect` : '',
+        prospectRole: role,
+        dealType: role ? getDealTypeFromRole(role) : '',
+        propertyCategory: categoryKey,
+        propertyType: categoryRaw ? getPropertyCategoryLabel(categoryKey) : '',
+        area: getImportValue(source, ['Area', 'Suburb', 'Node', 'Region']),
+        status: normalizeImportStatus(getImportValue(source, ['Status', 'Stage'])),
+        canvassingMethod: getImportValue(source, ['Source', 'Canvassing Method', 'Method']) || 'Existing Database',
+        assignedBrokerId: brokerMatch?.value || '',
+        assignedBrokerName: brokerMatch?.label || '',
+        nextFollowUpDate: normalizeImportDate(getImportValue(source, ['Next Follow Up Date', 'Follow Up Date', 'Next Action Date'])),
+        followUpPriority: normalizeImportPriority(getImportValue(source, ['Priority', 'Follow Up Priority'])),
+        notes: getImportValue(source, ['Notes', 'Note', 'Comments']),
+        metadata: {
+          importSource: 'prospect_csv_phase1',
+          importRowNumber: index + 2,
+          importFileName: fileName,
+        },
+      }
+
+      return {
+        id: `import-row-${index + 2}`,
+        rowNumber: index + 2,
+        source,
+        payload,
+        status: 'ready',
+        errors: [],
+        warnings: [],
+        reason: '',
+      }
+    })
+
+    return decorateImportRows(mappedRows)
+  }
+
+  function updateImportRowPayload(rowId = '', patch = {}) {
+    setImportRows((current) => {
+      const updated = current.map((row) => {
+        if (row.id !== rowId) return row
+        const nextPayload = { ...(row.payload || {}), ...patch }
+        if (patch.prospectRole !== undefined) {
+          const role = normalizeImportRole(patch.prospectRole) || normalizeKey(patch.prospectRole)
+          nextPayload.prospectRole = role
+          nextPayload.dealType = role ? getDealTypeFromRole(role) : ''
+          nextPayload.prospectType = role ? `${getRoleLabel(role)} Prospect` : ''
+        }
+        if (patch.propertyCategory !== undefined) {
+          nextPayload.propertyType = getPropertyCategoryLabel(patch.propertyCategory)
+        }
+        if (patch.nextFollowUpDate !== undefined) {
+          nextPayload.nextFollowUpDate = normalizeImportDate(patch.nextFollowUpDate) || normalizeText(patch.nextFollowUpDate)
+        }
+        return { ...row, payload: nextPayload }
+      })
+      return decorateImportRows(updated)
+    })
+  }
+
+  function handleDownloadRejectedProspectRows() {
+    if (!rejectedImportRows.length) return
+    downloadTextFile('arch9-prospect-import-rejected-rows.csv', buildProspectRejectedRowsCsv(rejectedImportRows))
+  }
+
+  async function handleProspectImportFileChange(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setImportError('')
+    setImportRows([])
+    setImportAudit({ batches: [], warning: '', unsupportedRows: 0 })
+    setImportFileName(file.name)
+    try {
+      if (!prospectImportSettings.enabled) {
+        throw new Error('Bulk uploads are disabled in Commercial settings.')
+      }
+      if (!file.name.toLowerCase().endsWith('.csv')) {
+        throw new Error('Please upload a CSV file for this first version.')
+      }
+      const text = await file.text()
+      const csvRows = parseCsvText(text)
+      if (csvRows.length < 2) throw new Error('The CSV needs a header row and at least one prospect row.')
+      const dataRowCount = Math.max(0, csvRows.length - 1)
+      if (dataRowCount > prospectImportSettings.maxRowsPerUpload) {
+        throw new Error(`This CSV has ${dataRowCount} rows. The current bulk upload limit is ${prospectImportSettings.maxRowsPerUpload} rows.`)
+      }
+      setImportRows(mapCsvRowsToImportRows(csvRows, file.name))
+    } catch (fileError) {
+      setImportError(fileError?.message || 'Prospects could not be read from this CSV.')
+    }
+  }
+
+  async function createProspectImportAuditBatches(rows = []) {
+    const groups = rows.reduce((accumulator, row) => {
+      const recordType = getProspectImportAuditRecordType(row)
+      if (!recordType) return accumulator
+      if (!accumulator[recordType]) accumulator[recordType] = []
+      accumulator[recordType].push(row)
+      return accumulator
+    }, {})
+    const unsupportedRows = rows.filter((row) => !getProspectImportAuditRecordType(row)).length
+    const batches = []
+
+    for (const [recordType, groupedRows] of Object.entries(groups)) {
+      const summary = summarizeProspectImportRows(groupedRows)
+      const batch = await createCommercialImportBatch({
+        organisationId,
+        recordType,
+        sourceType: 'csv',
+        fileName: importFileName,
+        fileMimeType: 'text/csv',
+        duplicateStrategy: prospectImportSettings.duplicateStrategy,
+        defaultOwnerMode: prospectImportSettings.defaultOwnerMode,
+        requiresManagerApproval: prospectImportSettings.requireManagerApproval,
+        totalRows: groupedRows.length,
+        settingsSnapshot: {
+          source: 'commercial_canvassing_prospect_import_phase_3',
+          pageView: pageView.id,
+          bulkUpload: prospectImportSettings,
+        },
+        columnMapping: PROSPECT_IMPORT_COLUMNS.reduce((mapping, column) => ({ ...mapping, [normalizeImportHeader(column)]: column }), {}),
+        validationSummary: {
+          phase: 'commercial_canvassing_prospect_import_phase_3',
+          ...summary,
+          unsupportedRows,
+          requiresManagerApproval: prospectImportSettings.requireManagerApproval,
+        },
+        importSummary: {
+          fileName: importFileName,
+          recordType,
+          status: 'preview_validated',
+          ...summary,
+        },
+        metadata: {
+          source: 'commercial_canvassing_prospect_import_phase_3',
+          pageView: pageView.id,
+          unsupportedRows,
+          requiresManagerApproval: prospectImportSettings.requireManagerApproval,
+        },
+      })
+
+      const createdAuditRows = []
+      const rowPayloads = groupedRows.map(buildProspectImportAuditRowPayload)
+      const chunkSize = 250
+      for (let index = 0; index < rowPayloads.length; index += chunkSize) {
+        const createdChunk = await createCommercialImportRows(batch.id, rowPayloads.slice(index, index + chunkSize))
+        createdAuditRows.push(...createdChunk)
+      }
+
+      await updateCommercialImportBatch(batch.id, {
+        status: prospectImportSettings.requireManagerApproval ? 'approval_pending' : 'ready',
+        totalRows: summary.totalRows,
+        validRows: summary.validRows,
+        warningRows: summary.warningRows,
+        invalidRows: summary.invalidRows,
+        skippedCount: summary.skippedRows,
+        validationSummary: {
+          phase: 'commercial_canvassing_prospect_import_phase_3',
+          ...summary,
+          unsupportedRows,
+          requiresManagerApproval: prospectImportSettings.requireManagerApproval,
+        },
+        importSummary: {
+          fileName: importFileName,
+          recordType,
+          status: prospectImportSettings.requireManagerApproval ? 'approval_pending' : 'ready_for_direct_commit',
+          ...summary,
+          unsupportedRows,
+          requiresManagerApproval: prospectImportSettings.requireManagerApproval,
+        },
+      })
+
+      batches.push({
+        ...batch,
+        recordType,
+        rowCount: groupedRows.length,
+        rowsByLocalId: new Map(createdAuditRows.map((auditRow) => [auditRow.metadata?.importRowId, auditRow])),
+      })
+    }
+
+    return { batches, unsupportedRows }
+  }
+
+  function getAuditRowForImportRow(auditContext = {}, rowId = '') {
+    for (const batch of auditContext.batches || []) {
+      const auditRow = batch.rowsByLocalId?.get(rowId)
+      if (auditRow) return auditRow
+    }
+    return null
+  }
+
+  async function finalizeProspectImportAuditBatches(auditContext = {}, sourceRows = [], createdByRowId = new Map(), failedRows = new Map()) {
+    const batches = auditContext.batches || []
+    if (!batches.length) return
+
+    const sourceRowsById = new Map(sourceRows.map((row) => [row.id, row]))
+    const updates = []
+    batches.forEach((batch) => {
+      batch.rowsByLocalId?.forEach((auditRow, localRowId) => {
+        const sourceRow = sourceRowsById.get(localRowId)
+        const created = createdByRowId.get(localRowId)
+        const failedMessage = failedRows.get(localRowId)
+        if (created?.id) {
+          updates.push(updateCommercialImportRow(auditRow.id, {
+            status: 'created',
+            action: 'create',
+            targetTable: 'commercial_canvassing_prospects',
+            targetRecordId: created.id,
+            errorMessage: '',
+            processedAt: new Date().toISOString(),
+            metadata: {
+              ...(auditRow.metadata || {}),
+              createdProspectId: created.id,
+            },
+          }))
+          return
+        }
+        if (failedMessage) {
+          updates.push(updateCommercialImportRow(auditRow.id, {
+            status: 'failed',
+            action: 'create',
+            targetTable: 'commercial_canvassing_prospects',
+            errorMessage: failedMessage,
+            processedAt: new Date().toISOString(),
+          }))
+          return
+        }
+        if (sourceRow?.status === 'skipped' || sourceRow?.status === 'invalid') {
+          updates.push(updateCommercialImportRow(auditRow.id, {
+            status: sourceRow.status,
+            action: sourceRow.status === 'skipped' ? 'skip' : 'review',
+            errorMessage: sourceRow.reason,
+            processedAt: sourceRow.status === 'skipped' ? new Date().toISOString() : null,
+          }))
+        }
+      })
+    })
+
+    const chunkSize = 50
+    for (let index = 0; index < updates.length; index += chunkSize) {
+      await Promise.all(updates.slice(index, index + chunkSize))
+    }
+
+    for (const batch of batches) {
+      const batchLocalRows = Array.from(batch.rowsByLocalId?.keys() || []).map((localRowId) => sourceRowsById.get(localRowId)).filter(Boolean)
+      const summary = summarizeProspectImportRows(batchLocalRows.map((row) => {
+        if (createdByRowId.has(row.id)) return { ...row, status: 'created' }
+        if (failedRows.has(row.id)) return { ...row, status: 'failed' }
+        return row
+      }))
+      await updateCommercialImportBatch(batch.id, {
+        status: summary.failedRows && !summary.createdRows ? 'failed' : 'committed',
+        totalRows: summary.totalRows,
+        validRows: summary.validRows,
+        warningRows: summary.warningRows,
+        invalidRows: summary.invalidRows,
+        createdCount: summary.createdRows,
+        skippedCount: summary.skippedRows,
+        failedCount: summary.failedRows,
+        importSummary: {
+          fileName: importFileName,
+          recordType: batch.recordType,
+          phase: 'commercial_canvassing_prospect_import_phase_3',
+          status: summary.failedRows && !summary.createdRows ? 'failed' : 'committed',
+          committedAt: new Date().toISOString(),
+          ...summary,
+          unsupportedRows: auditContext.unsupportedRows || 0,
+        },
+      })
+    }
+  }
+
+  async function handleCommitProspectImport() {
+    const readyRows = importRows.filter((row) => row.status === 'ready' || row.status === 'warning')
+    if (!organisationId || !readyRows.length) return
+    if (!prospectImportSettings.enabled) {
+      setImportError('Bulk uploads are disabled in Commercial settings.')
+      return
+    }
+
+    setBusyAction('import')
+    setImportError('')
+    setError('')
+    try {
+      const createdRows = []
+      const createdByRowId = new Map()
+      const failedRows = new Map()
+      let auditContext = { batches: [], unsupportedRows: 0 }
+      const stagedRowIds = new Set()
+
+      try {
+        auditContext = await createProspectImportAuditBatches(importRows)
+        setImportAudit({ ...auditContext, warning: '' })
+      } catch (auditError) {
+        if (prospectImportSettings.requireManagerApproval) {
+          throw auditError
+        }
+        setImportAudit({
+          batches: [],
+          unsupportedRows: 0,
+          warning: auditError?.message || 'Import audit trail could not be created, but the prospect import can continue.',
+        })
+      }
+
+      const directCreateRows = readyRows.filter((row) => {
+        const auditRow = getAuditRowForImportRow(auditContext, row.id)
+        const shouldStageForApproval = prospectImportSettings.requireManagerApproval && auditRow
+        if (shouldStageForApproval) stagedRowIds.add(row.id)
+        return !shouldStageForApproval
+      })
+
+      for (const row of directCreateRows) {
+        try {
+          const auditRow = getAuditRowForImportRow(auditContext, row.id)
+          const created = await createCommercialCanvassingProspect(organisationId, {
+            ...row.payload,
+            metadata: {
+              ...(row.payload?.metadata || {}),
+              commercialImportSource: 'commercial_canvassing_prospect_import_phase_3',
+              commercialImportBatchId: auditRow?.batchId || '',
+              commercialImportRowId: auditRow?.id || '',
+            },
+          })
+          createdRows.push(created)
+          createdByRowId.set(row.id, created)
+        } catch (rowError) {
+          failedRows.set(row.id, rowError?.message || 'Could not create this prospect.')
+        }
+      }
+
+      if (auditContext.batches?.length && !prospectImportSettings.requireManagerApproval) {
+        try {
+          await finalizeProspectImportAuditBatches(auditContext, importRows, createdByRowId, failedRows)
+        } catch (auditFinalizeError) {
+          setImportAudit((current) => ({
+            ...current,
+            warning: auditFinalizeError?.message || 'Prospects were imported, but the import audit outcome could not be updated.',
+          }))
+        }
+      }
+
+      setImportRows((current) => current.map((row) => {
+        if (failedRows.has(row.id)) return { ...row, status: 'failed', reason: failedRows.get(row.id) }
+        if (createdByRowId.has(row.id)) return { ...row, status: 'created', reason: '' }
+        if (stagedRowIds.has(row.id)) return { ...row, status: 'staged', reason: 'Staged for manager approval in Bulk Upload review' }
+        return row
+      }))
+
+      if (createdRows.length) {
+        setProspects((current) => [
+          ...createdRows,
+          ...current.filter((row) => !createdRows.some((created) => normalizeText(created.id) === normalizeText(row.id))),
+        ])
+      }
+
+      const failedCount = failedRows.size
+      const auditCount = auditContext.batches?.length || 0
+      const unsupportedAudit = auditContext.unsupportedRows || 0
+      const stagedCount = stagedRowIds.size
+      setMessage(`${createdRows.length} prospects imported${stagedCount ? ` · ${stagedCount} staged for manager approval` : ''}${failedCount ? `, ${failedCount} failed` : ''}${auditCount ? ` · ${auditCount} audit ${auditCount === 1 ? 'batch' : 'batches'} saved` : ''}${unsupportedAudit ? ` · ${unsupportedAudit} rows imported without audit support` : ''}.`)
+      if (!failedCount) setImportOpen(false)
+      await loadData({ showLoading: false, preserveOnError: true })
+      void loadRecentProspectImportBatches(organisationId, { showLoading: false })
+    } catch (commitError) {
+      setImportError(commitError?.message || 'Prospect import could not be completed.')
+    } finally {
+      setBusyAction('')
+    }
   }
 
   useEffect(() => {
@@ -2688,29 +3633,41 @@ function CommercialCanvassingPage({ dealType = '' }) {
               </div>
               {isFocusedCanvassingView ? (
                 pageView.key === 'lease' ? (
-                  <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)} className="h-12 rounded-[10px] bg-[#082f56] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#0b3d70]">
-                    <Plus size={16} />
-                    Add Prospect
-                  </Button>
-                ) : (
-                  <div className="relative">
-                    <Button type="button" onClick={() => setCreateMenuOpen((current) => !current)} className="h-12 rounded-[10px] bg-[#082f56] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#0b3d70]">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button type="button" onClick={() => openCreateModal(pageView.defaultCreateRole)} className="h-12 rounded-[10px] bg-[#082f56] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#0b3d70]">
                       <Plus size={16} />
                       Add Prospect
-                      <ChevronRight size={15} className={`transition ${createMenuOpen ? 'rotate-90' : ''}`} />
                     </Button>
-                    {createMenuOpen ? (
-                      <div className="absolute right-0 top-14 z-30 w-44 overflow-hidden rounded-[12px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
-                        <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(primaryCreateRole) }}>
-                          <Building2 size={15} />
-                          {primaryCreateLabel}
-                        </button>
-                        <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(secondaryCreateRole) }}>
-                          <Users size={15} />
-                          {secondaryCreateLabel}
-                        </button>
-                      </div>
-                    ) : null}
+                    <Button type="button" variant="secondary" onClick={openImportModal} className="h-12 rounded-[10px] px-5">
+                      <Upload size={16} />
+                      Import
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative">
+                      <Button type="button" onClick={() => setCreateMenuOpen((current) => !current)} className="h-12 rounded-[10px] bg-[#082f56] px-5 shadow-[0_12px_28px_rgba(16,43,70,0.18)] hover:bg-[#0b3d70]">
+                        <Plus size={16} />
+                        Add Prospect
+                        <ChevronRight size={15} className={`transition ${createMenuOpen ? 'rotate-90' : ''}`} />
+                      </Button>
+                      {createMenuOpen ? (
+                        <div className="absolute right-0 top-14 z-30 w-44 overflow-hidden rounded-[12px] border border-[#dce6f0] bg-white py-1 shadow-[0_14px_30px_rgba(15,23,42,0.16)]">
+                          <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(primaryCreateRole) }}>
+                            <Building2 size={15} />
+                            {primaryCreateLabel}
+                          </button>
+                          <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold text-[#102236] hover:bg-[#f7fafc]" onClick={() => { setCreateMenuOpen(false); openCreateModal(secondaryCreateRole) }}>
+                            <Users size={15} />
+                            {secondaryCreateLabel}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                    <Button type="button" variant="secondary" onClick={openImportModal} className="h-12 rounded-[10px] px-5">
+                      <Upload size={16} />
+                      Import
+                    </Button>
                   </div>
                 )
               ) : (
@@ -2719,8 +3676,8 @@ function CommercialCanvassingPage({ dealType = '' }) {
                     <Plus size={16} />
                     {pageView.createLabel.replace(/^\+\s*/, '')}
                   </Button>
-                  <Button type="button" variant="secondary" className="h-12 rounded-[14px] px-5" disabled title="Import is coming soon">
-                    <Download size={16} />
+                  <Button type="button" variant="secondary" onClick={openImportModal} className="h-12 rounded-[14px] px-5">
+                    <Upload size={16} />
                     Import
                   </Button>
                   <button
@@ -2732,6 +3689,103 @@ function CommercialCanvassingPage({ dealType = '' }) {
                   </button>
                 </div>
               )}
+            </section>
+
+            <section className={`${isFocusedCanvassingView ? 'rounded-[18px] border border-[#dce6f0] bg-white p-4 shadow-[0_12px_28px_rgba(15,35,55,0.05)]' : 'mt-6 rounded-[18px] border border-[#e2ebf4] bg-[#fbfdff] p-4'}`}>
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] bg-[#eef5ff] text-[#1f6dd5]">
+                    <FileClock size={18} />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-semibold text-[#102236]">Recent Prospect Imports</h2>
+                    <p className="mt-1 text-xs leading-5 text-[#60758d]">Track audited seller, buyer, landlord, and tenant prospect uploads created from this page.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void loadRecentProspectImportBatches(organisationId)}
+                    disabled={recentImportsLoading || !organisationId}
+                    className="h-10 rounded-[10px] px-3 text-xs"
+                  >
+                    <FileClock size={14} />
+                    {recentImportsLoading ? 'Refreshing...' : 'Refresh'}
+                  </Button>
+                  <Button asChild type="button" variant="secondary" className="h-10 rounded-[10px] px-3 text-xs">
+                    <Link to="/commercial/settings/bulk-upload">
+                      <ArrowRight size={14} />
+                      Review All
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+
+              {recentImportError ? (
+                <p className="mt-3 rounded-[12px] border border-[#f1d9ab] bg-[#fff9eb] px-3 py-2 text-xs font-semibold text-[#81550d]">{recentImportError}</p>
+              ) : null}
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {recentImportsLoading && !recentImportBatches.length ? (
+                  [0, 1, 2].map((item) => <div key={item} className="h-20 animate-pulse rounded-[14px] bg-[#eef3f7]" />)
+                ) : recentImportBatches.length ? recentImportBatches.slice(0, 3).map((batch) => {
+                  const tone = getImportBatchStatusTone(batch.status)
+                  const issueCount = getProspectImportBatchIssueCount(batch)
+                  const actionBusy = recentImportAction.batchId === batch.id
+                  const canApprove = batch.status === 'approval_pending' || (batch.status === 'validated' && batch.requiresManagerApproval)
+                  const canCommit = ['ready', 'approved', 'validated'].includes(normalizeKey(batch.status)) && (Number(batch.validRows || 0) + Number(batch.warningRows || 0) > 0)
+                  return (
+                    <article key={batch.id} className="rounded-[14px] border border-[#e2ebf4] bg-white p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[#102236]">{batch.fileName || getProspectImportAuditBatchLabel(batch)}</p>
+                          <p className="mt-1 text-xs text-[#71859b]">{getProspectImportAuditBatchLabel(batch)} · {batch.totalRows || 0} rows</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass(tone)}`}>{titleize(batch.status || 'uploaded')}</span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-[#60758d]">
+                        <span>{batch.createdCount || 0} created</span>
+                        <span>{batch.skippedCount || 0} skipped</span>
+                        <span>{batch.failedCount || 0} failed</span>
+                        {issueCount ? <span className="text-[#81550d]">{issueCount} issues</span> : null}
+                      </div>
+                      <p className="mt-2 text-xs text-[#8a96a8]">{formatRelativeTime(batch.updatedAt || batch.createdAt)}</p>
+                      {canApprove || canCommit ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {canApprove ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() => void handleApproveRecentProspectImport(batch)}
+                              disabled={actionBusy}
+                              className="h-8 rounded-[10px] px-2.5 text-xs"
+                            >
+                              <CheckCircle2 size={13} />
+                              {actionBusy && recentImportAction.action === 'approve' ? 'Approving...' : 'Approve'}
+                            </Button>
+                          ) : null}
+                          {canCommit ? (
+                            <Button
+                              type="button"
+                              onClick={() => void handleCommitRecentProspectImport(batch)}
+                              disabled={actionBusy}
+                              className="h-8 rounded-[10px] px-2.5 text-xs"
+                            >
+                              <FileClock size={13} />
+                              {actionBusy && recentImportAction.action === 'commit' ? 'Committing...' : 'Commit'}
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </article>
+                  )
+                }) : (
+                  <div className="rounded-[14px] border border-dashed border-[#dce6f0] bg-white px-4 py-5 text-sm text-[#60758d] lg:col-span-3">
+                    No audited prospect imports yet.
+                  </div>
+                )}
+              </div>
             </section>
 
             {isFocusedCanvassingView ? (
@@ -3379,6 +4433,228 @@ function CommercialCanvassingPage({ dealType = '' }) {
           </Modal>
 
           {createModal}
+
+          <Modal
+            open={importOpen}
+            onClose={() => {
+              setImportOpen(false)
+              resetImportState()
+            }}
+            title="Import Prospects"
+            subtitle="Upload a CSV list and review rows before creating prospects."
+            className="max-w-[1040px]"
+            footer={(
+              <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-xs font-semibold text-[#6f8197]">
+                  {importSummary.total ? `${importSummary.ready} ready · ${importSummary.warning} warnings · ${importSummary.staged} staged · ${importSummary.skipped} skipped · ${importSummary.invalid} invalid` : 'CSV only'}
+                </div>
+                <div className="flex flex-wrap justify-end gap-3">
+                  <Button type="button" variant="secondary" onClick={handleDownloadProspectTemplate}>
+                    <Download size={16} />
+                    Template
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={handleDownloadRejectedProspectRows} disabled={!rejectedImportRows.length}>
+                    <Download size={16} />
+                    Rejected Rows
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => { setImportOpen(false); resetImportState() }}>
+                    Cancel
+                  </Button>
+                  <Button type="button" onClick={handleCommitProspectImport} disabled={!prospectImportSettings.enabled || busyAction === 'import' || importSummary.ready + importSummary.warning < 1}>
+                    <Upload size={16} />
+                    {busyAction === 'import' ? 'Importing...' : prospectImportSettings.requireManagerApproval ? `Stage ${importSummary.ready + importSummary.warning || ''}`.trim() : `Import ${importSummary.ready + importSummary.warning || ''}`.trim()}
+                  </Button>
+                </div>
+              </div>
+            )}
+          >
+            <div className="space-y-5">
+              <section className="rounded-[18px] border border-[#dce6f0] bg-[#fbfdff] p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-[#102236]">{importFileName || 'No file selected'}</p>
+                    <p className="mt-1 text-xs text-[#6f8197]">Required: company or contact, phone or email, and prospect role.</p>
+                    <p className="mt-1 text-xs text-[#6f8197]">
+                      Limit {prospectImportSettings.maxRowsPerUpload} rows · {prospectImportSettings.requireManagerApproval ? 'Manager approval required for audited prospect rows' : 'Audited rows can be created immediately'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      ref={importFileInputRef}
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="hidden"
+                      onChange={(event) => void handleProspectImportFileChange(event)}
+                    />
+                    <Button type="button" variant="secondary" onClick={() => importFileInputRef.current?.click()} disabled={!prospectImportSettings.enabled}>
+                      <Upload size={16} />
+                      Choose CSV
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={handleDownloadProspectTemplate}>
+                      <Download size={16} />
+                      Download Template
+                    </Button>
+                  </div>
+                </div>
+                {prospectImportSettingsError ? (
+                  <p className="mt-3 rounded-[12px] border border-[#f1d9ab] bg-[#fff9eb] px-3 py-2 text-sm text-[#81550d]">{prospectImportSettingsError}</p>
+                ) : null}
+                {!prospectImportSettings.enabled ? (
+                  <p className="mt-3 rounded-[12px] border border-[#f5d0d0] bg-[#fff5f5] px-3 py-2 text-sm text-[#9f1d1d]">Bulk uploads are disabled in Commercial settings.</p>
+                ) : null}
+                {importError ? <p className="mt-3 rounded-[12px] border border-[#f5d0d0] bg-[#fff5f5] px-3 py-2 text-sm text-[#9f1d1d]">{importError}</p> : null}
+                {importAudit.warning ? (
+                  <p className="mt-3 rounded-[12px] border border-[#f1d9ab] bg-[#fff9eb] px-3 py-2 text-sm text-[#81550d]">{importAudit.warning}</p>
+                ) : null}
+                {importAudit.batches.length ? (
+                  <div className="mt-3 rounded-[12px] border border-[#dbe9f6] bg-white px-3 py-2 text-sm text-[#49647f]">
+                    <span className="font-semibold text-[#102236]">Audit trail saved:</span>{' '}
+                    {importAudit.batches.map((batch) => `${batch.rowCount} ${batch.recordType.replace(/_/g, ' ')} rows`).join(' · ')}
+                    {importAudit.unsupportedRows ? ` · ${importAudit.unsupportedRows} rows imported directly` : ''}
+                  </div>
+                ) : null}
+              </section>
+
+              {importRows.length ? (
+                <>
+                <section className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-[16px] border border-[#dbe9f6] bg-[#f8fbff] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#71859b]">Importable</p>
+                    <p className="mt-1 text-2xl font-semibold text-[#102236]">{importSummary.ready + importSummary.warning}</p>
+                    <p className="mt-1 text-xs leading-5 text-[#60758d]">{prospectImportSettings.requireManagerApproval ? 'Audited rows will be staged for review.' : 'Ready rows and rows with warnings will be created.'}</p>
+                  </div>
+                  <div className="rounded-[16px] border border-[#f1d9ab] bg-[#fff9eb] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#986a11]">Warnings</p>
+                    <p className="mt-1 text-2xl font-semibold text-[#81550d]">{importSummary.warning + importSummary.skipped}</p>
+                    <p className="mt-1 text-xs leading-5 text-[#7a5b1b]">Warnings can import. Duplicates are skipped.</p>
+                  </div>
+                  <div className="rounded-[16px] border border-[#f2c7c7] bg-[#fff5f5] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#9f1d1d]">Rejected</p>
+                    <p className="mt-1 text-2xl font-semibold text-[#8e1b1b]">{importSummary.invalid + importSummary.failed}</p>
+                    <p className="mt-1 text-xs leading-5 text-[#8e3d3d]">Fix invalid rows below or export them.</p>
+                  </div>
+                </section>
+
+                {duplicateImportRows.length ? (
+                  <section className="rounded-[16px] border border-[#f1d9ab] bg-[#fff9eb] p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-[#81550d]">{duplicateImportRows.length} duplicate rows will be skipped</p>
+                        <p className="mt-1 text-xs leading-5 text-[#7a5b1b]">Duplicates are matched by email, phone, or company name within the same prospect role.</p>
+                      </div>
+                      <Button type="button" variant="secondary" onClick={handleDownloadRejectedProspectRows} className="border-[#f1d9ab] bg-white text-[#81550d]">
+                        <Download size={16} />
+                        Export
+                      </Button>
+                    </div>
+                  </section>
+                ) : null}
+
+                <section className="overflow-hidden rounded-[18px] border border-[#dce6f0] bg-white">
+                  <div className="grid grid-cols-4 divide-x divide-[#e6edf4] border-b border-[#e6edf4] text-center text-sm font-semibold text-[#102236]">
+                    <div className="p-3">{importSummary.ready} ready</div>
+                    <div className="p-3">{importSummary.warning} warnings</div>
+                    <div className="p-3">{importSummary.skipped} skipped</div>
+                    <div className="p-3">{importSummary.invalid + importSummary.failed + importSummary.staged} needs review</div>
+                  </div>
+                  <div className="max-h-[430px] overflow-auto">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="sticky top-0 bg-[#f8fbff] text-xs font-semibold uppercase tracking-[0.08em] text-[#71859b]">
+                        <tr>
+                          <th className="px-4 py-3">Row</th>
+                          <th className="px-4 py-3">Prospect</th>
+                          <th className="px-4 py-3">Role</th>
+                          <th className="px-4 py-3">Contact</th>
+                          <th className="px-4 py-3">Details</th>
+                          <th className="px-4 py-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#eef3f7]">
+                        {importRows.slice(0, 100).map((row) => {
+                          const tone = row.status === 'ready' || row.status === 'created'
+                            ? 'emerald'
+                            : row.status === 'skipped' || row.status === 'warning' || row.status === 'staged'
+                              ? 'amber'
+                              : 'rose'
+                          return (
+                            <tr key={row.id}>
+                              <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-[#7b899a]">{row.rowNumber}</td>
+                              <td className="min-w-[240px] px-4 py-3">
+                                <Field value={row.payload.companyName || ''} onChange={(event) => updateImportRowPayload(row.id, { companyName: event.target.value })} placeholder="Company name" className="h-10 rounded-[10px] text-sm" />
+                                <Field value={row.payload.contactName || ''} onChange={(event) => updateImportRowPayload(row.id, { contactName: event.target.value })} placeholder="Contact name" className="mt-2 h-10 rounded-[10px] text-sm" />
+                              </td>
+                              <td className="min-w-[150px] px-4 py-3">
+                                <Field as="select" value={row.payload.prospectRole || ''} onChange={(event) => updateImportRowPayload(row.id, { prospectRole: event.target.value })} className="h-10 rounded-[10px] bg-white text-sm">
+                                  <option value="">Select role</option>
+                                  {['seller', 'buyer', 'landlord', 'tenant'].map((role) => <option key={role} value={role}>{getRoleLabel(role)}</option>)}
+                                </Field>
+                              </td>
+                              <td className="min-w-[220px] px-4 py-3">
+                                <Field value={row.payload.phone || ''} onChange={(event) => updateImportRowPayload(row.id, { phone: event.target.value })} placeholder="Phone" className="h-10 rounded-[10px] text-sm" />
+                                <Field value={row.payload.email || ''} onChange={(event) => updateImportRowPayload(row.id, { email: event.target.value })} placeholder="Email" className="mt-2 h-10 rounded-[10px] text-sm" />
+                              </td>
+                              <td className="min-w-[220px] px-4 py-3">
+                                <Field value={row.payload.area || ''} onChange={(event) => updateImportRowPayload(row.id, { area: event.target.value })} placeholder="Area" className="h-10 rounded-[10px] text-sm" />
+                                <Field as="select" value={row.payload.propertyCategory || ''} onChange={(event) => updateImportRowPayload(row.id, { propertyCategory: event.target.value })} className="mt-2 h-10 rounded-[10px] bg-white text-sm">
+                                  <option value="">Property category</option>
+                                  {COMMERCIAL_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </Field>
+                                <Field
+                                  as="select"
+                                  value={row.payload.assignedBrokerId || ''}
+                                  onChange={(event) => {
+                                    const broker = brokerOptions.find((option) => option.value === event.target.value)
+                                    updateImportRowPayload(row.id, { assignedBrokerId: event.target.value, assignedBrokerName: broker?.label || '' })
+                                  }}
+                                  className="mt-2 h-10 rounded-[10px] bg-white text-sm"
+                                >
+                                  <option value="">Unassigned</option>
+                                  {brokerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                </Field>
+                                <Field as="input" type="date" value={normalizeImportDate(row.payload.nextFollowUpDate) || ''} onChange={(event) => updateImportRowPayload(row.id, { nextFollowUpDate: event.target.value })} className="mt-2 h-10 rounded-[10px] text-sm" />
+                              </td>
+                              <td className="min-w-[240px] px-4 py-3 align-top">
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass(tone)}`}>
+                                  {titleize(row.status)}
+                                </span>
+                                {row.status === 'skipped' || row.status === 'failed' ? (
+                                  <p className="mt-2 max-w-[240px] text-xs leading-5 text-[#81550d]">{row.reason}</p>
+                                ) : row.errors?.length ? (
+                                  <ul className="mt-2 list-disc pl-4 text-xs leading-5 text-[#9f1d1d]">
+                                    {row.errors.map((entry) => <li key={entry}>{entry}</li>)}
+                                  </ul>
+                                ) : null}
+                                {!row.errors?.length && row.warnings?.length ? (
+                                  <ul className="mt-2 list-disc pl-4 text-xs leading-5 text-[#81550d]">
+                                    {row.warnings.map((entry) => <li key={entry}>{entry}</li>)}
+                                  </ul>
+                                ) : null}
+                                {!row.errors?.length && !row.warnings?.length && row.reason ? <p className="mt-1 max-w-[240px] text-xs leading-5 text-[#7b899a]">{row.reason}</p> : null}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    {importRows.length > 100 ? (
+                      <p className="border-t border-[#eef3f7] px-4 py-3 text-xs text-[#7b899a]">Preview limited to first 100 rows.</p>
+                    ) : null}
+                  </div>
+                </section>
+                </>
+              ) : (
+                <section className="rounded-[18px] border border-dashed border-[#dce6f0] bg-white p-8 text-center">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[16px] bg-[#eef5ff] text-[#1f6dd5]">
+                    <Upload size={20} />
+                  </div>
+                  <h3 className="mt-3 text-base font-semibold text-[#102236]">CSV preview will appear here</h3>
+                  <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#60758d]">
+                    Start from the template for the cleanest import.
+                  </p>
+                </section>
+              )}
+            </div>
+          </Modal>
 
       <Modal
         open={archiveOpen}

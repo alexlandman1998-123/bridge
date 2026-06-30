@@ -673,13 +673,6 @@ export function ResidentialCommandCenterGrid({
         })}
       </div>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <ResidentialTransactionHealth data={model.transactionHealth} scope={scope} mode={mode} />
-        <ResidentialPerformanceChart data={model.performance} scope={scope} mode={mode} />
-      </div>
-
-      <ResidentialTransactionFlow data={model.transactionFlow} scope={scope} mode={mode} />
-
       <ResidentialActiveTransactionsCarousel
         title={model.activeTransactions.title}
         rows={model.activeTransactions.rows}
@@ -687,6 +680,13 @@ export function ResidentialCommandCenterGrid({
         onViewAll={onViewTransactions}
         onOpenRecord={onOpenTransaction}
       />
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <ResidentialTransactionHealth data={model.transactionHealth} scope={scope} mode={mode} />
+        <ResidentialPerformanceChart data={model.performance} scope={scope} mode={mode} />
+      </div>
+
+      <ResidentialTransactionFlow data={model.transactionFlow} scope={scope} mode={mode} />
 
       <div className={`grid gap-4 ${showTopPerformers ? 'xl:grid-cols-2' : 'xl:grid-cols-1'}`}>
         {showTopPerformers ? <ResidentialTopPerformers data={model.topPerformers} scope={scope} /> : null}

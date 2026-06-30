@@ -47,6 +47,7 @@ import {
   assignOrganisationUserCommissionProfile,
   listOrganisationCommissionStructures,
   listOrganisationUserCommissionProfiles,
+  listOrganisationUsers,
   updateOrganisationUserRole,
 } from '../lib/settingsApi'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
@@ -679,6 +680,65 @@ function normalizeOrganisationUserAgent(user = {}, context = {}) {
   }
 }
 
+function normalizeDirectoryAgentForWorkspace(agent = {}, directory = {}) {
+  const email = normalizeIdentityEmail(agent.email)
+  const id = normalizeAgentRecordId(agent.id || email || agent.name)
+  if (!id) return null
+
+  const name = String(agent.name || agent.fullName || agent.full_name || email || 'Agent').trim()
+  return {
+    id,
+    organisationUserId: normalizeAgentRecordId(agent.organisationUserId || agent.organisation_user_id),
+    userId: normalizeAgentRecordId(agent.userId || agent.user_id),
+    name,
+    fullName: name,
+    firstName: String(agent.firstName || agent.first_name || '').trim(),
+    lastName: String(agent.lastName || agent.last_name || '').trim(),
+    title: String(agent.title || agent.jobTitle || agent.position || '').trim(),
+    profile: agent.profile || null,
+    createdAt: agent.createdAt || agent.created_at || null,
+    email,
+    phone: agent.phone || '',
+    avatarUrl: getAgentAvatarUrl(agent),
+    profilePhotoUrl: getAgentAvatarUrl(agent),
+    office: agent.office || agent.branchName || 'Head Office',
+    branchId: agent.branchId || agent.branch_id || null,
+    organisationId: normalizeAgentRecordId(agent.organisationId || agent.agencyId || directory?.agency?.id || ''),
+    organisationName: agent.organisationName || agent.agencyName || directory?.agency?.name || 'Arch9 Organisation',
+    role: String(agent.role || 'agent').trim().toLowerCase(),
+    status: normalizeAgentDirectoryStatus(agent.status),
+    invitedAt: agent.invitedAt || null,
+    activatedAt: agent.activatedAt || agent.acceptedAt || null,
+    lastActiveAt: agent.lastActiveAt || null,
+    commissionStructureId: normalizeAgentRecordId(agent.commissionStructureId),
+    appliedCommissionStructureId: normalizeAgentRecordId(agent.commissionStructureId),
+    commissionStructureName: agent.commissionStructureName || '',
+    commissionEffectiveFrom: agent.commissionEffectiveFrom || agent.effectiveFrom || null,
+    overrideAgentSplitPercentage: Number.isFinite(Number(agent.overrideAgentSplitPercentage)) ? Number(agent.overrideAgentSplitPercentage) : null,
+    baseCommissionRate: agent.baseCommissionRate || '',
+    commissionSplit: agent.commissionSplit || '',
+    performanceTier: agent.performanceTier || '',
+    inviteId: '',
+    inviteToken: '',
+    deals: [],
+    developmentListings: [],
+    privateListings: [],
+    pipelineRows: [],
+    appointments: [],
+    metrics: buildEmptyAgentMetrics(),
+    recentDeals: [],
+  }
+}
+
+function getDirectoryWorkspaceAgents(directory = {}) {
+  return [
+    ...(Array.isArray(directory?.principals) ? directory.principals : []),
+    ...(Array.isArray(directory?.agents) ? directory.agents : []),
+  ]
+    .map((agent) => normalizeDirectoryAgentForWorkspace(agent, directory))
+    .filter(Boolean)
+}
+
 function createCommissionProfileMap(profiles = []) {
   const map = new Map()
   for (const profile of profiles) {
@@ -943,6 +1003,20 @@ function findAgentByRouteId(agents = [], routeId = '') {
   const target = normalizeAgentRecordId(routeId)
   if (!target) return null
   return agents.find((agent) => getAgentMatchKeys(agent).includes(target)) || null
+}
+
+function createEmptyAgentWorkspaceSnapshot() {
+  return {
+    branches: [],
+    leads: [],
+    transactions: [],
+    listings: [],
+    appointments: [],
+    tasks: [],
+    leadActivities: [],
+    canvassingProspects: [],
+    canvassingActivities: [],
+  }
 }
 
 function resolveOrganisationOptions({ directory = null, invites = [], profile = null } = {}) {
@@ -6045,20 +6119,11 @@ export function AgentWorkspacePage() {
   const { role, baseRole, profile } = useWorkspace()
   const [membershipRole, setMembershipRole] = useState('viewer')
   const [loading, setLoading] = useState(true)
+  const [hydratingSnapshot, setHydratingSnapshot] = useState(false)
   const [error, setError] = useState('')
   const [agent, setAgent] = useState(null)
   const [commissionStructures, setCommissionStructures] = useState([])
-  const [workspaceSnapshot, setWorkspaceSnapshot] = useState({
-    branches: [],
-    leads: [],
-    transactions: [],
-    listings: [],
-    appointments: [],
-    tasks: [],
-    leadActivities: [],
-    canvassingProspects: [],
-    canvassingActivities: [],
-  })
+  const [workspaceSnapshot, setWorkspaceSnapshot] = useState(() => createEmptyAgentWorkspaceSnapshot())
 
   const canAccess = canAccessAgentsModule({ role, baseRole, profile, membershipRole })
   const canManageSettings = canManageAgentOrganisations({ role, baseRole, profile, membershipRole })
@@ -6081,15 +6146,19 @@ export function AgentWorkspacePage() {
     }
   }, [])
 
-  const loadWorkspace = useCallback(async () => {
+  const loadFullWorkspace = useCallback(async ({ blockInitialRender = false } = {}) => {
     if (!canAccess) {
-      setLoading(false)
+      if (blockInitialRender) setLoading(false)
       return
     }
 
     try {
-      setLoading(true)
-      setError('')
+      if (blockInitialRender) {
+        setLoading(true)
+        setError('')
+      } else {
+        setHydratingSnapshot(true)
+      }
 
       const [
         performanceSources,
@@ -6131,8 +6200,10 @@ export function AgentWorkspacePage() {
 
       const target = findAgentByRouteId(mergedAgents, agentId)
       if (!target) {
-        setError('Agent not found in your current workspace scope.')
-        setAgent(null)
+        if (blockInitialRender) {
+          setError('Agent not found in your current workspace scope.')
+          setAgent(null)
+        }
       } else {
         setAgent(target)
         setWorkspaceSnapshot({
@@ -6148,24 +6219,84 @@ export function AgentWorkspacePage() {
         })
       }
     } catch (loadError) {
+      if (blockInitialRender) {
+        setError(loadError?.message || 'Unable to load agent workspace.')
+        setAgent(null)
+        setCommissionStructures([])
+        setWorkspaceSnapshot(createEmptyAgentWorkspaceSnapshot())
+      } else {
+        console.warn('[Agents] Agent workspace performance snapshot failed', loadError)
+      }
+    } finally {
+      if (blockInitialRender) {
+        setLoading(false)
+      } else {
+        setHydratingSnapshot(false)
+      }
+    }
+  }, [agentId, canAccess, canManageSettings, profile, role])
+
+  const loadWorkspace = useCallback(async () => {
+    if (!canAccess) {
+      setLoading(false)
+      return
+    }
+
+    try {
+      setLoading(true)
+      setError('')
+      setWorkspaceSnapshot(createEmptyAgentWorkspaceSnapshot())
+
+      const directory = readAgentDirectory()
+      const directoryTarget = findAgentByRouteId(getDirectoryWorkspaceAgents(directory), agentId)
+      if (directoryTarget) {
+        setAgent(directoryTarget)
+        setLoading(false)
+        void loadFullWorkspace({ blockInitialRender: false })
+        return
+      }
+
+      const [
+        organisationSettings,
+        organisationUsers,
+        commissionStructureRows,
+        commissionProfileRows,
+      ] = await Promise.all([
+        fetchOrganisationSettings().catch(() => null),
+        canManageSettings ? listOrganisationUsers().catch(() => []) : Promise.resolve([]),
+        canManageSettings ? listOrganisationCommissionStructures().catch(() => []) : Promise.resolve([]),
+        canManageSettings ? listOrganisationUserCommissionProfiles().catch(() => []) : Promise.resolve([]),
+      ])
+
+      const nextCommissionStructures = Array.isArray(commissionStructureRows) ? commissionStructureRows : []
+      const commissionProfileMap = createCommissionProfileMap(Array.isArray(commissionProfileRows) ? commissionProfileRows : [])
+      setCommissionStructures(nextCommissionStructures)
+
+      const organisationAgentRows = (organisationUsers || [])
+        .map((user) => normalizeOrganisationUserAgent(user, {
+          organisationId: organisationSettings?.organisation?.id || directory?.agency?.id,
+          organisationName: organisationSettings?.organisation?.name || directory?.agency?.name,
+        }))
+        .map((row) => enrichAgentWithCommissionProfile(row, commissionProfileMap, nextCommissionStructures))
+        .filter(Boolean)
+
+      const target = findAgentByRouteId(organisationAgentRows, agentId)
+      if (target) {
+        setAgent(target)
+        setLoading(false)
+        void loadFullWorkspace({ blockInitialRender: false })
+        return
+      }
+
+      await loadFullWorkspace({ blockInitialRender: true })
+    } catch (loadError) {
       setError(loadError?.message || 'Unable to load agent workspace.')
       setAgent(null)
       setCommissionStructures([])
-      setWorkspaceSnapshot({
-        branches: [],
-        leads: [],
-        transactions: [],
-        listings: [],
-        appointments: [],
-        tasks: [],
-        leadActivities: [],
-        canvassingProspects: [],
-        canvassingActivities: [],
-      })
-    } finally {
+      setWorkspaceSnapshot(createEmptyAgentWorkspaceSnapshot())
       setLoading(false)
     }
-  }, [agentId, canAccess, canManageSettings, profile, role])
+  }, [agentId, canAccess, canManageSettings, loadFullWorkspace])
 
   useEffect(() => {
     void loadWorkspace()
@@ -6204,7 +6335,7 @@ export function AgentWorkspacePage() {
         </Button>
         <div className="inline-flex min-w-0 items-center gap-2 truncate text-xs text-[#647a92]">
           <ShieldCheck size={13} />
-          {canManageSettings ? 'Principal Workspace' : 'Agent Workspace'}
+          {hydratingSnapshot ? 'Refreshing performance snapshot…' : canManageSettings ? 'Principal Workspace' : 'Agent Workspace'}
         </div>
       </div>
       <AgentWorkspace
