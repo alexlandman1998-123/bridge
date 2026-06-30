@@ -1597,13 +1597,15 @@ function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
 function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { workspace, role, profile, personaOptions, setActivePersona, rolePreviewActive } = useWorkspace()
+  const { workspace, role, profile, personaOptions, setActivePersona, rolePreviewActive, currentMembership } = useWorkspace()
   const {
     organisation,
     loading: organisationLoading,
     membershipRole: hydratedMembershipRole,
   } = useOrganisation()
   const currentOrganisationId = String(organisation?.id || '').trim()
+  const isDevAuthBypassWorkspace = String(currentMembership?.source || '').trim() === 'dev_auth_bypass'
+  const developerDashboardOrganisationId = role === 'developer' && isDevAuthBypassWorkspace ? null : currentOrganisationId
   const [overview, setOverview] = useState({
     metrics: {
       totalDevelopments: 0,
@@ -1812,7 +1814,7 @@ function Dashboard() {
         setAgentPrivateListingRows([])
         const data = await fetchDashboardOverview({
           developmentId: workspace.id === 'all' ? null : workspace.id,
-          organisationId: role === 'developer' ? currentOrganisationId : null,
+          organisationId: role === 'developer' ? developerDashboardOrganisationId : null,
         })
         setOverview(data)
       }
@@ -1824,7 +1826,7 @@ function Dashboard() {
     } finally {
       setLoading(false)
     }
-  }, [currentOrganisationId, isPrincipalAgentView, organisationLoading, profile?.email, profile?.id, profile?.userId, role, workspace.id])
+  }, [currentOrganisationId, developerDashboardOrganisationId, isPrincipalAgentView, organisationLoading, profile?.email, profile?.id, profile?.userId, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()

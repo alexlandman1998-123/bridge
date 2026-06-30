@@ -427,6 +427,21 @@
     justify-content: flex-end;
   }
 
+  .ui-shell-header-developer-dashboard {
+    min-height: 72px;
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+  }
+
+  .ui-shell-actions-developer-dashboard {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+  }
+
   .ui-shell-header-attorney-dashboard {
     min-height: 64px;
     padding-top: 0.75rem;
@@ -1364,6 +1379,16 @@
     font-size: 0.72rem;
     font-weight: 700;
     line-height: 1;
+  }
+
+  .ui-shell-search-developer-dashboard {
+    flex: 0 1 520px;
+    min-width: 320px;
+    max-width: 520px;
+    border-color: rgba(206, 219, 232, 0.95);
+    background: rgba(255, 255, 255, 0.86);
+    border-radius: 14px;
+    box-shadow: 0 12px 30px rgba(25, 46, 69, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.86);
   }
 
   .ui-shell-create-button {
@@ -3383,6 +3408,12 @@ body.sidebar-compact .ui-main-region {
     justify-content: flex-start;
   }
 
+  .ui-shell-actions-developer-dashboard {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
   .ui-shell-actions {
     width: 100%;
     flex: 1 1 100%;
@@ -3394,6 +3425,12 @@ body.sidebar-compact .ui-main-region {
 
   .ui-shell-search {
     flex: 1 1 320px;
+    max-width: none;
+  }
+
+  .ui-shell-search-developer-dashboard {
+    flex: 1 1 420px;
+    min-width: 260px;
     max-width: none;
   }
 
@@ -3432,6 +3469,15 @@ body.sidebar-compact .ui-main-region {
   .ui-shell-search {
     flex: 1 1 100%;
     width: 100%;
+  }
+
+  .ui-shell-actions-developer-dashboard {
+    align-items: center;
+  }
+
+  .ui-shell-search-developer-dashboard {
+    order: 5;
+    flex-basis: 100%;
   }
 
   .ui-shell-role-switch {

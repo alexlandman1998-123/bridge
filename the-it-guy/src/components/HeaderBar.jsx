@@ -810,11 +810,20 @@ function HeaderBar({ onLogout, user }) {
 
   if (developerDashboardHeaderOnly) {
     return (
-      <header className="no-print ui-shell-header ui-shell-header-no-title">
-        <div className="flex-1" />
-        <QuickCreateDropdown />
-        {notificationsControl}
-        {avatarControl}
+      <header className="no-print ui-shell-header ui-shell-header-no-title ui-shell-header-developer-dashboard">
+        <div className="ui-shell-actions ui-shell-actions-developer-dashboard">
+          <QuickCreateDropdown />
+          <div className="ui-shell-search ui-shell-search-developer-dashboard min-h-[44px]" aria-label="Search">
+            <Search size={17} className="shrink-0 text-textSoft" />
+            <input
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-secondary text-textStrong outline-none"
+              type="search"
+              placeholder="Search unit, buyer, stage..."
+            />
+          </div>
+          {notificationsControl}
+          {avatarControl}
+        </div>
       </header>
     )
   }
