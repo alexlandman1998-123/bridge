@@ -18,5 +18,8 @@ assert.match(canvassingPageSource, /buildCanvassingImportPayload/, 'canvassing i
 assert.match(canvassingPageSource, /createCanvassingProspect\(organisationId, payload\)/, 'canvassing import should create canvassing prospects directly')
 assert.match(canvassingPageSource, /normalizedAudience === 'buyer' \? 'Buyer' : 'Seller'/, 'canvassing bulk upload should support buyer and seller-specific import copy')
 assert.match(canvassingPageSource, /Import \$\{audienceLabel\} Prospects/, 'canvassing bulk upload should label the selected import mode')
+assert.match(canvassingPageSource, />\s*Add Prospect\s*</, 'canvassing toolbar should label the create action as Add Prospect')
+assert.match(canvassingPageSource, />\s*Bulk Import\s*</, 'canvassing toolbar should label the import action as Bulk Import')
+assert.match(canvassingPageSource, /grid-cols-\[repeat\(auto-fit,minmax\(170px,1fr\)\)\]/, 'canvassing filters should stretch evenly across the available width')
 
 console.log('residential canvassing checks passed')

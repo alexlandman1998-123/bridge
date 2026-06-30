@@ -2466,46 +2466,48 @@ function PipelineCanvassingPage() {
       </section>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 p-4">
+        <div className="border-b border-slate-200 bg-white p-4">
           <div className="grid gap-3">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <Field
-              className="h-10 w-full md:max-w-sm"
-              placeholder="Search prospects..."
-              value={filters.search}
-              onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
-            />
-              <Button
-                type="button"
-                className="h-10 min-h-10 w-full justify-center whitespace-nowrap rounded-xl px-4 md:w-auto"
-                onClick={() => {
-                  resetProspectForm()
-                  setProspectForm((previous) => ({
-                    ...previous,
-                    prospectType: prospectView === 'buyer' ? 'Buyer Prospect' : 'Seller Prospect',
-                    source: prospectView === 'buyer' ? 'Website' : 'Cold Call',
-                    canvassingMethod: prospectView === 'buyer' ? 'Website' : 'Cold Call',
-                    buyerStatus: prospectView === 'buyer' ? 'New' : '',
-                  }))
-                  setShowCreateModal(true)
-                }}
-              >
-                <Plus size={14} />
-                Prospect
-              </Button>
-              <Button
-                type="button"
-                className="h-10 min-h-10 w-full justify-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 text-slate-700 hover:bg-slate-50 md:w-auto"
-                onClick={() => {
-                  setImportResult(null)
-                  setShowImportModal(true)
-                }}
-              >
-                <FileUp size={14} />
-                Import
-              </Button>
+            <div className="grid gap-3 lg:grid-cols-[minmax(260px,420px)_auto] lg:items-center lg:justify-between">
+              <Field
+                className="min-h-11 w-full rounded-xl py-2.5 text-sm leading-5"
+                placeholder="Search prospects..."
+                value={filters.search}
+                onChange={(event) => setFilters((previous) => ({ ...previous, search: event.target.value }))}
+              />
+              <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:justify-end">
+                <Button
+                  type="button"
+                  className="min-h-11 w-full justify-center whitespace-nowrap rounded-xl px-4 lg:w-auto"
+                  onClick={() => {
+                    resetProspectForm()
+                    setProspectForm((previous) => ({
+                      ...previous,
+                      prospectType: prospectView === 'buyer' ? 'Buyer Prospect' : 'Seller Prospect',
+                      source: prospectView === 'buyer' ? 'Website' : 'Cold Call',
+                      canvassingMethod: prospectView === 'buyer' ? 'Website' : 'Cold Call',
+                      buyerStatus: prospectView === 'buyer' ? 'New' : '',
+                    }))
+                    setShowCreateModal(true)
+                  }}
+                >
+                  <Plus size={14} />
+                  Add Prospect
+                </Button>
+                <Button
+                  type="button"
+                  className="min-h-11 w-full justify-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 text-slate-700 shadow-sm hover:bg-slate-50 lg:w-auto"
+                  onClick={() => {
+                    setImportResult(null)
+                    setShowImportModal(true)
+                  }}
+                >
+                  <FileUp size={14} />
+                  Bulk Import
+                </Button>
+              </div>
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8">
+            <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(170px,1fr))] items-stretch gap-2">
               <Field
                 as="select"
                 className={CANVASSING_FILTER_SELECT_CLASS}

@@ -2554,16 +2554,6 @@ function getAppointmentStartDate(item = {}) {
   return null
 }
 
-function getAppointmentEndDate(item = {}) {
-  const safeItem = item || {}
-  const explicit = normalizeText(safeItem.endAt || safeItem.end_at || safeItem.endsAt || safeItem.ends_at)
-  if (explicit) {
-    const parsed = new Date(explicit)
-    if (!Number.isNaN(parsed.getTime())) return parsed
-  }
-  return null
-}
-
 function getAppointmentTimeLabel(item = {}) {
   const start = getAppointmentStartDate(item)
   if (!start) return 'Time TBC'
@@ -6772,13 +6762,6 @@ function getListingTitle(listing = {}) {
   return normalizeText(listing.title || listing.listingTitle || listing.listing_title || listing.propertyTitle || listing.property_title || listing.propertyAddress || listing.address) || 'Private property recommendation'
 }
 
-function getListingAddressLine(listing = {}) {
-  return [listing.address, listing.addressLine1, listing.address_line_1, listing.suburb, listing.city]
-    .map(normalizeText)
-    .filter(Boolean)
-    .join(', ') || normalizeText(listing.description) || 'Address pending'
-}
-
 function getListingPrice(listing = {}) {
   return toFiniteNumber(listing.price ?? listing.askingPrice ?? listing.asking_price ?? listing.estimatedValue ?? listing.estimated_value)
 }
@@ -6852,35 +6835,8 @@ function getListingImageUrl(listing = {}) {
   )
 }
 
-function getListingPropertyType(listing = {}) {
-  return formatCleanValue(listing.propertyType || listing.property_type || listing.listingType || listing.listing_type || listing.category)
-}
-
 function getCollectionExplicitScore(source = {}) {
   return toFiniteNumber(source.matchScore ?? source.match_score ?? source.score ?? source.compatibilityScore ?? source.compatibility_score)
-}
-
-function getCollectionScoreTone(score = 0) {
-  if (score >= 95) return {
-    label: 'Perfect Match',
-    badge: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    dot: 'bg-emerald-500',
-  }
-  if (score >= 90) return {
-    label: 'Strong Match',
-    badge: 'border-blue-200 bg-blue-50 text-blue-700',
-    dot: 'bg-blue-500',
-  }
-  if (score >= 80) return {
-    label: 'Potential Match',
-    badge: 'border-slate-200 bg-slate-50 text-slate-700',
-    dot: 'bg-slate-400',
-  }
-  return {
-    label: 'Needs Review',
-    badge: 'border-amber-200 bg-amber-50 text-amber-700',
-    dot: 'bg-amber-500',
-  }
 }
 
 function buildGeneratedMatchReasons(listing = {}, row = {}, requirement = getBuyerPrimaryRequirement(row)) {
@@ -8115,11 +8071,9 @@ function PropertySelector({ value = '', onChange, properties = [], placeholder =
   const [highlightedIndex, setHighlightedIndex] = useState(0)
   const containerRef = useRef(null)
   const searchInputRef = useRef(null)
-  const selectedProperty = properties.find((property) => property.id === value) || null
-  const filteredProperties = useMemo(
-    () => properties.filter((property) => propertySelectorMatches(property, searchQuery)).slice(0, 100),
-    [properties, searchQuery],
-  )
+  const propertyRows = Array.isArray(properties) ? properties : []
+  const selectedProperty = propertyRows.find((property) => property.id === value) || null
+  const filteredProperties = propertyRows.filter((property) => propertySelectorMatches(property, searchQuery)).slice(0, 100)
 
   useEffect(() => {
     if (!isOpen) return undefined
@@ -8138,19 +8092,21 @@ function PropertySelector({ value = '', onChange, properties = [], placeholder =
     }
   }, [isOpen])
 
-  useEffect(() => {
-    setHighlightedIndex(0)
-  }, [searchQuery])
-
   function openSelector() {
     if (disabled) return
     setIsOpen(true)
+  }
+
+  function handleSearchQueryChange(event) {
+    setSearchQuery(event.target.value)
+    setHighlightedIndex(0)
   }
 
   function selectProperty(property) {
     onChange?.(property?.id || '')
     setIsOpen(false)
     setSearchQuery('')
+    setHighlightedIndex(0)
   }
 
   function handleKeyDown(event) {
@@ -8198,7 +8154,7 @@ function PropertySelector({ value = '', onChange, properties = [], placeholder =
               <input
                 ref={searchInputRef}
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
+                onChange={handleSearchQueryChange}
                 className="min-h-12 w-full rounded-2xl border border-slate-300 bg-white pl-12 pr-4 text-sm font-medium outline-none focus:border-blue-300 focus:ring-4 focus:ring-blue-50"
                 placeholder="Search for a property, suburb or reference..."
               />
@@ -9042,7 +8998,7 @@ function LeadAppointmentsPanel({ organisationId, lead, actor, onSaved, onBackToL
   const [selectedAppointment, setSelectedAppointment] = useState(null)
   const [activeListings, setActiveListings] = useState([])
   const [listingsLoading, setListingsLoading] = useState(false)
-  const appointments = Array.isArray(lead?.appointments) ? lead.appointments : []
+  const appointments = useMemo(() => Array.isArray(lead?.appointments) ? lead.appointments : [], [lead?.appointments])
   const propertyOptions = useMemo(() => buildAppointmentPropertyOptions(lead, activeListings), [activeListings, lead])
   const upcomingAppointments = useMemo(() => getBuyerUpcomingAppointments({ ...lead, appointments }), [appointments, lead])
 
@@ -9331,18 +9287,21 @@ function SellerAppointmentForm({ organisationId, lead, listing = null, actor, on
 
 function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, onSaved, openComposerSignal = 0 }) {
   const navigate = useNavigate()
-  const [appointmentModalOpen, setAppointmentModalOpen] = useState(false)
+  const [manualAppointmentModalOpen, setManualAppointmentModalOpen] = useState(false)
+  const [dismissedOpenComposerSignal, setDismissedOpenComposerSignal] = useState(0)
+  const externalAppointmentModalOpen = openComposerSignal > 0 && openComposerSignal !== dismissedOpenComposerSignal
+  const appointmentModalOpen = manualAppointmentModalOpen || externalAppointmentModalOpen
+
+  const closeAppointmentModal = useCallback(() => {
+    setManualAppointmentModalOpen(false)
+    setDismissedOpenComposerSignal(openComposerSignal)
+  }, [openComposerSignal])
 
   const handleAppointmentSaved = useCallback(async () => {
-    setAppointmentModalOpen(false)
+    setManualAppointmentModalOpen(false)
+    setDismissedOpenComposerSignal(openComposerSignal)
     await onSaved?.()
-  }, [onSaved])
-
-  useEffect(() => {
-    if (openComposerSignal > 0) {
-      setAppointmentModalOpen(true)
-    }
-  }, [openComposerSignal])
+  }, [onSaved, openComposerSignal])
 
   return (
     <SellerWorkspaceCard title="Appointments" action={<StatusPill tone={(lead?.appointments || []).length ? 'blue' : 'slate'}>{(lead?.appointments || []).length} linked</StatusPill>}>
@@ -9359,13 +9318,13 @@ function SellerAppointmentsTab({ organisationId, lead, listing = null, actor, on
           onOpenCalendar={() => navigate('/pipeline/calendar')}
           onManageAppointment={() => navigate('/pipeline/calendar')}
           onOpenAppointment={() => navigate('/pipeline/calendar')}
-          onScheduleAppointment={() => setAppointmentModalOpen(true)}
+          onScheduleAppointment={() => setManualAppointmentModalOpen(true)}
           emptyActionLabel="Create Appointment"
           refreshKey={`${lead?.leadId || ''}:${(lead?.appointments || []).length}`}
         />
         <Modal
           open={appointmentModalOpen}
-          onClose={() => setAppointmentModalOpen(false)}
+          onClose={closeAppointmentModal}
           title="Create Appointment"
           subtitle="Create a seller appointment without leaving the lead workspace."
           className="max-w-2xl"
@@ -16121,14 +16080,6 @@ function AgentLeadWorkspace() {
       setError(deleteError?.message || 'Unable to delete this lead.')
     }
   }, [navigate, organisationId, row])
-
-  const markBuyerReachedOut = useCallback(async () => {
-    if (!organisationId || !row?.leadId) {
-      throw new Error('This lead cannot be updated until the workspace has loaded.')
-    }
-    await markLeadFirstContacted({ organisationId, leadId: row.leadId }, { actor })
-    await loadWorkspace()
-  }, [actor, loadWorkspace, organisationId, row])
 
   const markBuyerQualified = useCallback(async () => {
     if (!organisationId || !row?.leadId) {
