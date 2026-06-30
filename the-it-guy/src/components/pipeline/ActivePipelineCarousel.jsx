@@ -1,5 +1,5 @@
-import { Building2, CalendarDays, ChevronRight, Home, User2 } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { Building2, CalendarDays, ChevronLeft, ChevronRight, Home, User2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const currencyCompact = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -324,6 +324,29 @@ export default function ActivePipelineCarousel({
   const config = useModeConfig(mode)
   const scrollRef = useRef(null)
   const safeRecords = useMemo(() => (Array.isArray(records) ? records.filter(Boolean) : []), [records])
+  const [scrollState, setScrollState] = useState({ canScrollLeft: false, canScrollRight: false })
+
+  useEffect(() => {
+    const scrollNode = scrollRef.current
+    if (!scrollNode) return undefined
+
+    const updateScrollState = () => {
+      const maxScrollLeft = Math.max(0, scrollNode.scrollWidth - scrollNode.clientWidth)
+      setScrollState({
+        canScrollLeft: scrollNode.scrollLeft > 4,
+        canScrollRight: scrollNode.scrollLeft < maxScrollLeft - 4,
+      })
+    }
+
+    updateScrollState()
+    scrollNode.addEventListener('scroll', updateScrollState, { passive: true })
+    window.addEventListener('resize', updateScrollState)
+
+    return () => {
+      scrollNode.removeEventListener('scroll', updateScrollState)
+      window.removeEventListener('resize', updateScrollState)
+    }
+  }, [safeRecords.length])
 
   return (
     <section className="space-y-4">
@@ -360,12 +383,22 @@ export default function ActivePipelineCarousel({
                 />
               ))}
             </div>
-            {safeRecords.length > 1 ? (
+            {safeRecords.length > 1 && scrollState.canScrollLeft ? (
               <button
                 type="button"
-                aria-label={`Scroll ${title}`}
+                aria-label={`Scroll ${title} left`}
+                onClick={() => scrollRef.current?.scrollBy({ left: scrollRef.current.clientWidth * -0.82, behavior: 'smooth' })}
+                className="absolute left-2 top-[calc(50%-28px)] z-10 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-[#dde5ef] bg-white/96 text-[#10243a] shadow-[0_12px_24px_rgba(15,23,42,0.12)] backdrop-blur md:inline-flex"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            ) : null}
+            {safeRecords.length > 1 && scrollState.canScrollRight ? (
+              <button
+                type="button"
+                aria-label={`Scroll ${title} right`}
                 onClick={() => scrollRef.current?.scrollBy({ left: scrollRef.current.clientWidth * 0.82, behavior: 'smooth' })}
-                className="absolute right-2 top-[calc(50%-28px)] hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-[#dde5ef] bg-white/96 text-[#10243a] shadow-[0_12px_24px_rgba(15,23,42,0.12)] backdrop-blur md:inline-flex"
+                className="absolute right-2 top-[calc(50%-28px)] z-10 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-[#dde5ef] bg-white/96 text-[#10243a] shadow-[0_12px_24px_rgba(15,23,42,0.12)] backdrop-blur md:inline-flex"
               >
                 <ChevronRight size={20} />
               </button>
